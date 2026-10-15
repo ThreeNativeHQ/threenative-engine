@@ -17443,3 +17443,3325 @@ index c46f6ab0e06d93f124c9fc62ece8859529461d5e..57c1eb62f1e0de063f22e08ec879e31d
  		this._samplerCache.clear();
  
  	}
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 5975e257a43fe139b69c249d8c8c1edfe91e12a0..ee394e98d798be749776cce1fa3e043fb9951769 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -61436,6 +61436,7 @@ class Renderer {
+ 		//
+ 
+ 		renderContext.camera = camera;
++		renderContext._tnOutputOwner = scene === this._tnOutputOwner ? scene : null;
+ 		this.backend.beginRender( renderContext );
+ 
+ 		// process render lists
+@@ -61448,13 +61449,22 @@ class Renderer {
+ 			opaque: opaqueObjects
+ 		} = renderList;
+ 
++		let renderComplete = false;
++		try {
++
+ 		if ( bundles.length > 0 ) this._renderBundles( bundles, sceneRef, lightsNode );
+ 		if ( this.opaque === true && opaqueObjects.length > 0 ) this._renderObjects( opaqueObjects, camera, sceneRef, lightsNode );
+ 		if ( this.transparent === true && transparentObjects.length > 0 ) this._renderTransparents( transparentObjects, transparentDoublePassObjects, camera, sceneRef, lightsNode );
+ 
+-		// finish render pass
++		renderComplete = true;
++
++		} finally {
++
++		try {
++
++			if ( renderComplete || this.backend.get( renderContext )._tnDepth ) this.backend.finishRender( renderContext );
+ 
+-		this.backend.finishRender( renderContext );
++		} finally {
+ 
+ 		// restore render tree
+ 
+@@ -61469,6 +61479,9 @@ class Renderer {
+ 
+ 		this._callDepth --;
+ 
++		}
++		}
++
+ 		if ( frameBufferTarget !== null ) {
+ 
+ 			this.setRenderTarget( outputRenderTarget, activeCubeFace, activeMipmapLevel );
+@@ -77246,6 +77259,7 @@ class WebGPUTextureUtils {
+ 
+ 		if ( depthBuffers !== undefined ) {
+ 
++			depthBuffers._tnPrivateDepth?.texture.destroy();
+ 			this._depthBuffers.delete( texture );
+ 			depthBuffers.canvasTarget.removeEventListener( 'resize', depthBuffers.onDispose );
+ 			depthBuffers.canvasTarget.removeEventListener( 'dispose', depthBuffers.onDispose );
+@@ -81831,6 +81845,9 @@ class WebGPUAttributeUtils {
+ 
+ 			buffer.unmap();
+ 
++			bufferData._tnFullTriangle = backend.device.features?.has( 'transient-attachments' ) && attribute.itemSize === 3 && attribute.count === 3 && attribute.normalized === false && array instanceof Float32Array && array.length === 9 && ! attribute.isInterleavedBufferAttribute && ! attribute.isStorageBufferAttribute && [ -1, 3, 0, -1, -1, 0, 3, -1, 0 ].every( ( value, i ) => array[ i ] === value );
++			bufferData._tnTriangleVersion = bufferAttribute.version;
++			bufferData._tnTriangleBuffer = buffer;
+ 			bufferData.buffer = buffer;
+ 			bufferData.version = bufferAttribute.version;
+ 			bufferData.uploadCall = backend.renderer.info.calls;
+@@ -81866,6 +81883,8 @@ class WebGPUAttributeUtils {
+ 		if ( bufferData.version === bufferAttribute.version &&
+ 			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
++		bufferData._tnFullTriangle = false;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -82427,6 +82446,7 @@ class WebGPUBindingUtils {
+ 
+ 		}
+ 
++		bindingsData._tnBindings = this._tnGroups?.get( bindGroupGPU );
+ 		bindingsData.group = bindGroupGPU;
+ 
+ 	}
+@@ -82446,6 +82466,7 @@ class WebGPUBindingUtils {
+ 
+ 		const updateRanges = binding.updateRanges;
+ 
++
+ 		if ( updateRanges.length === 0 ) {
+ 
+ 			device.queue.writeBuffer(
+@@ -82499,6 +82520,15 @@ class WebGPUBindingUtils {
+ 
+ 		}
+ 
++		// Keep bytes actually sent to the GPU, including partial writes; never certify mutable CPU values.
++		if ( backend.device.features?.has( 'transient-attachments' ) && binding.uniforms?.some( u => u.itemSize === 16 ) ) {
++
++			const data = backend.get( binding );
++			const values = new Float32Array( array.buffer, array.byteOffset, array.byteLength / 4 );
++			if ( updateRanges.length === 0 ) data._tnUniformBytes = values.slice();
++			else if ( data._tnUniformBytes ) for ( const range of updateRanges ) data._tnUniformBytes.set( values.subarray( range.start, range.start + range.count ), range.start );
++
++		}
+ 	}
+ 
+ 	/**
+@@ -82662,6 +82692,12 @@ class WebGPUBindingUtils {
+ 		}
+ 
+ 		const bindGroupGPU = device.createBindGroup( _bindGroupDescriptor );
++		if ( device.features?.has( 'transient-attachments' ) ) {
++
++			this._tnGroups ||= new WeakMap();
++			this._tnGroups.set( bindGroupGPU, bindGroup.bindings.map( binding => ( { binding, buffer: backend.get( binding ).buffer, uniforms: binding.uniforms?.map( u => ( { name: u.name, offset: u.offset, itemSize: u.itemSize } ) ) } ) ) );
++
++		}
+ 
+ 		_bindGroupDescriptor.reset();
+ 
+@@ -83263,6 +83299,16 @@ class WebGPUPipelineUtils {
+ 
+ 		}
+ 
++		if ( device.features?.has( 'transient-attachments' ) ) {
++
++		// Capture the actual immutable GPU descriptor and compiled programs, after graph updates.
++		const positionIndex = renderObject.getAttributes().indexOf( geometry.attributes.position );
++		const positionLayout = vertexBuffers.find( layout => layout.attributes.some( a => a.shaderLocation === positionIndex ) );
++		const positionSlot = positionLayout?.attributes.find( a => a.shaderLocation === positionIndex );
++		pipelineData._tnDepthProof = depthStencil.depthWriteEnabled === true && depthStencil.depthCompare === 'less-equal' && ! depthStencil.depthBias && ! depthStencil.depthBiasSlopeScale && ! _renderPipelineDescriptor.multisample.alphaToCoverageEnabled && ( _renderPipelineDescriptor.multisample.mask === undefined || _renderPipelineDescriptor.multisample.mask === 0xffffffff ) && primitiveState.topology === 'triangle-list' && ( primitiveState.cullMode === 'none' || ( primitiveState.cullMode === 'back' && primitiveState.frontFace === 'ccw' ) ) && positionLayout?.arrayStride === 12 && positionLayout.stepMode === 'vertex' && positionSlot?.format === 'float32x3' && positionSlot.offset === 0 ? { material, version: material.version, positionIndex, vertex: backend.get( vertexProgram )._tnShaderCode, fragment: backend.get( fragmentProgram )._tnShaderCode } : null;
++
++		}
++
+ 		// create pipeline
+ 
+ 		device.pushErrorScope( 'validation' );
+@@ -83276,6 +83322,7 @@ class WebGPUPipelineUtils {
+ 		if ( promises === null ) {
+ 
+ 			pipelineData.pipeline = device.createRenderPipeline( _renderPipelineDescriptor );
++			if ( pipelineData._tnDepthProof ) pipelineData._tnDepthProof.pipeline = pipelineData.pipeline;
+ 
+ 			_renderPipelineDescriptor.reset();
+ 
+@@ -85296,6 +85343,144 @@ class WebGPUBackend extends Backend {
+ 	 *
+ 	 * @param {RenderContext} renderContext - The render context.
+ 	 */
++	// Only the renderer-owned presentation scene may speculate. Canonical textures stay public.
++	_isFullTransientViewport( context ) {
++
++		const v = context.viewportValue;
++		return ! context.scissor && ( ! context.viewport || ( v.x === 0 && v.y === 0 && v.width === context.width && v.height === context.height && v.minDepth === 0 && v.maxDepth === 1 ) );
++
++	}
++
++	_beginTransientDepth( context, descriptor ) {
++
++		const original = descriptor.depthStencilAttachment;
++		if ( ! this.device.features?.has( 'transient-attachments' ) || ! context._tnOutputOwner || context.textures !== null || ! context.depth || context.stencil || context.camera?.isArrayCamera || this.renderer.xr?.isPresenting || this.renderer.reversedDepthBuffer || context.occlusionQueryCount !== 0 || ! this._isFullTransientViewport( context ) || original?.depthLoadOp !== 'clear' || original.depthClearValue !== 1 || original.depthStoreOp !== 'store' ) return descriptor;
++
++		const samples = this.utils.getSampleCountRenderContext( context );
++		if ( samples <= 1 ) return descriptor;
++		const canonical = this.renderer.getCanvasTarget().depthTexture;
++		const cache = this.textureUtils._depthBuffers.get( canonical );
++		const format = this.get( canonical ).format;
++		if ( cache === undefined || ! format ) return descriptor;
++		if ( cache._tnPrivateDepth === undefined ) {
++
++			const texture = this.device.createTexture( { label: 'tn-private-output-depth', size: { width: context.width, height: context.height }, format, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT, _tnPassLocalMSAA: true } );
++			cache._tnPrivateDepth = { texture, used: false };
++
++		}
++		const source = cache._tnPrivateDepth;
++		const attachment = { ...original, view: source.texture.createView(), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
++		if ( format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'clear', stencilClearValue: 0, stencilStoreOp: 'discard' } );
++		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, originalGPU: this.get( canonical ).texture, colorGPU: this.get( this.renderer.getCanvasTarget().colorTexture ).texture, active: true, logical: 1 };
++		return { ...descriptor, colorAttachments: descriptor.colorAttachments.map( a => ( { ...a } ) ), depthStencilAttachment: attachment };
++
++	}
++
++	_finishTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		if ( ! state?.active ) return;
++		state.active = false;
++		const attachment = { ...state.original, depthLoadOp: 'clear', depthClearValue: state.logical, depthStoreOp: 'store' };
++		// A combined texture's original stencil is never changed by this depth-only compatibility clear.
++		if ( attachment.stencilLoadOp !== undefined || this.get( state.canonical ).format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'load', stencilStoreOp: 'store', stencilReadOnly: false } );
++		data.encoder.beginRenderPass( { colorAttachments: [], depthStencilAttachment: attachment } ).end();
++		data.descriptor.depthStencilAttachment = { ...state.original, depthLoadOp: 'load' };
++
++	}
++
++	_restoreTransientDepth( context ) {
++
++		const data = this.get( context );
++		if ( ! data._tnDepth?.active ) return;
++		data.currentPass.end();
++		this._finishTransientDepth( context );
++		this._resumeTransientDepth( context );
++
++	}
++
++	_resumeTransientDepth( context ) {
++
++		const data = this.get( context );
++		const descriptor = { ...data.descriptor, timestampWrites: undefined, colorAttachments: data.descriptor.colorAttachments.map( a => ( { ...a, loadOp: 'load' } ) ) };
++		data.descriptor = descriptor;
++		data.currentPass = data.encoder.beginRenderPass( descriptor );
++		data.currentSets = { attributes: {}, bindingGroups: [], pipeline: null, index: null };
++		if ( context.viewport ) this.updateViewport( context );
++		if ( context.scissor ) this.updateScissor( context );
++
++	}
++
++	_releaseTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		if ( state && ! state.source.used && state.cache._tnPrivateDepth === state.source ) {
++
++			state.source.texture.destroy();
++			delete state.cache._tnPrivateDepth;
++
++		}
++		delete data._tnDepth;
++
++	}
++
++	// Separate encoders must observe the pending canonical contents in queue order.
++	_flushTransientDepth( context ) {
++
++		const data = this.get( context );
++		if ( ! data._tnDepth ) return false;
++		this._restoreTransientDepth( context );
++		data.currentPass.end();
++		submit( this.device, data.encoder.finish() );
++		this._releaseTransientDepth( context );
++		data.currentPass = null;
++		return true;
++
++	}
++
++	_validateTransientDepth( renderObject, params, vertexBuffers ) {
++
++		const { object, context, material, pipeline } = renderObject;
++		const proof = this.get( pipeline )._tnDepthProof;
++		const position = object.geometry.attributes.position;
++		const uploaded = position && this.get( position );
++		if ( object !== context._tnOutputOwner || ! this._isFullTransientViewport( context ) || ! proof || proof.pipeline !== this.get( pipeline ).pipeline || proof.material !== material || proof.version !== material.version || material.vertexNode !== null || material.positionNode !== null || material.depthNode !== null || material.depthTest !== true || material.depthWrite !== true || material.depthFunc !== 3 || material.alphaToCoverage || material.polygonOffset || material.stencilWrite || params.vertexCount !== 3 || params.firstVertex !== 0 || params.instanceCount !== 1 || renderObject.geometry !== object.geometry || renderObject.getIndex() !== null || object.geometry.index !== null || object.isBatchedMesh || object.isInstancedMesh || ! vertexBuffers.includes( position ) || renderObject.getIndirect() !== null || ! uploaded?._tnFullTriangle || uploaded._tnTriangleVersion !== position.version || uploaded._tnTriangleBuffer !== uploaded.buffer || position.array.length !== 9 || ! [ -1, 3, 0, -1, -1, 0, 3, -1, 0 ].every( ( n, i ) => position.array[ i ] === n ) ) return false;
++		if ( proof.vertex !== this.get( pipeline.vertexProgram )._tnShaderCode || proof.fragment !== this.get( pipeline.fragmentProgram )._tnShaderCode ) return false;
++		if ( /\b(discard|frag_depth|sample_mask|clip_distances)\b/.test( proof.vertex + proof.fragment ) ) return false;
++		// Admit only Three's shipped projection chain. Custom code anywhere in the vertex stage falls back.
++		const code = proof.vertex.replace( /\/\/[^\n]*/g, '' ).replace( /\s+/g, '' );
++		if ( ( code.match( /fn/g ) || [] ).length !== 1 ) return false;
++		const main = /@vertexfnmain\((.*?)\)->VaryingsStruct\{(.*)\}$/.exec( code );
++		if ( ! main || ! /^(@location\(\d+\)(position:vec3<f32>|uv:vec2<f32>),?)+$/.test( main[ 1 ] ) || ! main[ 1 ].includes( '@location(' + proof.positionIndex + ')position:vec3<f32>' ) ) return false;
++		let body = main[ 2 ];
++		// UV passthrough affects colour only; no other extra vertex operation is accepted.
++		body = body.replace( /varyings\.(v_uv|nodeVarying\d+)=uv;/g, '' );
++		const chain = /^modelViewMatrix=\(render\.cameraViewMatrix\*object\.(nodeUniform\d+)\);positionLocal=position;v_positionView=\(modelViewMatrix\*vec4<f32>\(positionLocal,1\.0\)\)\.xyz;(VERTEX_nodeVar\d+)=\(render\.cameraProjectionMatrix\*vec4<f32>\(v_positionView,1\.0\)\);VERTEX_v_modelViewProjection=\2;varyings\.builtinClipSpace=VERTEX_v_modelViewProjection;returnvaryings;$/;
++		const match = chain.exec( body );
++		if ( ! match ) return false;
++		const matrices = new Map();
++		for ( const group of renderObject.getBindings() ) {
++
++			const groupData = this.get( group );
++			if ( ! groupData._tnBindings || ! groupData._tnBindings.every( ( b, i ) => b.binding === group.bindings[ i ] && b.buffer === this.get( b.binding ).buffer ) ) return false;
++			for ( const entry of groupData._tnBindings ) {
++
++				const binding = entry.binding;
++				const snapshot = this.get( binding )._tnUniformBytes;
++				if ( ! snapshot ) continue;
++				for ( const uniform of entry.uniforms || [] ) if ( uniform.itemSize === 16 ) matrices.set( group.name + '.' + uniform.name, Array.from( snapshot.slice( uniform.offset, uniform.offset + 16 ) ) );
++
++			}
++
++		}
++		const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
++		const projection = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1 ];
++		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.every( ( value, i ) => value === expected[ i ] ) );
++
++	}
++
+ 	beginRender( renderContext ) {
+ 
+ 		const renderContextData = this.get( renderContext );
+@@ -85448,10 +85633,15 @@ class WebGPUBackend extends Backend {
+ 
+ 		//
+ 
++		descriptor = this._beginTransientDepth( renderContext, descriptor );
++
+ 		_commandEncoderDescriptor.label = 'renderContext_' + renderContext.id;
+ 		const encoder = device.createCommandEncoder( _commandEncoderDescriptor );
+ 		_commandEncoderDescriptor.reset();
+ 
++		renderContextData.descriptor = descriptor;
++		renderContextData.encoder = encoder;
++
+ 		// Layered render targets: prepare bundle encoders for each camera in the array camera.
+ 
+ 		if ( this._isRenderCameraDepthArray( renderContext ) === true ) {
+@@ -85745,6 +85935,8 @@ class WebGPUBackend extends Backend {
+ 
+ 		}
+ 
++		this._finishTransientDepth( renderContext );
++
+ 		if ( occlusionQueryCount > 0 ) {
+ 
+ 			const bufferSize = occlusionQueryCount * 8; // 8 byte entries for query results
+@@ -85787,7 +85979,15 @@ class WebGPUBackend extends Backend {
+ 
+ 		}
+ 
+-		submit( this.device, renderContextData.encoder.finish() );
++		try {
++
++			submit( this.device, renderContextData.encoder.finish() );
++
++		} finally {
++
++			this._releaseTransientDepth( renderContext );
++
++		}
+ 
+ 
+ 		//
+@@ -85881,6 +86081,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	updateViewport( renderContext ) {
+ 
++		if ( ! this._isFullTransientViewport( renderContext ) ) this._restoreTransientDepth( renderContext );
++
+ 		const { currentPass } = this.get( renderContext );
+ 		const { x, y, width, height, minDepth, maxDepth } = renderContext.viewportValue;
+ 
+@@ -85895,6 +86097,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	updateScissor( renderContext ) {
+ 
++		this._restoreTransientDepth( renderContext );
++
+ 		const { currentPass } = this.get( renderContext );
+ 		const { x, y, width, height } = renderContext.scissorValue;
+ 
+@@ -85936,6 +86140,9 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	clear( color, depth, stencil, renderTargetContext = null ) {
+ 
++		const active = this.renderer._currentRenderContext;
++		const interrupted = active && ( renderTargetContext === active || ( renderTargetContext === null && active.textures === null ) ) && this._flushTransientDepth( active );
++
+ 		const device = this.device;
+ 		const renderer = this.renderer;
+ 
+@@ -86064,6 +86271,12 @@ class WebGPUBackend extends Backend {
+ 		currentPass.end();
+ 
+ 		submit( device, encoder.finish() );
++		if ( interrupted ) {
++
++			this.get( active ).encoder = device.createCommandEncoder();
++			this._resumeTransientDepth( active );
++
++		}
+ 
+ 	}
+ 
+@@ -86392,6 +86605,12 @@ class WebGPUBackend extends Backend {
+ 			} else {
+ 
+ 				passEncoderGPU.draw( vertexCount, instanceCount, firstVertex, 0 );
++				if ( renderContextData._tnDepth?.active ) {
++
++					renderContextData._tnDepth.logical = 0;
++					renderContextData._tnDepth.source.used = true;
++
++				}
+ 
+ 			}
+ 
+@@ -86427,6 +86646,19 @@ class WebGPUBackend extends Backend {
+ 		// vertex buffers
+ 
+ 		const vertexBuffers = renderObject.getVertexBuffers();
++		if ( renderContextData._tnDepth?.active ) {
++
++			if ( this._validateTransientDepth( renderObject, drawParams, vertexBuffers ) ) {
++
++				// _draw records the constant only after the actual GPU draw is encoded.
++
++			} else {
++
++				this._restoreTransientDepth( context );
++
++			}
++
++		}
+ 
+ 		if ( renderObject.camera.isArrayCamera && renderObject.camera.cameras.length > 0 ) {
+ 
+@@ -86763,7 +86995,24 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	async copyTextureToBuffer( texture, x, y, width, height, faceIndex ) {
+ 
+-		return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
++		const active = this.renderer._currentRenderContext;
++		const state = active && this.get( active )._tnDepth;
++		const sourceGPU = state && this.get( texture ).texture;
++		const interrupted = state && ( sourceGPU === state.originalGPU || sourceGPU === state.colorGPU ) && this._flushTransientDepth( active );
++		try {
++
++			return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
++
++		} finally {
++
++			if ( interrupted ) {
++
++				this.get( active ).encoder = this.device.createCommandEncoder();
++				this._resumeTransientDepth( active );
++
++			}
++
++		}
+ 
+ 	}
+ 
+@@ -86827,6 +87076,8 @@ class WebGPUBackend extends Backend {
+ 		_shaderModuleDescriptor.label = program.stage + ( program.name !== '' ? `_${ program.name }` : '' );
+ 		_shaderModuleDescriptor.code = program.code;
+ 
++		programGPU._tnShaderCode = program.code;
++
+ 		programGPU.module = {
+ 			module: this.device.createShaderModule( _shaderModuleDescriptor ),
+ 			entryPoint: 'main'
+@@ -86974,6 +87225,7 @@ class WebGPUBackend extends Backend {
+ 			_bufferDescriptor.reset();
+ 
+ 			uniformBufferData.buffer = bufferGPU;
++			if ( this.device.features?.has( 'transient-attachments' ) && uniformBuffer.uniforms?.some( u => u.itemSize === 16 ) ) uniformBufferData._tnUniformBytes = new Float32Array( byteLength / 4 );
+ 
+ 		}
+ 
+@@ -87159,6 +87411,10 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	copyTextureToTexture( srcTexture, dstTexture, srcRegion = null, dstPosition = null, srcLevel = 0, dstLevel = 0 ) {
+ 
++		const active = this.renderer._currentRenderContext;
++		const state = active && this.get( active )._tnDepth;
++		const interrupted = state && [ srcTexture, dstTexture ].some( texture => { const gpu = this.get( texture ).texture; return gpu === state.originalGPU || gpu === state.colorGPU; } ) && this._flushTransientDepth( active );
++
+ 		let dstX = 0;
+ 		let dstY = 0;
+ 		let dstZ = 0;
+@@ -87240,6 +87496,13 @@ class WebGPUBackend extends Backend {
+ 
+ 		submit( this.device, encoder.finish() );
+ 
++		if ( interrupted ) {
++
++			this.get( active ).encoder = this.device.createCommandEncoder();
++			this._resumeTransientDepth( active );
++
++		}
++
+ 		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
+ 
+ 			this.textureUtils.generateMipmaps( dstTexture );
+@@ -87257,6 +87520,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	copyFramebufferToTexture( texture, renderContext, rectangle ) {
+ 
++		this._restoreTransientDepth( renderContext );
++
+ 		const renderContextData = this.get( renderContext );
+ 
+ 		let sourceGPU = null;
+@@ -87883,7 +88148,20 @@ class RenderPipeline {
+ 		const currentXR = renderer.xr.enabled;
+ 		renderer.xr.enabled = false;
+ 
+-		this._quadMesh.render( renderer );
++		const previousOwner = renderer._tnOutputOwner;
++		renderer._tnOutputOwner = currentXR === false ? this._quadMesh : null;
++		try {
++
++			this._quadMesh.render( renderer );
++
++		} finally {
++
++			renderer._tnOutputOwner = previousOwner;
++			renderer.xr.enabled = currentXR;
++			renderer.toneMapping = toneMapping;
++			renderer.outputColorSpace = outputColorSpace;
++
++		}
+ 
+ 		renderer.xr.enabled = currentXR;
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 95669d28b54250a3857dcb7d1b1b0e30dd19e0cb..a0fab1c7c37cfaf270d9ce36dd3d91453ae6a44c 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -61389,6 +61389,7 @@ class Renderer {
+ 		//
+ 
+ 		renderContext.camera = camera;
++		renderContext._tnOutputOwner = scene === this._tnOutputOwner ? scene : null;
+ 		this.backend.beginRender( renderContext );
+ 
+ 		// process render lists
+@@ -61401,13 +61402,22 @@ class Renderer {
+ 			opaque: opaqueObjects
+ 		} = renderList;
+ 
++		let renderComplete = false;
++		try {
++
+ 		if ( bundles.length > 0 ) this._renderBundles( bundles, sceneRef, lightsNode );
+ 		if ( this.opaque === true && opaqueObjects.length > 0 ) this._renderObjects( opaqueObjects, camera, sceneRef, lightsNode );
+ 		if ( this.transparent === true && transparentObjects.length > 0 ) this._renderTransparents( transparentObjects, transparentDoublePassObjects, camera, sceneRef, lightsNode );
+ 
+-		// finish render pass
++		renderComplete = true;
++
++		} finally {
++
++		try {
++
++			if ( renderComplete || this.backend.get( renderContext )._tnDepth ) this.backend.finishRender( renderContext );
+ 
+-		this.backend.finishRender( renderContext );
++		} finally {
+ 
+ 		// restore render tree
+ 
+@@ -61422,6 +61432,9 @@ class Renderer {
+ 
+ 		this._callDepth --;
+ 
++		}
++		}
++
+ 		if ( frameBufferTarget !== null ) {
+ 
+ 			this.setRenderTarget( outputRenderTarget, activeCubeFace, activeMipmapLevel );
+@@ -77188,6 +77201,7 @@ class WebGPUTextureUtils {
+ 
+ 		if ( depthBuffers !== undefined ) {
+ 
++			depthBuffers._tnPrivateDepth?.texture.destroy();
+ 			this._depthBuffers.delete( texture );
+ 			depthBuffers.canvasTarget.removeEventListener( 'resize', depthBuffers.onDispose );
+ 			depthBuffers.canvasTarget.removeEventListener( 'dispose', depthBuffers.onDispose );
+@@ -81769,6 +81783,9 @@ class WebGPUAttributeUtils {
+ 
+ 			buffer.unmap();
+ 
++			bufferData._tnFullTriangle = backend.device.features?.has( 'transient-attachments' ) && attribute.itemSize === 3 && attribute.count === 3 && attribute.normalized === false && array instanceof Float32Array && array.length === 9 && ! attribute.isInterleavedBufferAttribute && ! attribute.isStorageBufferAttribute && [ -1, 3, 0, -1, -1, 0, 3, -1, 0 ].every( ( value, i ) => array[ i ] === value );
++			bufferData._tnTriangleVersion = bufferAttribute.version;
++			bufferData._tnTriangleBuffer = buffer;
+ 			bufferData.buffer = buffer;
+ 			bufferData.version = bufferAttribute.version;
+ 			bufferData.uploadCall = backend.renderer.info.calls;
+@@ -81804,6 +81821,8 @@ class WebGPUAttributeUtils {
+ 		if ( bufferData.version === bufferAttribute.version &&
+ 			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
++		bufferData._tnFullTriangle = false;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -82367,6 +82386,7 @@ class WebGPUBindingUtils {
+ 
+ 		}
+ 
++		bindingsData._tnBindings = this._tnGroups?.get( bindGroupGPU );
+ 		bindingsData.group = bindGroupGPU;
+ 
+ 	}
+@@ -82386,6 +82406,7 @@ class WebGPUBindingUtils {
+ 
+ 		const updateRanges = binding.updateRanges;
+ 
++
+ 		if ( updateRanges.length === 0 ) {
+ 
+ 			device.queue.writeBuffer(
+@@ -82439,6 +82460,15 @@ class WebGPUBindingUtils {
+ 
+ 		}
+ 
++		// Keep bytes actually sent to the GPU, including partial writes; never certify mutable CPU values.
++		if ( backend.device.features?.has( 'transient-attachments' ) && binding.uniforms?.some( u => u.itemSize === 16 ) ) {
++
++			const data = backend.get( binding );
++			const values = new Float32Array( array.buffer, array.byteOffset, array.byteLength / 4 );
++			if ( updateRanges.length === 0 ) data._tnUniformBytes = values.slice();
++			else if ( data._tnUniformBytes ) for ( const range of updateRanges ) data._tnUniformBytes.set( values.subarray( range.start, range.start + range.count ), range.start );
++
++		}
+ 	}
+ 
+ 	/**
+@@ -82602,6 +82632,12 @@ class WebGPUBindingUtils {
+ 		}
+ 
+ 		const bindGroupGPU = device.createBindGroup( _bindGroupDescriptor );
++		if ( device.features?.has( 'transient-attachments' ) ) {
++
++			this._tnGroups ||= new WeakMap();
++			this._tnGroups.set( bindGroupGPU, bindGroup.bindings.map( binding => ( { binding, buffer: backend.get( binding ).buffer, uniforms: binding.uniforms?.map( u => ( { name: u.name, offset: u.offset, itemSize: u.itemSize } ) ) } ) ) );
++
++		}
+ 
+ 		_bindGroupDescriptor.reset();
+ 
+@@ -83200,6 +83236,16 @@ class WebGPUPipelineUtils {
+ 
+ 		}
+ 
++		if ( device.features?.has( 'transient-attachments' ) ) {
++
++		// Capture the actual immutable GPU descriptor and compiled programs, after graph updates.
++		const positionIndex = renderObject.getAttributes().indexOf( geometry.attributes.position );
++		const positionLayout = vertexBuffers.find( layout => layout.attributes.some( a => a.shaderLocation === positionIndex ) );
++		const positionSlot = positionLayout?.attributes.find( a => a.shaderLocation === positionIndex );
++		pipelineData._tnDepthProof = depthStencil.depthWriteEnabled === true && depthStencil.depthCompare === 'less-equal' && ! depthStencil.depthBias && ! depthStencil.depthBiasSlopeScale && ! _renderPipelineDescriptor.multisample.alphaToCoverageEnabled && ( _renderPipelineDescriptor.multisample.mask === undefined || _renderPipelineDescriptor.multisample.mask === 0xffffffff ) && primitiveState.topology === 'triangle-list' && ( primitiveState.cullMode === 'none' || ( primitiveState.cullMode === 'back' && primitiveState.frontFace === 'ccw' ) ) && positionLayout?.arrayStride === 12 && positionLayout.stepMode === 'vertex' && positionSlot?.format === 'float32x3' && positionSlot.offset === 0 ? { material, version: material.version, positionIndex, vertex: backend.get( vertexProgram )._tnShaderCode, fragment: backend.get( fragmentProgram )._tnShaderCode } : null;
++
++		}
++
+ 		// create pipeline
+ 
+ 		device.pushErrorScope( 'validation' );
+@@ -83213,6 +83259,7 @@ class WebGPUPipelineUtils {
+ 		if ( promises === null ) {
+ 
+ 			pipelineData.pipeline = device.createRenderPipeline( _renderPipelineDescriptor );
++			if ( pipelineData._tnDepthProof ) pipelineData._tnDepthProof.pipeline = pipelineData.pipeline;
+ 
+ 			_renderPipelineDescriptor.reset();
+ 
+@@ -85208,6 +85255,144 @@ class WebGPUBackend extends Backend {
+ 	 *
+ 	 * @param {RenderContext} renderContext - The render context.
+ 	 */
++	// Only the renderer-owned presentation scene may speculate. Canonical textures stay public.
++	_isFullTransientViewport( context ) {
++
++		const v = context.viewportValue;
++		return ! context.scissor && ( ! context.viewport || ( v.x === 0 && v.y === 0 && v.width === context.width && v.height === context.height && v.minDepth === 0 && v.maxDepth === 1 ) );
++
++	}
++
++	_beginTransientDepth( context, descriptor ) {
++
++		const original = descriptor.depthStencilAttachment;
++		if ( ! this.device.features?.has( 'transient-attachments' ) || ! context._tnOutputOwner || context.textures !== null || ! context.depth || context.stencil || context.camera?.isArrayCamera || this.renderer.xr?.isPresenting || this.renderer.reversedDepthBuffer || context.occlusionQueryCount !== 0 || ! this._isFullTransientViewport( context ) || original?.depthLoadOp !== 'clear' || original.depthClearValue !== 1 || original.depthStoreOp !== 'store' ) return descriptor;
++
++		const samples = this.utils.getSampleCountRenderContext( context );
++		if ( samples <= 1 ) return descriptor;
++		const canonical = this.renderer.getCanvasTarget().depthTexture;
++		const cache = this.textureUtils._depthBuffers.get( canonical );
++		const format = this.get( canonical ).format;
++		if ( cache === undefined || ! format ) return descriptor;
++		if ( cache._tnPrivateDepth === undefined ) {
++
++			const texture = this.device.createTexture( { label: 'tn-private-output-depth', size: { width: context.width, height: context.height }, format, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT, _tnPassLocalMSAA: true } );
++			cache._tnPrivateDepth = { texture, used: false };
++
++		}
++		const source = cache._tnPrivateDepth;
++		const attachment = { ...original, view: source.texture.createView(), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
++		if ( format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'clear', stencilClearValue: 0, stencilStoreOp: 'discard' } );
++		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, originalGPU: this.get( canonical ).texture, colorGPU: this.get( this.renderer.getCanvasTarget().colorTexture ).texture, active: true, logical: 1 };
++		return { ...descriptor, colorAttachments: descriptor.colorAttachments.map( a => ( { ...a } ) ), depthStencilAttachment: attachment };
++
++	}
++
++	_finishTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		if ( ! state?.active ) return;
++		state.active = false;
++		const attachment = { ...state.original, depthLoadOp: 'clear', depthClearValue: state.logical, depthStoreOp: 'store' };
++		// A combined texture's original stencil is never changed by this depth-only compatibility clear.
++		if ( attachment.stencilLoadOp !== undefined || this.get( state.canonical ).format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'load', stencilStoreOp: 'store', stencilReadOnly: false } );
++		data.encoder.beginRenderPass( { colorAttachments: [], depthStencilAttachment: attachment } ).end();
++		data.descriptor.depthStencilAttachment = { ...state.original, depthLoadOp: 'load' };
++
++	}
++
++	_restoreTransientDepth( context ) {
++
++		const data = this.get( context );
++		if ( ! data._tnDepth?.active ) return;
++		data.currentPass.end();
++		this._finishTransientDepth( context );
++		this._resumeTransientDepth( context );
++
++	}
++
++	_resumeTransientDepth( context ) {
++
++		const data = this.get( context );
++		const descriptor = { ...data.descriptor, timestampWrites: undefined, colorAttachments: data.descriptor.colorAttachments.map( a => ( { ...a, loadOp: 'load' } ) ) };
++		data.descriptor = descriptor;
++		data.currentPass = data.encoder.beginRenderPass( descriptor );
++		data.currentSets = { attributes: {}, bindingGroups: [], pipeline: null, index: null };
++		if ( context.viewport ) this.updateViewport( context );
++		if ( context.scissor ) this.updateScissor( context );
++
++	}
++
++	_releaseTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		if ( state && ! state.source.used && state.cache._tnPrivateDepth === state.source ) {
++
++			state.source.texture.destroy();
++			delete state.cache._tnPrivateDepth;
++
++		}
++		delete data._tnDepth;
++
++	}
++
++	// Separate encoders must observe the pending canonical contents in queue order.
++	_flushTransientDepth( context ) {
++
++		const data = this.get( context );
++		if ( ! data._tnDepth ) return false;
++		this._restoreTransientDepth( context );
++		data.currentPass.end();
++		submit( this.device, data.encoder.finish() );
++		this._releaseTransientDepth( context );
++		data.currentPass = null;
++		return true;
++
++	}
++
++	_validateTransientDepth( renderObject, params, vertexBuffers ) {
++
++		const { object, context, material, pipeline } = renderObject;
++		const proof = this.get( pipeline )._tnDepthProof;
++		const position = object.geometry.attributes.position;
++		const uploaded = position && this.get( position );
++		if ( object !== context._tnOutputOwner || ! this._isFullTransientViewport( context ) || ! proof || proof.pipeline !== this.get( pipeline ).pipeline || proof.material !== material || proof.version !== material.version || material.vertexNode !== null || material.positionNode !== null || material.depthNode !== null || material.depthTest !== true || material.depthWrite !== true || material.depthFunc !== 3 || material.alphaToCoverage || material.polygonOffset || material.stencilWrite || params.vertexCount !== 3 || params.firstVertex !== 0 || params.instanceCount !== 1 || renderObject.geometry !== object.geometry || renderObject.getIndex() !== null || object.geometry.index !== null || object.isBatchedMesh || object.isInstancedMesh || ! vertexBuffers.includes( position ) || renderObject.getIndirect() !== null || ! uploaded?._tnFullTriangle || uploaded._tnTriangleVersion !== position.version || uploaded._tnTriangleBuffer !== uploaded.buffer || position.array.length !== 9 || ! [ -1, 3, 0, -1, -1, 0, 3, -1, 0 ].every( ( n, i ) => position.array[ i ] === n ) ) return false;
++		if ( proof.vertex !== this.get( pipeline.vertexProgram )._tnShaderCode || proof.fragment !== this.get( pipeline.fragmentProgram )._tnShaderCode ) return false;
++		if ( /\b(discard|frag_depth|sample_mask|clip_distances)\b/.test( proof.vertex + proof.fragment ) ) return false;
++		// Admit only Three's shipped projection chain. Custom code anywhere in the vertex stage falls back.
++		const code = proof.vertex.replace( /\/\/[^\n]*/g, '' ).replace( /\s+/g, '' );
++		if ( ( code.match( /fn/g ) || [] ).length !== 1 ) return false;
++		const main = /@vertexfnmain\((.*?)\)->VaryingsStruct\{(.*)\}$/.exec( code );
++		if ( ! main || ! /^(@location\(\d+\)(position:vec3<f32>|uv:vec2<f32>),?)+$/.test( main[ 1 ] ) || ! main[ 1 ].includes( '@location(' + proof.positionIndex + ')position:vec3<f32>' ) ) return false;
++		let body = main[ 2 ];
++		// UV passthrough affects colour only; no other extra vertex operation is accepted.
++		body = body.replace( /varyings\.(v_uv|nodeVarying\d+)=uv;/g, '' );
++		const chain = /^modelViewMatrix=\(render\.cameraViewMatrix\*object\.(nodeUniform\d+)\);positionLocal=position;v_positionView=\(modelViewMatrix\*vec4<f32>\(positionLocal,1\.0\)\)\.xyz;(VERTEX_nodeVar\d+)=\(render\.cameraProjectionMatrix\*vec4<f32>\(v_positionView,1\.0\)\);VERTEX_v_modelViewProjection=\2;varyings\.builtinClipSpace=VERTEX_v_modelViewProjection;returnvaryings;$/;
++		const match = chain.exec( body );
++		if ( ! match ) return false;
++		const matrices = new Map();
++		for ( const group of renderObject.getBindings() ) {
++
++			const groupData = this.get( group );
++			if ( ! groupData._tnBindings || ! groupData._tnBindings.every( ( b, i ) => b.binding === group.bindings[ i ] && b.buffer === this.get( b.binding ).buffer ) ) return false;
++			for ( const entry of groupData._tnBindings ) {
++
++				const binding = entry.binding;
++				const snapshot = this.get( binding )._tnUniformBytes;
++				if ( ! snapshot ) continue;
++				for ( const uniform of entry.uniforms || [] ) if ( uniform.itemSize === 16 ) matrices.set( group.name + '.' + uniform.name, Array.from( snapshot.slice( uniform.offset, uniform.offset + 16 ) ) );
++
++			}
++
++		}
++		const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
++		const projection = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1 ];
++		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.every( ( value, i ) => value === expected[ i ] ) );
++
++	}
++
+ 	beginRender( renderContext ) {
+ 
+ 		const renderContextData = this.get( renderContext );
+@@ -85360,10 +85545,15 @@ class WebGPUBackend extends Backend {
+ 
+ 		//
+ 
++		descriptor = this._beginTransientDepth( renderContext, descriptor );
++
+ 		_commandEncoderDescriptor.label = 'renderContext_' + renderContext.id;
+ 		const encoder = device.createCommandEncoder( _commandEncoderDescriptor );
+ 		_commandEncoderDescriptor.reset();
+ 
++		renderContextData.descriptor = descriptor;
++		renderContextData.encoder = encoder;
++
+ 		// Layered render targets: prepare bundle encoders for each camera in the array camera.
+ 
+ 		if ( this._isRenderCameraDepthArray( renderContext ) === true ) {
+@@ -85657,6 +85847,8 @@ class WebGPUBackend extends Backend {
+ 
+ 		}
+ 
++		this._finishTransientDepth( renderContext );
++
+ 		if ( occlusionQueryCount > 0 ) {
+ 
+ 			const bufferSize = occlusionQueryCount * 8; // 8 byte entries for query results
+@@ -85699,7 +85891,15 @@ class WebGPUBackend extends Backend {
+ 
+ 		}
+ 
+-		submit( this.device, renderContextData.encoder.finish() );
++		try {
++
++			submit( this.device, renderContextData.encoder.finish() );
++
++		} finally {
++
++			this._releaseTransientDepth( renderContext );
++
++		}
+ 
+ 
+ 		//
+@@ -85793,6 +85993,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	updateViewport( renderContext ) {
+ 
++		if ( ! this._isFullTransientViewport( renderContext ) ) this._restoreTransientDepth( renderContext );
++
+ 		const { currentPass } = this.get( renderContext );
+ 		const { x, y, width, height, minDepth, maxDepth } = renderContext.viewportValue;
+ 
+@@ -85807,6 +86009,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	updateScissor( renderContext ) {
+ 
++		this._restoreTransientDepth( renderContext );
++
+ 		const { currentPass } = this.get( renderContext );
+ 		const { x, y, width, height } = renderContext.scissorValue;
+ 
+@@ -85848,6 +86052,9 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	clear( color, depth, stencil, renderTargetContext = null ) {
+ 
++		const active = this.renderer._currentRenderContext;
++		const interrupted = active && ( renderTargetContext === active || ( renderTargetContext === null && active.textures === null ) ) && this._flushTransientDepth( active );
++
+ 		const device = this.device;
+ 		const renderer = this.renderer;
+ 
+@@ -85976,6 +86183,12 @@ class WebGPUBackend extends Backend {
+ 		currentPass.end();
+ 
+ 		submit( device, encoder.finish() );
++		if ( interrupted ) {
++
++			this.get( active ).encoder = device.createCommandEncoder();
++			this._resumeTransientDepth( active );
++
++		}
+ 
+ 	}
+ 
+@@ -86305,6 +86518,12 @@ class WebGPUBackend extends Backend {
+ 			} else {
+ 
+ 				passEncoderGPU.draw( vertexCount, instanceCount, firstVertex, 0 );
++				if ( renderContextData._tnDepth?.active ) {
++
++					renderContextData._tnDepth.logical = 0;
++					renderContextData._tnDepth.source.used = true;
++
++				}
+ 
+ 			}
+ 
+@@ -86340,6 +86559,19 @@ class WebGPUBackend extends Backend {
+ 		// vertex buffers
+ 
+ 		const vertexBuffers = renderObject.getVertexBuffers();
++		if ( renderContextData._tnDepth?.active ) {
++
++			if ( this._validateTransientDepth( renderObject, drawParams, vertexBuffers ) ) {
++
++				// _draw records the constant only after the actual GPU draw is encoded.
++
++			} else {
++
++				this._restoreTransientDepth( context );
++
++			}
++
++		}
+ 
+ 		if ( renderObject.camera.isArrayCamera && renderObject.camera.cameras.length > 0 ) {
+ 
+@@ -86671,7 +86903,24 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	async copyTextureToBuffer( texture, x, y, width, height, faceIndex ) {
+ 
+-		return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
++		const active = this.renderer._currentRenderContext;
++		const state = active && this.get( active )._tnDepth;
++		const sourceGPU = state && this.get( texture ).texture;
++		const interrupted = state && ( sourceGPU === state.originalGPU || sourceGPU === state.colorGPU ) && this._flushTransientDepth( active );
++		try {
++
++			return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
++
++		} finally {
++
++			if ( interrupted ) {
++
++				this.get( active ).encoder = this.device.createCommandEncoder();
++				this._resumeTransientDepth( active );
++
++			}
++
++		}
+ 
+ 	}
+ 
+@@ -86735,6 +86984,8 @@ class WebGPUBackend extends Backend {
+ 		_shaderModuleDescriptor.label = program.stage + ( program.name !== '' ? `_${ program.name }` : '' );
+ 		_shaderModuleDescriptor.code = program.code;
+ 
++		programGPU._tnShaderCode = program.code;
++
+ 		programGPU.module = {
+ 			module: this.device.createShaderModule( _shaderModuleDescriptor ),
+ 			entryPoint: 'main'
+@@ -86882,6 +87133,7 @@ class WebGPUBackend extends Backend {
+ 			_bufferDescriptor.reset();
+ 
+ 			uniformBufferData.buffer = bufferGPU;
++			if ( this.device.features?.has( 'transient-attachments' ) && uniformBuffer.uniforms?.some( u => u.itemSize === 16 ) ) uniformBufferData._tnUniformBytes = new Float32Array( byteLength / 4 );
+ 
+ 		}
+ 
+@@ -87067,6 +87319,10 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	copyTextureToTexture( srcTexture, dstTexture, srcRegion = null, dstPosition = null, srcLevel = 0, dstLevel = 0 ) {
+ 
++		const active = this.renderer._currentRenderContext;
++		const state = active && this.get( active )._tnDepth;
++		const interrupted = state && [ srcTexture, dstTexture ].some( texture => { const gpu = this.get( texture ).texture; return gpu === state.originalGPU || gpu === state.colorGPU; } ) && this._flushTransientDepth( active );
++
+ 		let dstX = 0;
+ 		let dstY = 0;
+ 		let dstZ = 0;
+@@ -87148,6 +87404,13 @@ class WebGPUBackend extends Backend {
+ 
+ 		submit( this.device, encoder.finish() );
+ 
++		if ( interrupted ) {
++
++			this.get( active ).encoder = this.device.createCommandEncoder();
++			this._resumeTransientDepth( active );
++
++		}
++
+ 		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
+ 
+ 			this.textureUtils.generateMipmaps( dstTexture );
+@@ -87165,6 +87428,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	copyFramebufferToTexture( texture, renderContext, rectangle ) {
+ 
++		this._restoreTransientDepth( renderContext );
++
+ 		const renderContextData = this.get( renderContext );
+ 
+ 		let sourceGPU = null;
+@@ -87738,7 +88003,20 @@ class RenderPipeline {
+ 		const currentXR = renderer.xr.enabled;
+ 		renderer.xr.enabled = false;
+ 
+-		this._quadMesh.render( renderer );
++		const previousOwner = renderer._tnOutputOwner;
++		renderer._tnOutputOwner = currentXR === false ? this._quadMesh : null;
++		try {
++
++			this._quadMesh.render( renderer );
++
++		} finally {
++
++			renderer._tnOutputOwner = previousOwner;
++			renderer.xr.enabled = currentXR;
++			renderer.toneMapping = toneMapping;
++			renderer.outputColorSpace = outputColorSpace;
++
++		}
+ 
+ 		renderer.xr.enabled = currentXR;
+ 
+diff --git a/src/renderers/common/RenderPipeline.js b/src/renderers/common/RenderPipeline.js
+index ab3085cfdca456ffb3de6945d7e7f693e4ed33ae..94e54740e13088a9fa40ccfd30000232df7c2eea 100644
+--- a/src/renderers/common/RenderPipeline.js
++++ b/src/renderers/common/RenderPipeline.js
+@@ -137,7 +137,20 @@ class RenderPipeline {
+ 		const currentXR = renderer.xr.enabled;
+ 		renderer.xr.enabled = false;
+ 
+-		this._quadMesh.render( renderer );
++		const previousOwner = renderer._tnOutputOwner;
++		renderer._tnOutputOwner = currentXR === false ? this._quadMesh : null;
++		try {
++
++			this._quadMesh.render( renderer );
++
++		} finally {
++
++			renderer._tnOutputOwner = previousOwner;
++			renderer.xr.enabled = currentXR;
++			renderer.toneMapping = toneMapping;
++			renderer.outputColorSpace = outputColorSpace;
++
++		}
+ 
+ 		renderer.xr.enabled = currentXR;
+ 
+diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
+index b1293bfbe2ccf0583711813c625ddd5c5ba78620..769c909b0a63708dea7d22efc5379c39bdf57d92 100644
+--- a/src/renderers/common/Renderer.js
++++ b/src/renderers/common/Renderer.js
+@@ -1738,6 +1738,7 @@ class Renderer {
+ 		//
+ 
+ 		renderContext.camera = camera;
++		renderContext._tnOutputOwner = scene === this._tnOutputOwner ? scene : null;
+ 		this.backend.beginRender( renderContext );
+ 
+ 		// process render lists
+@@ -1750,13 +1751,22 @@ class Renderer {
+ 			opaque: opaqueObjects
+ 		} = renderList;
+ 
++		let renderComplete = false;
++		try {
++
+ 		if ( bundles.length > 0 ) this._renderBundles( bundles, sceneRef, lightsNode );
+ 		if ( this.opaque === true && opaqueObjects.length > 0 ) this._renderObjects( opaqueObjects, camera, sceneRef, lightsNode );
+ 		if ( this.transparent === true && transparentObjects.length > 0 ) this._renderTransparents( transparentObjects, transparentDoublePassObjects, camera, sceneRef, lightsNode );
+ 
+-		// finish render pass
++		renderComplete = true;
++
++		} finally {
++
++		try {
+ 
+-		this.backend.finishRender( renderContext );
++			if ( renderComplete || this.backend.get( renderContext )._tnDepth ) this.backend.finishRender( renderContext );
++
++		} finally {
+ 
+ 		// restore render tree
+ 
+@@ -1771,6 +1781,9 @@ class Renderer {
+ 
+ 		this._callDepth --;
+ 
++		}
++		}
++
+ 		if ( frameBufferTarget !== null ) {
+ 
+ 			this.setRenderTarget( outputRenderTarget, activeCubeFace, activeMipmapLevel );
+diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
+index b86e40b357823cf3919d9fdf3c2554f14bcd9931..94b48d64ed8f2e57f00cb5fd5bd0112da085aeae 100644
+--- a/src/renderers/webgpu/WebGPUBackend.js
++++ b/src/renderers/webgpu/WebGPUBackend.js
+@@ -814,6 +814,144 @@ class WebGPUBackend extends Backend {
+ 	 *
+ 	 * @param {RenderContext} renderContext - The render context.
+ 	 */
++	// Only the renderer-owned presentation scene may speculate. Canonical textures stay public.
++	_isFullTransientViewport( context ) {
++
++		const v = context.viewportValue;
++		return ! context.scissor && ( ! context.viewport || ( v.x === 0 && v.y === 0 && v.width === context.width && v.height === context.height && v.minDepth === 0 && v.maxDepth === 1 ) );
++
++	}
++
++	_beginTransientDepth( context, descriptor ) {
++
++		const original = descriptor.depthStencilAttachment;
++		if ( ! this.device.features?.has( 'transient-attachments' ) || ! context._tnOutputOwner || context.textures !== null || ! context.depth || context.stencil || context.camera?.isArrayCamera || this.renderer.xr?.isPresenting || this.renderer.reversedDepthBuffer || context.occlusionQueryCount !== 0 || ! this._isFullTransientViewport( context ) || original?.depthLoadOp !== 'clear' || original.depthClearValue !== 1 || original.depthStoreOp !== 'store' ) return descriptor;
++
++		const samples = this.utils.getSampleCountRenderContext( context );
++		if ( samples <= 1 ) return descriptor;
++		const canonical = this.renderer.getCanvasTarget().depthTexture;
++		const cache = this.textureUtils._depthBuffers.get( canonical );
++		const format = this.get( canonical ).format;
++		if ( cache === undefined || ! format ) return descriptor;
++		if ( cache._tnPrivateDepth === undefined ) {
++
++			const texture = this.device.createTexture( { label: 'tn-private-output-depth', size: { width: context.width, height: context.height }, format, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT, _tnPassLocalMSAA: true } );
++			cache._tnPrivateDepth = { texture, used: false };
++
++		}
++		const source = cache._tnPrivateDepth;
++		const attachment = { ...original, view: source.texture.createView(), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
++		if ( format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'clear', stencilClearValue: 0, stencilStoreOp: 'discard' } );
++		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, originalGPU: this.get( canonical ).texture, colorGPU: this.get( this.renderer.getCanvasTarget().colorTexture ).texture, active: true, logical: 1 };
++		return { ...descriptor, colorAttachments: descriptor.colorAttachments.map( a => ( { ...a } ) ), depthStencilAttachment: attachment };
++
++	}
++
++	_finishTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		if ( ! state?.active ) return;
++		state.active = false;
++		const attachment = { ...state.original, depthLoadOp: 'clear', depthClearValue: state.logical, depthStoreOp: 'store' };
++		// A combined texture's original stencil is never changed by this depth-only compatibility clear.
++		if ( attachment.stencilLoadOp !== undefined || this.get( state.canonical ).format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'load', stencilStoreOp: 'store', stencilReadOnly: false } );
++		data.encoder.beginRenderPass( { colorAttachments: [], depthStencilAttachment: attachment } ).end();
++		data.descriptor.depthStencilAttachment = { ...state.original, depthLoadOp: 'load' };
++
++	}
++
++	_restoreTransientDepth( context ) {
++
++		const data = this.get( context );
++		if ( ! data._tnDepth?.active ) return;
++		data.currentPass.end();
++		this._finishTransientDepth( context );
++		this._resumeTransientDepth( context );
++
++	}
++
++	_resumeTransientDepth( context ) {
++
++		const data = this.get( context );
++		const descriptor = { ...data.descriptor, timestampWrites: undefined, colorAttachments: data.descriptor.colorAttachments.map( a => ( { ...a, loadOp: 'load' } ) ) };
++		data.descriptor = descriptor;
++		data.currentPass = data.encoder.beginRenderPass( descriptor );
++		data.currentSets = { attributes: {}, bindingGroups: [], pipeline: null, index: null };
++		if ( context.viewport ) this.updateViewport( context );
++		if ( context.scissor ) this.updateScissor( context );
++
++	}
++
++	_releaseTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		if ( state && ! state.source.used && state.cache._tnPrivateDepth === state.source ) {
++
++			state.source.texture.destroy();
++			delete state.cache._tnPrivateDepth;
++
++		}
++		delete data._tnDepth;
++
++	}
++
++	// Separate encoders must observe the pending canonical contents in queue order.
++	_flushTransientDepth( context ) {
++
++		const data = this.get( context );
++		if ( ! data._tnDepth ) return false;
++		this._restoreTransientDepth( context );
++		data.currentPass.end();
++		submit( this.device, data.encoder.finish() );
++		this._releaseTransientDepth( context );
++		data.currentPass = null;
++		return true;
++
++	}
++
++	_validateTransientDepth( renderObject, params, vertexBuffers ) {
++
++		const { object, context, material, pipeline } = renderObject;
++		const proof = this.get( pipeline )._tnDepthProof;
++		const position = object.geometry.attributes.position;
++		const uploaded = position && this.get( position );
++		if ( object !== context._tnOutputOwner || ! this._isFullTransientViewport( context ) || ! proof || proof.pipeline !== this.get( pipeline ).pipeline || proof.material !== material || proof.version !== material.version || material.vertexNode !== null || material.positionNode !== null || material.depthNode !== null || material.depthTest !== true || material.depthWrite !== true || material.depthFunc !== 3 || material.alphaToCoverage || material.polygonOffset || material.stencilWrite || params.vertexCount !== 3 || params.firstVertex !== 0 || params.instanceCount !== 1 || renderObject.geometry !== object.geometry || renderObject.getIndex() !== null || object.geometry.index !== null || object.isBatchedMesh || object.isInstancedMesh || ! vertexBuffers.includes( position ) || renderObject.getIndirect() !== null || ! uploaded?._tnFullTriangle || uploaded._tnTriangleVersion !== position.version || uploaded._tnTriangleBuffer !== uploaded.buffer || position.array.length !== 9 || ! [ -1, 3, 0, -1, -1, 0, 3, -1, 0 ].every( ( n, i ) => position.array[ i ] === n ) ) return false;
++		if ( proof.vertex !== this.get( pipeline.vertexProgram )._tnShaderCode || proof.fragment !== this.get( pipeline.fragmentProgram )._tnShaderCode ) return false;
++		if ( /\b(discard|frag_depth|sample_mask|clip_distances)\b/.test( proof.vertex + proof.fragment ) ) return false;
++		// Admit only Three's shipped projection chain. Custom code anywhere in the vertex stage falls back.
++		const code = proof.vertex.replace( /\/\/[^\n]*/g, '' ).replace( /\s+/g, '' );
++		if ( ( code.match( /fn/g ) || [] ).length !== 1 ) return false;
++		const main = /@vertexfnmain\((.*?)\)->VaryingsStruct\{(.*)\}$/.exec( code );
++		if ( ! main || ! /^(@location\(\d+\)(position:vec3<f32>|uv:vec2<f32>),?)+$/.test( main[ 1 ] ) || ! main[ 1 ].includes( '@location(' + proof.positionIndex + ')position:vec3<f32>' ) ) return false;
++		let body = main[ 2 ];
++		// UV passthrough affects colour only; no other extra vertex operation is accepted.
++		body = body.replace( /varyings\.(v_uv|nodeVarying\d+)=uv;/g, '' );
++		const chain = /^modelViewMatrix=\(render\.cameraViewMatrix\*object\.(nodeUniform\d+)\);positionLocal=position;v_positionView=\(modelViewMatrix\*vec4<f32>\(positionLocal,1\.0\)\)\.xyz;(VERTEX_nodeVar\d+)=\(render\.cameraProjectionMatrix\*vec4<f32>\(v_positionView,1\.0\)\);VERTEX_v_modelViewProjection=\2;varyings\.builtinClipSpace=VERTEX_v_modelViewProjection;returnvaryings;$/;
++		const match = chain.exec( body );
++		if ( ! match ) return false;
++		const matrices = new Map();
++		for ( const group of renderObject.getBindings() ) {
++
++			const groupData = this.get( group );
++			if ( ! groupData._tnBindings || ! groupData._tnBindings.every( ( b, i ) => b.binding === group.bindings[ i ] && b.buffer === this.get( b.binding ).buffer ) ) return false;
++			for ( const entry of groupData._tnBindings ) {
++
++				const binding = entry.binding;
++				const snapshot = this.get( binding )._tnUniformBytes;
++				if ( ! snapshot ) continue;
++				for ( const uniform of entry.uniforms || [] ) if ( uniform.itemSize === 16 ) matrices.set( group.name + '.' + uniform.name, Array.from( snapshot.slice( uniform.offset, uniform.offset + 16 ) ) );
++
++			}
++
++		}
++		const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
++		const projection = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1 ];
++		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.every( ( value, i ) => value === expected[ i ] ) );
++
++	}
++
+ 	beginRender( renderContext ) {
+ 
+ 		const renderContextData = this.get( renderContext );
+@@ -966,10 +1104,15 @@ class WebGPUBackend extends Backend {
+ 
+ 		//
+ 
++		descriptor = this._beginTransientDepth( renderContext, descriptor );
++
+ 		_commandEncoderDescriptor.label = 'renderContext_' + renderContext.id;
+ 		const encoder = device.createCommandEncoder( _commandEncoderDescriptor );
+ 		_commandEncoderDescriptor.reset();
+ 
++		renderContextData.descriptor = descriptor;
++		renderContextData.encoder = encoder;
++
+ 		// Layered render targets: prepare bundle encoders for each camera in the array camera.
+ 
+ 		if ( this._isRenderCameraDepthArray( renderContext ) === true ) {
+@@ -1263,6 +1406,8 @@ class WebGPUBackend extends Backend {
+ 
+ 		}
+ 
++		this._finishTransientDepth( renderContext );
++
+ 		if ( occlusionQueryCount > 0 ) {
+ 
+ 			const bufferSize = occlusionQueryCount * 8; // 8 byte entries for query results
+@@ -1305,7 +1450,15 @@ class WebGPUBackend extends Backend {
+ 
+ 		}
+ 
+-		submit( this.device, renderContextData.encoder.finish() );
++		try {
++
++			submit( this.device, renderContextData.encoder.finish() );
++
++		} finally {
++
++			this._releaseTransientDepth( renderContext );
++
++		}
+ 
+ 
+ 		//
+@@ -1399,6 +1552,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	updateViewport( renderContext ) {
+ 
++		if ( ! this._isFullTransientViewport( renderContext ) ) this._restoreTransientDepth( renderContext );
++
+ 		const { currentPass } = this.get( renderContext );
+ 		const { x, y, width, height, minDepth, maxDepth } = renderContext.viewportValue;
+ 
+@@ -1413,6 +1568,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	updateScissor( renderContext ) {
+ 
++		this._restoreTransientDepth( renderContext );
++
+ 		const { currentPass } = this.get( renderContext );
+ 		const { x, y, width, height } = renderContext.scissorValue;
+ 
+@@ -1454,6 +1611,9 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	clear( color, depth, stencil, renderTargetContext = null ) {
+ 
++		const active = this.renderer._currentRenderContext;
++		const interrupted = active && ( renderTargetContext === active || ( renderTargetContext === null && active.textures === null ) ) && this._flushTransientDepth( active );
++
+ 		const device = this.device;
+ 		const renderer = this.renderer;
+ 
+@@ -1582,6 +1742,12 @@ class WebGPUBackend extends Backend {
+ 		currentPass.end();
+ 
+ 		submit( device, encoder.finish() );
++		if ( interrupted ) {
++
++			this.get( active ).encoder = device.createCommandEncoder();
++			this._resumeTransientDepth( active );
++
++		}
+ 
+ 	}
+ 
+@@ -1910,6 +2076,12 @@ class WebGPUBackend extends Backend {
+ 			} else {
+ 
+ 				passEncoderGPU.draw( vertexCount, instanceCount, firstVertex, 0 );
++				if ( renderContextData._tnDepth?.active ) {
++
++					renderContextData._tnDepth.logical = 0;
++					renderContextData._tnDepth.source.used = true;
++
++				}
+ 
+ 			}
+ 
+@@ -1945,6 +2117,19 @@ class WebGPUBackend extends Backend {
+ 		// vertex buffers
+ 
+ 		const vertexBuffers = renderObject.getVertexBuffers();
++		if ( renderContextData._tnDepth?.active ) {
++
++			if ( this._validateTransientDepth( renderObject, drawParams, vertexBuffers ) ) {
++
++				// _draw records the constant only after the actual GPU draw is encoded.
++
++			} else {
++
++				this._restoreTransientDepth( context );
++
++			}
++
++		}
+ 
+ 		if ( renderObject.camera.isArrayCamera && renderObject.camera.cameras.length > 0 ) {
+ 
+@@ -2281,7 +2466,24 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	async copyTextureToBuffer( texture, x, y, width, height, faceIndex ) {
+ 
+-		return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
++		const active = this.renderer._currentRenderContext;
++		const state = active && this.get( active )._tnDepth;
++		const sourceGPU = state && this.get( texture ).texture;
++		const interrupted = state && ( sourceGPU === state.originalGPU || sourceGPU === state.colorGPU ) && this._flushTransientDepth( active );
++		try {
++
++			return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
++
++		} finally {
++
++			if ( interrupted ) {
++
++				this.get( active ).encoder = this.device.createCommandEncoder();
++				this._resumeTransientDepth( active );
++
++			}
++
++		}
+ 
+ 	}
+ 
+@@ -2345,6 +2547,8 @@ class WebGPUBackend extends Backend {
+ 		_shaderModuleDescriptor.label = program.stage + ( program.name !== '' ? `_${ program.name }` : '' );
+ 		_shaderModuleDescriptor.code = program.code;
+ 
++		programGPU._tnShaderCode = program.code;
++
+ 		programGPU.module = {
+ 			module: this.device.createShaderModule( _shaderModuleDescriptor ),
+ 			entryPoint: 'main'
+@@ -2492,6 +2696,7 @@ class WebGPUBackend extends Backend {
+ 			_bufferDescriptor.reset();
+ 
+ 			uniformBufferData.buffer = bufferGPU;
++			if ( this.device.features?.has( 'transient-attachments' ) && uniformBuffer.uniforms?.some( u => u.itemSize === 16 ) ) uniformBufferData._tnUniformBytes = new Float32Array( byteLength / 4 );
+ 
+ 		}
+ 
+@@ -2677,6 +2882,10 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	copyTextureToTexture( srcTexture, dstTexture, srcRegion = null, dstPosition = null, srcLevel = 0, dstLevel = 0 ) {
+ 
++		const active = this.renderer._currentRenderContext;
++		const state = active && this.get( active )._tnDepth;
++		const interrupted = state && [ srcTexture, dstTexture ].some( texture => { const gpu = this.get( texture ).texture; return gpu === state.originalGPU || gpu === state.colorGPU; } ) && this._flushTransientDepth( active );
++
+ 		let dstX = 0;
+ 		let dstY = 0;
+ 		let dstZ = 0;
+@@ -2758,6 +2967,13 @@ class WebGPUBackend extends Backend {
+ 
+ 		submit( this.device, encoder.finish() );
+ 
++		if ( interrupted ) {
++
++			this.get( active ).encoder = this.device.createCommandEncoder();
++			this._resumeTransientDepth( active );
++
++		}
++
+ 		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
+ 
+ 			this.textureUtils.generateMipmaps( dstTexture );
+@@ -2775,6 +2991,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	copyFramebufferToTexture( texture, renderContext, rectangle ) {
+ 
++		this._restoreTransientDepth( renderContext );
++
+ 		const renderContextData = this.get( renderContext );
+ 
+ 		let sourceGPU = null;
+diff --git a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js b/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
+index 16bd72d0c0f1d693481efc98140a0f1b73905149..ded852d9df7e709c62c9fc3a6109c31737650d97 100644
+--- a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
++++ b/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
+@@ -174,6 +174,9 @@ class WebGPUAttributeUtils {
+ 
+ 			buffer.unmap();
+ 
++			bufferData._tnFullTriangle = backend.device.features?.has( 'transient-attachments' ) && attribute.itemSize === 3 && attribute.count === 3 && attribute.normalized === false && array instanceof Float32Array && array.length === 9 && ! attribute.isInterleavedBufferAttribute && ! attribute.isStorageBufferAttribute && [ -1, 3, 0, -1, -1, 0, 3, -1, 0 ].every( ( value, i ) => array[ i ] === value );
++			bufferData._tnTriangleVersion = bufferAttribute.version;
++			bufferData._tnTriangleBuffer = buffer;
+ 			bufferData.buffer = buffer;
+ 			bufferData.version = bufferAttribute.version;
+ 			bufferData.uploadCall = backend.renderer.info.calls;
+@@ -209,6 +212,8 @@ class WebGPUAttributeUtils {
+ 		if ( bufferData.version === bufferAttribute.version &&
+ 			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
++		bufferData._tnFullTriangle = false;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+diff --git a/src/renderers/webgpu/utils/WebGPUBindingUtils.js b/src/renderers/webgpu/utils/WebGPUBindingUtils.js
+index c479d0a88794b01bca531e7cbfb780cf93fc4721..7ff28660e2ea3e72eb545c5bbe95bd8d8435a58e 100644
+--- a/src/renderers/webgpu/utils/WebGPUBindingUtils.js
++++ b/src/renderers/webgpu/utils/WebGPUBindingUtils.js
+@@ -179,6 +179,7 @@ class WebGPUBindingUtils {
+ 
+ 		}
+ 
++		bindingsData._tnBindings = this._tnGroups?.get( bindGroupGPU );
+ 		bindingsData.group = bindGroupGPU;
+ 
+ 	}
+@@ -198,6 +199,7 @@ class WebGPUBindingUtils {
+ 
+ 		const updateRanges = binding.updateRanges;
+ 
++
+ 		if ( updateRanges.length === 0 ) {
+ 
+ 			device.queue.writeBuffer(
+@@ -251,6 +253,15 @@ class WebGPUBindingUtils {
+ 
+ 		}
+ 
++		// Keep bytes actually sent to the GPU, including partial writes; never certify mutable CPU values.
++		if ( backend.device.features?.has( 'transient-attachments' ) && binding.uniforms?.some( u => u.itemSize === 16 ) ) {
++
++			const data = backend.get( binding );
++			const values = new Float32Array( array.buffer, array.byteOffset, array.byteLength / 4 );
++			if ( updateRanges.length === 0 ) data._tnUniformBytes = values.slice();
++			else if ( data._tnUniformBytes ) for ( const range of updateRanges ) data._tnUniformBytes.set( values.subarray( range.start, range.start + range.count ), range.start );
++
++		}
+ 	}
+ 
+ 	/**
+@@ -414,6 +425,12 @@ class WebGPUBindingUtils {
+ 		}
+ 
+ 		const bindGroupGPU = device.createBindGroup( _bindGroupDescriptor );
++		if ( device.features?.has( 'transient-attachments' ) ) {
++
++			this._tnGroups ||= new WeakMap();
++			this._tnGroups.set( bindGroupGPU, bindGroup.bindings.map( binding => ( { binding, buffer: backend.get( binding ).buffer, uniforms: binding.uniforms?.map( u => ( { name: u.name, offset: u.offset, itemSize: u.itemSize } ) ) } ) ) );
++
++		}
+ 
+ 		_bindGroupDescriptor.reset();
+ 
+diff --git a/src/renderers/webgpu/utils/WebGPUPipelineUtils.js b/src/renderers/webgpu/utils/WebGPUPipelineUtils.js
+index 3480fea1e86f1f237cb6ee2ea87b5826d4fc404d..d5872652cc969dbea62c69944044a9eeff1f3ac3 100644
+--- a/src/renderers/webgpu/utils/WebGPUPipelineUtils.js
++++ b/src/renderers/webgpu/utils/WebGPUPipelineUtils.js
+@@ -248,6 +248,16 @@ class WebGPUPipelineUtils {
+ 
+ 		}
+ 
++		if ( device.features?.has( 'transient-attachments' ) ) {
++
++		// Capture the actual immutable GPU descriptor and compiled programs, after graph updates.
++		const positionIndex = renderObject.getAttributes().indexOf( geometry.attributes.position );
++		const positionLayout = vertexBuffers.find( layout => layout.attributes.some( a => a.shaderLocation === positionIndex ) );
++		const positionSlot = positionLayout?.attributes.find( a => a.shaderLocation === positionIndex );
++		pipelineData._tnDepthProof = depthStencil.depthWriteEnabled === true && depthStencil.depthCompare === 'less-equal' && ! depthStencil.depthBias && ! depthStencil.depthBiasSlopeScale && ! _renderPipelineDescriptor.multisample.alphaToCoverageEnabled && ( _renderPipelineDescriptor.multisample.mask === undefined || _renderPipelineDescriptor.multisample.mask === 0xffffffff ) && primitiveState.topology === 'triangle-list' && ( primitiveState.cullMode === 'none' || ( primitiveState.cullMode === 'back' && primitiveState.frontFace === 'ccw' ) ) && positionLayout?.arrayStride === 12 && positionLayout.stepMode === 'vertex' && positionSlot?.format === 'float32x3' && positionSlot.offset === 0 ? { material, version: material.version, positionIndex, vertex: backend.get( vertexProgram )._tnShaderCode, fragment: backend.get( fragmentProgram )._tnShaderCode } : null;
++
++		}
++
+ 		// create pipeline
+ 
+ 		device.pushErrorScope( 'validation' );
+@@ -261,6 +271,7 @@ class WebGPUPipelineUtils {
+ 		if ( promises === null ) {
+ 
+ 			pipelineData.pipeline = device.createRenderPipeline( _renderPipelineDescriptor );
++			if ( pipelineData._tnDepthProof ) pipelineData._tnDepthProof.pipeline = pipelineData.pipeline;
+ 
+ 			_renderPipelineDescriptor.reset();
+ 
+diff --git a/src/renderers/webgpu/utils/WebGPUTextureUtils.js b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
+index 57c1eb62f1e0de063f22e08ec879e31d2a3240b6..f6d510b59151e02c46928689b2be99486c1dfcd8 100644
+--- a/src/renderers/webgpu/utils/WebGPUTextureUtils.js
++++ b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
+@@ -446,6 +446,7 @@ class WebGPUTextureUtils {
+ 
+ 		if ( depthBuffers !== undefined ) {
+ 
++			depthBuffers._tnPrivateDepth?.texture.destroy();
+ 			this._depthBuffers.delete( texture );
+ 			depthBuffers.canvasTarget.removeEventListener( 'resize', depthBuffers.onDispose );
+ 			depthBuffers.canvasTarget.removeEventListener( 'dispose', depthBuffers.onDispose );
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index ee394e98d798be749776cce1fa3e043fb9951769..2a70eb319b4235c958c7b5b1ede148c808d0b4b2 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -85369,11 +85369,11 @@
+ 
+ 		}
+ 		const source = cache._tnPrivateDepth;
+ 		const attachment = { ...original, view: source.texture.createView(), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
+ 		if ( format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'clear', stencilClearValue: 0, stencilStoreOp: 'discard' } );
+-		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, originalGPU: this.get( canonical ).texture, colorGPU: this.get( this.renderer.getCanvasTarget().colorTexture ).texture, active: true, logical: 1 };
++		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, active: true, logical: 1 };
+ 		return { ...descriptor, colorAttachments: descriptor.colorAttachments.map( a => ( { ...a } ) ), depthStencilAttachment: attachment };
+ 
+ 	}
+ 
+ 	_finishTransientDepth( context ) {
+@@ -85421,24 +85421,10 @@
+ 			state.source.texture.destroy();
+ 			delete state.cache._tnPrivateDepth;
+ 
+ 		}
+ 		delete data._tnDepth;
+-
+-	}
+-
+-	// Separate encoders must observe the pending canonical contents in queue order.
+-	_flushTransientDepth( context ) {
+-
+-		const data = this.get( context );
+-		if ( ! data._tnDepth ) return false;
+-		this._restoreTransientDepth( context );
+-		data.currentPass.end();
+-		submit( this.device, data.encoder.finish() );
+-		this._releaseTransientDepth( context );
+-		data.currentPass = null;
+-		return true;
+ 
+ 	}
+ 
+ 	_validateTransientDepth( renderObject, params, vertexBuffers ) {
+ 
+@@ -86138,13 +86124,10 @@
+ 	 * @param {boolean} stencil - Whether the stencil buffer should be cleared or not.
+ 	 * @param {?RenderContext} [renderTargetContext=null] - The render context of the current set render target.
+ 	 */
+ 	clear( color, depth, stencil, renderTargetContext = null ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const interrupted = active && ( renderTargetContext === active || ( renderTargetContext === null && active.textures === null ) ) && this._flushTransientDepth( active );
+-
+ 		const device = this.device;
+ 		const renderer = this.renderer;
+ 
+ 		let colorAttachments = [];
+ 		let depthStencilAttachment;
+@@ -86269,16 +86252,10 @@
+ 		} );
+ 
+ 		currentPass.end();
+ 
+ 		submit( device, encoder.finish() );
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 	}
+ 
+ 	// compute
+ 
+@@ -86993,28 +86970,11 @@
+ 	 * @param {number} faceIndex - The face index.
+ 	 * @return {Promise<TypedArray>} A Promise that resolves with a typed array when the copy operation has finished.
+ 	 */
+ 	async copyTextureToBuffer( texture, x, y, width, height, faceIndex ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const sourceGPU = state && this.get( texture ).texture;
+-		const interrupted = state && ( sourceGPU === state.originalGPU || sourceGPU === state.colorGPU ) && this._flushTransientDepth( active );
+-		try {
+-
+-			return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+-
+-		} finally {
+-
+-			if ( interrupted ) {
+-
+-				this.get( active ).encoder = this.device.createCommandEncoder();
+-				this._resumeTransientDepth( active );
+-
+-			}
+-
+-		}
++		return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+ 
+ 	}
+ 
+ 	/**
+ 	 * Inits a time stamp query for the given render context.
+@@ -87409,14 +87369,10 @@
+ 	 * @param {number} [srcLevel=0] - The mipmap level to copy.
+ 	 * @param {number} [dstLevel=0] - The destination mip level to copy to.
+ 	 */
+ 	copyTextureToTexture( srcTexture, dstTexture, srcRegion = null, dstPosition = null, srcLevel = 0, dstLevel = 0 ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const interrupted = state && [ srcTexture, dstTexture ].some( texture => { const gpu = this.get( texture ).texture; return gpu === state.originalGPU || gpu === state.colorGPU; } ) && this._flushTransientDepth( active );
+-
+ 		let dstX = 0;
+ 		let dstY = 0;
+ 		let dstZ = 0;
+ 
+ 		let srcX = 0;
+@@ -87494,16 +87450,10 @@
+ 		_texelCopyTextureInfoDst.reset();
+ 		_extent3D.reset();
+ 
+ 		submit( this.device, encoder.finish() );
+ 
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = this.device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
+ 
+ 			this.textureUtils.generateMipmaps( dstTexture );
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index a0fab1c7c37cfaf270d9ce36dd3d91453ae6a44c..bfa242835dfef49019dd368e3593a62a221dda3d 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -85281,11 +85281,11 @@
+ 
+ 		}
+ 		const source = cache._tnPrivateDepth;
+ 		const attachment = { ...original, view: source.texture.createView(), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
+ 		if ( format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'clear', stencilClearValue: 0, stencilStoreOp: 'discard' } );
+-		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, originalGPU: this.get( canonical ).texture, colorGPU: this.get( this.renderer.getCanvasTarget().colorTexture ).texture, active: true, logical: 1 };
++		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, active: true, logical: 1 };
+ 		return { ...descriptor, colorAttachments: descriptor.colorAttachments.map( a => ( { ...a } ) ), depthStencilAttachment: attachment };
+ 
+ 	}
+ 
+ 	_finishTransientDepth( context ) {
+@@ -85333,24 +85333,10 @@
+ 			state.source.texture.destroy();
+ 			delete state.cache._tnPrivateDepth;
+ 
+ 		}
+ 		delete data._tnDepth;
+-
+-	}
+-
+-	// Separate encoders must observe the pending canonical contents in queue order.
+-	_flushTransientDepth( context ) {
+-
+-		const data = this.get( context );
+-		if ( ! data._tnDepth ) return false;
+-		this._restoreTransientDepth( context );
+-		data.currentPass.end();
+-		submit( this.device, data.encoder.finish() );
+-		this._releaseTransientDepth( context );
+-		data.currentPass = null;
+-		return true;
+ 
+ 	}
+ 
+ 	_validateTransientDepth( renderObject, params, vertexBuffers ) {
+ 
+@@ -86050,13 +86036,10 @@
+ 	 * @param {boolean} stencil - Whether the stencil buffer should be cleared or not.
+ 	 * @param {?RenderContext} [renderTargetContext=null] - The render context of the current set render target.
+ 	 */
+ 	clear( color, depth, stencil, renderTargetContext = null ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const interrupted = active && ( renderTargetContext === active || ( renderTargetContext === null && active.textures === null ) ) && this._flushTransientDepth( active );
+-
+ 		const device = this.device;
+ 		const renderer = this.renderer;
+ 
+ 		let colorAttachments = [];
+ 		let depthStencilAttachment;
+@@ -86181,16 +86164,10 @@
+ 		} );
+ 
+ 		currentPass.end();
+ 
+ 		submit( device, encoder.finish() );
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 	}
+ 
+ 	// compute
+ 
+@@ -86901,28 +86878,11 @@
+ 	 * @param {number} faceIndex - The face index.
+ 	 * @return {Promise<TypedArray>} A Promise that resolves with a typed array when the copy operation has finished.
+ 	 */
+ 	async copyTextureToBuffer( texture, x, y, width, height, faceIndex ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const sourceGPU = state && this.get( texture ).texture;
+-		const interrupted = state && ( sourceGPU === state.originalGPU || sourceGPU === state.colorGPU ) && this._flushTransientDepth( active );
+-		try {
+-
+-			return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+-
+-		} finally {
+-
+-			if ( interrupted ) {
+-
+-				this.get( active ).encoder = this.device.createCommandEncoder();
+-				this._resumeTransientDepth( active );
+-
+-			}
+-
+-		}
++		return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+ 
+ 	}
+ 
+ 	/**
+ 	 * Inits a time stamp query for the given render context.
+@@ -87317,14 +87277,10 @@
+ 	 * @param {number} [srcLevel=0] - The mipmap level to copy.
+ 	 * @param {number} [dstLevel=0] - The destination mip level to copy to.
+ 	 */
+ 	copyTextureToTexture( srcTexture, dstTexture, srcRegion = null, dstPosition = null, srcLevel = 0, dstLevel = 0 ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const interrupted = state && [ srcTexture, dstTexture ].some( texture => { const gpu = this.get( texture ).texture; return gpu === state.originalGPU || gpu === state.colorGPU; } ) && this._flushTransientDepth( active );
+-
+ 		let dstX = 0;
+ 		let dstY = 0;
+ 		let dstZ = 0;
+ 
+ 		let srcX = 0;
+@@ -87402,16 +87358,10 @@
+ 		_texelCopyTextureInfoDst.reset();
+ 		_extent3D.reset();
+ 
+ 		submit( this.device, encoder.finish() );
+ 
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = this.device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
+ 
+ 			this.textureUtils.generateMipmaps( dstTexture );
+ 
+diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
+index 94b48d64ed8f2e57f00cb5fd5bd0112da085aeae..5dbb9bf2ed43fa055c0f7dd2859c146485825817 100644
+--- a/src/renderers/webgpu/WebGPUBackend.js
++++ b/src/renderers/webgpu/WebGPUBackend.js
+@@ -841,9 +841,9 @@
+ 		}
+ 		const source = cache._tnPrivateDepth;
+ 		const attachment = { ...original, view: source.texture.createView(), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
+ 		if ( format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'clear', stencilClearValue: 0, stencilStoreOp: 'discard' } );
+-		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, originalGPU: this.get( canonical ).texture, colorGPU: this.get( this.renderer.getCanvasTarget().colorTexture ).texture, active: true, logical: 1 };
++		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, active: true, logical: 1 };
+ 		return { ...descriptor, colorAttachments: descriptor.colorAttachments.map( a => ( { ...a } ) ), depthStencilAttachment: attachment };
+ 
+ 	}
+ 
+@@ -893,22 +893,8 @@
+ 			delete state.cache._tnPrivateDepth;
+ 
+ 		}
+ 		delete data._tnDepth;
+-
+-	}
+-
+-	// Separate encoders must observe the pending canonical contents in queue order.
+-	_flushTransientDepth( context ) {
+-
+-		const data = this.get( context );
+-		if ( ! data._tnDepth ) return false;
+-		this._restoreTransientDepth( context );
+-		data.currentPass.end();
+-		submit( this.device, data.encoder.finish() );
+-		this._releaseTransientDepth( context );
+-		data.currentPass = null;
+-		return true;
+ 
+ 	}
+ 
+ 	_validateTransientDepth( renderObject, params, vertexBuffers ) {
+@@ -1610,11 +1596,8 @@
+ 	 * @param {?RenderContext} [renderTargetContext=null] - The render context of the current set render target.
+ 	 */
+ 	clear( color, depth, stencil, renderTargetContext = null ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const interrupted = active && ( renderTargetContext === active || ( renderTargetContext === null && active.textures === null ) ) && this._flushTransientDepth( active );
+-
+ 		const device = this.device;
+ 		const renderer = this.renderer;
+ 
+ 		let colorAttachments = [];
+@@ -1741,14 +1724,8 @@
+ 
+ 		currentPass.end();
+ 
+ 		submit( device, encoder.finish() );
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 	}
+ 
+ 	// compute
+@@ -2465,26 +2442,9 @@
+ 	 * @return {Promise<TypedArray>} A Promise that resolves with a typed array when the copy operation has finished.
+ 	 */
+ 	async copyTextureToBuffer( texture, x, y, width, height, faceIndex ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const sourceGPU = state && this.get( texture ).texture;
+-		const interrupted = state && ( sourceGPU === state.originalGPU || sourceGPU === state.colorGPU ) && this._flushTransientDepth( active );
+-		try {
+-
+-			return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+-
+-		} finally {
+-
+-			if ( interrupted ) {
+-
+-				this.get( active ).encoder = this.device.createCommandEncoder();
+-				this._resumeTransientDepth( active );
+-
+-			}
+-
+-		}
++		return this.textureUtils.copyTextureToBuffer( texture, x, y, width, height, faceIndex );
+ 
+ 	}
+ 
+ 	/**
+@@ -2881,12 +2841,8 @@
+ 	 * @param {number} [dstLevel=0] - The destination mip level to copy to.
+ 	 */
+ 	copyTextureToTexture( srcTexture, dstTexture, srcRegion = null, dstPosition = null, srcLevel = 0, dstLevel = 0 ) {
+ 
+-		const active = this.renderer._currentRenderContext;
+-		const state = active && this.get( active )._tnDepth;
+-		const interrupted = state && [ srcTexture, dstTexture ].some( texture => { const gpu = this.get( texture ).texture; return gpu === state.originalGPU || gpu === state.colorGPU; } ) && this._flushTransientDepth( active );
+-
+ 		let dstX = 0;
+ 		let dstY = 0;
+ 		let dstZ = 0;
+ 
+@@ -2966,14 +2922,8 @@
+ 		_extent3D.reset();
+ 
+ 		submit( this.device, encoder.finish() );
+ 
+-		if ( interrupted ) {
+-
+-			this.get( active ).encoder = this.device.createCommandEncoder();
+-			this._resumeTransientDepth( active );
+-
+-		}
+ 
+ 		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
+ 
+ 			this.textureUtils.generateMipmaps( dstTexture );
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 2a70eb319b4235c958c7b5b1ede148c808d0b4b2..7e34d05be672a7fa2e38b19c035f744a8b486446 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -85446,41 +85446,41 @@
+ 		const chain = /^modelViewMatrix=\(render\.cameraViewMatrix\*object\.(nodeUniform\d+)\);positionLocal=position;v_positionView=\(modelViewMatrix\*vec4<f32>\(positionLocal,1\.0\)\)\.xyz;(VERTEX_nodeVar\d+)=\(render\.cameraProjectionMatrix\*vec4<f32>\(v_positionView,1\.0\)\);VERTEX_v_modelViewProjection=\2;varyings\.builtinClipSpace=VERTEX_v_modelViewProjection;returnvaryings;$/;
+ 		const match = chain.exec( body );
+ 		if ( ! match ) return false;
+ 		const matrices = new Map();
+ 		for ( const group of renderObject.getBindings() ) {
+ 
+ 			const groupData = this.get( group );
+ 			if ( ! groupData._tnBindings || ! groupData._tnBindings.every( ( b, i ) => b.binding === group.bindings[ i ] && b.buffer === this.get( b.binding ).buffer ) ) return false;
+ 			for ( const entry of groupData._tnBindings ) {
+ 
+ 				const binding = entry.binding;
+ 				const snapshot = this.get( binding )._tnUniformBytes;
+ 				if ( ! snapshot ) continue;
+ 				for ( const uniform of entry.uniforms || [] ) if ( uniform.itemSize === 16 ) matrices.set( group.name + '.' + uniform.name, Array.from( snapshot.slice( uniform.offset, uniform.offset + 16 ) ) );
+ 
+ 			}
+ 
+ 		}
+ 		const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
+ 		const projection = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1 ];
+-		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.every( ( value, i ) => value === expected[ i ] ) );
++		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.length === 16 && matrices.get( name ).every( ( value, i ) => value === expected[ i ] ) );
+ 
+ 	}
+ 
+ 	beginRender( renderContext ) {
+ 
+ 		const renderContextData = this.get( renderContext );
+ 
+ 		//
+ 
+ 		const device = this.device;
+ 		const occlusionQueryCount = renderContext.occlusionQueryCount;
+ 
+ 		let occlusionQuerySet;
+ 
+ 		if ( occlusionQueryCount > 0 ) {
+ 
+ 			if ( renderContextData.currentOcclusionQuerySet ) renderContextData.currentOcclusionQuerySet.destroy();
+ 			if ( renderContextData.currentOcclusionQueryBuffer ) renderContextData.currentOcclusionQueryBuffer.destroy();
+ 
+ 			// Get a reference to the array of objects with queries. The renderContextData property
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index bfa242835dfef49019dd368e3593a62a221dda3d..4b7a3baea4fc2a99f9453211d2807131f8a86dd4 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -85358,41 +85358,41 @@
+ 		const chain = /^modelViewMatrix=\(render\.cameraViewMatrix\*object\.(nodeUniform\d+)\);positionLocal=position;v_positionView=\(modelViewMatrix\*vec4<f32>\(positionLocal,1\.0\)\)\.xyz;(VERTEX_nodeVar\d+)=\(render\.cameraProjectionMatrix\*vec4<f32>\(v_positionView,1\.0\)\);VERTEX_v_modelViewProjection=\2;varyings\.builtinClipSpace=VERTEX_v_modelViewProjection;returnvaryings;$/;
+ 		const match = chain.exec( body );
+ 		if ( ! match ) return false;
+ 		const matrices = new Map();
+ 		for ( const group of renderObject.getBindings() ) {
+ 
+ 			const groupData = this.get( group );
+ 			if ( ! groupData._tnBindings || ! groupData._tnBindings.every( ( b, i ) => b.binding === group.bindings[ i ] && b.buffer === this.get( b.binding ).buffer ) ) return false;
+ 			for ( const entry of groupData._tnBindings ) {
+ 
+ 				const binding = entry.binding;
+ 				const snapshot = this.get( binding )._tnUniformBytes;
+ 				if ( ! snapshot ) continue;
+ 				for ( const uniform of entry.uniforms || [] ) if ( uniform.itemSize === 16 ) matrices.set( group.name + '.' + uniform.name, Array.from( snapshot.slice( uniform.offset, uniform.offset + 16 ) ) );
+ 
+ 			}
+ 
+ 		}
+ 		const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
+ 		const projection = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1 ];
+-		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.every( ( value, i ) => value === expected[ i ] ) );
++		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.length === 16 && matrices.get( name ).every( ( value, i ) => value === expected[ i ] ) );
+ 
+ 	}
+ 
+ 	beginRender( renderContext ) {
+ 
+ 		const renderContextData = this.get( renderContext );
+ 
+ 		//
+ 
+ 		const device = this.device;
+ 		const occlusionQueryCount = renderContext.occlusionQueryCount;
+ 
+ 		let occlusionQuerySet;
+ 
+ 		if ( occlusionQueryCount > 0 ) {
+ 
+ 			if ( renderContextData.currentOcclusionQuerySet ) renderContextData.currentOcclusionQuerySet.destroy();
+ 			if ( renderContextData.currentOcclusionQueryBuffer ) renderContextData.currentOcclusionQueryBuffer.destroy();
+ 
+ 			// Get a reference to the array of objects with queries. The renderContextData property
+diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
+index 5dbb9bf2ed43fa055c0f7dd2859c146485825817..0fbcc307d39cbf6d74d9dbc5f199f2b0e4f58b33 100644
+--- a/src/renderers/webgpu/WebGPUBackend.js
++++ b/src/renderers/webgpu/WebGPUBackend.js
+@@ -917,41 +917,41 @@
+ 		const chain = /^modelViewMatrix=\(render\.cameraViewMatrix\*object\.(nodeUniform\d+)\);positionLocal=position;v_positionView=\(modelViewMatrix\*vec4<f32>\(positionLocal,1\.0\)\)\.xyz;(VERTEX_nodeVar\d+)=\(render\.cameraProjectionMatrix\*vec4<f32>\(v_positionView,1\.0\)\);VERTEX_v_modelViewProjection=\2;varyings\.builtinClipSpace=VERTEX_v_modelViewProjection;returnvaryings;$/;
+ 		const match = chain.exec( body );
+ 		if ( ! match ) return false;
+ 		const matrices = new Map();
+ 		for ( const group of renderObject.getBindings() ) {
+ 
+ 			const groupData = this.get( group );
+ 			if ( ! groupData._tnBindings || ! groupData._tnBindings.every( ( b, i ) => b.binding === group.bindings[ i ] && b.buffer === this.get( b.binding ).buffer ) ) return false;
+ 			for ( const entry of groupData._tnBindings ) {
+ 
+ 				const binding = entry.binding;
+ 				const snapshot = this.get( binding )._tnUniformBytes;
+ 				if ( ! snapshot ) continue;
+ 				for ( const uniform of entry.uniforms || [] ) if ( uniform.itemSize === 16 ) matrices.set( group.name + '.' + uniform.name, Array.from( snapshot.slice( uniform.offset, uniform.offset + 16 ) ) );
+ 
+ 			}
+ 
+ 		}
+ 		const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
+ 		const projection = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1 ];
+-		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.every( ( value, i ) => value === expected[ i ] ) );
++		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.length === 16 && matrices.get( name ).every( ( value, i ) => value === expected[ i ] ) );
+ 
+ 	}
+ 
+ 	beginRender( renderContext ) {
+ 
+ 		const renderContextData = this.get( renderContext );
+ 
+ 		//
+ 
+ 		const device = this.device;
+ 		const occlusionQueryCount = renderContext.occlusionQueryCount;
+ 
+ 		let occlusionQuerySet;
+ 
+ 		if ( occlusionQueryCount > 0 ) {
+ 
+ 			if ( renderContextData.currentOcclusionQuerySet ) renderContextData.currentOcclusionQuerySet.destroy();
+ 			if ( renderContextData.currentOcclusionQueryBuffer ) renderContextData.currentOcclusionQueryBuffer.destroy();
+ 
+ 			// Get a reference to the array of objects with queries. The renderContextData property
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 7e34d05be672a7fa2e38b19c035f744a8b486446..f9ea33ac39db20e96822fda6b90e2bed02817435 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -61462,7 +61462,8 @@ class Renderer {
+ 
+ 		try {
+ 
+-			if ( renderComplete || this.backend.get( renderContext )._tnDepth ) this.backend.finishRender( renderContext );
++			if ( renderComplete ) this.backend.finishRender( renderContext );
++			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
+ 
+ 		} finally {
+ 
+@@ -85412,6 +85413,26 @@ class WebGPUBackend extends Backend {
+ 
+ 	}
+ 
++	_abortTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		try {
++
++			data.currentPass.end();
++			data.encoder.finish(); // Close and discard failed work without submitting or restoring depth.
++
++		} finally {
++
++			data.descriptor.depthStencilAttachment = { ...state.original };
++			delete data.currentPass;
++			delete data.encoder;
++			this._releaseTransientDepth( context );
++
++		}
++
++	}
++
+ 	_releaseTransientDepth( context ) {
+ 
+ 		const data = this.get( context );
+@@ -85968,6 +85989,7 @@ class WebGPUBackend extends Backend {
+ 		try {
+ 
+ 			submit( this.device, renderContextData.encoder.finish() );
++			if ( renderContextData._tnDepth?.logical === 0 ) renderContextData._tnDepth.source.used = true;
+ 
+ 		} finally {
+ 
+@@ -86585,7 +86607,6 @@ class WebGPUBackend extends Backend {
+ 				if ( renderContextData._tnDepth?.active ) {
+ 
+ 					renderContextData._tnDepth.logical = 0;
+-					renderContextData._tnDepth.source.used = true;
+ 
+ 				}
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 4b7a3baea4fc2a99f9453211d2807131f8a86dd4..93cedce745291edfbd333fb76d8154b8eff685bd 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -61415,7 +61415,8 @@ class Renderer {
+ 
+ 		try {
+ 
+-			if ( renderComplete || this.backend.get( renderContext )._tnDepth ) this.backend.finishRender( renderContext );
++			if ( renderComplete ) this.backend.finishRender( renderContext );
++			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
+ 
+ 		} finally {
+ 
+@@ -85324,6 +85325,26 @@ class WebGPUBackend extends Backend {
+ 
+ 	}
+ 
++	_abortTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		try {
++
++			data.currentPass.end();
++			data.encoder.finish(); // Close and discard failed work without submitting or restoring depth.
++
++		} finally {
++
++			data.descriptor.depthStencilAttachment = { ...state.original };
++			delete data.currentPass;
++			delete data.encoder;
++			this._releaseTransientDepth( context );
++
++		}
++
++	}
++
+ 	_releaseTransientDepth( context ) {
+ 
+ 		const data = this.get( context );
+@@ -85880,6 +85901,7 @@ class WebGPUBackend extends Backend {
+ 		try {
+ 
+ 			submit( this.device, renderContextData.encoder.finish() );
++			if ( renderContextData._tnDepth?.logical === 0 ) renderContextData._tnDepth.source.used = true;
+ 
+ 		} finally {
+ 
+@@ -86498,7 +86520,6 @@ class WebGPUBackend extends Backend {
+ 				if ( renderContextData._tnDepth?.active ) {
+ 
+ 					renderContextData._tnDepth.logical = 0;
+-					renderContextData._tnDepth.source.used = true;
+ 
+ 				}
+ 
+diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
+index 769c909b0a63708dea7d22efc5379c39bdf57d92..bc495cb324ed9923008fa5685aede53aee44b6d8 100644
+--- a/src/renderers/common/Renderer.js
++++ b/src/renderers/common/Renderer.js
+@@ -1764,7 +1764,8 @@ class Renderer {
+ 
+ 		try {
+ 
+-			if ( renderComplete || this.backend.get( renderContext )._tnDepth ) this.backend.finishRender( renderContext );
++			if ( renderComplete ) this.backend.finishRender( renderContext );
++			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
+ 
+ 		} finally {
+ 
+diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
+index 0fbcc307d39cbf6d74d9dbc5f199f2b0e4f58b33..add7f3284d411fd3eb188c2568775595b85204f5 100644
+--- a/src/renderers/webgpu/WebGPUBackend.js
++++ b/src/renderers/webgpu/WebGPUBackend.js
+@@ -883,6 +883,26 @@ class WebGPUBackend extends Backend {
+ 
+ 	}
+ 
++	_abortTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		try {
++
++			data.currentPass.end();
++			data.encoder.finish(); // Close and discard failed work without submitting or restoring depth.
++
++		} finally {
++
++			data.descriptor.depthStencilAttachment = { ...state.original };
++			delete data.currentPass;
++			delete data.encoder;
++			this._releaseTransientDepth( context );
++
++		}
++
++	}
++
+ 	_releaseTransientDepth( context ) {
+ 
+ 		const data = this.get( context );
+@@ -1439,6 +1459,7 @@ class WebGPUBackend extends Backend {
+ 		try {
+ 
+ 			submit( this.device, renderContextData.encoder.finish() );
++			if ( renderContextData._tnDepth?.logical === 0 ) renderContextData._tnDepth.source.used = true;
+ 
+ 		} finally {
+ 
+@@ -2056,7 +2077,6 @@ class WebGPUBackend extends Backend {
+ 				if ( renderContextData._tnDepth?.active ) {
+ 
+ 					renderContextData._tnDepth.logical = 0;
+-					renderContextData._tnDepth.source.used = true;
+ 
+ 				}
+ 
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index f497ad0a21ac3ded5ee87ee03830587f22f30657..001a464cd0721ce402967e2cd6ebd51a75317822 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -61436,6 +61436,7 @@ class Renderer {
+ 		//
+ 
+ 		renderContext.camera = camera;
++		renderContext._tnOutputOwner = scene === this._tnOutputOwner ? scene : null;
+ 		this.backend.beginRender( renderContext );
+ 
+ 		// process render lists
+@@ -61448,13 +61449,23 @@ class Renderer {
+ 			opaque: opaqueObjects
+ 		} = renderList;
+ 
++		let renderComplete = false;
++		try {
++
+ 		if ( bundles.length > 0 ) this._renderBundles( bundles, sceneRef, lightsNode );
+ 		if ( this.opaque === true && opaqueObjects.length > 0 ) this._renderObjects( opaqueObjects, camera, sceneRef, lightsNode );
+ 		if ( this.transparent === true && transparentObjects.length > 0 ) this._renderTransparents( transparentObjects, transparentDoublePassObjects, camera, sceneRef, lightsNode );
+ 
+-		// finish render pass
++		renderComplete = true;
++
++		} finally {
++
++		try {
++
++			if ( renderComplete ) this.backend.finishRender( renderContext );
++			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
+ 
+-		this.backend.finishRender( renderContext );
++		} finally {
+ 
+ 		// restore render tree
+ 
+@@ -61469,6 +61480,9 @@ class Renderer {
+ 
+ 		this._callDepth --;
+ 
++		}
++		}
++
+ 		if ( frameBufferTarget !== null ) {
+ 
+ 			this.setRenderTarget( outputRenderTarget, activeCubeFace, activeMipmapLevel );
+@@ -77251,6 +77265,7 @@ class WebGPUTextureUtils {
+ 
+ 		if ( depthBuffers !== undefined ) {
+ 
++			depthBuffers._tnPrivateDepth?.texture.destroy();
+ 			this._depthBuffers.delete( texture );
+ 			depthBuffers.canvasTarget.removeEventListener( 'resize', depthBuffers.onDispose );
+ 			depthBuffers.canvasTarget.removeEventListener( 'dispose', depthBuffers.onDispose );
+@@ -81836,6 +81851,9 @@ class WebGPUAttributeUtils {
+ 
+ 			buffer.unmap();
+ 
++			bufferData._tnFullTriangle = backend.device.features?.has( 'transient-attachments' ) && attribute.itemSize === 3 && attribute.count === 3 && attribute.normalized === false && array instanceof Float32Array && array.length === 9 && ! attribute.isInterleavedBufferAttribute && ! attribute.isStorageBufferAttribute && [ -1, 3, 0, -1, -1, 0, 3, -1, 0 ].every( ( value, i ) => array[ i ] === value );
++			bufferData._tnTriangleVersion = bufferAttribute.version;
++			bufferData._tnTriangleBuffer = buffer;
+ 			bufferData.buffer = buffer;
+ 			bufferData.version = bufferAttribute.version;
+ 			bufferData.uploadCall = backend.renderer.info.calls;
+@@ -81871,6 +81889,8 @@ class WebGPUAttributeUtils {
+ 		if ( bufferData.version === bufferAttribute.version &&
+ 			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
++		bufferData._tnFullTriangle = false;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -82432,6 +82452,7 @@ class WebGPUBindingUtils {
+ 
+ 		}
+ 
++		bindingsData._tnBindings = this._tnGroups?.get( bindGroupGPU );
+ 		bindingsData.group = bindGroupGPU;
+ 
+ 	}
+@@ -82451,6 +82472,7 @@ class WebGPUBindingUtils {
+ 
+ 		const updateRanges = binding.updateRanges;
+ 
++
+ 		if ( updateRanges.length === 0 ) {
+ 
+ 			device.queue.writeBuffer(
+@@ -82504,6 +82526,15 @@ class WebGPUBindingUtils {
+ 
+ 		}
+ 
++		// Keep bytes actually sent to the GPU, including partial writes; never certify mutable CPU values.
++		if ( backend.device.features?.has( 'transient-attachments' ) && binding.uniforms?.some( u => u.itemSize === 16 ) ) {
++
++			const data = backend.get( binding );
++			const values = new Float32Array( array.buffer, array.byteOffset, array.byteLength / 4 );
++			if ( updateRanges.length === 0 ) data._tnUniformBytes = values.slice();
++			else if ( data._tnUniformBytes ) for ( const range of updateRanges ) data._tnUniformBytes.set( values.subarray( range.start, range.start + range.count ), range.start );
++
++		}
+ 	}
+ 
+ 	/**
+@@ -82667,6 +82698,12 @@ class WebGPUBindingUtils {
+ 		}
+ 
+ 		const bindGroupGPU = device.createBindGroup( _bindGroupDescriptor );
++		if ( device.features?.has( 'transient-attachments' ) ) {
++
++			this._tnGroups ||= new WeakMap();
++			this._tnGroups.set( bindGroupGPU, bindGroup.bindings.map( binding => ( { binding, buffer: backend.get( binding ).buffer, uniforms: binding.uniforms?.map( u => ( { name: u.name, offset: u.offset, itemSize: u.itemSize } ) ) } ) ) );
++
++		}
+ 
+ 		_bindGroupDescriptor.reset();
+ 
+@@ -83268,6 +83305,16 @@ class WebGPUPipelineUtils {
+ 
+ 		}
+ 
++		if ( device.features?.has( 'transient-attachments' ) ) {
++
++		// Capture the actual immutable GPU descriptor and compiled programs, after graph updates.
++		const positionIndex = renderObject.getAttributes().indexOf( geometry.attributes.position );
++		const positionLayout = vertexBuffers.find( layout => layout.attributes.some( a => a.shaderLocation === positionIndex ) );
++		const positionSlot = positionLayout?.attributes.find( a => a.shaderLocation === positionIndex );
++		pipelineData._tnDepthProof = depthStencil.depthWriteEnabled === true && depthStencil.depthCompare === 'less-equal' && ! depthStencil.depthBias && ! depthStencil.depthBiasSlopeScale && ! _renderPipelineDescriptor.multisample.alphaToCoverageEnabled && ( _renderPipelineDescriptor.multisample.mask === undefined || _renderPipelineDescriptor.multisample.mask === 0xffffffff ) && primitiveState.topology === 'triangle-list' && ( primitiveState.cullMode === 'none' || ( primitiveState.cullMode === 'back' && primitiveState.frontFace === 'ccw' ) ) && positionLayout?.arrayStride === 12 && positionLayout.stepMode === 'vertex' && positionSlot?.format === 'float32x3' && positionSlot.offset === 0 ? { material, version: material.version, positionIndex, vertex: backend.get( vertexProgram )._tnShaderCode, fragment: backend.get( fragmentProgram )._tnShaderCode } : null;
++
++		}
++
+ 		// create pipeline
+ 
+ 		device.pushErrorScope( 'validation' );
+@@ -83281,6 +83328,7 @@ class WebGPUPipelineUtils {
+ 		if ( promises === null ) {
+ 
+ 			pipelineData.pipeline = device.createRenderPipeline( _renderPipelineDescriptor );
++			if ( pipelineData._tnDepthProof ) pipelineData._tnDepthProof.pipeline = pipelineData.pipeline;
+ 
+ 			_renderPipelineDescriptor.reset();
+ 
+@@ -85301,6 +85349,150 @@ class WebGPUBackend extends Backend {
+ 	 *
+ 	 * @param {RenderContext} renderContext - The render context.
+ 	 */
++	// Only the renderer-owned presentation scene may speculate. Canonical textures stay public.
++	_isFullTransientViewport( context ) {
++
++		const v = context.viewportValue;
++		return ! context.scissor && ( ! context.viewport || ( v.x === 0 && v.y === 0 && v.width === context.width && v.height === context.height && v.minDepth === 0 && v.maxDepth === 1 ) );
++
++	}
++
++	_beginTransientDepth( context, descriptor ) {
++
++		const original = descriptor.depthStencilAttachment;
++		if ( ! this.device.features?.has( 'transient-attachments' ) || ! context._tnOutputOwner || context.textures !== null || ! context.depth || context.stencil || context.camera?.isArrayCamera || this.renderer.xr?.isPresenting || this.renderer.reversedDepthBuffer || context.occlusionQueryCount !== 0 || ! this._isFullTransientViewport( context ) || original?.depthLoadOp !== 'clear' || original.depthClearValue !== 1 || original.depthStoreOp !== 'store' ) return descriptor;
++
++		const samples = this.utils.getSampleCountRenderContext( context );
++		if ( samples <= 1 ) return descriptor;
++		const canonical = this.renderer.getCanvasTarget().depthTexture;
++		const cache = this.textureUtils._depthBuffers.get( canonical );
++		const format = this.get( canonical ).format;
++		if ( cache === undefined || ! format ) return descriptor;
++		if ( cache._tnPrivateDepth === undefined ) {
++
++			const texture = this.device.createTexture( { label: 'tn-private-output-depth', size: { width: context.width, height: context.height }, format, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT, _tnPassLocalMSAA: true } );
++			cache._tnPrivateDepth = { texture, used: false };
++
++		}
++		const source = cache._tnPrivateDepth;
++		const attachment = { ...original, view: source.texture.createView(), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
++		if ( format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'clear', stencilClearValue: 0, stencilStoreOp: 'discard' } );
++		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, active: true, logical: 1 };
++		return { ...descriptor, colorAttachments: descriptor.colorAttachments.map( a => ( { ...a } ) ), depthStencilAttachment: attachment };
++
++	}
++
++	_finishTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		if ( ! state?.active ) return;
++		state.active = false;
++		const attachment = { ...state.original, depthLoadOp: 'clear', depthClearValue: state.logical, depthStoreOp: 'store' };
++		// A combined texture's original stencil is never changed by this depth-only compatibility clear.
++		if ( attachment.stencilLoadOp !== undefined || this.get( state.canonical ).format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'load', stencilStoreOp: 'store', stencilReadOnly: false } );
++		data.encoder.beginRenderPass( { colorAttachments: [], depthStencilAttachment: attachment } ).end();
++		data.descriptor.depthStencilAttachment = { ...state.original, depthLoadOp: 'load' };
++
++	}
++
++	_restoreTransientDepth( context ) {
++
++		const data = this.get( context );
++		if ( ! data._tnDepth?.active ) return;
++		data.currentPass.end();
++		this._finishTransientDepth( context );
++		this._resumeTransientDepth( context );
++
++	}
++
++	_resumeTransientDepth( context ) {
++
++		const data = this.get( context );
++		const descriptor = { ...data.descriptor, timestampWrites: undefined, colorAttachments: data.descriptor.colorAttachments.map( a => ( { ...a, loadOp: 'load' } ) ) };
++		data.descriptor = descriptor;
++		data.currentPass = data.encoder.beginRenderPass( descriptor );
++		data.currentSets = { attributes: {}, bindingGroups: [], pipeline: null, index: null };
++		if ( context.viewport ) this.updateViewport( context );
++		if ( context.scissor ) this.updateScissor( context );
++
++	}
++
++	_abortTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		try {
++
++			data.currentPass.end();
++			data.encoder.finish(); // Close and discard failed work without submitting or restoring depth.
++
++		} finally {
++
++			data.descriptor.depthStencilAttachment = { ...state.original };
++			delete data.currentPass;
++			delete data.encoder;
++			this._releaseTransientDepth( context );
++
++		}
++
++	}
++
++	_releaseTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		if ( state && ! state.source.used && state.cache._tnPrivateDepth === state.source ) {
++
++			state.source.texture.destroy();
++			delete state.cache._tnPrivateDepth;
++
++		}
++		delete data._tnDepth;
++
++	}
++
++	_validateTransientDepth( renderObject, params, vertexBuffers ) {
++
++		const { object, context, material, pipeline } = renderObject;
++		const proof = this.get( pipeline )._tnDepthProof;
++		const position = object.geometry.attributes.position;
++		const uploaded = position && this.get( position );
++		if ( object !== context._tnOutputOwner || ! this._isFullTransientViewport( context ) || ! proof || proof.pipeline !== this.get( pipeline ).pipeline || proof.material !== material || proof.version !== material.version || material.vertexNode !== null || material.positionNode !== null || material.depthNode !== null || material.depthTest !== true || material.depthWrite !== true || material.depthFunc !== 3 || material.alphaToCoverage || material.polygonOffset || material.stencilWrite || params.vertexCount !== 3 || params.firstVertex !== 0 || params.instanceCount !== 1 || renderObject.geometry !== object.geometry || renderObject.getIndex() !== null || object.geometry.index !== null || object.isBatchedMesh || object.isInstancedMesh || ! vertexBuffers.includes( position ) || renderObject.getIndirect() !== null || ! uploaded?._tnFullTriangle || uploaded._tnTriangleVersion !== position.version || uploaded._tnTriangleBuffer !== uploaded.buffer || position.array.length !== 9 || ! [ -1, 3, 0, -1, -1, 0, 3, -1, 0 ].every( ( n, i ) => position.array[ i ] === n ) ) return false;
++		if ( proof.vertex !== this.get( pipeline.vertexProgram )._tnShaderCode || proof.fragment !== this.get( pipeline.fragmentProgram )._tnShaderCode ) return false;
++		if ( /\b(discard|frag_depth|sample_mask|clip_distances)\b/.test( proof.vertex + proof.fragment ) ) return false;
++		// Admit only Three's shipped projection chain. Custom code anywhere in the vertex stage falls back.
++		const code = proof.vertex.replace( /\/\/[^\n]*/g, '' ).replace( /\s+/g, '' );
++		if ( ( code.match( /fn/g ) || [] ).length !== 1 ) return false;
++		const main = /@vertexfnmain\((.*?)\)->VaryingsStruct\{(.*)\}$/.exec( code );
++		if ( ! main || ! /^(@location\(\d+\)(position:vec3<f32>|uv:vec2<f32>),?)+$/.test( main[ 1 ] ) || ! main[ 1 ].includes( '@location(' + proof.positionIndex + ')position:vec3<f32>' ) ) return false;
++		let body = main[ 2 ];
++		// UV passthrough affects colour only; no other extra vertex operation is accepted.
++		body = body.replace( /varyings\.(v_uv|nodeVarying\d+)=uv;/g, '' );
++		const chain = /^modelViewMatrix=\(render\.cameraViewMatrix\*object\.(nodeUniform\d+)\);positionLocal=position;v_positionView=\(modelViewMatrix\*vec4<f32>\(positionLocal,1\.0\)\)\.xyz;(VERTEX_nodeVar\d+)=\(render\.cameraProjectionMatrix\*vec4<f32>\(v_positionView,1\.0\)\);VERTEX_v_modelViewProjection=\2;varyings\.builtinClipSpace=VERTEX_v_modelViewProjection;returnvaryings;$/;
++		const match = chain.exec( body );
++		if ( ! match ) return false;
++		const matrices = new Map();
++		for ( const group of renderObject.getBindings() ) {
++
++			const groupData = this.get( group );
++			if ( ! groupData._tnBindings || ! groupData._tnBindings.every( ( b, i ) => b.binding === group.bindings[ i ] && b.buffer === this.get( b.binding ).buffer ) ) return false;
++			for ( const entry of groupData._tnBindings ) {
++
++				const binding = entry.binding;
++				const snapshot = this.get( binding )._tnUniformBytes;
++				if ( ! snapshot ) continue;
++				for ( const uniform of entry.uniforms || [] ) if ( uniform.itemSize === 16 ) matrices.set( group.name + '.' + uniform.name, Array.from( snapshot.slice( uniform.offset, uniform.offset + 16 ) ) );
++
++			}
++
++		}
++		const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
++		const projection = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1 ];
++		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.length === 16 && matrices.get( name ).every( ( value, i ) => value === expected[ i ] ) );
++
++	}
++
+ 	beginRender( renderContext ) {
+ 
+ 		const renderContextData = this.get( renderContext );
+@@ -85453,10 +85645,15 @@ class WebGPUBackend extends Backend {
+ 
+ 		//
+ 
++		descriptor = this._beginTransientDepth( renderContext, descriptor );
++
+ 		_commandEncoderDescriptor.label = 'renderContext_' + renderContext.id;
+ 		const encoder = device.createCommandEncoder( _commandEncoderDescriptor );
+ 		_commandEncoderDescriptor.reset();
+ 
++		renderContextData.descriptor = descriptor;
++		renderContextData.encoder = encoder;
++
+ 		// Layered render targets: prepare bundle encoders for each camera in the array camera.
+ 
+ 		if ( this._isRenderCameraDepthArray( renderContext ) === true ) {
+@@ -85750,6 +85947,8 @@ class WebGPUBackend extends Backend {
+ 
+ 		}
+ 
++		this._finishTransientDepth( renderContext );
++
+ 		if ( occlusionQueryCount > 0 ) {
+ 
+ 			const bufferSize = occlusionQueryCount * 8; // 8 byte entries for query results
+@@ -85792,7 +85991,16 @@ class WebGPUBackend extends Backend {
+ 
+ 		}
+ 
+-		submit( this.device, renderContextData.encoder.finish() );
++		try {
++
++			submit( this.device, renderContextData.encoder.finish() );
++			if ( renderContextData._tnDepth?.logical === 0 ) renderContextData._tnDepth.source.used = true;
++
++		} finally {
++
++			this._releaseTransientDepth( renderContext );
++
++		}
+ 
+ 
+ 		//
+@@ -85886,6 +86094,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	updateViewport( renderContext ) {
+ 
++		if ( ! this._isFullTransientViewport( renderContext ) ) this._restoreTransientDepth( renderContext );
++
+ 		const { currentPass } = this.get( renderContext );
+ 		const { x, y, width, height, minDepth, maxDepth } = renderContext.viewportValue;
+ 
+@@ -85900,6 +86110,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	updateScissor( renderContext ) {
+ 
++		this._restoreTransientDepth( renderContext );
++
+ 		const { currentPass } = this.get( renderContext );
+ 		const { x, y, width, height } = renderContext.scissorValue;
+ 
+@@ -86397,6 +86609,11 @@ class WebGPUBackend extends Backend {
+ 			} else {
+ 
+ 				passEncoderGPU.draw( vertexCount, instanceCount, firstVertex, 0 );
++				if ( renderContextData._tnDepth?.active ) {
++
++					renderContextData._tnDepth.logical = 0;
++
++				}
+ 
+ 			}
+ 
+@@ -86432,6 +86649,19 @@ class WebGPUBackend extends Backend {
+ 		// vertex buffers
+ 
+ 		const vertexBuffers = renderObject.getVertexBuffers();
++		if ( renderContextData._tnDepth?.active ) {
++
++			if ( this._validateTransientDepth( renderObject, drawParams, vertexBuffers ) ) {
++
++				// _draw records the constant only after the actual GPU draw is encoded.
++
++			} else {
++
++				this._restoreTransientDepth( context );
++
++			}
++
++		}
+ 
+ 		if ( renderObject.camera.isArrayCamera && renderObject.camera.cameras.length > 0 ) {
+ 
+@@ -86832,6 +87062,8 @@ class WebGPUBackend extends Backend {
+ 		_shaderModuleDescriptor.label = program.stage + ( program.name !== '' ? `_${ program.name }` : '' );
+ 		_shaderModuleDescriptor.code = program.code;
+ 
++		programGPU._tnShaderCode = program.code;
++
+ 		programGPU.module = {
+ 			module: this.device.createShaderModule( _shaderModuleDescriptor ),
+ 			entryPoint: 'main'
+@@ -86979,6 +87211,7 @@ class WebGPUBackend extends Backend {
+ 			_bufferDescriptor.reset();
+ 
+ 			uniformBufferData.buffer = bufferGPU;
++			if ( this.device.features?.has( 'transient-attachments' ) && uniformBuffer.uniforms?.some( u => u.itemSize === 16 ) ) uniformBufferData._tnUniformBytes = new Float32Array( byteLength / 4 );
+ 
+ 		}
+ 
+@@ -87245,6 +87478,7 @@ class WebGPUBackend extends Backend {
+ 
+ 		submit( this.device, encoder.finish() );
+ 
++
+ 		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
+ 
+ 			this.textureUtils.generateMipmaps( dstTexture );
+@@ -87262,6 +87496,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	copyFramebufferToTexture( texture, renderContext, rectangle ) {
+ 
++		this._restoreTransientDepth( renderContext );
++
+ 		const renderContextData = this.get( renderContext );
+ 
+ 		let sourceGPU = null;
+@@ -87888,7 +88124,20 @@ class RenderPipeline {
+ 		const currentXR = renderer.xr.enabled;
+ 		renderer.xr.enabled = false;
+ 
+-		this._quadMesh.render( renderer );
++		const previousOwner = renderer._tnOutputOwner;
++		renderer._tnOutputOwner = currentXR === false ? this._quadMesh : null;
++		try {
++
++			this._quadMesh.render( renderer );
++
++		} finally {
++
++			renderer._tnOutputOwner = previousOwner;
++			renderer.xr.enabled = currentXR;
++			renderer.toneMapping = toneMapping;
++			renderer.outputColorSpace = outputColorSpace;
++
++		}
+ 
+ 		renderer.xr.enabled = currentXR;
+ 
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index f9ea33ac39db20e96822fda6b90e2bed02817435..001a464cd0721ce402967e2cd6ebd51a75317822 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -63155,7 +63155,8 @@ class Renderer {
+ 				version,
+ 				colorNode,
+ 				depthNode,
+-				positionNode
++				positionNode,
++				alphaTestNode: material.alphaTestNode && material.alphaTestNode.isNode ? material.alphaTestNode : null
+ 			};
+ 
+ 			this._cacheShadowNodes.set( material, cache );
+@@ -63283,6 +63284,7 @@ class Renderer {
+ 		let materialDisplacementScale;
+ 		let materialDisplacementBias;
+ 		let materialAlphaTest;
++		let materialAlphaTestNode;
+ 
+ 		const previousSourceMaterial = this._currentSourceMaterial;
+ 
+@@ -63309,6 +63311,7 @@ class Renderer {
+ 			materialDisplacementScale = overrideMaterial.displacementScale;
+ 			materialDisplacementBias = overrideMaterial.displacementBias;
+ 			materialAlphaTest = overrideMaterial.alphaTest;
++			materialAlphaTestNode = overrideMaterial.alphaTestNode;
+ 
+ 			if ( material.positionNode && material.positionNode.isNode ) {
+ 
+@@ -63335,7 +63338,7 @@ class Renderer {
+ 
+ 			if ( overrideMaterial.isShadowPassMaterial ) {
+ 
+-				const { colorNode, depthNode, positionNode } = this._getShadowNodes( material );
++				const { colorNode, depthNode, positionNode, alphaTestNode } = this._getShadowNodes( material );
+ 
+ 				if ( this.shadowMap.type === VSMShadowMap ) {
+ 
+@@ -63347,6 +63350,7 @@ class Renderer {
+ 
+ 				}
+ 
++				overrideMaterial.alphaTestNode = alphaTestNode;
+ 				if ( colorNode !== null ) overrideMaterial.colorNode = colorNode;
+ 				if ( depthNode !== null ) overrideMaterial.depthNode = depthNode;
+ 				if ( positionNode !== null ) overrideMaterial.positionNode = positionNode;
+@@ -63387,6 +63391,7 @@ class Renderer {
+ 			scene.overrideMaterial.displacementScale = materialDisplacementScale;
+ 			scene.overrideMaterial.displacementBias = materialDisplacementBias;
+ 			scene.overrideMaterial._alphaTest = materialAlphaTest;
++			scene.overrideMaterial.alphaTestNode = materialAlphaTestNode;
+ 
+ 		}
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 7fb3bbe36a63212009dcdb4f2d2b9c23e766bff1..7eb6c45e3bfa62b45c4dce0d941cfbf87bc5010d 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -61389,6 +61389,7 @@ class Renderer {
+ 		//
+ 
+ 		renderContext.camera = camera;
++		renderContext._tnOutputOwner = scene === this._tnOutputOwner ? scene : null;
+ 		this.backend.beginRender( renderContext );
+ 
+ 		// process render lists
+@@ -61401,13 +61402,23 @@ class Renderer {
+ 			opaque: opaqueObjects
+ 		} = renderList;
+ 
++		let renderComplete = false;
++		try {
++
+ 		if ( bundles.length > 0 ) this._renderBundles( bundles, sceneRef, lightsNode );
+ 		if ( this.opaque === true && opaqueObjects.length > 0 ) this._renderObjects( opaqueObjects, camera, sceneRef, lightsNode );
+ 		if ( this.transparent === true && transparentObjects.length > 0 ) this._renderTransparents( transparentObjects, transparentDoublePassObjects, camera, sceneRef, lightsNode );
+ 
+-		// finish render pass
++		renderComplete = true;
++
++		} finally {
++
++		try {
++
++			if ( renderComplete ) this.backend.finishRender( renderContext );
++			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
+ 
+-		this.backend.finishRender( renderContext );
++		} finally {
+ 
+ 		// restore render tree
+ 
+@@ -61422,6 +61433,9 @@ class Renderer {
+ 
+ 		this._callDepth --;
+ 
++		}
++		}
++
+ 		if ( frameBufferTarget !== null ) {
+ 
+ 			this.setRenderTarget( outputRenderTarget, activeCubeFace, activeMipmapLevel );
+@@ -77190,6 +77204,7 @@ class WebGPUTextureUtils {
+ 
+ 		if ( depthBuffers !== undefined ) {
+ 
++			depthBuffers._tnPrivateDepth?.texture.destroy();
+ 			this._depthBuffers.delete( texture );
+ 			depthBuffers.canvasTarget.removeEventListener( 'resize', depthBuffers.onDispose );
+ 			depthBuffers.canvasTarget.removeEventListener( 'dispose', depthBuffers.onDispose );
+@@ -81771,6 +81786,9 @@ class WebGPUAttributeUtils {
+ 
+ 			buffer.unmap();
+ 
++			bufferData._tnFullTriangle = backend.device.features?.has( 'transient-attachments' ) && attribute.itemSize === 3 && attribute.count === 3 && attribute.normalized === false && array instanceof Float32Array && array.length === 9 && ! attribute.isInterleavedBufferAttribute && ! attribute.isStorageBufferAttribute && [ -1, 3, 0, -1, -1, 0, 3, -1, 0 ].every( ( value, i ) => array[ i ] === value );
++			bufferData._tnTriangleVersion = bufferAttribute.version;
++			bufferData._tnTriangleBuffer = buffer;
+ 			bufferData.buffer = buffer;
+ 			bufferData.version = bufferAttribute.version;
+ 			bufferData.uploadCall = backend.renderer.info.calls;
+@@ -81806,6 +81824,8 @@ class WebGPUAttributeUtils {
+ 		if ( bufferData.version === bufferAttribute.version &&
+ 			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
+ 
++		bufferData._tnFullTriangle = false;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -82369,6 +82389,7 @@ class WebGPUBindingUtils {
+ 
+ 		}
+ 
++		bindingsData._tnBindings = this._tnGroups?.get( bindGroupGPU );
+ 		bindingsData.group = bindGroupGPU;
+ 
+ 	}
+@@ -82388,6 +82409,7 @@ class WebGPUBindingUtils {
+ 
+ 		const updateRanges = binding.updateRanges;
+ 
++
+ 		if ( updateRanges.length === 0 ) {
+ 
+ 			device.queue.writeBuffer(
+@@ -82441,6 +82463,15 @@ class WebGPUBindingUtils {
+ 
+ 		}
+ 
++		// Keep bytes actually sent to the GPU, including partial writes; never certify mutable CPU values.
++		if ( backend.device.features?.has( 'transient-attachments' ) && binding.uniforms?.some( u => u.itemSize === 16 ) ) {
++
++			const data = backend.get( binding );
++			const values = new Float32Array( array.buffer, array.byteOffset, array.byteLength / 4 );
++			if ( updateRanges.length === 0 ) data._tnUniformBytes = values.slice();
++			else if ( data._tnUniformBytes ) for ( const range of updateRanges ) data._tnUniformBytes.set( values.subarray( range.start, range.start + range.count ), range.start );
++
++		}
+ 	}
+ 
+ 	/**
+@@ -82604,6 +82635,12 @@ class WebGPUBindingUtils {
+ 		}
+ 
+ 		const bindGroupGPU = device.createBindGroup( _bindGroupDescriptor );
++		if ( device.features?.has( 'transient-attachments' ) ) {
++
++			this._tnGroups ||= new WeakMap();
++			this._tnGroups.set( bindGroupGPU, bindGroup.bindings.map( binding => ( { binding, buffer: backend.get( binding ).buffer, uniforms: binding.uniforms?.map( u => ( { name: u.name, offset: u.offset, itemSize: u.itemSize } ) ) } ) ) );
++
++		}
+ 
+ 		_bindGroupDescriptor.reset();
+ 
+@@ -83202,6 +83239,16 @@ class WebGPUPipelineUtils {
+ 
+ 		}
+ 
++		if ( device.features?.has( 'transient-attachments' ) ) {
++
++		// Capture the actual immutable GPU descriptor and compiled programs, after graph updates.
++		const positionIndex = renderObject.getAttributes().indexOf( geometry.attributes.position );
++		const positionLayout = vertexBuffers.find( layout => layout.attributes.some( a => a.shaderLocation === positionIndex ) );
++		const positionSlot = positionLayout?.attributes.find( a => a.shaderLocation === positionIndex );
++		pipelineData._tnDepthProof = depthStencil.depthWriteEnabled === true && depthStencil.depthCompare === 'less-equal' && ! depthStencil.depthBias && ! depthStencil.depthBiasSlopeScale && ! _renderPipelineDescriptor.multisample.alphaToCoverageEnabled && ( _renderPipelineDescriptor.multisample.mask === undefined || _renderPipelineDescriptor.multisample.mask === 0xffffffff ) && primitiveState.topology === 'triangle-list' && ( primitiveState.cullMode === 'none' || ( primitiveState.cullMode === 'back' && primitiveState.frontFace === 'ccw' ) ) && positionLayout?.arrayStride === 12 && positionLayout.stepMode === 'vertex' && positionSlot?.format === 'float32x3' && positionSlot.offset === 0 ? { material, version: material.version, positionIndex, vertex: backend.get( vertexProgram )._tnShaderCode, fragment: backend.get( fragmentProgram )._tnShaderCode } : null;
++
++		}
++
+ 		// create pipeline
+ 
+ 		device.pushErrorScope( 'validation' );
+@@ -83215,6 +83262,7 @@ class WebGPUPipelineUtils {
+ 		if ( promises === null ) {
+ 
+ 			pipelineData.pipeline = device.createRenderPipeline( _renderPipelineDescriptor );
++			if ( pipelineData._tnDepthProof ) pipelineData._tnDepthProof.pipeline = pipelineData.pipeline;
+ 
+ 			_renderPipelineDescriptor.reset();
+ 
+@@ -85210,6 +85258,150 @@ class WebGPUBackend extends Backend {
+ 	 *
+ 	 * @param {RenderContext} renderContext - The render context.
+ 	 */
++	// Only the renderer-owned presentation scene may speculate. Canonical textures stay public.
++	_isFullTransientViewport( context ) {
++
++		const v = context.viewportValue;
++		return ! context.scissor && ( ! context.viewport || ( v.x === 0 && v.y === 0 && v.width === context.width && v.height === context.height && v.minDepth === 0 && v.maxDepth === 1 ) );
++
++	}
++
++	_beginTransientDepth( context, descriptor ) {
++
++		const original = descriptor.depthStencilAttachment;
++		if ( ! this.device.features?.has( 'transient-attachments' ) || ! context._tnOutputOwner || context.textures !== null || ! context.depth || context.stencil || context.camera?.isArrayCamera || this.renderer.xr?.isPresenting || this.renderer.reversedDepthBuffer || context.occlusionQueryCount !== 0 || ! this._isFullTransientViewport( context ) || original?.depthLoadOp !== 'clear' || original.depthClearValue !== 1 || original.depthStoreOp !== 'store' ) return descriptor;
++
++		const samples = this.utils.getSampleCountRenderContext( context );
++		if ( samples <= 1 ) return descriptor;
++		const canonical = this.renderer.getCanvasTarget().depthTexture;
++		const cache = this.textureUtils._depthBuffers.get( canonical );
++		const format = this.get( canonical ).format;
++		if ( cache === undefined || ! format ) return descriptor;
++		if ( cache._tnPrivateDepth === undefined ) {
++
++			const texture = this.device.createTexture( { label: 'tn-private-output-depth', size: { width: context.width, height: context.height }, format, sampleCount: samples, usage: GPUTextureUsage.RENDER_ATTACHMENT, _tnPassLocalMSAA: true } );
++			cache._tnPrivateDepth = { texture, used: false };
++
++		}
++		const source = cache._tnPrivateDepth;
++		const attachment = { ...original, view: source.texture.createView(), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
++		if ( format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'clear', stencilClearValue: 0, stencilStoreOp: 'discard' } );
++		this.get( context )._tnDepth = { original: { ...original }, source, cache, canonical, active: true, logical: 1 };
++		return { ...descriptor, colorAttachments: descriptor.colorAttachments.map( a => ( { ...a } ) ), depthStencilAttachment: attachment };
++
++	}
++
++	_finishTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		if ( ! state?.active ) return;
++		state.active = false;
++		const attachment = { ...state.original, depthLoadOp: 'clear', depthClearValue: state.logical, depthStoreOp: 'store' };
++		// A combined texture's original stencil is never changed by this depth-only compatibility clear.
++		if ( attachment.stencilLoadOp !== undefined || this.get( state.canonical ).format.includes( 'stencil' ) ) Object.assign( attachment, { stencilLoadOp: 'load', stencilStoreOp: 'store', stencilReadOnly: false } );
++		data.encoder.beginRenderPass( { colorAttachments: [], depthStencilAttachment: attachment } ).end();
++		data.descriptor.depthStencilAttachment = { ...state.original, depthLoadOp: 'load' };
++
++	}
++
++	_restoreTransientDepth( context ) {
++
++		const data = this.get( context );
++		if ( ! data._tnDepth?.active ) return;
++		data.currentPass.end();
++		this._finishTransientDepth( context );
++		this._resumeTransientDepth( context );
++
++	}
++
++	_resumeTransientDepth( context ) {
++
++		const data = this.get( context );
++		const descriptor = { ...data.descriptor, timestampWrites: undefined, colorAttachments: data.descriptor.colorAttachments.map( a => ( { ...a, loadOp: 'load' } ) ) };
++		data.descriptor = descriptor;
++		data.currentPass = data.encoder.beginRenderPass( descriptor );
++		data.currentSets = { attributes: {}, bindingGroups: [], pipeline: null, index: null };
++		if ( context.viewport ) this.updateViewport( context );
++		if ( context.scissor ) this.updateScissor( context );
++
++	}
++
++	_abortTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		try {
++
++			data.currentPass.end();
++			data.encoder.finish(); // Close and discard failed work without submitting or restoring depth.
++
++		} finally {
++
++			data.descriptor.depthStencilAttachment = { ...state.original };
++			delete data.currentPass;
++			delete data.encoder;
++			this._releaseTransientDepth( context );
++
++		}
++
++	}
++
++	_releaseTransientDepth( context ) {
++
++		const data = this.get( context );
++		const state = data._tnDepth;
++		if ( state && ! state.source.used && state.cache._tnPrivateDepth === state.source ) {
++
++			state.source.texture.destroy();
++			delete state.cache._tnPrivateDepth;
++
++		}
++		delete data._tnDepth;
++
++	}
++
++	_validateTransientDepth( renderObject, params, vertexBuffers ) {
++
++		const { object, context, material, pipeline } = renderObject;
++		const proof = this.get( pipeline )._tnDepthProof;
++		const position = object.geometry.attributes.position;
++		const uploaded = position && this.get( position );
++		if ( object !== context._tnOutputOwner || ! this._isFullTransientViewport( context ) || ! proof || proof.pipeline !== this.get( pipeline ).pipeline || proof.material !== material || proof.version !== material.version || material.vertexNode !== null || material.positionNode !== null || material.depthNode !== null || material.depthTest !== true || material.depthWrite !== true || material.depthFunc !== 3 || material.alphaToCoverage || material.polygonOffset || material.stencilWrite || params.vertexCount !== 3 || params.firstVertex !== 0 || params.instanceCount !== 1 || renderObject.geometry !== object.geometry || renderObject.getIndex() !== null || object.geometry.index !== null || object.isBatchedMesh || object.isInstancedMesh || ! vertexBuffers.includes( position ) || renderObject.getIndirect() !== null || ! uploaded?._tnFullTriangle || uploaded._tnTriangleVersion !== position.version || uploaded._tnTriangleBuffer !== uploaded.buffer || position.array.length !== 9 || ! [ -1, 3, 0, -1, -1, 0, 3, -1, 0 ].every( ( n, i ) => position.array[ i ] === n ) ) return false;
++		if ( proof.vertex !== this.get( pipeline.vertexProgram )._tnShaderCode || proof.fragment !== this.get( pipeline.fragmentProgram )._tnShaderCode ) return false;
++		if ( /\b(discard|frag_depth|sample_mask|clip_distances)\b/.test( proof.vertex + proof.fragment ) ) return false;
++		// Admit only Three's shipped projection chain. Custom code anywhere in the vertex stage falls back.
++		const code = proof.vertex.replace( /\/\/[^\n]*/g, '' ).replace( /\s+/g, '' );
++		if ( ( code.match( /fn/g ) || [] ).length !== 1 ) return false;
++		const main = /@vertexfnmain\((.*?)\)->VaryingsStruct\{(.*)\}$/.exec( code );
++		if ( ! main || ! /^(@location\(\d+\)(position:vec3<f32>|uv:vec2<f32>),?)+$/.test( main[ 1 ] ) || ! main[ 1 ].includes( '@location(' + proof.positionIndex + ')position:vec3<f32>' ) ) return false;
++		let body = main[ 2 ];
++		// UV passthrough affects colour only; no other extra vertex operation is accepted.
++		body = body.replace( /varyings\.(v_uv|nodeVarying\d+)=uv;/g, '' );
++		const chain = /^modelViewMatrix=\(render\.cameraViewMatrix\*object\.(nodeUniform\d+)\);positionLocal=position;v_positionView=\(modelViewMatrix\*vec4<f32>\(positionLocal,1\.0\)\)\.xyz;(VERTEX_nodeVar\d+)=\(render\.cameraProjectionMatrix\*vec4<f32>\(v_positionView,1\.0\)\);VERTEX_v_modelViewProjection=\2;varyings\.builtinClipSpace=VERTEX_v_modelViewProjection;returnvaryings;$/;
++		const match = chain.exec( body );
++		if ( ! match ) return false;
++		const matrices = new Map();
++		for ( const group of renderObject.getBindings() ) {
++
++			const groupData = this.get( group );
++			if ( ! groupData._tnBindings || ! groupData._tnBindings.every( ( b, i ) => b.binding === group.bindings[ i ] && b.buffer === this.get( b.binding ).buffer ) ) return false;
++			for ( const entry of groupData._tnBindings ) {
++
++				const binding = entry.binding;
++				const snapshot = this.get( binding )._tnUniformBytes;
++				if ( ! snapshot ) continue;
++				for ( const uniform of entry.uniforms || [] ) if ( uniform.itemSize === 16 ) matrices.set( group.name + '.' + uniform.name, Array.from( snapshot.slice( uniform.offset, uniform.offset + 16 ) ) );
++
++			}
++
++		}
++		const identity = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ];
++		const projection = [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1 ];
++		return [ [ 'render.cameraViewMatrix', identity ], [ 'object.' + match[ 1 ], identity ], [ 'render.cameraProjectionMatrix', projection ] ].every( ( [ name, expected ] ) => matrices.get( name )?.length === 16 && matrices.get( name ).every( ( value, i ) => value === expected[ i ] ) );
++
++	}
++
+ 	beginRender( renderContext ) {
+ 
+ 		const renderContextData = this.get( renderContext );
+@@ -85362,10 +85554,15 @@ class WebGPUBackend extends Backend {
+ 
+ 		//
+ 
++		descriptor = this._beginTransientDepth( renderContext, descriptor );
++
+ 		_commandEncoderDescriptor.label = 'renderContext_' + renderContext.id;
+ 		const encoder = device.createCommandEncoder( _commandEncoderDescriptor );
+ 		_commandEncoderDescriptor.reset();
+ 
++		renderContextData.descriptor = descriptor;
++		renderContextData.encoder = encoder;
++
+ 		// Layered render targets: prepare bundle encoders for each camera in the array camera.
+ 
+ 		if ( this._isRenderCameraDepthArray( renderContext ) === true ) {
+@@ -85659,6 +85856,8 @@ class WebGPUBackend extends Backend {
+ 
+ 		}
+ 
++		this._finishTransientDepth( renderContext );
++
+ 		if ( occlusionQueryCount > 0 ) {
+ 
+ 			const bufferSize = occlusionQueryCount * 8; // 8 byte entries for query results
+@@ -85701,7 +85900,16 @@ class WebGPUBackend extends Backend {
+ 
+ 		}
+ 
+-		submit( this.device, renderContextData.encoder.finish() );
++		try {
++
++			submit( this.device, renderContextData.encoder.finish() );
++			if ( renderContextData._tnDepth?.logical === 0 ) renderContextData._tnDepth.source.used = true;
++
++		} finally {
++
++			this._releaseTransientDepth( renderContext );
++
++		}
+ 
+ 
+ 		//
+@@ -85795,6 +86003,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	updateViewport( renderContext ) {
+ 
++		if ( ! this._isFullTransientViewport( renderContext ) ) this._restoreTransientDepth( renderContext );
++
+ 		const { currentPass } = this.get( renderContext );
+ 		const { x, y, width, height, minDepth, maxDepth } = renderContext.viewportValue;
+ 
+@@ -85809,6 +86019,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	updateScissor( renderContext ) {
+ 
++		this._restoreTransientDepth( renderContext );
++
+ 		const { currentPass } = this.get( renderContext );
+ 		const { x, y, width, height } = renderContext.scissorValue;
+ 
+@@ -86307,6 +86519,11 @@ class WebGPUBackend extends Backend {
+ 			} else {
+ 
+ 				passEncoderGPU.draw( vertexCount, instanceCount, firstVertex, 0 );
++				if ( renderContextData._tnDepth?.active ) {
++
++					renderContextData._tnDepth.logical = 0;
++
++				}
+ 
+ 			}
+ 
+@@ -86342,6 +86559,19 @@ class WebGPUBackend extends Backend {
+ 		// vertex buffers
+ 
+ 		const vertexBuffers = renderObject.getVertexBuffers();
++		if ( renderContextData._tnDepth?.active ) {
++
++			if ( this._validateTransientDepth( renderObject, drawParams, vertexBuffers ) ) {
++
++				// _draw records the constant only after the actual GPU draw is encoded.
++
++			} else {
++
++				this._restoreTransientDepth( context );
++
++			}
++
++		}
+ 
+ 		if ( renderObject.camera.isArrayCamera && renderObject.camera.cameras.length > 0 ) {
+ 
+@@ -86737,6 +86967,8 @@ class WebGPUBackend extends Backend {
+ 		_shaderModuleDescriptor.label = program.stage + ( program.name !== '' ? `_${ program.name }` : '' );
+ 		_shaderModuleDescriptor.code = program.code;
+ 
++		programGPU._tnShaderCode = program.code;
++
+ 		programGPU.module = {
+ 			module: this.device.createShaderModule( _shaderModuleDescriptor ),
+ 			entryPoint: 'main'
+@@ -86884,6 +87116,7 @@ class WebGPUBackend extends Backend {
+ 			_bufferDescriptor.reset();
+ 
+ 			uniformBufferData.buffer = bufferGPU;
++			if ( this.device.features?.has( 'transient-attachments' ) && uniformBuffer.uniforms?.some( u => u.itemSize === 16 ) ) uniformBufferData._tnUniformBytes = new Float32Array( byteLength / 4 );
+ 
+ 		}
+ 
+@@ -87150,6 +87383,7 @@ class WebGPUBackend extends Backend {
+ 
+ 		submit( this.device, encoder.finish() );
+ 
++
+ 		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
+ 
+ 			this.textureUtils.generateMipmaps( dstTexture );
+@@ -87167,6 +87401,8 @@ class WebGPUBackend extends Backend {
+ 	 */
+ 	copyFramebufferToTexture( texture, renderContext, rectangle ) {
+ 
++		this._restoreTransientDepth( renderContext );
++
+ 		const renderContextData = this.get( renderContext );
+ 
+ 		let sourceGPU = null;
+@@ -87740,7 +87976,20 @@ class RenderPipeline {
+ 		const currentXR = renderer.xr.enabled;
+ 		renderer.xr.enabled = false;
+ 
+-		this._quadMesh.render( renderer );
++		const previousOwner = renderer._tnOutputOwner;
++		renderer._tnOutputOwner = currentXR === false ? this._quadMesh : null;
++		try {
++
++			this._quadMesh.render( renderer );
++
++		} finally {
++
++			renderer._tnOutputOwner = previousOwner;
++			renderer.xr.enabled = currentXR;
++			renderer.toneMapping = toneMapping;
++			renderer.outputColorSpace = outputColorSpace;
++
++		}
+ 
+ 		renderer.xr.enabled = currentXR;
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 93cedce745291edfbd333fb76d8154b8eff685bd..7eb6c45e3bfa62b45c4dce0d941cfbf87bc5010d 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -63108,7 +63108,8 @@ class Renderer {
+ 				version,
+ 				colorNode,
+ 				depthNode,
+-				positionNode
++				positionNode,
++				alphaTestNode: material.alphaTestNode && material.alphaTestNode.isNode ? material.alphaTestNode : null
+ 			};
+ 
+ 			this._cacheShadowNodes.set( material, cache );
+@@ -63278,7 +63279,7 @@ class Renderer {
+ 
+ 			if ( overrideMaterial.isShadowPassMaterial ) {
+ 
+-				const { colorNode, depthNode, positionNode } = this._getShadowNodes( material );
++				const { colorNode, depthNode, positionNode, alphaTestNode } = this._getShadowNodes( material );
+ 
+ 				if ( this.shadowMap.type === VSMShadowMap ) {
+ 
+@@ -63290,6 +63291,7 @@ class Renderer {
+ 
+ 				}
+ 
++				overrideMaterial.alphaTestNode = alphaTestNode;
+ 				if ( colorNode !== null ) overrideMaterial.colorNode = colorNode;
+ 				if ( depthNode !== null ) overrideMaterial.depthNode = depthNode;
+ 				if ( positionNode !== null ) overrideMaterial.positionNode = positionNode;
+diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
+index 0625415312229faa6c834a139ae83885f1618141..d2939c02fb6a36cbf0fa299b04a5f1c783d97b7e 100644
+--- a/src/renderers/common/Renderer.js
++++ b/src/renderers/common/Renderer.js
+@@ -1738,6 +1738,7 @@ class Renderer {
+ 		//
+ 
+ 		renderContext.camera = camera;
++		renderContext._tnOutputOwner = scene === this._tnOutputOwner ? scene : null;
+ 		this.backend.beginRender( renderContext );
+ 
+ 		// process render lists
+@@ -1750,13 +1751,23 @@ class Renderer {
+ 			opaque: opaqueObjects
+ 		} = renderList;
+ 
++		let renderComplete = false;
++		try {
++
+ 		if ( bundles.length > 0 ) this._renderBundles( bundles, sceneRef, lightsNode );
+ 		if ( this.opaque === true && opaqueObjects.length > 0 ) this._renderObjects( opaqueObjects, camera, sceneRef, lightsNode );
+ 		if ( this.transparent === true && transparentObjects.length > 0 ) this._renderTransparents( transparentObjects, transparentDoublePassObjects, camera, sceneRef, lightsNode );
+ 
+-		// finish render pass
++		renderComplete = true;
++
++		} finally {
++
++		try {
+ 
+-		this.backend.finishRender( renderContext );
++			if ( renderComplete ) this.backend.finishRender( renderContext );
++			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
++
++		} finally {
+ 
+ 		// restore render tree
+ 
+@@ -1771,6 +1782,9 @@ class Renderer {
+ 
+ 		this._callDepth --;
+ 
++		}
++		}
++
+ 		if ( frameBufferTarget !== null ) {
+ 
+ 			this.setRenderTarget( outputRenderTarget, activeCubeFace, activeMipmapLevel );
+diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
+index bc495cb324ed9923008fa5685aede53aee44b6d8..d2939c02fb6a36cbf0fa299b04a5f1c783d97b7e 100644
+--- a/src/renderers/common/Renderer.js
++++ b/src/renderers/common/Renderer.js
+@@ -3457,7 +3457,8 @@ class Renderer {
+ 				version,
+ 				colorNode,
+ 				depthNode,
+-				positionNode
++				positionNode,
++				alphaTestNode: material.alphaTestNode && material.alphaTestNode.isNode ? material.alphaTestNode : null
+ 			};
+ 
+ 			this._cacheShadowNodes.set( material, cache );
+@@ -3585,6 +3586,7 @@ class Renderer {
+ 		let materialDisplacementScale;
+ 		let materialDisplacementBias;
+ 		let materialAlphaTest;
++		let materialAlphaTestNode;
+ 
+ 		const previousSourceMaterial = this._currentSourceMaterial;
+ 
+@@ -3611,6 +3613,7 @@ class Renderer {
+ 			materialDisplacementScale = overrideMaterial.displacementScale;
+ 			materialDisplacementBias = overrideMaterial.displacementBias;
+ 			materialAlphaTest = overrideMaterial.alphaTest;
++			materialAlphaTestNode = overrideMaterial.alphaTestNode;
+ 
+ 			if ( material.positionNode && material.positionNode.isNode ) {
+ 
+@@ -3637,7 +3640,7 @@ class Renderer {
+ 
+ 			if ( overrideMaterial.isShadowPassMaterial ) {
+ 
+-				const { colorNode, depthNode, positionNode } = this._getShadowNodes( material );
++				const { colorNode, depthNode, positionNode, alphaTestNode } = this._getShadowNodes( material );
+ 
+ 				if ( this.shadowMap.type === VSMShadowMap ) {
+ 
+@@ -3649,6 +3652,7 @@ class Renderer {
+ 
+ 				}
+ 
++				overrideMaterial.alphaTestNode = alphaTestNode;
+ 				if ( colorNode !== null ) overrideMaterial.colorNode = colorNode;
+ 				if ( depthNode !== null ) overrideMaterial.depthNode = depthNode;
+ 				if ( positionNode !== null ) overrideMaterial.positionNode = positionNode;
+@@ -3689,6 +3693,7 @@ class Renderer {
+ 			scene.overrideMaterial.displacementScale = materialDisplacementScale;
+ 			scene.overrideMaterial.displacementBias = materialDisplacementBias;
+ 			scene.overrideMaterial._alphaTest = materialAlphaTest;
++			scene.overrideMaterial.alphaTestNode = materialAlphaTestNode;
+ 
+ 		}
+ 
