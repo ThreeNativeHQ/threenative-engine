@@ -1078,10 +1078,11 @@ it("composition clear pose centers the shared circle on the heightfield at 30 me
     scope,
   );
   const heightAt = vi.fn((x: number, z: number) => x / 2 + z);
-  for (const target of [
+  const targets: [number, number][] = [
     [31, -47],
     [-53, 19],
-  ]) {
+  ];
+  for (const target of targets) {
     const view = scope.exports.compositionClearView(target, { heightAt });
     expect(heightAt).toHaveBeenLastCalledWith(...target);
     expect(view.look.toArray()).toEqual([target[0], target[0] / 2 + target[1], target[1]]);

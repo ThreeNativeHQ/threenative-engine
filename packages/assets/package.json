@@ -53,6 +53,7 @@
     "@wasm-audio-decoders/ogg-vorbis": "0.1.20",
     "draco3dgltf": "^1.5.7",
     "jpeg-js": "0.4.4",
+    "jspeg": "catalog:",
     "ktx-parse": "^1.1.0",
     "meshoptimizer": "1.1.1",
     "pngjs": "7.0.0",

@@ -1007,6 +1007,93 @@ describe("cookTerrainWorld", () => {
     expect(new Uint8Array(image)).toEqual(new Uint8Array(species.png));
   });
 
+  it("losslessly optimizes streamed baseline JPEGs while preserving authored content", async () => {
+    const sharp = (await import("sharp")).default;
+    const pixels = Buffer.from(Array.from({ length: 32 * 32 * 3 }, (_, i) => (i * 37) % 256));
+    const jpeg = await sharp(pixels, { raw: { width: 32, height: 32, channels: 3 } })
+      .withMetadata({ orientation: 6 })
+      .jpeg({ quality: 87, optimiseCoding: false })
+      .toBuffer();
+    const doc = await io().readBinary(await simpleSpecies());
+    const texture = doc.createTexture("authored JPEG").setImage(jpeg).setMimeType("image/jpeg");
+    const material = doc.getRoot().listMaterials()[0];
+    assert.ok(material);
+    material.setBaseColorTexture(texture);
+    const glb = await io().writeBinary(doc);
+    const cooked = await cookTerrainWorld({
+      state: evaluatedTerrain(),
+      species: { fir: { glb, lods: [{ distance: 45, glb }] } },
+      out: dir,
+    });
+    for (const name of ["fir.glb", "fir_lod1.glb"]) {
+      const bytes = await readFile(path.join(dir, "models", name));
+      expect(bytes.length).toBeLessThan(glb.length);
+      const output = await io().readBinary(bytes);
+      const image = output.getRoot().listTextures()[0]?.getImage();
+      assert.ok(image);
+      expect(image.length).toBeLessThan(jpeg.length);
+      expect(await sharp(image).ensureAlpha().raw().toBuffer()).toEqual(
+        await sharp(jpeg).ensureAlpha().raw().toBuffer(),
+      );
+      const { size: originalSize, ...originalMetadata } = await sharp(jpeg).metadata();
+      const { size: optimizedSize, ...optimizedMetadata } = await sharp(image).metadata();
+      expect(optimizedSize).toBeLessThan(originalSize ?? jpeg.length);
+      expect(optimizedMetadata).toEqual(originalMetadata);
+      const before = await io().writeJSON(doc);
+      const after = await io().writeJSON(output);
+      expect(after.json).toEqual(before.json);
+      assert.ok(before.resources["buffer.bin"]);
+      expect(after.resources["buffer.bin"]).toEqual(before.resources["buffer.bin"]);
+    }
+    const combined = await io().readBinary(cooked.worldGlb);
+    const combinedJpegs = combined
+      .getRoot()
+      .listTextures()
+      .filter((item) => item.getMimeType() === "image/jpeg");
+    expect(combinedJpegs.length).toBeGreaterThan(0);
+    for (const item of combinedJpegs) expect(item.getImage()).toEqual(new Uint8Array(jpeg));
+  });
+
+  it("preserves unsupported progressive JPEG bytes in streamed GLBs", async () => {
+    const sharp = (await import("sharp")).default;
+    const jpeg = await sharp({ create: { width: 16, height: 16, channels: 3, background: "red" } })
+      .jpeg({ progressive: true })
+      .toBuffer();
+    const doc = await io().readBinary(await simpleSpecies());
+    const texture = doc.createTexture().setImage(jpeg).setMimeType("image/jpeg");
+    doc.getRoot().listMaterials()[0]?.setBaseColorTexture(texture);
+    const glb = await io().writeBinary(doc);
+    await cookTerrainWorld({
+      state: evaluatedTerrain(),
+      species: { fir: { glb, lods: [{ distance: 45, glb }] } },
+      out: dir,
+    });
+    for (const name of ["fir.glb", "fir_lod1.glb"])
+      expect(new Uint8Array(await readFile(path.join(dir, "models", name)))).toEqual(glb);
+  });
+
+  it("fails with asset context for malformed streamed JPEGs before writing", async () => {
+    const sharp = (await import("sharp")).default;
+    const jpeg = await sharp({ create: { width: 16, height: 16, channels: 3, background: "red" } })
+      .jpeg({ optimiseCoding: false })
+      .toBuffer();
+    const doc = await io().readBinary(await simpleSpecies());
+    const texture = doc
+      .createTexture("broken JPEG")
+      .setImage(jpeg.subarray(0, jpeg.length - 100))
+      .setMimeType("image/jpeg");
+    doc.getRoot().listMaterials()[0]?.setBaseColorTexture(texture);
+    const glb = await io().writeBinary(doc);
+    await expect(
+      cookTerrainWorld({
+        state: evaluatedTerrain(),
+        species: { fir: { glb, lods: [{ distance: 45, glb }] } },
+        out: dir,
+      }),
+    ).rejects.toThrow(/fir\.glb.*broken JPEG/);
+    await expect(stat(path.join(dir, "world.glb"))).rejects.toThrow();
+  });
+
   it("writes explicit LOD files and authored bounds without changing them", async () => {
     const near = await simpleSpecies();
     const lod = await simpleSpecies();

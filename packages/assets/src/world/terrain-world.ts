@@ -237,6 +237,52 @@ async function parseSpecies(bytes: Uint8Array): Promise<Document> {
   return doc;
 }
 
+/** Optimize only streamed images; restore the document used to assemble the combined world. */
+async function optimizeStreamedJpegs(
+  bytes: Uint8Array,
+  loadedDocument: Document,
+  asset: string,
+): Promise<Uint8Array> {
+  const originals = new Map<ReturnType<Document["createTexture"]>, Uint8Array>();
+  try {
+    for (const texture of loadedDocument.getRoot().listTextures()) {
+      if (texture.getMimeType() !== "image/jpeg") continue;
+      const image = texture.getImage();
+      try {
+        if (image === null) throw new Error("JPEG has no image bytes");
+        const sharp = (await import("sharp")).default;
+        const decoder = sharp(image, { failOn: "warning" });
+        const metadata = await decoder.metadata();
+        await decoder.stats();
+        if (
+          metadata.isProgressive ||
+          metadata.space === "cmyk" ||
+          metadata.depth !== "uchar" ||
+          (metadata.bitsPerSample !== undefined && metadata.bitsPerSample !== 8)
+        )
+          continue;
+        const { optimize } = await import("jspeg");
+        const optimized = optimize(image, { strip: false });
+        if (optimized.byteLength < image.byteLength) {
+          originals.set(texture, image);
+          texture.setImage(optimized);
+        }
+      } catch (cause) {
+        throw new Error(`cookTerrainWorld: ${asset} texture '${texture.getName()}' JPEG failed.`, {
+          cause,
+        });
+      }
+    }
+    return originals.size === 0
+      ? bytes
+      : await new NodeIO()
+          .registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod])
+          .writeBinary(loadedDocument);
+  } finally {
+    for (const [texture, image] of originals) texture.setImage(image);
+  }
+}
+
 /**
  * Authored sibling LODs beside a path species: `<root>-mid.glb`, else `<root>-lod1.glb`, where
  * `<root>` drops one trailing detail marker (`-near`, `-lod1`, `-lod2`, …) from the file name.
@@ -498,6 +544,7 @@ export async function cookTerrainWorld(
       const lod0 = await resolveBytes(spec.glb);
       const nearDoc = await parseSpecies(lod0);
       assertInstancable(speciesId, nearDoc);
+      const streamedLod0 = await optimizeStreamedJpegs(lod0, nearDoc, `${speciesId}.glb`);
 
       // Authored LODs first: explicit `spec.lods`, then a sibling `-mid`/`-lod1` file beside a path
       // species. Only when neither exists does simplification invent a level.
@@ -535,6 +582,10 @@ export async function cookTerrainWorld(
         lods.push({ distance: 40, glb: bytes, filename: `${speciesId}_lod1.glb`, doc });
       }
 
+      // Optimize streamed bytes before adding the combined world's own index-only chain.
+      for (const level of lods)
+        level.glb = await optimizeStreamedJpegs(level.glb, level.doc, level.filename);
+
       // The combined world's near meshes need their own index-only chain; streamed files stay authored.
       await generateDiscreteLod(
         nearDoc,
@@ -555,7 +606,7 @@ export async function cookTerrainWorld(
         })),
         ...(spec.maxDistance === undefined ? {} : { maxDistance: spec.maxDistance }),
       };
-      return { speciesId, lod0, nearDoc, lods, asset };
+      return { speciesId, lod0: streamedLod0, nearDoc, lods, asset };
     });
     const prepared = await Promise.all(tasks);
     // Promise.all preserves source order; completion order must not change GLB or manifest bytes.

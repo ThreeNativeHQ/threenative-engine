@@ -37,6 +37,7 @@ import { chromium, type Page } from "playwright";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../src/index.js";
 import { HOST_PLAYTEST_OBSERVATION_FIELDS } from "../src/runner/observationFields.js";
 import { waitForStartupReady } from "../src/runner/startupReady.js";
+import { SCREENSHOT_TIMEOUT_MS } from "../src/runner/shared.js";
 
 const CONFIG: IStandalonePlaytestConfig = {
   artifactDirectory: "artifacts/playtest",
@@ -91,7 +92,7 @@ test("visual capture reads the largest canvas instead of composited page UI", as
   await expect(captureVisualSurface(page)).resolves.toEqual(Buffer.from("canvas"));
   expect(page.locator).toHaveBeenCalledWith("canvas");
   expect(nth).toHaveBeenCalledWith(1);
-  expect(screenshot).toHaveBeenCalledWith();
+  expect(screenshot).toHaveBeenCalledWith({ timeout: SCREENSHOT_TIMEOUT_MS });
   expect(page.screenshot).not.toHaveBeenCalled();
 });
 

@@ -1,7 +1,7 @@
 # PRD-614 — A terrain world's look and layout are edited in game source, without a rebake
 
 **Status:** IN PROGRESS
-**Priority:** P2 — AC-1 and AC-3 are open: a ground-table edit, and a move, removal or instanced addition of a generated prop, still need a full re-bake.
+**Priority:** P2 — AC-1 and AC-3 pass; default forest appearance proof (AC-2) remains open.
 **Complexity:** 7 (HIGH); risk override: none. Three packages (core, terrain, assets), five kits, the kit fixture and verifier, two conformance cases, one optional package file and three visual judges. `WorldCells` does not change.
 **Owner:** ThreeNative maintainers
 **Depends on:** None
@@ -335,7 +335,7 @@ This PRD has 3 phases and 12 countable boxes: 9 phase boxes and 3 acceptance box
 ## Blocked on
 
 - Forest AC-2: sealed baseline overview screenshot still times out after 120,000 ms with a quiet GPU; isolated ground/edge render p95 is 140.6/132.8 ms against 40 ms. No threshold changed.
-- Forest package budget: the new 166,764-byte ID sidecar puts the streamed package 63,139 bytes over its unchanged 25 MiB cap. The existing forest GLB pin also differs under preserved parent asset-cooker work. Draft delivery only; no merge or archive.
+- The package overrun is resolved by lossless streamed-image entropy optimization: fresh controlled forest output is 26,086,643 bytes, 127,757 below the unchanged 25 MiB cap. Working-tree forest GLB and splat golden mismatches remain under retained parent work; source pins are unchanged. Draft delivery only; no merge or archive.
 
 ## Integration Ledger
 
@@ -398,3 +398,25 @@ This PRD has 3 phases and 12 countable boxes: 9 phase boxes and 3 acceptance box
 - Parent independently passes 46 fixture/lifecycle tests, including strict generated default/edited source. Scoped Biome passes with five warnings. Four new headed NVIDIA Turing runs pass every original assertion and the unchanged render gate; all 16 source/published package hashes match earlier controls.
 - The existing opt-in `KIT_COMPOSITION_FAR=1` appends `composition-clear` (Digit6) after `composition-far`; original four views and far framing stay unchanged. Target is the actual original clear-circle center with the shared terrain height, identical in both arms. Frame/GPU p95 (ms), run 1 / run 2: default 1.6/1.46 / 1.1/1.51; edited 1.0/1.40 / 1.0/1.42.
 - Fresh read-only judge: IMPROVEMENT in both pairs; two original boulders visible before and absent after, surrounding terrain/light intact. [Published images and verdict](https://github.com/ThreeNativeHQ/threenative-engine/pull/483#issuecomment-6189081519). This closes the specifically missing clearing effect without changing a criterion.
+
+### Supporting capture repair plan — 2026-10-15
+
+The bounded forest watchdog diagnostic captures the canonical overview and records no device loss, but visual assertion sampling still fails in `captureVisualSurface`: its canvas locator uses Playwright’s 30-second default while page capture already has a 120-second policy. `--no-screenshots` cannot skip this required assertion capture. Repair the playtest layer by sharing the existing timeout policy between both capture paths, with a focused regression proving the locator receives it. Preserve every assertion, scenario timeout, renderer flag and render budget. After focused red/green and playtest build, run one bounded unchanged overview diagnostic; no repeated same-cause retries. Forest AC-2 remains unchecked until all poses/two arms/two runs have full evidence.
+
+Lossless package investigation measured 81,076 bytes recoverable from the two fir-c streamed GLBs using local JPEG coefficient entropy optimization, with identical decoded RGBA, semantic JSON and non-image bytes. That would put the package 17,937 bytes under its cap, but no such optimizer ships in the current dependencies. The inspected native wrapper lacks Linux ARM prebuilt support and can require a source toolchain. No optimizer dependency, source asset pin, ID schema, payload or cap has changed; this is a candidate, not qualified output.
+
+Capture repair result: focused red/green passed (15 tests), manager reran the complete runner suite (87/87) and rebuilt/publinted playtest successfully. The next bounded forest run stopped earlier at Bridge operation 'sample' exceeded 15000ms; diagnostics were not evaluated and no canonical image was produced. The shared screenshot timeout fix is unit-verified; it does not prove the forest runtime or AC-2. No further identical GPU retry.
+
+### Supporting package repair plan
+
+A scratch probe of a pinned pure-JavaScript coefficient optimizer (Alpaq92/JsPeg commit a816a3999a6fa87a2b5f0ca86d17303a21a556f5, MIT) saved 81,360 bytes across the two fir-c outputs. All ten JPEG decoded RGBA hashes, quantization tables, APP/COM metadata, non-image buffers, material/accessor bindings and semantic JSON matched. Corrected projected streamed size excludes the alternative 20,976,440-byte combined GLB: 26,196,179 bytes, 18,221 below the unchanged cap. The probe's reported 47,172,619-byte stream included the combined GLB and is not the streamed budget.
+
+Before shipping, declare a pinned portable dependency in the assets package/catalog, provide its narrow type declaration, and reuse the existing NodeIO image/write path for lossless Huffman optimization of authored streamed GLBs. Preserve metadata; retain original bytes whenever optimization is unsupported or not smaller, while malformed input still fails. Do not special-case fir-c, change source asset pins, IDs, geometry, material values, a render feature or any budget. Focused tests must prove decoded-image/geometry/metadata identity and unsupported/malformed behavior; the existing starter-kit cap must pass with a fresh controlled bake. This is a reversible AFK implementation choice, not a qualified-output claim. The codec is young and pinned; no native binary, install script or source compilation may be required.
+
+### Supporting repairs verified — 2026-10-15
+
+- Fresh controlled forest bake passes the unchanged streamed cap: 26,086,643 bytes / 26,214,400 bytes, margin 127,757. All six streamed models save 190,896 bytes; all 30 decoded JPEG RGBA hashes, dimensions, quantization tables, APP/COM metadata, non-image buffers, material/accessor bindings and semantic JSON match the old output. Original source buffers remain unchanged. Combined GLB, heightmap, placements, IDs, splat and manifest SHA256 values match the unoptimized control exactly.
+- The pinned MIT pure-JavaScript codec ships through the assets dependency catalog and integrity-pinned lockfile; no native binary, build toolchain or install script is required. Packed dependency URL check passes. Laptop Node 20.19.6 frozen install and 34 cooker tests pass; independent desktop cooker/runner/fixture verification passes 164 tests. Root typecheck, lint and docs pass (1,487 lint warnings; 3,133 links / 1,376 Markdown files).
+- All-five-kit starter suite remains 17 passes / two forest golden failures. The package cap now passes; the uncovered forest splat mismatch and retained combined-GLB mismatch are not updated to fake green. Controlled clean-HEAD input bake retains both pre-optimizer payload hashes; optimizer changes only the six streamed GLB encodings.
+- Capture timeout repair uses the existing shared 120-second policy for required canvas sampling, with red/green regression and 87 runner tests passing. Its bounded GPU rerun stops earlier at bridge sample 15 seconds, with required diagnostics not evaluated. Forest AC-2 remains open, and no further identical GPU run is started.
+- No complete board, complete PRD or merge claim. The young codec is pinned and independently checked on actual output; its provenance and the precommit review-precondition exception remain visible for parent delivery.
