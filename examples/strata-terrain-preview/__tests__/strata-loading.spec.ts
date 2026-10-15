@@ -679,6 +679,7 @@ it("the edited alpine stand anchors on the moved ID rather than the nearest orig
     COLLIDERS: { boulder: { sphere: 0.9 } },
     forestStand: undefined,
     proofFarTarget: null,
+    proofClearTarget: null,
     composition: {
       anchorId: "moved",
       referencePlacements: [0, 0, 0, 0, 0, 0, 1, 1, 18, 0, 0, 0, 0, 0, 1, 1],
@@ -759,7 +760,7 @@ it("alpine composition uses actual sidecar IDs and leaves every package byte unc
     // Typecheck both generated modules against the installed terrain types without writing a game.
     for (const composition of [undefined, arm]) {
       const filename = new URL("../scripts/virtual-composition.ts", import.meta.url).pathname;
-      const generated = compositionSource(composition, arm.proofFarTarget);
+      const generated = compositionSource(composition, arm.proofFarTarget, arm.clear.center);
       const options = {
         strict: true,
         noEmit: true,
@@ -941,19 +942,26 @@ it("composition far proof shares the original target without default composition
   const verifierUrl = new URL("../scripts/verify-starter-kit.mjs", import.meta.url).href;
   const { compositionSource } = await import(verifierUrl);
   const target = [31, 22, -47];
+  const clearTarget = [-53, 19];
   for (const composition of [
     undefined,
-    { proofFarTarget: target, promotedAt: [5, -1], edits: {} },
+    {
+      proofFarTarget: target,
+      clear: { center: clearTarget, radius: 12 },
+      promotedAt: [5, -1],
+      edits: {},
+    },
   ]) {
     const scope = { exports: {} as Record<string, unknown> };
     runInNewContext(
-      ts.transpile(compositionSource(composition, target), {
+      ts.transpile(compositionSource(composition, target, clearTarget), {
         target: ts.ScriptTarget.ES2022,
         module: ts.ModuleKind.CommonJS,
       }),
       scope,
     );
     expect(scope.exports.proofFarTarget).toEqual(target);
+    expect(scope.exports.proofClearTarget).toEqual(clearTarget);
     expect(scope.exports.composition).toEqual(composition ?? null);
     expect(scope.exports.edits).toEqual(composition?.edits);
   }
@@ -988,7 +996,7 @@ it("composition far pose centers the original record at 90 metres without changi
   expect(view.at.y - view.look.y).toBe(54);
 });
 
-it("composition far scenario appends Digit5 and all view metrics while retaining existing gates", async () => {
+it("composition far scenario appends Digit5 and Digit6 with all view metrics while retaining existing gates", async () => {
   const verifierUrl = new URL("../scripts/verify-starter-kit.mjs", import.meta.url).href;
   const { appendCompositionFarScenario } = await import(verifierUrl);
   const original = JSON.parse(
@@ -1009,6 +1017,20 @@ it("composition far scenario appends Digit5 and all view metrics while retaining
       release: true,
       screenshot: "composition-far",
     },
+    {
+      kind: "input",
+      label: "composition-clear-view",
+      press: "Digit6",
+      holdTicks: 2,
+      release: true,
+    },
+    {
+      kind: "wait",
+      label: "composition-clear",
+      waitTicks: 150,
+      release: true,
+      screenshot: "composition-clear",
+    },
   ]);
   expect(scenario.assert.resources.slice(0, original.assert.resources.length)).toEqual(
     original.assert.resources,
@@ -1021,7 +1043,59 @@ it("composition far scenario appends Digit5 and all view metrics while retaining
     ["viewGpuP50.composition-far", 0],
     ["viewGpuP95.composition-far", 0],
     ["viewFrameP95.composition-far", 0],
+    ["viewGpuP50.composition-clear", 0],
+    ["viewGpuP95.composition-clear", 0],
+    ["viewFrameP95.composition-clear", 0],
   ]);
   expect(scenario.assert.performance).toEqual(original.assert.performance);
   expect(scenario.assert.performance.maxPhaseMsP95.render).toBe(40);
+});
+
+it("composition clear pose centers the shared circle on the heightfield at 30 metres", () => {
+  const text = readFileSync(
+    new URL("../scripts/fixtures/kit-game/KitScene.ts", import.meta.url),
+    "utf8",
+  );
+  const source = ts.createSourceFile("KitScene.ts", text, ts.ScriptTarget.Latest, true);
+  const declaration = source.statements.find(
+    (node) => ts.isFunctionDeclaration(node) && node.name?.text === "compositionClearView",
+  );
+  expect(declaration).toBeDefined();
+  const scope = {
+    exports: {} as {
+      compositionClearView(
+        target: number[],
+        field: { heightAt(x: number, z: number): number },
+      ): { at: Vector3; look: Vector3 };
+    },
+    Vector3,
+  };
+  runInNewContext(
+    ts.transpile(declaration?.getText(source) ?? "", {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.CommonJS,
+    }),
+    scope,
+  );
+  const heightAt = vi.fn((x: number, z: number) => x / 2 + z);
+  for (const target of [
+    [31, -47],
+    [-53, 19],
+  ]) {
+    const view = scope.exports.compositionClearView(target, { heightAt });
+    expect(heightAt).toHaveBeenLastCalledWith(...target);
+    expect(view.look.toArray()).toEqual([target[0], target[0] / 2 + target[1], target[1]]);
+    expect(view.at.distanceTo(view.look)).toBeCloseTo(30);
+    expect(view.at.y - view.look.y).toBe(24);
+  }
+  expect(text).toContain('if (proofClearTarget) VIEW_NAMES.push("composition-clear")');
+  expect(text).toContain('"composition-clear": compositionClearView(proofClearTarget, kit.field)');
+  const verifier = readFileSync(
+    new URL("../scripts/verify-starter-kit.mjs", import.meta.url),
+    "utf8",
+  );
+  expect(verifier).toContain('CONFIG.views.push("composition-far", "composition-clear")');
+  expect(verifier).toContain('CONFIG.captures.push("composition-far", "composition-clear")');
+  expect(verifier).toContain('"composition-clear": { keys: ["Digit6"] }');
+  expect(verifier).toContain("COMPOSITION_FAR ? alpine.clear.center : null");
 });

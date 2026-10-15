@@ -106,8 +106,8 @@ const CONFIG = KITS[KIT];
 const COMPOSITION_FAR = process.env.KIT_COMPOSITION_FAR === "1";
 if (COMPOSITION_FAR) {
   assert.equal(KIT, "alpine", "KIT_COMPOSITION_FAR requires the alpine kit");
-  CONFIG.views.push("composition-far");
-  CONFIG.captures.push("composition-far");
+  CONFIG.views.push("composition-far", "composition-clear");
+  CONFIG.captures.push("composition-far", "composition-clear");
 }
 
 const say = (line) => process.stderr.write(`${line}\n`);
@@ -396,29 +396,37 @@ export function alpineComposition(world) {
   };
 }
 
-export function compositionSource(composition, proofFarTarget = null) {
-  return `import type { IWorldPlacementEdits } from "@threenative/terrain/starter";\nexport const composition: { referencePlacements: readonly number[]; anchorId: string; promotedId: string; proofFarTarget: readonly [number, number, number]; clearedIds: readonly string[]; clear: { center: readonly [number, number]; radius: number }; promotedAt: readonly [number, number]; edits: IWorldPlacementEdits } | null = ${JSON.stringify(composition ?? null)};\nexport const proofFarTarget: readonly [number, number, number] | null = ${JSON.stringify(proofFarTarget)};\nexport const edits: IWorldPlacementEdits | undefined = ${composition ? "composition.edits" : "undefined"};\n`;
+export function compositionSource(composition, proofFarTarget = null, proofClearTarget = null) {
+  return `import type { IWorldPlacementEdits } from "@threenative/terrain/starter";\nexport const composition: { referencePlacements: readonly number[]; anchorId: string; promotedId: string; proofFarTarget: readonly [number, number, number]; clearedIds: readonly string[]; clear: { center: readonly [number, number]; radius: number }; promotedAt: readonly [number, number]; edits: IWorldPlacementEdits } | null = ${JSON.stringify(composition ?? null)};\nexport const proofFarTarget: readonly [number, number, number] | null = ${JSON.stringify(proofFarTarget)};\nexport const proofClearTarget: readonly [number, number] | null = ${JSON.stringify(proofClearTarget)};\nexport const edits: IWorldPlacementEdits | undefined = ${composition ? "composition.edits" : "undefined"};\n`;
 }
 
 /** Append proof framing without replacing any original view, gate or frame budget. */
 export function appendCompositionFarScenario(scenario) {
-  scenario.steps.push(
-    { kind: "input", label: "composition-far-view", press: "Digit5", holdTicks: 2, release: true },
-    {
-      kind: "wait",
-      label: "composition-far",
-      waitTicks: 150,
-      release: true,
-      screenshot: "composition-far",
-    },
-  );
-  for (const metric of ["viewGpuP50", "viewGpuP95", "viewFrameP95"])
-    scenario.assert.resources.push({
-      id: "GameState",
-      path: `${metric}.composition-far`,
-      gte: 0,
-      allowTrivial: "Presence row: an unmeasured view reads -1 and fails.",
-    });
+  for (const [index, view] of ["composition-far", "composition-clear"].entries()) {
+    scenario.steps.push(
+      {
+        kind: "input",
+        label: `${view}-view`,
+        press: `Digit${index + 5}`,
+        holdTicks: 2,
+        release: true,
+      },
+      {
+        kind: "wait",
+        label: view,
+        waitTicks: 150,
+        release: true,
+        screenshot: view,
+      },
+    );
+    for (const metric of ["viewGpuP50", "viewGpuP95", "viewFrameP95"])
+      scenario.assert.resources.push({
+        id: "GameState",
+        path: `${metric}.${view}`,
+        gte: 0,
+        allowTrivial: "Presence row: an unmeasured view reads -1 and fails.",
+      });
+  }
 }
 
 async function main() {
@@ -571,7 +579,11 @@ export const stand = {
   const composition = ARM === "edited" ? alpine : undefined;
   writeFileSync(
     join(game, "src/terrain/composition.ts"),
-    compositionSource(composition, COMPOSITION_FAR ? alpine.proofFarTarget : null),
+    compositionSource(
+      composition,
+      COMPOSITION_FAR ? alpine.proofFarTarget : null,
+      COMPOSITION_FAR ? alpine.clear.center : null,
+    ),
   );
   if (COMPOSITION_FAR) {
     const gameSource = join(game, "src/game.ts");
@@ -579,7 +591,7 @@ export const stand = {
       gameSource,
       readFileSync(gameSource, "utf8").replace(
         "input: {",
-        'input: {\n    "composition-far": { keys: ["Digit5"] },',
+        'input: {\n    "composition-far": { keys: ["Digit5"] },\n    "composition-clear": { keys: ["Digit6"] },',
       ),
     );
     const scenarioPath = join(game, "playtests/kit.playtest.json");

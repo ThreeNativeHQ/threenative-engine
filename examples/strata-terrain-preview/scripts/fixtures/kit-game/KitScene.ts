@@ -25,7 +25,7 @@ import {
   kitDaylight,
 } from "../terrain/kit.js";
 
-import { composition, proofFarTarget } from "../terrain/composition.js";
+import { composition, proofClearTarget, proofFarTarget } from "../terrain/composition.js";
 
 type Ctx = ICtx<GameState, IPhysicsContext>;
 type Field = IKitWorld["field"];
@@ -50,6 +50,7 @@ const VIEW_NAMES =
     ? ["ground", "edge", "overview", "lake"]
     : ["boulders", "edge", "ground", "overview"];
 if (proofFarTarget) VIEW_NAMES.push("composition-far");
+if (proofClearTarget) VIEW_NAMES.push("composition-clear");
 type ViewName = string;
 
 interface IPoint {
@@ -72,6 +73,13 @@ interface IView {
 export function compositionFarView(target: readonly [number, number, number]): IView {
   const look = new Vector3(...target).add(new Vector3(0, 1, 0));
   return { at: look.clone().add(new Vector3(72, 54, 0)), look };
+}
+
+/** Same original clearing in both arms, framed from 30 m above and beside its terrain. */
+export function compositionClearView(target: readonly [number, number], field: Field): IView {
+  const [x, z] = target;
+  const look = new Vector3(x, field.heightAt(x, z), z);
+  return { at: look.clone().add(new Vector3(18, 24, 0)), look };
 }
 
 /** Where the scene stands, looks and drives, all read from the loaded world. */
@@ -485,6 +493,14 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
         stand = {
           ...stand,
           views: { ...stand.views, "composition-far": compositionFarView(proofFarTarget) },
+        };
+      if (proofClearTarget)
+        stand = {
+          ...stand,
+          views: {
+            ...stand.views,
+            "composition-clear": compositionClearView(proofClearTarget, kit.field),
+          },
         };
     } catch (error) {
       this.#fail(ctx, error instanceof Error ? error.message : String(error));
