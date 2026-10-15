@@ -99,14 +99,15 @@ export function installStartupProof(
   let visibleWorldFrame = 0;
   const unregister = ctx.beforeRender(() => {
     const proofHost = globalThis as Record<string, unknown>;
+    const census = runtime.pipelineCensus?.();
 
-    if (!firstWorldDrawObserved) {
+    if (!firstWorldDrawObserved && census?.warmUpSettled !== undefined) {
       firstWorldDrawObserved = true;
       const previousFrameBudget = runtime.runtimeDiagnosticsSeries?.().at(-1);
       const previousPhases = previousFrameBudget?.phases;
       const firstWorldReady = proofHost.__TN_STARTUP_READY__ === true;
       const firstWorldTick = runtime.tick();
-      const censusBeforeDraw = runtime.pipelineCensus?.();
+      const censusBeforeDraw = census;
       queueMicrotask(() =>
         publishFirstWorldCpu(
           proofHost,
