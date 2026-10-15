@@ -91,7 +91,7 @@ bool PipelineCache::IdKey::operator==(const IdKey& o) const {
            fragmentSize == o.fragmentSize && target.color == o.target.color &&
            target.depth == o.target.depth && target.sampleCount == o.target.sampleCount &&
            target.cull == o.target.cull && target.blend == o.target.blend &&
-           target.depthWrite == o.target.depthWrite && target.layout == o.target.layout &&
+           target.depthWrite == o.target.depthWrite && target.colorWrite == o.target.colorWrite && target.layout == o.target.layout &&
            target.skinIndex == o.target.skinIndex && target.frontFace == o.target.frontFace &&
            target.depthCompare == o.target.depthCompare && target.depthBias == o.target.depthBias &&
            target.depthBiasSlopeScale == o.target.depthBiasSlopeScale && target.instanceStepMask == o.target.instanceStepMask &&
@@ -119,7 +119,7 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     mix(uint64_t(key.vertexSize) ^ uint64_t(key.fragmentSize) << 32);
     mix(uint64_t(key.target.color) | uint64_t(key.target.depth) << 32 ^ uint64_t(key.target.sampleCount) << 48);
     mix(uint64_t(key.target.cull) | uint64_t(key.target.frontFace) << 8 | uint64_t(key.target.depthCompare) << 16 |
-        uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 58);
+        uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 58 | uint64_t(key.target.colorWrite) << 59);
     mix(reinterpret_cast<uintptr_t>(key.target.layout));
     mix(uint64_t(uint32_t(key.target.depthBias)) | uint64_t(std::bit_cast<uint32_t>(key.target.depthBiasSlopeScale)) << 32);
     mix(key.target.instanceStepMask);
@@ -139,7 +139,7 @@ std::string PipelineCache::textKey(const shader::StageModule& vertex, const shad
     key += '\x1f';
     if (fragment) key += fragment->wgsl.code;
     key += '\x1f' + std::to_string(target.color) + ':' + std::to_string(target.depth) + ':' + std::to_string(target.sampleCount) + ':' +
-           std::to_string(target.cull) + ':' + std::to_string(target.blend) + ':' + std::to_string(target.depthWrite) +
+           std::to_string(target.cull) + ':' + std::to_string(target.blend) + ':' + std::to_string(target.depthWrite) + std::to_string(target.colorWrite) +
            ':' + std::to_string(reinterpret_cast<uintptr_t>(target.layout)) + ':' + std::to_string(target.skinIndex) +
            ':' + std::to_string(target.frontFace) + ':' + std::to_string(target.depthCompare) + ':' +
            std::to_string(target.depthBias) + ':' + std::to_string(std::bit_cast<uint32_t>(target.depthBiasSlopeScale)) +
@@ -293,7 +293,7 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     if (target.depth != WGPUTextureFormat_Undefined) desc.depthStencil = &depth;
     WGPUColorTargetState color = {};
     color.format = target.color;
-    color.writeMask = WGPUColorWriteMask_All;
+    color.writeMask = target.colorWrite ? WGPUColorWriteMask_All : WGPUColorWriteMask_None;
     // WebGPUPipelineUtils._getBlending without premultiplied alpha: NormalBlending, or AdditiveBlending;
     // 3 is premultiplied "over", a UI overlay's frame whose colour already carries its alpha.
     const WGPUBlendFactor dst = target.blend == 2 ? WGPUBlendFactor_One : WGPUBlendFactor_OneMinusSrcAlpha;

@@ -2280,7 +2280,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const auto drawTargetKey = [&](const DrawItem& item, const shader::StageModule& vertex) {
         uint64_t h = 0xcbf29ce484222325ull;
         const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
-        mix(item.side); mix(item.blending); mix(item.transparent); mix(item.depthWrite);
+        mix(item.side); mix(item.blending); mix(item.transparent); mix(item.depthWrite); mix(item.colorWrite);
         mix(item.depthBias); mix(std::bit_cast<uint32_t>(item.depthBiasSlopeScale));
         mix(item.background); mix(item.frontFace() == WGPUFrontFace_CW);
         mix(static_cast<uint64_t>(item.topology));
@@ -2333,6 +2333,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const uint8_t blend = item.blending == 0 || (item.blending == 1 && !item.transparent) ? 0 : item.blending;
         PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, cull, blend,
                               item.depthWrite};
+        target.colorWrite = item.colorWrite;
         target.sampleCount = sampleCount_;
         target.layout = program.pipelineLayout;
         if (item.background) target.depthCompare = WGPUCompareFunction_Always;
@@ -2629,6 +2630,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                     item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
                 target.layout = draw.program->pipelineLayout; target.depthWrite = false;
+                target.colorWrite = item.colorWrite;
                 target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
                 target.skinIndex = skinIndexFormat(item);
                 target.instanceStepMask = instanceStepMask(draw.program->vertex, item);

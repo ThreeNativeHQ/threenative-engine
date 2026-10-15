@@ -144,6 +144,7 @@ void registerMaterialBase(ClassBinding& b) {
     materialBool(b, "transparent", &Material::transparent);
     materialBool(b, "depthTest", &Material::depthTest);
     materialBool(b, "depthWrite", &Material::depthWrite);
+    materialBool(b, "colorWrite", &Material::colorWrite);
     materialBool(b, "forceSinglePass", &Material::forceSinglePass);
     materialBool(b, "vertexColors", &Material::vertexColors);
     materialBool(b, "polygonOffset", &Material::polygonOffset);
