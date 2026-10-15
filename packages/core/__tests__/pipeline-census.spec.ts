@@ -1,3 +1,4 @@
+import { BoxGeometry, Mesh, MeshBasicMaterial } from "three";
 import { describe, expect, it } from "vitest";
 import {
   type IPipelineCensus,
@@ -488,6 +489,7 @@ describe("pipeline census", () => {
     };
     const raw = {
       backend,
+      _nodes: { getForRender: (_renderObject: unknown) => ({}) },
       renderObject: (...args: unknown[]) => {
         backend.createRenderPipeline?.(
           args[0] as Record<string, unknown>,
@@ -566,12 +568,15 @@ describe("pipeline census", () => {
   it("counts distinct node-builder states on each side of the warm-up boundary", () => {
     let now = 0;
     const { backend, pipelines } = webgpuStub();
+    const nodes = {
+      getForRender: (renderObject: Record<string, unknown>) => renderObject.nodeBuilderState,
+    };
     const raw = {
       backend,
+      _nodes: nodes,
       renderObject: (...args: unknown[]) => {
         const object = args[0] as Record<string, unknown>;
-        const getNodeBuilderState = object.getNodeBuilderState;
-        if (typeof getNodeBuilderState === "function") getNodeBuilderState();
+        nodes.getForRender(object);
         pipelines.getForRender(object, args[1]);
       },
     };
@@ -588,7 +593,7 @@ describe("pipeline census", () => {
         { id: 1 },
         { id: 2 },
       ),
-      getNodeBuilderState: () => firstState,
+      nodeBuilderState: firstState,
     };
     raw.renderObject(first, null);
     census.warmUpSettled();
@@ -604,12 +609,12 @@ describe("pipeline census", () => {
         { id: 3 },
         { id: 4 },
       ),
-      getNodeBuilderState: () => secondState,
+      nodeBuilderState: secondState,
     };
     raw.renderObject(second, null);
     census.warmUpScopeSettled("chunk:0");
     now += 1;
-    raw.renderObject({ ...second, getNodeBuilderState: () => secondState }, null);
+    raw.renderObject(second, null);
 
     const report = census.snapshot();
     expect(report.counts.nodeBuilds).toBe(2);
@@ -632,6 +637,68 @@ describe("pipeline census", () => {
       { nodeBuilds: 1, beforeWarmUpSettled: false },
       { nodeBuilds: 0, beforeWarmUpSettled: false, afterWarmUpScope: "chunk:0" },
     ]);
+  });
+
+  it("observes the renderer-owned node seam for a real Mesh instead of patching the Mesh", () => {
+    const { backend } = webgpuStub();
+    const geometry = new BoxGeometry();
+    const material = new MeshBasicMaterial();
+    const mesh = new Mesh(geometry, material);
+    const state = {};
+    const internalRenderObject = {
+      object: mesh,
+      material,
+      pipeline: {
+        vertexProgram: { code: source("mesh vertex") },
+        fragmentProgram: { code: source("mesh fragment") },
+      },
+    };
+    const originalGetForRender = (_renderObject: unknown): object => state;
+    const nodes = { getForRender: originalGetForRender };
+    const originalRenderObject = (..._args: unknown[]): void => {
+      nodes.getForRender(internalRenderObject);
+      backend.createRenderPipeline?.(internalRenderObject, null);
+    };
+    const raw = { backend, _nodes: nodes, renderObject: originalRenderObject };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+
+    raw.renderObject(mesh, {}, {}, geometry, material, null, null, null, "main");
+
+    const report = census.snapshot();
+    expect(report.complete).toBe(true);
+    expect(report.counts.nodeBuilds).toBe(1);
+    expect(report.events[0]?.nodeBuilds).toBe(1);
+    expect(mesh.getNodeBuilderState).toBeUndefined();
+
+    census.dispose();
+    expect(nodes.getForRender).toBe(originalGetForRender);
+    expect(raw.renderObject).toBe(originalRenderObject);
+    geometry.dispose();
+    material.dispose();
+  });
+
+  it("fails closed when the renderer-owned node seam cannot be installed", () => {
+    const { backend } = webgpuStub();
+    const raw = {
+      backend,
+      _nodes: {},
+      renderObject: (...args: unknown[]) => backend.createRenderPipeline?.(...args),
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+    raw.renderObject(
+      renderObject(
+        { vertexProgram: { code: source("v") }, fragmentProgram: { code: source("f") } },
+        {},
+        {},
+      ),
+      null,
+    );
+
+    const report = census.snapshot();
+    expect(report.complete).toBe(false);
+    expect(report.incompleteReasons).toContain("node builder observation unavailable");
   });
 
   it("rejects completeness when creation observation is missing or bounded out", () => {

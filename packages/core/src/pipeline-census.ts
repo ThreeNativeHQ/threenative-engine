@@ -161,7 +161,6 @@ interface IRenderObjectLike {
   readonly context?: unknown;
   readonly scene?: unknown;
   readonly passId?: unknown;
-  readonly getNodeBuilderState?: () => unknown;
 }
 
 interface IProgramLike {
@@ -252,7 +251,15 @@ interface IInstalledBackend {
 
 interface IRendererHookTarget {
   backend?: unknown;
+  /** Three's renderer-owned node manager; absent on the WebGL2 renderer. */
+  _nodes?: unknown;
   renderObject?: (...args: unknown[]) => unknown;
+}
+
+interface INodeBuilderObservation {
+  readonly state: object;
+  builds: number;
+  reported: boolean;
 }
 
 /**
@@ -289,6 +296,8 @@ export class PipelineCensus {
   readonly #observations = new WeakMap<object, IPipelineShaderObservation>();
   /** Distinct node-builder states, so a repeated render-object lookup is not a graph rebuild. */
   readonly #nodeBuilderStates = new WeakSet<object>();
+  /** Pending state-build counts keyed by Three's internal RenderObject for async compilation. */
+  readonly #nodeBuilderObservations = new WeakMap<object, INodeBuilderObservation>();
   /** Device methods that exist but refused their hook, so their creations were never seen. */
   readonly #deviceRefusals = new Set<string>();
   #activeRenderObject: IActiveRenderObject | undefined;
@@ -502,6 +511,7 @@ export class PipelineCensus {
   installRenderer(renderer: IRendererHookTarget): void {
     if (this.#cleanup !== undefined) return;
     const restoreBackend = this.install(renderer.backend);
+    const restoreNodeBuilder = this.#installNodeBuilderObservation(renderer);
     const originalRenderObject = renderer.renderObject;
     let wrappedRenderObject: ((...args: unknown[]) => unknown) | undefined;
     if (originalRenderObject !== undefined) {
@@ -512,6 +522,7 @@ export class PipelineCensus {
       renderer.renderObject = wrappedRenderObject;
     }
     this.#cleanup = () => {
+      restoreNodeBuilder();
       if (wrappedRenderObject !== undefined && renderer.renderObject === wrappedRenderObject)
         renderer.renderObject = originalRenderObject;
       restoreBackend();
@@ -535,46 +546,85 @@ export class PipelineCensus {
       nodeBuilds: 0,
     };
     this.#activeRenderObject = active;
-    const renderObject = isObject(args[0]) ? args[0] : undefined;
-    const originalGetNodeBuilderState = renderObject?.getNodeBuilderState;
-    let restoreNodeBuilderState = (): void => undefined;
-    if (renderObject !== undefined && typeof originalGetNodeBuilderState === "function") {
-      const ownDescriptor = Object.getOwnPropertyDescriptor(renderObject, "getNodeBuilderState");
-      const census = this;
-      try {
-        Object.defineProperty(renderObject, "getNodeBuilderState", {
-          configurable: true,
-          enumerable: ownDescriptor?.enumerable ?? false,
-          value: function (this: unknown, ...methodArgs: unknown[]): unknown {
-            const state = originalGetNodeBuilderState.apply(this, methodArgs);
-            if (isObject(state) && !census.#nodeBuilderStates.has(state)) {
-              census.#nodeBuilderStates.add(state);
-              census.#nodeBuilds += 1;
-              active.nodeBuilds += 1;
-            }
-            return state;
-          },
-          writable: true,
-        });
-        restoreNodeBuilderState = (): void => {
-          if (ownDescriptor === undefined)
-            Reflect.deleteProperty(renderObject, "getNodeBuilderState");
-          else Object.defineProperty(renderObject, "getNodeBuilderState", ownDescriptor);
-        };
-      } catch {
-        this.#nodeBuilderObservationUnavailable = true;
-      }
-    }
     try {
       return callback();
     } finally {
-      try {
-        restoreNodeBuilderState();
-      } catch {
-        this.#nodeBuilderObservationUnavailable = true;
-      }
       this.#activeRenderObject = previous;
     }
+  }
+
+  /** Observe state creation at Three's renderer-owned NodeManager seam, never on the game Mesh. */
+  #installNodeBuilderObservation(renderer: IRendererHookTarget): () => void {
+    if (this.#kind !== "webgpu" || renderer.renderObject === undefined) return () => undefined;
+    if (!isObject(renderer._nodes)) {
+      this.#nodeBuilderObservationUnavailable = true;
+      return () => undefined;
+    }
+    const nodes = renderer._nodes;
+    const original = nodes.getForRender;
+    if (typeof original !== "function") {
+      this.#nodeBuilderObservationUnavailable = true;
+      return () => undefined;
+    }
+    const census = this;
+    const restore: (() => void)[] = [];
+    const installed = this.#patchMethod(
+      nodes,
+      "getForRender",
+      (method) =>
+        function (this: unknown, ...args: unknown[]): unknown {
+          const result = method.apply(this, args);
+          return census.#observeNodeBuilderResult(args[0], result);
+        },
+      restore,
+    );
+    if (!installed) {
+      this.#nodeBuilderObservationUnavailable = true;
+      return () => undefined;
+    }
+    return () => {
+      for (const undo of restore.splice(0).reverse()) undo();
+    };
+  }
+
+  #observeNodeBuilderResult(renderObjectValue: unknown, result: unknown): unknown {
+    if (isPromiseLike(result)) {
+      return result.then((state: unknown) => {
+        this.#recordNodeBuilderState(renderObjectValue, state);
+        return state;
+      });
+    }
+    this.#recordNodeBuilderState(renderObjectValue, result);
+    return result;
+  }
+
+  #recordNodeBuilderState(renderObjectValue: unknown, state: unknown): void {
+    if (!isObject(renderObjectValue) || !isObject(state)) {
+      this.#nodeBuilderObservationUnavailable = true;
+      return;
+    }
+    if (this.#nodeBuilderStates.has(state)) return;
+    this.#nodeBuilderStates.add(state);
+    this.#nodeBuilds += 1;
+    const previous = this.#nodeBuilderObservations.get(renderObjectValue);
+    const observation: INodeBuilderObservation =
+      previous === undefined || previous.state !== state
+        ? {
+            state,
+            builds: (previous?.builds ?? 0) + 1,
+            reported: false,
+          }
+        : previous;
+    this.#nodeBuilderObservations.set(renderObjectValue, observation);
+    if (this.#activeRenderObject !== undefined) this.#activeRenderObject.nodeBuilds += 1;
+  }
+
+  #nodeBuildsFor(renderObjectValue: IRenderObjectLike | undefined): number {
+    if (!isObject(renderObjectValue)) return this.#activeRenderObject?.nodeBuilds ?? 0;
+    const observation = this.#nodeBuilderObservations.get(renderObjectValue);
+    if (observation === undefined || observation.reported) return 0;
+    observation.reported = true;
+    return observation.builds;
   }
 
   /** Mark the first renderer render call as the first-present boundary. */
@@ -944,7 +994,7 @@ export class PipelineCensus {
       ...(input.compute === undefined ? {} : { compute: input.compute }),
       ...(input.label === undefined ? {} : { label: input.label }),
       ...(input.kind === "render" && input.direct !== true
-        ? { nodeBuilds: this.#activeRenderObject?.nodeBuilds ?? 0 }
+        ? { nodeBuilds: this.#nodeBuildsFor(input.renderObject) }
         : {}),
       startedMs: this.#clock(),
       backendPipeline: input.pipeline,
