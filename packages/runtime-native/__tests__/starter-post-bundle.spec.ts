@@ -2,8 +2,6 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-// The production bundler is JavaScript and has no declaration file.
-// @ts-expect-error -- native engine bundler is an executable module.
 import { bundleNativeEngine } from "../scripts/bundle-native-engine.mjs";
 
 const directories: string[] = [];
