@@ -1,10 +1,10 @@
 # PRD-617 — Every template runs on the native engine
 
 **Status:** NOT STARTED
-**Priority:** P1 — v1 makes the native engine the default, but AC-1 to AC-7 are open: 11 of 13 templates, the starter among them, still pin `engine: "legacy"`.
+**Priority:** P0 — the owner blocks the v1 release until AC-1 to AC-7 pass (Decisions, 2026-10-15); 11 of 13 templates, the starter among them, still pin `engine: "legacy"`.
 **Complexity:** 4 (MEDIUM)
 **Owner:** João
-**Depends on:** PRD-573 (PR #493: native default, the eleven `legacy` pins, the pin ratchet test, the CI engine artifact builds)
+**Depends on:** PRD-573 (PR #493 carries this work: native default, the `legacy` pins, the pin ratchet test, the CI engine artifact builds)
 
 ## Context
 
@@ -88,6 +88,15 @@ AC-1 to AC-4 sit under Phase 1 and AC-5 to AC-7 under Phase 2, each with its pro
 | TSL names on the native graph | Template TSL code → native graph binding | Named refusal in `unboundDiagnostic()` stays only for names that remain unbound | AC-1, AC-5 |
 | Runtime members on the V8 player | Template code → V8 bindings (`flatShading`, `computeBoundingSphere`, `updateRanges`) | Runtime failure deleted | AC-5, AC-6 |
 | Native default for every template | `threenative.config.ts` without `engine` | The eleven `engine: "legacy"` pins are deleted | AC-1, AC-5 (ratchet test) |
+
+## Decisions
+
+- 2026-10-15 (João): "We're not in a rush, sort this shit out. No need to go legacy." The native engine
+  stays the default. A legacy default for v1 is rejected; do not propose it again. The `engine: "legacy"`
+  pins are temporary debt, removed only after native proof on web and desktop; native-in-name with
+  legacy-pinned templates is not the finished state. The v1 release stays blocked until every template
+  passes the web and desktop matrix (startup, visible rendering, zero frame or runtime errors). This work
+  runs on PR #493 (the epic), not after it.
 
 ## Execution Phases
 
