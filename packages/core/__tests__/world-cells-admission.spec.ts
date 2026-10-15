@@ -419,6 +419,138 @@ describe("WorldCells admission budget", () => {
     expect(await jump([1, 1])).toBe(5);
   });
 
+  it.each([
+    {
+      name: "one-cell move",
+      budgetMs: Infinity,
+      startX: 537,
+      endX: 739.1,
+      endZ: -426.6,
+      hereX: 13,
+      hereZ: 4,
+      lost: "11:2",
+      ledEdge: "15:7",
+    },
+    {
+      name: "finite admission and delayed model",
+      budgetMs: 2,
+      startX: 537,
+      endX: 739.1,
+      endZ: -426.6,
+      hereX: 13,
+      hereZ: 4,
+      lost: "11:2",
+      ledEdge: "15:7",
+    },
+    {
+      name: "two-cell jump below velocity reset distance",
+      budgetMs: Infinity,
+      startX: 639.9,
+      endX: 850,
+      endZ: -555.5,
+      hereX: 14,
+      hereZ: 3,
+      lost: "12:2",
+      ledEdge: "17:3",
+    },
+  ])(
+    "recovers the actual wanted ring after a speculative lead retires: $name",
+    async ({ budgetMs, startX, endX, endZ, hereX, hereZ, lost, ledEdge }) => {
+      const placements = new Float32Array(18 * 18 * 8);
+      const cells = Array.from({ length: 18 * 18 }, (_, index) => {
+        const x = index % 18;
+        const z = Math.floor(index / 18);
+        placements.set(
+          [-1024 + (x + 0.5) * 128, 0, -1024 + (z + 0.5) * 128, 0, 0, 0, 1, 1],
+          index * 8,
+        );
+        return { x, z, runs: [{ asset: "pine", offset: index, count: 1 }] };
+      });
+      let clock = 0;
+      const finite = Number.isFinite(budgetMs);
+      const now = vi.fn(() => (clock += finite ? 0.5 : 0));
+      let releaseModel: (() => void) | undefined;
+      const modelReady = new Promise<void>((resolve) => {
+        releaseModel = resolve;
+      });
+      const follow = followAt(startX, -555.5); // Actual cell 12:3.
+      const world = await WorldCells.load({
+        url: "/world/world.json",
+        data: {
+          manifest: {
+            ...manifest,
+            assets: { pine: { glb: "assets/pine.glb", bounds: manifest.assets.pine!.bounds } },
+            cellSize: 128,
+            extent: { minX: -1024, minZ: -1024, sizeX: 2304, sizeZ: 2304 },
+            terrain: { ...manifest.terrain, spacing: 18 },
+            cells,
+          },
+          placements: placements.buffer,
+        },
+        admissionNow: now,
+        admissionBudgetMs: budgetMs,
+        budgets: { ...budgets, residentCells: 25 },
+        follow,
+        concurrency: 1,
+        loadModel: async () => {
+          if (finite) await modelReady;
+          return model();
+        },
+        ring: 2,
+        surface,
+        terrain: false,
+      });
+      try {
+        world.update();
+        await step(world);
+        expect(world.stats().residentCells).toBe(25);
+        expect(world.stats().residentKeys).toContain(lost);
+        // Both routes are below the 256 m velocity reset: the original 239.6 m move leads to
+        // 15:5; the 210.1 m two-cell jump leads to 16:3. Each evicts an actually wanted column.
+        clock = 1660;
+        follow.position.x = endX;
+        follow.position.z = endZ;
+        world.update();
+        expect(world.stats().residentKeys).not.toContain(lost);
+        expect(world.stats().residentKeys).toContain(ledEdge);
+        // Let the lead retire, then stop completely. No further camera movement can rescue a cell.
+        for (let frame = 0; frame < 8; frame += 1) {
+          clock += 600;
+          await step(world);
+          expect(world.stats().residentCells).toBeLessThanOrEqual(25);
+        }
+        const wanted = new Set(
+          cells
+            .filter(({ x, z }) => Math.max(Math.abs(x - hereX), Math.abs(z - hereZ)) <= 2)
+            .map(({ x, z }) => `${x}:${z}`),
+        );
+        expect(new Set(world.stats().residentKeys)).toEqual(wanted);
+        expect(world.stats().residentCells).toBe(25);
+        if (finite) {
+          expect(world.stats().loadedCells).toBe(0);
+          releaseModel!();
+          await flush();
+          world.update();
+          expect(world.stats().admission.backlog).toBeGreaterThan(0);
+          for (let frame = 0; frame < 80 && world.stats().loadedCells < 25; frame += 1) {
+            clock += 600;
+            await step(world);
+            expect(world.stats().residentCells).toBeLessThanOrEqual(25);
+          }
+        }
+        expect(world.stats().loadedCells).toBe(25);
+        expect(new Set(world.stats().residentKeys)).toEqual(wanted);
+        expect(world.stats().failures).toBe(0);
+        now.mockClear();
+        world.update();
+        // Only the adaptive-LOD and census clocks remain; no lookahead/admission work spins forever.
+        expect(now).toHaveBeenCalledTimes(2);
+      } finally {
+        world.dispose();
+      }
+    },
+  );
+
   it("reports the deferred work and the backlog while it waits, and empties both", async () => {
     const { world: cells } = await makeWorld({ admissionBudgetMs: 2, priced: true });
     cells.update();

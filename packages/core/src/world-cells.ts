@@ -4380,6 +4380,8 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #residencyPoint = new Vector3(Number.NaN, 0, Number.NaN);
   /** The follow point's cell at the last residency pass; a move of more than one is a jump. */
   #residencyCell: { readonly x: number; readonly z: number } | undefined;
+  /** A speculative lead evicted an actually wanted cell; recover it once the lead retires. */
+  #prefetchRecovery = false;
   /** The follow point the last refilter pass ran for; see `#refilterStale`. */
   readonly #refilterPoint = new Vector3(Number.NaN, 0, Number.NaN);
   /** Bumped by every admission and eviction, so a residency change owes a refilter that update. */
@@ -5371,6 +5373,7 @@ export class WorldCells extends Group implements IComputeDriven {
     )
       return true;
     return (
+      this.#prefetchRecovery ||
       this.#limiter.inFlight > 0 ||
       this.#limiter.queued > 0 ||
       this.#jobs.length > 0 ||
@@ -5995,6 +5998,7 @@ export class WorldCells extends Group implements IComputeDriven {
   dispose(): void {
     if (this.#released) return;
     this.#released = true;
+    this.#prefetchRecovery = false;
     for (const [mesh, entry] of [...this.#awaited]) {
       if (mesh.onBeforeRender === entry.borrow) this.#handBack(mesh, entry.hadOwn, entry.own);
     }
@@ -6036,6 +6040,17 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   #updateResidency(followCell: { x: number; z: number }, x: number, z: number): void {
+    const here = {
+      x: Math.floor((this.#follow.position.x - this.#minX) / this.#cellSize),
+      z: Math.floor((this.#follow.position.z - this.#minZ) / this.#cellSize),
+    };
+    // Read jumps off the actual follow point: lookahead can move two cells during an ordinary walk.
+    const last = this.#residencyCell;
+    const jumped =
+      last !== undefined && Math.max(Math.abs(last.x - here.x), Math.abs(last.z - here.z)) > 1;
+    this.#residencyCell = here;
+    // A jump retires the previous lead's debt, but its new lead can still evict a wanted cell below.
+    if (jumped) this.#prefetchRecovery = false;
     const wanted: Array<{ cell: IWorldCell; distance: number }> = [];
     for (const cell of this.#cells) {
       if (Math.max(Math.abs(cell.x - followCell.x), Math.abs(cell.z - followCell.z)) > this.#ring)
@@ -6050,32 +6065,25 @@ export class WorldCells extends Group implements IComputeDriven {
       if (
         Math.max(Math.abs(resident.x - followCell.x), Math.abs(resident.z - followCell.z)) >
         this.#ring + 1
-      )
+      ) {
+        if (Math.max(Math.abs(resident.x - here.x), Math.abs(resident.z - here.z)) <= this.#ring)
+          this.#prefetchRecovery = true;
         this.#evict(resident);
+      }
     }
-    // A follow point that crossed more than one cell in one pass jumped (a teleport, a review
-    // camera). Only then does the hysteresis ring yield. Read off the follow point itself, not the
-    // lookahead `followCell`: that leads by up to 1.5 cells, so a walk that stopped and started moved
-    // it by two, and yielding there evicted and re-admitted a whole row each time.
-    const here = {
-      x: Math.floor((this.#follow.position.x - this.#minX) / this.#cellSize),
-      z: Math.floor((this.#follow.position.z - this.#minZ) / this.#cellSize),
-    };
-    const last = this.#residencyCell;
-    const jumped =
-      last !== undefined && Math.max(Math.abs(last.x - here.x), Math.abs(last.z - here.z)) > 1;
-    this.#residencyCell = here;
+    const recovering = this.#prefetchRecovery && followCell.x === here.x && followCell.z === here.z;
+    if (recovering) this.#prefetchRecovery = false;
 
     for (const candidate of wanted) {
       const key = cellKey(candidate.cell.x, candidate.cell.z);
       if (this.#resident.has(key)) continue;
       const instances = candidate.cell.runs.reduce((total, run) => total + run.count, 0);
       const bytes = instances * PLACEMENT_RECORD_BYTES;
-      // After a jump, a cell the one-ring hysteresis above kept is not wanted, so it yields its share
+      // After a jump or a retired speculative eviction, an unwanted hysteresis cell yields its share
       // of the budgets to one that is. Without this the budgets stayed full of the ring the camera
       // jumped from and the cells around it were refused until it moved again.
       while (
-        jumped &&
+        (jumped || recovering) &&
         (this.#resident.size >= this.#budgets.residentCells ||
           this.#instances + this.#farInstances + instances > this.#budgets.instances ||
           this.#bytes + this.#farBytes + this.#hlodBytes + bytes > this.#budgets.bytes)
