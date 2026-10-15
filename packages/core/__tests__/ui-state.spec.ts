@@ -51,8 +51,8 @@ describe("published state", () => {
       store.tick({ score: 1 });
       store.flush();
       expect(stringify).toHaveBeenCalledTimes(1);
-      const [value] = stringify.mock.calls[0];
-      expect(value === store.getPublishedState() || value.state === store.getPublishedState()).toBe(
+      const [value] = stringify.mock.calls[0] ?? [];
+      expect(value === store.getPublishedState() || value?.state === store.getPublishedState()).toBe(
         true,
       );
       stringify.mockClear();
