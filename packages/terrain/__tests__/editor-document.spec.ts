@@ -8,6 +8,27 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 const servers: ViteDevServer[] = [];
+async function* revisionEvents(reader: ReadableStreamDefaultReader<Uint8Array>) {
+  const decoder = new TextDecoder();
+  let pending = "";
+  while (true) {
+    const end = pending.indexOf("\n\n");
+    if (end >= 0) {
+      const event = pending.slice(0, end);
+      pending = pending.slice(end + 2);
+      const data = event
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trimStart())
+        .join("\n");
+      if (data) yield data;
+      continue;
+    }
+    const { done, value } = await reader.read();
+    if (done) throw new Error("Revision stream ended before the expected event");
+    pending = (pending + decoder.decode(value, { stream: true })).replaceAll("\r\n", "\n");
+  }
+}
 afterEach(async () => {
   for (const server of servers.splice(0)) await server.close();
 });
@@ -193,30 +214,64 @@ describe("project terrain editor document", () => {
     const { path, base, get, post } = await api();
     const before = await get();
     const cancellation = new AbortController();
-    const stream = await fetch(`${base}events`, { signal: cancellation.signal });
+    const stream = await fetch(`${base}events`, {
+      signal: AbortSignal.any([cancellation.signal, AbortSignal.timeout(10_000)]),
+    });
     const reader = stream.body?.getReader();
     expect(reader).toBeTruthy();
-    const initial = new TextDecoder().decode((await reader?.read())?.value);
-    expect(initial).toContain(before.revision);
-    const edit = await post({
-      baseRevision: before.revision,
-      commands: [{ op: "update", id: "hills", patch: { params: { amplitude: 7 } } }],
-    });
-    const next = await edit.json();
-    expect(new TextDecoder().decode((await reader?.read())?.value)).toContain(next.revision);
-    writeFileSync(
-      path,
-      JSON.stringify({
-        ...next.document,
-        recipe: Terrain.fromJSON(next.document.recipe)
-          .noise({ id: "hills", amplitude: 13 })
-          .toJSON(),
-      }),
-    );
-    const changed = new TextDecoder().decode((await reader?.read())?.value);
-    expect(changed).toContain('"amplitude":13');
-    cancellation.abort();
-    await reader?.cancel().catch(() => {});
+    if (!reader) throw new Error("Missing revision stream reader");
+    const revisions = revisionEvents(reader);
+    try {
+      const initial = (await revisions.next()).value;
+      expect(initial).toContain(before.revision);
+      const edit = await post({
+        baseRevision: before.revision,
+        commands: [{ op: "update", id: "hills", patch: { params: { amplitude: 7 } } }],
+      });
+      const next = await edit.json();
+      expect((await revisions.next()).value).toContain(next.revision);
+      writeFileSync(
+        path,
+        JSON.stringify({
+          ...next.document,
+          recipe: Terrain.fromJSON(next.document.recipe)
+            .noise({ id: "hills", amplitude: 13 })
+            .toJSON(),
+        }),
+      );
+      const changed = (await revisions.next()).value;
+      expect(changed).toContain('"amplitude":13');
+    } finally {
+      cancellation.abort();
+      await reader.cancel().catch(() => {});
+    }
+  });
+  it("reads complete revision events past keepalives and split chunks", async () => {
+    const reader = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of [
+          ": keepalive\n\n",
+          'data: {"revision":',
+          '"one"}\n',
+          '\ndata: {"revision":"two"}\n\n',
+        ]) {
+          controller.enqueue(new TextEncoder().encode(chunk));
+        }
+        controller.close();
+      },
+    }).getReader();
+    const revisions = revisionEvents(reader);
+    expect((await revisions.next()).value).toBe('{"revision":"one"}');
+    expect((await revisions.next()).value).toBe('{"revision":"two"}');
+  });
+  it("rejects a revision stream ending with only a comment and partial event", async () => {
+    const reader = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(': keepalive\n\ndata: {"revision":'));
+        controller.close();
+      },
+    }).getReader();
+    await expect(revisionEvents(reader).next()).rejects.toThrow("before the expected event");
   });
   it("uses an explicitly configured private forward and rejects a failed forward", async () => {
     let target: string | undefined;
