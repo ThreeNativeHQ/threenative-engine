@@ -11,7 +11,9 @@
 #endif
 
 #if defined(__linux__) && !defined(__ANDROID__)
+#include <dirent.h>
 #include <dlfcn.h>
+#include <sched.h>
 #endif
 #if defined(__linux__)
 #include <linux/perf_event.h>
@@ -486,6 +488,116 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
     return V::makeObject(std::move(members));
 }
 
+#if defined(__linux__) && !defined(__ANDROID__)
+/**
+ * PRD-610: the game thread owns one physical core. Every other thread of the player and its child
+ * processes (the GPU present worker, the render thread, shader compiles, V8 workers, the HUD overlay
+ * and its WebKit processes) runs on the remaining CPUs. On Xvfb the NVIDIA present waits in a
+ * busy loop, and sharing a core with it cost the game thread 15 to 30% of its IPC on Midway.
+ * TN_PLAYER_MAIN_CORE=off leaves placement to the OS; a CPU number names the core to take.
+ * Auto picks the core the firmware ranks fastest (ACPI CPPC), the last one on a tie.
+ */
+struct ThreadPlacement {
+    cpu_set_t helpers{};
+    bool active = false;
+    std::chrono::steady_clock::time_point lastSweep{};
+
+    static long readNumber(const std::string& path) {
+        long value = -1;
+        if (std::FILE* file = std::fopen(path.c_str(), "r")) {
+            if (std::fscanf(file, "%ld", &value) != 1) value = -1;
+            std::fclose(file);
+        }
+        return value;
+    }
+    /** The CPUs of `cpu`'s physical core, from "11,23" or "0-1". */
+    static cpu_set_t siblingsOf(int cpu) {
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        CPU_SET(cpu, &set);
+        std::string path = "/sys/devices/system/cpu/cpu" + std::to_string(cpu) + "/topology/thread_siblings_list";
+        if (std::FILE* file = std::fopen(path.c_str(), "r")) {
+            int first = 0, last = 0;
+            char separator = 0;
+            while (std::fscanf(file, "%d", &first) == 1) {
+                last = first;
+                if (std::fscanf(file, "%c", &separator) == 1 && separator == '-' && std::fscanf(file, "%d", &last) == 1)
+                    std::fscanf(file, "%c", &separator);
+                for (int c = first; c <= last && c < CPU_SETSIZE; ++c) CPU_SET(c, &set);
+            }
+            std::fclose(file);
+        }
+        return set;
+    }
+    void start() {
+        const char* setting = std::getenv("TN_PLAYER_MAIN_CORE");
+        if (setting && std::strcmp(setting, "off") == 0) return;
+        cpu_set_t allowed;
+        if (sched_getaffinity(0, sizeof allowed, &allowed) != 0 || CPU_COUNT(&allowed) < 4) return;
+        int chosen = -1;
+        if (setting && *setting && std::strcmp(setting, "auto") != 0) {
+            chosen = std::atoi(setting);
+            if (chosen < 0 || chosen >= CPU_SETSIZE || !CPU_ISSET(chosen, &allowed)) {
+                std::fprintf(stderr, "TN_PLAYER_MAIN_CORE=%s is not an allowed CPU; placement is off.\n", setting);
+                return;
+            }
+        } else {
+            long best = -2;
+            for (int c = 0; c < CPU_SETSIZE; ++c) {
+                if (!CPU_ISSET(c, &allowed)) continue;
+                const std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(c);
+                long rank = readNumber(base + "/acpi_cppc/highest_perf");
+                if (rank < 0) rank = readNumber(base + "/cpufreq/cpuinfo_max_freq");
+                if (rank >= best) best = rank, chosen = c;
+            }
+        }
+        const cpu_set_t core = siblingsOf(chosen);
+        cpu_set_t main;
+        CPU_AND(&main, &core, &allowed);
+        CPU_XOR(&helpers, &allowed, &main);
+        if (CPU_COUNT(&helpers) == 0 || sched_setaffinity(0, sizeof main, &main) != 0) return;
+        active = true;
+        sweep();
+        std::string cpus;
+        for (int c = 0; c < CPU_SETSIZE; ++c)
+            if (CPU_ISSET(c, &main)) cpus += (cpus.empty() ? "" : ",") + std::to_string(c);
+        std::printf("TN_THREAD_PLACEMENT main=%s helpers=%d\n", cpus.c_str(), CPU_COUNT(&helpers));
+    }
+    /** Moves every thread but the calling (game) one, and every descendant process, onto the helpers. */
+    void moveTasks(int pid, bool self) {
+        const std::string root = "/proc/" + std::to_string(pid) + "/task";
+        DIR* tasks = opendir(root.c_str());
+        if (!tasks) return;
+        const pid_t me = static_cast<pid_t>(syscall(SYS_gettid));
+        while (const dirent* entry = readdir(tasks)) {
+            const int tid = std::atoi(entry->d_name);
+            if (tid <= 0) continue;
+            if (!self || tid != me) sched_setaffinity(tid, sizeof helpers, &helpers);
+            // Children are listed per thread; WebKit's processes hang off the overlay's thread.
+            if (std::FILE* file = std::fopen((root + "/" + entry->d_name + "/children").c_str(), "r")) {
+                int child = 0;
+                while (std::fscanf(file, "%d", &child) == 1) moveTasks(child, false);
+                std::fclose(file);
+            }
+        }
+        closedir(tasks);
+    }
+    void sweep() {
+        lastSweep = std::chrono::steady_clock::now();
+        moveTasks(static_cast<int>(getpid()), true);
+    }
+    /** Threads started after `start` inherit the game thread's core; a sweep a second moves them. */
+    void sweepIfDue() {
+        if (active && std::chrono::steady_clock::now() - lastSweep >= std::chrono::seconds(1)) sweep();
+    }
+};
+#else
+struct ThreadPlacement {
+    void start() {}
+    void sweepIfDue() {}
+};
+#endif
+
 struct Session {
     Game game;
     Window window;
@@ -584,6 +696,7 @@ struct Session {
         if (spans) gameSpans = {};
     }
     uint64_t tick() const { return runner ? drivenTicks : clock.tick(); }
+    ThreadPlacement placement;
     int initialize();
     int step();
     ~Session();
@@ -666,6 +779,7 @@ int Session::initialize() {
     if (game.initialize)
         game.initialize(*renderer);
     startupStage("game-initialize-ready");
+    placement.start();
 
     clock.start(0);
     inspect::Host host;
@@ -1113,6 +1227,7 @@ int Session::initialize() {
 
 int Session::step() {
     if (!pumpEvents(window, game)) return 0;
+    placement.sweepIfDue();
 
 #if defined(__ANDROID__)
     if (window.resumeSurface) {
