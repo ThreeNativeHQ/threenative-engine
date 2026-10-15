@@ -245,7 +245,7 @@ describe("scene warm-up", () => {
     });
   });
 
-  test("should prefer the authored output pass and cover its render pipeline", async () => {
+  test("should use the covered output pass when stock compile cannot match its render depth", async () => {
     const compileWorldPassAsync = vi.fn(async () => true);
     const compileAsync = vi.fn(async () => undefined);
     const warmUpWorldPass = vi.fn();
@@ -256,10 +256,10 @@ describe("scene warm-up", () => {
       { yieldFrame: () => Promise.resolve() },
     );
 
-    expect(compileWorldPassAsync).toHaveBeenCalledOnce();
+    expect(compileWorldPassAsync).not.toHaveBeenCalled();
     expect(compileAsync).not.toHaveBeenCalled();
     expect(warmUpWorldPass).toHaveBeenCalledOnce();
-    expect(report).toMatchObject({ attempted: 1, compiled: 1, passes: ["main"] });
+    expect(report).toMatchObject({ attempted: 0, compiled: 1, passes: ["main"] });
   });
 
   test("should not call abandoned work complete when the census itself is complete", async () => {
@@ -585,7 +585,7 @@ describe("scene warm-up", () => {
       yieldFrame: () => Promise.resolve(),
     });
 
-    expect(renderer.compileWorldPassAsync).toHaveBeenCalledOnce();
+    expect(renderer.compileWorldPassAsync).not.toHaveBeenCalled();
     expect(renderer.compileAsync).not.toHaveBeenCalled();
     expect(warmUpWorldPass).toHaveBeenCalledOnce();
     expect(report.passes).toEqual(["main"]);

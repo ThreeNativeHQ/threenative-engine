@@ -941,6 +941,9 @@ export async function warmUpScene(
     }
   };
   const invokeSceneCompile = (): Promise<void> => {
+    // Stock Three compileAsync has no render-depth input, so an output pipeline's covered render
+    // is the only path that can build the world graph against the target the first frame draws.
+    if (renderer.warmUpWorldPass !== undefined) return Promise.resolve();
     if (renderer.compileWorldPassAsync === undefined)
       return invokeCompile(scene, options.targetScene);
     return renderer.compileWorldPassAsync(scene, camera, options.targetScene).then((used) => {

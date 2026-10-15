@@ -74,7 +74,7 @@ Risk: a covered render through the real pipeline can advance temporal history (T
 **Files:** `packages/core/src/pipeline-census.ts` (warm-up-settled boundary on each event), `packages/playtest/src/runner/pipeline-summary.ts` and its scenario schema/evaluator (assertion on builds and creations after warm-up), `examples/abyss-framework/playtests/warm-up-reuse.playtest.json`.
 **Implementation:** Today's census flags only `beforeFirstPresent`, and frame-1 rebuilds land before the first present. Add a warm-up-settled boundary and count node builds and pipeline creations after it, per material. The assertion fails closed when the census is absent or incomplete.
 
-- [ ] The new scenario runs red on develop and reports 3 rebuilt graphs and 3 new pipelines. proof: the AC-1 command, plus `pnpm exec vitest run packages/playtest/__tests__/pipeline-timing.spec.ts packages/core/__tests__/pipeline-census.spec.ts` — Focused census, schema, evaluator and warm-up tests passed locally on 2026-10-14: 5 files, 141 tests; valid headed red reproduction remains pending because the shared capture lock is occupied (attempts exited 75 with `LOCK TIMEOUT`).
+- [ ] The new scenario runs red on develop and reports 3 rebuilt graphs and 3 new pipelines. proof: the AC-1 command, plus `pnpm exec vitest run packages/playtest/__tests__/pipeline-timing.spec.ts packages/core/__tests__/pipeline-census.spec.ts` — Focused census, schema, evaluator and warm-up tests passed locally on 2026-10-14: 5 files, 144 tests; the census now observes Three's renderer-owned node-builder seam, with a positive real-`Mesh` unit control and a missing-hook fail-closed control. Valid headed red reproduction remains pending because the shared capture lock is occupied (attempts exited 75 with `LOCK TIMEOUT`).
 
 #### Phase 2: The warm-up compiles against the world pass (green)
 
@@ -84,7 +84,7 @@ Risk: a covered render through the real pipeline can advance temporal history (T
 
 - [ ] AC-1 and AC-2 are green. proof: the AC-1 command, three runs
 - [ ] AC-3 is green. proof: the streaming scenario
-- [x] A renderer without an output pipeline warms exactly as before. proof: `pnpm exec vitest run packages/core/__tests__/warmup.spec.ts` — 34 tests passed locally on 2026-10-14.
+- [x] A renderer without an output pipeline warms exactly as before. proof: `pnpm exec vitest run packages/core/__tests__/warmup.spec.ts` — 35 tests passed locally on 2026-10-14, including the scoped output-world-pass regression.
 
 #### Phase 3: Prove the look and the native host
 
@@ -97,4 +97,4 @@ Risk: a covered render through the real pipeline can advance temporal history (T
 ## Decisions
 
 - API precheck (read-only, not runtime proof): stock Three r185 `PassNode.compileAsync` sets its target/MRT, but `Renderer.compileAsync` chooses a render context without a call-depth argument (default 0). `RenderPipeline.render` also temporarily sets output color space/tone mapping around the quad draw. These facts suggest the preferred compile-only path may still miss real-frame reuse; Phase 2 must measure it against the covered real-render fallback before choosing. No Three.js patch change is authorized.
-- Implementation checkpoint 2026-10-14: the shared warm-up entry point now attempts the stock output-pass compile and covers the output pipeline render; startup, chunk, and cell callers use it, while no-output renderers retain the existing compile path. The real-WebGPU comparison and final choice remain pending until the capture lock clears.
+- Implementation checkpoint 2026-10-14: the source-level API comparison confirms stock `compileAsync` cannot carry the output pass's active render depth. The shared warm-up entry point therefore selects the covered output-pipeline render for output-pipeline scenes; `renderPasses: false` still runs that covered world pass for chunk/cell warm-ups, while no-output renderers retain the existing compile path. The real-WebGPU comparison, CPU samples and final AC evidence remain pending until the capture lock clears.
