@@ -68,7 +68,7 @@ The hosted arm64 runner has no GPU, so the speed comparison measures JS frame ti
 ## Execution Phases
 
 #### Phase 1: arm64 V8 payload
-**Status:** PARTIAL — source producer and opt-in cache/publication jobs implemented; `pnpm exec vitest run scripts/__tests__/linux-arm64-v8-source.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-native-chain.spec.ts` passed 197 tests. Native compilation and both cache runs remain pending. Five broader contract failures currently read committed HEAD's older workflow; rerun them after the producer commit.
+**Status:** PARTIAL — source producer and opt-in cache/publication jobs implemented; focused source, CI structure, native chain, qualification and efficiency specs passed 285 tests after producer commit `6226a0821`. YAML and all six producer/publication shell blocks passed syntax checks. Native compilation and both cache runs remain pending.
 **Files:** `packages/runtime-native/scripts/build-linux-arm64-v8.mjs` (new, reuses `build-android-v8.mjs` helpers), `.github/workflows/native-platforms.yml`
 **Implementation:** Pin the recipe (version, source commit, GN args, recipe number). Add the build-and-upload job on a recipe-hash miss.
 The source job requires `gh workflow run native-platforms.yml --ref feat/prd615-linux-arm64-v8 -f build_linux_arm64_v8=true`. On a feature branch it uploads only the verified tarball and SHA-256 artifact; publication is restricted to main/develop. The parent manually publishes those exact reviewed artifact bytes to `ci-v8-linux-arm64` before the second cache-hit dispatch. Existing recipe-named assets are immutable: identical bytes are reused and a mismatch fails.
