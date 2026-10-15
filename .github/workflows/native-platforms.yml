@@ -19,6 +19,11 @@ on:
         required: false
         type: boolean
         default: false
+      build_linux_arm64_v8:
+        description: "Build and cache the Linux arm64 V8 source payload (up to 210 minutes)"
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       selection_plan:
@@ -253,6 +258,169 @@ jobs:
               --prerelease --latest=false --title "CI cache: Android V8 payload" \
               --notes "Built Android V8 payloads, one asset per recipe hash, for CI to download instead of rebuilding. Not a product release."
           gh release upload ci-v8-android "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+
+  # PRD-615 phase 1: opt-in cache producer; starter selection changes in the consumer phase.
+  linux-arm64-v8-source:
+    name: Linux arm64 V8 source payload
+    needs: scope
+    if: github.event_name == 'workflow_dispatch' && inputs.build_linux_arm64_v8 == true && needs.scope.outputs.selection == 'full' && needs.scope.outputs.native_tier != 'reduced' && inputs.ios_only != true
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 210
+    permissions:
+      contents: read
+    outputs:
+      recipe-hash: ${{ steps.recipe.outputs.hash }}
+      published: ${{ steps.published.outputs.hit }}
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - name: Compute the Linux arm64 V8 recipe hash
+        id: recipe
+        env:
+          RECIPE_HASH: >-
+            ${{ hashFiles(
+              'packages/runtime-native/scripts/build-linux-arm64-v8.mjs') }}
+        run: echo "hash=$RECIPE_HASH" >> "$GITHUB_OUTPUT"
+      - name: Download the published Linux arm64 V8 payload
+        id: published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: v8-linux-arm64-${{ steps.recipe.outputs.hash }}.tgz
+        run: |
+          set -euo pipefail
+          if gh release download ci-v8-linux-arm64 --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" \
+            --dir "$RUNNER_TEMP" --clobber; then
+            mkdir -p packages/runtime-native/third_party/v8-linux-arm64
+            tar -xzf "$RUNNER_TEMP/$ASSET" -C packages/runtime-native/third_party/v8-linux-arm64
+            node packages/runtime-native/scripts/build-linux-arm64-v8.mjs --verify
+            echo "Published Linux arm64 V8 asset hit: $ASSET; no rebuild."
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No published $ASSET; falling back to cache and source build."
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Restore the Linux arm64 V8 payload
+        id: payload
+        if: steps.published.outputs.hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/runtime-native/third_party/v8-linux-arm64
+          key: linux-arm64-v8-payload-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}
+      - name: Restore resumable Linux arm64 V8 source
+        if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            packages/runtime-native/third_party/.v8-linux-arm64-source
+            packages/runtime-native/third_party/v8-linux-arm64
+          key: linux-arm64-v8-source-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: linux-arm64-v8-source-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}-
+      - name: Install the pinned Linux arm64 V8 compiler
+        if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18=1:18.1.3-1ubuntu1 lld-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 ninja-build build-essential python3 git pkg-config
+      - name: Build the Linux arm64 V8 payload
+        id: build
+        if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          export THREENATIVE_V8_BUILD_JOBS="${THREENATIVE_V8_BUILD_JOBS:-$(nproc)}"
+          timeout --signal=TERM --kill-after=30s 180m \
+            node packages/runtime-native/scripts/build-linux-arm64-v8.mjs
+      - name: Verify and package the Linux arm64 V8 payload
+        id: verify
+        env:
+          ASSET: v8-linux-arm64-${{ steps.recipe.outputs.hash }}.tgz
+        run: |
+          set -euo pipefail
+          node packages/runtime-native/scripts/build-linux-arm64-v8.mjs --verify
+          mkdir -p "$RUNNER_TEMP/linux-arm64-v8-proof"
+          mapfile -t libraries < <(find packages/runtime-native/third_party/v8-linux-arm64 -name libv8_monolith.a -type f)
+          test "${#libraries[@]}" -eq 1
+          library="${libraries[0]}"
+          ar t "$library" > "$RUNNER_TEMP/linux-arm64-v8-proof/ar-members.txt"
+          member="$(sed -n '1p' "$RUNNER_TEMP/linux-arm64-v8-proof/ar-members.txt")"
+          test -n "$member"
+          ar p "$library" "$member" > "$RUNNER_TEMP/v8-arm64-member.o"
+          file "$RUNNER_TEMP/v8-arm64-member.o" | tee "$RUNNER_TEMP/linux-arm64-v8-proof/file.txt"
+          readelf -h "$RUNNER_TEMP/v8-arm64-member.o" | tee "$RUNNER_TEMP/linux-arm64-v8-proof/elf-header.txt"
+          grep -Eq 'Machine:.*AArch64' "$RUNNER_TEMP/linux-arm64-v8-proof/elf-header.txt"
+          if [ "${{ steps.published.outputs.hit }}" != 'true' ]; then
+            tar -czf "$RUNNER_TEMP/$ASSET" -C packages/runtime-native/third_party/v8-linux-arm64 .
+          fi
+          (cd "$RUNNER_TEMP" && sha256sum "$ASSET") > "$RUNNER_TEMP/linux-arm64-v8-proof/payload.sha256"
+      - name: Save the verified Linux arm64 V8 payload
+        if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true' && steps.verify.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: packages/runtime-native/third_party/v8-linux-arm64
+          key: linux-arm64-v8-payload-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}
+      - name: Save interrupted Linux arm64 V8 source
+        if: >-
+          always() && steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true' &&
+          (steps.build.outcome == 'failure' ||
+          (steps.build.outcome == 'cancelled' && github.event_name != 'pull_request'))
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            packages/runtime-native/third_party/.v8-linux-arm64-source
+            packages/runtime-native/third_party/v8-linux-arm64
+          key: linux-arm64-v8-source-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-arm64-v8-${{ needs.scope.outputs.candidate_sha }}
+          path: |
+            ${{ runner.temp }}/v8-linux-arm64-${{ steps.recipe.outputs.hash }}.tgz
+            ${{ runner.temp }}/linux-arm64-v8-proof
+          if-no-files-found: error
+          retention-days: 2
+
+  # Release writes are isolated from candidate source and restricted to trusted refs.
+  publish-linux-arm64-v8:
+    name: Publish the Linux arm64 V8 payload
+    needs: [scope, linux-arm64-v8-source]
+    if: >-
+      needs.linux-arm64-v8-source.outputs.published == 'false' &&
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: linux-arm64-v8-${{ needs.scope.outputs.candidate_sha }}
+          path: payload
+      - name: Publish the exact verified Linux arm64 V8 tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: v8-linux-arm64-${{ needs.linux-arm64-v8-source.outputs.recipe-hash }}.tgz
+          TARGET: ${{ needs.scope.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          (cd payload && sha256sum --check linux-arm64-v8-proof/payload.sha256)
+          gh release view ci-v8-linux-arm64 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create ci-v8-linux-arm64 --repo "$GITHUB_REPOSITORY" --target "$TARGET" \
+              --prerelease --latest=false --title "CI cache: Linux arm64 V8 payload" \
+              --notes "Linux arm64 V8 source payloads keyed by recipe hash. Not a product release."
+          if gh release view ci-v8-linux-arm64 --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[].name' | grep -Fx "$ASSET"; then
+            mkdir -p "$RUNNER_TEMP/published-v8"
+            gh release download ci-v8-linux-arm64 --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" \
+              --dir "$RUNNER_TEMP/published-v8"
+            cmp -- "payload/$ASSET" "$RUNNER_TEMP/published-v8/$ASSET"
+          else
+            gh release upload ci-v8-linux-arm64 "payload/$ASSET" --repo "$GITHUB_REPOSITORY"
+          fi
 
   performance-coverage:
     name: Native collector evidence coverage
@@ -2434,7 +2602,7 @@ jobs:
 
   completion:
     name: Native required coverage receipt
-    needs: [scope, web-reference, android-v8-source, android-emulator-parity, desktop-parity, release-reports, performance-coverage, networking-matrix, desktop, starter-linux, ios-simulator, publish-android-v8]
+    needs: [scope, web-reference, android-v8-source, android-emulator-parity, desktop-parity, release-reports, performance-coverage, networking-matrix, desktop, starter-linux, ios-simulator, publish-android-v8, linux-arm64-v8-source, publish-linux-arm64-v8]
     # Isolated iOS dispatch remains advisory and emits no full qualification receipt.
     if: ${{ always() && inputs.ios_only != true }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}

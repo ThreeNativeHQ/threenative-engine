@@ -1097,6 +1097,7 @@ describe("CI pipeline structure", () => {
       new Set([
         "android-emulator-parity",
         "publish-android-v8",
+        "publish-linux-arm64-v8",
         "web-reference",
         "android-v8-source",
       ]),
@@ -1150,6 +1151,83 @@ describe("CI pipeline structure", () => {
       }
     },
   );
+
+  it("isolates the cached Linux arm64 V8 producer from consumers and release credentials", async () => {
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const source = requiredJob(native, "linux-arm64-v8-source");
+    const publish = requiredJob(native, "publish-linux-arm64-v8");
+    expect(declaredNeeds(source)).toEqual(["scope"]);
+    expect(source).toContain("runs-on: ubuntu-24.04-arm");
+    expect(source).toContain("github.event_name == 'workflow_dispatch'");
+    expect(source).toContain("inputs.build_linux_arm64_v8 == true");
+    expect(native).toMatch(
+      /build_linux_arm64_v8:\n {8}description: .+\n {8}required: false\n {8}type: boolean\n {8}default: false/u,
+    );
+    expect(source).toContain("needs.scope.outputs.selection == 'full'");
+    expect(source).toContain("needs.scope.outputs.native_tier != 'reduced'");
+    expect(source).toContain("inputs.ios_only != true");
+    expect(source).toContain("ref: ${{ needs.scope.outputs.candidate_sha }}");
+    expect(source).toContain("timeout-minutes: 210");
+    expect(source).toContain("timeout --signal=TERM --kill-after=30s 180m");
+    expect(source).toContain("contents: read");
+    expect(source).not.toContain("contents: write");
+    const recipe = source.match(/hashFiles\(([\s\S]*?)\)/u)?.[1] ?? "";
+    expect([...recipe.matchAll(/'([^']+)'/gu)].map((match) => match[1])).toEqual([
+      "packages/runtime-native/scripts/build-linux-arm64-v8.mjs",
+    ]);
+    expect(source).toContain("gh release download ci-v8-linux-arm64");
+    expect(source).toContain("v8-linux-arm64-${{ steps.recipe.outputs.hash }}.tgz");
+    expect(source).toContain(
+      "node packages/runtime-native/scripts/build-linux-arm64-v8.mjs --verify",
+    );
+    expect(source).toContain(
+      "if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'",
+    );
+    expect(source).toContain("Published Linux arm64 V8 asset hit: $ASSET; no rebuild.");
+    expect(source).toContain("packages/runtime-native/third_party/.v8-linux-arm64-source");
+    expect(source).toContain("steps.verify.outcome == 'success'");
+    expect(source).toContain("steps.build.outcome == 'failure'");
+    expect(source).toContain('ar p "$library" "$member"');
+    expect(source).toContain('file "$RUNNER_TEMP/v8-arm64-member.o"');
+    expect(source).toContain("grep -Eq 'Machine:.*AArch64'");
+    expect(source).toContain('sha256sum "$ASSET"');
+    expect(source).toContain("if-no-files-found: error");
+    expect(declaredNeeds(publish)).toEqual(["scope", "linux-arm64-v8-source"]);
+    expect(publish).toContain("github.event_name != 'pull_request'");
+    expect(publish).toContain(
+      "github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'",
+    );
+    expect(publish).toContain("contents: write");
+    expect(publish).not.toContain("actions/checkout");
+    expect(publish).not.toContain("node ");
+    expect(publish).toContain("sha256sum --check linux-arm64-v8-proof/payload.sha256");
+    expect(publish).toContain('gh release upload ci-v8-linux-arm64 "payload/$ASSET"');
+    expect(publish).not.toContain("--clobber");
+    expect(publish).toContain('cmp -- "payload/$ASSET" "$RUNNER_TEMP/published-v8/$ASSET"');
+    expect(declaredNeeds(requiredJob(native, "starter-linux"))).not.toContain(
+      "linux-arm64-v8-source",
+    );
+    expect(declaredNeeds(requiredJob(native, "completion"))).toEqual(
+      expect.arrayContaining(["linux-arm64-v8-source", "publish-linux-arm64-v8"]),
+    );
+    const install =
+      source
+        .split("      - name: Install the pinned Linux arm64 V8 compiler\n")[1]
+        ?.split("      - name:")[0] ?? "";
+    expect(install).toContain(
+      "if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'",
+    );
+    expect(install).toContain("sudo apt-get update");
+    expect(install).toContain(
+      "sudo apt-get install -y clang-18=1:18.1.3-1ubuntu1 lld-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 ninja-build build-essential python3 git pkg-config",
+    );
+    expect(source.indexOf("Install the pinned Linux arm64 V8 compiler")).toBeLessThan(
+      source.indexOf("Build the Linux arm64 V8 payload"),
+    );
+  });
 
   // PRD-480's light lane: the jobs whose whole work is a script or a summary — no workspace build
   // and no test suite; a JSON aggregator may still `pnpm install` its own toolchain. `scope`

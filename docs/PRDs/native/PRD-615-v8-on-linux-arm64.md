@@ -1,6 +1,6 @@
 # PRD-615 — V8 on the linux-arm64 native host
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — producer implemented locally; arm64 source build, cached asset and runtime/performance acceptance remain unverified.
 **Priority:** P1 — linux-arm64 is a supported target, and its open AC-1/AC-2 boxes replace QuickJS with the V8 engine that every other desktop host runs.
 **Complexity:** 6 (MEDIUM) — about 6 implementation files, a new V8 build recipe, a CI build-and-cache boundary; risk override: none.
 **Owner:** João
@@ -36,8 +36,8 @@ flowchart LR
 
 - **Recipe.** Same V8 version, same `v8_monolith` shape and same GN flags as the x64 archive, so
   the headers and ABI the runtime compiles against do not change. Build natively on
-  `ubuntu-24.04-arm`, not by cross-compile. Reuse the fetch, patch and recipe-hash code of
-  `build-android-v8.mjs`; do not copy it.
+  `ubuntu-24.04-arm`, not by cross-compile. Follow the Android producer's fetch, integrity,
+  transactional promotion and recipe-hash pattern while keeping its script and cache unchanged.
 - **Cache.** A `linux-arm64-v8-source` job in `native-platforms.yml` runs only on a recipe-hash
   miss and uploads `v8-linux-arm64-<recipe-hash>.tgz` to a `ci-v8-linux-arm64` release, as the
   Android job does. No new workflow file.
@@ -63,13 +63,15 @@ The hosted arm64 runner has no GPU, so the speed comparison measures JS frame ti
 ## Decisions
 
 - 2026-10-14 (João): linux-arm64 uses V8, not QuickJS, for speed.
+- 2026-10-15: the pinned V8 toolchain downloads Linux x64 binaries, so the native arm64 producer bootstraps the pinned GN revision and uses Ubuntu arm64 LLVM 18.1.3 packages at exact version `1:18.1.3-1ubuntu1`, recorded in its receipt. The producer is an explicit manual-dispatch auxiliary job; ordinary product qualification retains its existing inventory. Linux keeps its small fetch/integrity helpers local because modifying the Android build script invalidates its expensive cache.
 
 ## Execution Phases
 
 #### Phase 1: arm64 V8 payload
-**Status:** NOT STARTED
+**Status:** PARTIAL — source producer and opt-in cache/publication jobs implemented; `pnpm exec vitest run scripts/__tests__/linux-arm64-v8-source.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-native-chain.spec.ts` passed 197 tests. Native compilation and both cache runs remain pending. Five broader contract failures currently read committed HEAD's older workflow; rerun them after the producer commit.
 **Files:** `packages/runtime-native/scripts/build-linux-arm64-v8.mjs` (new, reuses `build-android-v8.mjs` helpers), `.github/workflows/native-platforms.yml`
 **Implementation:** Pin the recipe (version, source commit, GN args, recipe number). Add the build-and-upload job on a recipe-hash miss.
+The source job requires `gh workflow run native-platforms.yml --ref feat/prd615-linux-arm64-v8 -f build_linux_arm64_v8=true`. On a feature branch it uploads only the verified tarball and SHA-256 artifact; publication is restricted to main/develop. The parent manually publishes those exact reviewed artifact bytes to `ci-v8-linux-arm64` before the second cache-hit dispatch. Existing recipe-named assets are immutable: identical bytes are reused and a mismatch fails.
 - [ ] Recipe builds a `v8_monolith` for aarch64 with the x64 archive's headers. proof: `linux-arm64-v8-source` job run, `file` on the library reports `ARM aarch64`
 - [ ] A second run reuses the cached release asset with no rebuild. proof: second `gh workflow run`, the job logs a recipe-hash hit
 
