@@ -52,7 +52,11 @@ import {
   IMPOSTOR_FAR_CULL_ATTRIBUTE,
   WorldImpostorSurface,
 } from "../src/render/world-impostor-surface.js";
-import { type IImpostorRawRenderer, WorldImpostorAtlas } from "../src/render/world-impostor.js";
+import {
+  type IImpostorRawRenderer,
+  WorldImpostorAtlas,
+  WorldImpostorBaker,
+} from "../src/render/world-impostor.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { type IKernelInput, WorldGpuScene, cullAndSelect } from "../src/world-gpu-scene.js";
 import { type IWorldAsset, type IWorldRun, cellPlacements } from "../src/world-package.js";
@@ -558,6 +562,40 @@ describe("WorldCells automatic impostors", () => {
       expect(world.stats().impostor.drawn).toBeGreaterThan(0);
       expect(partsOf(world, "pine", 2, 0)[0]?.geometry.index?.count).toBe(6);
       expect(partsOf(world, "pine", 2, 1)).toHaveLength(0);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("drains the covered atlas in one update but keeps uncovered bakes at one view", async () => {
+    stubManifestFetch(pineOnly());
+    const world = await loadPine(treeLoader());
+    try {
+      await flushed(world);
+      const renderer = rendererStub();
+      const capture = vi.spyOn(renderer.raw as IImpostorRawRenderer, "render");
+      world.process(renderer, undefined, false);
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(world.stats().impostor.pending).toBeGreaterThan(0);
+      world.process(renderer, undefined, true);
+      expect(capture).toHaveBeenCalledTimes(16);
+      expect(world.stats().impostor.assets).toBe(1);
+      expect(world.stats().impostor.pending).toBe(0);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("yields a covered bake when a view makes no progress", async () => {
+    stubManifestFetch(pineOnly());
+    const world = await loadPine(treeLoader());
+    try {
+      await flushed(world);
+      const step = vi.spyOn(WorldImpostorBaker.prototype, "step").mockReturnValue(undefined);
+      world.process(rendererStub(), undefined, true);
+      expect(step).toHaveBeenCalledTimes(1);
+      expect(world.stats().impostor.assets).toBe(0);
+      expect(world.stats().impostor.pending).toBeGreaterThan(0);
     } finally {
       world.dispose();
     }

@@ -5106,9 +5106,8 @@ export class WorldCells extends Group implements IComputeDriven {
     // shader builds the residency is about to need, and the allowance that spreads those is
     // `PREWARM_PER_UPDATE`.
     this.#drainPrewarm();
-    // One bake view per render update, after the prewarm so its own atlas allocation never delays a
-    // node build the walk is waiting on, and before the levels are told so a level the bake just
-    // appended is in this frame's window.
+    // Drain the atlas while covered, one view otherwise, after prewarm so allocation cannot delay
+    // a node build, and before telling levels so a newly appended level is in this frame's window.
     this.#stepImpostor(renderer);
     // After the bake handoff, so a wide block it deferred to this frame's exhausted allowance is
     // claimed now; a no-op on every frame with nothing waiting.
@@ -8644,7 +8643,7 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * One view of the bake per render-cadence update, then the terminal level when it completes.
+   * Drain the current atlas while covered; otherwise capture one view per render update.
    *
    * The renderer is asked for its raw seam and the bake waits for one that can run it: a world that
    * has no renderer yet — or a backend whose raw seam is not the layered-target API — simply does
@@ -8716,7 +8715,13 @@ export class WorldCells extends Group implements IComputeDriven {
     if (raw === undefined) return;
     let atlas: WorldImpostorAtlas | undefined;
     try {
-      atlas = this.#baker.step(raw);
+      const views = this.#covered ? IMPOSTOR_VIEWS - (this.#baker.pending?.view ?? 0) : 1;
+      for (let remaining = views; remaining > 0; remaining -= 1) {
+        const view = this.#baker.pending?.view;
+        atlas = this.#baker.step(raw);
+        // A deferred capture must yield to the next update, never spin waiting for compilation.
+        if (atlas !== undefined || this.#baker.pending?.view === view) break;
+      }
     } catch {
       this.#failures += 1;
       this.#impostorBaking = undefined;
