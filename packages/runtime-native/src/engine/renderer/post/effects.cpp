@@ -238,7 +238,7 @@ void PostEffects::captureUniforms() {
     captured_ = true;
 }
 uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
-                         const CameraState& camera, uint64_t frame, float time) {
+                         const CameraState& camera, uint64_t frame, float time, float exposure) {
     if (!captured_) captureUniforms();
     captured_ = false;
     graph::RenderGraph graph;
@@ -280,6 +280,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, 
         auto values = pass.source.uniforms;
         for (const auto& [name, value] : pass.captured) values[name] = value;
         values["time"] = {time};
+        values["toneMappingExposure"] = {exposure};
         values["cameraNear"] = {static_cast<float>(camera.near)};
         values["cameraFar"] = {static_cast<float>(camera.far)};
         values["resolution"] = {float(target.width), float(target.height)};

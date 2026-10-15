@@ -839,6 +839,11 @@ void Renderer::setOutput(const OutputState& output) {
     const bool programChanged = outputVertex_.wgsl.code.empty() || output.toneMapping != output_.toneMapping || output.srgb != output_.srgb;
     output_ = output;
     if (!programChanged) return;
+    if (postGraph_) {
+        post_ = std::make_shared<shader::PostNode>(shader::graph::serializedPost(postGraph_, output.toneMapping, output.srgb));
+        postEffects_ = post_->passes.empty() ? nullptr : std::make_unique<PostEffects>(device_, queue_, post_->passes);
+        if (postEffects_ && width_ && height_) postEffects_->resize(width_, height_);
+    }
     const shader::OutputPrograms programs = shader::buildOutput(output.toneMapping, output.srgb, post_.get());
     outputVertex_ = shader::buildStage(programs.vertex, 0);
     outputFragment_ = shader::buildStage(programs.fragment, 0);
@@ -877,6 +882,7 @@ void Renderer::setOutput(const OutputState& output) {
 }
 
 void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
+    postGraph_.reset();
     auto effects = post && !post->passes.empty() ? std::make_unique<PostEffects>(device_,queue_,post->passes) : nullptr;
     postEffects_.reset();
     postTextures_.clear();
@@ -892,7 +898,8 @@ void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
 
 void Renderer::setPostGraph(shader::graph::Node root) {
     const auto temporal = shader::graph::traaEffect(root);
-    setPostNode(root ? std::make_shared<shader::PostNode>(shader::graph::serializedPost(root)) : nullptr);
+    setPostNode(root ? std::make_shared<shader::PostNode>(shader::graph::serializedPost(root, output_.toneMapping, output_.srgb)) : nullptr);
+    postGraph_ = root;
     if (temporal && temporal != liveTraa_) setTraa(TraaOptions{});
     if (!temporal && liveTraa_) { traa_.reset(); releaseOutputGroup(); }
     liveTraa_ = temporal;
@@ -3211,7 +3218,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
     if (postEffects_) {
         // three's Info counts each fullscreen effect pass as one draw of one triangle, like the output pass below.
-        const uint32_t effectPasses = postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_, frameTime_);
+        const uint32_t effectPasses = postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_, frameTime_, static_cast<float>(output_.toneMappingExposure));
         lastFrame_.draws += effectPasses;
         lastFrame_.triangles += effectPasses;
     }

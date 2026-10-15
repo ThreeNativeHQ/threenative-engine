@@ -29,7 +29,7 @@ class PostEffects {
     bool reads(const std::string& name) const;
     /** The fullscreen passes it drew, which three's renderer.info counts as one draw and one triangle each. */
     uint32_t render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
-                const CameraState& camera, uint64_t frame, float time = 0);
+                const CameraState& camera, uint64_t frame, float time = 0, float exposure = 1);
     WGPUTextureView view(const std::string& name) const;
     WGPUSampler sampler(const std::string& name) const;
 

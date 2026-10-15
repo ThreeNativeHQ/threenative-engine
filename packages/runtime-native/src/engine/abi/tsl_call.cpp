@@ -107,10 +107,30 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (method && (name == "struct:get" || name == "get")) {
         arity(1);
         const auto& value = receiver->node;
-        if (!value || value->kind != g::Kind::Struct)
-            throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: struct member selection needs a direct struct value; function-return aggregates need statement-preserving lowering");
-        for (size_t i = 0; i < value->members.size(); ++i)
-            if (value->members[i].first == text(args[0])) return value->args.at(i);
+        auto schema = value;
+        while (schema && schema->kind == g::Kind::Body && schema->args.size() == 1)
+            schema = schema->args[0];
+        if (!schema || schema->kind != g::Kind::Struct)
+            throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: get requires a direct struct or final Body value; callable and early aggregate returns need member return slots");
+        // Early aggregate returns need one return slot per member, rather than the scalar return slot.
+        const std::function<void(g::Node)> validate = [&](g::Node node) {
+            if (!node || node->kind == g::Kind::Call) return;
+            if (node->kind == g::Kind::Return)
+                throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: early aggregate returns need member return slots");
+            for (const auto* list : {&node->body, &node->otherwise})
+                for (const auto& child : *list) validate(child);
+        };
+        validate(value);
+        for (size_t i = 0; i < schema->members.size(); ++i) {
+            if (schema->members[i].first != text(args[0])) continue;
+            if (value->kind == g::Kind::Struct) return value->args.at(i);
+            auto selected = std::make_shared<g::NodeData>();
+            selected->kind = g::Kind::StructMember;
+            selected->type = schema->members[i].second;
+            selected->bits = i;
+            selected->args = {value};
+            return selected;
+        }
         throw std::runtime_error("struct:get: unknown member " + text(args[0]));
     }
 
@@ -198,6 +218,37 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const auto effect = denoise ? g::denoiseEffect(arg(0), arg(1), optional(2), static_cast<uint32_t>(++serial))
                                     : g::gtaoEffect(arg(0), optional(1));
         return g::effectNode(effect);
+    }
+    if (name == "pipelineOutput") {
+        arity(2);
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::PipelineOutput;
+        node->args = {arg(0)};
+        const double enabled = number(args[1]);
+        if (enabled != 0 && enabled != 1) throw std::runtime_error("pipelineOutput requires a boolean flag");
+        node->bits = static_cast<uint64_t>(enabled);
+        return node;
+    }
+    if (name == "renderOutput") {
+        const size_t count = args.size() + (method ? 1 : 0);
+        if (count < 1 || count > 3) throw std::runtime_error("renderOutput takes color, optional tone mapping and output color space");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::RenderOutput;
+        node->args = {lhs()};
+        const size_t offset = method ? 0 : 1;
+        if (args.size() > offset && args[offset].kind != TslArg::Kind::Other) {
+            const double tone = number(args[offset]);
+            if (tone != 0 && tone != 1 && tone != 2 && tone != 3 && tone != 4 && tone != 6 && tone != 7)
+                throw std::runtime_error("renderOutput: unsupported toneMapping " + std::to_string(tone));
+            node->bits = static_cast<uint64_t>(tone) + 1;
+        }
+        if (args.size() > offset + 1 && args[offset + 1].kind != TslArg::Kind::Other) {
+            node->name = text(args[offset + 1]);
+            if (node->name.empty()) node->name = "srgb-linear";
+            if (node->name != "srgb" && node->name != "srgb-linear")
+                throw std::runtime_error("renderOutput: unsupported outputColorSpace " + node->name);
+        }
+        return node;
     }
     if (name == "luminance") {
         if (args.empty() || args.size() > 2) throw std::runtime_error("luminance takes color and optional coefficients");

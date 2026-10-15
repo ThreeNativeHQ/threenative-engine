@@ -470,7 +470,7 @@ std::shared_ptr<const PostEffect> traaEffect(Node root) {
     return result;
 }
 
-std::vector<PostPass> postPasses(Node root) {
+std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMapping, bool srgb) {
     std::vector<PostPass> passes;
     std::unordered_set<const NodeData*> seen;
     // A target is rendered once however it is sampled: a sample at another coordinate is a copy of
@@ -483,7 +483,7 @@ std::vector<PostPass> postPasses(Node root) {
             for (const auto& child : *list)
                 visit(child);
         if (n->kind == Kind::RenderTexture && targets.insert(n->name).second)
-            passes.push_back(renderTexturePass(n));
+            passes.push_back(renderTexturePass(n, toneMapping, srgb));
         if (!n->post)
             return;
         const auto& effect = *n->post;
@@ -493,7 +493,7 @@ std::vector<PostPass> postPasses(Node root) {
                               weights = effect.output + "_weights";
             const PostNode post{key(effect.inputs[0]), [&](Program& p, uint32_t, ExprId coordinate) {
                                     tsl::Build scope(p);
-                                    return lower(effect.inputs[0], p, {{"uv", coordinate}, {"screenUV", coordinate}});
+                                    return lower(effect.inputs[0], p, {{"uv", coordinate}, {"screenUV", coordinate}}, toneMapping, srgb);
                                 }};
             auto programs = buildOutput(std::nullopt, false, &post, false);
             PostPass material;

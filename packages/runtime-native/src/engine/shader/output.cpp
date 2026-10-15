@@ -10,6 +10,16 @@ ExprId srgbTransferOetf(Program& p, ExprId linear) {
     return p.call("mix", {a, b, le});
 }
 
+ExprId renderOutput(Program& p, ExprId scene, std::optional<ToneMapping> toneMapping, bool srgb) {
+    // RenderOutputNode: unpremultiply before nonlinear transforms, then premultiply in output space.
+    const ExprId alpha = p.call("clamp", {p.swizzle(scene, "w"), p.constant(0.0f), p.constant(1.0f)});
+    ExprId rgb = p.select(p.equal(alpha, p.constant(0.0f)), p.construct(Type::vec(3), {p.constant(0.0f)}),
+                         p.div(p.swizzle(scene, "xyz"), alpha));
+    if (toneMapping) rgb = toneMap(p, *toneMapping, rgb, p.uniform("toneMappingExposure", Type::f32()));
+    if (srgb) rgb = srgbTransferOetf(p, rgb);
+    return p.construct(Type::vec(4), {p.mul(rgb, alpha), alpha});
+}
+
 OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post) {
     return buildOutput(toneMapping, srgb, post, true);
 }
@@ -27,14 +37,8 @@ OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, co
     const uint32_t texture = f.texture2d("scene");
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId scene = post ? post->build(f, texture, uv) : f.sample(texture, uv);
-    if (!outputTransform) { f.output("color", scene); return out; }
-    // RenderOutputNode: unpremultiply before nonlinear transforms, then premultiply in output space.
-    const ExprId alpha = f.call("clamp", {f.swizzle(scene, "w"), f.constant(0.0f), f.constant(1.0f)});
-    ExprId rgb = f.select(f.equal(alpha, f.constant(0.0f)), f.construct(Type::vec(3), {f.constant(0.0f)}),
-                         f.div(f.swizzle(scene, "xyz"), alpha));
-    if (toneMapping) rgb = toneMap(f, *toneMapping, rgb, f.uniform("toneMappingExposure", Type::f32()));
-    if (srgb) rgb = srgbTransferOetf(f, rgb);
-    f.output("color", f.construct(Type::vec(4), {f.mul(rgb, alpha), alpha}));
+    if (!outputTransform || (post && !post->outputTransform)) { f.output("color", scene); return out; }
+    f.output("color", renderOutput(f, scene, toneMapping, srgb));
     return out;
 }
 

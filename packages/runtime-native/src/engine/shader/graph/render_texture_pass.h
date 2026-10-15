@@ -4,12 +4,12 @@
 #include "engine/shader/tsl/tsl.h"
 
 namespace tn::engine::shader::graph {
-inline PostPass renderTexturePass(Node node) {
+inline PostPass renderTexturePass(Node node, std::optional<ToneMapping> toneMapping = std::nullopt, bool srgb = false) {
     PostPass pass; pass.output = node->name; pass.resolutionScale = node->scale;
     pass.floorSize = true; pass.autoUpdate = node->bits != 1;
     pass.width = node->width; pass.height = node->height; pass.package.name = node->name;
-    const PostNode post{key(node->args[0]), [node](Program& p, uint32_t, ExprId coordinate) {
-        tsl::Build scope(p); return lower(node->args[0], p, {{"uv", coordinate}});
+    const PostNode post{key(node->args[0]), [node, toneMapping, srgb](Program& p, uint32_t, ExprId coordinate) {
+        tsl::Build scope(p); return lower(node->args[0], p, {{"uv", coordinate}}, toneMapping, srgb);
     }};
     // Intermediate RTTs render the shader value verbatim, before RenderOutput transforms.
     auto programs = buildOutput(std::nullopt, false, &post, false);

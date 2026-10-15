@@ -11,6 +11,9 @@ namespace tn::engine::shader {
 /** sRGBTransferOETF from three's ColorSpaceFunctions: linear vec3 to sRGB-encoded vec3. */
 ExprId srgbTransferOetf(Program& p, ExprId linear);
 
+/** The output transform at an authored graph position. */
+ExprId renderOutput(Program& p, ExprId scene, std::optional<ToneMapping> toneMapping, bool srgb);
+
 struct OutputPrograms {
     Program vertex{Stage::Vertex};
     Program fragment{Stage::Fragment};

@@ -103,6 +103,7 @@ const FUNCTIONS = [
   "traa",
   "film",
   "lut3D",
+  "renderOutput",
   "struct",
   "luminance",
   "viewZToOrthographicDepth",
@@ -191,6 +192,7 @@ const METHODS = [
   "oneMinus",
   "dispose",
   "newStruct",
+  "renderOutput",
   "get",
   "flipX",
   "flipY",
@@ -420,6 +422,7 @@ export function defineTsl(
   );
   exports.uniform = live.uniform;
   exports.uniformArray = live.uniformArray;
+  exports.reference = live.reference;
   if (classes !== undefined) withConstValues(exports, classes);
   return { exports, sync: live.sync };
 }

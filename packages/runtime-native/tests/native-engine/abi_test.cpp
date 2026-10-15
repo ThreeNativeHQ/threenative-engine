@@ -1578,6 +1578,84 @@ void gpu_bind_escape() {
 }
 
 
+void struct_function_return() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    using namespace tn::engine::shader;
+    uint64_t serial = 0;
+    const auto schema = tn::abi::tslCall("struct", nullptr,
+        {TslArg::of(std::string("Pair")), TslArg::of(std::string("first")), TslArg::of(std::string("float")),
+         TslArg::of(std::string("second")), TslArg::of(std::string("float"))}, serial);
+    g::Block block;
+    const auto variable = block.var(g::float_(0));
+    block.assign(variable.declaration, g::add(variable.read(), g::float_(1)));
+    const auto receiver = TslArg::of(schema);
+    const auto value = tn::abi::tslCall("newStruct", &receiver,
+        {TslArg::of(variable.read()), TslArg::of(variable.read())}, serial);
+    auto body = std::make_shared<g::NodeData>(*block.node());
+    body->args = {value};
+    const auto function = TslArg::of(body);
+    const auto first = tn::abi::tslCall("get", &function, {TslArg::of(std::string("first"))}, serial);
+    const auto second = tn::abi::tslCall("get", &function, {TslArg::of(std::string("second"))}, serial);
+    g::Block consumer;
+    const auto savedFirst = consumer.var(first);
+    const auto savedSecond = consumer.var(second);
+    auto root = std::make_shared<g::NodeData>(*consumer.node());
+    root->args = {g::vec4({savedFirst.read(), savedSecond.read(), first, second})};
+    Program program(Stage::Fragment);
+    tn::engine::shader::tsl::Build scope(program);
+    program.output("color", g::lower(root, program));
+    const auto shader = buildStage(program);
+    CHECK(shader.wgsl.ok());
+    const auto addition = shader.wgsl.code.find(" + ");
+    CHECK(addition != std::string::npos);
+    CHECK(shader.wgsl.code.find(" + ", addition + 3) == std::string::npos);
+    auto callable = std::make_shared<g::NodeData>();
+    callable->kind = g::Kind::Call;
+    callable->args = {body};
+    const auto call = TslArg::of(callable);
+    bool refused = false;
+    try { tn::abi::tslCall("get", &call, {TslArg::of(std::string("first"))}, serial); }
+    catch (const std::exception& error) { refused = std::string(error.what()).find("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND") != std::string::npos; }
+    CHECK(refused);
+
+}
+
+void authored_output() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto scene = g::texture("scene", g::uv());
+    const auto authored = tn::abi::tslCall("renderOutput", nullptr,
+        {TslArg::of(scene), TslArg::of(4.0), TslArg::of(std::string("srgb"))}, serial);
+    CHECK(authored != nullptr);
+    if (!authored) return;
+    const auto post = g::serializedPost(authored);
+    const auto programs = tn::engine::shader::buildOutput(std::nullopt, false, &post, false);
+    const auto fragment = tn::engine::shader::buildStage(programs.fragment);
+    CHECK(fragment.wgsl.ok());
+    bool exposure = false;
+    for (const auto& uniform : fragment.uniforms) exposure |= uniform.name == "toneMappingExposure";
+    CHECK(exposure);
+    CHECK(fragment.wgsl.code.find("pow(") != std::string::npos);
+    const auto inherited = tn::abi::tslCall("renderOutput", nullptr, {TslArg::of(scene)}, serial);
+    CHECK(inherited != nullptr);
+    const auto disabled = tn::abi::tslCall("pipelineOutput", nullptr, {TslArg::of(inherited), TslArg::of(0.0)}, serial);
+    const auto inheritedPost = g::serializedPost(disabled, tn::engine::shader::ToneMapping::ACESFilmic, true);
+    CHECK(!inheritedPost.outputTransform);
+    const auto inheritedPrograms = tn::engine::shader::buildOutput(tn::engine::shader::ToneMapping::ACESFilmic, true, &inheritedPost);
+    CHECK(tn::engine::shader::buildStage(inheritedPrograms.fragment).wgsl.code == fragment.wgsl.code);
+    const auto bloom = g::bloom(inherited, 1, 0, 1);
+    const auto bloomPost = g::serializedPost(bloom, tn::engine::shader::ToneMapping::ACESFilmic, true);
+    CHECK(!bloomPost.passes.empty());
+    CHECK(bloomPost.passes.front().package.variants.at(0).stages[1].wgsl.code.find("pow(") != std::string::npos);
+    bool refused = false;
+    try { tn::abi::tslCall("renderOutput", nullptr,
+        {TslArg::of(scene), TslArg::of(5.0), TslArg::of(std::string("srgb"))}, serial); }
+    catch (const std::exception& error) { refused = std::string(error.what()).find("renderOutput") != std::string::npos; }
+    CHECK(refused);
+}
+
 void starter_post_bindings() {
     namespace g = tn::engine::shader::graph;
     using tn::abi::TslArg;
@@ -1664,7 +1742,7 @@ void starter_post_bindings() {
 
 }
 
-TN_TEST_MAIN({"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count},

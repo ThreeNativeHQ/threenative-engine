@@ -238,10 +238,10 @@ private:
 };
 } // namespace
 
-PostNode serializedPost(Node root) {
-    return {key(root), [root](Program& p, uint32_t, ExprId coordinate) {
-        tsl::Build scope(p); return lower(root, p, {{"uv", coordinate}});
-    }, postPasses(root), uniforms(root), uniformNodes(root)};
+PostNode serializedPost(Node root, std::optional<ToneMapping> toneMapping, bool srgb) {
+    return {key(root), [root, toneMapping, srgb](Program& p, uint32_t, ExprId coordinate) {
+        tsl::Build scope(p); return lower(root, p, {{"uv", coordinate}}, toneMapping, srgb);
+    }, postPasses(root, toneMapping, srgb), uniforms(root), uniformNodes(root), !root || root->kind != Kind::PipelineOutput || root->bits != 0};
 }
 
 Graph importSerialized(std::string_view source, std::vector<std::string>& errors) {

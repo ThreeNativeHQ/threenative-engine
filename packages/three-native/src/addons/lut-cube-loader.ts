@@ -30,6 +30,57 @@ interface ICubeClasses {
   vectorClass: new (x: number, y: number, z: number) => IVector;
 }
 
+interface ICubeData {
+  title: string | null;
+  size: number;
+  min: number[];
+  max: number[];
+  samples: number[];
+}
+
+function cubeSize(words: string[], previous: number): number {
+  if (previous || words.length !== 2) throw new Error("TN_LUT_SIZE: expected one LUT_3D_SIZE");
+  const size = Number(words[1]);
+  if (!Number.isInteger(size) || size < 2 || size > 256)
+    throw new Error("TN_LUT_SIZE: expected 2 through 256");
+  return size;
+}
+
+function cubeRow(line: string, cube: ICubeData): void {
+  if (!line || line.startsWith("#")) return;
+  const heading = /^TITLE\s+"([^"]*)"\s*(?:#.*)?$/u.exec(line);
+  if (heading) {
+    cube.title = heading[1] ?? "";
+    return;
+  }
+  const words = line.split("#")[0]?.trim().split(/\s+/u) ?? [];
+  const key = words[0];
+  if (key === "LUT_3D_SIZE") {
+    cube.size = cubeSize(words, cube.size);
+    return;
+  }
+  const target = key === "DOMAIN_MIN" ? cube.min : key === "DOMAIN_MAX" ? cube.max : undefined;
+  const values = (target ? words.slice(1) : words).map(Number);
+  if (values.length !== 3 || !values.every(Number.isFinite)) throw new Error(`TN_LUT_ROW: ${line}`);
+  if (target) {
+    target.splice(0, 3, ...values);
+    return;
+  }
+  if (!cube.size || cube.samples.length >= cube.size ** 3 * 4)
+    throw new Error("TN_LUT_DATA: missing size or excess samples");
+  cube.samples.push(...values, 1);
+}
+
+function parseCube(input: string): ICubeData {
+  const cube: ICubeData = { title: null, size: 0, min: [0, 0, 0], max: [1, 1, 1], samples: [] };
+  for (const raw of input.split(/\r?\n/u)) cubeRow(raw.trim(), cube);
+  if (!cube.size || cube.samples.length !== cube.size ** 3 * 4)
+    throw new Error("TN_LUT_DATA: expected size cubed RGB samples");
+  if (cube.min.some((value, index) => value > (cube.max[index] ?? 0)))
+    throw new Error("TN_LUT_DOMAIN: minimum exceeds maximum");
+  return cube;
+}
+
 export function defineLUTCubeLoader(classes: ICubeClasses, read: (url: string) => Promise<string>) {
   return class LUTCubeLoader {
     type = 1009;
@@ -70,44 +121,7 @@ export function defineLUTCubeLoader(classes: ICubeClasses, read: (url: string) =
     }
     parse(input: string) {
       this.setType(this.type);
-      let title: string | null = null;
-      let size = 0;
-      const min = [0, 0, 0];
-      const max = [1, 1, 1];
-      const samples: number[] = [];
-      for (const raw of input.split(/\r?\n/u)) {
-        const line = raw.trim();
-        if (!line || line.startsWith("#")) continue;
-        const heading = /^TITLE\s+"([^"]*)"\s*(?:#.*)?$/u.exec(line);
-        if (heading) {
-          title = heading[1] ?? "";
-          continue;
-        }
-        const words = line.split("#")[0]?.trim().split(/\s+/u) ?? [];
-        const key = words[0];
-        if (key === "LUT_3D_SIZE") {
-          if (size || words.length !== 2) throw new Error("TN_LUT_SIZE: expected one LUT_3D_SIZE");
-          size = Number(words[1]);
-          if (!Number.isInteger(size) || size < 2 || size > 256)
-            throw new Error("TN_LUT_SIZE: expected 2 through 256");
-          continue;
-        }
-        const target = key === "DOMAIN_MIN" ? min : key === "DOMAIN_MAX" ? max : undefined;
-        const values = (target ? words.slice(1) : words).map(Number);
-        if (values.length !== 3 || !values.every(Number.isFinite))
-          throw new Error(`TN_LUT_ROW: ${line}`);
-        if (target) {
-          target.splice(0, 3, ...values);
-          continue;
-        }
-        if (!size || samples.length >= size ** 3 * 4)
-          throw new Error("TN_LUT_DATA: missing size or excess samples");
-        samples.push(...values, 1);
-      }
-      if (!size || samples.length !== size ** 3 * 4)
-        throw new Error("TN_LUT_DATA: expected size cubed RGB samples");
-      if (min.some((value, index) => value > (max[index] ?? 0)))
-        throw new Error("TN_LUT_DOMAIN: minimum exceeds maximum");
+      const { title, size, min, max, samples } = parseCube(input);
       const data =
         this.type === 1009
           ? Uint8Array.from(samples, (value) => value * 255)

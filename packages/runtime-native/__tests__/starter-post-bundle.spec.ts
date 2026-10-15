@@ -26,8 +26,8 @@ describe("starter post import bindings", () => {
       import { lut3D } from "three/addons/tsl/display/Lut3DNode.js";
       import { traa } from "three/addons/tsl/display/TRAANode.js";
       import { LUTCubeLoader } from "three/addons/loaders/LUTCubeLoader.js";
-      import { luminance, logarithmicDepthToViewZ, viewZToOrthographicDepth, viewZToPerspectiveDepth, vertexIndex, struct } from "three/tsl";
-      globalThis.bound = { film, lut3D, traa, LUTCubeLoader, luminance, logarithmicDepthToViewZ, viewZToOrthographicDepth, viewZToPerspectiveDepth, vertexIndex, struct };
+      import { luminance, logarithmicDepthToViewZ, viewZToOrthographicDepth, viewZToPerspectiveDepth, vertexIndex, struct, renderOutput, reference } from "three/tsl";
+      globalThis.bound = { film, lut3D, traa, LUTCubeLoader, luminance, logarithmicDepthToViewZ, viewZToOrthographicDepth, viewZToPerspectiveDepth, vertexIndex, struct, renderOutput, reference };
     `,
     );
     await bundleNativeEngine({ entry, outfile, boot: false, host: false });
@@ -38,8 +38,6 @@ describe("starter post import bindings", () => {
     ["atomicAdd", "atomic element types"],
     ["atomicStore", "atomic element types"],
     ["lightShadowMatrix", "shadow matrix"],
-    ["reference", "object property"],
-    ["renderOutput", "authored graph position"],
     ["rtt", "update lifecycle"],
     ["wgslFn", "WGSL function"],
     ["DepthTexture", "sampleable depth attachment"],

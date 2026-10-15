@@ -59,6 +59,7 @@ struct PostNode {
     std::map<std::string, std::vector<float>> uniforms;
     /** The graph's uniform nodes, read each frame over `uniforms` (three's `uniform.value = x`). */
     std::vector<graph::Node> live;
+    bool outputTransform = true;
 };
 
 }  // namespace tn::engine::shader

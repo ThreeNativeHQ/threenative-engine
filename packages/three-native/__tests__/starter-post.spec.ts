@@ -129,6 +129,45 @@ describe("starter post bindings", () => {
     expect(newStruct).toHaveBeenCalledWith(color, weight);
     expect(() => Sample(color)).toThrow("TN_TSL_STRUCT_VALUES");
   });
+  it("refreshes typed object-property references before each render", () => {
+    const setUniform = vi.fn();
+    let next = 0;
+    const { exports: tsl, sync } = defineTsl({
+      call: () => ++next,
+      release: vi.fn(),
+      set: vi.fn(),
+      setPost: vi.fn(),
+      setUniform,
+      effectParameter: vi.fn(() => 0),
+    });
+    const reference = tsl.reference as (
+      property: string,
+      type: string,
+      object?: unknown,
+    ) => {
+      object: unknown;
+      value: unknown;
+    };
+    const shadow = { bias: 0.01 };
+    const node = reference("bias", "float", shadow);
+    shadow.bias = 0.02;
+    sync();
+    expect(setUniform).toHaveBeenLastCalledWith(1, [0.02]);
+    node.object = { bias: 0.03 };
+    sync();
+    expect(node.value).toBe(0.03);
+    const vector = { nested: { color: new Vector3(1, 2, 3) } };
+    reference("nested.color", "vec3", vector);
+    vector.nested.color.x = 4;
+    sync();
+    expect(setUniform).toHaveBeenLastCalledWith(2, [4, 2, 3]);
+    expect(() => reference("bias", "mat4", shadow)).toThrow("TN_TSL_REFERENCE_TYPE");
+    expect(() => reference("bias", "float")).toThrow("TN_TSL_REFERENCE_OBJECT");
+    expect(() => reference("bias", "vec3", shadow)).toThrow("TN_TSL_REFERENCE_VALUE");
+    node.object = { bias: Number.NaN };
+    expect(sync).toThrow("TN_TSL_REFERENCE_VALUE");
+  });
+
   it("routes the Wasm names, node methods and live parameters into the shared native table", () => {
     const calls: { name: string; receiver: number | null; args: readonly TslArgValue[] }[] = [];
     let next = 0;

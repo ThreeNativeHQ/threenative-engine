@@ -836,6 +836,23 @@ void tslApi() {
     CHECK(normalOutput != std::string::npos &&
           instancedVertex.find("instanceMatrix0", normalOutput) != std::string::npos);
     CHECK(instancedPrograms.vertex.ok() && s::WgslEmitter::emit(instancedPrograms.vertex).ok());
+    const std::string post = run(rt, adapter, R"JS(
+        (() => {
+            const Pair = tsl.struct('Pair', 'first', 'float', 'second', 'float');
+            const value = tsl.Fn(() => {
+                const local = tsl.float(0).toVar();
+                local.addAssign(1);
+                return Pair.newStruct(local, local);
+            })();
+            const first = value.get('first'), second = value.get('second');
+            const output = tsl.renderOutput(tsl.vec4(first, second, first, second), 4, 'srgb');
+            const linear = output.renderOutput(0, 'srgb-linear');
+            return linear !== output && tsl.pipelineOutput(linear, 0) !== linear;
+        })()
+    )JS");
+    CHECK(post == "true");
+    if (post != "true") std::fprintf(stderr, "Post API got %s\n", post.c_str());
+
 }
 
 // PRD-531 slice 3: the real V8 material setter owns a graph after its JS wrapper is gone.

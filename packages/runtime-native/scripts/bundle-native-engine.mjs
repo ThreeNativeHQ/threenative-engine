@@ -92,8 +92,6 @@ function unboundDiagnostic(specifier, name) {
       atomicAdd: "native IR supports atomics, but live storage nodes do not carry atomic element types or statement scheduling",
       atomicStore: "native IR supports atomics, but live storage nodes do not carry atomic element types or statement scheduling",
       lightShadowMatrix: "the live graph cannot bind an authored light's shadow matrix to its render light index",
-      reference: "the live graph cannot refresh an arbitrary object property as a typed uniform",
-      renderOutput: "renderer tone mapping and output color space are not available at an authored graph position",
       rtt: "live RTT targets do not expose the requested filtering, renderTarget extent or update lifecycle",
       wgslFn: "the live graph cannot compile and link an authored WGSL function with its typed arguments",
     })[name] ?? "the native graph lacks this material/pass/history/storage context binding";

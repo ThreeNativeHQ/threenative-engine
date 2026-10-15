@@ -25,6 +25,31 @@ export function uniformLanes(value: unknown): number[] {
   throw new TypeError(`TN_TSL_UNIFORM_VALUE: ${String(value)} is not a number, Color or vector`);
 }
 
+function referenceValue(property: string, type: string, object: unknown): unknown {
+  const types: Readonly<Record<string, number>> = { float: 1, color: 3, vec2: 2, vec3: 3, vec4: 4 };
+  const lanes = types[type];
+  if (lanes === undefined)
+    throw new TypeError(
+      `TN_TSL_REFERENCE_TYPE: reference '${type}' needs typed integer, boolean, matrix or buffer uniforms`,
+    );
+  if (typeof object !== "object" || object === null)
+    throw new TypeError(
+      "TN_TSL_REFERENCE_OBJECT: reference needs an explicit object; per-draw object references are unbound",
+    );
+  let value: unknown = object;
+  for (const key of property.split(".")) {
+    if (typeof value !== "object" || value === null)
+      throw new TypeError(`TN_TSL_REFERENCE_VALUE: missing ${property}`);
+    value = Reflect.get(value, key);
+  }
+  const values = uniformLanes(value);
+  if (values.length !== lanes || !values.every(Number.isFinite))
+    throw new TypeError(
+      `TN_TSL_REFERENCE_VALUE: ${property} must match ${type} with finite values`,
+    );
+  return value;
+}
+
 /**
  * Wraps a back end's `uniform` so each uniform node it returns answers `.value` (an accessor on the
  * node itself: a V8 node has no prototype of its own to carry it) and three's update hooks. `setValues`
@@ -40,6 +65,7 @@ export function liveUniforms<TNode extends object>(
     values: unknown[],
     type?: string,
   ) => { array: unknown[]; element(index: unknown): TNode };
+  reference(property: string, type: string, object?: unknown): TNode;
   sync(): void;
 } {
   const states = new WeakMap<object, IUniformState>();
@@ -90,6 +116,17 @@ export function liveUniforms<TNode extends object>(
           value: (callback: never) => onUpdate(callback, "object"),
         },
       });
+      return node;
+    },
+    reference(property: string, type: string, object?: unknown): TNode {
+      if (typeof property !== "string" || property.split(".").some((key) => key.length === 0))
+        throw new TypeError("TN_TSL_REFERENCE_PROPERTY: expected a nonempty property path");
+      const node = live.uniform(referenceValue(property, type, object)) as TNode & {
+        object: unknown;
+        onRenderUpdate(callback: () => unknown): TNode;
+      };
+      Object.defineProperty(node, "object", { configurable: true, writable: true, value: object });
+      node.onRenderUpdate(() => referenceValue(property, type, node.object));
       return node;
     },
     /**

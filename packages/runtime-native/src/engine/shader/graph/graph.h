@@ -1,6 +1,8 @@
 #pragma once
 
 #include "engine/shader/ir.h"
+#include "engine/shader/tonemap.h"
+#include <optional>
 
 #include <cstdint>
 #include <functional>
@@ -31,7 +33,7 @@ enum class Kind : uint8_t {
     Unary, Binary, Math, Swizzle, Join, Convert, Select, Texture,
     StorageElement, VarRead, LoopIndex,
     Body, Var, Assign, If, Loop, RenderTexture, TextureSize, TextureLoad, Call, Return, Break, Continue, Discard, PostEffect,
-    Pmrem, ScreenUv, Reflector, ViewportDepth, StructType, Struct,
+    Pmrem, ScreenUv, Reflector, ViewportDepth, StructType, Struct, StructMember, RenderOutput, PipelineOutput,
 };
 
 enum class UnOp : uint8_t { Negate };
@@ -212,7 +214,8 @@ using Graph = Node;
 
 /** Walks the graph and emits IR into `program`; a Build scope must be active, as tsl.h requires. */
 ExprId lower(const Graph& graph, Program& program,
-             const std::unordered_map<std::string, ExprId>& inputs = {});
+             const std::unordered_map<std::string, ExprId>& inputs = {},
+             std::optional<ToneMapping> toneMapping = std::nullopt, bool srgb = false);
 /** Canonical DAG serialization, independent of addresses; includes sharing and every operation. */
 std::string key(const Graph& graph);
 /** How many times key() has serialized a graph in this process; a steady frame serializes none. */

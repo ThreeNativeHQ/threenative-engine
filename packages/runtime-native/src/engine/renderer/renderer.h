@@ -733,6 +733,7 @@ private:
     std::vector<std::string> diagnostics_;
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;
+    shader::graph::Node postGraph_;
     GraphTextures postTextures_;
     std::vector<uint32_t> postTextureVersions_;
     std::unique_ptr<TraaPass> traa_;

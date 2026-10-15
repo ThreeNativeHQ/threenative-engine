@@ -2,6 +2,7 @@
 
 #include "engine/shader/tsl/tsl.h"
 #include "engine/shader/cube_uv.h"
+#include "engine/shader/output.h"
 
 #include <bit>
 #include <unordered_map>
@@ -57,8 +58,9 @@ std::shared_ptr<NodeData> makeJoin(uint8_t lanes, std::initializer_list<Node> pa
 /** Walks a graph and lowers each node once, preserving statement order. */
 class Lowerer {
 public:
-    explicit Lowerer(Program& program, const std::unordered_map<std::string, ExprId>& inputs)
-        : program_(program), inputs_(inputs) {}
+    explicit Lowerer(Program& program, const std::unordered_map<std::string, ExprId>& inputs,
+                     std::optional<ToneMapping> toneMapping, bool srgb)
+        : program_(program), inputs_(inputs), toneMapping_(toneMapping), srgb_(srgb) {}
 
     ExprId expression(Node node);
     void statements(const std::vector<Node>& list);
@@ -68,17 +70,21 @@ private:
     VarId ensureVar(Node var);
     uint32_t ensureStorage(const NodeData& element);
     ExprId emit(Node node);
+    std::vector<ExprId> aggregate(Node node);
     ExprId convert(ExprId value, Type target);
 
     Program& program_;
     const std::unordered_map<std::string, ExprId>& inputs_;
     std::unordered_map<const NodeData*, ExprId> exprs_;
+    std::unordered_map<const NodeData*, std::vector<ExprId>> aggregates_;
     std::unordered_map<const NodeData*, VarId> vars_;
     std::unordered_map<std::string, uint32_t> buffers_;
     std::unordered_map<const NodeData*, ExprId> loopIndex_;
     static constexpr VarId noVar = UINT32_MAX;
     VarId returnVar_ = noVar, doneVar_ = noVar;
     Type returnType_;
+    std::optional<ToneMapping> toneMapping_;
+    bool srgb_;
 };
 
 ExprId Lowerer::convert(ExprId value, Type target) {
@@ -106,6 +112,29 @@ ExprId Lowerer::expression(Node node) {
     return id;
 }
 
+std::vector<ExprId> Lowerer::aggregate(Node node) {
+    if (const auto found = aggregates_.find(node.get()); found != aggregates_.end()) return found->second;
+    if (doneVar_ != noVar)
+        throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: aggregates inside callable functions need invocation-local member slots");
+    std::vector<ExprId> values;
+    if (node->kind == Kind::Struct) {
+        for (const auto& member : node->args) {
+            const auto value = expression(member);
+            if (value == kInvalid) throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: invalid struct member");
+            // Snapshot every member before later statements can change the function's local variables.
+            values.push_back(program_.load(program_.var(program_.expr(value).type, value)));
+        }
+    } else if (node->kind == Kind::Body && node->args.size() == 1) {
+        statements(node->body);
+        exprs_.clear();
+        values = aggregate(node->args[0]);
+    } else {
+        throw std::runtime_error("TN_NATIVE_STRUCT_AGGREGATE_UNBOUND: expected a final struct value");
+    }
+    aggregates_[node.get()] = values;
+    return values;
+}
+
 ExprId Lowerer::emit(Node node) {
     const NodeData& d = *node;
     if (d.kind == Kind::PositionLocal || d.kind == Kind::Varying || d.kind == Kind::Attribute) {
@@ -113,6 +142,18 @@ ExprId Lowerer::emit(Node node) {
         if (input != inputs_.end()) return input->second;
     }
     switch (d.kind) {
+        case Kind::StructMember: return aggregate(d.args[0]).at(d.bits);
+        case Kind::PipelineOutput: return expression(d.args[0]);
+        case Kind::RenderOutput: {
+            auto tone = toneMapping_;
+            if (d.bits) {
+                static const std::map<uint64_t, std::optional<ToneMapping>> mappings{
+                    {1, std::nullopt}, {2, ToneMapping::Linear}, {3, ToneMapping::Reinhard},
+                    {4, ToneMapping::Cineon}, {5, ToneMapping::ACESFilmic}, {7, ToneMapping::AgX}, {8, ToneMapping::Neutral}};
+                tone = mappings.at(d.bits);
+            }
+            return renderOutput(program_, expression(d.args[0]), tone, d.name.empty() ? srgb_ : d.name == "srgb");
+        }
         case Kind::Body: {
             statements(d.body);
             exprs_.clear();
@@ -354,21 +395,25 @@ void Lowerer::statement(Node node) {
         }
         case Kind::If: {
             const ExprId condition = expression(s.args[0]);
+            const auto previousAggregates = aggregates_;
             if (s.otherwise.empty()) {
                 program_.If(condition, [this, &s] { statements(s.body); });
             } else {
                 program_.If(condition, [this, &s] { statements(s.body); },
-                            [this, &s] { statements(s.otherwise); });
+                            [this, &s, &previousAggregates] { aggregates_ = previousAggregates; statements(s.otherwise); });
             }
+            aggregates_ = previousAggregates;
             return;
         }
         case Kind::Loop: {
             const ExprId count = expression(s.args[0]);
+            const auto previousAggregates = aggregates_;
             const Node indexNode = s.args[1];
             program_.Loop(count, [this, &s, &indexNode](ExprId index) {
                 loopIndex_[indexNode.get()] = s.args.size() > 2 ? program_.add(index, expression(s.args[2])) : index;
                 statements(s.body);
             });
+            aggregates_ = previousAggregates;
             return;
         }
         default: return;
@@ -654,9 +699,10 @@ Node Block::node() const {
     return data;
 }
 
-ExprId lower(const Graph& graph, Program& program, const std::unordered_map<std::string, ExprId>& inputs) {
+ExprId lower(const Graph& graph, Program& program, const std::unordered_map<std::string, ExprId>& inputs,
+             std::optional<ToneMapping> toneMapping, bool srgb) {
     if (!graph) return kInvalid;
-    Lowerer lowerer(program, inputs);
+    Lowerer lowerer(program, inputs, toneMapping, srgb);
     return lowerer.expression(graph);
 }
 

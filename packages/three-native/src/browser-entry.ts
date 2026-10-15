@@ -231,6 +231,9 @@ interface IPipelineRenderer {
 function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camera?: unknown }) {
   return class RenderPipeline {
     outputNode: unknown;
+    outputColorTransform = true;
+    private outputSource?: number;
+    private outputGraph?: number;
     readonly renderer: IPipelineRenderer;
 
     constructor(renderer: IPipelineRenderer, outputNode?: unknown) {
@@ -241,14 +244,30 @@ function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camer
     render(): void {
       if (!isTslNode(this.outputNode))
         throw new TypeError("TN_WASM_POST: RenderPipeline.outputNode is not a TSL node");
-      tsl.setPost(this.outputNode[TSL_NODE]);
+      tsl.setPost(this.graph(this.outputNode[TSL_NODE]));
       if (target.scene !== undefined && target.camera !== undefined && this.renderer.render)
         this.renderer.render(target.scene, target.camera);
       else this.renderer[RENDER_AGAIN]?.();
     }
 
+    private graph(source: number): number {
+      if (this.outputSource !== source) {
+        if (this.outputGraph !== undefined) tsl.release(this.outputGraph);
+        this.outputSource = source;
+        this.outputGraph = undefined;
+      }
+      if (!this.outputColorTransform)
+        this.outputGraph ??= tsl.call("pipelineOutput", null, [
+          { kind: "node", node: source },
+          { kind: "number", number: 0 },
+        ]);
+      return this.outputColorTransform ? source : (this.outputGraph ?? source);
+    }
+
     dispose(): void {
       tsl.setPost(null);
+      if (this.outputGraph !== undefined) tsl.release(this.outputGraph);
+      this.outputGraph = undefined;
     }
   };
 }

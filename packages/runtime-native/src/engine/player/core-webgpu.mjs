@@ -117,6 +117,9 @@ export const QuadMesh = defineQuadMesh(globalThis);
 // three's RenderPipeline(renderer, outputNode): the player installs the node graph as its post pass
 // (once per graph) and draws it with the renderer's settings.
 export class RenderPipeline {
+  outputColorTransform = true;
+  _source = null;
+  _graph = null;
   constructor(renderer, outputNode = null) {
     this.renderer = renderer;
     this.outputNode = outputNode;
@@ -124,7 +127,13 @@ export class RenderPipeline {
   render() {
     syncUniforms();
     globalThis.tn.setRendererState(this.renderer);
-    globalThis.tn.setPostGraph(this.outputNode);
+    if (this._source !== this.outputNode) {
+      this._source = this.outputNode;
+      this._graph = null;
+    }
+    if (!this.outputColorTransform && this.outputNode !== null)
+      this._graph ??= globalThis.tsl.pipelineOutput(this.outputNode, 0);
+    globalThis.tn.setPostGraph(this.outputColorTransform ? this.outputNode : this._graph);
   }
   dispose() { globalThis.tn.setPostGraph(null); }
 }
