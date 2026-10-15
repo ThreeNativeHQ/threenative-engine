@@ -1,14 +1,9 @@
-// The native host resolves a texture at `<path>` or `assets/<path>` beside the game; the web build
-// gets the ground's CC0 starter maps from Vite's publicDir. Mirror that root into `assets/` with hard
-// links so a desktop run reads the very bytes the browser does. The licensed `local-assets/` mounts
-// are not staged: their cooked KTX2 models load untextured on the native host today, which is worse
-// than the procedural fallback they leave in place, and the ground already falls back from
-// `temperate/` to these public maps by name.
 import {
   copyFileSync,
   existsSync,
   linkSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   statSync,
   unlinkSync,
@@ -19,9 +14,16 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(dirname(fileURLToPath(import.meta.url)));
 const out = join(here, "assets");
-// vite.config.ts publicDir, served at the root.
+// Match Vite publicDir and preparedAssets mounts, including first-root-wins /basis.
 const roots = [
   { dir: join(here, "../../packages/terrain/starter-assets"), mount: "", required: true },
+  ...[
+    ["temperate", "temperate"],
+    ["temperate/basis", "basis"],
+    ["prepared", "prepared"],
+    ["landscape-pro", "landscape-pro"],
+    ["landscape-pro/basis", "basis"],
+  ].map(([dir, mount]) => ({ dir: join(here, "local-assets", dir), mount })),
 ];
 
 let linked = 0;
@@ -37,11 +39,10 @@ function mirror(source, target) {
     }
     if (!entry.isFile()) continue;
     const logical = relative(out, to).split(sep).join("/");
-    entries[logical] = { output: `assets/${logical}`, bytes: statSync(from).size };
-    if (existsSync(to)) {
-      if (statSync(to).ino === statSync(from).ino) continue;
-      unlinkSync(to);
-    }
+    if (entries[logical]) continue;
+    entries[logical] = { output: logical, bytes: statSync(from).size };
+    if (existsSync(to) && statSync(to).ino === statSync(from).ino) continue;
+    if (existsSync(to)) unlinkSync(to);
     try {
       linkSync(from, to);
     } catch (error) {
@@ -66,7 +67,18 @@ for (const root of roots) {
 if (Object.keys(entries).length === 0) throw new Error("stage-native-assets: no staged assets");
 // A nonempty manifest skips bare-path probes and rejects absent optional assets before fetching.
 writeFileSync(
-  join(here, "assets.manifest.json"),
+  join(out, "assets.manifest.json"),
   `${JSON.stringify({ version: 1, entries }, null, 2)}\n`,
 );
+// Remove only this script's old starter-only manifest, never a user-authored manifest.
+const legacy = join(here, "assets.manifest.json");
+if (existsSync(legacy)) {
+  const old = JSON.parse(readFileSync(legacy, "utf8"));
+  const starter = Object.fromEntries(
+    Object.entries(entries)
+      .filter(([key]) => existsSync(join(roots[0].dir, key)))
+      .map(([key, entry]) => [key, { ...entry, output: `assets/${key}` }]),
+  );
+  if (JSON.stringify(old) === JSON.stringify({ version: 1, entries: starter })) unlinkSync(legacy);
+}
 console.log(`stage-native-assets: ${linked} file(s) linked into ${relative(here, out)}/`);
