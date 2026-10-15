@@ -1,5 +1,8 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 const profile = await import(
   new URL("../../packages/runtime-native/scripts/desktop-build-profile.mjs", import.meta.url).href
 );
@@ -41,6 +44,37 @@ describe("shipping desktop identity preserves measured coverage defaults", () =>
       engine: "V8",
     });
   });
+  it.each([
+    ["Linux", "aarch64", "FALSE", "FALSE", "TRUE", "pthread;dl;atomic"],
+    ["Linux", "arm64", "FALSE", "FALSE", "TRUE", "pthread;dl;atomic"],
+    ["Linux", "x86_64", "FALSE", "FALSE", "TRUE", "pthread;dl"],
+    ["Android", "aarch64", "FALSE", "TRUE", "TRUE", ""],
+    ["Windows", "ARM64", "FALSE", "FALSE", "FALSE", "winmm;dbghelp;shlwapi"],
+  ])(
+    "evaluates V8 system libraries for %s/%s",
+    (system, processor, apple, android, unix, expected) => {
+      const cmake = readFileSync(
+        new URL("../../packages/runtime-native/CMakeLists.txt", import.meta.url),
+        "utf8",
+      );
+      const start = cmake.indexOf("            # V8 requires additional system libraries");
+      const end = cmake.indexOf("\n        else()", start);
+      expect(start).toBeGreaterThan(0);
+      expect(end).toBeGreaterThan(start);
+      const script = join(makeTempDirSync("v8-system-libs-"), "libraries.cmake");
+      writeFileSync(
+        script,
+        `set(CMAKE_SYSTEM_NAME "${system}")\nset(CMAKE_SYSTEM_PROCESSOR "${processor}")\nset(APPLE ${apple})\nset(ANDROID ${android})\nset(UNIX ${unix})\nset(WIN32 ${system === "Windows" ? "TRUE" : "FALSE"})\n${cmake.slice(start, end)}\nmessage("V8_SYSTEM_LIBS=${"${V8_SYSTEM_LIBS}"}")\n`,
+      );
+      const output = spawnSync("cmake", ["-P", script], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      expect(output.status).toBe(0);
+      expect(output.stderr.trim()).toBe(`V8_SYSTEM_LIBS=${expected}`);
+    },
+  );
+
   it("selects V8/wgpu explicitly on Linux ARM64", () => {
     expect(profile.desktopBuildOverrides("linux", "arm64")).toEqual({
       MYSTRAL_USE_V8: "ON",
