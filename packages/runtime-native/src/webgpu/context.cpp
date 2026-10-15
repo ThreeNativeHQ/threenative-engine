@@ -1426,14 +1426,16 @@ void Context::releaseSurfaceView() {
     surfaceTexture_ = nullptr;
 }
 
-void Context::present() {
+bool Context::present() {
+    bool presented = false;
     if (surface_ && surfaceView_) {
-        wgpuSurfacePresent(surface_);
+        presented = wgpuSurfacePresent(surface_) == WGPUStatus_Success;
 #if defined(__ANDROID__)
         __android_log_print(ANDROID_LOG_INFO, "TN_Player", "TN_SURFACE_FRAME:{\"view\":true}");
 #endif
     }
     releaseSurfaceView();
+    return presented;
 }
 
 // Screenshot callback data

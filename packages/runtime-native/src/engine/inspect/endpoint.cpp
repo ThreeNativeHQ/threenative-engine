@@ -70,9 +70,49 @@ std::string Endpoint::handle(std::string_view frame) {
     return response(id->string(), hasResult ? &result : nullptr, nullptr);
 }
 
+void Endpoint::recordPresentation(double completedAtMs, uint64_t queuedEpoch, bool presented) {
+    if (!presented || !liveClock() || automaticRenderHeld()) return;
+    std::lock_guard lock(presentationMutex_);
+    if (!liveClock() || automaticRenderHeld() || queuedEpoch != presentationEpoch_) return;
+    if (!std::isfinite(completedAtMs) || (!presentations_.empty() && completedAtMs <= presentations_.back().second)) {
+        presentationsValid_ = false;
+        return;
+    }
+    presentations_.emplace_back(++presentationSequence_, completedAtMs);
+    if (presentations_.size() > 2048) { presentations_.pop_front(); ++droppedPresentations_; }
+}
+
 // True when the method answers a result; false with `error` set when it refused, false with no error
 // when it answered nothing (device.ts then sends { id } alone).
 bool Endpoint::dispatch(const std::string& method, const Value* argument, Value& result, std::string& error) {
+    if (method == "_setClockMode") {
+        if (!argument || !argument->isString() || (argument->string() != "fixed-step" && argument->string() != "wall-clock"))
+            return fail(error, "TN_INSPECT_INVALID_ARGUMENT: _setClockMode takes fixed-step or wall-clock.");
+        if (!host_.setLiveClock)
+            return fail(error, "TN_INSPECT_UNSUPPORTED: live clock requires an available host.");
+        const bool live = argument->string() == "wall-clock";
+        if (live != liveClock()) {
+            host_.setLiveClock(live); // drains old render jobs before changing the observation epoch
+            std::lock_guard lock(presentationMutex_);
+            presentations_.clear(); droppedPresentations_ = 0; presentationsValid_ = true; ++presentationEpoch_;
+            liveClock_ = live;
+        }
+        result = clock();
+        return true;
+    }
+    if (method == "_presentationCompletions") {
+        if (argument && !argument->isNull())
+            return fail(error, "TN_INSPECT_INVALID_ARGUMENT: _presentationCompletions takes no argument.");
+        std::lock_guard lock(presentationMutex_);
+        std::vector<Value> samples;
+        for (const auto& [sequence, time] : presentations_)
+            samples.push_back(obj({{"sequence", num(double(sequence))}, {"completedAtMs", num(time)}}));
+        result = obj({{"source", str("present-return")}, {"timebase", str("steady-clock-ms")},
+            {"clock", clock()}, {"sequence", num(double(presentationSequence_))}, {"epoch", num(double(presentationEpoch_))},
+            {"dropped", num(double(droppedPresentations_))}, {"valid", Value::makeBool(presentationsValid_)},
+            {"samples", Value::makeArray(std::move(samples))}});
+        return true;
+    }
     if (host_.observe && (method == "describe" || method == "ready" || method == "sample" ||
                           method == "applySetup" || method == "drainEvents")) {
         if (host_.observe(method, argument, result, error)) {
@@ -81,6 +121,12 @@ bool Endpoint::dispatch(const std::string& method, const Value* argument, Value&
                 std::erase_if(members, [](const auto& member) { return member.first == "profile"; });
                 members.emplace_back("profile", obj({{"engine", str("native")},
                                                       {"gameRuntime", str(host_.gameRuntime)}}));
+                result = obj(std::move(members));
+            }
+            if (method == "sample" && liveClock() && result.isObject()) {
+                auto members = result.members();
+                std::erase_if(members, [](const auto& member) { return member.first == "clock"; });
+                members.emplace_back("clock", clock());
                 result = obj(std::move(members));
             }
             return true;
@@ -92,7 +138,13 @@ bool Endpoint::dispatch(const std::string& method, const Value* argument, Value&
             return fail(error, "TN_INSPECT_INVALID_ARGUMENT: _holdAutomaticRender takes a boolean.");
         if (argument->boolean() && !host_.renderEachTick)
             return fail(error, "TN_INSPECT_UNSUPPORTED: holding automatic render requires rendering each driven tick.");
-        automaticRenderHeld_ = argument->boolean();
+        {
+            std::lock_guard lock(presentationMutex_);
+            if (argument->boolean() != automaticRenderHeld()) {
+                presentations_.clear(); droppedPresentations_ = 0; presentationsValid_ = true; ++presentationEpoch_;
+            }
+            automaticRenderHeld_ = argument->boolean();
+        }
         // Brackets a matched CPU window in the host's own ticks, so a checker reconciles the frames in
         // it without trusting the game clock the runner samples (it can lead the driven tick).
         const auto& d = Material::diagnostics();
@@ -109,7 +161,7 @@ bool Endpoint::dispatch(const std::string& method, const Value* argument, Value&
                 automaticRenderHeld_ ? "true" : "false", static_cast<unsigned long long>(tick()), json::stringify(diagnostic).c_str());
         }
         std::fflush(stdout);
-        return result = Value::makeBool(automaticRenderHeld_), true;
+        return result = Value::makeBool(automaticRenderHeld()), true;
     }
     if (method.rfind("input.", 0) == 0) {
         if (!input(method, argument, error))
@@ -156,7 +208,7 @@ Value Endpoint::describe() const {
 }
 
 Value Endpoint::clock() const {
-    return obj({{"mode", str("fixed-step")}, {"tick", num(host_.tick ? double(host_.tick()) : 0.0)}});
+    return obj({{"mode", str(liveClock() ? "wall-clock" : "fixed-step")}, {"tick", num(host_.tick ? double(host_.tick()) : 0.0)}});
 }
 
 bool Endpoint::sample(const Value* argument, Value& result, std::string& error) const {
@@ -224,6 +276,8 @@ bool Endpoint::sample(const Value* argument, Value& result, std::string& error) 
 }
 
 bool Endpoint::advance(const Value* argument, Value& result, std::string& error) {
+    if (liveClock())
+        return fail(error, "TN_INSPECT_UNSUPPORTED: advance cannot inject ticks in wall-clock mode.");
     if (!isInteger(argument) || argument->number() < 1 || argument->number() > 100000)
         return fail(error, "TN_INSPECT_INVALID_ARGUMENT: advance takes a whole number of ticks from 1 to 100000.");
     if (!host_.step)

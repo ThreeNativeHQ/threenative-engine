@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,7 @@ const native = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const executable = process.argv[2];
 assert(executable, "Usage: player-frame-per-present.mjs <tn-native-engine-player-v8> [--cpu-profile] [--main-thread-cpu] [--driven-clock]");
 const drivenClock = process.argv.includes("--driven-clock");
+const liveClock = process.argv.includes("--live-clock");
 const cpuProfile = process.argv.includes("--cpu-profile");
 const mainThreadCpu = process.argv.includes("--main-thread-cpu");
 const work = await mkdtemp(resolve(native, "build/player-frame-per-present-"));
@@ -26,7 +27,7 @@ await writeFile(entry, `
 import { Scene, PerspectiveCamera, Object3D, AnimationMixer, AnimationClip, VectorKeyframeTrack } from "three";
 globalThis.tn.scene = new Scene();
 globalThis.tn.camera = new PerspectiveCamera();
-${drivenClock ? `const player = new Object3D(); player.name = "player";
+${drivenClock || liveClock ? `const player = new Object3D(); player.name = "player";
 globalThis.tn.scene.add(player);
 globalThis.tn.onUpdate(() => { player.position.x++; });` : ""}
 const mixer = new AnimationMixer(new Object3D());
@@ -51,7 +52,7 @@ const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy
 delete env.TN_PLAYER_MAIN_THREAD_CPU;
 if (mainThreadCpu) env.TN_PLAYER_MAIN_THREAD_CPU = "1";
 delete env.TN_PLAYTEST_MAILBOX_ROOT;
-if (drivenClock) {
+if (drivenClock || liveClock) {
   const mailbox = resolve(work, "mailbox");
   mkdirSync(mailbox);
   env.TN_PLAYTEST_MAILBOX_ROOT = mailbox;
@@ -77,10 +78,53 @@ if (drivenClock) {
   let sampled;
   try {
     await answer("ready");
+    const call = async (id, method, argument) => {
+      // A live held loop can poll between open(O_TRUNC) and write: publish atomically.
+      writeFileSync(`${request}.tmp`, JSON.stringify({ id, method, argument }));
+      renameSync(`${request}.tmp`, request);
+      return answer(id);
+    };
+    if (liveClock) {
+      const initial = await call("setup", "advance", 10);
+      assert.equal(initial.result.clock.tick, 10);
+      const mode = await call("live", "_setClockMode", "wall-clock");
+      assert.equal(mode.error, undefined, "host must negotiate autonomous simulation");
+      const forbidden = await call("forbidden", "advance", 1);
+      assert.match(forbidden.error?.message ?? "", /TN_INSPECT_UNSUPPORTED/);
+      await new Promise((done) => setTimeout(done, 180));
+      const running = await call("running", "sample", { resources: ["state"] });
+      assert.equal(running.result.clock.mode, "wall-clock");
+      assert(running.result.clock.tick > 10, "live host must update without injected advances");
+      assert.equal(running.result.clock.tick, running.result.resources.state.playerX);
+      await call("renderhold", "_holdAutomaticRender", true);
+      await new Promise((done) => setTimeout(done, 100));
+      const whileHeld = await call("whileheld", "_setClockMode", "wall-clock");
+      assert(whileHeld.result.tick > running.result.clock.tick, "render hold must not hold live simulation");
+      const heldSample = await call("heldsample", "sample", { resources: ["state"] });
+      assert.equal(heldSample.result.clock.tick, heldSample.result.resources.state.playerX);
+      const completions = await call("cadence", "_presentationCompletions");
+      assert.equal(completions.result.source, "present-return");
+      assert.deepEqual(completions.result.samples, [], "headless draws are not presentations");
+      await call("renderresume", "_holdAutomaticRender", false);
+      const frozen = await call("fixed", "_setClockMode", "fixed-step");
+      const tick = frozen.result.tick;
+      await new Promise((done) => setTimeout(done, 120));
+      const held = await call("held", "sample", {});
+      assert.equal(held.result.clock.tick, tick, "returning to lockstep stops autonomous updates");
+      const resumed = await call("resumed", "advance", 3);
+      assert.equal(resumed.result.clock.tick, tick + 3, "mode switches preserve monotonic ticks");
+      const again = await call("liveagain", "_setClockMode", "wall-clock");
+      assert.equal(again.result.tick, tick + 3, "rebasing does not reset or inject simulation ticks");
+      await new Promise((done) => setTimeout(done, 100));
+      const active = await call("active", "sample", {});
+      assert(active.result.clock.tick > tick + 3, "a second live epoch updates autonomously");
+      // finally tears down an actively updating host, not only a held lockstep host.
+    } else {
     writeFileSync(request, JSON.stringify({ id: "advance", method: "advance", argument: 2500 }));
     advanced = await answer("advance");
     writeFileSync(request, JSON.stringify({ id: "sample", method: "sample", argument: { resources: ["state"] } }));
     sampled = await answer("sample");
+    }
   } finally {
     child.kill();
     const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
@@ -88,6 +132,7 @@ if (drivenClock) {
     clearTimeout(timer);
     assert.notEqual(signal, "SIGKILL", "driven player must stop within five seconds");
   }
+  if (liveClock) { console.log("PASS negotiated live clock, autonomous updates, headless exclusion and lockstep restoration"); process.exit(0); }
   assert.equal(advanced.error, undefined);
   assert.equal(sampled.error, undefined);
   assert.equal(advanced.result.ticks, 2500);

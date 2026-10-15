@@ -667,6 +667,12 @@ int Session::initialize() {
     host.renderEachTick = game.renderEachTick;
     host.observe = game.observe;
     host.tick = [this] { return tick(); };
+    host.setLiveClock = [this](bool) {
+        waitRenderThread(true);
+        clock = world::FixedStepClock{kTickStep, 5};
+        clock.start(0);
+        freeRunStart = std::chrono::steady_clock::now();
+    };
     host.step = [this] {
         // A runner requests updates directly; the wall-time accumulator may bank zero or two.
         ++drivenTicks;
@@ -821,25 +827,27 @@ int Session::initialize() {
             if (firstFrame) startupStage("first-acquire-begin");
             const auto presentBegin = metrics ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
             const auto format = static_cast<WGPUTextureFormat>(context->getPreferredFormat());
+            const auto presentationEpoch = endpoint->liveClock() ? endpoint->presentationEpoch() : 0;
             if (offThread) {
                 // Every pass's encode, then the present job for the GPU thread, in order on the render thread.
                 // The jobs hold renderers, never scene data, and the game thread does not touch them until
                 // its next waitRenderThread().
                 renderJobPosted = true;
-                renderThread->post([this, format, queue = context->getQueue()]() mutable {
+                renderThread->post([this, format, queue = context->getQueue(), presentationEpoch]() mutable {
                     const double begin = threadCpuMs();
                     try {
                         for (auto& job : encodeJobs) job();
                         if (auto plan = renderer->prepareBlit(format)) {
                             gpuThread->post([plan = *plan, presenter = presenter.get(), queue,
-                                             stats = &gpuJobCpuMs]() mutable {
+                                             stats = &gpuJobCpuMs, observation = endpoint.get(), presentationEpoch]() mutable {
                                 const double gpuBegin = threadCpuMs();
                                 Presenter::Frame frame;
                                 WGPUCommandBuffer commands = presenter->begin(frame) ? Renderer::encodeBlit(plan, frame.color) : nullptr;
                                 if (commands) {
                                     wgpuQueueSubmit(queue, 1, &commands);
                                     wgpuCommandBufferRelease(commands);
-                                    presenter->present();
+                                    const bool presented = presenter->present();
+                                    if (observation->liveClock()) observation->recordPresentation(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(), presentationEpoch, presented);
                                 } else {
                                     wgpuBindGroupRelease(plan.group);
                                     if (plan.overGroup) wgpuBindGroupRelease(plan.overGroup);
@@ -856,14 +864,15 @@ int Session::initialize() {
                 // Prepared here, recorded there: the job reads the plan and the presenter, never the renderer.
                 if (auto plan = renderer->prepareBlit(format)) {
                     gpuThread->post([plan = *plan, presenter = presenter.get(), queue = context->getQueue(),
-                                     stats = &gpuJobCpuMs]() mutable {
+                                     stats = &gpuJobCpuMs, observation = endpoint.get(), presentationEpoch]() mutable {
                         const double begin = threadCpuMs();
                         Presenter::Frame frame;
                         WGPUCommandBuffer commands = presenter->begin(frame) ? Renderer::encodeBlit(plan, frame.color) : nullptr;
                         if (commands) {
                             wgpuQueueSubmit(queue, 1, &commands);
                             wgpuCommandBufferRelease(commands);
-                            presenter->present();
+                            const bool presented = presenter->present();
+                            if (observation->liveClock()) observation->recordPresentation(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(), presentationEpoch, presented);
                         } else {
                             wgpuBindGroupRelease(plan.group);
                             if (plan.overGroup) wgpuBindGroupRelease(plan.overGroup);
@@ -881,7 +890,8 @@ int Session::initialize() {
                 const double presentCpuBegin = metrics ? threadCpuMs() : -1;
                 const double presentInstructionsBegin = metrics ? threadInstructions() : -1;
                 const double presentCyclesBegin = metrics ? threadCycles() : -1;
-                presenter->present();
+                const bool presented = presenter->present();
+                if (endpoint->liveClock()) endpoint->recordPresentation(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(), presentationEpoch, presented);
                 if (presentInstructionsBegin >= 0) presentInstructions = threadInstructions() - presentInstructionsBegin;
                 if (presentCyclesBegin >= 0) presentCycles = threadCycles() - presentCyclesBegin;
                 if (presentCpuBegin >= 0) { presentCpuEnd = threadCpuMs(); presentCpuMs = presentCpuEnd - presentCpuBegin; presentCpuStart = presentCpuBegin; presentTimed = true; }
@@ -1101,7 +1111,7 @@ int Session::step() {
     if (game.uiFrame) game.uiFrame();
     // An advance may render several streaming frames; each tick gets its own admission cap.
     mailbox->poll(*endpoint);
-    if (endpoint->automaticRenderHeld()) return viewFailed ? -1 : 1;
+    if (endpoint->automaticRenderHeld() && !endpoint->liveClock()) return viewFailed ? -1 : 1;
     // A launched runner holds the game's boot until its first request, and that request races this
     // loop: the host reaches its first step in milliseconds, the runner polls every 40 ms. A frame
     // presented before the request is a loader frame, so how many there were, which settings the
@@ -1118,11 +1128,14 @@ int Session::step() {
     }
     // Without a runner nothing drives host.step, and the game would re-render one frozen tick:
     // the clock follows real time instead, as the web loop follows requestAnimationFrame.
-    if (!runner) {
+    if (!runner || endpoint->liveClock()) {
         nowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - freeRunStart).count();
-        for (uint32_t steps = clock.advance(nowMs); steps > 0 && game.update; --steps)
+        for (uint32_t steps = clock.advance(nowMs); steps > 0 && game.update; --steps) {
+            if (runner) ++drivenTicks;
             update(kTickStep);
+        }
     }
+    if (endpoint->automaticRenderHeld()) return viewFailed ? -1 : 1;
     if (!refreshView())
         return -1;
     renderFrame();

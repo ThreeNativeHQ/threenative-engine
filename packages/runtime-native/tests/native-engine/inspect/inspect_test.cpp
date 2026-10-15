@@ -156,8 +156,78 @@ void automaticRenderHold() {
 #endif
 }
 
+void liveClockProtocol() {
+    Host host;
+    Endpoint unsupported(host);
+    CHECK(reply(unsupported, request("u", "_setClockMode", "\"wall-clock\"")).find("error"));
+    bool live = false;
+    int transitions = 0;
+    host.renderEachTick = true;
+    host.setLiveClock = [&](bool enabled) { live = enabled; ++transitions; };
+    host.observe = [](const std::string& method, const json::Value*, json::Value& result, std::string&) {
+        if (method != "sample") return false;
+        result = json::Value::makeObject({{"clock", json::Value::makeObject({{"mode", json::Value::makeString("fixed-step")}})}});
+        return true;
+    };
+    Endpoint endpoint(host);
+    const auto record = [&](double time) { endpoint.recordPresentation(time, endpoint.presentationEpoch(), true); };
+    CHECK(reply(endpoint, request("bad", "_setClockMode", "true")).find("error"));
+    CHECK(!live && transitions == 0);
+    reply(endpoint, request("hold", "_holdAutomaticRender", "true"));
+    CHECK(!reply(endpoint, request("held", "_setClockMode", "\"wall-clock\"")).find("error"));
+    reply(endpoint, request("release", "_holdAutomaticRender", "false"));
+    CHECK(!reply(endpoint, request("live", "_setClockMode", "\"wall-clock\"")).find("error"));
+    CHECK(live && transitions == 1);
+    reply(endpoint, request("same", "_setClockMode", "\"wall-clock\""));
+    CHECK(transitions == 1);
+    CHECK(reply(endpoint, request("advance", "advance", "1")).find("error"));
+    CHECK(!reply(endpoint, request("holdlive", "_holdAutomaticRender", "true")).find("error"));
+    record(90);
+    CHECK(reply(endpoint, request("excluded", "_presentationCompletions", "")).find("result")->find("samples")->items().empty());
+    reply(endpoint, request("resume", "_holdAutomaticRender", "false"));
+    CHECK(reply(endpoint, request("sample", "sample", "{}")).find("result")->find("clock")->find("mode")->string() == "wall-clock");
+    endpoint.recordPresentation(99, endpoint.presentationEpoch(), false);
+    auto failed = reply(endpoint, request("failedpresent", "_presentationCompletions", ""));
+    CHECK(failed.find("result")->find("samples")->items().empty());
+    CHECK(failed.find("result")->find("sequence")->number() == 0);
+    record(100);
+    record(125); // full-loop delay belongs in completion intervals
+    auto cadence = reply(endpoint, request("cadence", "_presentationCompletions", ""));
+    const auto& samples = cadence.find("result")->find("samples")->items();
+    CHECK(samples.size() == 2);
+    CHECK(samples.back().find("completedAtMs")->number() - samples.front().find("completedAtMs")->number() == 25);
+    CHECK(samples.back().find("sequence")->number() == 2);
+    const double epoch = cadence.find("result")->find("epoch")->number();
+    reply(endpoint, request("pollmode", "_setClockMode", "\"wall-clock\""));
+    auto unchanged = reply(endpoint, request("unchanged", "_presentationCompletions", ""));
+    CHECK(transitions == 1 && unchanged.find("result")->find("epoch")->number() == epoch);
+    CHECK(unchanged.find("result")->find("samples")->items().size() == 2);
+    CHECK(unchanged.find("result")->find("sequence")->number() == 2);
+    const auto queuedEpoch = endpoint.presentationEpoch();
+    reply(endpoint, request("pause", "_holdAutomaticRender", "true"));
+    record(500);
+    reply(endpoint, request("unpause", "_holdAutomaticRender", "false"));
+    endpoint.recordPresentation(900, queuedEpoch, true); // an old queued job completing after hold release must be rejected
+    CHECK(reply(endpoint, request("stale", "_presentationCompletions", "")).find("result")->find("samples")->items().empty());
+    record(1000);
+    CHECK(reply(endpoint, request("epoch", "_presentationCompletions", "")).find("result")->find("epoch")->number() > epoch);
+    CHECK(reply(endpoint, request("gap", "_presentationCompletions", "")).find("result")->find("samples")->items().size() == 1);
+    record(1000); // invalid/nonmonotonic observations fail closed
+    CHECK(!reply(endpoint, request("invalid", "_presentationCompletions", "")).find("result")->find("valid")->boolean());
+    reply(endpoint, request("fixed", "_setClockMode", "\"fixed-step\""));
+    CHECK(!live && transitions == 2);
+    record(200);
+    CHECK(reply(endpoint, request("cleared", "_presentationCompletions", "")).find("result")->find("samples")->items().empty());
+    reply(endpoint, request("liveagain", "_setClockMode", "\"wall-clock\""));
+    for (int i = 0; i < 2049; ++i) record(300 + i);
+    cadence = reply(endpoint, request("bounded", "_presentationCompletions", ""));
+    CHECK(cadence.find("result")->find("samples")->items().size() == 2048);
+    CHECK(cadence.find("result")->find("dropped")->number() == 1);
+}
+
 void protocol() {
     automaticRenderHold();
+    liveClockProtocol();
     Game game;
     // Valid and invalid arguments for every method device.ts dispatches.
     struct Case {

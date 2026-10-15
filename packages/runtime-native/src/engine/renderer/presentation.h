@@ -32,7 +32,7 @@ public:
     };
     /** Acquires the next surface image; an outdated surface is reconfigured once and retried. */
     bool begin(Frame& frame);
-    void present();
+    bool present(); // successful API completion, not physical scanout
 
     uint32_t width() const { return width_; }
     uint32_t height() const { return height_; }

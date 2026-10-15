@@ -130,7 +130,7 @@ public:
     /**
      * Present the current frame
      */
-    void present();
+    bool present(); // true only when the surface present API reports success
 
     /**
      * Capture a screenshot of the current surface

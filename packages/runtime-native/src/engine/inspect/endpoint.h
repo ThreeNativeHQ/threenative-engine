@@ -1,5 +1,8 @@
 #pragma once
 
+#include <atomic>
+#include <deque>
+#include <mutex>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -39,6 +42,7 @@ struct Host {
     Object3D* scene = nullptr;
     std::function<uint64_t()> tick; // the simulation tick that last ran
     std::function<void()> step;     // runs one simulation tick; it takes the queued input first
+    std::function<void(bool)> setLiveClock; // rebases the host accumulator without changing its tick
     std::string name = "threenative-native-engine";
     /** The artifact's game runtime, reported in `describe.profile`: "cpp" for a built-in game, "v8"
      *  for a game bundle on the V8 adapter. Mirrored into `sample.resources.profile`. */
@@ -79,6 +83,12 @@ class Endpoint {
 
     [[nodiscard]] bool automaticRenderHeld() const { return automaticRenderHeld_; }
 
+    [[nodiscard]] bool liveClock() const { return liveClock_.load(); }
+    /** Record an acquired frame's present() result; steady-clock milliseconds,
+     * not physical scanout. Thread-safe for the GPU worker; inactive by default. */
+    uint64_t presentationEpoch() { std::lock_guard lock(presentationMutex_); return presentationEpoch_; }
+    void recordPresentation(double completedAtMs, uint64_t queuedEpoch, bool presented);
+
     static constexpr std::size_t kMaxPayloadBytes = 1'000'000;
 
   private:
@@ -95,7 +105,12 @@ class Endpoint {
     json::Value clock() const;
 
     Host host_;
-    bool automaticRenderHeld_ = false;
+    std::atomic<bool> automaticRenderHeld_{false};
+    std::atomic<bool> liveClock_{false};
+    std::mutex presentationMutex_;
+    std::deque<std::pair<uint64_t, double>> presentations_;
+    uint64_t presentationSequence_ = 0, presentationEpoch_ = 0, droppedPresentations_ = 0;
+    bool presentationsValid_ = true;
     std::vector<InputEvent> input_;
     std::vector<Pointer> pointers_; // the touch set input.pointers last reported, in its order
 };
