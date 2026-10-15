@@ -70,11 +70,11 @@ Risk: a covered render through the real pipeline can advance temporal history (T
 
 #### Phase 1: The census sees the rebuild (red)
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Files:** `packages/core/src/pipeline-census.ts` (warm-up-settled boundary on each event), `packages/playtest/src/runner/pipeline-summary.ts` and its scenario schema/evaluator (assertion on builds and creations after warm-up), `examples/abyss-framework/playtests/warm-up-reuse.playtest.json`.
 **Implementation:** Today's census flags only `beforeFirstPresent`, and frame-1 rebuilds land before the first present. Add a warm-up-settled boundary and count node builds and pipeline creations after it, per material. The assertion fails closed when the census is absent or incomplete.
 
-- [ ] The new scenario runs red on develop and reports 3 rebuilt graphs and 3 new pipelines. proof: the AC-1 command, plus `pnpm exec vitest run packages/playtest/__tests__/pipeline-timing.spec.ts packages/core/__tests__/pipeline-census.spec.ts` — Focused census, schema, evaluator and warm-up tests passed locally on 2026-10-14: 5 files, 144 tests; the census now observes Three's renderer-owned node-builder seam, with a positive real-`Mesh` unit control and a missing-hook fail-closed control. Valid headed red reproduction remains pending because the shared capture lock is occupied (attempts exited 75 with `LOCK TIMEOUT`).
+- [x] The new scenario runs red on develop and reports 3 rebuilt graphs and 3 new pipelines. proof: the AC-1 command, plus `pnpm exec vitest run packages/playtest/__tests__/pipeline-timing.spec.ts packages/core/__tests__/pipeline-census.spec.ts` — Verified 2026-10-15 against frozen develop `1d056cec3` with the diagnostic patch retained in `artifacts/prd616/baseline-source.patch`: headed NVIDIA Turing scenario exited 1 with both complete census assertions observing exactly 3 against 0; diagnostics passed. Two first-visible capture runs independently distinguish these 3 warmed world graphs/pipelines from 8 new post graphs. Parent reran the focused census/timing suites on the repaired source: 81/81 passed. Raw command results: `baseline-scenario-red-3.log` and `phase1-current-focused.log`; capture artifacts: `artifacts/prd616/baseline-scenario-red` and `artifacts/prd616/first-visible/before-{run1,run2}`. First-world CPU measurement remains a Phase 2 task.
 
 #### Phase 2: The warm-up compiles against the world pass (green)
 
