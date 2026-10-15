@@ -6,7 +6,7 @@
 //
 // A fresh decision, as a projection's first reconcile makes it: the streamed-geometry watch and
 // the material-drift checks of later frames are not carried. The native scene has no sprites,
-// points, lines, LODs, BatchedMeshes, multi-materials, custom depth materials, draw ranges,
+// points, lines, LODs, BatchedMeshes, custom depth materials, draw ranges,
 // indirect geometries or vertex-displacing materials, so those reasons never arise here.
 #include <bit>
 #include <cmath>
@@ -72,6 +72,7 @@ inline const char* meshLaneReason(const Mesh& mesh) {
     if (!mesh.geometry) return "unsupportedGeometry";
     if (const char* reason = geometryLaneReason(*mesh.geometry)) return reason;
     if (mesh.renderOrder() != 0) return "renderOrder";
+    if (!mesh.materials.empty()) return "multiMaterial";
     if (!mesh.material) return "unsupportedGeometry";
     if (mesh.material->transparent) return "transparent";
     return nullptr;
@@ -237,6 +238,7 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
         }
         if (laneGeometryReason) return laneGeometryReason;
         if (m.renderOrder() != 0) return "renderOrder";
+        if (!m.materials.empty()) return "multiMaterial";
         if (!m.material) return "unsupportedGeometry";
         return m.material->transparent ? "transparent" : nullptr;
     };

@@ -561,6 +561,35 @@ BufferGeometry& BufferGeometry::copy(const BufferGeometry& source) {
     return *this;
 }
 
+const std::vector<std::shared_ptr<BufferGeometry>>& BufferGeometry::groupViews() const {
+    if (groupViewsRevision_ == revision_) return groupViews_;
+    groupViewsRevision_ = revision_;
+    groupViews_.clear();
+    const auto position = attributes.find("position");
+    const uint64_t total = index ? index->count() : position != attributes.end() ? position->second->count() : 0;
+    for (const GeometryGroup& group : groups) {
+        // `addGroup(0, Infinity)` runs to the end; a start past it, or a count of nothing, draws nothing.
+        const double first = std::max(group.start, 0.0);
+        const double last = std::min(group.start + group.count, static_cast<double>(total));
+        if (!(last > first)) {
+            groupViews_.push_back(nullptr);
+            continue;
+        }
+        auto view = std::make_shared<BufferGeometry>();
+        view->attributes = attributes;
+        std::vector<uint32_t> slice;
+        slice.reserve(static_cast<std::size_t>(last - first));
+        for (auto at = static_cast<uint64_t>(first); at < static_cast<uint64_t>(last); ++at)
+            slice.push_back(index ? static_cast<uint32_t>(index->getX(at)) : static_cast<uint32_t>(at));
+        view->index = BufferAttribute::fromIndices(slice);
+        view->boundingBox = boundingBox;
+        view->boundingSphere = boundingSphere;
+        view->name = name;
+        groupViews_.push_back(std::move(view));
+    }
+    return groupViews_;
+}
+
 void BufferGeometry::dispose() {
     if (index) index->store->releaseGpuCopy();
     for (const auto& [name, attribute] : attributes) attribute->store->releaseGpuCopy();

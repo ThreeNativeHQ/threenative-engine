@@ -188,6 +188,13 @@ public:
     /** three's `dispose()`: the renderer lets the GPU copies go; the CPU data stays usable. */
     void dispose();
 
+    /**
+     * One geometry per group, sharing this geometry's attributes (so their GPU buffers) and holding the
+     * group's slice of the index. A multi-material mesh draws one per material (PRD-617). Empty slot: the
+     * group draws nothing. Rebuilt when the revision moves, so meshes sharing a geometry share its views.
+     */
+    [[nodiscard]] const std::vector<std::shared_ptr<BufferGeometry>>& groupViews() const;
+
     BufferGeometry& applyMatrix4(const Matrix4& matrix);
     BufferGeometry& translate(double x, double y, double z);
     BufferGeometry& rotateX(double angle);
@@ -203,6 +210,8 @@ public:
 
 private:
     uint64_t revision_ = 0;
+    mutable uint64_t groupViewsRevision_ = std::numeric_limits<uint64_t>::max();
+    mutable std::vector<std::shared_ptr<BufferGeometry>> groupViews_;
 };
 
 }  // namespace tn::engine

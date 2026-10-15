@@ -272,6 +272,15 @@ const before = grid.version; grid.needsUpdate = true;
 check(grid.version === before + 1 && !Object.hasOwn(grid, "needsUpdate"), "needsUpdate reaches the engine");
 grid.dispose();
 check(grid.version === before + 2, "Texture.dispose frees the GPU copy and the texture uploads again");
+// three's material array: one material per geometry group, kept as an array until a single one replaces it.
+const flat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+const slotted = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), [lit, flat]);
+check(Array.isArray(slotted.material) && slotted.material.length === 2 && slotted.material[1].color.g === 1, "a Mesh takes a material array");
+slotted.material = flat;
+check(slotted.material === flat || (!Array.isArray(slotted.material) && slotted.material.color.g === 1), "a single material replaces the array");
+slotted.material = [flat, lit];
+check(Array.isArray(slotted.material) && slotted.material[0].color.g === 1, "an array replaces a single material");
+check(Array.isArray(slotted.clone().material) && slotted.clone().material.length === 2, "clone keeps the material array");
 check(lit instanceof Material && lit.onBeforeCompile === Material.prototype.onBeforeCompile && lit.isMaterial, "Material base");
 const vertex = new THREE.Vector3();
 check(new THREE.Mesh(rounded, lit).getVertexPosition(0, vertex) === vertex && vertex.equals(new THREE.Vector3().fromBufferAttribute(rounded.getAttribute("position"), 0)), "getVertexPosition");

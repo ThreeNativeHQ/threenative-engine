@@ -639,6 +639,33 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
     }
 }
 
+void RenderDatabase::projectGroups(const Mesh& mesh, const Camera& camera, std::vector<DrawItem>& items,
+                                   LightState& lights, const Object3D* excluded) {
+    if (!mesh.geometry) return;
+    const auto& groups = mesh.geometry->groups;
+    const auto& views = mesh.geometry->groupViews();
+    mesh.groupMeshes.resize(views.size());
+    for (std::size_t i = 0; i < views.size(); ++i) {
+        // three skips a group whose material is missing, and a mesh with an array and no groups draws nothing.
+        const double slot = std::floor(groups[i].materialIndex);
+        if (!views[i] || !(slot >= 0 && slot < static_cast<double>(mesh.materials.size())) ||
+            !mesh.materials[static_cast<std::size_t>(slot)])
+            continue;
+        std::shared_ptr<Mesh>& part = mesh.groupMeshes[i];
+        if (!part) part = std::make_shared<Mesh>();
+        part->geometry = views[i];
+        part->material = mesh.materials[static_cast<std::size_t>(slot)];
+        part->matrixWorld.copy(mesh.matrixWorld);
+        part->frustumCulled = mesh.frustumCulled;
+        part->setVisible(true);  // the mesh's own visibility was tested before this call
+        part->setCastShadow(mesh.castShadow());
+        part->setReceiveShadow(mesh.receiveShadow());
+        part->setRenderOrder(mesh.renderOrder());
+        part->setLayerMask(mesh.layers().mask);
+        project(*part, camera, items, lights, false, false, nullptr, true, false, excluded);
+    }
+}
+
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
                              bool updateChildren, bool force, Record* cached, bool plainMesh, bool lightsOnly, const Object3D* excluded) {
     if (&object == excluded) return;
@@ -659,7 +686,9 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 if (lod.autoUpdate) lod.update(camera);
             }
         }
-        if (!lightsOnly && (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite" || type == "Line" ||
+        if (!lightsOnly && type == "Mesh" && !static_cast<const Mesh&>(object).materials.empty()) {
+            projectGroups(static_cast<const Mesh&>(object), camera, items, lights, excluded);
+        } else if (!lightsOnly && (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite" || type == "Line" ||
             type == "LineSegments")) {
             const auto& mesh = static_cast<const Mesh&>(object);
             if (mesh.frustumCulled && !cullExempt_) {

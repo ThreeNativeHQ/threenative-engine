@@ -168,6 +168,10 @@ class RenderDatabase {
     void project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
                  bool updateChildren = false, bool force = false, Record* cached = nullptr, bool plainMesh = false,
                  bool lightsOnly = false, const Object3D* excluded = nullptr);
+    /** A multi-material mesh (three's material array): each geometry group draws as a mesh of its own, with
+     *  the group's slice of the index and `materials[group.materialIndex]`, placed where the mesh is. */
+    void projectGroups(const Mesh& mesh, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
+                       const Object3D* excluded);
     void batch(std::vector<DrawItem>& items, Object3D& scene,
                const std::vector<std::pair<double, const DrawItem*>>& ordered);
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group

@@ -89,9 +89,16 @@ class Mesh : public Object3D {
     [[nodiscard]] std::string_view type() const override { return "Mesh"; }
 
     // Shared, as a three Mesh references its geometry and material: the mesh keeps them alive while
-    // it draws them. A material array (groups) arrives with PRD-514's multi-material work.
+    // it draws them.
     std::shared_ptr<BufferGeometry> geometry;
     std::shared_ptr<Material> material;
+    /**
+     * three's material ARRAY: group `materialIndex` of the geometry draws with `materials[materialIndex]`.
+     * Set, it replaces `material` (null); the render database draws one `groupMeshes` entry per group.
+     */
+    std::vector<std::shared_ptr<Material>> materials;
+    /** The render database's per-group draws of a multi-material mesh; they live and die with the mesh. */
+    mutable std::vector<std::shared_ptr<Mesh>> groupMeshes;
 
   protected:
     friend class Box3;

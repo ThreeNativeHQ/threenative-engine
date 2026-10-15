@@ -305,6 +305,7 @@ std::shared_ptr<Object3D> cloneObject(const Object3D& source, bool recursive, st
                 const auto& mesh = static_cast<const Mesh&>(from);
                 auto next = std::make_shared<Mesh>(mesh.geometry, mesh.material);
                 next->morphTargetInfluences = mesh.morphTargetInfluences;
+                next->materials = mesh.materials;
                 to = std::move(next);
             } else if (kind == "Line" || kind == "LineSegments") {
                 // three's Line.copy: the same geometry and material.
@@ -360,6 +361,7 @@ std::shared_ptr<Object3D> cloneSkeleton(const Object3D& source, std::string& err
                 ? std::make_shared<Mesh>(mesh.geometry, mesh.material)
                 : std::static_pointer_cast<Mesh>(std::make_shared<SkinnedMesh>(mesh.geometry, mesh.material));
             next->morphTargetInfluences = mesh.morphTargetInfluences;
+            next->materials = mesh.materials;
             to = std::move(next);
         } else {
             error = "TN_NATIVE_SKELETON_CLONE_UNSUPPORTED: " + std::string(kind);

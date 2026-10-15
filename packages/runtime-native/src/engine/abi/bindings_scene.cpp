@@ -933,6 +933,14 @@ std::shared_ptr<Material> materialArg(Store& store, const Value& arg) {
     return store.shared<Material>(arg, "Material");
 }
 
+bool isMaterialArray(const Value& arg) { return arg.kind == Value::Kind::Refs || arg.kind == Value::Kind::Array; }
+
+std::vector<std::shared_ptr<Material>> materialsArg(Store& store, const Value& arg) {
+    std::vector<std::shared_ptr<Material>> materials;
+    for (const Value& ref : refsOf(arg)) materials.push_back(ref.kind == Value::Kind::Ref ? materialArg(store, ref) : nullptr);
+    return materials;
+}
+
 // Structured intersection results preserve the actual scene object and publish real vector wrappers.
 Value intersections(Store& store, const std::vector<Intersection>& hits) {
     std::vector<Value> values;
@@ -1064,7 +1072,9 @@ void registerMesh(ClassBinding& b) {
         std::shared_ptr<Material> material;
         if (!a.empty() && a.at(0).kind == Value::Kind::Ref) geometry = geometryArg(store, a.at(0));
         if (a.size() >= 2 && a.at(1).kind == Value::Kind::Ref) material = materialArg(store, a.at(1));
-        return std::static_pointer_cast<void>(detail::makeShared<Mesh>(geometry, material));
+        auto mesh = detail::makeShared<Mesh>(geometry, material);
+        if (a.size() >= 2 && isMaterialArray(a.at(1))) mesh->materials = materialsArg(store, a.at(1));
+        return std::static_pointer_cast<void>(mesh);
     };
     // three's getVertexPosition(index, target): the vertex with morphs (and, on a SkinnedMesh, bones) applied.
     b.methods["getVertexPosition"] = [](void* self, const Args& a, Store& store) {
@@ -1100,11 +1110,25 @@ void registerMesh(ClassBinding& b) {
         };
     }
     b.members["material"] = [](void* self, const Args&, Store& store) -> Value {
-        const std::shared_ptr<Material>& material = as<Mesh>(self)->material;
-        return material ? store.share(std::string(material->typeName()), material) : Value{};
+        const Mesh& mesh = *as<Mesh>(self);
+        if (!mesh.materials.empty()) {
+            std::vector<Value> slots;
+            for (const auto& material : mesh.materials)
+                slots.push_back(material ? store.share(std::string(material->typeName()), material) : Value{});
+            return Value::array(std::move(slots));
+        }
+        return mesh.material ? store.share(std::string(mesh.material->typeName()), mesh.material) : Value{};
     };
+    // three's `mesh.material` is one material or an array of them (one per geometry group).
     b.setters["material"] = [](void* self, const Value& value, Store& store) {
-        as<Mesh>(self)->material = materialArg(store, value);
+        Mesh& mesh = *as<Mesh>(self);
+        if (isMaterialArray(value)) {
+            mesh.materials = materialsArg(store, value);
+            mesh.material = nullptr;
+        } else {
+            mesh.materials.clear();
+            mesh.material = materialArg(store, value);
+        }
     };
 }
 

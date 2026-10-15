@@ -206,6 +206,67 @@ void rigRelativePreparation() {
     CHECK(staleBind.matrices() == original.matrices());
 }
 
+// PRD-617: a material ARRAY draws one group per material, as three does. A Mesh(box, [m0..m5]) is six draws
+// of two triangles each, in its group's colour; meshes sharing the geometry and materials batch per group.
+void multiMaterialGroups() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.shadowMapEnabled = true;
+    DirectionalLight sun;
+    sun.position.set(10, 20, 20);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    camera.position.set(0, 0, 12);
+    camera.lookAt(0, 0, 0);
+    const auto geometry = makeBoxGeometry();
+    CHECK(geometry->groups.size() == 6);
+    std::vector<std::shared_ptr<Material>> materials;
+    for (int i = 0; i < 6; ++i) {
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->color.setRGB(double(i + 1) / 8, 0.25, 0.5);
+        materials.push_back(material);
+    }
+    auto mesh = std::make_shared<Mesh>(geometry, nullptr);
+    mesh->materials = materials;
+    mesh->setCastShadow(true);
+    scene.add(*mesh);
+    auto items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 6);
+    for (std::size_t i = 0; i < items.size() && i < 6; ++i) {
+        CHECK(items[i].indices != nullptr && items[i].indices->count() == 6);
+        CHECK(items[i].castShadow);
+    }
+    std::vector<double> reds;
+    for (const DrawItem& item : items) reds.push_back(item.material->color[0]);
+    std::sort(reds.begin(), reds.end());
+    for (int i = 0; i < 6 && i < int(reds.size()); ++i) CHECK(std::abs(reds[i] - double(i + 1) / 8) < 1e-9);
+
+    // A group whose material slot is missing draws nothing, as in three.
+    mesh->materials.resize(3);
+    items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 3);
+
+    // A moved mesh moves every group; the views are shared, not rebuilt.
+    mesh->materials = materials;
+    mesh->position.set(2, 0, 0);
+    items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 6);
+    for (const DrawItem& item : items) CHECK(item.matrixWorld[12] == 2);
+
+    // Four meshes sharing the geometry and materials batch per group: six instanced draws.
+    std::vector<std::shared_ptr<Mesh>> crowd;
+    for (int i = 0; i < 4; ++i) {
+        auto member = std::make_shared<Mesh>(geometry, nullptr);
+        member->materials = materials;
+        member->position.set(-3 + i, 1, 0);
+        scene.add(*member);
+        crowd.push_back(member);
+    }
+    scene.remove(*mesh);
+    items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 6);
+    for (const DrawItem& item : items) CHECK(item.instanceCount == 4);
+}
+
 void uniformBatchPreparation() {
     rigRelativePreparation();
     Material a(MaterialType::Standard), b(MaterialType::Standard);
@@ -3503,7 +3564,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
