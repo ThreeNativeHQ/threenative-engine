@@ -136,9 +136,33 @@ export function parseStartupReport(log: string): StartupReport {
   throw new Error("missing or malformed startup report");
 }
 
+export function verifyStartupPackageIdentity(
+  baseline: Record<string, unknown>,
+  candidate: Record<string, unknown>,
+) {
+  for (const field of [
+    "name",
+    "version",
+    "private",
+    "type",
+    "engines",
+    "packageManager",
+    "dependencies",
+    "devDependencies",
+    "peerDependencies",
+    "optionalDependencies",
+  ])
+    assert.deepEqual(candidate[field], baseline[field], `incompatible package identity: ${field}`);
+}
+
 function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const baseline = path.join(root, ".worktrees/strata-startup-baseline");
+  const commonDirectory = execFileSync(
+    "git",
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    { cwd: root, encoding: "utf8" },
+  ).trim();
+  const baseline = path.join(path.dirname(commonDirectory), ".worktrees/strata-startup-baseline");
   const output = path.join(root, "artifacts/strata-startup");
   mkdirSync(output, { recursive: true });
   const git = (cwd: string) =>
@@ -146,16 +170,17 @@ function main() {
   assert.equal(git(baseline), BASELINE_SHA, "baseline must remain reviewed source");
   assert.match(process.env.EXPECTED_SOURCE_SHA ?? "", /^[a-f0-9]{40}$/);
   assert.equal(git(root), process.env.EXPECTED_SOURCE_SHA, "candidate must match scoped source");
-  for (const file of [
-    "pnpm-lock.yaml",
-    "pnpm-workspace.yaml",
-    "examples/strata-terrain-preview/package.json",
-  ])
+  for (const file of ["pnpm-lock.yaml", "pnpm-workspace.yaml"])
     assert.equal(
       readFileSync(path.join(root, file), "utf8"),
       readFileSync(path.join(baseline, file), "utf8"),
       `incompatible identity: ${file}`,
     );
+  const packageIdentity = (cwd: string) =>
+    JSON.parse(
+      readFileSync(path.join(cwd, "examples/strata-terrain-preview/package.json"), "utf8"),
+    );
+  verifyStartupPackageIdentity(packageIdentity(baseline), packageIdentity(root));
   for (const cwd of [root, baseline])
     assert.equal(
       realpathSync(

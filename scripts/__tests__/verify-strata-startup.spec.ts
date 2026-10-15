@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { BASELINE_SHA, parseStartupReport, verifyStartupRuns } from "../verify-strata-startup.js";
+import {
+  BASELINE_SHA,
+  parseStartupReport,
+  verifyStartupPackageIdentity,
+  verifyStartupRuns,
+} from "../verify-strata-startup.js";
 
 function run(time = 100, arm = "after") {
   const values = {
@@ -133,4 +138,36 @@ it("requires all six runs in alternating pair order", () => {
   const runs = pairs();
   runs.reverse();
   expect(() => verifyStartupRuns(runs)).toThrow();
+});
+
+it("accepts native command edits but rejects dependency or compiler identity changes", () => {
+  const baseline = {
+    name: "strata-terrain-preview",
+    type: "module",
+    version: "0.1.0",
+    scripts: { "test:terrain:desktop": "old native staging" },
+    dependencies: { "@threenative/core": "workspace:*", three: "catalog:" },
+    devDependencies: { vite: "catalog:", typescript: "catalog:" },
+    engines: { node: ">=20" },
+  };
+  const candidate = {
+    ...baseline,
+    scripts: {
+      "test:terrain:desktop": "new native staging",
+      "verify-native": "node scripts/verify-native.mjs",
+    },
+  };
+  expect(() => verifyStartupPackageIdentity(baseline, candidate)).not.toThrow();
+  expect(() =>
+    verifyStartupPackageIdentity(baseline, {
+      ...candidate,
+      dependencies: { ...candidate.dependencies, three: "other" },
+    }),
+  ).toThrow(/dependencies/);
+  expect(() =>
+    verifyStartupPackageIdentity(baseline, { ...candidate, devDependencies: { vite: "other" } }),
+  ).toThrow(/devDependencies/);
+  expect(() =>
+    verifyStartupPackageIdentity(baseline, { ...candidate, engines: { node: ">=24" } }),
+  ).toThrow(/engines/);
 });
