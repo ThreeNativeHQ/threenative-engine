@@ -339,7 +339,7 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
         gn,
       );
       run("python3", ["build/gen.py"], gn);
-      run("ninja", [`-j${jobs}`, "-C", "out"], gn);
+      run("/usr/bin/ninja", [`-j${jobs}`, "-C", "out"], gn);
       // GN normally lives here in the V8 source tree; install our native bootstrap instead.
       mkdirSync(join(source, "buildtools/linux64"), { recursive: true });
       copyFileSync(join(gn, "out/gn"), join(source, "buildtools/linux64/gn"));
@@ -357,7 +357,7 @@ export function provisionLinuxArm64V8(destination, { force = false, env = proces
       if (actual !== revision) throw new Error(`V8 cached source revision mismatch: ${directory}`);
     }
     run(join(gn, "out/gn"), ["gen", "out/linux-arm64", `--args=${linuxArm64V8GnArgs()}`], source);
-    run("ninja", [`-j${jobs}`, "-C", "out/linux-arm64", "v8_monolith"], source);
+    run("/usr/bin/ninja", [`-j${jobs}`, "-C", "out/linux-arm64", "v8_monolith"], source);
     rmSync(stage, { recursive: true, force: true });
     mkdirSync(join(stage, "licenses"), { recursive: true });
     cpSync(join(source, "include"), join(stage, "include"), { recursive: true });
