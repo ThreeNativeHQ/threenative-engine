@@ -21,6 +21,7 @@
 #include <unistd.h>
 #endif
 #include <chrono>
+#include <climits>
 #include <cmath>
 #include <ctime>
 #include <array>
@@ -495,7 +496,8 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
  * and its WebKit processes) runs on the remaining CPUs. On Xvfb the NVIDIA present waits in a
  * busy loop, and sharing a core with it cost the game thread 15 to 30% of its IPC on Midway.
  * TN_PLAYER_MAIN_CORE=off leaves placement to the OS; a CPU number names the core to take.
- * Auto picks the core the firmware ranks fastest (ACPI CPPC), the last one on a tie.
+ * Auto picks the core the firmware ranks last (ACPI CPPC, the last one on a tie): the scheduler packs
+ * other busy work onto the top-ranked cores first, and a game thread pinned there competed with it.
  */
 struct ThreadPlacement {
     cpu_set_t helpers{};
@@ -542,13 +544,13 @@ struct ThreadPlacement {
                 return;
             }
         } else {
-            long best = -2;
+            long lowest = LONG_MAX;
             for (int c = 0; c < CPU_SETSIZE; ++c) {
                 if (!CPU_ISSET(c, &allowed)) continue;
                 const std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(c);
                 long rank = readNumber(base + "/acpi_cppc/highest_perf");
                 if (rank < 0) rank = readNumber(base + "/cpufreq/cpuinfo_max_freq");
-                if (rank >= best) best = rank, chosen = c;
+                if (rank <= lowest) lowest = rank, chosen = c;
             }
         }
         const cpu_set_t core = siblingsOf(chosen);
