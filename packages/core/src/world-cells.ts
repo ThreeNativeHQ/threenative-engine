@@ -4378,6 +4378,8 @@ export class WorldCells extends Group implements IComputeDriven {
   #visibleEpoch = 0;
   /** The follow point the last full residency pass ran for; see `#residencyStale`. */
   readonly #residencyPoint = new Vector3(Number.NaN, 0, Number.NaN);
+  /** Actual cell at the last residency pass; only a jump reclaims retained hysteresis. */
+  #residencyCell: { readonly x: number; readonly z: number } | undefined;
   /** The follow point the last refilter pass ran for; see `#refilterStale`. */
   readonly #refilterPoint = new Vector3(Number.NaN, 0, Number.NaN);
   /** Bumped by every admission and eviction, so a residency change owes a refilter that update. */
@@ -6034,60 +6036,51 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   #updateResidency(followCell: { x: number; z: number }, x: number, z: number): void {
+    const wanted: Array<{ cell: IWorldCell; distance: number }> = [];
+    for (const cell of this.#cells) {
+      if (Math.max(Math.abs(cell.x - followCell.x), Math.abs(cell.z - followCell.z)) > this.#ring)
+        continue;
+      const centerX = this.#minX + (cell.x + 0.5) * this.#cellSize;
+      const centerZ = this.#minZ + (cell.z + 0.5) * this.#cellSize;
+      wanted.push({ cell, distance: Math.hypot(x - centerX, z - centerZ) });
+    }
+    wanted.sort((a, b) => a.distance - b.distance || a.cell.z - b.cell.z || a.cell.x - b.cell.x);
+
+    for (const resident of [...this.#resident.values()]) {
+      if (
+        Math.max(Math.abs(resident.x - followCell.x), Math.abs(resident.z - followCell.z)) >
+        this.#ring + 1
+      )
+        this.#evict(resident);
+    }
+    // A follow point that crossed more than one cell in one pass jumped (a teleport, a review
+    // camera). Only then does the hysteresis ring yield. Read off the follow point itself, not the
+    // lookahead `followCell`: that leads by up to 1.5 cells, so a walk that stopped and started moved
+    // it by two, and yielding there evicted and re-admitted a whole row each time.
     const here = {
       x: Math.floor((this.#follow.position.x - this.#minX) / this.#cellSize),
       z: Math.floor((this.#follow.position.z - this.#minZ) / this.#cellSize),
     };
-    const wanted: Array<{ cell: IWorldCell; actual: boolean; distance: number }> = [];
-    for (const cell of this.#cells) {
-      const actual = Math.max(Math.abs(cell.x - here.x), Math.abs(cell.z - here.z)) <= this.#ring;
-      if (
-        !actual &&
-        Math.max(Math.abs(cell.x - followCell.x), Math.abs(cell.z - followCell.z)) > this.#ring
-      )
-        continue;
-      const centerX = this.#minX + (cell.x + 0.5) * this.#cellSize;
-      const centerZ = this.#minZ + (cell.z + 0.5) * this.#cellSize;
-      wanted.push({
-        cell,
-        actual,
-        distance: Math.hypot(
-          (actual ? this.#follow.position.x : x) - centerX,
-          (actual ? this.#follow.position.z : z) - centerZ,
-        ),
-      });
-    }
-    wanted.sort(
-      (a, b) =>
-        Number(b.actual) - Number(a.actual) ||
-        a.distance - b.distance ||
-        a.cell.z - b.cell.z ||
-        a.cell.x - b.cell.x,
-    );
-
-    for (const resident of [...this.#resident.values()]) {
-      if (
-        Math.max(Math.abs(resident.x - here.x), Math.abs(resident.z - here.z)) > this.#ring &&
-        Math.max(Math.abs(resident.x - followCell.x), Math.abs(resident.z - followCell.z)) >
-          this.#ring + 1
-      )
-        this.#evict(resident);
-    }
+    const last = this.#residencyCell;
+    const jumped =
+      last !== undefined && Math.max(Math.abs(last.x - here.x), Math.abs(last.z - here.z)) > 1;
+    this.#residencyCell = here;
 
     for (const candidate of wanted) {
       const key = cellKey(candidate.cell.x, candidate.cell.z);
       if (this.#resident.has(key)) continue;
       const instances = candidate.cell.runs.reduce((total, run) => total + run.count, 0);
       const bytes = instances * PLACEMENT_RECORD_BYTES;
-      // Actual wanted cells reclaim unwanted hysteresis under pressure. Predicted extras use
-      // slack only: displacing an actual edge for lookahead churns a full ring during small moves.
+      // After a jump, a cell the one-ring hysteresis above kept is not wanted, so it yields its share
+      // of the budgets to one that is. Without this the budgets stayed full of the ring the camera
+      // jumped from and the cells around it were refused until it moved again.
       while (
-        candidate.actual &&
+        jumped &&
         (this.#resident.size >= this.#budgets.residentCells ||
           this.#instances + this.#farInstances + instances > this.#budgets.instances ||
           this.#bytes + this.#farBytes + this.#hlodBytes + bytes > this.#budgets.bytes)
       ) {
-        const spare = this.#farthestUnwanted(here);
+        const spare = this.#farthestUnwanted(followCell);
         if (spare === undefined) break;
         this.#evict(spare);
       }
