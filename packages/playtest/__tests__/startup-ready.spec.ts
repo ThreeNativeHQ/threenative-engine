@@ -1,5 +1,7 @@
 import { PerspectiveCamera, Scene, type Vector2, type WebGLRenderer } from "three";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import type { Page } from "playwright";
+import { waitFrames } from "../src/runner/steps.js";
 
 import { installThreePlaytestBridge } from "../src/three/bridge.js";
 import { validatePlaytestScenario } from "../src/scenario/schema-validate.js";
@@ -358,4 +360,165 @@ test("startup frame timeouts consume the remaining deadline without resetting it
   })).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
   expect(budgets).toEqual([200, 150, 100, 50]);
   expect(clock).toBe(200);
+});
+
+
+test("warmup consumes the existing startup allowance before readiness pumps", async () => {
+  let clock = 0;
+  const budgets: Array<number | undefined> = [];
+  await expect(waitForStartupReady({
+    bridge: source(["runtime.startup"], [collapsing, collapsing, ready]),
+    now: () => clock,
+    timeoutMs: 200,
+    warmup: async (remainingMs) => {
+      budgets.push(remainingMs);
+      clock += 80;
+    },
+    pump: async (remainingMs) => {
+      budgets.push(remainingMs);
+      clock += 50;
+    },
+  })).resolves.toEqual({ rule: "sustained-frames", startup: ready });
+  expect(budgets).toEqual([200, 120, 70]);
+  expect(clock).toBe(180);
+});
+
+test("an exhausted warmup cannot poll readiness with a fresh deadline", async () => {
+  let clock = 0;
+  const bridge = source(["runtime.startup"], [ready]);
+  await expect(waitForStartupReady({
+    bridge,
+    now: () => clock,
+    timeoutMs: 200,
+    warmup: async () => { clock = 200; },
+    pump: async () => { throw new Error("startup allowance already exhausted"); },
+  })).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+  expect(bridge.calls).toBe(0);
+});
+
+test.each(["warmup", "readiness"] as const)("a hung %s is Node-bounded by the shared startup allowance", async (hang) => {
+  vi.useFakeTimers();
+  try {
+    let result: unknown = "pending";
+    const bridge = source(["runtime.startup"], [ready]);
+    if (hang === "readiness") bridge.readiness = () => new Promise(() => {});
+    const pending = waitForStartupReady({
+      bridge,
+      timeoutMs: 100,
+      warmup: () => new Promise((resolve) => {
+        if (hang !== "warmup") setTimeout(resolve, 40);
+      }),
+      pump: async () => { throw new Error("hung phase cannot pump"); },
+    }).then(value => { result = value; }, error => { result = error; });
+    await vi.advanceTimersByTimeAsync(99);
+    expect(result).toBe("pending");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result).toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+    await pending;
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test.each(["success", "warmup-error", "readiness-error"] as const)("the shared startup timer clears after %s", async (outcome) => {
+  vi.useFakeTimers();
+  try {
+    const sentinel = new Error(outcome);
+    const bridge = source(["runtime.startup"], [ready]);
+    if (outcome === "readiness-error") bridge.readiness = async () => { throw sentinel; };
+    const pending = waitForStartupReady({
+      bridge,
+      timeoutMs: 100,
+      warmup: async () => { if (outcome === "warmup-error") throw sentinel; },
+      pump: async () => undefined,
+    });
+    if (outcome === "success") await expect(pending).resolves.toEqual({ rule: "sustained-frames", startup: ready });
+    else await expect(pending).rejects.toBe(sentinel);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("without runtime.startup warmup keeps its original operation deadline", async () => {
+  vi.useFakeTimers();
+  try {
+    let result: unknown = "pending";
+    const page = { evaluate: () => new Promise(() => {}) } as unknown as Page;
+    const bridge = source([], [undefined]);
+    const pending = waitForStartupReady({
+      bridge,
+      timeoutMs: 100,
+      warmup: remainingMs => waitFrames(page, 10, remainingMs),
+      pump: async () => { throw new Error("unsupported startup must not pump"); },
+    }).then(value => { result = value; }, error => { result = error; });
+    await vi.advanceTimersByTimeAsync(22_499);
+    expect(result).toBe("pending");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result).toMatchObject({ diagnostic: { code: "TN_PLAYTEST_OPERATION_TIMEOUT" } });
+    await pending;
+    expect(bridge.calls).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test.each(["collapsing", "busy"] as const)("late %s readiness cannot resume startup work after the Node deadline", async (late) => {
+  vi.useFakeTimers();
+  try {
+    let release: (value: IPlaytestBridgeReady) => void = () => undefined;
+    let fail: (error: Error) => void = () => undefined;
+    let reads = 0;
+    let pumps = 0;
+    let hostChecks = 0;
+    const pending = waitForStartupReady({
+      bridge: {
+        description: { capabilities: ["runtime.startup"] },
+        readiness: () => {
+          reads += 1;
+          return new Promise((resolve, reject) => { release = resolve; fail = reject; });
+        },
+      },
+      now: () => 0,
+      timeoutMs: 100,
+      hostAlive: async () => { hostChecks += 1; return true; },
+      pump: () => { pumps += 1; return new Promise(() => {}); },
+    });
+    const failed = expect(pending).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+    await vi.advanceTimersByTimeAsync(100);
+    await failed;
+    if (late === "collapsing") release({ ready: true, startup: collapsing });
+    else fail(new PlaytestBridgeError(playtestDiagnostic("TN_PLAYTEST_OPERATION_TIMEOUT", "late timeout", "x")));
+    await vi.advanceTimersByTimeAsync(0);
+    expect({ reads, pumps, hostChecks }).toEqual({ reads: 1, pumps: 0, hostChecks: 0 });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("late warmup cannot query readiness after the Node deadline even when the clock has not moved", async () => {
+  vi.useFakeTimers();
+  try {
+    let release: () => void = () => undefined;
+    const bridge = source(["runtime.startup"], [ready]);
+    const pending = waitForStartupReady({
+      bridge,
+      now: () => 0,
+      timeoutMs: 100,
+      warmup: () => new Promise<void>(resolve => { release = resolve; }),
+      pump: async () => { throw new Error("expired startup must not pump"); },
+    });
+    const failed = expect(pending).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+    await vi.advanceTimersByTimeAsync(100);
+    await failed;
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(bridge.calls).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
 });
