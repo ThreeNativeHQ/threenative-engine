@@ -537,6 +537,8 @@ struct Session {
     bool runner = false, initialized = false, readbackInFlight = false, firstFrame = true;
     bool viewFailed = false;
     bool metrics = std::getenv("TN_PLAYER_METRICS") != nullptr || gameSpan(-1, 0) == 1;
+    bool gpuTiming = metrics && std::getenv("TN_PLAYER_GPU_TIMING") && std::strcmp(std::getenv("TN_PLAYER_GPU_TIMING"), "1") == 0;
+    uint64_t previousGpuSamples = 0;
     bool mainThreadCpuEnabled = [] {
         const char* flag = std::getenv("TN_PLAYER_MAIN_THREAD_CPU");
         const char* metricsFlag = std::getenv("TN_PLAYER_METRICS");
@@ -588,6 +590,10 @@ struct Session {
 };
 
 int Session::initialize() {
+    if (const char* rt = std::getenv("TN_RENDER_THREAD"); gpuTiming && rt && std::strcmp(rt, "1") == 0) {
+        std::fprintf(stderr, "TN_PLAYER_GPU_TIMING_UNSUPPORTED: TN_RENDER_THREAD=1 has no synchronized GPU timing snapshot.\n");
+        return 2;
+    }
     if (!game.view && (game.scene == nullptr || game.camera == nullptr)) {
         std::printf("TN_PLAYER_NO_SCENE: %s carries no scene or camera.\n", game.name.c_str());
         return 1;
@@ -639,6 +645,7 @@ int Session::initialize() {
     renderer = std::make_unique<Renderer>(context->getInstance(), context->getDevice(), context->getQueue(), events);
     const uint32_t width = presenter ? presenter->width() : surfaceConfig().width;
     const uint32_t height = presenter ? presenter->height() : surfaceConfig().height;
+    renderer->setGpuTimer(gpuTiming);
     renderer->setSize(width, height);
     renderer->setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
 #if !defined(__ANDROID__)
@@ -990,6 +997,22 @@ int Session::initialize() {
                     lastGeometryBytes = geometryBytes;
                     lastTextureBytes = textureBytes;
                 }
+                sample = json::Value::makeObject(std::move(members));
+            }
+            if (gpuTiming) {
+                // Resolved render-pass GPU time: excludes queue wait, final swapchain blit and present.
+                const uint64_t samples = renderer->gpuSamples();
+                const auto segments = renderer->lastGpuSegments();
+                auto members = sample.members();
+                members.emplace_back("gpuTiming", json::Value::makeObject({
+                    {"enabled", json::Value::makeBool(true)},
+                    {"supported", json::Value::makeBool(context->hasTimestampQuery())},
+                    {"samples", json::Value::makeNumber(double(samples))},
+                    {"fresh", json::Value::makeBool(samples > previousGpuSamples)},
+                    {"elapsedMs", samples ? json::Value::makeNumber(renderer->lastGpuMs()) : json::Value::makeNull()},
+                    {"segmentsMs", samples ? json::Value::makeArray({json::Value::makeNumber(segments[0]), json::Value::makeNumber(segments[1]),
+                        json::Value::makeNumber(segments[2]), json::Value::makeNumber(segments[3])}) : json::Value::makeNull()}}));
+                previousGpuSamples = samples;
                 sample = json::Value::makeObject(std::move(members));
             }
             if (instructionsFrameBegin >= 0) {

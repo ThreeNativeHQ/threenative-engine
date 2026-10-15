@@ -17,6 +17,7 @@ const drivenClock = process.argv.includes("--driven-clock");
 const liveClock = process.argv.includes("--live-clock");
 const cpuProfile = process.argv.includes("--cpu-profile");
 const mainThreadCpu = process.argv.includes("--main-thread-cpu");
+const gpuTiming = process.argv.includes("--gpu-timing");
 const work = await mkdtemp(resolve(native, "build/player-frame-per-present-"));
 process.once("exit", () => rmSync(work, { recursive: true, force: true }));
 const entry = resolve(work, "game.ts");
@@ -49,9 +50,24 @@ requestAnimationFrame(frame);
 await bundleNativeEngine({ entry, outfile, boot: false, host: true });
 const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy", TN_PLAYER_METRICS: "1",
   ...(cpuProfile ? { TN_JS_CPU_PROFILE: "1", TN_JS_CPU_PROFILE_START_FRAME: "10" } : {}) };
+delete env.TN_PLAYER_GPU_TIMING;
+if (gpuTiming) env.TN_PLAYER_GPU_TIMING = "1";
 delete env.TN_PLAYER_MAIN_THREAD_CPU;
 if (mainThreadCpu) env.TN_PLAYER_MAIN_THREAD_CPU = "1";
 delete env.TN_PLAYTEST_MAILBOX_ROOT;
+if (gpuTiming && process.argv.includes("--render-thread")) {
+  env.TN_RENDER_THREAD = "1";
+  const child = spawn(resolve(executable), [outfile], { env });
+  let output = "";
+  const read = (chunk) => { output += chunk; if (output.includes("FRAME_CALLBACK")) child.kill("SIGTERM"); };
+  child.stdout.on("data", read); child.stderr.on("data", read);
+  const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
+  const [code] = await once(child, "close"); clearTimeout(timer);
+  assert.equal(code, 2); assert.match(output, /TN_PLAYER_GPU_TIMING_UNSUPPORTED.*TN_RENDER_THREAD=1/);
+  console.log("PASS GPU timestamps reject requested render-thread execution");
+  process.exit(0);
+}
+
 if (drivenClock || liveClock) {
   const mailbox = resolve(work, "mailbox");
   mkdirSync(mailbox);
@@ -200,6 +216,29 @@ assert(settled.every((count) => count === 1), `frame callbacks per drawn frame: 
 console.log(`PASS one frame callback per drawn frame over ${settled.length} frames`);
 const cullFrames = output.split("\n").filter((line) => line.startsWith("TN_PLAYER_FRAME:"))
   .map((line) => JSON.parse(line.slice("TN_PLAYER_FRAME:".length))).slice(3, 20);
+assert(cullFrames.every((frame) => Object.hasOwn(frame, "gpuTiming") === gpuTiming), "GPU timestamp metrics must be opt-in");
+if (gpuTiming) {
+  for (let i = 0; i < cullFrames.length; i++) {
+    const value = cullFrames[i].gpuTiming;
+    assert.equal(value.enabled, true);
+    assert.equal(typeof value.supported, "boolean");
+    assert(Number.isInteger(value.samples) && value.samples >= 0);
+    assert.equal(typeof value.fresh, "boolean");
+    if (!value.supported) assert.equal(value.samples, 0);
+    if (value.samples === 0) {
+      assert.equal(value.elapsedMs, null); assert.equal(value.segmentsMs, null); assert.equal(value.fresh, false);
+    } else {
+      assert(Number.isFinite(value.elapsedMs) && value.elapsedMs > 0);
+      assert.equal(value.segmentsMs.length, 4);
+      assert(value.segmentsMs.every((v) => Number.isFinite(v) && v >= 0));
+    }
+    if (i > 0) {
+      assert(value.samples >= cullFrames[i - 1].gpuTiming.samples);
+      assert.equal(value.fresh, value.samples > cullFrames[i - 1].gpuTiming.samples);
+    }
+  }
+  console.log("PASS GPU timestamp metric schema/freshness (not a GPU support claim)");
+}
 assert(cullFrames.every((frame) => Object.hasOwn(frame, "mainThreadCpuMs") === mainThreadCpu &&
   Object.hasOwn(frame, "measuredFrames") === mainThreadCpu), "whole main-thread CPU endpoints must be opt-in");
 if (mainThreadCpu) {
