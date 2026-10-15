@@ -1,0 +1,978 @@
+{
+  "purpose": "Default forest unchanged-look acceptance; manual visual capture only",
+  "performanceGate": "UNVERIFIED: original CLI/performance failures are retained",
+  "observerScripts": [
+    {
+      "path": "sources/forest-cold-start-capture.ts",
+      "sha256": "82b6c370f395a7ed894be2575eaab53c9ac605c95555068540847314a58edc89"
+    },
+    {
+      "path": "sources/forest-settled-capture.ts",
+      "sha256": "e2b029418ec4241b4a9b21c20500f71c9d757991a867390ccc8aa436426c4fd8"
+    },
+    {
+      "path": "sources/collect-forest-initial.py",
+      "sha256": "dd93627df997d8b59aab78e8213a98c844252476d72fd332cfdf0a191c074392"
+    },
+    {
+      "path": "sources/run-full-if-probe-passes.py",
+      "sha256": "d8f95d666c1b74a315fd75313ed0665f4627f82a6918c84decd468dbd49783eb"
+    },
+    {
+      "path": "sources/prepare-proof.py",
+      "sha256": "833ee50ec18e02ff8f490033a633f8d6dbe18ec444b2f16a94bfcdb673c5103e"
+    },
+    {
+      "path": "sources/payload-v2-sha256.json",
+      "sha256": "5275af199d48f1c158850ca88fde08175163439c2713bb200c8121f356ba13e0"
+    }
+  ],
+  "frames": [
+    {
+      "arm": "BEFORE",
+      "run": 1,
+      "pose": "ground",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 189508,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "d7df19e75055e44a95434a8f7eb7fc661596c0e3c5db5676ebc9c0eeddb2783c",
+        "labeled.png": "f84c1192e6d442189537ccf7a10736dccf54665d6e4054703425e38755ba6914",
+        "pilot.json.gz": {
+          "sha256": "a227e53995101d2530a068fdce9e70cd006886794bcc243dbd7f1968decd3d87",
+          "originalSha256": "62ab58c4b30f8b942032adef01d0d238f53b4c8db6c12640d2f109fe0664f1e2"
+        },
+        "settle.json.gz": {
+          "sha256": "fec1218a048e21f28dfadbd9546820cc6666bbeb76fee918d2aa704e3841b0f6",
+          "originalSha256": "263440062a13eb5aae15a933d012fcb727cb8d3ae391e92b79fdeb25d2b5788e"
+        },
+        "report.json.gz": {
+          "sha256": "aecff83b31dfb0d095996f54458012defa7b5f20c893c982b841bdbf835c3e77",
+          "originalSha256": "4e7c7e95ccb98aa08a8ed7188a1f80cf8e2267c4829aa65ba19062366cd412e0"
+        },
+        "input.json.gz": {
+          "sha256": "6f409ff4a32d6807db4fa3562d1626211c39a0185e09eaa6389c0e97e7cd8296",
+          "originalSha256": "fd0ae9a5fa5848c414d5f55867c8a1cc50977f5b430664cb8ff5ca562898df4d"
+        },
+        "preflight.json.gz": {
+          "sha256": "1c44c1e47f4dc5e55d790831d3dcd484505221b844063a39e0facdf4ba25fada",
+          "originalSha256": "a9e8e101d93e97f90df975d9ced10e23d9ba7da4e02303f3652dd1bc88d4a6b8"
+        },
+        "readiness.json.gz": {
+          "sha256": "ce839cb6216486fd9d10218eab66c0d770ce9b2deb285f5e78879d92a4f0d735",
+          "originalSha256": "52a8a8a8d5534f803df61d56a8a344e7ee853373f3d4b7d9a4b8862a6071d837"
+        },
+        "capture.log.gz": {
+          "sha256": "65374cd52237d422b550d558ce9ce987acdcb5f8a48eb198aec396d03eaf9dec",
+          "originalSha256": "0981a8d1d32f2d6548a27d64f1b5f152af19cbed8882255aa8f709ff64e59f7b"
+        }
+      }
+    },
+    {
+      "arm": "BEFORE",
+      "run": 1,
+      "pose": "edge",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 120266,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "7e9ba670c4310d2bc5f869ba1b75a923b0a6fb397d089b4fe064b9dab6185d1e",
+        "labeled.png": "f3253d12a4de660e21e90acf8e901176904b1cea9897268441ec8e76a5b4f903",
+        "pilot.json.gz": {
+          "sha256": "c1eeeb382151a8692122b73d8137bd521d67f5e9516349615ace70a6769a1298",
+          "originalSha256": "be0a43004c809c638859b614e49c540b13250827bc1e8c51cdb27512758a8ce8"
+        },
+        "settle.json.gz": {
+          "sha256": "db9b71c7439fd1faffc82295f150dbccd1f6993cccc81962b79b7c5a9b993e57",
+          "originalSha256": "cfee0325f9238e1d2d98753d91a94c36f93e5d373d35fbd4e9a3a5cc594d525e"
+        },
+        "report.json.gz": {
+          "sha256": "14ce1df461140643a62133b230b7c1ea67c3142b57d8780e46cd2e3ec00c30ef",
+          "originalSha256": "21c9dd412bec21205195fb48cfa50842985e013090738418faeb916c86603a66"
+        },
+        "input.json.gz": {
+          "sha256": "61151af0ae74e064618733b114b76e86d7224c418d64b91e218d5ab130668768",
+          "originalSha256": "64b21fb04b4dfa1094b1674f8b6dbf283e1950f8b569ce82b4864467933fc976"
+        },
+        "preflight.json.gz": {
+          "sha256": "b8186ab444d6e85b6325d58ccfef600fb88b7c93628245a13b194e7a91e781ef",
+          "originalSha256": "2e50554478fbc63e09b741c310232bb63902a92a9f85b983a51b75675e405157"
+        },
+        "readiness.json.gz": {
+          "sha256": "51d84b4ec5c21e3323253a7db47a2b0cd57dcbd221319bf5547abc96d8e43e72",
+          "originalSha256": "92cd48c02019a735d5eb8757b3494302db188be381f05103d28b75077dcc2308"
+        },
+        "capture.log.gz": {
+          "sha256": "b8fc1b8c538c4ff0454f799dc48bcf4f40179d8ae3c64be039d224095321560f",
+          "originalSha256": "e81dcedcb3fbe44a83a289254b3efac9154a2c04129cabb246e70a5d724756e0"
+        }
+      }
+    },
+    {
+      "arm": "BEFORE",
+      "run": 1,
+      "pose": "overview",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 424177,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "dc90b6209d6dadcb1e582c47cf04c7c69e2db66a05da1084622f8d7042b2693a",
+        "labeled.png": "03c01a3a887fb7fea84408a03401fc7566ca0c33b9381c1d23435b3da9871d51",
+        "pilot.json.gz": {
+          "sha256": "568f1b276878eb7a52b2f9f06ed42ba1f97bd8ffb5ae0e1a114e441c58d47e45",
+          "originalSha256": "f9d57ffd3d7447a0fc82789f5c16787b466309bc3539c3b07a3ca9420b240838"
+        },
+        "settle.json.gz": {
+          "sha256": "266cbdc5bdedab229c7b7b08193f9dd22004cb51ca0454ae4cb6fb93ae082992",
+          "originalSha256": "86eccd06e2830eb0d8cb9c14a728d95d8de532f84be35cebd4e1f8c2f2320a2b"
+        },
+        "report.json.gz": {
+          "sha256": "3cfab3bcbff41eacbf1df7bc3c100ae7b5b79df8cee0c18671f47ab301e5e14d",
+          "originalSha256": "15ac2a034b4965628830b19dc94e95d2b103f7b03c5a1f3d26f4150571a38046"
+        },
+        "input.json.gz": {
+          "sha256": "21f57f46787ff1ac1e26d141b5c460fa601a430d88532dfd377c8a8b3092794e",
+          "originalSha256": "02de0f4d32ecba8f1992bfa4460e6a3e12273d320d41b06cace2cc933228f6a6"
+        },
+        "preflight.json.gz": {
+          "sha256": "729fbefb2e07f486b414f1087f3d8d727a4cec550e5552d44badc720d50a2238",
+          "originalSha256": "f3f7f84b368ae7de31d85db168680db1694c6032f8020697c2d8ed68596770c4"
+        },
+        "readiness.json.gz": {
+          "sha256": "42cc2d9e7c92b011b0e7359951fb41034cf9bf32c769ed4f6259e8525c6962b0",
+          "originalSha256": "9d5c3f3cfb4a131982e03939416f89b0ba587c4ebcae944a308d0abd27d86cd9"
+        },
+        "capture.log.gz": {
+          "sha256": "1d20cb5f33e99e3aa4b4a6a82bc07e3cc2843f5c64c61ffeed56c22105a9ee58",
+          "originalSha256": "7ad0a8c7f4082eb7ac7b5df91e35cdab0fdd0a5be6137b51d90da51611c053fe"
+        }
+      }
+    },
+    {
+      "arm": "BEFORE",
+      "run": 1,
+      "pose": "lake",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 295890,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "9547ef7cb28bb3fc80b863c7e5b3624f7a3086cf387e2ea1b29f997d7cd764e9",
+        "labeled.png": "92ccd2314293694f79f36c01edf1b2122b4b97332fcefb7f5bfe6c16653cea9f",
+        "pilot.json.gz": {
+          "sha256": "f1602bbd67de2492b30dc7fa184fb2eca06496d358a2bf106d1146bb8129379a",
+          "originalSha256": "5eba7766a5a25ea71ca64a42bed04065a643e20325d5d843be9973734beda481"
+        },
+        "settle.json.gz": {
+          "sha256": "c6e422a80bb1bd6fa1d40f2e6723f3ce81a4626b81c8b02fdc41d6f6a25d19b3",
+          "originalSha256": "784af85539613aea8919fafd79c1402e52d3c871d1d301e6a42c952199f3ebc8"
+        },
+        "report.json.gz": {
+          "sha256": "76a4dd247277c100b3f9a3379d8c27ffb8ae40fc82595b9847238eceed228d83",
+          "originalSha256": "8a9c7d7ade3fbd3bc8d4355ef4316c13f09dc4029dede72f523a4d38461fba45"
+        },
+        "input.json.gz": {
+          "sha256": "c58dbfc55333a5aa3949dd62b1018074dd05dcde016246da55c99e7b5fa76f86",
+          "originalSha256": "c9234e7699dc8e2879b71e6c1e4fc360b08a66eb505cd1ff5f69dca5c67221e3"
+        },
+        "preflight.json.gz": {
+          "sha256": "ee1dd532b1edf9232ab7097f6e37b70de640e21d6a2309344eec536cb052587a",
+          "originalSha256": "56d5e7d8d484254bff12b20a0e35d8b4aaf4c3bbff0196082761b9ff9c04cef5"
+        },
+        "readiness.json.gz": {
+          "sha256": "1476ded0bc899b3d5d7945647e3212b9053b370ae0a872580e41fe1a60f57b71",
+          "originalSha256": "eeb0b16473238090710686e3bade78aa90d1323060781fece8539a172376e473"
+        },
+        "capture.log.gz": {
+          "sha256": "c2749f97467d91c96db99694d11f0f14818abfc8ea7dc47c7a6eb764e70ba7c3",
+          "originalSha256": "fd13ce4449bb0cb93a0572e204945c8be2861bd5b71f74e6af6e1f7fba0b7299"
+        }
+      }
+    },
+    {
+      "arm": "BEFORE",
+      "run": 2,
+      "pose": "ground",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 174903,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "da1755784692bee5a5797da9f02f5bc50e5db946c74225477c07f9951199063e",
+        "labeled.png": "1b6dc6402810475969e99fbe9999720d22ebdea4fa3063ed3b6ed11af84bdaa7",
+        "pilot.json.gz": {
+          "sha256": "9c932fe8688bae84e423243c8e4234c29b86986be0df126fdc13a38854392f97",
+          "originalSha256": "c3ba9abfa55776ebfa07b73b253dceb50783e157984aac4c926125b168d92430"
+        },
+        "settle.json.gz": {
+          "sha256": "efbf66b27cf9a3084a61e3ccc30a85d669247ee79680e259cc71fb8339c0b3ec",
+          "originalSha256": "e77aa8142fdf72ce51fa223d316d98ee138c68e485c04803755ca9f9b78d27ee"
+        },
+        "report.json.gz": {
+          "sha256": "e5d3ff38b0ef40727c1ab1470e00c9299b22c746875d503c7f39c105899cd743",
+          "originalSha256": "54d2065883a0300fc67ccb7da0d8327ba488ff75cd9ee06745463b6a49d1118b"
+        },
+        "input.json.gz": {
+          "sha256": "2d6709399ebeb8ac117e8d1f3d982715325327f7b2f68035cd59e8d9280e8533",
+          "originalSha256": "57cf3c8884569a5be20ec76e25a677e31fb64e400d24c6517ba8c88ed386836a"
+        },
+        "preflight.json.gz": {
+          "sha256": "2f573dc82c5b179dec1e26251bde00d040cc01e7945eb75f02aebe432984b8a5",
+          "originalSha256": "b7c5d9c80e206ba1d5ab449dec2c4045b4fe6c2e00c2ed26ed341115c258776e"
+        },
+        "readiness.json.gz": {
+          "sha256": "01f4417e333afd7d29e9fadcaa4586d1af2753be331e855685a0452ba3bfcd29",
+          "originalSha256": "52403a62c2f0fdc1dfc64f4128de94cdfaeeb948a81f476359c84afb8412aded"
+        },
+        "capture.log.gz": {
+          "sha256": "80600493f1611637af90fa176df4e625bda3f7a3d37d3f51ebf8e75484e1ed6d",
+          "originalSha256": "2f3bd303791944dbaae520b2e6832f0bacf7b1ec7dae34c29feb7828746aeab3"
+        }
+      }
+    },
+    {
+      "arm": "BEFORE",
+      "run": 2,
+      "pose": "edge",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 118060,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "f9692d2350d11fd3a904a12dba2a7db83a4d7aa6ee9142073ea8edfff6262174",
+        "labeled.png": "232ad1f146babd3353bb90161c8aacfeef7f05901830f38c8ee33bfae05a2e18",
+        "pilot.json.gz": {
+          "sha256": "32e065d13bb2c0e6c0223cc9b7b748f6fdc570f88f90cc7d118425a870bd7f57",
+          "originalSha256": "fd7e62f097ec22a385a8e445f1fc81d71e50ad7f6a82a61efe2a771826b06bbf"
+        },
+        "settle.json.gz": {
+          "sha256": "f76f94f2a50b3cee29d6bd9c0e5e8054440210dd359a668146c2c666a329cede",
+          "originalSha256": "223e951970b02e95d4854a748720a9d86bba3a3a6600d90421f726c42831c9bb"
+        },
+        "report.json.gz": {
+          "sha256": "db5b42e55883da7d6567ba5585305b682c53ba4319840ea040f2d96b08e3868b",
+          "originalSha256": "fbc20e1e55cc2be27ef217a4c91b7666eb2e51cf9ccb0bd3b47d2d159b0f26f9"
+        },
+        "input.json.gz": {
+          "sha256": "07b4e90894dd39d7ba657349c3c4b59e8325f370f79f00c299ec8303d7c9c71a",
+          "originalSha256": "0c4ffb29de7de55f78146d1cb177d807942a2ece00b853e98fee6b4f7364d769"
+        },
+        "preflight.json.gz": {
+          "sha256": "3ad8a5d2c174dda16445a55dc5362be3f43719f97af4589a0337e1991d79cfa2",
+          "originalSha256": "4fed8adbb54d88ef04db4e4abfaf53a1b195e6587ea304b1eb2db517740372bf"
+        },
+        "readiness.json.gz": {
+          "sha256": "e15a8e9949c46c7a8b54e5f331baab313aec395697115aac0e3c1fd78a907701",
+          "originalSha256": "10c6f3ea35709adf125b789ad67b4cb556f75575a551326cd58d3a3847d0da47"
+        },
+        "capture.log.gz": {
+          "sha256": "69cee24f5b908801b514aff4b76bb4955ea971065a19388d15d1b22923db68f4",
+          "originalSha256": "f8103f8b6aaee6aada8b2d805e8fd3fabe62d4dfc1769fc02be95474935a0b7f"
+        }
+      }
+    },
+    {
+      "arm": "BEFORE",
+      "run": 2,
+      "pose": "overview",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 438648,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "8348775c59fe41a35321657317504bb3df4e69ca1ee5e14b1d9d9d9b7c506a1c",
+        "labeled.png": "751b06219e2402b3b824ddecd76ebea76b62f6932ca9177e5f3e0c15bfc17447",
+        "pilot.json.gz": {
+          "sha256": "4a6a3d105bac0914a90808ebccc8f9c561dde0abc6c5e1fa8c2ba4eb14244f80",
+          "originalSha256": "288c4af2e6d9f544616804c0443591e39b64353fbe5d99381f941d2a712daf72"
+        },
+        "settle.json.gz": {
+          "sha256": "b23fc1c84442596afa402e10b0e2ff688b06f45159cc6e88159d7bf9624c143c",
+          "originalSha256": "d668eb4e0bb6820d5ce49cf494d04580094eefa2c5ed876e1fd8da3b4b0f7999"
+        },
+        "report.json.gz": {
+          "sha256": "5e75a0f31d1c1f734f0f913c751c628b42371dd829ee21f99f7ea7c59beedeba",
+          "originalSha256": "8373d50f18bcdaa86776b89d8dba6af1ce14a89fecc6d52b55669c8b44b6b45c"
+        },
+        "input.json.gz": {
+          "sha256": "ae9f7518f12a7b3f3e92b39a09a9bd19191867cc331babc096a9a777a5ecacc6",
+          "originalSha256": "de511cef221a47015612a92887e6c5ea6ab2699b36c61278447e5eae4a496cba"
+        },
+        "preflight.json.gz": {
+          "sha256": "89eedc16675a3d420eee217b9f29657ecb160f66aa75d61971cea5ef7479f072",
+          "originalSha256": "8ddb67d0fb3e7dc8856f2d1c608b16bb1d9de368db18614295db9c03b8a54207"
+        },
+        "readiness.json.gz": {
+          "sha256": "035eab503465d555b7612427216346a58b4c7e8241c119113808f0c67a3a86bd",
+          "originalSha256": "642a4cecb322027b3ba630f9ca58fa3d716aec6ee1017f88dab2738bf7875cc5"
+        },
+        "capture.log.gz": {
+          "sha256": "1b8488387b13f9171bab6058be98a3eb1768e82995359ec5b0789de929fd9911",
+          "originalSha256": "8e8caf57dfbd5b8d3ddc2cf57741ae3a8ec5e52b8e6c1ce991512c2f8a72cd26"
+        }
+      }
+    },
+    {
+      "arm": "BEFORE",
+      "run": 2,
+      "pose": "lake",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 101056,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": "/home/joao/offload/threenative-engine/prd614-checks-20261015-0735/.linchpin/prd614-laptop-settled/full16/BEFORE/run-2/overview",
+      "files": {
+        "raw.png": "57d6f51d231234af12f23e3a692c814b3030a17c66ffaf156cab48df87702b67",
+        "labeled.png": "9c16bf64a4cea3cec02cfe1309eb869f451e9e79d9be41181db1957859cb60b2",
+        "pilot.json.gz": {
+          "sha256": "569d697fed4a4dfa85ccb1f52b3d987bd189b6445d98fb70bb0b4e7134c083e5",
+          "originalSha256": "3e8cd62dce1105bd009805ab68e726e2e5d3e17ed29068976ee480a51fe68baf"
+        },
+        "settle.json.gz": {
+          "sha256": "67afadd0391cc6482d46d7e77b4edcae4d6d60e22a9da390febaf54029ffb6c8",
+          "originalSha256": "05394f0083ae8b7ec1658ddabc51a16204d8f81a0a245b745c888534b273f4ef"
+        },
+        "report.json.gz": {
+          "sha256": "ac14e166155691c9f65eb74dcc6b56130a04240d975577395a9e1a847fa65c0f",
+          "originalSha256": "03952f76d6b34827b36ad164d7293d009aa68f8866b1c4d9525f27e136022027"
+        },
+        "input.json.gz": {
+          "sha256": "ab6bc32101d3c43d9991f9dd183e06a90b42e1e2f90368172bcc980ec4531b8d",
+          "originalSha256": "fbe29f8cb0ec46fdcf6183e23d70df6b22f801a8cb8348b7be2b6d69c096a0be"
+        },
+        "preflight.json.gz": {
+          "sha256": "b60280840918d0bf6c332415f72f9b80132df090d06eb9c685ef2bf667b9f470",
+          "originalSha256": "2e5e2b588b9e5e569b897161d3b365249df01c744865179afdf531650ebb2038"
+        },
+        "readiness.json.gz": {
+          "sha256": "eee9f676d6388e90ef6f356c2e832b8c84597f8aea4796208e1ef766d8aac540",
+          "originalSha256": "5c9b8b9b9cd823181cae2e94d19e4fd48f62c9b094d16fad9bb1a5b7e350e35c"
+        },
+        "capture.log.gz": {
+          "sha256": "f5fbd225e81d747e1e5051a8f631438402ab4f04f92335ea21c6a56f3e17107d",
+          "originalSha256": "7802365ff5a390b90b0ffa5a90580299fedc7ae87b2e82545fddc99b308bcc6a"
+        }
+      }
+    },
+    {
+      "arm": "AFTER",
+      "run": 1,
+      "pose": "ground",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 182921,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "4388d52fd8ffb99038dbe71eae404514beead951fa7bbf22c61829d2649b3b40",
+        "labeled.png": "cd5afa22dc4c863c23029693ca49cdfc07cf7aaf2e8f8e59493c143250000fd8",
+        "pilot.json.gz": {
+          "sha256": "4922e39dd833de7765bf011370a28c386ae82b058c50683f54beaa7e6bd8ec95",
+          "originalSha256": "9e9ba4a5113e4703756d85f9f27fc4edec8888d48399cfe9f3b6ad089305825b"
+        },
+        "settle.json.gz": {
+          "sha256": "436a8a1e3288f51c4e88f3c78c6f56cf3dfcf6e860e2d46018fed313388ad11d",
+          "originalSha256": "f2a16fb2068f9e35c6d2539967353d12184693dd415d16087ae6eb1531ec53a7"
+        },
+        "report.json.gz": {
+          "sha256": "8f277d804acaa6aa31f5459b7a2232042140c01f7deda45de94038ec9394af6e",
+          "originalSha256": "1e37c8b91feb3e3e5b0f85fbab965d2e8aa17d6d1f224c5dd080319ae4f953c4"
+        },
+        "input.json.gz": {
+          "sha256": "03488342fa744b534effb848ce4a0c6cce226105394a63e9c46be9187f0510a9",
+          "originalSha256": "768edb9d61734af66fe4c0c6662563fb203d06d6e76b9d29967431d707b64d7d"
+        },
+        "preflight.json.gz": {
+          "sha256": "75be3f59e3f365be0a7e0241a05a64d40a752598cbc28b43065e2322a265357f",
+          "originalSha256": "ac26a6ff120a58dc24cb21b01d8ebd833f15cb44ce3f943e810443ce6c1d296a"
+        },
+        "readiness.json.gz": {
+          "sha256": "afad2053b1f62ef9364a144c6573df67177053a2ee9e34425359a8d827fd466c",
+          "originalSha256": "d427d1733b60fbc5e0a72bf734f31fb29f8fe6fa46ed331abd8eb45dd83e6b14"
+        },
+        "capture.log.gz": {
+          "sha256": "3bd14131d304152c1e540b30bbb18ea37a0a3e915198d7a1a9d2f196c0beb508",
+          "originalSha256": "60416011a19d7253999b70842abfa4f8d571fe80d0a023a64595cdd1cf0e20e0"
+        }
+      }
+    },
+    {
+      "arm": "AFTER",
+      "run": 1,
+      "pose": "edge",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 117293,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "a5d142c80ff6772cafeccd4af12e3b297858075f78051c16d001077d21466f5a",
+        "labeled.png": "f4c95b2316268acd99275dc686a15b2b90a2b9606d65e1a0ce7fce5a81946aaa",
+        "pilot.json.gz": {
+          "sha256": "8b4fa14058f4788a6d992e82478a9569e5816d4406a9e51b9fd327472ea80606",
+          "originalSha256": "cd2fabc36521c3bb086e7fc529249c0ac3ce7bd4c530dee9954e8c276094e9ae"
+        },
+        "settle.json.gz": {
+          "sha256": "76148867f8651ee74adfe7f08196088ce662c7e922f86914a4c76e4d5262fe66",
+          "originalSha256": "c22e1f57fc9870ae8f4dac992af183da668f0c5821a0f8ae769dc14ada8d35c5"
+        },
+        "report.json.gz": {
+          "sha256": "a3ecf6b39a14998f497ed17743d1a43acf22289e0661b58a8e3fb01f2dc70ee5",
+          "originalSha256": "9ed05c9e27317e71672d81e20e7de5dda8d6d13518308b7f636eddd885992893"
+        },
+        "input.json.gz": {
+          "sha256": "180c8cf4b77a89802c7ffcc6777900e6af1220f3d32e3ac0d70868137ee2c7a8",
+          "originalSha256": "74a5f5d6f7c11aba0ab4006b229adb55fac91448e951e002a9042a5e4b1d9b31"
+        },
+        "preflight.json.gz": {
+          "sha256": "aa53935442670fcf43e55d9dc7dc4d4f27d96c0b62316af95dbe04b7595025e7",
+          "originalSha256": "24e1c5d40b30ae8aa081e29b955b122ab8048cbb0486b29a5ecf276f65d67976"
+        },
+        "readiness.json.gz": {
+          "sha256": "e9225ff35a136d36a9f34d3677e8031960f87e34eff22f55cb21958fc768406b",
+          "originalSha256": "5ceffd60b2e13355e27840bff8b4d1d2f45f358ebd1ead633ec9d79b49d5365f"
+        },
+        "capture.log.gz": {
+          "sha256": "e2d5050e081d3b5885d382dddb5f698c9fad05ac8e223ef179f0bb48110a23ba",
+          "originalSha256": "c7d751efbd74a583e1d50d00ecef10a21f7e8b28634f4f802bacd87d1e58658a"
+        }
+      }
+    },
+    {
+      "arm": "AFTER",
+      "run": 1,
+      "pose": "overview",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 483291,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "9ea25a7d6d83c4ef1b7dc2a13041752316f4ee3a49564ca8df07c3e867a3867c",
+        "labeled.png": "1c883d3276cb8aea799470d9ac8405a9f3e0b8f186bc63d3cedd1b4a0e24c14c",
+        "pilot.json.gz": {
+          "sha256": "dba323549b7b34e90cc7e60a33428814a90a3b900f0aea417a7fcee3ae998da2",
+          "originalSha256": "6bf35e2018fd1951fbb1fa94b1fab2a75752dbd40d7347aa68263be0d088c80f"
+        },
+        "settle.json.gz": {
+          "sha256": "daa2eed220ea413deb275e670a64410e94c01f8f4c2fe181fad6f208f3215da4",
+          "originalSha256": "f1d5be8463d4cff35a61ecd143d476d69c0caf6aec432bd5e73f32874ee24c02"
+        },
+        "report.json.gz": {
+          "sha256": "e77f49bc7685741de993341770613328dac79ce2cac1ef29b866cbfff0fc5c98",
+          "originalSha256": "cd2e0813c53ed88c178d44b748c278e021977d34dc9e7484f0f59c540da41860"
+        },
+        "input.json.gz": {
+          "sha256": "b82f805fc3cb45750453ce294e7c2de4722ffa92db4b78c5bbab707a31fb9795",
+          "originalSha256": "825b8bde75000ad7483655ad738d7a7351967ece22a83163a6086fa7f044dfe8"
+        },
+        "preflight.json.gz": {
+          "sha256": "f870103f810e0041296127e5cdb135c97ee4e64207d46995b502572202f63ede",
+          "originalSha256": "2958ee81d6450437b957ca3143bd3ac3f48d799d54d09a18b5660de169761821"
+        },
+        "readiness.json.gz": {
+          "sha256": "4716afc457a845668631fd7e6b641b2a179774baefab572747f3eede7e13bea6",
+          "originalSha256": "75e31675575f70703b19b52f2bebcf82b1a37176766fbe159a884347ee6321f9"
+        },
+        "capture.log.gz": {
+          "sha256": "fed700eca09b78ff4c8ba646c0b02997693a7b4c7fd847dae22749c16b73164d",
+          "originalSha256": "055e24cbb24f24b29437904f1b2f369f495d89f06cdab10cf742dfdf9ba1d54b"
+        }
+      }
+    },
+    {
+      "arm": "AFTER",
+      "run": 1,
+      "pose": "lake",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 314983,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "34980e96b4ba3fa84b6765c0c144b61b0dbe7d53d454ebe8cbe065f90edb473c",
+        "labeled.png": "486d455357aa8d4f667a5c2bcf67a0e59cc7be56e08c936ab53cd7be45bad283",
+        "pilot.json.gz": {
+          "sha256": "4f8bc90a8653e18f321756f41ee6519524eeb9dcac777e0eebcc606bc3b69971",
+          "originalSha256": "cc215b10940329832417df54ae9bbf49601d20ba3dec8a21546da777c5da0a3f"
+        },
+        "settle.json.gz": {
+          "sha256": "122dc157effb1ab9a20080e0aba0f57471867c5ab3da904279f775c9fd23243f",
+          "originalSha256": "eb0792936833323d6c7480486a1d6b33d096069834cf53f2e611a71fb48d73e6"
+        },
+        "report.json.gz": {
+          "sha256": "9878c558ea9d0327f1bc37949c2fe9f5ad6b4b1245435ef316edb74e85620c34",
+          "originalSha256": "c5c2e72ddd17b329d2899e5e14d74dfad2080149b5d9654e4b2d6f713da1199f"
+        },
+        "input.json.gz": {
+          "sha256": "375fb791e6253ae093112a7f7006af7db3ce3298c7254ec68b013dc8015cb0ec",
+          "originalSha256": "d71d099e4bd3cc0a8eb21ab344f3be4690f83f8120f889964e9b0200c20f1a67"
+        },
+        "preflight.json.gz": {
+          "sha256": "65400b10e7a49ac4ac7a99defacc0cac17633ee736d1e6240c3df74aecf221b7",
+          "originalSha256": "63b1a8236274eb3772668126feb61a334d5abf8bbd96cbfec0cef5819a8c1030"
+        },
+        "readiness.json.gz": {
+          "sha256": "e36a4dab72a15f50b973cf40cef16daee69d6d676b8d217c71b430e24a4208b3",
+          "originalSha256": "6b7c1e3e9b11ff5ed7079e54b2425c0c13d02001077c3dc9ecc411d70e09200a"
+        },
+        "capture.log.gz": {
+          "sha256": "ae659e1d8021e9b4cd62e70f7df346d1da48f043deb3559a5df05b25cf26f679",
+          "originalSha256": "bd18557d17f0c96079401cba827a7e76110b4e88dd39f15014b0afd2bf9746db"
+        }
+      }
+    },
+    {
+      "arm": "AFTER",
+      "run": 2,
+      "pose": "ground",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 185337,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "52fe772df8f0a6d182929ae909ec6dec6b9252b3a130802a0eb85b06b9464333",
+        "labeled.png": "a2a6ac27a5fcdda1c3b9067f1d877e61069d68864a969d79be4f2b41d66af545",
+        "pilot.json.gz": {
+          "sha256": "ce4ffe67a355b586a516b7c953b964a423922e6ae7244795f3705ff118b49c85",
+          "originalSha256": "e5214a0daec327dbcfab4bb89ca8912aea707ab58fbf7a22b59dc1cea998bac6"
+        },
+        "settle.json.gz": {
+          "sha256": "7015e1cd18e5d6260fbfa67df8cabafba90439e77817e39de7ac63cdb627b3ed",
+          "originalSha256": "bbaa4ad89f1b35fbd6a07afeee6c769aae5cb1e65f172a3801757c8825c7274e"
+        },
+        "report.json.gz": {
+          "sha256": "a4cb66853a6da2942fd9bbf754cda5081773b35c29390f587e305be8f6419206",
+          "originalSha256": "179af2dd6240a1adc86ed5dee021883056ce40474306d838191189b010189a57"
+        },
+        "input.json.gz": {
+          "sha256": "fbed7a171737f2526b191dd681c975e983fbe5c96761f664f7b9461411cd3d49",
+          "originalSha256": "57646620f507fd0fe5cf8ed860b355213734a065b52a78c9a58f9f0199461331"
+        },
+        "preflight.json.gz": {
+          "sha256": "ef59d4bf7f9f75db1f15fdf8e6514d9dd1152957b83e250358bd2fceb2aff97e",
+          "originalSha256": "4522596b4c35f88a8c60c4ec90e956474f997f375320bf49f1868c467f161dce"
+        },
+        "readiness.json.gz": {
+          "sha256": "9d72f248788822737bc4ff302c0ffe6b4752aba50c0f2b1fadc647f3830d2e52",
+          "originalSha256": "6241fd61dd88c140e34a09e74fd909504a2b141f9042b57fb0e959031286b87e"
+        },
+        "capture.log.gz": {
+          "sha256": "5cdfd9632a4f40adaa4e69b03034f7a7fbf90bac0767d3931dc98742081f5783",
+          "originalSha256": "6d08533ef4522a2f8d42770c8df4b665b50a4e8ce16753d81e4ef703b0eacd78"
+        }
+      }
+    },
+    {
+      "arm": "AFTER",
+      "run": 2,
+      "pose": "edge",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 114572,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "53b4640116caadc4912c265b1bc17a8ced7a4ebdf93f85f422948a90c393e517",
+        "labeled.png": "6f22c1d4085336410b137fa971d4789842f884172a80e6c99a18a6ff7e9b8420",
+        "pilot.json.gz": {
+          "sha256": "dd55085466921113a3dafe627fea0474c3374e98886a7f7eae677c918fe18c3e",
+          "originalSha256": "75919d93b926edef5aa243ffe1a1bbeb2fece3702235813ba8b3490ddaa37c98"
+        },
+        "settle.json.gz": {
+          "sha256": "bfdca7aba922cbb2765b371d50e782677dae0aa5b5748a8ee204f896b0bd8f2e",
+          "originalSha256": "6ae1f48e8b71887c95984437a7c7eecdd6076c152b9eacfdf96b4c43480fd684"
+        },
+        "report.json.gz": {
+          "sha256": "06d1c05e075ff8676b587738bb5a2c77cec455815922a64a31038693b0abd6e6",
+          "originalSha256": "7f5b373adf5bbe450a3d52c490d6881909b3a50f8fbf167a7cf8da06b1d91265"
+        },
+        "input.json.gz": {
+          "sha256": "705a402cca68ef4b9134d64abfe346c6cdc365681505918410959a5789d1a76d",
+          "originalSha256": "dc796d4ffffd17fb20bc41c92d903ecbc9dc00202c182a2e3639a2de33c953d4"
+        },
+        "preflight.json.gz": {
+          "sha256": "e5f14d2c0ce59bc46e544a885f82afc38fbd968b541c736ffba3b107d40069d3",
+          "originalSha256": "c35de08a060a08d70cd0640827fcc67bc1bbd04f536112e9a047e760833d384f"
+        },
+        "readiness.json.gz": {
+          "sha256": "c99a0fd60c0587b5fde162fe691cdf3b1085ac53037c1756013b18e22c15425b",
+          "originalSha256": "759bd315a511425d53a2bd9339dc5288d7804b1b7ebf6506c55297424bb6c6d1"
+        },
+        "capture.log.gz": {
+          "sha256": "eeb973f768eabf8e1e5ff9db2718d907283f2a5baac1e6b47129deef1abf9502",
+          "originalSha256": "f29cf255f0a424f30b25a36f9d98e2baf653056faf92f7679497a2e3fc8742ba"
+        }
+      }
+    },
+    {
+      "arm": "AFTER",
+      "run": 2,
+      "pose": "overview",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 467323,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "dd15aed17f205f65584b5a06b69511f41f769d4feeb118211cab18908a324bf7",
+        "labeled.png": "b436349adc2bc08ef3a1dc9ce62bf0f7bb394b8a307e3824020038b190c2c2dd",
+        "pilot.json.gz": {
+          "sha256": "e66812b72ebd34d79ef43a097eb4ecd89c50c3c3f73ba60d65533cf351e84cbf",
+          "originalSha256": "c704e108efa4ae795a6498fec0d48e6e6a1343756124f26b16a947dd68f24f03"
+        },
+        "settle.json.gz": {
+          "sha256": "d90d494d0ae04e8c9d1400e132dd10794b670af5efa9f1cac66d0e6b2b192aeb",
+          "originalSha256": "fe5777432cf5fac85a723bbde9c19e44f1c190f490d4ccb4bf65399de9594326"
+        },
+        "report.json.gz": {
+          "sha256": "e58aaeb4e1cf523f6c2b747dfc55dabb89a8b642158d8b23eb9bb16e60201865",
+          "originalSha256": "f248615597dfcd616083417f07643d06463b63c90e7230b3a295d67f4734a32c"
+        },
+        "input.json.gz": {
+          "sha256": "4af8660997cc90f0f12c7d58902ca0a4af72a3fd9c373f11ab0a7c110b7690f6",
+          "originalSha256": "36f12b243e312ea04891821ee2b81b3a869575a85205eb6c6d2301844b2199e0"
+        },
+        "preflight.json.gz": {
+          "sha256": "525f677a5c3198d2b760e6d14709272ad53e16f7690ec0820f02e590bd7080fb",
+          "originalSha256": "d9456539d8cda66efe7f720c0c93775467e7de5452f2f320c90ca7814bd6cfa6"
+        },
+        "readiness.json.gz": {
+          "sha256": "249b19f5f505d534d3d85407147b5baf1c20061ba7e96f8d9fc208b74ac38c7d",
+          "originalSha256": "3315928c45a13142f241f44fae5dae195b89ef7a87da8397c5e58d1d93b24acf"
+        },
+        "capture.log.gz": {
+          "sha256": "420168b979616300c899eae921050d196421a8bf05cf33958fc60bb68a8a2a83",
+          "originalSha256": "c0c7cb2549f26ec6d595d6851004a60d6b0455baf584ec00066eaa16909295fb"
+        }
+      }
+    },
+    {
+      "arm": "AFTER",
+      "run": 2,
+      "pose": "lake",
+      "adapter": {
+        "architecture": "gen-12lp",
+        "vendor": "intel"
+      },
+      "settleMs": 294188,
+      "drawingBuffer": {
+        "width": 1171,
+        "height": 659,
+        "rect": {
+          "x": 0,
+          "y": 0,
+          "width": 1920,
+          "height": 1080,
+          "top": 0,
+          "right": 1920,
+          "bottom": 1080,
+          "left": 0
+        }
+      },
+      "reusedBrowserFrom": null,
+      "files": {
+        "raw.png": "819617b7f41d6b5b70fd4b52a4ba1586517ffcda11670a1eeb603c32f2a70c02",
+        "labeled.png": "dd3bd2d250e57c338db9356ae4367662f7a98b2228d4afa0c57b02ed19f936c2",
+        "pilot.json.gz": {
+          "sha256": "14335561e49c0281a8762f38b26a80ca0aaec5e2c3f1f141b162e3c53aed1fa4",
+          "originalSha256": "dfd4418eadf9030e76c75a9bef33e549d4d9826553578b84ceed3c4c1e3a9fa8"
+        },
+        "settle.json.gz": {
+          "sha256": "e6e21e18b1904e3c2379ea48a52fa8f91a2a23b91c260b0d30b158cac4cac8ce",
+          "originalSha256": "e66abbac58b259954e298c37a3a7447478587d4e8955949fe56a10841f1ef1b8"
+        },
+        "report.json.gz": {
+          "sha256": "e9e0652f1016a95b917ae00089313864e9b01ae0e5163347c984d0c18befdc1a",
+          "originalSha256": "b18df3db703eacfe5e5b7bbfd2629f25070fa25d353bf8b3739e2d783cab61d4"
+        },
+        "input.json.gz": {
+          "sha256": "1c480b2f038425220327f31934e9e35077f685fb053437a1b828e5f3d43d4464",
+          "originalSha256": "cfbe2a8323124ac05a5866faea5532f8eb5d9a84b03b017dff63d5081c348016"
+        },
+        "preflight.json.gz": {
+          "sha256": "657063843e95ed9733edacae631fb0caa4bafa361dda34c7ffeaeb7e817ec2f5",
+          "originalSha256": "84d0f9fd5d2d32f36d68f704cf5d97459f2593d4641864ae44116b759e5c1b9c"
+        },
+        "readiness.json.gz": {
+          "sha256": "5e2e3db9daf4b38e86f7a70c07f0e3a2445b41ddf577c32a18997dfdc7569362",
+          "originalSha256": "4ad24def6f6e2e48df854bec6995906c85914f291d82a4349145c77a1cd54283"
+        },
+        "capture.log.gz": {
+          "sha256": "95836e99988a33651a41ae597ca70eb3bc6106fba4887fb1027b31cfbd4332ba",
+          "originalSha256": "e65b90bda423c8415e3f6e2e45803b93fd1cd05201fec1e58ba336ec57402c96"
+        }
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "path": "pairs/ground-run-1.png",
+      "sha256": "a8ab093ea49d6de993e0a2324a41148cb22501ce16d1cc906b82f5a68124fd17"
+    },
+    {
+      "path": "pairs/edge-run-1.png",
+      "sha256": "66c30e9b591c7908db9e3fc83ab482bfed3fb352e904cca4d0dcfc6e2fb3c24a"
+    },
+    {
+      "path": "pairs/overview-run-1.png",
+      "sha256": "65cfd2199eecb8387b240639a3c871da52a2d522175cd6a64184b3d06ea70b95"
+    },
+    {
+      "path": "pairs/lake-run-1.png",
+      "sha256": "66e25b66b32009dd7485cbfa4cef2dd5c501321de4a8ec8c19011963df457ed9"
+    },
+    {
+      "path": "pairs/ground-run-2.png",
+      "sha256": "105b10ea2c126267834a7829466a66e55e3407d7a590d3e3c3102e406c5b6891"
+    },
+    {
+      "path": "pairs/edge-run-2.png",
+      "sha256": "164a898aa502e64727a27a1fdabe6b91ff4fa21f6122f09fdd1dbb9b18479cd9"
+    },
+    {
+      "path": "pairs/overview-run-2.png",
+      "sha256": "10aaf73e0ec952449868103dba35f89247c8de3caacdd267be9c3261430acf05"
+    },
+    {
+      "path": "pairs/lake-run-2.png",
+      "sha256": "1aae6525494d59331c7b6e33fc740785435302ad99f4c4a74c692451cf9dab21"
+    }
+  ]
+}
