@@ -1,6 +1,27 @@
-/** RTTNode's mutable target state over the engine's scheduled fullscreen pass. */
+/** RTTNode's mutable target and quad over the engine's scheduled fullscreen pass. */
 interface IRttNode {
   __effect(name: string, value?: number): number;
+  __rtt(target: unknown, quad: unknown): unknown;
+}
+interface IRttQuad {
+  material: unknown;
+  name: string;
+  render(renderer: unknown): void;
+}
+export interface IRttClasses {
+  NodeMaterial: new () => { name: string; needsUpdate: boolean; fragmentNode: unknown };
+  QuadMesh: new (...args: never[]) => object;
+  RenderTarget: new (
+    width: number,
+    height: number,
+    options: Record<string, unknown>,
+  ) => {
+    texture: unknown;
+    width: number;
+    height: number;
+    setSize(w: number, h: number): void;
+    dispose(): void;
+  };
 }
 function validateOptions(options: Record<string, unknown>): void {
   for (const [key, value] of Object.entries(options)) {
@@ -11,7 +32,7 @@ function validateOptions(options: Record<string, unknown>): void {
     throw new TypeError(`TN_TSL_RTT_OPTION: unsupported ${key}=${value}`);
   }
 }
-export function defineRtt(make: (...args: unknown[]) => IRttNode) {
+export function defineRtt(make: (...args: unknown[]) => IRttNode, classes?: IRttClasses) {
   return (
     source: unknown,
     width: number | null = null,
@@ -19,6 +40,8 @@ export function defineRtt(make: (...args: unknown[]) => IRttNode) {
     options: Record<string, unknown> = { type: 1016 },
   ) => {
     validateOptions(options);
+    if (!classes)
+      throw new TypeError("TN_RTT_CLASSES: engine material, quad and target classes are required");
     const node = make(
       source,
       width ?? 0,
@@ -26,46 +49,83 @@ export function defineRtt(make: (...args: unknown[]) => IRttNode) {
       options.minFilter ?? 1006,
       options.magFilter ?? 1006,
     );
+    const material = new classes.NodeMaterial();
+    material.fragmentNode = source;
+    const quad = new classes.QuadMesh(material as never) as IRttQuad;
+    const { minFilter = 1006, magFilter = 1006, ...targetOptions } = options;
+    const target = new classes.RenderTarget(width ?? 1, height ?? 1, targetOptions);
+    Object.assign(target.texture as object, { minFilter, magFilter });
+    node.__rtt(target, quad);
+    let version = 0;
     const parameter = (name: string) => ({
-      configurable: true,
       get: () => node.__effect(name),
-      set: (value: number) => {
-        node.__effect(name, value);
-      },
+      set: (value: number) => node.__effect(name, value),
     });
-    const extent = {
-      width: { get: () => node.__effect("actualWidth") },
-      height: { get: () => node.__effect("actualHeight") },
+    const setSize = (w: number, h: number) => {
+      const scale = node.__effect("resolutionScale");
+      if (![w, h].every((v) => Number.isFinite(v) && v >= 0 && v <= 16384))
+        throw new TypeError("TN_RTT_SIZE: expected finite dimensions in [0, 16384]");
+      target.setSize(Math.floor(w * scale), Math.floor(h * scale));
+      node.__effect("textureNeedsUpdate", 1);
     };
-    const texture = Object.defineProperties(
-      { type: 1016, isTexture: true, image: Object.defineProperties({}, extent) },
-      {
-        ...extent,
-        minFilter: parameter("minFilter"),
-        magFilter: parameter("magFilter"),
-      },
-    );
-    const renderTarget = Object.defineProperties(
-      {
-        texture,
-        setSize(w: number, h: number) {
-          node.__effect("width", w);
-          node.__effect("height", h);
-        },
-        dispose() {
-          node.__effect("dispose", 1);
-        },
-      },
-      {
-        width: { get: () => node.__effect("actualWidth") },
-        height: { get: () => node.__effect("actualHeight") },
-      },
-    );
     return Object.defineProperties(node, {
+      version: { get: () => version },
+      needsUpdate: {
+        set: (value: boolean) => {
+          if (value === true) ++version;
+        },
+      },
+      _quadMesh: { value: quad },
+      setup: {
+        value: () => {
+          const current = quad.material as InstanceType<IRttClasses["NodeMaterial"]>;
+          current.name = "RTT";
+          current.needsUpdate = true;
+          return node;
+        },
+      },
+      updateBefore: {
+        value: ({
+          renderer,
+        }: {
+          renderer: {
+            getRenderTarget(): unknown;
+            setRenderTarget(target: unknown): void;
+            getDrawingBufferSize(target: unknown): { width: number; height: number };
+          };
+        }) => {
+          if (!node.__effect("textureNeedsUpdate") && !node.__effect("autoUpdate")) return;
+          node.__effect("textureNeedsUpdate", 0);
+          if (node.__effect("width") === 0) {
+            const size = renderer.getDrawingBufferSize({
+              set(w: number, h: number) {
+                return { width: w, height: h };
+              },
+            });
+            const scale = node.__effect("resolutionScale");
+            if (
+              Math.floor(size.width * scale) !== target.width ||
+              Math.floor(size.height * scale) !== target.height
+            )
+              setSize(size.width, size.height);
+          }
+          const current = quad.material as InstanceType<IRttClasses["NodeMaterial"]>;
+          if (current.fragmentNode !== source) current.fragmentNode = source;
+          node.__rtt(target, quad);
+          quad.name = "RTT";
+          const previous = renderer.getRenderTarget();
+          renderer.setRenderTarget(target);
+          try {
+            quad.render(renderer);
+          } finally {
+            renderer.setRenderTarget(previous);
+          }
+        },
+      },
       isRTTNode: { value: true },
       autoResize: { get: () => node.__effect("width") === 0 },
-      renderTarget: { value: renderTarget },
-      value: { value: texture },
+      renderTarget: { value: target },
+      value: { value: target.texture },
       width: parameter("width"),
       height: parameter("height"),
       autoUpdate: {
@@ -79,11 +139,12 @@ export function defineRtt(make: (...args: unknown[]) => IRttNode) {
       setResolutionScale: {
         value: (scale: number) => {
           node.__effect("resolutionScale", scale);
+          if (width !== null) setSize(node.__effect("width"), node.__effect("height"));
           return node;
         },
       },
       getResolutionScale: { value: () => node.__effect("resolutionScale") },
-      setSize: { value: (w: number, h: number) => renderTarget.setSize(w, h) },
+      setSize: { value: setSize },
     });
   };
 }

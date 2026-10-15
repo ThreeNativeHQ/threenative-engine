@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
-import { Data3DTexture, Vector3 } from "three";
+import { Data3DTexture, Vector3, PerspectiveCamera, OrthographicCamera } from "three";
+import { NodeMaterial, QuadMesh, RenderTarget } from "three/webgpu";
+import { rtt as upstreamRtt, vec4 } from "three/tsl";
+import TRAANode from "three/addons/tsl/display/TRAANode.js";
 import { LUTCubeLoader as UpstreamLUTCubeLoader } from "three/addons/loaders/LUTCubeLoader.js";
 import { describe, expect, it, vi } from "vitest";
 import { defineLUTCubeLoader } from "../src/addons/lut-cube-loader.js";
@@ -112,10 +115,70 @@ describe("starter post bindings", () => {
     expect(values.get("depthThreshold")).toBe(0.002);
     expect(temporal.depthThreshold).toBe(0.002);
     expect(temporal.useSubpixelCorrection).toBe(false);
-    expect(() => (temporal as unknown as { setup: () => void }).setup()).toThrow(
-      "TN_NATIVE_TRAA_LIFECYCLE_UNBOUND",
-    );
+
     expect(tsl.traa).toHaveBeenCalledWith(input, depth, velocity, camera);
+  });
+
+  it("matches upstream TRAA camera offsets and clears them through setup callbacks", () => {
+    for (const Camera of [PerspectiveCamera, OrthographicCamera]) {
+      const camera = new Camera();
+      const referenceCamera = new Camera();
+      const reference = new TRAANode(
+        null as never,
+        null as never,
+        null as never,
+        referenceCamera as never,
+      ) as unknown as {
+        setViewOffset(w: number, h: number): void;
+        clearViewOffset(): void;
+        dispose(): void;
+      };
+      Object.assign(reference, { _velocityNode: { setProjectionMatrix: vi.fn() } });
+      const state = new Map<string, number>();
+      const effect = {
+        __effect(name: string, value?: number) {
+          if (value !== undefined) state.set(name, value);
+          return state.get(name) ?? 0;
+        },
+      };
+      const make = () => effect;
+      const temporal = definePostEffects({
+        ao: make,
+        denoise: make,
+        smaa: make,
+        bloom: make,
+        traa: make,
+        film: make,
+        lut3D: make,
+      }).traa({}, {}, {}, camera) as unknown as {
+        setup(builder: unknown): unknown;
+        setViewOffset(w: number, h: number): void;
+        clearViewOffset(): void;
+      };
+      const context: { onBeforeRenderPipeline?: () => void; onAfterRenderPipeline?: () => void } =
+        {};
+      expect(
+        temporal.setup({
+          context: { renderPipeline: { context } },
+          renderer: {
+            getDrawingBufferSize: (target: { set(w: number, h: number): unknown }) =>
+              target.set(320, 240),
+          },
+        }),
+      ).toBe(effect);
+      for (let i = 0; i < 96; ++i) {
+        context.onBeforeRenderPipeline?.();
+        reference.setViewOffset(320, 240);
+        expect(camera.projectionMatrix.elements).toEqual(referenceCamera.projectionMatrix.elements);
+        expect(state.get("viewOffset")).toBe(1);
+        context.onAfterRenderPipeline?.();
+        reference.clearViewOffset();
+        expect(camera.projectionMatrix.elements).toEqual(referenceCamera.projectionMatrix.elements);
+        expect((camera as unknown as { view?: { enabled: boolean } }).view?.enabled).toBe(false);
+        expect(state.get("viewOffset")).toBe(0);
+      }
+      reference.dispose();
+    }
   });
 
   it("links positional and named WGSL arguments with their declared scalar and vector types", () => {
@@ -146,8 +209,8 @@ describe("starter post bindings", () => {
       if (value !== undefined) state.set(name, value);
       return state.get(name) ?? 0;
     });
-    const make = vi.fn(() => ({ __effect: effect }));
-    const node = defineRtt(make)({}, null, null, {
+    const make = vi.fn(() => ({ __effect: effect, __rtt: vi.fn() }));
+    const node = defineRtt(make, { NodeMaterial, QuadMesh, RenderTarget })({}, null, null, {
       depthBuffer: false,
       type: 1016,
       minFilter: 1003,
@@ -165,23 +228,82 @@ describe("starter post bindings", () => {
       setResolutionScale(value: number): void;
     };
     expect(make).toHaveBeenCalledWith({}, 0, 0, 1003, 1003);
-    expect([node.renderTarget.width, node.renderTarget.height]).toEqual([40, 20]);
+    expect([node.renderTarget.width, node.renderTarget.height]).toEqual([1, 1]);
     node.autoUpdate = false;
     node.textureNeedsUpdate = true;
     node.renderTarget.setSize(80, 40);
     node.renderTarget.texture.minFilter = 1006;
     node.setResolutionScale(0.5);
+    expect([node.renderTarget.width, node.renderTarget.height]).toEqual([80, 40]);
+    expect(node.renderTarget.texture.minFilter).toBe(1006);
     node.renderTarget.dispose();
     expect(Object.fromEntries(state)).toMatchObject({
       autoUpdate: 0,
       textureNeedsUpdate: 1,
-      width: 80,
-      height: 40,
-      minFilter: 1006,
       resolutionScale: 0.5,
-      dispose: 1,
     });
-    expect(() => defineRtt(make)({}, 1, 1, { samples: 4 })).toThrow("TN_TSL_RTT_OPTION");
+    expect(() =>
+      defineRtt(make, { NodeMaterial, QuadMesh, RenderTarget })({}, 1, 1, { samples: 4 }),
+    ).toThrow("TN_TSL_RTT_OPTION");
+  });
+
+  it("uses a real quad material and follows upstream manual RTT updates", () => {
+    const state = new Map<string, number>([
+      ["autoUpdate", 1],
+      ["textureNeedsUpdate", 1],
+      ["width", 16],
+      ["height", 8],
+      ["resolutionScale", 1],
+    ]);
+    const bind = vi.fn();
+    const node = defineRtt(
+      () => ({
+        __rtt: bind,
+        __effect(name: string, value?: number) {
+          if (value !== undefined) state.set(name, value);
+          return state.get(name) ?? 0;
+        },
+      }),
+      { NodeMaterial, QuadMesh, RenderTarget },
+    )(vec4(1), 16, 8) as unknown as {
+      autoUpdate: boolean;
+      textureNeedsUpdate: boolean;
+      needsUpdate: boolean;
+      version: number;
+      setup(builder: unknown): unknown;
+      updateBefore(frame: unknown): void;
+      _quadMesh: QuadMesh;
+      renderTarget: RenderTarget;
+    };
+    const source = vec4(1);
+    const reference = upstreamRtt(source, 16, 8);
+    const target = {};
+    const renderer = { getRenderTarget: () => target, setRenderTarget: vi.fn(), render: vi.fn() };
+    const builder = { getSharedContext: () => ({}) };
+    node.setup(builder);
+    const material = node._quadMesh.material as NodeMaterial;
+    expect(material.isNodeMaterial).toBe(true);
+    expect(material.name).toBe("RTT");
+    expect(material.version).toBeGreaterThan(0);
+    expect(bind).toHaveBeenCalledWith(node.renderTarget, node._quadMesh);
+    node.autoUpdate = false;
+    reference.autoUpdate = false;
+    node.updateBefore({ renderer });
+    reference.updateBefore({ renderer } as never);
+    expect(renderer.render).toHaveBeenCalledTimes(2);
+    expect(renderer.setRenderTarget).toHaveBeenLastCalledWith(target);
+    expect(node.textureNeedsUpdate).toBe(false);
+    renderer.render.mockClear();
+    node.needsUpdate = true;
+    reference.needsUpdate = true;
+    expect(node.version).toBe(reference.version);
+    node.updateBefore({ renderer });
+    reference.updateBefore({ renderer } as never);
+    expect(renderer.render).not.toHaveBeenCalled();
+    node.textureNeedsUpdate = true;
+    node.updateBefore({ renderer });
+    expect(renderer.render).toHaveBeenCalledTimes(1);
+    reference.renderTarget?.dispose();
   });
 
   it("schedules atomic stores and adds through the Wasm statement scopes", () => {

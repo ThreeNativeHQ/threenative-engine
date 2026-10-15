@@ -159,7 +159,8 @@ ExprId Lowerer::emit(Node node) {
     const NodeData& d = *node;
     if (d.kind == Kind::PositionLocal || d.kind == Kind::Varying || d.kind == Kind::Attribute) {
         const auto input = inputs_.find(d.kind == Kind::PositionLocal ? "positionLocal" : d.name);
-        if (input != inputs_.end()) return input->second;
+        if (input != inputs_.end())
+            return convert(input->second, d.type);
     }
     switch (d.kind) {
         case Kind::AtomicAdd: {
@@ -297,7 +298,8 @@ ExprId Lowerer::emit(Node node) {
         case Kind::ScreenUv: {
             // ScreenNode.UV: screenCoordinate / screenSize, the render target's size when drawing into one.
             const auto input = inputs_.find("screenUV");
-            if (input != inputs_.end()) return input->second;
+            if (input != inputs_.end())
+                return convert(input->second, d.type);
             return program_.div(program_.swizzle(program_.builtin("position"), "xy"),
                                 program_.uniform("screenSize", Type::vec(2)));
         }

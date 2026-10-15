@@ -554,7 +554,7 @@ void catalogCoverage() {
     for (const auto& [name, want] : numbers) CHECK(tableConstants.count(name) == 1);
     for (const auto& [name, want] : strings) CHECK(tableConstants.count(name) == 1);
     // Supported TSL functions live on the TSL module, rather than the class/constant globals.
-    const std::set<std::string> tslFunctions = {"atomicAdd", "atomicStore", "lightShadowMatrix"};
+    const std::set<std::string> tslFunctions = {"atomicAdd", "atomicStore", "lightShadowMatrix", "rtt"};
     v8::Local<v8::Value> tsl;
     CHECK(global->Get(ctx, key("tsl")).ToLocal(&tsl) && tsl->IsObject());
     for (const auto& name : tslFunctions) {

@@ -18,6 +18,7 @@ public:
     static std::shared_ptr<RenderTarget> make(uint32_t width, uint32_t height, uint16_t type) {
         auto target = std::shared_ptr<RenderTarget>(new RenderTarget());
         target->texture->type = type;
+        target->texture->minFilter = static_cast<uint16_t>(TextureFilter::Linear);
         target->texture->flipY = false;  // three's render target textures are not flipped
         target->texture->generateMipmaps = false;
         target->setSize(width, height);

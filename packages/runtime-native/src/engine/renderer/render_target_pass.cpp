@@ -34,6 +34,7 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
                                         std::array<double, 4> clear, bool shadowMap) {
     TargetGpu& gpu = gpuOf(main, target);
     gpu.database->shadowMapEnabled = shadowMap;
+    gpu.renderer->setSourceAttachments(main.sceneColorView(), main.sceneDepthView());
     gpu.database->render(*gpu.renderer, root, camera, clear);
     gpu.rendered = true;
     if (target.depthTexture) gpu.renderer->copyDepthToTexture(*target.depthTexture);

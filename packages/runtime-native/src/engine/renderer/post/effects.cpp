@@ -1,4 +1,8 @@
 #include "effects.h"
+#include "engine/scene/material.h"
+#include "engine/scene/render_target.h"
+#include "engine/scene/nodes.h"
+#include "engine/scene/camera.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/graph/render_graph.h"
@@ -53,42 +57,62 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
             passes_.push_back({std::move(source)});
             auto& pass = passes_.back();
             const auto& stages = pass.source.package.variants.at(0).stages;
-            std::vector<WGPUBindGroupLayoutEntry> entries;
-            for (const auto& binding : stages[1].bindings) {
-                WGPUBindGroupLayoutEntry entry{};
-                entry.binding = binding.binding;
-                entry.visibility = WGPUShaderStage_Fragment;
-                if (binding.kind == shader::BindingKind::Uniform) {
-                    entry.buffer.type = WGPUBufferBindingType_Uniform;
-                    entry.buffer.minBindingSize = stages[1].uniformBlockSize;
-                } else if (binding.kind == shader::BindingKind::Texture) {
-                    entry.texture.sampleType = binding.depth ? WGPUTextureSampleType_Depth : WGPUTextureSampleType_Float;
-                    entry.texture.viewDimension = binding.volume ? WGPUTextureViewDimension_3D : WGPUTextureViewDimension_2D;
-                } else {
-                    entry.sampler.type = WGPUSamplerBindingType_Filtering;
+            const auto layoutFor = [&](const shader::StageModule& stage, WGPUShaderStage visibility) {
+                std::vector<WGPUBindGroupLayoutEntry> entries;
+                for (const auto& binding : stage.bindings) {
+                    WGPUBindGroupLayoutEntry entry{};
+                    entry.binding = binding.binding;
+                    entry.visibility = visibility;
+                    if (binding.kind == shader::BindingKind::Uniform) {
+                        entry.buffer.type = WGPUBufferBindingType_Uniform;
+                        entry.buffer.minBindingSize = stage.uniformBlockSize;
+                    } else if (binding.kind == shader::BindingKind::Texture) {
+                        entry.texture.sampleType =
+                            binding.depth ? WGPUTextureSampleType_Depth : WGPUTextureSampleType_Float;
+                        entry.texture.viewDimension =
+                            binding.volume ? WGPUTextureViewDimension_3D : WGPUTextureViewDimension_2D;
+                    } else if (binding.kind == shader::BindingKind::Sampler) {
+                        entry.sampler.type = WGPUSamplerBindingType_Filtering;
+                    } else
+                        throw std::runtime_error("TN_POST_BINDING_UNSUPPORTED: " + binding.name);
+                    entries.push_back(entry);
                 }
-                entries.push_back(entry);
-            }
-            WGPUBindGroupLayoutDescriptor layoutDesc{};
-            layoutDesc.entryCount = entries.size();
-            layoutDesc.entries = entries.data();
-            pass.layout = wgpuDeviceCreateBindGroupLayout(device, &layoutDesc);
+                WGPUBindGroupLayoutDescriptor desc{};
+                desc.entryCount = entries.size();
+                desc.entries = entries.data();
+                return wgpuDeviceCreateBindGroupLayout(device, &desc);
+            };
+            pass.layout = layoutFor(stages[1], WGPUShaderStage_Fragment);
+            if (!stages[0].bindings.empty())
+                pass.vertexLayout = layoutFor(stages[0], WGPUShaderStage_Vertex);
+            const WGPUBindGroupLayout layouts[]{pass.layout, pass.vertexLayout};
             WGPUPipelineLayoutDescriptor pipelineLayoutDesc{};
-            pipelineLayoutDesc.bindGroupLayoutCount = 1;
-            pipelineLayoutDesc.bindGroupLayouts = &pass.layout;
+            pipelineLayoutDesc.bindGroupLayoutCount = pass.vertexLayout ? 2 : 1;
+            pipelineLayoutDesc.bindGroupLayouts = layouts;
             pass.pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDesc);
             PipelineTarget target{pass.source.redFormat ? WGPUTextureFormat_R8Unorm : WGPUTextureFormat_RGBA16Float,
                                   WGPUTextureFormat_Undefined, WGPUCullMode_None};
+            if (pass.source.rtt && pass.source.rtt->material) {
+                const auto& material = *pass.source.rtt->material;
+                target.cull = material.side == Side::Double ? WGPUCullMode_None
+                              : material.side == Side::Back ? WGPUCullMode_Front
+                                                            : WGPUCullMode_Back;
+                target.blend = material.blending == Blending::None ||
+                                       (material.blending == Blending::Normal && !material.transparent)
+                                   ? 0
+                                   : uint8_t(material.blending);
+            }
             target.layout = pass.pipelineLayout;
             pass.pipeline = pipelines_.get(stages[0], &stages[1], target);
             if (!pass.pipeline)
                 throw std::runtime_error("TN_POST_PIPELINE_REFUSED: " + pass.source.output);
-            if (stages[1].uniformBlockSize) {
-                WGPUBufferDescriptor desc{};
-                desc.size = stages[1].uniformBlockSize;
-                desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-                pass.uniforms = wgpuDeviceCreateBuffer(device, &desc);
-            }
+            for (size_t stage = 0; stage < 2; ++stage)
+                if (stages[stage].uniformBlockSize) {
+                    WGPUBufferDescriptor desc{};
+                    desc.size = stages[stage].uniformBlockSize;
+                    desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+                    (stage == 0 ? pass.vertexUniforms : pass.uniforms) = wgpuDeviceCreateBuffer(device, &desc);
+                }
             for (const auto& sourceImage : pass.source.images) {
                 auto& image = images_[sourceImage.name];
                 image.width = sourceImage.width;
@@ -112,6 +136,10 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
         for (auto& pass : passes_) {
             if (pass.uniforms)
                 wgpuBufferRelease(pass.uniforms);
+            if (pass.vertexUniforms)
+                wgpuBufferRelease(pass.vertexUniforms);
+            if (pass.vertexLayout)
+                wgpuBindGroupLayoutRelease(pass.vertexLayout);
             if (pass.pipelineLayout)
                 wgpuPipelineLayoutRelease(pass.pipelineLayout);
             if (pass.layout)
@@ -134,6 +162,10 @@ PostEffects::~PostEffects() {
     for (auto& pass : passes_) {
         if (pass.uniforms)
             wgpuBufferRelease(pass.uniforms);
+        if (pass.vertexUniforms)
+            wgpuBufferRelease(pass.vertexUniforms);
+        if (pass.vertexLayout)
+            wgpuBindGroupLayoutRelease(pass.vertexLayout);
         wgpuPipelineLayoutRelease(pass.pipelineLayout);
         wgpuBindGroupLayoutRelease(pass.layout);
     }
@@ -148,6 +180,10 @@ void PostEffects::releaseGroups() {
     for (auto& pass : passes_) {
         if (pass.group)
             wgpuBindGroupRelease(pass.group);
+        if (pass.vertexGroup)
+            wgpuBindGroupRelease(pass.vertexGroup);
+        pass.vertexGroup = nullptr;
+        pass.vertexEntries.clear();
         pass.group = nullptr;
         pass.groupEntries.clear();
     }
@@ -179,8 +215,22 @@ void PostEffects::resize(uint32_t width, uint32_t height) {
             1u, uint32_t(std::floor((pass.source.height ? pass.source.height : height) * pass.source.resolutionScale +
                                     rounding)));
         if (pass.source.rtt) {
-            target.sampler = makeSampler(device_, pass.source.rtt->minFilter == 1003, false, pass.source.rtt->magFilter == 1003);
-            pass.source.rtt->textureNeedsUpdate = true; ++pass.source.rtt->revision;
+            target.sampler =
+                makeSampler(device_, pass.source.rtt->minFilter == 1003, false, pass.source.rtt->magFilter == 1003);
+            auto& state = *pass.source.rtt;
+            if (state.target) {
+                if (state.width == 0 && (state.autoUpdate || state.textureNeedsUpdate) &&
+                    (state.target->width != target.width || state.target->height != target.height)) {
+                    state.target->setSize(target.width, target.height);
+                    state.textureNeedsUpdate = true;
+                    ++state.revision;
+                }
+                target.width = state.target->width;
+                target.height = state.target->height;
+            } else {
+                state.textureNeedsUpdate = true;
+                ++state.revision;
+            }
             pass.source.rtt->actualWidth = target.width;
             pass.source.rtt->actualHeight = target.height;
         }
@@ -194,7 +244,22 @@ bool PostEffects::syncScales() {
     bool changed = false, filtersChanged = false;
     for (auto& pass : passes_) {
         if (pass.source.rtt) {
-            const auto& r = *pass.source.rtt;
+            auto& r = *pass.source.rtt;
+            if (r.target) {
+                r.minFilter = r.target->texture->minFilter;
+                r.magFilter = r.target->texture->magFilter;
+                if ((r.minFilter != 1003 && r.minFilter != 1006) || (r.magFilter != 1003 && r.magFilter != 1006))
+                    throw std::runtime_error("TN_NATIVE_RTT_FILTER: expected NearestFilter or LinearFilter");
+                if (r.width == 0 && (r.autoUpdate || r.textureNeedsUpdate) &&
+                    (r.target->width != std::max(1u, uint32_t(std::floor(width_ * r.scale))) ||
+                     r.target->height != std::max(1u, uint32_t(std::floor(height_ * r.scale)))))
+                    changed = true;
+
+                if (const auto current = targets_.find(pass.source.output);
+                    current != targets_.end() &&
+                    (current->second.width != r.target->width || current->second.height != r.target->height))
+                    changed = true;
+            }
             if (pass.source.resolutionScale != r.scale || pass.source.width != r.width || pass.source.height != r.height) {
                 pass.source.resolutionScale = r.scale; pass.source.width = r.width; pass.source.height = r.height;
                 changed = true;
@@ -222,6 +287,19 @@ bool PostEffects::syncScales() {
     resize(width, height);
     return true;
 }
+bool PostEffects::target(const std::string& name, WGPUTextureView view) {
+    const auto pass = std::find_if(passes_.begin(), passes_.end(), [&](const auto& pass) {
+        return pass.source.output == name && pass.source.rtt && pass.source.rtt->target;
+    });
+    if (pass == passes_.end() || !view)
+        throw std::runtime_error("TN_POST_TARGET_INVALID: " + name);
+    const auto previous = outputViews_.find(name);
+    if (previous != outputViews_.end() && previous->second == view)
+        return false;
+    outputViews_[name] = view;
+    releaseGroups();
+    return true;
+}
 void PostEffects::input(const std::string& name, WGPUTextureView view, WGPUSampler sampler) {
     if (name == "scene" || name == "depth" || targets_.contains(name) || images_.contains(name))
         throw std::runtime_error("TN_POST_INPUT_RESERVED: " + name);
@@ -234,10 +312,13 @@ void PostEffects::input(const std::string& name, WGPUTextureView view, WGPUSampl
 bool PostEffects::reads(const std::string& name) const {
     for (const auto& pass : passes_)
         for (const auto& [binding, read] : pass.source.reads)
-            if (read == name) return true;
+            if (read == name)
+                return true;
     return false;
 }
 WGPUTextureView PostEffects::view(const std::string& name) const {
+    if (const auto it = outputViews_.find(name); it != outputViews_.end())
+        return it->second;
     if (const auto it = targets_.find(name); it != targets_.end())
         return it->second.view;
     if (const auto it = images_.find(name); it != images_.end())
@@ -247,8 +328,10 @@ WGPUTextureView PostEffects::view(const std::string& name) const {
     return nullptr;
 }
 WGPUSampler PostEffects::sampler(const std::string& name) const {
-    if (const auto it = inputSamplers_.find(name); it != inputSamplers_.end()) return it->second;
-    if (const auto it = targets_.find(name); it != targets_.end() && it->second.sampler) return it->second.sampler;
+    if (const auto it = inputSamplers_.find(name); it != inputSamplers_.end())
+        return it->second;
+    if (const auto it = targets_.find(name); it != targets_.end() && it->second.sampler)
+        return it->second.sampler;
     if (const auto it = images_.find(name); it != images_.end())
         return it->second.sampler;
     return linear_;
@@ -257,21 +340,47 @@ void PostEffects::captureUniforms() {
     for (auto& pass : passes_) {
         if (pass.source.rtt) {
             pass.rttRequested = pass.source.rtt->textureNeedsUpdate ? pass.source.rtt->revision : pass.rttRevision;
-            pass.rttMin = pass.source.rtt->minFilter; pass.rttMag = pass.source.rtt->magFilter;
+            pass.rttMin = pass.source.rtt->minFilter;
+            pass.rttMag = pass.source.rtt->magFilter;
             pass.source.rtt->textureNeedsUpdate = false;
         }
         pass.captured.clear();
         for (const auto& node : pass.source.live)
             pass.captured[node->name] = node->values;
+        if (pass.source.rtt && pass.source.rtt->quad) {
+            auto& quad = *pass.source.rtt->quad;
+            quad.updateMatrixWorld(true);
+            static const auto projection = [] {
+                OrthographicCamera camera(-1, 1, 1, -1, 0, 1);
+                camera.coordinateSystem = CoordinateSystem::WebGPU;
+                camera.updateProjectionMatrix();
+                return camera.projectionMatrix;
+            }();
+            const auto put = [&](const char* name, const auto& matrix) {
+                pass.captured[name] = std::vector<float>(matrix.elements.begin(), matrix.elements.end());
+            };
+            put("modelMatrix", quad.matrixWorld);
+            put("viewMatrix", Matrix4{});
+            put("cameraWorldMatrix", Matrix4{});
+            put("cameraProjectionMatrix", projection);
+            put("projectionMatrix", projection);
+            Matrix3 normal;
+            normal.getNormalMatrix(quad.matrixWorld);
+            put("normalMatrix", normal);
+            pass.captured["cameraPosition"] = {0, 0, 0};
+        }
         if (pass.source.effect)
             for (const auto& [name, value] : pass.source.effect->parameters)
-                if (name != "sampleVectors") pass.captured[name] = value;
+                if (name != "sampleVectors")
+                    pass.captured[name] = value;
     }
     captured_ = true;
 }
-uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
-                         const CameraState& camera, uint64_t frame, float time, float exposure, const LightState* lights) {
-    if (!captured_) captureUniforms();
+uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth,
+                             WGPUBuffer triangle, const CameraState& camera, uint64_t frame, float time, float exposure,
+                             const LightState* lights) {
+    if (!captured_)
+        captureUniforms();
     captured_ = false;
     graph::RenderGraph graph;
     std::map<std::string, graph::ResourceId> resources;
@@ -307,74 +416,90 @@ uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, 
         if (!pass.source.autoUpdate && (pass.source.rtt ? pass.rttRevision == pass.rttRequested : pass.rendered))
             continue;
         auto& target = targets_.at(pass.source.output);
-        if (pass.source.rtt) pass.rttRevision = pass.rttRequested;
+        if (pass.source.rtt)
+            pass.rttRevision = pass.rttRequested;
         const auto& stages = pass.source.package.variants.at(0).stages;
-        const auto& fragment = stages[1];
         auto values = pass.source.uniforms;
-        for (const auto& [name, value] : pass.captured) values[name] = value;
+        for (const auto& [name, value] : pass.captured)
+            values[name] = value;
         values["time"] = {time};
         values["toneMappingExposure"] = {exposure};
         values["cameraNear"] = {static_cast<float>(camera.near)};
         values["cameraFar"] = {static_cast<float>(camera.far)};
+        if (pass.source.rtt) {
+            values["cameraNear"] = {0};
+            values["cameraFar"] = {1};
+        }
         values["resolution"] = {float(target.width), float(target.height)};
         values["postTargetSize"] = {float(target.width), float(target.height)};
+        values["screenSize"] = {float(target.width), float(target.height)};
         values["_cameraProjectionMatrix"] = {camera.projectionMatrix.begin(), camera.projectionMatrix.end()};
         values["_cameraProjectionMatrixInverse"] = {inverse.elements.begin(), inverse.elements.end()};
         constexpr float rotations[]{60, 300, 180, 240, 120, 0};
         values["_temporalDirection"] = {pass.source.temporal ? rotations[frame % 6] / 360.0f : 0.0f};
-        if (pass.uniforms) {
-            std::vector<uint8_t> block(fragment.uniformBlockSize);
-            for (const auto& field : fragment.uniforms) {
-                constexpr std::string_view prefix = "authoredLightShadowMatrix";
-                if (field.name.starts_with(prefix)) {
-                    if (!lights) throw std::runtime_error("TN_NATIVE_LIGHT_STATE_MISSING");
-                    const auto& matrix = lights->shadowMatrix(std::stoull(field.name.substr(prefix.size())));
-                    values[field.name] = std::vector<float>(matrix.begin(), matrix.end());
+        for (size_t stageIndex = 0; stageIndex < 2; ++stageIndex) {
+            if (stageIndex == 0 && !pass.vertexLayout)
+                continue;
+            const auto& stage = stages[stageIndex];
+            const auto buffer = stageIndex == 0 ? pass.vertexUniforms : pass.uniforms;
+            const auto layout = stageIndex == 0 ? pass.vertexLayout : pass.layout;
+            auto& cachedGroup = stageIndex == 0 ? pass.vertexGroup : pass.group;
+            auto& cachedEntries = stageIndex == 0 ? pass.vertexEntries : pass.groupEntries;
+            if (buffer) {
+                std::vector<uint8_t> block(stage.uniformBlockSize);
+                for (const auto& field : stage.uniforms) {
+                    constexpr std::string_view prefix = "authoredLightShadowMatrix";
+                    if (field.name.starts_with(prefix)) {
+                        if (!lights)
+                            throw std::runtime_error("TN_NATIVE_LIGHT_STATE_MISSING");
+                        const auto& matrix = lights->shadowMatrix(std::stoull(field.name.substr(prefix.size())));
+                        values[field.name] = std::vector<float>(matrix.begin(), matrix.end());
+                    }
+                    const auto value = values.find(field.name);
+                    if (value == values.end())
+                        throw std::runtime_error("TN_POST_UNIFORM_MISSING: " + field.name);
+                    writeUniform(block, field, value->second);
                 }
-                const auto value = values.find(field.name);
-                if (value == values.end())
-                    throw std::runtime_error("TN_POST_UNIFORM_MISSING: " + field.name);
-                writeUniform(block, field, value->second);
+                wgpuQueueWriteBuffer(queue_, buffer, 0, block.data(), block.size());
             }
-            wgpuQueueWriteBuffer(queue_, pass.uniforms, 0, block.data(), block.size());
-        }
-        std::vector<WGPUBindGroupEntry> entries;
-        for (const auto& binding : fragment.bindings) {
-            WGPUBindGroupEntry entry{};
-            entry.binding = binding.binding;
-            if (binding.kind == shader::BindingKind::Uniform) {
-                entry.buffer = pass.uniforms;
-                entry.size = fragment.uniformBlockSize;
-            } else {
-                const auto& name =
-                    pass.source.reads.at(binding.name.substr(binding.kind == shader::BindingKind::Texture ? 2 : 4));
-                if (binding.kind == shader::BindingKind::Texture)
-                    entry.textureView = name == "scene" ? scene : name == "depth" ? depth : view(name);
-                else
-                    entry.sampler = sampler(name);
-                if (binding.kind == shader::BindingKind::Texture && !entry.textureView)
-                    throw std::runtime_error("TN_POST_INPUT_MISSING: " + name);
+            std::vector<WGPUBindGroupEntry> entries;
+            for (const auto& binding : stage.bindings) {
+                WGPUBindGroupEntry entry{};
+                entry.binding = binding.binding;
+                if (binding.kind == shader::BindingKind::Uniform) {
+                    entry.buffer = buffer;
+                    entry.size = stage.uniformBlockSize;
+                } else {
+                    const auto& name =
+                        pass.source.reads.at(binding.name.substr(binding.kind == shader::BindingKind::Texture ? 2 : 4));
+                    if (binding.kind == shader::BindingKind::Texture)
+                        entry.textureView = name == "scene" ? scene : name == "depth" ? depth : view(name);
+                    else
+                        entry.sampler = sampler(name);
+                    if (binding.kind == shader::BindingKind::Texture && !entry.textureView)
+                        throw std::runtime_error("TN_POST_INPUT_MISSING: " + name);
+                }
+                entries.push_back(entry);
             }
-            entries.push_back(entry);
-        }
-        const auto same = [](const WGPUBindGroupEntry& a, const WGPUBindGroupEntry& b) {
-            return a.binding == b.binding && a.buffer == b.buffer && a.offset == b.offset && a.size == b.size &&
-                   a.sampler == b.sampler && a.textureView == b.textureView;
-        };
-        if (!pass.group || !std::equal(entries.begin(), entries.end(), pass.groupEntries.begin(),
-                                       pass.groupEntries.end(), same)) {
-            if (pass.group)
-                wgpuBindGroupRelease(pass.group);
-            WGPUBindGroupDescriptor groupDesc{};
-            groupDesc.layout = pass.layout;
-            groupDesc.entryCount = entries.size();
-            groupDesc.entries = entries.data();
-            pass.group = createBindGroup(device_, &groupDesc);
-            pass.groupEntries = entries;
+            const auto same = [](const WGPUBindGroupEntry& a, const WGPUBindGroupEntry& b) {
+                return a.binding == b.binding && a.buffer == b.buffer && a.offset == b.offset && a.size == b.size &&
+                       a.sampler == b.sampler && a.textureView == b.textureView;
+            };
+            if (!cachedGroup ||
+                !std::equal(entries.begin(), entries.end(), cachedEntries.begin(), cachedEntries.end(), same)) {
+                if (cachedGroup)
+                    wgpuBindGroupRelease(cachedGroup);
+                WGPUBindGroupDescriptor groupDesc{};
+                groupDesc.layout = layout;
+                groupDesc.entryCount = entries.size();
+                groupDesc.entries = entries.data();
+                cachedGroup = createBindGroup(device_, &groupDesc);
+                cachedEntries = entries;
+            }
         }
         const auto group = pass.group;
         WGPURenderPassColorAttachment color{};
-        color.view = target.view;
+        color.view = view(pass.source.output);
         color.loadOp = WGPULoadOp_Clear;
         color.storeOp = WGPUStoreOp_Store;
         color.clearValue = {pass.source.clear, 0, 0, pass.source.clear ? 1.0 : 0.0};
@@ -385,14 +510,19 @@ uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, 
         passDesc.colorAttachmentCount = 1;
         passDesc.colorAttachments = &color;
         const auto render = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
-        wgpuRenderPassEncoderSetPipeline(render, pass.pipeline);
-        wgpuRenderPassEncoderSetBindGroup(render, 0, group, 0, nullptr);
-        wgpuRenderPassEncoderSetVertexBuffer(render, 0, triangle, 0, 24);
-        wgpuRenderPassEncoderDraw(render, 3, 1, 0, 0);
+        if (pass.source.visible) {
+            wgpuRenderPassEncoderSetPipeline(render, pass.pipeline);
+            wgpuRenderPassEncoderSetBindGroup(render, 0, group, 0, nullptr);
+            if (pass.vertexGroup)
+                wgpuRenderPassEncoderSetBindGroup(render, 1, pass.vertexGroup, 0, nullptr);
+            wgpuRenderPassEncoderSetVertexBuffer(render, 0, triangle, 0, 24);
+            wgpuRenderPassEncoderDraw(render, 3, 1, 0, 0);
+        }
         wgpuRenderPassEncoderEnd(render);
         wgpuRenderPassEncoderRelease(render);
         pass.rendered = true;
-        ++drawn;
+        if (pass.source.visible)
+            ++drawn;
     }
     return drawn;
 }

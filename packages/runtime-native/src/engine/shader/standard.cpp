@@ -1293,6 +1293,13 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     outputInstanceColor(v, local);
     if (!variant.background) outputMapUv(v, local);
     Program& f = out.fragment;
+    if (variant.nodes.fragmentNode) {
+        tsl::Build scope(f);
+        f.output("color", graph::lower(variant.nodes.fragmentNode, f));
+        linkNodes(out, variant, local);
+        return out;
+    }
+
     // MeshBasicNodeMaterial.setupNormal: negateOnBackSide(normalViewGeometry); a normalNode is not read.
     const ExprId normalView = needsNormal ? facedNormal(f, variant, f.call("normalize", {f.varying("normalView", Type::vec(3))})) : kInvalid;
     const ExprId diffuse = nodeValue(f, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)), normalView);

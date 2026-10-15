@@ -20,6 +20,11 @@
  * A node is an immutable ref-counted value, so a shared node lowers once — as upstream builds one
  * node per stage — and statement nodes keep their program order.
  */
+namespace tn::engine {
+class Material;
+class RenderTarget;
+class Mesh;
+} // namespace tn::engine
 namespace tn::engine::shader::graph {
 
 struct NodeData;
@@ -40,6 +45,10 @@ enum class UnOp : uint8_t { Negate };
 enum class BinOp : uint8_t { Add, Sub, Mul, Div, Less, Greater, Equal, ShiftRight, BitXor };
 
 struct RttState {
+    std::shared_ptr<tn::engine::RenderTarget> target;
+    std::shared_ptr<tn::engine::Material> material;
+    std::shared_ptr<tn::engine::Mesh> quad;
+    Node source;
     double scale = 1;
     uint32_t width = 0, height = 0, actualWidth = 1, actualHeight = 1;
     uint16_t minFilter = 1006, magFilter = 1006;

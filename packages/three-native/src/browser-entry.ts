@@ -232,6 +232,8 @@ function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camer
   return class RenderPipeline {
     outputNode: unknown;
     outputColorTransform = true;
+    readonly context: { onBeforeRenderPipeline?: () => void; onAfterRenderPipeline?: () => void } =
+      {};
     private outputSource?: number;
     private outputGraph?: number;
     readonly renderer: IPipelineRenderer;
@@ -244,10 +246,15 @@ function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camer
     render(): void {
       if (!isTslNode(this.outputNode))
         throw new TypeError("TN_WASM_POST: RenderPipeline.outputNode is not a TSL node");
-      tsl.setPost(this.graph(this.outputNode[TSL_NODE]));
-      if (target.scene !== undefined && target.camera !== undefined && this.renderer.render)
-        this.renderer.render(target.scene, target.camera);
-      else this.renderer[RENDER_AGAIN]?.();
+      this.context.onBeforeRenderPipeline?.();
+      try {
+        tsl.setPost(this.graph(this.outputNode[TSL_NODE]));
+        if (target.scene !== undefined && target.camera !== undefined && this.renderer.render)
+          this.renderer.render(target.scene, target.camera);
+        else this.renderer[RENDER_AGAIN]?.();
+      } finally {
+        this.context.onAfterRenderPipeline?.();
+      }
     }
 
     private graph(source: number): number {

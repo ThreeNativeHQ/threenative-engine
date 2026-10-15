@@ -126,7 +126,9 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
     // pmremTexture prefilters the texture object itself and texture3D samples it, and storage reads the attribute's buffer, not a map the material
     // names; reflector takes its target and virtual camera.
-    if ((index == 0 && (name == "pmremTexture" || name == "texture3D" || name == "storage" || name == "lightShadowMatrix")) || (index < 2 && name == "reflector")) {
+    if ((index == 0 &&
+         (name == "pmremTexture" || name == "texture3D" || name == "storage" || name == "lightShadowMatrix")) ||
+        (index < 2 && (name == "reflector" || name == "__rtt"))) {
         tn_handle_t handle{};
         const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
         if (object == nullptr) throw std::runtime_error(name + " needs an engine object as argument " + std::to_string(index));
@@ -417,14 +419,74 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
 void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) {
     const auto node = v8::ObjectTemplate::New(isolate_);
     node->SetInternalFieldCount(2);
-    for (const char* name : {"add", "sub", "mul", "div", "negate", "lessThan", "greaterThan", "equal", "setName",
-                             "toVar", "assign", "element", "toAtomic", "toReadOnly", "toReadWrite", "Else", "abs", "sin", "cos", "floor", "fract",
-                             "sqrt", "exp", "exp2", "log2", "normalize", "length", "min", "max", "pow",
-                             "step", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "select",
-                             "sample", "setResolutionScale", "__effect", "oneMinus", "dispose",
-                             "flipX", "flipY", "flipZ", "flipW", "addAssign", "subAssign", "mulAssign",
-                             "divAssign", "dFdx", "dFdy", "sign", "cbrt", "atan", "mod", "fwidth", "transformDirection",
-                             "level", "lengthSq", "setGroup", "invoke", "newStruct", "get", "renderOutput"})
+    for (const char* name : {"add",
+                             "sub",
+                             "mul",
+                             "div",
+                             "negate",
+                             "lessThan",
+                             "greaterThan",
+                             "equal",
+                             "setName",
+                             "toVar",
+                             "assign",
+                             "element",
+                             "toAtomic",
+                             "toReadOnly",
+                             "toReadWrite",
+                             "Else",
+                             "abs",
+                             "sin",
+                             "cos",
+                             "floor",
+                             "fract",
+                             "sqrt",
+                             "exp",
+                             "exp2",
+                             "log2",
+                             "normalize",
+                             "length",
+                             "min",
+                             "max",
+                             "pow",
+                             "step",
+                             "dot",
+                             "distance",
+                             "cross",
+                             "reflect",
+                             "mix",
+                             "clamp",
+                             "smoothstep",
+                             "select",
+                             "sample",
+                             "__rtt",
+                             "setResolutionScale",
+                             "__effect",
+                             "oneMinus",
+                             "dispose",
+                             "flipX",
+                             "flipY",
+                             "flipZ",
+                             "flipW",
+                             "addAssign",
+                             "subAssign",
+                             "mulAssign",
+                             "divAssign",
+                             "dFdx",
+                             "dFdy",
+                             "sign",
+                             "cbrt",
+                             "atan",
+                             "mod",
+                             "fwidth",
+                             "transformDirection",
+                             "level",
+                             "lengthSq",
+                             "setGroup",
+                             "invoke",
+                             "newStruct",
+                             "get",
+                             "renderOutput"})
         node->Set(str(isolate_, name), function(context, name, true));
     // three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, read as xyzw lanes.
     const std::function<void(const char*, const std::string&, const std::string&)> swizzles =

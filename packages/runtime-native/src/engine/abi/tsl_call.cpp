@@ -1,6 +1,9 @@
 // The TSL name table both language back ends call (PRD-540). Moved from the V8 adapter's
 // Tsl::call unchanged: each case builds the graph node the upstream TSL call means.
 #include "engine/abi/tsl_call.h"
+#include "engine/scene/render_target.h"
+#include "engine/scene/material.h"
+#include "engine/scene/nodes.h"
 #include "engine/renderer/reflector.h"
 #include "engine/scene/texture.h"
 #include "engine/scene/lights.h"
@@ -678,6 +681,20 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (args.empty() || args.size() > 2) throw std::runtime_error("expected a node and an optional name");
         return g::varying(arg(0), args.size() == 2 ? text(args[1]) : "nodeVarying" + std::to_string(++serial));
     }
+    if (name == "__rtt" && method) {
+        arity(2);
+        const auto node = receiver->node;
+        if (!node || !node->rtt || args[0].kind != TslArg::Kind::Object || args[0].cls != "RenderTarget" ||
+            !args[0].object || args[1].kind != TslArg::Kind::Object || !args[1].object || args[1].cls != "Mesh")
+            throw std::runtime_error("RTT needs a RenderTarget and a QuadMesh");
+        node->rtt->target = std::static_pointer_cast<engine::RenderTarget>(args[0].object);
+        node->rtt->quad = std::static_pointer_cast<engine::Mesh>(args[1].object);
+        node->rtt->material = node->rtt->quad->material;
+        node->rtt->source = node->args[0];
+        if (!node->rtt->material || !node->rtt->material->nodeMaterial)
+            throw std::runtime_error("RTT quad needs a node material");
+        return node;
+    }
     if (name == "rtt") {
         arity(5);
         auto target = std::make_shared<g::NodeData>();
@@ -869,6 +886,8 @@ double tslEffectParameter(const g::Node& node, const std::string& name, const do
         }
         if (name == "actualWidth" || name == "actualHeight") {
             if (value) throw std::runtime_error("rtt actual extent is read-only");
+            if (r.target)
+                return name == "actualWidth" ? r.target->width : r.target->height;
             const auto extent = name == "actualWidth" ? r.width : r.height;
             return extent ? std::max(1.0, std::floor(extent * r.scale)) : name == "actualWidth" ? r.actualWidth : r.actualHeight;
         }
@@ -909,6 +928,21 @@ double tslEffectParameter(const g::Node& node, const std::string& name, const do
     }
     if (!node || node->kind != g::Kind::PostEffect || !node->post) throw std::runtime_error("not a live post effect");
     auto& effect = const_cast<g::PostEffect&>(*node->post);  // ponytail: live effects are built mutable
+    if (effect.kind == "TRAANode") {
+        if (value && !std::isfinite(*value))
+            throw std::runtime_error("expected a finite number");
+        if (name == "viewOffset") {
+            if (value)
+                effect.viewOffset = *value != 0;
+            return effect.viewOffset;
+        }
+        for (size_t i = 0; i < effect.originalProjection.size(); ++i)
+            if (name == "projection" + std::to_string(i)) {
+                if (value)
+                    effect.originalProjection[i] = *value;
+                return effect.originalProjection[i];
+            }
+    }
     if (name == "resolutionScale") {
         if (value) {
             if (!(*value > 0 && *value <= 8)) throw std::runtime_error("resolutionScale must be in (0, 8]");

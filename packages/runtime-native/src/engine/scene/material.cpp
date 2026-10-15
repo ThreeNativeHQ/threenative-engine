@@ -21,12 +21,13 @@ std::shared_ptr<Material> Material::clone() const {
 Material& Material::copy(const Material& source) {
     if (&source == this) return *this;
     const MaterialType keptType = type;
-    const bool keptNode = nodeMaterial, keptSprite = spriteMaterial, keptLine = lineMaterial;
+    const bool keptRaw = rawNodeMaterial, keptNode = nodeMaterial, keptSprite = spriteMaterial, keptLine = lineMaterial;
     const uint32_t keptId = id, keptVersion = version_;
     const std::string keptUuid = uuid;
     *this = source;
     type = keptType;
     nodeMaterial = keptNode;
+    rawNodeMaterial = keptRaw;
     spriteMaterial = keptSprite;
     lineMaterial = keptLine;
     id = keptId;
@@ -37,6 +38,8 @@ Material& Material::copy(const Material& source) {
 }
 
 std::string_view Material::typeName() const {
+    if (rawNodeMaterial)
+        return "NodeMaterial";
     if (spriteMaterial) return nodeMaterial ? "SpriteNodeMaterial" : "SpriteMaterial";
     if (lineMaterial) return "LineBasicMaterial";
     if (nodeMaterial) return type == MaterialType::Basic ? "MeshBasicNodeMaterial" : "MeshStandardNodeMaterial";

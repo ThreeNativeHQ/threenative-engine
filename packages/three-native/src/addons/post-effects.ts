@@ -1,5 +1,3 @@
-import { refused } from "../refused.js";
-
 /**
  * three/addons/tsl/display's GTAO, Denoise, SMAA and Bloom as the engine's live effects, for both
  * back ends (PRD-540; moved from the V8 player's core-addons.mjs). Each returns the effect's node; its
@@ -49,12 +47,71 @@ export function definePostEffects(tsl: IEffectTsl) {
       uniforms(tsl.lut3D(input, lut, size, intensity), ["size"]),
     traa(input: unknown, depth: unknown, velocity: unknown, camera: unknown): IEffectNode {
       const node = tsl.traa(input, depth, velocity, camera);
-      // shortcut: custom TRAANode lifecycle needs authored resolve-graph lowering before use.
-      for (const name of ["setViewOffset", "clearViewOffset", "setup"])
-        Object.defineProperty(node, name, {
+      const viewCamera = camera as {
+        updateProjectionMatrix(): void;
+        projectionMatrix: { elements: readonly number[] };
+        setViewOffset(w: number, h: number, x: number, y: number, vw: number, vh: number): void;
+        clearViewOffset(): void;
+      };
+      let jitterIndex = 0;
+      const halton = (index: number, base: number): number => {
+        let fraction = 1,
+          result = 0;
+        while (index > 0) {
+          fraction /= base;
+          result += fraction * (index % base);
+          index = Math.floor(index / base);
+        }
+        return result;
+      };
+      const setViewOffset = (width: number, height: number) => {
+        if (![width, height].every((v) => Number.isFinite(v) && v > 0))
+          throw new TypeError("TN_NATIVE_TRAA_SIZE: expected positive finite dimensions");
+        viewCamera.updateProjectionMatrix();
+        viewCamera.projectionMatrix.elements.forEach((value, i) =>
+          node.__effect(`projection${i}`, value),
+        );
+        viewCamera.setViewOffset(
+          width,
+          height,
+          halton(jitterIndex + 1, 2) - 0.5,
+          halton(jitterIndex + 1, 3) - 0.5,
+          width,
+          height,
+        );
+        node.__effect("viewOffset", 1);
+      };
+      const clearViewOffset = () => {
+        viewCamera.clearViewOffset();
+        node.__effect("viewOffset", 0);
+        jitterIndex = (jitterIndex + 1) % 31;
+      };
+      Object.defineProperties(node, {
+        setViewOffset: { value: setViewOffset, configurable: true },
+        clearViewOffset: { value: clearViewOffset, configurable: true },
+        setup: {
           configurable: true,
-          value: refused(`TRAANode.${name}`, "TN_NATIVE_TRAA_LIFECYCLE_UNBOUND"),
-        });
+          value: (builder: {
+            context: { renderPipeline?: { context: Record<string, unknown> } };
+            renderer: { getDrawingBufferSize(target: unknown): { width: number; height: number } };
+          }) => {
+            const pipeline = builder.context.renderPipeline;
+            if (pipeline) {
+              pipeline.context.onBeforeRenderPipeline = () => {
+                const size = builder.renderer.getDrawingBufferSize({
+                  set(width: number, height: number) {
+                    return { width, height };
+                  },
+                });
+                setViewOffset(size.width, size.height);
+              };
+              pipeline.context.onAfterRenderPipeline = clearViewOffset;
+            }
+            // The engine already lowers the resolve graph and exposes its output as this node.
+            return node;
+          },
+        },
+      });
       for (const name of [
         "depthThreshold",
         "edgeDepthDiff",

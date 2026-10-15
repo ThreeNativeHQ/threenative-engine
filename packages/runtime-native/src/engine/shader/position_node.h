@@ -15,12 +15,17 @@ class Program;
 struct MaterialNodes {
     graph::Node colorNode, positionNode, normalNode, emissiveNode, roughnessNode, metalnessNode, opacityNode;
     /** NodeMaterial.vertexNode: the clip-space position itself, replacing model-view-projection. */
-    graph::Node vertexNode;
+    graph::Node vertexNode, fragmentNode;
     bool operator==(const MaterialNodes&) const = default;
-    auto pointers() const { return std::array{colorNode.get(), positionNode.get(), normalNode.get(), emissiveNode.get(),
-                                           roughnessNode.get(), metalnessNode.get(), opacityNode.get(), vertexNode.get()}; }
-    auto graphs() const { return std::array{colorNode, positionNode, normalNode, emissiveNode,
-                                         roughnessNode, metalnessNode, opacityNode, vertexNode}; }
+    auto pointers() const {
+        return std::array{colorNode.get(),    positionNode.get(),  normalNode.get(),
+                          emissiveNode.get(), roughnessNode.get(), metalnessNode.get(),
+                          opacityNode.get(),  vertexNode.get(),    fragmentNode.get()};
+    }
+    auto graphs() const {
+        return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
+                          metalnessNode, opacityNode,  vertexNode, fragmentNode};
+    }
     std::string key() const {
         std::string out;
         for (const auto& node : graphs()) {

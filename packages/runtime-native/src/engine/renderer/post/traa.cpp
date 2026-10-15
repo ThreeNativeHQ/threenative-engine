@@ -221,7 +221,8 @@ void TraaPass::resize(uint32_t width, uint32_t height) {
     graph_.pass("traa-store-history", graph::PassKind::Render, {{result}, {z}}, {next, nextZ});
     if (!graph_.compile().ok()) throw std::runtime_error("TN_GRAPH_INVALID: TRAA");
 }
-TraaPass::Matrix TraaPass::begin(const Matrix& projection, const Matrix& world, const Matrix& view) {
+TraaPass::Matrix TraaPass::begin(const Matrix& projection, const Matrix& world, const Matrix& view,
+                                 const Matrix* viewProjection) {
     history_.beginRender(0, true);
     previousProjection_ = started_ ? projection_ : projection;
     previousWorld_ = started_ ? world_ : world;
@@ -233,6 +234,8 @@ TraaPass::Matrix TraaPass::begin(const Matrix& projection, const Matrix& world, 
     // Perspective setViewOffset changes column 2; orthographic changes the translation column.
     if (projection[11] == -1) { jittered[8] += 2 * jitter[0] / width_; jittered[9] -= 2 * jitter[1] / height_; }
     else { jittered[12] -= 2 * jitter[0] / width_; jittered[13] += 2 * jitter[1] / height_; }
+    if (viewProjection)
+        jittered = *viewProjection;
     inverseProjection_ = inverse(jittered);
     if (debugDump_) {
         debugDump_->frame = history_.frame();

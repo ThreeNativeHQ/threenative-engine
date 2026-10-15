@@ -18,6 +18,8 @@ struct PostEffect {
     std::vector<PostImage> images;
     float resolutionScale = 1;
     bool normal = false, temporal = false;
+    bool viewOffset = false;
+    std::array<double, 16> originalProjection{};
 };
 struct PostPass {
     std::shared_ptr<RttState> rtt;
@@ -31,7 +33,7 @@ struct PostPass {
     std::vector<PostImage> images;
     float resolutionScale = 1;
     uint32_t width = 0, height = 0; // RTT fixed dimensions; zero uses viewport
-    bool floorSize = false, autoUpdate = true;
+    bool floorSize = false, autoUpdate = true, visible = true;
     // GTAONode uses RedFormat + UnsignedByteType (R8Unorm), not an HDR colour target.
     bool redFormat = false;
     float clear = 0;

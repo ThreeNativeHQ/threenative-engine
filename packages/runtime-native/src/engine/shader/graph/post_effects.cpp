@@ -1,4 +1,5 @@
 #include "post_effects.h"
+#include "engine/scene/material.h"
 #include "render_texture_pass.h"
 #include "engine/shader/output.h"
 #include "engine/shader/tsl/tsl.h"
@@ -482,6 +483,9 @@ std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMappi
         for (const auto* list : {&n->args, &n->body, &n->otherwise})
             for (const auto& child : *list)
                 visit(child);
+        if (n->rtt && n->rtt->material)
+            for (const auto& graph : n->rtt->material->nodes.graphs())
+                visit(graph);
         if (n->kind == Kind::RenderTexture && targets.insert(n->name).second)
             passes.push_back(renderTexturePass(n, toneMapping, srgb));
         if (!n->post)

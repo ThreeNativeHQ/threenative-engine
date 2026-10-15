@@ -1,5 +1,6 @@
 import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
-import { defineRtt } from "./rtt.js";
+import { defineQuadMesh } from "./quad-mesh.js";
+import { type IRttClasses, defineRtt } from "./rtt.js";
 import { defineStruct } from "./tsl-struct.js";
 import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
 /**
@@ -194,6 +195,7 @@ const METHODS = [
   "smoothstep",
   "select",
   "sample",
+  "__rtt",
   "oneMinus",
   "dispose",
   "newStruct",
@@ -235,7 +237,7 @@ function takesEngineObject(name: string, index: number): boolean {
   return (
     (index === 0 &&
       (name === "pmremTexture" || name === "texture3D" || name === "lightShadowMatrix")) ||
-    (index < 2 && name === "reflector")
+    (index < 2 && (name === "reflector" || name === "__rtt"))
   );
 }
 
@@ -377,7 +379,15 @@ export function defineTsl(
   const exports: Record<string, unknown> = {};
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
-  exports.rtt = defineRtt(exports.rtt as Parameters<typeof defineRtt>[0]);
+  exports.rtt = defineRtt(
+    exports.rtt as Parameters<typeof defineRtt>[0],
+    classes && "Mesh" in classes
+      ? ({
+          ...(classes as unknown as IRttClasses),
+          QuadMesh: defineQuadMesh(classes as never),
+        } as IRttClasses)
+      : undefined,
+  );
   exports.wgslFn = defineWgslFn(exports.wgslFunction as Parameters<typeof defineWgslFn>[0]);
   exports.struct = defineStruct(exports.struct as Parameters<typeof defineStruct>[0]);
   // Fn builds once at definition; calling the returned function returns that graph, as on V8.

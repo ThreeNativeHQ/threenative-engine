@@ -251,21 +251,33 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialNumber(b, "dispersion", &Material::dispersion);
 }
 
-void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false) {
+void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false, bool raw = false) {
     // A parameters object is applied by the language adapter (V8's setValues) after construction.
-    b.ctor = [type, node](const Args& a, Store&) -> std::shared_ptr<void> {
-        if (!a.empty()) throw Unsupported{"a material parameters object is not supported"};
-        return std::static_pointer_cast<void>(detail::makeShared<Material>(type, node));
+    b.ctor = [type, node, raw](const Args& a, Store&) -> std::shared_ptr<void> {
+        if (!a.empty())
+            throw Unsupported{"a material parameters object is not supported"};
+        auto material = detail::makeShared<Material>(type, node);
+        material->rawNodeMaterial = raw;
+        return material;
     };
     registerMaterialBase(b);
-    registerTypeFields(b, type);
+    if (!raw)
+        registerTypeFields(b, type);
     if (!node) return;
     using Nodes = shader::MaterialNodes;
     for (const auto& [name, field] : std::initializer_list<std::pair<const char*, shader::graph::Node Nodes::*>>{
-             {"colorNode", &Nodes::colorNode}, {"positionNode", &Nodes::positionNode},
-             {"normalNode", &Nodes::normalNode}, {"opacityNode", &Nodes::opacityNode},
-             {"emissiveNode", &Nodes::emissiveNode}, {"roughnessNode", &Nodes::roughnessNode},
-             {"metalnessNode", &Nodes::metalnessNode}, {"vertexNode", &Nodes::vertexNode}}) {
+             {"fragmentNode", &Nodes::fragmentNode},
+             {"colorNode", &Nodes::colorNode},
+             {"positionNode", &Nodes::positionNode},
+             {"normalNode", &Nodes::normalNode},
+             {"opacityNode", &Nodes::opacityNode},
+             {"emissiveNode", &Nodes::emissiveNode},
+             {"roughnessNode", &Nodes::roughnessNode},
+             {"metalnessNode", &Nodes::metalnessNode},
+             {"vertexNode", &Nodes::vertexNode}}) {
+        if (raw && (std::string_view(name) == "emissiveNode" || std::string_view(name) == "roughnessNode" ||
+                    std::string_view(name) == "metalnessNode"))
+            continue;
         b.getters[name] = [field](void* self) { return Value::shaderNode(as<Material>(self)->nodes.*field); };
         b.setters[name] = [field, name](void* self, const Value& v) {
             if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node))
@@ -609,6 +621,7 @@ void registerMaterialBindings(Registry& classes) {
         };
     }
     registerMeshMaterial(classes["MeshBasicMaterial"], MaterialType::Basic);
+    registerMeshMaterial(classes["NodeMaterial"], MaterialType::Basic, true, true);
     registerMeshMaterial(classes["MeshBasicNodeMaterial"], MaterialType::Basic, true);
     registerMeshMaterial(classes["MeshStandardNodeMaterial"], MaterialType::Standard, true);
     registerMeshMaterial(classes["MeshLambertMaterial"], MaterialType::Lambert);

@@ -15,6 +15,7 @@
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
+#include "engine/scene/render_target.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/lights.h"
 #include "engine/scene/camera.h"
@@ -1695,6 +1696,48 @@ void starter_post_bindings() {
     CHECK(tn::abi::tslEffectParameter(rtt, "textureNeedsUpdate", &yes) == yes);
     passes = g::postPasses(rtt);
     CHECK(passes[0].width == 80 && passes[0].resolutionScale == 0.5 && !passes[0].autoUpdate);
+    const auto actualTarget = tn::engine::RenderTarget::make(64, 32, 1016);
+    CHECK(actualTarget->texture->minFilter == 1006);
+    const auto quad = std::make_shared<tn::engine::Mesh>();
+    quad->material = std::make_shared<tn::engine::Material>(tn::engine::MaterialType::Basic, true);
+    quad->material->nodes.fragmentNode = scene;
+    const auto self = TslArg::of(rtt);
+    CHECK(tn::abi::tslCall("__rtt", &self,
+                           {TslArg::objectOf("RenderTarget", actualTarget), TslArg::objectOf("Mesh", quad)},
+                           serial) == rtt);
+    CHECK(rtt->rtt->target == actualTarget && rtt->rtt->quad == quad);
+    actualTarget->setSize(123, 45);
+    CHECK(tn::abi::tslEffectParameter(rtt, "actualWidth", nullptr) == 123);
+    CHECK(tn::abi::tslEffectParameter(rtt, "actualHeight", nullptr) == 45);
+    const auto vertexScale = g::uniform("rttVertexScale", tn::engine::shader::Type::f32(), {0.5f});
+    quad->material->nodes.vertexNode = g::vec4(
+        {g::mul(g::attribute("position", tn::engine::shader::Type::vec(2)), vertexScale), g::float_(0), g::float_(1)});
+    const auto materialGraph = g::postPasses(rtt);
+    CHECK(materialGraph.size() == 1 && materialGraph[0].rtt->material == quad->material);
+    CHECK(materialGraph[0].package.errors.empty());
+    const auto& rttVertex = materialGraph[0].package.variants.at(0).stages[0];
+    CHECK(rttVertex.wgsl.ok() && rttVertex.wgsl.code.find("@group(1)") != std::string::npos);
+    CHECK(materialGraph[0].uniforms.at("rttVertexScale")[0] == 0.5f);
+
+    bool badQuad = false;
+    try {
+        tn::abi::tslCall("__rtt", &self, {TslArg::of(1.0), TslArg::of(2.0)}, serial);
+    } catch (const std::exception& e) {
+        badQuad = std::string(e.what()).find("QuadMesh") != std::string::npos;
+    }
+    CHECK(badQuad);
+    const auto lifecycle = call("traa", {TslArg::of(scene), TslArg::of(g::texture("depth", g::uv())),
+                                         TslArg::of(g::texture("velocity", g::uv())), TslArg::other()});
+    for (size_t i = 0; i < 16; ++i) {
+        const double projection = 0.125 * i;
+        const auto name = "projection" + std::to_string(i);
+        CHECK(tn::abi::tslEffectParameter(lifecycle, name, &projection) == projection);
+        CHECK(lifecycle->post->originalProjection[i] == projection);
+    }
+    CHECK(tn::abi::tslEffectParameter(lifecycle, "viewOffset", &yes) == 1);
+    CHECK(lifecycle->post->viewOffset);
+    CHECK(tn::abi::tslEffectParameter(lifecycle, "viewOffset", &no) == 0);
+    CHECK(!lifecycle->post->viewOffset);
     tn_context_t* context = nullptr;
     tn_diagnostic_t diagnostic{};
     const auto version = tn_engine_version();

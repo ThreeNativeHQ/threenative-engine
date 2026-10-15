@@ -465,7 +465,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     depthBiasOf(*material, d);
     geometryInputsOf(*mesh.geometry, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
-    d.kind = kindOf(material->type);
+    d.kind = material->nodes.fragmentNode ? MaterialKind::Basic : kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
     d.transparent = material->transparent;
     d.forceSinglePass = material->forceSinglePass;

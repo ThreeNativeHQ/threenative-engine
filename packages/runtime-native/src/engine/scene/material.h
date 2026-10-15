@@ -64,6 +64,7 @@ public:
 
     MaterialType type;  // fixed at construction; copy() keeps the target's
     bool nodeMaterial;
+    bool rawNodeMaterial = false;
     shader::MaterialNodes nodes;
     uint32_t id;  // three's material id counter; a clone takes the next one
     std::string name;

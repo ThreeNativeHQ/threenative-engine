@@ -481,11 +481,12 @@ import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { createAssetLoader } from ${JSON.stringify(resolve(native, "src/engine/player/core-assets.mjs"))};
 import { Scene, PerspectiveCamera, Mesh, BoxGeometry, MeshBasicMaterial, Color } from "three";
 import { WebGPURenderer, RenderPipeline } from "three/webgpu";
-import { vec4, convertToTexture, screenUV, pass, mrt, output, normalView, metalness, roughness, uniform } from "three/tsl";
+import { rtt, vec4, convertToTexture, screenUV, pass, mrt, output, normalView, metalness, roughness, uniform } from "three/tsl";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { smaa } from "three/addons/tsl/display/SMAANode.js";
+import { traa } from "three/addons/tsl/display/TRAANode.js";
 import { installThreePlaytestBridge } from "@threenative/playtest/three";
 function check(value, name) { if (!value) throw Error("SERVICE_CHECK: " + name); }
 const host = globalThis.__THREENATIVE_NATIVE__.physics;
@@ -518,6 +519,33 @@ pipeline.render();
 const target = convertToTexture(vec4(0.2, 0.3, 0.4, 1)).setResolutionScale(0.5);
 pipeline.outputNode = target.sample(screenUV); pipeline.render();
 check(convertToTexture(target) !== undefined, "native post RTT graph");
+const manual = rtt(vec4(0.2, 0.3, 0.4, 0.5), 16, 8);
+manual.setup({ getSharedContext: () => ({}) });
+check(manual._quadMesh.material.isNodeMaterial && manual._quadMesh.material.type === "NodeMaterial", "real RTT quad material");
+check(manual._quadMesh.material.fragmentNode !== undefined && manual.renderTarget.texture.type === 1016, "bound RTT source/target");
+manual.autoUpdate = false;
+let draws = 0, currentTarget = null;
+const captureRenderer = { getRenderTarget: () => currentTarget, setRenderTarget: t => { currentTarget = t; },
+  render: (q, c) => { check(q === manual._quadMesh && c.isCamera && currentTarget === manual.renderTarget, "RTT manual draw"); ++draws; } };
+manual.updateBefore({ renderer: captureRenderer });
+manual.needsUpdate = true;
+manual.updateBefore({ renderer: captureRenderer });
+check(draws === 1 && manual.version === 1 && currentTarget === null, "RTT frozen texture and node invalidation");
+manual.textureNeedsUpdate = true;
+manual.updateBefore({ renderer: captureRenderer });
+check(draws === 2 && !manual.textureNeedsUpdate, "RTT explicit dirty update");
+pipeline.outputNode = manual.sample(screenUV); pipeline.render();
+camera.aspect = 4 / 3; camera.updateProjectionMatrix();
+const originalProjection = JSON.stringify(Array.from(camera.projectionMatrix.elements));
+const temporal = traa(texture({ name: "scene" }), texture({ name: "depth" }), texture({ name: "velocity" }), camera);
+temporal.setViewOffset(320, 240);
+check(JSON.stringify(Array.from(camera.projectionMatrix.elements)) !== originalProjection, "TRAA camera jitter");
+temporal.clearViewOffset();
+check(JSON.stringify(Array.from(camera.projectionMatrix.elements)) === originalProjection, "TRAA camera restored");
+temporal.setup({ context: { renderPipeline: pipeline }, renderer: { getDrawingBufferSize: size => size.set(320, 240) } });
+pipeline.outputNode = temporal; pipeline.render();
+check(temporal.__effect("viewOffset") === 0 && JSON.stringify(Array.from(camera.projectionMatrix.elements)) === originalProjection,
+  "TRAA pipeline clears its camera offset");
 // The minimal template's live post chain (PRD-531 slice 4): pass, MRT normals and the four addons.
 const scenePass = pass(scene, camera);
 let refusedNormal = false;

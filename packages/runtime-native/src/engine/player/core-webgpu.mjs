@@ -1,5 +1,5 @@
 export * from "./core-three.mjs";
-import { BufferAttribute, Color, NormalBlending } from "./core-three.mjs";
+import { BufferAttribute, Color, Material, NormalBlending } from "./core-three.mjs";
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 import { syncUniforms } from "./core-tsl.mjs";
 import { GAME_SPANS } from "../../../../core/src/profiling/Spans.ts";
@@ -117,6 +117,7 @@ export const QuadMesh = defineQuadMesh(globalThis);
 // three's RenderPipeline(renderer, outputNode): the player installs the node graph as its post pass
 // (once per graph) and draws it with the renderer's settings.
 export class RenderPipeline {
+  context = {};
   outputColorTransform = true;
   _source = null;
   _graph = null;
@@ -125,6 +126,8 @@ export class RenderPipeline {
     this.outputNode = outputNode;
   }
   render() {
+    this.context.onBeforeRenderPipeline?.();
+    try {
     syncUniforms();
     globalThis.tn.setRendererState(this.renderer);
     if (this._source !== this.outputNode) {
@@ -134,6 +137,7 @@ export class RenderPipeline {
     if (!this.outputColorTransform && this.outputNode !== null)
       this._graph ??= globalThis.tsl.pipelineOutput(this.outputNode, 0);
     globalThis.tn.setPostGraph(this.outputColorTransform ? this.outputNode : this._graph);
+    } finally { this.context.onAfterRenderPipeline?.(); }
   }
   dispose() { globalThis.tn.setPostGraph(null); }
 }
@@ -200,5 +204,7 @@ export class TempNode {
     throw new Error("TN_NATIVE_UNSUPPORTED_TEMPNODE: TempNode is not available on the native engine.");
   }
 }
-export const NodeMaterial = unsupportedExport("NodeMaterial");
+export const NodeMaterial = globalThis.NodeMaterial;
+Object.setPrototypeOf(NodeMaterial.prototype, Material.prototype);
+NodeMaterial.prototype.isNodeMaterial = true;
 export const RendererUtils = unsupportedExport("RendererUtils");

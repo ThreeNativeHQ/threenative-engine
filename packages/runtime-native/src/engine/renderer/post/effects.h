@@ -25,6 +25,7 @@ class PostEffects {
      * thread calls it with the render thread idle, then `render` runs on the copy while the game writes on.
      */
     void captureUniforms();
+    bool target(const std::string& name, WGPUTextureView view);
     void input(const std::string& name, WGPUTextureView view, WGPUSampler sampler = nullptr);
     /** True when any pass reads the named resource ("normal" asks the renderer for a normal target). */
     bool reads(const std::string& name) const;
@@ -44,11 +45,11 @@ class PostEffects {
     };
     struct Pass {
         shader::graph::PostPass source;
-        WGPUBuffer uniforms = nullptr;
+        WGPUBuffer uniforms = nullptr, vertexUniforms = nullptr;
         WGPURenderPipeline pipeline = nullptr; // borrowed from cache
         // Explicit layout: an automatic one drops a binding the shader never reads (SMAA's unused
         // uniform block), and the pass binds every binding its package declares.
-        WGPUBindGroupLayout layout = nullptr;
+        WGPUBindGroupLayout layout = nullptr, vertexLayout = nullptr;
         WGPUPipelineLayout pipelineLayout = nullptr;
         uint64_t rttRevision = 0, rttRequested = 0, rttDisposal = 0;
         uint16_t rttMin = 1006, rttMag = 1006;
@@ -56,8 +57,8 @@ class PostEffects {
         std::map<std::string, std::vector<float>> captured;  // the live nodes' and effect's values, over `source.uniforms`
         // The bind group of the last frame and what it binds: reused while every entry is the same,
         // dropped with the targets (a released view's handle can come back for a new one).
-        WGPUBindGroup group = nullptr;
-        std::vector<WGPUBindGroupEntry> groupEntries;
+        WGPUBindGroup group = nullptr, vertexGroup = nullptr;
+        std::vector<WGPUBindGroupEntry> groupEntries, vertexEntries;
     };
     void releaseGroups();
     void clearTargets();
@@ -67,6 +68,7 @@ class PostEffects {
     std::vector<Pass> passes_;
     std::map<std::string, Image> targets_, images_;
     std::map<std::string, WGPUTextureView> inputs_;
+    std::map<std::string, WGPUTextureView> outputViews_;
     std::map<std::string, WGPUSampler> inputSamplers_;
     WGPUSampler linear_ = nullptr;
     uint32_t width_ = 0, height_ = 0;

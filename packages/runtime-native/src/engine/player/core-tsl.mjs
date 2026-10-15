@@ -73,7 +73,8 @@ export const velocity = unsupportedExport("velocity");
 export const struct = defineStruct(globalThis.tsl.struct);
 
 import { defineRtt } from "../../../../three-native/src/rtt.ts";
-export const rtt = defineRtt(globalThis.tsl.rtt);
+import { defineQuadMesh } from "../../../../three-native/src/quad-mesh.ts";
+export const rtt = defineRtt(globalThis.tsl.rtt, { NodeMaterial: globalThis.NodeMaterial, RenderTarget: globalThis.RenderTarget, QuadMesh: defineQuadMesh(globalThis) });
 
 import { defineWgslFn } from "../../../../three-native/src/wgsl-fn.ts";
 export const wgslFn = defineWgslFn(globalThis.tsl.wgslFunction);

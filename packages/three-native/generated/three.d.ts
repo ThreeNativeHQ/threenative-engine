@@ -1482,6 +1482,7 @@ vertexNode: Node | null;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+fragmentNode: Node | null;
 
   clone(): this;
 
@@ -1625,6 +1626,7 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 bumpMap: Texture | null;
+fragmentNode: Node | null;
 
   clone(): this;
 
@@ -1707,9 +1709,39 @@ export declare class Node {
 constructor();
 }
 
-/** Catalog partial (native-not-bound): three/webgpu/NodeMaterial. */
-export declare class NodeMaterial {
+/** Catalog supported: three/webgpu/NodeMaterial. */
+export declare class NodeMaterial extends Material {
 constructor();
+alphaTest: number;
+blending: Blending;
+colorNode: Node<"float"> | Node<"vec2"> | Node<"vec3"> | Node<"vec4"> | Node<"color"> | null;
+depthTest: boolean;
+depthWrite: boolean;
+fog: boolean;
+forceSinglePass: boolean;
+fragmentNode: Node | null;
+readonly id: number;
+name: string;
+normalNode: Node | null;
+opacity: number;
+opacityNode: Node | null;
+polygonOffset: boolean;
+polygonOffsetFactor: number;
+polygonOffsetUnits: number;
+positionNode: Node | null;
+side: Side;
+toneMapped: boolean;
+transparent: boolean;
+readonly type: string;
+vertexColors: boolean;
+vertexNode: Node | null;
+visible: boolean;
+
+  clone(): this;
+
+  copy(source: Material): this;
+
+  dispose(): void;
 }
 
 /** Catalog partial (native-not-implemented): three/NormalAnimationBlendMode. */
@@ -2400,10 +2432,10 @@ readonly bones: Bone[];
 /** Catalog supported: three/webgpu/SkinnedMesh. */
 export declare class SkinnedMesh extends Mesh {
 constructor();
-readonly skeleton: Skeleton;
+skeleton: Skeleton;
 bindMode: "attached" | "detached";
-readonly bindMatrix: Matrix4;
-readonly bindMatrixInverse: Matrix4;
+bindMatrix: Matrix4;
+bindMatrixInverse: Matrix4;
 boundingBox: Box3 | null;
 
   bind(skeleton: Skeleton, bindMatrix?: Matrix4): void;
@@ -3202,7 +3234,7 @@ export declare const ZeroStencilOp: 0;
 /** Catalog supported: three/tsl/lightShadowMatrix. */
 export declare function lightShadowMatrix(light: Light): Node;
 
-/** Catalog partial (custom-quad-material, manual-update-before): three/tsl/rtt. */
+/** Catalog supported: three/tsl/rtt. */
 export declare function rtt(node: Node, width?: number | null, height?: number | null, options?: Record<string, unknown>): Node;
 
 /** Catalog partial (resource-parameters, includes, more-than-four-arguments): three/tsl/wgslFn. */

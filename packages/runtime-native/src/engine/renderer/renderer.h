@@ -327,6 +327,11 @@ public:
     }
     /** The last render's linear HDR scene target (RGBA16Float), before post and the output transform. */
     void copyDepthToTexture(const Texture& texture);
+    void setSourceAttachments(WGPUTextureView color, WGPUTextureView depth) {
+        sourceScene_ = color;
+        sourceDepth_ = depth;
+    }
+    WGPUTextureView sceneDepthView() const { return depthView_; }
     WGPUTextureView sceneColorView() const { return sceneView_; }
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
     WGPUSampler linearClampSampler();
@@ -744,7 +749,16 @@ private:
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;
     shader::graph::Node postGraph_;
+    WGPUTextureView sourceScene_ = nullptr, sourceDepth_ = nullptr;
     GraphTextures postTextures_;
+    struct RttTarget {
+        std::string name;
+        std::shared_ptr<shader::graph::RttState> state;
+        uint32_t materialVersion = 0;
+        const Material* material = nullptr;
+    };
+    std::vector<RttTarget> rttTargets_;
+
     std::vector<uint32_t> postTextureVersions_;
     std::unique_ptr<TraaPass> traa_;
     std::shared_ptr<const shader::graph::PostEffect> liveTraa_;

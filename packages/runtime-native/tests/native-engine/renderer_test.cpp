@@ -96,6 +96,13 @@ void traaValidation() {
         const TraaPass::Matrix projections[] = {
             {.75,0,0,0,0,1,0,0,0,0,-10.0/9,-1,0,0,-10.0/9,0},
             {1,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,1}};
+        {
+            TraaPass manual(device, queue, TraaOptions{});
+            manual.resize(320, 240);
+            auto authored = projections[0];
+            authored[8] += 0.125;
+            CHECK(manual.begin(projections[0], identity, identity, &authored) == authored);
+        }
         std::cout << std::setprecision(17) << "TRAA_PROJECTIONS [";
         for (int kind = 0; kind < 2; ++kind) {
             TraaPass jitter(device, queue, TraaOptions{});

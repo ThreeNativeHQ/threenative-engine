@@ -889,6 +889,7 @@ void Renderer::setOutput(const OutputState& output) {
 
 void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
     postGraph_.reset();
+    rttTargets_.clear();
     auto effects = post && !post->passes.empty() ? std::make_unique<PostEffects>(device_,queue_,post->passes) : nullptr;
     postEffects_.reset();
     postTextures_.clear();
@@ -912,8 +913,16 @@ void Renderer::setPostGraph(shader::graph::Node root) {
     std::unordered_set<const shader::graph::NodeData*> seen;
     const std::function<void(shader::graph::Node)> collect = [&](shader::graph::Node node) {
         if (!node || !seen.insert(node.get()).second) return;
+        if (node->rtt && node->rtt->target &&
+            std::none_of(rttTargets_.begin(), rttTargets_.end(),
+                         [&](const auto& target) { return target.name == node->name; }))
+            rttTargets_.push_back({node->name, node->rtt, node->rtt->material ? node->rtt->material->version() : 0,
+                                   node->rtt->material.get()});
         if (node->kind == shader::graph::Kind::Texture && node->object)
             postTextures_.emplace_back(node->name, static_cast<const Texture*>(node->object.get()));
+        if (node->rtt && node->rtt->material)
+            for (const auto& graph : node->rtt->material->nodes.graphs())
+                collect(graph);
         for (const auto* list : {&node->args, &node->body, &node->otherwise})
             for (const auto& child : *list) collect(child);
     };
@@ -1112,6 +1121,14 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             const FrameStorage& storage = storages_.at(b.name.substr(2)); // "s_<name>"
             e.buffer = gpu_.buffer(storage.buffer);
             e.size = storage.capacity;
+        } else if (sourceScene_ && (b.name == "t_scene" || b.name == "smp_scene" || b.name == "t_depth" ||
+                                    b.name == "smp_depth" || viewportBinding(b.name))) {
+            const bool sourceDepth =
+                b.name.find("depth") != std::string::npos || b.name.find("Depth") != std::string::npos;
+            if (b.kind == shader::BindingKind::Texture)
+                e.textureView = sourceDepth ? sourceDepth_ : sourceScene_;
+            else
+                e.sampler = outputSampler_;
         } else if (viewportBinding(b.name)) {
             const bool depthCopy = b.name.find("Depth") != std::string::npos;
             if (b.kind == shader::BindingKind::Texture) e.textureView = depthCopy ? viewportDepthView_ : viewportColorView_;
@@ -1968,9 +1985,10 @@ std::vector<std::shared_ptr<PipelineCompilation>> Renderer::compileAsync(std::sp
     return compilation;
 }
 
-uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraState& unjitteredCamera,
-    const LightState& lights, std::array<double, 4> clear,
-    std::vector<std::shared_ptr<PipelineCompilation>>* compilation, WGPUTextureFormat outputFormat, bool defer) {
+uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraState& inputCamera,
+                                  const LightState& lights, std::array<double, 4> clear,
+                                  std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
+                                  WGPUTextureFormat outputFormat, bool defer) {
     // One frame in flight per renderer: the game thread may not plan while the encode half is pending or running.
     if (!compilation && (pendingEncode_ || encoding_))
         throw std::logic_error("TN_RENDER_THREAD_BATON: a frame was planned before the previous one was encoded");
@@ -1978,13 +1996,31 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // Taken at once: a frame that throws must not leave a borrowed view armed for the next one.
     const WGPUTextureView presentTarget = compilation ? nullptr : std::exchange(presentTarget_, nullptr);
     const WGPUTextureFormat presentFormat = presentFormat_;
+    for (const auto& target : rttTargets_) {
+        auto& state = *target.state;
+        state.material = state.quad->material;
+        if (!state.material || !state.material->nodeMaterial)
+            throw std::runtime_error("RTT quad needs a node material");
+        state.material->nodes.fragmentNode = state.source;
+    }
+    if (!compilation && std::any_of(rttTargets_.begin(), rttTargets_.end(), [](const auto& target) {
+            return target.state->material && (target.materialVersion != target.state->material->version() ||
+                                              target.material != target.state->material.get());
+        }))
+        setPostGraph(postGraph_);
+    CameraState unjitteredCamera = inputCamera;
+    const bool manualView = liveTraa_ && liveTraa_->viewOffset;
+    if (manualView)
+        unjitteredCamera.projectionMatrix = liveTraa_->originalProjection;
     CameraState camera = unjitteredCamera;
     if (liveTraa_ && traa_ && !compilation) {
         const auto parameter = [&](const char* name) { return liveTraa_->parameters.at(name).at(0); };
         traa_->setOptions({parameter("depthThreshold"), parameter("edgeDepthDiff"),
                            parameter("maxVelocityLength"), parameter("useSubpixelCorrection") != 0});
     }
-    if (traa_ && !compilation) camera.projectionMatrix = traa_->begin(camera.projectionMatrix, camera.matrixWorld, camera.matrixWorldInverse);
+    if (traa_ && !compilation)
+        camera.projectionMatrix = traa_->begin(camera.projectionMatrix, camera.matrixWorld, camera.matrixWorldInverse,
+                                               manualView ? &inputCamera.projectionMatrix : nullptr);
     const Matrix& view = camera.matrixWorldInverse;
     geometry_->cache.sweep();  // GPU copies of attributes released since the last frame
     sweepTextures();    // ...and of textures that no longer exist
@@ -2978,6 +3014,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         plan.begin()));
     // A post pass's resolution scale and uniform nodes are the game's to write: read them now, encode uses the copy.
     if (postEffects_ && postEffects_->syncScales()) releaseOutputGroup();
+    for (const auto& target : rttTargets_) {
+        auto& state = *target.state;
+        if (postEffects_->target(target.name, renderTargetView(*this, *state.target)))
+            releaseOutputGroup();
+    }
+
     if (postEffects_) postEffects_->captureUniforms();
     // Upload authored LUT textures while the game thread is idle, as for live uniforms.
     const bool newTextures = postTextureVersions_.size() != postTextures_.size();

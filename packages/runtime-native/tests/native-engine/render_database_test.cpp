@@ -1212,6 +1212,50 @@ void renderTarget() {
                  (unsigned long long)renderer.geometry().stats().fullUploads);
     CHECK(afterTarget > before);
     CHECK(renderer.geometry().stats().fullUploads == afterTarget);
+    // PRD-617: scheduled and manual RTT draws must share the target, including a frozen frame.
+    namespace g = shader::graph;
+    const auto live = g::uniform("rttColour", shader::Type::vec(4), {0.25f, 0.5f, 0.75f, 1});
+    auto rtt = std::make_shared<g::NodeData>();
+    rtt->kind = g::Kind::RenderTexture;
+    rtt->type = shader::Type::vec(4);
+    rtt->name = "rtt_lifecycle";
+    rtt->args = {live, g::uv()};
+    rtt->rtt = std::make_shared<g::RttState>();
+    auto& state = *rtt->rtt;
+    state.width = state.height = 32;
+    state.autoUpdate = false;
+    state.target = target;
+    state.source = live;
+    state.quad = std::make_shared<Mesh>(makePlaneGeometry(2, 2), std::make_shared<Material>(MaterialType::Basic, true));
+    state.material = state.quad->material;
+    state.material->rawNodeMaterial = true;
+    state.material->nodes.fragmentNode = live;
+    renderer.setPostGraph(rtt);
+    const auto rttFrame = [&] {
+        renderer.render({}, CameraState{}, LightState{}, {0, 0, 0, 1});
+        const auto bytes = read(renderer, events);
+        CHECK(bytes.size() == 64 * 64 * 4);
+        return bytes.size() == 64 * 64 * 4 ? bytes[(32 * 64 + 32) * 4] : 0;
+    };
+    CHECK(std::abs(int(rttFrame()) - 64) <= 1);
+    g::setUniformValues(live, {0.75f, 0.5f, 0.25f, 1});
+    CHECK(std::abs(int(rttFrame()) - 64) <= 1); // frozen despite changed uniforms
+    state.textureNeedsUpdate = true;
+    ++state.revision;
+    CHECK(std::abs(int(rttFrame()) - 191) <= 1);
+    g::setUniformValues(live, {0.5f, 0.25f, 0.75f, 1});
+    state.quad->updateMatrixWorld(true);
+    CHECK(renderToTarget(renderer, *target, *state.quad, innerCamera, {0, 0, 0, 1}, false).empty());
+    CHECK(std::abs(int(rttFrame()) - 128) <= 1); // explicit quad render reaches the same sampled texture
+    const auto vertexScale = g::uniform("quadScale", shader::Type::f32(), {1});
+    state.material->nodes.vertexNode =
+        g::vec4({g::mul(g::attribute("position", shader::Type::vec(2)), vertexScale), g::float_(0), g::float_(1)});
+    state.material->needsUpdate();
+    state.autoUpdate = true;
+    CHECK(std::abs(int(rttFrame()) - 128) <= 1);
+    g::setUniformValues(vertexScale, {0});
+    CHECK(rttFrame() == 0); // the quad's live vertex uniform reaches group 1
+    CHECK(renderer.diagnostics().empty());
 }
 
 // A steady frame does no setup work: after warm-up, sixty more frames of a lit node-material scene with
