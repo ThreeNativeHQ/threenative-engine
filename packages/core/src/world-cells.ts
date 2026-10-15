@@ -7844,6 +7844,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // The dispatch scales the whole-asset impostor's terminal gate by each placement's own scale;
       // the same flag the live-state reference reads, so the two cannot cross it differently.
       impostor: asset.impostor !== undefined,
+      shadowFallback: asset.definition.lods === undefined,
       levels: gates,
     };
   }
@@ -7855,6 +7856,7 @@ export class WorldCells extends Group implements IComputeDriven {
       cull: gates.cull,
       distances: [...gates.distances],
       impostor: gates.impostor,
+      shadowFallback: gates.shadowFallback,
       levels: gates.levels.map((level) => ({ ...level })),
       locals: asset.levels.map((parts) =>
         parts.map((part) => Float32Array.from(part.local.elements)),

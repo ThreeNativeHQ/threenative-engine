@@ -36,6 +36,7 @@ import { isStatic } from "../src/static-transform.js";
 import {
   COARSEST_SHADOW_LEVEL,
   DRAW_ARGS_BYTES,
+  type IAssetSlot,
   type IGpuPlacement,
   type IKernelInput,
   type IKernelResult,
@@ -1811,6 +1812,32 @@ describe("WorldCells with the GPU-driven main pass", () => {
     world.dispose();
   });
 
+  it.each([false, true])(
+    "publishes the CPU shadow fallback policy for authored LODs=%s",
+    async (authoredLods) => {
+      stubManifestFetch(authoredLods);
+      const adopted = vi.spyOn(WorldGpuScene.prototype, "slot");
+      const world = await WorldCells.load({
+        admissionBudgetMs: Number.POSITIVE_INFINITY,
+        budgets,
+        follow: { position: { ...cellCentre(0, 1), y: 0 } },
+        gpuScene: true,
+        loadModel: async () => plainModel(),
+        prefetchSeconds: 0,
+        ring: 1,
+        shadows: { cast: true, castLevels: 1 },
+        surface,
+        url: "/world/world.json",
+      });
+      world.update(gpuRendererStub(), playerCamera());
+      await flushed(world);
+      const pine = adopted.mock.calls.filter(([name]) => name === "pine");
+      expect(pine.length).toBeGreaterThan(0);
+      for (const [, slot] of pine) expect(slot.shadowFallback).toBe(!authoredLods);
+      world.dispose();
+    },
+  );
+
   it("is the CPU path byte for byte with the option off", async () => {
     stubManifestFetch();
     const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
@@ -3022,6 +3049,15 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     expect(scene.gates()).toHaveLength(2);
     const levels = scene.footprint().levels;
     expect((levels?.count ?? 0) * 4).toBeGreaterThanOrEqual(6);
+  });
+
+  it("republishes a slot when its shadow fallback policy changes", () => {
+    const scene = wired([{ name: "rock", levels: DISTANCES }], 1, 4);
+    const slot = scene.gates()[0] as IAssetSlot;
+    scene.slot("rock", { ...slot, shadowFallback: false });
+    expect(scene.gates()[0]?.shadowFallback).toBe(false);
+    scene.slot("rock", { ...slot, shadowFallback: true });
+    expect(scene.gates()[0]?.shadowFallback).toBe(true);
   });
 
   it("keeps every regrown binding as wide as the kernel declares it", () => {
@@ -4854,6 +4890,25 @@ describe("a shadow level's own selection", () => {
     expect([...(coarse.get(0) ?? [])]).toEqual([0, 1, 3]);
     expect([...(coarse.get(2) ?? [])]).toEqual([]);
   });
+
+  it.each([0, COARSEST_SHADOW_LEVEL])(
+    "does not restore authored LODs past their casting levels (base=%s)",
+    (base) => {
+      const { input } = shadowFixture();
+      const authored: IKernelInput = {
+        ...input,
+        slots: input.slots.map((slot) => ({ ...slot, shadowFallback: false })),
+        regions: input.regions.map((region, index) =>
+          index === 0 ? region : { ...region, uncast: true },
+        ),
+      };
+      const level = { base, gate: 1, planes: levelPlanes(100) };
+      const drawn = drawnPlacements(cullAndSelectShadow(authored, level), authored);
+      expect(drawn.get(0)).toEqual([0, 3]);
+      expect(drawn.get(1)).toEqual([]);
+      expect(cullAndSelect(authored)).toEqual(cullAndSelect(input));
+    },
+  );
 
   it("reads a base past the chain as the coarsest shape the asset has, without reading past its levels", () => {
     const { input } = shadowFixture();
