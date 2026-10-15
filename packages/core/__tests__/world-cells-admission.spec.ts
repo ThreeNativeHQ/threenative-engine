@@ -236,7 +236,7 @@ async function makeWorld(options: {
 }
 
 /** Update until nothing is queued, returning every frame's admission spend. */
-function drain(world: WorldCells, limit = 4000, covered = false): number[] {
+function drain(world: WorldCells, limit = 10_000, covered = false): number[] {
   const spent: number[] = [];
   for (let frame = 0; frame < limit; frame += 1) {
     if (covered) world.process(undefined, undefined, true);
@@ -308,7 +308,7 @@ describe("WorldCells admission budget", () => {
     const { world: covered } = await makeWorld({ priced: true });
     covered.update();
     await step(covered);
-    const coveredSpent = drain(covered, 4000, true);
+    const coveredSpent = drain(covered, 10_000, true);
     for (const frame of coveredSpent) expect(frame).toBeLessThanOrEqual(16 + UNIT_MS);
     expect(Math.max(...coveredSpent)).toBeGreaterThan(2 + UNIT_MS);
     expect(coveredSpent.length).toBeLessThan(openSpent.length);
@@ -350,7 +350,7 @@ describe("WorldCells admission budget", () => {
     });
     cells.update();
     await step(cells);
-    for (const frame of drain(cells, 4000, true)) expect(frame).toBeLessThanOrEqual(2 + UNIT_MS);
+    for (const frame of drain(cells, 10_000, true)) expect(frame).toBeLessThanOrEqual(2 + UNIT_MS);
     cells.dispose();
   });
 
@@ -473,8 +473,12 @@ describe("WorldCells admission budget", () => {
     for (let frame = 0; frame < 10_000 && terrain.residentTileCount < 9; frame += 1) {
       cells.update();
       expect(cells.stats().admission.spentMs).toBeLessThanOrEqual(UNIT_MS);
+      if (terrain.deferredAdmissions > 0)
+        expect(cells.stats().admission.backlog).toBeGreaterThan(0);
     }
     expect(terrain.residentTileCount).toBe(9);
+    drain(cells);
+    expect(cells.stats().admission.backlog).toBe(0);
     expect(cells.stats().failures).toBe(0);
     cells.dispose();
   });
@@ -540,6 +544,7 @@ describe("WorldCells admission budget", () => {
     cells.update();
     expect(cells.stats().residentKeys).toEqual([]);
     expect(cells.stats().admission.deferred).toBe(0);
+    drain(cells);
     expect(cells.stats().admission.backlog).toBe(0);
     expect(drawn(cells).size).toBe(0);
     expect(cells.stats().failures).toBe(0);

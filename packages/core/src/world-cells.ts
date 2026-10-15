@@ -926,7 +926,7 @@ export interface IWorldCellsStats {
     readonly spentMs: number;
     /** Cell-asset builds the last `update` had no budget for, still queued for a later one. */
     readonly deferred: number;
-    /** Units of work those builds still owe — placement slices left plus meshes left to publish. */
+    /** Placement slices and meshes left to publish, plus one unit while terrain admission is owed. */
     readonly backlog: number;
   };
 }
@@ -6308,9 +6308,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#queued.delete(job.run);
   }
 
-  /** Units of work the queue still owes: placement slices left, plus meshes left to publish. */
+  /** Placement slices and meshes left to publish, plus the terrain's outstanding admission. */
   #backlog(): number {
-    let units = 0;
+    let units = this.#terrain?.deferredAdmissions ?? 0;
     for (const job of this.#jobs) {
       const meshes = job.batches === undefined ? 0 : publishCount(job.batches);
       units +=
