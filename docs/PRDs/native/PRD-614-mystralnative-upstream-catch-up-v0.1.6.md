@@ -1,8 +1,8 @@
 # PRD-614 — Catch the runtime-native fork up with MystralNative v0.1.6
 
 **Status:** NOT STARTED
-**Priority:** P2 — the open Wayland and zero-length `writeBuffer` boxes are planned parity work; no release depends on them.
-**Complexity:** 2 (LOW) — about 7 implementation files, no new module; risk override: none.
+**Priority:** P2 — the open Wayland, zero-length `writeBuffer` and linux-arm64 feature boxes are planned parity work; no release depends on them.
+**Complexity:** 3 (LOW) — about 10 implementation files, no new module; risk override: none.
 **Owner:** João
 **Depends on:** None
 
@@ -24,13 +24,14 @@ Triage of each upstream change against the fork (2026-10-14):
 | `9bec9d7` (part) | Debug `std::cout` per buffer binding in `createBindGroupLayout` | — | Skip — log noise in a hot path. |
 | `0d87767` | wgpu-native: replace `wgpuInstanceProcessEvents` (an `unimplemented!()` abort in older wgpu-native) with `wgpuDevicePoll`; libuv-less `DebugServer` stub | Pinned wgpu-native v25.0.2.2 implements `wgpuInstanceProcessEvents` (`src/lib.rs:2690`, `poll_all_devices`). The fork gates `debug_server.cpp` behind `TN_ENABLE_DEBUG_SERVER` (`CMakeLists.txt:1672`) | Skip — not applicable. |
 | `4e01a6e` (part) | `#include <cstdint>` in `http_client.h` | Already present | Skip — present. |
-| `aa2c18e`, `de75cf7`, `0b2b225`, `53e96a3`, `8f748eb`, `fcd2e95` | linux-arm64 build (QuickJS + wgpu), Skia `arm64` lib subdir, quiche `0.24.6-4`, Canvas 2D on arm64 | Fork has no linux-arm64 row in `build-matrix.json` | Not in this PRD — see Blocked on. |
+| `0d87767`, `aa2c18e`, `8f748eb`, `fcd2e95` | linux-arm64 host with QuickJS + wgpu | Already in the fork: `scripts/download-deps.mjs:1548` selects QuickJS + wgpu on arm64, and `native-platforms.yml` runs a `linux-arm64` leg on `ubuntu-24.04-arm` | Skip — present. V8 on arm64 is PRD-614's sibling [PRD-615](PRD-615-v8-on-linux-arm64.md). |
+| `de75cf7`, `0b2b225`, `53e96a3` | linux-arm64 optional features: Skia from `mystralengine/library-builder` `chrome/m145`, quiche `0.24.6-4` (adds `quiche-linux-arm64`), SWC `swc-41`, libwebp `aarch64`, CMake Skia `arm64` lib subdir | The fork's arm64 host disables Canvas 2D, WebTransport and TS transpile because these archives were missing (`scripts/download-deps.mjs:1548`); `CMakeLists.txt:1099` hard-codes `x64` | **Port** (Phase 3). |
 | `02c86dc`, `21611f0`, `fd2d126`, CI/release workflows, `install.sh` | `.gitignore`, README, version bump, upstream CI | Fork has its own `.gitignore` (`third_party/` ignored), CI and release | Skip — fork owns these. |
 
 ## Solution
 
-Port the two behaviour changes that the fork lacks, then move the provenance baseline so the next
-catch-up starts from `bafab09`.
+Port the three changes that the fork lacks, then move the provenance baseline so the next catch-up
+starts from `bafab09`.
 
 ```mermaid
 flowchart LR
@@ -51,6 +52,10 @@ flowchart LR
   `libwebgpu_dawn.a` already carries the Wayland surface symbols.
 - **Zero-length `writeBuffer`.** Return `undefined` when `dataSize == 0` before the null-pointer
   check, in the direct binding and in the frame-op stream decoder, to match the browser.
+- **linux-arm64 features.** Pin the new arm64 archives in `native-deps.lock.json` with their
+  SHA-256, add them to the arm64 `desktopDeps` list, and pick the Skia `arm64` subdir in CMake.
+  The arm64 host then has Canvas 2D, WebTransport and TS transpile like x64. The JS engine stays
+  QuickJS here; [PRD-615](PRD-615-v8-on-linux-arm64.md) moves it to V8.
 - **Provenance.** Update `NOTICE` to the new upstream baseline. This PRD keeps the per-commit
   disposition table above; no separate record.
 
@@ -64,21 +69,24 @@ default X11 run is proved again. The frame-op stream encodes `writeBuffer` in JS
 - [ ] AC-1 [local]: A native desktop game run with `SDL_VIDEODRIVER=wayland` under a headless Wayland compositor presents 300 non-blank frames. proof: `weston --backend=headless` + `SDL_VIDEODRIVER=wayland pnpm native:verify:desktop` — Evidence: pending.
 - [ ] AC-2 [local]: The default X11 run still presents 300 non-blank frames. proof: `pnpm native:verify:desktop` — Evidence: pending.
 - [ ] AC-3 [local]: `device.queue.writeBuffer(buffer, 0, new Uint8Array(0))` returns without an exception on native, as on web. proof: new case in `pnpm parity` (`packages/runtime-native/conformance/registry.json`), red before Phase 2 — Evidence: pending.
+- [ ] AC-4 [shared]: The linux-arm64 host draws Canvas 2D in the starter. proof: `native-platforms.yml` `linux-arm64` leg, dispatched with `gh workflow run` — Evidence: pending.
 
 ## Blocked on
 
 - A headless Wayland compositor (`weston`) on this machine or the Debian laptop for AC-1. Neither `weston`, `cage` nor `sway` is installed here — unblocked by João installing one, or by approving an install.
-- Whether linux-arm64 becomes a supported native target. If yes, a separate PRD ports `aa2c18e`, `de75cf7`, `0b2b225`, `53e96a3` and the Skia `arm64` lib subdir, with its own arm64 lane — unblocked by João's decision.
-- Whether Wayland becomes the default SDL driver when no web overlay runs. This PRD keeps X11 as the default — unblocked by João's decision.
 
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 | --- | --- | --- | --- |
 | Wayland WebGPU surface | `mystral` CLI → `Runtime` surface setup (`src/runtime.cpp:655`) → `Context::createSurfaceWithWLDisplay` | `createSurfaceWithDisplay(…, PLATFORM_XLIB)` is deleted; the X11 path delegates to `createSurfaceWithX11Display` | AC-1, AC-2 |
+| linux-arm64 Canvas 2D, WebTransport, TS | `node scripts/download-deps.mjs` on arm64 (`scripts/download-deps.mjs:1558`) → CMake feature detection | Disabled features become enabled; no fallback copy | AC-4 |
 | Zero-length `writeBuffer` | Game JS → `GPUQueue.writeBuffer` binding (`src/webgpu/bindings.cpp:1687`) and frame-op stream decoder (`src/webgpu/bindings_frame_stream.cpp:334`) | Throw becomes no-op | AC-3 |
 
 ## Decisions
+
+- 2026-10-14 (João): linux-arm64 stays a supported target, and its optional features catch up with upstream (Phase 3). João prefers V8 over QuickJS for speed; that is [PRD-615](PRD-615-v8-on-linux-arm64.md).
+- 2026-10-14 (agent, João delegated the call): X11 stays the default Linux SDL driver, also in a Wayland session. Wayland sessions already run the game through XWayland, and the web overlay and key forwarding use X11 only. Native Wayland is opt-in with `SDL_VIDEODRIVER=wayland`. Revisit when a game needs a Wayland-only feature, such as fractional scaling.
 
 - 2026-10-14 (agent, triage): skip upstream's `externalTexture` layout entry. three 0.185 sets `externalTexture` only for WebXR textures, and the fork has no `importExternalTexture`, so the entry has no consumer. Revisit when a game needs `GPUExternalTexture`.
 - 2026-10-14 (agent, triage): skip the wgpu-native `wgpuInstanceProcessEvents` replacement. The pinned wgpu-native v25.0.2.2 implements that function, so the abort that upstream fixed cannot occur.
@@ -100,8 +108,10 @@ default X11 run is proved again. The frame-op stream encodes `writeBuffer` in JS
 - [ ] AC-3 direct binding path, red then green. proof: `pnpm parity` new case
 - [ ] AC-3 frame-op stream path, red then green. proof: `pnpm parity` new case with the frame-op stream on
 
-#### Phase 3: Provenance
+#### Phase 3: linux-arm64 features and provenance
 **Status:** NOT STARTED
-**Files:** `packages/runtime-native/NOTICE`
-**Implementation:** Set `Upstream provenance baseline:` to `bafab09d599bd55aeb7433ba7131c3f320334c99` and name v0.1.6.
+**Files:** `scripts/download-deps.mjs`, `native-deps.lock.json`, `CMakeLists.txt`, `NOTICE` (all under `packages/runtime-native/`)
+**Implementation:** Port `de75cf7`, `0b2b225` and `53e96a3`. Move every quiche pin to `0.24.6-4`. Keep SWC `swc-11` on other platforms, as upstream does. Set `Upstream provenance baseline:` to `bafab09d599bd55aeb7433ba7131c3f320334c99` and name v0.1.6.
+- [ ] Lock pins and download selection pass their specs. proof: `pnpm exec vitest run scripts/__tests__/check-version-pins.spec.ts scripts/__tests__/check-build-matrix.spec.ts`
+- [ ] AC-4 arm64 leg green with Canvas 2D on. proof: `gh workflow run native-platforms.yml` `linux-arm64` leg
 - [ ] NOTICE names the new baseline and the doc checks pass. proof: `pnpm check:docs`
