@@ -174,6 +174,8 @@ The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Ph
 
 ## Decisions
 
+- 2026-10-15 compose rollback complete: restored only `object3d.h/.cpp` and `scene_hierarchy_test.cpp` from `1766f64ac^`; trial source/results preserved on local `perf/prd610-compose-trial` at `09a05e079`. Rebuilt player/test targets; 14 scene + 2 callback/reflection-reuse + 27 V8/player checks PASS, compile-time node-size check returns 440 bytes. Logs `/tmp/prd610-compose-restored-*`; no GPU acquisition or new performance/parity claim.
+
 - 2026-10-15 (compose-cache performance candidate — NO-GO): stop after one pair; no second timing pair or promotion. CPU is INCONCLUSIVE under the predeclared load guard: baseline windows all exceed load1 ≤ 12. The exploratory instruction reduction of only 0.13–0.51% is insufficient to justify +240 bytes per Object3D (440 → 680, +54.5%). Neither the raw CPU improvement nor load/IPC differences establishes a causal performance explanation. Preserve trial source/results on local `perf/prd610-compose-trial` before reverting only the cache implementation; AC boxes remain open.
 
 | Compose pair 1 pose | CPU ms/frame A → B (guard failed) | Instructions M/frame A → B | Instruction change | Cycles M/frame A → B | IPC A → B | Host load1 A → B |
