@@ -776,30 +776,6 @@ function wrapRenderer(
         const originalMatrix = scene.matrix.clone();
         const originalMatrixWorld = scene.matrixWorld.clone();
         const attached = scoped && !isInObject3DSubtree(outputRoot, scene);
-        const hidden: { object: Object3D; visible: boolean }[] = [];
-        const keep = new Set<Object3D>();
-        const keepWithAncestors = (object: Object3D): void => {
-          let current: Object3D | null = object;
-          while (current !== null) {
-            keep.add(current);
-            if (current === outputRoot) break;
-            current = current.parent;
-          }
-        };
-        if (scoped) {
-          keepWithAncestors(scene);
-          scene.traverse((object) => keep.add(object));
-          outputRoot.traverse((object) => {
-            if ((object as Object3D & { isLight?: boolean }).isLight === true)
-              keepWithAncestors(object);
-          });
-          outputRoot.traverse((object) => {
-            if (object !== outputRoot && !keep.has(object)) {
-              hidden.push({ object, visible: object.visible });
-              object.visible = false;
-            }
-          });
-        }
         if (attached) outputRoot.add(scene);
         renderingFrame += 1;
         try {
@@ -846,7 +822,6 @@ function wrapRenderer(
           scene.name = previousSceneName;
           outputRoot.name = previousOutputRootName;
           camera.layers.mask = previousCameraMask;
-          for (const entry of hidden) entry.object.visible = entry.visible;
           if (attached) {
             outputRoot.remove(scene);
             if (originalParent !== null) originalParent.add(scene);

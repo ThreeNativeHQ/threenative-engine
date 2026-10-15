@@ -1381,6 +1381,12 @@ describe("createRenderer", () => {
         const authoredUpdateBeforeType = worldPass.updateBeforeType;
         expect(authoredUpdateBeforeType).toBe(NodeUpdateType.FRAME);
         targetScene = new Scene();
+        const terrain = new Object3D();
+        terrain.name = "terrain";
+        targetScene.add(terrain);
+        const worldObject = new Object3D();
+        worldObject.name = "world-object";
+        targetScene.add(worldObject);
         const chunk = new Object3D();
         chunk.name = "requested-chunk";
 
@@ -1396,7 +1402,7 @@ describe("createRenderer", () => {
         expect(worldPass.updateBeforeType).toBe(authoredUpdateBeforeType);
         expect(canvasSubmissions).toHaveLength(warmStart);
         expect(draws[1]?.scene).toBe(targetScene);
-        expect(draws[1]?.visibleObjects).toEqual(["requested-chunk"]);
+        expect(draws[1]?.visibleObjects).toEqual(["terrain", "world-object", "requested-chunk"]);
         expect(draws[1]?.target).not.toBeNull();
         expect(draws[1]?.warm).toBe(true);
 
