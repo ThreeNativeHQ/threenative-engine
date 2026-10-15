@@ -693,7 +693,7 @@ describe("pipeline census", () => {
     let stateIndex = 0;
     let createPipeline = true;
     const nodes = {
-      getForRender: () => states[stateIndex],
+      getForRender: (_renderObject: unknown) => states[stateIndex],
     };
     const pipeline = {
       vertexProgram: { code: source("scope vertex") },
@@ -751,7 +751,7 @@ describe("pipeline census", () => {
       vertexProgram: { code: source("zero vertex") },
       fragmentProgram: { code: source("zero fragment") },
     };
-    const nodes = { getForRender: () => state };
+    const nodes = { getForRender: (_renderObject: unknown) => state };
     const internal = { object: target, material: { name: "warm" }, pipeline };
     const raw = {
       backend,
@@ -776,7 +776,7 @@ describe("pipeline census", () => {
     const target = {};
     const world = {};
     const state = {};
-    const nodes = { getForRender: () => state };
+    const nodes = { getForRender: (_renderObject: unknown) => state };
     const raw = {
       _nodes: nodes,
       backend: webgpuStub().backend,

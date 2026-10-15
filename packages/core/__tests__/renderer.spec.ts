@@ -1368,7 +1368,7 @@ describe("createRenderer", () => {
         const targetOverrideMaterial = targetScene.overrideMaterial;
         invokePassUpdate = () => worldPass?.updateBefore({ renderer: raw } as never);
 
-        const warm = () => renderer.warmUpWorldPass?.(chunk, camera, targetScene);
+        const warm = () => renderer.warmUpWorldPass?.(chunk as Object3D, camera, targetScene);
         if (throws) expect(warm).toThrow("covered output render failed");
         else warm();
 
