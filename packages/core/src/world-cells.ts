@@ -4378,10 +4378,6 @@ export class WorldCells extends Group implements IComputeDriven {
   #visibleEpoch = 0;
   /** The follow point the last full residency pass ran for; see `#residencyStale`. */
   readonly #residencyPoint = new Vector3(Number.NaN, 0, Number.NaN);
-  /** The follow point's cell at the last residency pass; a move of more than one is a jump. */
-  #residencyCell: { readonly x: number; readonly z: number } | undefined;
-  /** A speculative lead evicted an actually wanted cell; recover it once the lead retires. */
-  #prefetchRecovery = false;
   /** The follow point the last refilter pass ran for; see `#refilterStale`. */
   readonly #refilterPoint = new Vector3(Number.NaN, 0, Number.NaN);
   /** Bumped by every admission and eviction, so a residency change owes a refilter that update. */
@@ -5373,7 +5369,6 @@ export class WorldCells extends Group implements IComputeDriven {
     )
       return true;
     return (
-      this.#prefetchRecovery ||
       this.#limiter.inFlight > 0 ||
       this.#limiter.queued > 0 ||
       this.#jobs.length > 0 ||
@@ -5998,7 +5993,6 @@ export class WorldCells extends Group implements IComputeDriven {
   dispose(): void {
     if (this.#released) return;
     this.#released = true;
-    this.#prefetchRecovery = false;
     for (const [mesh, entry] of [...this.#awaited]) {
       if (mesh.onBeforeRender === entry.borrow) this.#handBack(mesh, entry.hadOwn, entry.own);
     }
@@ -6044,54 +6038,57 @@ export class WorldCells extends Group implements IComputeDriven {
       x: Math.floor((this.#follow.position.x - this.#minX) / this.#cellSize),
       z: Math.floor((this.#follow.position.z - this.#minZ) / this.#cellSize),
     };
-    // Read jumps off the actual follow point: lookahead can move two cells during an ordinary walk.
-    const last = this.#residencyCell;
-    const jumped =
-      last !== undefined && Math.max(Math.abs(last.x - here.x), Math.abs(last.z - here.z)) > 1;
-    this.#residencyCell = here;
-    // A jump retires the previous lead's debt, but its new lead can still evict a wanted cell below.
-    if (jumped) this.#prefetchRecovery = false;
-    const wanted: Array<{ cell: IWorldCell; distance: number }> = [];
+    const wanted: Array<{ cell: IWorldCell; actual: boolean; distance: number }> = [];
     for (const cell of this.#cells) {
-      if (Math.max(Math.abs(cell.x - followCell.x), Math.abs(cell.z - followCell.z)) > this.#ring)
+      const actual = Math.max(Math.abs(cell.x - here.x), Math.abs(cell.z - here.z)) <= this.#ring;
+      if (
+        !actual &&
+        Math.max(Math.abs(cell.x - followCell.x), Math.abs(cell.z - followCell.z)) > this.#ring
+      )
         continue;
       const centerX = this.#minX + (cell.x + 0.5) * this.#cellSize;
       const centerZ = this.#minZ + (cell.z + 0.5) * this.#cellSize;
-      wanted.push({ cell, distance: Math.hypot(x - centerX, z - centerZ) });
+      wanted.push({
+        cell,
+        actual,
+        distance: Math.hypot(
+          (actual ? this.#follow.position.x : x) - centerX,
+          (actual ? this.#follow.position.z : z) - centerZ,
+        ),
+      });
     }
-    wanted.sort((a, b) => a.distance - b.distance || a.cell.z - b.cell.z || a.cell.x - b.cell.x);
+    wanted.sort(
+      (a, b) =>
+        Number(b.actual) - Number(a.actual) ||
+        a.distance - b.distance ||
+        a.cell.z - b.cell.z ||
+        a.cell.x - b.cell.x,
+    );
 
     for (const resident of [...this.#resident.values()]) {
       if (
+        Math.max(Math.abs(resident.x - here.x), Math.abs(resident.z - here.z)) > this.#ring &&
         Math.max(Math.abs(resident.x - followCell.x), Math.abs(resident.z - followCell.z)) >
-        this.#ring + 1
-      ) {
-        if (Math.max(Math.abs(resident.x - here.x), Math.abs(resident.z - here.z)) <= this.#ring)
-          this.#prefetchRecovery = true;
+          this.#ring + 1
+      )
         this.#evict(resident);
-      }
     }
-    const recovering = this.#prefetchRecovery && followCell.x === here.x && followCell.z === here.z;
-    if (recovering) this.#prefetchRecovery = false;
 
     for (const candidate of wanted) {
       const key = cellKey(candidate.cell.x, candidate.cell.z);
       if (this.#resident.has(key)) continue;
       const instances = candidate.cell.runs.reduce((total, run) => total + run.count, 0);
       const bytes = instances * PLACEMENT_RECORD_BYTES;
-      // Wanted cells take priority over unwanted hysteresis under pressure, including ordinary
-      // one-cell moves. With room, retention still avoids unloading the ring just left behind.
+      // Actual wanted cells reclaim unwanted hysteresis under pressure. Predicted extras use
+      // slack only: displacing an actual edge for lookahead churns a full ring during small moves.
       while (
-        this.#resident.size >= this.#budgets.residentCells ||
-        this.#instances + this.#farInstances + instances > this.#budgets.instances ||
-        this.#bytes + this.#farBytes + this.#hlodBytes + bytes > this.#budgets.bytes
+        candidate.actual &&
+        (this.#resident.size >= this.#budgets.residentCells ||
+          this.#instances + this.#farInstances + instances > this.#budgets.instances ||
+          this.#bytes + this.#farBytes + this.#hlodBytes + bytes > this.#budgets.bytes)
       ) {
-        const spare = this.#farthestUnwanted(followCell);
+        const spare = this.#farthestUnwanted(here);
         if (spare === undefined) break;
-        // Pressure alone can displace an actual wanted edge while the speculative lead is only
-        // one cell away. Owe its recovery even if the actual follow cell never moves again.
-        if (Math.max(Math.abs(spare.x - here.x), Math.abs(spare.z - here.z)) <= this.#ring)
-          this.#prefetchRecovery = true;
         this.#evict(spare);
       }
       if (this.#resident.size >= this.#budgets.residentCells) {

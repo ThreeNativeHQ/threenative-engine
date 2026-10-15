@@ -423,6 +423,36 @@ describe("WorldCells admission budget", () => {
   });
 
   it.each([
+    ...[Number.POSITIVE_INFINITY, 2].map((budgetMs) => ({
+      name: `same-cell alternating speculative lead with admission budget ${budgetMs}`,
+      sameCellAlternation: true,
+      capacity: 25,
+      prefetchSeconds: 1.5,
+      slack: false,
+      budgetMs,
+      startX: 537,
+      endX: 600,
+      endZ: -555.5,
+      hereX: 12,
+      hereZ: 3,
+      lost: "10:3",
+      ledEdge: "15:3",
+    })),
+    {
+      name: "same-cell speculative lead uses available slack",
+      sameCellAlternation: true,
+      capacity: 30,
+      prefetchSeconds: 1.5,
+      slack: true,
+      budgetMs: Number.POSITIVE_INFINITY,
+      startX: 537,
+      endX: 600,
+      endZ: -555.5,
+      hereX: 12,
+      hereZ: 3,
+      lost: "10:3",
+      ledEdge: "15:3",
+    },
     {
       name: "full-capacity ordinary one-cell shift",
       capacity: 25,
@@ -452,7 +482,7 @@ describe("WorldCells admission budget", () => {
       ledEdge: "15:3",
     },
     {
-      name: "pressure-only one-cell lead retires without moving actual cell",
+      name: "full actual ring refuses a speculative-only edge",
       capacity: 25,
       prefetchSeconds: 1.5,
       slack: false,
@@ -535,6 +565,7 @@ describe("WorldCells admission budget", () => {
       hereZ,
       lost,
       ledEdge,
+      sameCellAlternation,
     }) => {
       const placements = new Float32Array(18 * 18 * 8);
       const cells = Array.from({ length: 18 * 18 }, (_, index) => {
@@ -591,14 +622,52 @@ describe("WorldCells admission budget", () => {
         await step(world);
         expect(world.stats().residentCells).toBe(25);
         expect(world.stats().residentKeys).toContain(lost);
-        // All moves stay below the velocity reset. The 63 m move keeps the actual cell unchanged
-        // and leads only one cell: pressure, rather than the outer eviction ring, displaces its edge.
+        if (sameCellAlternation) {
+          if (releaseModel === undefined) throw new Error("Missing delayed model release");
+          releaseModel();
+          for (let frame = 0; frame < 80 && world.stats().loadedCells < 25; frame += 1) {
+            clock += 600;
+            await step(world);
+          }
+          expect(world.stats().loadedCells).toBe(25);
+          const originalKeys = world.stats().residentKeys;
+          const trace = [];
+          for (const positionX of slack ? [600] : [600, 537, 600, 537]) {
+            clock += 1660;
+            follow.position.x = positionX;
+            await step(world);
+            const stats = world.stats();
+            trace.push({
+              actualCell: Math.floor((positionX + 1024) / 128),
+              evictions: stats.evictions,
+              missingActualKeys: originalKeys.filter((key) => !stats.residentKeys.includes(key)),
+              residentCells: stats.residentCells,
+              predictedKeys: stats.residentKeys.filter((key) => !originalKeys.includes(key)),
+            });
+          }
+          expect(trace).toEqual(
+            Array.from({ length: slack ? 1 : 4 }, () => ({
+              actualCell: 12,
+              evictions: 0,
+              missingActualKeys: [],
+              residentCells: capacity,
+              predictedKeys: slack ? ["15:1", "15:2", "15:3", "15:4", "15:5"] : [],
+            })),
+          );
+          return;
+        }
+        // Moves stay below the velocity reset. Speculative extras cannot displace actual wanted
+        // residents; an actual cell move can reclaim the unwanted edge of a full ring.
         clock = 1660;
         follow.position.x = endX;
         follow.position.z = endZ;
         world.update();
-        expect(world.stats().residentKeys.includes(lost)).toBe(slack);
-        expect(world.stats().residentKeys).toContain(ledEdge);
+        const actualWanted = (key: string) => {
+          const [x, z] = key.split(":").map(Number);
+          return Math.max(Math.abs(x - hereX), Math.abs(z - hereZ)) <= 2;
+        };
+        expect(world.stats().residentKeys.includes(lost)).toBe(slack || actualWanted(lost));
+        expect(world.stats().residentKeys.includes(ledEdge)).toBe(slack || actualWanted(ledEdge));
         // Let the lead retire, then stop completely. No further camera movement can rescue a cell.
         for (let frame = 0; frame < 8; frame += 1) {
           clock += 600;
