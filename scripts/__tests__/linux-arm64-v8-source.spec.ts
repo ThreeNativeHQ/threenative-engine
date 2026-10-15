@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readlinkSync,
   renameSync,
@@ -10,9 +9,8 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   CHROMIUM_BUILD_LICENSE,
   LINUX_ARM64_V8_BUILD,
@@ -27,6 +25,7 @@ import {
   runLinuxArm64V8Command,
   verifyLinuxArm64V8Installation,
 } from "../../packages/runtime-native/scripts/build-linux-arm64-v8.mjs";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 import { promoteV8Payload } from "../../packages/runtime-native/scripts/build-linux-arm64-v8.mjs";
 
@@ -34,10 +33,6 @@ const chromiumLicense = Buffer.from(
   "Ly8gQ29weXJpZ2h0IDIwMTUgVGhlIENocm9taXVtIEF1dGhvcnMKLy8KLy8gUmVkaXN0cmlidXRpb24gYW5kIHVzZSBpbiBzb3VyY2UgYW5kIGJpbmFyeSBmb3Jtcywgd2l0aCBvciB3aXRob3V0Ci8vIG1vZGlmaWNhdGlvbiwgYXJlIHBlcm1pdHRlZCBwcm92aWRlZCB0aGF0IHRoZSBmb2xsb3dpbmcgY29uZGl0aW9ucyBhcmUKLy8gbWV0OgovLwovLyAgICAqIFJlZGlzdHJpYnV0aW9ucyBvZiBzb3VyY2UgY29kZSBtdXN0IHJldGFpbiB0aGUgYWJvdmUgY29weXJpZ2h0Ci8vIG5vdGljZSwgdGhpcyBsaXN0IG9mIGNvbmRpdGlvbnMgYW5kIHRoZSBmb2xsb3dpbmcgZGlzY2xhaW1lci4KLy8gICAgKiBSZWRpc3RyaWJ1dGlvbnMgaW4gYmluYXJ5IGZvcm0gbXVzdCByZXByb2R1Y2UgdGhlIGFib3ZlCi8vIGNvcHlyaWdodCBub3RpY2UsIHRoaXMgbGlzdCBvZiBjb25kaXRpb25zIGFuZCB0aGUgZm9sbG93aW5nIGRpc2NsYWltZXIKLy8gaW4gdGhlIGRvY3VtZW50YXRpb24gYW5kL29yIG90aGVyIG1hdGVyaWFscyBwcm92aWRlZCB3aXRoIHRoZQovLyBkaXN0cmlidXRpb24uCi8vICAgICogTmVpdGhlciB0aGUgbmFtZSBvZiBHb29nbGUgTExDIG5vciB0aGUgbmFtZXMgb2YgaXRzCi8vIGNvbnRyaWJ1dG9ycyBtYXkgYmUgdXNlZCB0byBlbmRvcnNlIG9yIHByb21vdGUgcHJvZHVjdHMgZGVyaXZlZCBmcm9tCi8vIHRoaXMgc29mdHdhcmUgd2l0aG91dCBzcGVjaWZpYyBwcmlvciB3cml0dGVuIHBlcm1pc3Npb24uCi8vCi8vIFRISVMgU09GVFdBUkUgSVMgUFJPVklERUQgQlkgVEhFIENPUFlSSUdIVCBIT0xERVJTIEFORCBDT05UUklCVVRPUlMKLy8gIkFTIElTIiBBTkQgQU5ZIEVYUFJFU1MgT1IgSU1QTElFRCBXQVJSQU5USUVTLCBJTkNMVURJTkcsIEJVVCBOT1QKLy8gTElNSVRFRCBUTywgVEhFIElNUExJRUQgV0FSUkFOVElFUyBPRiBNRVJDSEFOVEFCSUxJVFkgQU5EIEZJVE5FU1MgRk9SCi8vIEEgUEFSVElDVUxBUiBQVVJQT1NFIEFSRSBESVNDTEFJTUVELiBJTiBOTyBFVkVOVCBTSEFMTCBUSEUgQ09QWVJJR0hUCi8vIE9XTkVSIE9SIENPTlRSSUJVVE9SUyBCRSBMSUFCTEUgRk9SIEFOWSBESVJFQ1QsIElORElSRUNULCBJTkNJREVOVEFMLAovLyBTUEVDSUFMLCBFWEVNUExBUlksIE9SIENPTlNFUVVFTlRJQUwgREFNQUdFUyAoSU5DTFVESU5HLCBCVVQgTk9UCi8vIExJTUlURUQgVE8sIFBST0NVUkVNRU5UIE9GIFNVQlNUSVRVVEUgR09PRFMgT1IgU0VSVklDRVM7IExPU1MgT0YgVVNFLAovLyBEQVRBLCBPUiBQUk9GSVRTOyBPUiBCVVNJTkVTUyBJTlRFUlJVUFRJT04pIEhPV0VWRVIgQ0FVU0VEIEFORCBPTiBBTlkKLy8gVEhFT1JZIE9GIExJQUJJTElUWSwgV0hFVEhFUiBJTiBDT05UUkFDVCwgU1RSSUNUIExJQUJJTElUWSwgT1IgVE9SVAovLyAoSU5DTFVESU5HIE5FR0xJR0VOQ0UgT1IgT1RIRVJXSVNFKSBBUklTSU5HIElOIEFOWSBXQVkgT1VUIE9GIFRIRSBVU0UKLy8gT0YgVEhJUyBTT0ZUV0FSRSwgRVZFTiBJRiBBRFZJU0VEIE9GIFRIRSBQT1NTSUJJTElUWSBPRiBTVUNIIERBTUFHRS4K",
   "base64",
 );
-const roots: string[] = [];
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-});
 function archive(machine = 183, name = "object.o/", type = 1) {
   const elf = Buffer.alloc(64);
   Buffer.from([127, 69, 76, 70, 2, 1, 1]).copy(elf);
@@ -76,8 +71,8 @@ function toolchain() {
   };
 }
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "linux-arm64-v8-"));
-  roots.push(root);
+  const root = makeTempDirSync("linux-arm64-v8-");
+
   mkdirSync(join(root, "include"));
   mkdirSync(join(root, "licenses"));
   writeFileSync(join(root, "include/v8.h"), "// fixture");
@@ -205,8 +200,8 @@ describe("payload promotion and recovery", () => {
   });
   it("recovers a prior install after interrupted promotion", () => {
     const root = fixture();
-    const parent = mkdtempSync(join(tmpdir(), "v8-recovery-"));
-    roots.push(parent);
+    const parent = makeTempDirSync("v8-recovery-");
+
     const work = join(parent, ".v8-linux-arm64-source");
     mkdirSync(work);
     renameSync(root, join(work, "previous"));
@@ -215,8 +210,8 @@ describe("payload promotion and recovery", () => {
   });
   it("restores the previous payload if promotion fails", () => {
     const root = fixture();
-    const parent = mkdtempSync(join(tmpdir(), "v8-promotion-"));
-    roots.push(parent);
+    const parent = makeTempDirSync("v8-promotion-");
+
     const backup = join(parent, "previous");
     expect(() => promoteV8Payload(join(parent, "missing-stage"), root, backup)).toThrow();
     expect(verifyLinuxArm64V8Installation(root).objects).toBe(1);
@@ -306,8 +301,8 @@ describe("recipe and toolchain", () => {
     }
   });
   it("adapts only the private SDK and requires a native preflight executable to run", () => {
-    const root = mkdtempSync(join(tmpdir(), "v8-sdk-"));
-    roots.push(root);
+    const root = makeTempDirSync("v8-sdk-");
+
     const run = vi.fn((_program: string, args: string[]) => {
       if (args.length) {
         const elf = archive().subarray(68);
