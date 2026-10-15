@@ -328,6 +328,14 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         info.GetReturnValue().Set(info.This());
         return;
     }
+    if (name == "ElseIf") {
+        arity(2);
+        statement();
+        const auto condition = arg(0);
+        self->node = scoped("ElseIf", &receiver, {abi::TslArg::of(condition), abi::TslArg::of(capture(callback(info[1])))});
+        info.GetReturnValue().Set(info.This());
+        return;
+    }
     if (name == "Fn") {
         arity(1);
         // three's Fn(...).setLayout({ name, type, inputs }) names a generated function; the engine inlines, so it only chains.
@@ -395,12 +403,34 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
     if (name == "Loop") {
         arity(2);
         statement();
-        const abi::TslArg n = abi::TslArg::of(static_cast<double>(count(info[0])));
+        // Loop(count, ({ i }) => ...) or three's Loop({ type, start, end, name }, ({ i }) => ...).
+        std::string indexType = "int", indexName = "i";
+        abi::TslArg n, start = abi::TslArg::of(0.0);
+        if (info[0]->IsObject() && !wrapper(info[0])) {
+            const auto params = info[0].As<v8::Object>();
+            const auto field = [&](const char* key) {
+                v8::Local<v8::Value> value;
+                if (!params->Get(ctx, str(isolate_, key)).ToLocal(&value)) throw JsFailure{};
+                return value;
+            };
+            for (const char* unsupported : {"condition", "update"})
+                if (!field(unsupported)->IsUndefined())
+                    throw std::runtime_error(std::string("Loop ") + unsupported + " is not supported; give the loop an end");
+            if (!field("type")->IsUndefined()) indexType = text(isolate_, field("type"));
+            if (!field("name")->IsUndefined()) indexName = text(isolate_, field("name"));
+            if (!field("start")->IsUndefined()) start = abi::TslArg::of(static_cast<double>(count(field("start"))));
+            n = field("end")->IsNumber() ? abi::TslArg::of(static_cast<double>(count(field("end"))))
+                                         : argument(name, 0, 1, field("end"));
+            if (n.kind != abi::TslArg::Kind::Number && n.kind != abi::TslArg::Kind::Node)
+                throw std::runtime_error("Loop needs an end");
+        } else {
+            n = abi::TslArg::of(static_cast<double>(count(info[0])));
+        }
         const auto body = callback(info[1]);
-        const auto index = scoped("Loop:index", nullptr, {});
+        const auto index = scoped("Loop:index", nullptr, {abi::TslArg::of(indexType)});
         const auto inputs = v8::Object::New(isolate_);
-        inputs->Set(ctx, str(isolate_, "i"), wrap(index)).Check();
-        return result(scoped("Loop", nullptr, {n, abi::TslArg::of(index), abi::TslArg::of(capture(body, inputs))}));
+        inputs->Set(ctx, str(isolate_, indexName), wrap(index)).Check();
+        return result(scoped("Loop", nullptr, {n, abi::TslArg::of(index), abi::TslArg::of(capture(body, inputs)), start}));
     }
     // TSL storage(attribute, type, count): a storage buffer over the engine BufferAttribute's data.
     if (name == "storage") {
@@ -479,6 +509,17 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "lessThan",
                              "greaterThan",
                              "equal",
+                             "lessThanEqual",
+                             "greaterThanEqual",
+                             "and",
+                             "or",
+                             "not",
+                             "all",
+                             "any",
+                             "toFloat",
+                             "toInt",
+                             "toUint",
+                             "ElseIf",
                              "setName",
                              "toVar",
                              "assign",
@@ -559,7 +600,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     for (const char* name : {"float",      "int",   "uint",    "vec2",      "vec3",   "vec4",     "uniform",
                              "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",     "instancedArray", "storage",
                              "add",        "sub",   "mul",     "div",       "negate", "lessThan", "greaterThan",
-                             "equal",      "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
+                             "equal",      "lessThanEqual", "greaterThanEqual", "and", "or", "not", "all", "any", "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
                              "exp",        "exp2",  "log2",    "normalize", "length", "atan",     "min",      "max",
                              "mod", "fwidth", "saturation", "mat2", "hash",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",

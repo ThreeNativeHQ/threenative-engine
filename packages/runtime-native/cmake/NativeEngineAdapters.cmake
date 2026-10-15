@@ -316,6 +316,11 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-compute.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_compute PROPERTIES LABELS "native-engine" TIMEOUT 120)
+    # PRD-620 phase 3: the operators SoftBody3D needs (ElseIf, object-form Loop, comparisons, bool logic, conversions).
+    add_test(NAME native_engine_player_compute_ops
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-compute-ops.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_compute_ops PROPERTIES LABELS "native-engine" TIMEOUT 120)
     # PRD-548: BufferGeometryUtils over engine geometry on the player, three r185 in Node as the oracle.
     add_test(NAME native_engine_player_geometry_utils
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-geometry-utils.mjs

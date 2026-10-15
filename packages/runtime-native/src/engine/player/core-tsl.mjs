@@ -23,7 +23,7 @@ export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
 export const {
   atomicAdd, atomicStore, atomicLoad, lightShadowMatrix, attribute, uv, texture, renderOutput, Fn, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
-  add, sub, mul, div, negate, lessThan, greaterThan, equal, abs, sin, cos,
+  add, sub, mul, div, negate, lessThan, greaterThan, equal, lessThanEqual, greaterThanEqual, and, or, not, all, any, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,
   normalViewGeometry, instanceIndex, cameraViewMatrix, ivec2, nodeObject, reflect, textureLoad,

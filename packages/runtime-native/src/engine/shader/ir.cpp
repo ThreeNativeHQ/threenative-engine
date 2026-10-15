@@ -337,6 +337,19 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
         known = true;
         if (args.size() != 2 || !floating(0) || !type(0).isVector() || type(0) != type(1)) error = "takes two equal float vectors";
         else result = type(0);
+    } else if (function == "and" || function == "or") {
+        known = true;
+        // WGSL's && and || take scalar bools; a vector of bools is reduced with all or any first.
+        if (args.size() != 2 || type(0) != Type::boolean() || type(1) != Type::boolean()) error = "takes two bool scalars";
+        else result = Type::boolean();
+    } else if (function == "not") {
+        known = true;
+        if (args.size() != 1 || type(0) != Type::boolean()) error = "takes one bool scalar";
+        else result = Type::boolean();
+    } else if (function == "all" || function == "any") {
+        known = true;
+        if (args.size() != 1 || type(0).scalar != Type::Scalar::Bool) error = "takes a bool or a vector of bools";
+        else result = Type::boolean();
     } else if (function == "greaterEqual" || function == "lessEqual") {
         known = true;
         if (args.size() != 2 || !type(0).numeric() || type(0).isMatrix() || type(0) != type(1))

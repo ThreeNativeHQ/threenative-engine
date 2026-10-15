@@ -255,10 +255,24 @@ ExprId Lowerer::emit(Node node) {
             ExprId a = expression(d.args[0]);
             ExprId b = expression(d.args[1]);
             if (a == kInvalid || b == kInvalid) return kInvalid;
+            {
+                // r185 types a JS number from the other operand: `uint.mul(1000)` is a uint. A scalar float constant
+                // with a whole value beside an integer scalar takes that integer type.
+                const auto literal = [&](ExprId id, Type other) {
+                    const auto& e = program_.expr(id);
+                    const bool whole = e.op == Op::Constant && e.type == Type::f32() &&
+                                       std::bit_cast<float>(static_cast<uint32_t>(e.immediate)) == std::floor(std::bit_cast<float>(static_cast<uint32_t>(e.immediate)));
+                    return whole && other.isScalar() && (other.scalar == Type::Scalar::U32 || other.scalar == Type::Scalar::I32);
+                };
+                const auto at = program_.expr(a).type, bt = program_.expr(b).type;
+                if (d.args[1]->kind == Kind::Constant && literal(b, at)) b = program_.construct(at, {b});
+                else if (d.args[0]->kind == Kind::Constant && literal(a, bt)) a = program_.construct(bt, {a});
+            }
             if (d.bits == 1) {
                 auto at = program_.expr(a).type, bt = program_.expr(b).type;
                 if (at.numeric() && bt.numeric() && !at.isMatrix() && !bt.isMatrix() && at.scalar != bt.scalar) {
-                    const bool compare = d.binary == BinOp::Less || d.binary == BinOp::Greater || d.binary == BinOp::Equal;
+                    const bool compare = d.binary == BinOp::Less || d.binary == BinOp::Greater || d.binary == BinOp::Equal ||
+                                         d.binary == BinOp::LessEqual || d.binary == BinOp::GreaterEqual;
                     const auto scalar = compare && at.isScalar() && bt.isScalar() ? Type::Scalar::F32 : at.rows >= bt.rows ? at.scalar : bt.scalar;
                     if (at.scalar != scalar) a = program_.construct(Type::vec(at.rows, scalar), {a});
                     if (bt.scalar != scalar) b = program_.construct(Type::vec(bt.rows, scalar), {b});
@@ -272,6 +286,8 @@ ExprId Lowerer::emit(Node node) {
                 case BinOp::Less: return program_.less(a, b);
                 case BinOp::Greater: return program_.less(b, a);
                 case BinOp::Equal: return program_.equal(a, b);
+                case BinOp::LessEqual: return program_.call("lessEqual", {a, b});
+                case BinOp::GreaterEqual: return program_.call("greaterEqual", {a, b});
                 case BinOp::ShiftRight: return program_.shiftRight(a, b);
                 case BinOp::BitXor: return program_.bitXor(a, b);
             }
@@ -464,7 +480,9 @@ void Lowerer::statement(Node node) {
             const auto previousAggregates = aggregates_;
             const Node indexNode = s.args[1];
             program_.Loop(count, [this, &s, &indexNode](ExprId index) {
-                loopIndex_[indexNode.get()] = s.args.size() > 2 ? program_.add(index, expression(s.args[2])) : index;
+                ExprId value = s.args.size() > 2 ? program_.add(index, expression(s.args[2])) : index;
+                if (indexNode->type != Type::i32()) value = convert(value, indexNode->type);  // Loop({ type: "uint" })
+                loopIndex_[indexNode.get()] = value;
                 statements(s.body);
             });
             aggregates_ = previousAggregates;
@@ -517,6 +535,12 @@ Node bitXor(Node a, Node b) { return makeBinary(BinOp::BitXor, std::move(a), std
 Node lessThan(Node a, Node b) { return makeBinary(BinOp::Less, std::move(a), std::move(b)); }
 Node greaterThan(Node a, Node b) { return makeBinary(BinOp::Greater, std::move(a), std::move(b)); }
 Node equal(Node a, Node b) { return makeBinary(BinOp::Equal, std::move(a), std::move(b)); }
+Node lessThanEqual(Node a, Node b) { return makeBinary(BinOp::LessEqual, std::move(a), std::move(b)); }
+Node greaterThanEqual(Node a, Node b) { return makeBinary(BinOp::GreaterEqual, std::move(a), std::move(b)); }
+
+Node logicalAnd(Node a, Node b) { return makeMath("and", {std::move(a), std::move(b)}); }
+Node logicalOr(Node a, Node b) { return makeMath("or", {std::move(a), std::move(b)}); }
+Node logicalNot(Node a) { return makeMath("not", {std::move(a)}); }
 
 Node negate(Node a) {
     auto data = std::make_shared<NodeData>();
@@ -653,6 +677,8 @@ TN_GRAPH_UNARY(dFdy)
 TN_GRAPH_UNARY(sign)
 TN_GRAPH_UNARY(atan)
 TN_GRAPH_UNARY(fwidth)
+TN_GRAPH_UNARY(all)
+TN_GRAPH_UNARY(any)
 TN_GRAPH_BINARY(min)
 TN_GRAPH_BINARY(max)
 TN_GRAPH_BINARY(pow)

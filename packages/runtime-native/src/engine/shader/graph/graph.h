@@ -43,7 +43,7 @@ enum class Kind : uint8_t {
 };
 
 enum class UnOp : uint8_t { Negate };
-enum class BinOp : uint8_t { Add, Sub, Mul, Div, Less, Greater, Equal, ShiftRight, BitXor };
+enum class BinOp : uint8_t { Add, Sub, Mul, Div, Less, Greater, Equal, ShiftRight, BitXor, LessEqual, GreaterEqual };
 
 struct RttState {
     std::shared_ptr<tn::engine::RenderTarget> target;
@@ -135,6 +135,15 @@ Node negate(Node a);
 Node lessThan(Node a, Node b);
 Node greaterThan(Node a, Node b);
 Node equal(Node a, Node b);
+/** TSL's lessThanEqual and greaterThanEqual: a bool per lane. */
+Node lessThanEqual(Node a, Node b);
+Node greaterThanEqual(Node a, Node b);
+/** TSL's `and`, `or` and `not` on bool operands, and `all` / `any` over a bool vector's lanes. */
+Node logicalAnd(Node a, Node b);
+Node logicalOr(Node a, Node b);
+Node logicalNot(Node a);
+Node all(Node a);
+Node any(Node a);
 Node select(Node condition, Node whenTrue, Node whenFalse);
 Node swizzle(Node value, std::string_view lanes);
 Node texture(std::string_view map, Node uvs);

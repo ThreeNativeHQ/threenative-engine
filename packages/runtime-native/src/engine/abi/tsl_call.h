@@ -76,8 +76,9 @@ void tslSetUniform(const engine::shader::graph::Node& uniform, const double* val
  *   assign (receiver, value)       assigns a variable or storage element; returns the receiver
  *   If (condition, body)           appends an If; `body` is a closed Body
  *   Else (receiver If, body)       gives the last If of this body its else branch; returns the new If
- *   Loop:index ()                  the index node the loop callback gets as `{ i }`
- *   Loop (count, index, body)      appends an i32 loop from 0 over that index
+ *   ElseIf (receiver If, cond, body) gives it an else branch holding one more If; returns that If, the next tip
+ *   Loop:index ([type])            the index node the loop callback gets as `{ i }`: "int" (default) or "uint"
+ *   Loop (end, index, body [, start]) appends a loop over that index from `start` (default 0) to `end`
  */
 class TslScopes {
 public:
@@ -95,8 +96,15 @@ private:
     std::vector<Body>& open();
     std::vector<Body> open_;
     uint64_t nextBody_ = 0;
-    // Where each If sits, so Else can find it still last in its own body.
-    std::map<const engine::shader::graph::NodeData*, std::pair<uint64_t, size_t>> ifs_;
+    // Where each If sits, so Else and ElseIf can find it still last in its own body. `root` is the If in
+    // the body's statements; `depth` how many else-branches down the chain its tip is.
+    struct IfSlot {
+        uint64_t body;
+        size_t index;
+        engine::shader::graph::Node root;
+        size_t depth;
+    };
+    std::map<const engine::shader::graph::NodeData*, IfSlot> ifs_;
 };
 
 }  // namespace tn::abi
