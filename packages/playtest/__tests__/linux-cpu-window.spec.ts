@@ -170,6 +170,7 @@ const path = require('node:path');
 const args = process.argv.slice(2);
 const record = args[0] === 'record';
 const prefix = record ? 'record-' : '';
+if (!record) fs.writeFileSync(path.join(__dirname, 'stat-args'), JSON.stringify(args));
 const fifo = args.find(arg => arg.startsWith('--control=fifo:')).slice('--control=fifo:'.length).split(',');
 fs.writeFileSync(path.join(__dirname, prefix + 'paths'), JSON.stringify(fifo));
 if (record) {
@@ -278,23 +279,27 @@ function rendererSessions(mode: string) {
 }
 
 describe("fake proc/perf acquisition (no benchmark claims)", () => {
-  it("records only the owned thread inside the ACKed pose and keeps separate stat FIFOs", async () => {
+  it.each([false, true])("records the owned scope inside the ACKed pose with separate stat FIFOs (browser=%s)", async (renderer) => {
     const f = await fixture();
     const directory = join(f.root, "profiles");
     vi.stubEnv("TN_PLAYTEST_CPU_PROFILE_DIR", directory);
     try {
-      const result = await measureCpuWindow("pose/one", f.owner, f.bridge, async () => {
+      const result = await measureCpuWindow("pose/one", async () => ({ ...await f.owner(), renderer }), f.bridge, async () => {
         expect(await readFile(join(f.root, "record-commands"), "utf8")).toBe("enable\n");
         await f.advance();
       }, f.options);
       const artifact = join(directory, "pose%2Fone.perf.data");
-      expect(result).toMatchObject({ profile: { kind: "perf-record", path: artifact } });
+      expect(result).toMatchObject({ profile: { kind: "perf-record", path: artifact, recorderScope: renderer ? "main-thread" : "native-process" } });
       expect(await readFile(artifact, "utf8")).toBe("fake perf data");
       const args: string[] = JSON.parse(await readFile(join(f.root, "record-args"), "utf8"));
       expect(args).toEqual([
-        "record", "--no-inherit", "-t", "101", "-e", "cycles:u", "-F", "250", "-m", "64",
+        "record", "--no-inherit", renderer ? "-t" : "-p", "101", "-e", "cycles:u", "-F", "250", "-m", "64",
         "--call-graph", "dwarf,32768", "-D", "-1", "-o", artifact, expect.stringMatching(/^--control=fifo:/),
       ]);
+      const statArgs: string[] = JSON.parse(await readFile(join(f.root, "stat-args"), "utf8"));
+      expect(statArgs).toContain("-t");
+      expect(statArgs[statArgs.indexOf("-t") + 1]).toBe("101");
+      expect(statArgs).not.toContain("-p");
       const statPaths: string[] = JSON.parse(await readFile(join(f.root, "paths"), "utf8"));
       const recordPaths: string[] = JSON.parse(await readFile(join(f.root, "record-paths"), "utf8"));
       expect(new Set([...statPaths, ...recordPaths]).size).toBe(4);

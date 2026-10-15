@@ -19,7 +19,7 @@ export interface ICpuWindow {
   label: string;
   frames: number;
   /** Stack sampling perturbs these counters: diagnostic runs never qualify as benchmarks. */
-  profile?: { kind: "perf-record"; path: string };
+  profile?: { kind: "perf-record"; path: string; recorderScope: "native-process" | "main-thread" };
   startTick: number;
   endTick: number;
   startUs: number;
@@ -460,14 +460,14 @@ export async function measureCpuWindow(
       const path = join(profileDirectory, `${encodeURIComponent(label)}.perf.data`);
       // Reserve our output exclusively: perf must never replace another run's profile.
       await (await open(path, "wx")).close();
-      profile = { kind: "perf-record", path };
+      profile = { kind: "perf-record", path, recorderScope: owner.renderer ? "main-thread" : "native-process" };
     }
     const countersProcess = await startPerf("", [
       "stat", "--no-inherit", "--no-scale", "-x", ";", "-o", outputPath,
       "-t", String(owner.tid), "-e", "instructions:u,cycles:u", "-D", "-1",
     ]);
     const recorder = profile === undefined ? undefined : await startPerf("record-", [
-      "record", "--no-inherit", "-t", String(owner.tid), "-e", "cycles:u", "-F", "250", "-m", "64",
+      "record", "--no-inherit", owner.renderer ? "-t" : "-p", String(owner.renderer ? owner.tid : owner.pid), "-e", "cycles:u", "-F", "250", "-m", "64",
       "--call-graph", "dwarf,32768", "-D", "-1", "-o", profile.path,
     ]);
     const request = {
