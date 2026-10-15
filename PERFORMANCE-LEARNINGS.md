@@ -28,6 +28,7 @@ PRD's "Tried and rejected" or "Decisions" section, for example
   disagree, the change moved memory traffic, not computation.
 - **Serialize timed runs with one lock.** An "idle for 40 s" `pgrep` check starved queued runs for 50 minutes,
   because `pgrep -f` matches shells whose command text only contains the script name.
+- **A capture timeout is not a game result.** The shared capture queue races for admission and is not FIFO; its default 120 s wait can expire behind a healthy four-minute playtest. Doctor passed after `visible-resume-base-1` exited 75 with zero windows. Existing `CAPTURE_LOCK_TIMEOUT_MS=900000` permits a bounded 15-minute wait; preserve failed attempts and do not retry again on the same queue-timeout cause.
 - **Ratio levers live in the engine.** A fix in code that both arms run (for example `@threenative/core`) lowers the
   absolute cost but does not move the native or web Wasm ratio against three.js.
 
