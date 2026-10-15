@@ -590,6 +590,9 @@ void catalogCoverage() {
             const std::string head = path.substr(0, dot);
             if (binding.members.count(head) == 0 && binding.getters.count(head) == 0) expected.insert(head);
         }
+        // Object3D.raycast is the adapter's own JavaScript over Raycaster.intersectObject (it pushes onto the
+        // caller's array), so no registry method stands behind it.
+        if (binding.methods.count("worldToLocal")) expected.insert("raycast");
         v8::Local<v8::Value> ctor;
         v8::Local<v8::Value> prototype;
         if (!global->Get(ctx, key(name)).ToLocal(&ctor) || !ctor->IsObject() ||
