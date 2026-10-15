@@ -43,7 +43,9 @@ npx @threenative/playtest playtests/device-smoke.playtest.json \
 
 The native host receives the mailbox root through `TN_PLAYTEST_MAILBOX_ROOT` and injects the
 shared `TN_PLAYTEST_MAILBOX` global before evaluating the game entry, so the game source is
-unchanged. On Linux without a display, prefix the command with `sh scripts/xvfb.sh`.
+unchanged. `--live-clock` on the desktop target also passes `TN_PLAYTEST_CLOCK=wall-clock`, which
+the host reads before that same entry. On Linux without a display, prefix the command with
+`sh scripts/xvfb.sh`.
 
 An iOS simulator run installs a built app, launches it with `simctl`, and
 uses the app data-container mailbox:

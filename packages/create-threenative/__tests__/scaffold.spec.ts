@@ -16,6 +16,7 @@ import {
 import path from "node:path";
 import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
+import { read as readKTX2 } from "ktx-parse";
 import { describe, expect, it } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -189,6 +190,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
   // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
@@ -247,21 +249,24 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
   // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
   // createProject on the merged tree.
-  // PRD-566 merge: measured all thirteen trees; only the shared morph pipeline patch changes bytes.
-  "action-rpg": "8984c4f355d35eb5c1d0958746172f457c9c2ecad615f3bfcd38642533ff8c37",
-  minimal: "8d834289ea3940529d925f53a4946cc718771dc4fb8577c2199ba6a29faf51d4",
-  platformer: "f5d4a0362bd3a6f7bb3f8530178e22d5cbe0bd8625d0c83121b53f8f5aa3a2ec",
-  puzzle: "cdacbec8e3543a394263bd73c42d7482b61c433df6cb60ce42bc8306f91f71e9",
-  racing: "cec5c42b232f5f858fdefae9275b324378c2914d5113185e3ec3a748162caf23",
-  rain: "05027f3370b26deb260e158240a09904ea54e593a8184767eead660810bf7551",
-  rts: "6f331bb87e10340cd33263edbff4f7ce1fc40d24b601ea786a06ea41e1f065a5",
-  runner: "4f7a6b3ace688771a7c96e67062a8b696d0b50c09376183f2f02eead97361c12",
+  // PRD-566/569/609 merge: measured all thirteen trees; action-rpg carries emitParticle bursts and onCull instructions.
+  // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
+  // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
+  // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
+  "action-rpg": "2ad57690b87fe80faa26931ea11d6ea210ac787bb58c7bb0f83e7b653426eeb7",
+  minimal: "6e9d255a6033e239e73dfabec172dfebb4a88849c01ca461d476ab8b17b91cbd",
+  platformer: "2ccf93236a0d6c1b8aa00bd3f86585427149f3788640dccb491f8d451c2c6894",
+  puzzle: "a25a9129f070b8a4cd25c1d3a174950b0367eba85d5a414b62325a571e2c40f3",
+  racing: "0fb3b6a6eacfc54acd74ae086cb5502789fdfe83e0466306202053843314f663",
+  rain: "9523312a5c0573b6ae886bd63ade36922a86f7a9b8e3730f7ead743609357bd7",
+  rts: "8a8d80b543d77717243274896b5b7a6a723b92e3a3f252fd470b2fb6dcfc12c8",
+  runner: "b14123d911dc3eb7d73e1ab3f91269b480a028938efff4a2bea4f56f2e570906",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "9c9edb14b880fc446e9b921b60dd99053f45032f053c4fcb5cc820a323c43904",
-  shooter: "699758de47b7642a38b998dad0437b17c6a68df046d8807ddbaf35a61d9f1423",
-  snow: "837eee8058f3bf043eabe5161207e62fbc5accd83cd1353902b79bb55f2dd1cf",
-  starter: "21b5ccb273b27ff8b711c7b2c5f42345adb7ab941fa19e605b64b01626f5aa68",
-  "tower-defense": "95e514738bd04ba2a561f3500d877af1d0c540a9e40fb00829770455006fd14c",
+  sailing: "73da167ba1fdc6360c58e61b51a2f3dba047fbe1c4e88648e9bce4abb64325da",
+  shooter: "ca09b0b25f3ba689af53772d82be0978d82cdaff8f997b04b160874428ec3e54",
+  snow: "482c1c7f1cd2f233d43cc3fd378c983b4ab8f13dca4bd6fca008e5b120cb0705",
+  starter: "74df32f5ea8f1aeeea4d2eaf9c423f2fca93fbb1fa392de7acdb6b8bd994db8c",
+  "tower-defense": "7d816e530aee8842027a1666782d96c51b2cbfde55c4c23a7cdd1b0fd6a267ac",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -837,16 +842,8 @@ describe("create-threenative", () => {
   );
 
   it("keeps the starter's shipped assets mobile-shippable", async () => {
-    // Mobile has no WebAssembly, so neither Basis-decoded textures nor Meshopt-decoded geometry
-    // can ship there — the red hit on 2026-08-27: `build:android` on a machine with the Basis
-    // encoder refused TN_NATIVE_KTX2_UNSUPPORTED on a starter scaffold that had built clean the
-    // week before, purely because the encoder got installed in between.
-    //
-    // The template used to pin `models`/`textures` to `"none"` to prevent it, which held for
-    // android and followed the same game onto web: one shipped 2,003 MB of manifest output with
-    // no compressed texture in it. The build names its `--target` and the compile step now drops
-    // the passes that target cannot decode, so this asserts what a mobile bake *produces* rather
-    // than what the config file says — and the web bake of the same config stays compressed.
+    // Decoder-free mobile cooking may emit raw ASTC, while Basis and Meshopt still need decoders.
+    // Check the produced KTX2 headers rather than treating every KTX2 as Basis.
     const root = await makeTempDir("threenative-scaffold-mobile-");
     try {
       await mkdir(path.join(root, "assets"), { recursive: true });
@@ -870,14 +867,38 @@ describe("create-threenative", () => {
         }),
       );
 
-      await compileAssets({ cwd: root, platform: "android" });
+      await compileAssets({
+        cwd: root,
+        platform: "android",
+        runtimeDecoders: { ktx2: false, meshopt: false },
+      });
       const android = JSON.parse(
         await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
-      ) as { entries: Record<string, { extensions?: string[]; output: string }> };
+      ) as { entries: Record<string, { extensions?: string[]; output: string; format?: string }> };
       const mobileOutputs = Object.values(android.entries);
       expect(mobileOutputs.length).toBeGreaterThan(0);
+      expect(
+        mobileOutputs.some((entry) => /\.ktx2$/u.test(entry.output) && entry.format === "astc4x4"),
+      ).toBe(true);
       for (const entry of mobileOutputs) {
-        expect(entry.output).not.toMatch(/\.ktx2$/u);
+        if (/\.ktx2$/u.test(entry.output)) {
+          const raw = readKTX2(await readFile(path.join(root, "public", entry.output)));
+          expect([157, 158]).toContain(raw.vkFormat);
+          expect(raw.supercompressionScheme).toBe(0);
+          expect(raw.globalData).toBeNull();
+          const levels = Math.floor(Math.log2(Math.max(raw.pixelWidth, raw.pixelHeight))) + 1;
+          expect(raw.levelCount).toBe(levels);
+          expect(raw.levels).toHaveLength(levels);
+          for (const [mip, level] of raw.levels.entries()) {
+            const bytes =
+              Math.ceil(Math.max(1, raw.pixelWidth >> mip) / 4) *
+              Math.ceil(Math.max(1, raw.pixelHeight >> mip) / 4) *
+              16;
+            expect(level.levelData.byteLength).toBe(bytes);
+            expect(level.uncompressedByteLength).toBe(bytes);
+          }
+          expect(entry.format).toBe("astc4x4");
+        }
         expect(entry.extensions ?? []).not.toContain("EXT_meshopt_compression");
       }
 

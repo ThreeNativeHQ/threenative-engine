@@ -102,6 +102,10 @@ describe("core constraints", () => {
           // ShadowNode; it creates no material, light, colour or filter of its own.
           file !== "render/virtual-shadow.ts" &&
           file !== "render/virtual-shadow-pages.ts" &&
+          // The partial redraw resets a shadow rectangle with one internal quad that writes the stock
+          // clear's far depth and transparent black into the shadow map. That material never reaches
+          // the screen, copies nothing from the game and chooses no look.
+          file !== "render/virtual-shadow-partial.ts" &&
           // Alpha antialiasing decides how a cutout edge is RESOLVED, never how it looks: it
           // flips one coverage flag on the game's own material so an alpha-tested silhouette can
           // land on the samples `antialias` already paid for. It constructs no material, reads no

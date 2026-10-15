@@ -83,6 +83,8 @@ Risks:
 - 2026-10-02 (João): stop tuning and "stabilize and merge what you can". This PRD merges with its shipped cuts: idle frame p50 2.6–4.8 ms vs develop 5–7, walking render p50 7.0–8.4 vs 8.3–10.4, and AC-3 holding. Walking p95 stays at 19–26 ms (develop 18–25) and moves to PRD-478 (frame architecture: per-draw refresh only on changed inputs, streaming in a worker, GPU-driven shadow casters). The boxes stay open here rather than being ticked on unmet targets.
 - 2026-10-02: the bridge-pose van shading is a capture race, not a shipped regression. The van band reads 30.89 / 31.05 / 31.47 across repeated captures of the same build, and develop `a602467db` itself read 31.0472 in `artifacts/prd-475/bisect-van2`. Our builds land on 31.47 more often (cut12i 3/3, cut12k 2/3, cut12m 1/3); the cause is open in PRD-478 alongside the shadow-level cadence.
 
+- 2026-10-14 (João, "1"): PRD-473 closes at 5/5 with a re-scope. Its AC-2 timing half, AC-3 visual match and wider AC-4 coverage move here as Phase 4. Impostors stay opt-in; the highway_air finding is in PRD-473's AC-3 evidence log.
+
 ## Execution Phases
 
 #### Phase 1: Sync Machinefall with develop and record the baseline
@@ -146,3 +148,10 @@ Shared shadow colour (2026-10-02): `1299c6a91` shares three's constant shadow co
 - AC-1 to AC-4 above close this phase.
 
 **Verification:** AC-1 to AC-4 evidence, then `pnpm typecheck && pnpm lint && pnpm test`, and the Machinefall pin moved to the final tarball.
+
+#### Phase 4: Carried over from PRD-473 (João, 2026-10-14)
+**Files:** `packages/core/src/world-cells.ts`, `packages/core/src/render/world-impostor-surface.ts`, `packages/assets/src/` (HLOD cook).
+
+- [ ] Bundle replay timing: per-frame JS in the render phase for the world ≤ 1.5 ms at 400 world draws, from paired `TN_FRAME_SPANS` runs (bundles on and off) that survive the harness. proof: the paired reports. PRD-473's 2026-10-13 pairs died with `Bridge operation 'advance' exceeded 22500ms`. Coordinate with the PRD-478 p95 boxes.
+- [ ] Impostor look: with `?tnImpostors=1`, `highway_air` is NEUTRAL or better against impostors off (4 settled runs per arm, drain `stats.impostor.pending` first, fresh judge). Open finding: the pine and scots-pine impostors read lighter than the real trees from the air camera (lime crowns, yellower canopy), and keeping the broadleaf asset on real geometry does not fix it. The fix is impostor shading or the switch distance. proof: the judged sheets. Impostors stay opt-in until this passes.
+- [ ] HLOD coverage: decide the proxy (4 MiB) and source (64 MiB) admission caps and whether the cook declines proxies with no triangle reduction (cell 14_3: `srcTris=660 proxyTris=660`), then judge active proxies on more than cell 9_2. proof: `hlod.spec.ts` plus a judged before/after on the new cells.

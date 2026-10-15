@@ -53,6 +53,8 @@ const TRIANGLES = 4;
 const MAX_EXPANDED_BYTES = 64 * 1024 * 1024;
 const MAX_PROXY_BYTES = 4 * 1024 * 1024;
 const MAX_PROXY_NODES = 4096;
+/** Declines that mean the cell was too big to bake with its scatter, not that its scatter is ineligible. */
+const CAPACITY_DECLINES = new Set(["source-budget", "placement-budget", "proxy-budget"]);
 
 /** A parsed v1 world package, as this cook understands it; anything else is left untouched. */
 export interface IWorldPackageSource {
@@ -596,94 +598,32 @@ export async function cookWorldProxies(
   const declined: IWorldProxyDecline[] = [];
   for (const cell of world.cells) {
     if (cell.chunks.length === 0 && cell.runs.every((run) => run.count === 0)) continue;
-    const sources: { buffer: Buffer; records?: Float32Array }[] = [];
-    if (cell.runs.reduce((bytes, run) => bytes + run.count * 32, 0) > MAX_EXPANDED_BYTES) {
-      declined.push({ reason: "placement-budget", x: cell.x, z: cell.z });
-      continue;
-    }
-    let stagedSourceBytes = 0;
-    let reason: string | undefined;
-    for (const chunk of cell.chunks) {
-      const logical = resolveChunkLogical(worldLogical, chunk);
-      if (logical === undefined) {
-        reason = "outside-chunk";
-        break;
+    const hasScatter = cell.runs.some((run) => run.count > 0);
+    let failure: IWorldProxyDecline | undefined;
+    // A cell whose scatter does not fit the bake budgets still gets its hand-placed chunks: a
+    // chunks-only proxy leaves the scatter to the scene that already draws it. Scatter the bake
+    // cannot represent (a distance filter, an unsafe material) still declines the whole cell.
+    for (const withScatter of hasScatter && cell.chunks.length > 0 ? [true, false] : [true]) {
+      if (!withScatter && !(failure !== undefined && CAPACITY_DECLINES.has(failure.reason))) break;
+      failure = undefined;
+      const runs = withScatter ? cell.runs : [];
+      const sources: { buffer: Buffer; records?: Float32Array }[] = [];
+      if (runs.reduce((bytes, run) => bytes + run.count * 32, 0) > MAX_EXPANDED_BYTES) {
+        failure = { reason: "placement-budget", x: cell.x, z: cell.z };
+        continue;
       }
-      if (included !== undefined && !included(logical)) {
-        reason = "excluded-chunk";
-        break;
-      }
-      try {
-        const buffer = await read(logical);
-        stagedSourceBytes += buffer.length;
-        if (stagedSourceBytes > MAX_EXPANDED_BYTES) {
-          reason = "source-budget";
+      let stagedSourceBytes = 0;
+      let reason: string | undefined;
+      for (const chunk of cell.chunks) {
+        const logical = resolveChunkLogical(worldLogical, chunk);
+        if (logical === undefined) {
+          reason = "outside-chunk";
           break;
         }
-        sources.push({ buffer });
-      } catch {
-        reason = "missing-chunk";
-        break;
-      }
-    }
-    if (reason === undefined && cell.runs.some((run) => run.count > 0)) {
-      const placementsLogical =
-        typeof world.json.placements === "string"
-          ? resolveChunkLogical(worldLogical, world.json.placements)
-          : undefined;
-      let placements: Buffer | undefined;
-      if (
-        placementsLogical === undefined ||
-        (included !== undefined && !included(placementsLogical))
-      )
-        reason = "excluded-placements";
-      else
-        try {
-          placements = await read(placementsLogical);
-        } catch {
-          reason = "missing-placements";
-        }
-      for (const run of cell.runs) {
-        if (reason !== undefined) break;
-        if (run.count === 0) continue;
-        if (run.count > MAX_EXPANDED_BYTES / 64) {
-          reason = "placement-budget";
+        if (included !== undefined && !included(logical)) {
+          reason = "excluded-chunk";
           break;
         }
-        const definition = isRecord(world.json.assets) ? world.json.assets[run.asset] : undefined;
-        if (!isRecord(definition) || typeof definition.glb !== "string") {
-          reason = "unknown-scatter-asset";
-          break;
-        }
-        if (definition.maxDistance !== undefined) {
-          reason = "scatter-distance-filter";
-          break;
-        }
-        const logical = resolveChunkLogical(worldLogical, definition.glb);
-        if (logical === undefined || (included !== undefined && !included(logical))) {
-          reason = "excluded-scatter";
-          break;
-        }
-        if (placements === undefined || (run.offset + run.count) * 32 > placements.length) {
-          reason = "malformed-placements";
-          break;
-        }
-        const records = new Float32Array(run.count * 8);
-        for (let at = run.offset * 32; at < (run.offset + run.count) * 32; at += 32) {
-          const record = Array.from({ length: 8 }, (_, index) =>
-            (placements as Buffer).readFloatLE(at + index * 4),
-          );
-          if (
-            !record.every(Number.isFinite) ||
-            Math.abs(Math.hypot(...record.slice(3, 7)) - 1) > 0.0001 ||
-            record[7] === 0
-          ) {
-            reason = "malformed-placements";
-            break;
-          }
-          records.set(record, (at - run.offset * 32) / 4);
-        }
-        if (reason !== undefined) break;
         try {
           const buffer = await read(logical);
           stagedSourceBytes += buffer.length;
@@ -691,52 +631,126 @@ export async function cookWorldProxies(
             reason = "source-budget";
             break;
           }
-          sources.push({ buffer, records });
+          sources.push({ buffer });
         } catch {
-          reason = "missing-scatter";
+          reason = "missing-chunk";
+          break;
         }
       }
-    }
-    if (reason !== undefined) {
-      declined.push({ reason, x: cell.x, z: cell.z });
-      continue;
-    }
-    let built: Awaited<ReturnType<typeof buildCellProxy>>;
-    try {
-      built = await buildCellProxy(sources);
-    } catch {
-      built = { decline: "proxy-build-failed" };
-    }
-    if ("decline" in built) {
-      declined.push({ reason: built.decline, x: cell.x, z: cell.z });
-      continue;
-    }
-    const coversScatter = cell.runs.some((run) => run.count > 0);
-    if (
-      built.buffer.length > MAX_PROXY_BYTES ||
-      (coversScatter && built.triangles >= built.sourceTriangles)
-    ) {
-      declined.push({
-        reason: built.buffer.length > MAX_PROXY_BYTES ? "proxy-budget" : "no-triangle-reduction",
+      if (reason === undefined && runs.some((run) => run.count > 0)) {
+        const placementsLogical =
+          typeof world.json.placements === "string"
+            ? resolveChunkLogical(worldLogical, world.json.placements)
+            : undefined;
+        let placements: Buffer | undefined;
+        if (
+          placementsLogical === undefined ||
+          (included !== undefined && !included(placementsLogical))
+        )
+          reason = "excluded-placements";
+        else
+          try {
+            placements = await read(placementsLogical);
+          } catch {
+            reason = "missing-placements";
+          }
+        for (const run of runs) {
+          if (reason !== undefined) break;
+          if (run.count === 0) continue;
+          if (run.count > MAX_EXPANDED_BYTES / 64) {
+            reason = "placement-budget";
+            break;
+          }
+          const definition = isRecord(world.json.assets) ? world.json.assets[run.asset] : undefined;
+          if (!isRecord(definition) || typeof definition.glb !== "string") {
+            reason = "unknown-scatter-asset";
+            break;
+          }
+          if (definition.maxDistance !== undefined) {
+            reason = "scatter-distance-filter";
+            break;
+          }
+          const logical = resolveChunkLogical(worldLogical, definition.glb);
+          if (logical === undefined || (included !== undefined && !included(logical))) {
+            reason = "excluded-scatter";
+            break;
+          }
+          if (placements === undefined || (run.offset + run.count) * 32 > placements.length) {
+            reason = "malformed-placements";
+            break;
+          }
+          const records = new Float32Array(run.count * 8);
+          for (let at = run.offset * 32; at < (run.offset + run.count) * 32; at += 32) {
+            const record = Array.from({ length: 8 }, (_, index) =>
+              (placements as Buffer).readFloatLE(at + index * 4),
+            );
+            if (
+              !record.every(Number.isFinite) ||
+              Math.abs(Math.hypot(...record.slice(3, 7)) - 1) > 0.0001 ||
+              record[7] === 0
+            ) {
+              reason = "malformed-placements";
+              break;
+            }
+            records.set(record, (at - run.offset * 32) / 4);
+          }
+          if (reason !== undefined) break;
+          try {
+            const buffer = await read(logical);
+            stagedSourceBytes += buffer.length;
+            if (stagedSourceBytes > MAX_EXPANDED_BYTES) {
+              reason = "source-budget";
+              break;
+            }
+            sources.push({ buffer, records });
+          } catch {
+            reason = "missing-scatter";
+          }
+        }
+      }
+      if (reason !== undefined) {
+        failure = { reason, x: cell.x, z: cell.z };
+        continue;
+      }
+      let built: Awaited<ReturnType<typeof buildCellProxy>>;
+      try {
+        built = await buildCellProxy(sources);
+      } catch {
+        built = { decline: "proxy-build-failed" };
+      }
+      if ("decline" in built) {
+        failure = { reason: built.decline, x: cell.x, z: cell.z };
+        continue;
+      }
+      const coversScatter = runs.some((run) => run.count > 0);
+      if (
+        built.buffer.length > MAX_PROXY_BYTES ||
+        (coversScatter && built.triangles >= built.sourceTriangles)
+      ) {
+        failure = {
+          reason: built.buffer.length > MAX_PROXY_BYTES ? "proxy-budget" : "no-triangle-reduction",
+          x: cell.x,
+          z: cell.z,
+        };
+        continue;
+      }
+      proxies.push({
+        bounds: built.bounds,
+        scope: coversScatter ? "cell" : "chunks",
+        sourceTriangles: built.sourceTriangles,
+        sourcePrimitives: built.sourcePrimitives,
+        buffer: built.buffer,
+        error: built.error,
+        logical: proxyLogicalFor(worldLogical, cell.x, cell.z),
+        materialGroups: built.materialGroups,
+        reference: proxyReferenceFor(worldLogical, cell.x, cell.z),
+        triangles: built.triangles,
         x: cell.x,
         z: cell.z,
       });
-      continue;
+      break;
     }
-    proxies.push({
-      bounds: built.bounds,
-      scope: coversScatter ? "cell" : "chunks",
-      sourceTriangles: built.sourceTriangles,
-      sourcePrimitives: built.sourcePrimitives,
-      buffer: built.buffer,
-      error: built.error,
-      logical: proxyLogicalFor(worldLogical, cell.x, cell.z),
-      materialGroups: built.materialGroups,
-      reference: proxyReferenceFor(worldLogical, cell.x, cell.z),
-      triangles: built.triangles,
-      x: cell.x,
-      z: cell.z,
-    });
+    if (failure !== undefined) declined.push(failure);
   }
   return { declined, proxies };
 }
