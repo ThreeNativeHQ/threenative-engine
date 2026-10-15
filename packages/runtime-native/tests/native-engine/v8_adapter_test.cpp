@@ -85,6 +85,9 @@ void fastPaths() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
     Adapter adapter(rt.isolate, rt.context);
+    // Scalar accessor functions currently allow construction; CFunction requires kThrow instead.
+    CHECK(run(rt, adapter, "const setter = Object.getOwnPropertyDescriptor(Vector3.prototype, 'x').set;"
+                           "new setter(1) instanceof setter") == "true");
     const char* setup = "const m = new Mesh(); const p = m.position; const r = m.rotation;";
     const uint64_t start = adapter.genericArguments();
     CHECK(run(rt, adapter, setup) == "undefined");
