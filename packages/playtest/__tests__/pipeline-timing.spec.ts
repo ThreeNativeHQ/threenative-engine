@@ -528,6 +528,35 @@ describe("pipeline timing capture", () => {
     ]);
   });
 
+  it.each([
+    ["keeps the maximum for each metric", [
+      { nodeBuilds: 2, renderPipelineCreations: 0 },
+      { nodeBuilds: 0, renderPipelineCreations: 3 },
+      { nodeBuilds: 0, renderPipelineCreations: 0 },
+    ], { nodeBuilds: 2, renderPipelineCreations: 3, observed: true }],
+    ["does not hide a missing later draw", [
+      { nodeBuilds: 2, renderPipelineCreations: 1 }, undefined,
+    ], { nodeBuilds: 2, renderPipelineCreations: 1 }],
+    ["does not hide a missing earlier draw", [
+      undefined, { nodeBuilds: 2, renderPipelineCreations: 1 },
+    ], { nodeBuilds: 2, renderPipelineCreations: 1 }],
+  ])("repeated warm-up label %s", (_name, draws, expected) => {
+    const capture = parsePipelineCapture(browserCapture([browserEvent()], {
+      warmUpScopes: draws.map((firstDraw, index) => ({
+        label: "chunk:0",
+        boundaryMs: 4 + index,
+        eventsSettled: 1,
+        nodeBuilds: 0,
+        renderPipelineCreations: 1,
+        ...(firstDraw === undefined ? {} : { firstDraw }),
+      })),
+    }));
+    expect(capture.complete).toBe(true);
+    expect(summarizePipelineCapture(capture).warmup.scopes).toEqual([
+      { label: "chunk:0", ...expected },
+    ]);
+  });
+
   it("attributes node-build records when the later render reuses its cached pipeline", () => {
     const capture = parsePipelineCapture(
       browserCapture(

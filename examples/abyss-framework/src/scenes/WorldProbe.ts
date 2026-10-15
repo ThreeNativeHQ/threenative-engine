@@ -8,6 +8,7 @@ import {
   MeshStandardMaterial,
   SphereGeometry,
 } from "three";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { pass } from "three/tsl";
 import { ShadowPartialProbe } from "../probes/shadowPartial.js";
 import { terrainMaterial } from "../render/terrain.js";
@@ -348,7 +349,11 @@ export class WorldWarmUpProbe extends WorldProbe {
 
   override enter(ctx: WorldCtx): void {
     const worldPass = pass(ctx.scene, ctx.camera);
-    const installation = ctx.renderer.setOutputNode(worldPass);
+    const colour = worldPass.getTextureNode();
+    const installation = ctx.renderer.setOutputNode(
+      colour.add(bloom(colour, 0.9, 0.5, 0.25)),
+      worldPass,
+    );
     if (ctx.renderer.warmUpWorldPass === undefined)
       throw new Error("WorldWarmUpProbe requires renderer.warmUpWorldPass.");
     this.#worldPass = worldPass;

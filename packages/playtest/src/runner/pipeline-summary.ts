@@ -507,12 +507,21 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
     string,
     { nodeBuilds: number; renderPipelineCreations: number; observed?: boolean }
   >();
-  for (const scope of capture.warmUpScopes ?? [])
+  const measuredScopeLabels = new Set<string>();
+  for (const scope of capture.warmUpScopes ?? []) {
+    const previous = scopeMap.get(scope.label);
+    if (scope.firstDraw !== undefined) measuredScopeLabels.add(scope.label);
     scopeMap.set(scope.label, {
-      nodeBuilds: 0,
-      renderPipelineCreations: 0,
-      ...(scope.firstDraw === undefined ? {} : { observed: true }),
+      nodeBuilds: Math.max(previous?.nodeBuilds ?? 0, scope.firstDraw?.nodeBuilds ?? 0),
+      renderPipelineCreations: Math.max(
+        previous?.renderPipelineCreations ?? 0,
+        scope.firstDraw?.renderPipelineCreations ?? 0,
+      ),
+      ...(scope.firstDraw !== undefined && (previous === undefined || previous.observed === true)
+        ? { observed: true }
+        : {}),
     });
+  }
   let unreported = 0;
   let sizeSamples = 0;
   const hasNodeBuildRecords = capture.nodeBuilds !== undefined;
@@ -592,7 +601,7 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
         nodeBuilds: 0,
         renderPipelineCreations: 0,
       };
-      if (scope.observed !== true) {
+      if (!measuredScopeLabels.has(event.afterWarmUpScope)) {
         if (!hasNodeBuildRecords) scope.nodeBuilds += event.nodeBuilds ?? 0;
         if (event.kind === "render" && event.status === "created")
           scope.renderPipelineCreations += 1;
@@ -624,17 +633,9 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
         nodeBuilds: 0,
         renderPipelineCreations: 0,
       };
-      if (scope.observed !== true) scope.nodeBuilds += 1;
+      if (!measuredScopeLabels.has(nodeBuild.afterWarmUpScope)) scope.nodeBuilds += 1;
       scopeMap.set(nodeBuild.afterWarmUpScope, scope);
     }
-  }
-  for (const scope of capture.warmUpScopes ?? []) {
-    if (scope.firstDraw === undefined) continue;
-    scopeMap.set(scope.label, {
-      observed: true,
-      nodeBuilds: scope.firstDraw.nodeBuilds,
-      renderPipelineCreations: scope.firstDraw.renderPipelineCreations,
-    });
   }
   const source = capture.source;
   const nodeBuildsAfterWarmUpSettled =

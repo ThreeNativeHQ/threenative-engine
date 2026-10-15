@@ -1290,9 +1290,14 @@ describe("createRenderer", () => {
     }
   });
 
-  it.each([false, true])(
-    "refreshes a scoped world warm-up and its following main render in one node frame after %s failure",
-    async (throws) => {
+  it.each([
+    { throws: false, nextFrame: false },
+    { throws: false, nextFrame: true },
+    { throws: true, nextFrame: false },
+    { throws: true, nextFrame: true },
+  ])(
+    "refreshes a scoped world warm-up and its following main render in one outer render with nested post passes: %j",
+    async ({ throws, nextFrame }) => {
       const canvas = testCanvas();
       const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
       Object.defineProperty(globalThis, "navigator", {
@@ -1316,6 +1321,9 @@ describe("createRenderer", () => {
       const renderPipeline = vi.spyOn(RenderPipeline.prototype, "render").mockImplementation(() => {
         nodeFrame.renderId += 1;
         if (worldPass === undefined) throw new Error("Missing world pass");
+        nodeFrame.updateBeforeNode(worldPass);
+        // Bloom/temporal quads sample the same pass under a new renderId.
+        nodeFrame.renderId += 1;
         nodeFrame.updateBeforeNode(worldPass);
         if (!warm) canvasSubmissions.push(worldPass.scene as Object3D);
       });
@@ -1379,6 +1387,8 @@ describe("createRenderer", () => {
         const outputNode = worldPass.add(pass(new Scene(), new PerspectiveCamera()));
         renderer.setOutputNode(outputNode, worldPass);
         const authoredUpdateBeforeType = worldPass.updateBeforeType;
+        const authoredUpdateBefore = worldPass.updateBefore;
+        const hadOwnUpdateBefore = Object.hasOwn(worldPass, "updateBefore");
         expect(authoredUpdateBeforeType).toBe(NodeUpdateType.FRAME);
         targetScene = new Scene();
         const terrain = new Object3D();
@@ -1406,7 +1416,10 @@ describe("createRenderer", () => {
         expect(draws[1]?.target).not.toBeNull();
         expect(draws[1]?.warm).toBe(true);
 
+        if (nextFrame) nodeFrame.frameId += 1;
         renderer.render(authoredScene, authoredCamera);
+        expect(worldPass.updateBefore).toBe(authoredUpdateBefore);
+        expect(Object.hasOwn(worldPass, "updateBefore")).toBe(hadOwnUpdateBefore);
         expect(draws.map((draw) => draw.scene)).toEqual([
           authoredScene,
           targetScene,

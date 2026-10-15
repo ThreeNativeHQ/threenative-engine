@@ -567,6 +567,25 @@ function wrapRenderer(
   let outputInput: unknown;
   let outputPass: PassNode | undefined;
   let pendingWorldPassRefresh = false;
+  // Nested bloom/temporal quads sample this pass under distinct renderIds.
+  const refreshWorldPassOnce = (pass: PassNode | undefined): (() => void) | undefined => {
+    if (pass === undefined) return undefined;
+    const updateBefore = pass.updateBefore;
+    const updateBeforeType = pass.updateBeforeType;
+    const hadOwnUpdateBefore = Object.hasOwn(pass, "updateBefore");
+    let updated = false;
+    pass.updateBeforeType = NodeUpdateType.RENDER;
+    pass.updateBefore = function (frame) {
+      if (updated) return;
+      updated = true;
+      updateBefore.call(this, frame);
+    };
+    return () => {
+      pass.updateBeforeType = updateBeforeType;
+      if (hadOwnUpdateBefore) pass.updateBefore = updateBefore;
+      else Reflect.deleteProperty(pass, "updateBefore");
+    };
+  };
   let warmOutputTarget: RenderTarget | undefined;
   const renderChains = new Set<RenderChain>();
   let renderChainUsesPerObjectVelocity = false;
@@ -646,8 +665,7 @@ function wrapRenderer(
   const renderFrame = (scene: Object3D, camera: Camera): void => {
     pipelineCensus?.beginWorldFrame(scene);
     const refreshPass = pendingWorldPassRefresh ? outputPass : undefined;
-    const previousUpdateBeforeType = refreshPass?.updateBeforeType;
-    if (refreshPass !== undefined) refreshPass.updateBeforeType = NodeUpdateType.RENDER;
+    const restoreWorldPass = refreshWorldPassOnce(refreshPass);
     let completed = false;
     try {
       bindSurface();
@@ -663,8 +681,7 @@ function wrapRenderer(
       pipelineCensus?.firstPresent();
       completed = true;
     } finally {
-      if (refreshPass !== undefined && previousUpdateBeforeType !== undefined)
-        refreshPass.updateBeforeType = previousUpdateBeforeType;
+      restoreWorldPass?.();
       pipelineCensus?.endWorldFrame(scene, completed);
     }
   };
@@ -732,7 +749,7 @@ function wrapRenderer(
         const scoped = targetScene !== undefined && targetScene !== scene;
         const previousPassScene = outputPass?.scene;
         const previousPassCamera = outputPass?.camera;
-        const previousUpdateBeforeType = outputPass?.updateBeforeType;
+        let restoreWorldPass: (() => void) | undefined;
         const warmRenderer = raw as RendererInstance &
           ThreeRenderer & {
             contextNode?: unknown;
@@ -780,7 +797,7 @@ function wrapRenderer(
         renderingFrame += 1;
         try {
           if (scoped && outputPass !== undefined) {
-            outputPass.updateBeforeType = NodeUpdateType.RENDER;
+            restoreWorldPass = refreshWorldPassOnce(outputPass);
             pendingWorldPassRefresh = true;
           }
           if (scoped) {
@@ -798,8 +815,7 @@ function wrapRenderer(
           if (outputPass !== undefined) {
             outputPass.scene = previousPassScene as Object3D;
             outputPass.camera = previousPassCamera as Camera;
-            if (previousUpdateBeforeType !== undefined)
-              outputPass.updateBeforeType = previousUpdateBeforeType;
+            restoreWorldPass?.();
           }
           RendererUtils.restoreRendererState(warmRenderer, rendererState);
           restoreField(raw, "transparent", hadOwnTransparent, previousTransparent);
