@@ -26,6 +26,21 @@ The same engine C++ runs on the native desktop player at 20.4 M / 22.7 M / 29.7 
 
 To reach 1.5x, the web Wasm main thread must drop to about 6.1 / 6.4 / 9.6 ms per frame, which is 2.8 / 3.7 / 1.9 ms less than now.
 
+### Owner profile (diagnostic, 2026-10-14)
+
+One CPU profile of the web Wasm arm at engine e3271a19c, with the Wasm relinked `--profiling-funcs` so frames carry names. The host was loaded, so read the shares, not the milliseconds. Main-thread busy time per frame:
+
+| Owner | Takeoff | Cockpit | Rear gunner |
+| --- | --- | --- | --- |
+| Wasm engine code | 4.35 ms (44%) | 6.57 ms (45%) | 6.40 ms (48%) |
+| Engine JS glue (binding wrappers, property get/set) | 2.59 ms (26%) | 3.53 ms (24%) | 3.03 ms (23%) |
+| Game JS | 1.47 ms (15%) | 1.93 ms (13%) | 1.58 ms (12%) |
+| V8 `(program)` | 0.79 ms (8%) | 1.13 ms (8%) | 1.06 ms (8%) |
+| Browser natives, mostly WebGPU calls | 0.66 ms (7%) | 1.15 ms (8%) | 1.04 ms (8%) |
+| Busy total | 9.88 ms | 14.49 ms | 13.21 ms |
+
+Inside the Wasm engine at cockpit, the largest owners are `AnimationMixer::update` with its interpolants (about 11% of busy time), the matrix walk (about 8%) and `RenderDatabase::project` (about 8%). These are the same owners as on native, so a "do less work" lever there helps both arms. The engine JS glue is web-only. `wasm-to-js` frames, which include the WebGPU calls from Wasm, cost 1.3 ms at cockpit. `profile-owners.ts` classifies this arm as `unknown`, and crossings per frame are not counted yet, so AC-2 stays open.
+
 ## Solution
 
 Measure first, then cut the largest measured owner. Each lever is one A/B on the matched yardstick.
