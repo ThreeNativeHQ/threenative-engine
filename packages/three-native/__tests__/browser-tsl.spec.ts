@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { TSL_NODE } from "../src/browser-backend.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
+import { definePass } from "../src/pass-node.js";
 
 interface INode {
   readonly [TSL_NODE]: number;
@@ -70,5 +71,24 @@ describe("Wasm TSL extras", () => {
     expect(runtime.call).toHaveBeenCalledWith("clamp", null, expect.any(Array));
     expect(extras.fog(1, 2).isFogNode).toBe(true);
     expect(() => (extras.velocity as { x: number }).x).toThrow("TN_NATIVE_UNSUPPORTED_VELOCITY");
+  });
+});
+
+describe("Wasm TSL normal target", () => {
+  it("names the engine normal target by vec4(normalView, 0), as three's templates and the V8 player do", () => {
+    const { tsl } = setup();
+    const exports = tsl as unknown as {
+      vec4(...args: unknown[]): INode;
+      normalView: INode;
+    };
+    const { mrt, output, metalness, roughness } = definePass(tsl as never);
+    expect(() =>
+      mrt({
+        output,
+        normal: exports.vec4(exports.normalView, 0),
+        metalness,
+        roughness,
+      }),
+    ).not.toThrow();
   });
 });

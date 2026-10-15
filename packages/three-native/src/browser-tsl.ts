@@ -8,6 +8,7 @@
  * (tn::abi::TslScopes, shared with the V8 back end).
  */
 import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
+import { markNormalTarget } from "./pass-node.js";
 import { defineTslExtras } from "./tsl-extras.js";
 import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
 
@@ -422,5 +423,7 @@ export function defineTsl(
   exports.uniformArray = live.uniformArray;
   if (classes !== undefined) withConstValues(exports, classes);
   Object.assign(exports, defineTslExtras(exports as never));
+  // mrt()'s `normal: vec4(normalView, 0)` names the engine's normal target (pass-node.ts), as on the V8 player.
+  exports.vec4 = markNormalTarget(exports.vec4 as never, exports.normalView);
   return { exports, sync: live.sync };
 }
