@@ -731,7 +731,8 @@ function renderWarmPasses(
   enabled: boolean,
   includeHidden: boolean,
 ): IWarmPassRender | undefined {
-  const render = renderer.warmUpWorldPass ?? renderer.render;
+  const coveredWorldPass = renderer.warmUpWorldPass;
+  const render = coveredWorldPass ?? renderer.render;
   if (typeof render !== "function") return undefined;
   const skipped: IWarmPassRender = {
     passes: [],
@@ -740,15 +741,17 @@ function renderWarmPasses(
     cullingForced: 0,
     visibilityForced: 0,
   };
-  if (!enabled) return skipped;
+  // `renderPasses: false` disables optional shadow/reflection work, but an output pipeline's world
+  // pass is the shared fallback for a chunk/cell compile and must still be covered once.
+  if (!enabled && coveredWorldPass === undefined) return skipped;
   const raw =
     typeof renderer.raw === "object" && renderer.raw !== null
       ? (renderer.raw as IWarmRenderHost)
       : undefined;
   const shadowMap = raw?.shadowMap;
   const passes: string[] = ["main"];
-  if (shadowMap?.enabled !== false && hasShadowCaster(scene)) passes.push("shadow");
-  if (hasReflector(scene)) passes.push("reflection");
+  if (enabled && shadowMap?.enabled !== false && hasShadowCaster(scene)) passes.push("shadow");
+  if (enabled && hasReflector(scene)) passes.push("reflection");
   // `compileAsync` already built the main pass. A scene with neither a shadow map nor a reflection
   // has no second pass to build, so rendering it again would only draw a frame the cover hides for
   // nothing. Skip the draw and report the one pass that was compiled.

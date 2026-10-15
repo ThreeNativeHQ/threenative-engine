@@ -573,6 +573,24 @@ describe("scene warm-up", () => {
     expect(report.passPipelines).toBe(0);
   });
 
+  test("should keep the covered output world pass when renderPasses is false", async () => {
+    const warmUpWorldPass = vi.fn();
+    const renderer = {
+      compileWorldPassAsync: vi.fn(async () => true),
+      compileAsync: vi.fn(async () => undefined),
+      warmUpWorldPass,
+    };
+    const report = await warmUpScene(renderer as never, sceneOf(1) as never, {} as never, {
+      renderPasses: false,
+      yieldFrame: () => Promise.resolve(),
+    });
+
+    expect(renderer.compileWorldPassAsync).toHaveBeenCalledOnce();
+    expect(renderer.compileAsync).not.toHaveBeenCalled();
+    expect(warmUpWorldPass).toHaveBeenCalledOnce();
+    expect(report.passes).toEqual(["main"]);
+  });
+
   test("should submit an off-screen caster by turning frustum culling off for the warm render", async () => {
     // Frustum culling is on by default, so a mesh outside the startup camera's view is never
     // submitted to the shadow or reflection pass and its pipelines stay unbuilt. Midway's mid-flight
