@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { type FileHandle, mkdtemp, open, readFile, readdir, rm } from "node:fs/promises";
+import { type FileHandle, mkdir, mkdtemp, open, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -18,6 +18,8 @@ const fail = (reason: string): never => {
 export interface ICpuWindow {
   label: string;
   frames: number;
+  /** Stack sampling perturbs these counters: diagnostic runs never qualify as benchmarks. */
+  profile?: { kind: "perf-record"; path: string };
   startTick: number;
   endTick: number;
   startUs: number;
@@ -360,55 +362,62 @@ export async function measureCpuWindow(
   const hz = options.hz ?? Number((await execute("getconf", ["CLK_TCK"])).stdout.trim());
   const host = await hostState(procRoot, options.sysRoot ?? "/sys");
   const root = await mkdtemp(join(tmpdir(), "tn-cpu-window-"));
-  const controlPath = join(root, "control");
-  const ackPath = join(root, "ack");
   const outputPath = join(root, "stat");
-  let control: FileHandle | undefined;
-  let ack: FileHandle | undefined;
-  let child: ReturnType<typeof spawn> | undefined;
-  let closed: Promise<number | null> | undefined;
-  let exited = false;
-  let stderr = "";
-  let spawnError: Error | undefined;
-  try {
+  const cleanups: Array<() => Promise<void>> = [];
+  let result: ICpuWindow | undefined;
+  const errors: unknown[] = [];
+  const startPerf = async (prefix: string, args: string[]) => {
+    const controlPath = join(root, `${prefix}control`);
+    const ackPath = join(root, `${prefix}ack`);
+    const state: {
+      control?: FileHandle;
+      ack?: FileHandle;
+      child?: ReturnType<typeof spawn>;
+      closed?: Promise<number | null>;
+    } = {};
+    let exited = false;
+    let stderr = "";
+    let spawnError: Error | undefined;
+    const waitForExit = async () => {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          state.closed,
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error(`perf ${prefix}exit timed out`)), 3000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+    cleanups.push(async () => {
+      const errors: unknown[] = [];
+      try {
+        if (state.child !== undefined && !exited) {
+          state.child.kill("SIGKILL");
+          await waitForExit();
+        }
+      } catch (error) { errors.push(error); }
+      const handles = await Promise.allSettled([state.control?.close(), state.ack?.close()]);
+      for (const result of handles) if (result.status === "rejected") errors.push(result.reason);
+      if (errors.length > 0) throw new AggregateError(errors, "perf cleanup failed", { cause: errors[0] });
+    });
     await execute("mkfifo", [controlPath, ackPath]);
-    control = await open(controlPath, constants.O_RDWR | constants.O_NONBLOCK);
-    ack = await open(ackPath, constants.O_RDWR | constants.O_NONBLOCK);
-    child = spawn(
-      options.perfExecutable ?? "perf",
-      [
-        "stat",
-        "--no-inherit",
-        "--no-scale",
-        "-x",
-        ";",
-        "-o",
-        outputPath,
-        "-t",
-        String(owner.tid),
-        "-e",
-        "instructions:u,cycles:u",
-        "-D",
-        "-1",
-        `--control=fifo:${controlPath},${ackPath}`,
-      ],
-      { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, LC_ALL: "C" } },
-    );
+    state.control = await open(controlPath, constants.O_RDWR | constants.O_NONBLOCK);
+    state.ack = await open(ackPath, constants.O_RDWR | constants.O_NONBLOCK);
+    const child = spawn(options.perfExecutable ?? "perf", [...args, `--control=fifo:${controlPath},${ackPath}`],
+      { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, LC_ALL: "C" } });
+    state.child = child;
     const perfChild = child;
-    const controlFile = control;
-    const ackFile = ack;
-    closed = new Promise((resolve) =>
-      perfChild.once("close", (code) => {
-        exited = true;
-        resolve(code);
-      }),
-    );
-    child.on("error", (error) => {
-      spawnError = error;
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr = (stderr + String(chunk)).slice(-4000);
-    });
+    const controlFile = state.control;
+    const ackFile = state.ack;
+    state.closed = new Promise((resolve) => perfChild.once("close", (code) => {
+      exited = true;
+      resolve(code);
+    }));
+    child.on("error", (error) => { spawnError = error; });
+    child.stderr?.on("data", (chunk: Buffer) => { stderr = (stderr + String(chunk)).slice(-4000); });
     const command = async (name: string): Promise<void> => {
       await controlFile.write(`${name}\n`);
       const buffer = Buffer.alloc(64);
@@ -416,7 +425,7 @@ export async function measureCpuWindow(
       const deadline = Date.now() + 5000;
       while (Date.now() < deadline) {
         if (spawnError !== undefined || exited)
-          fail(`perf unavailable: ${spawnError?.message ?? stderr}`);
+          fail(`perf ${prefix}unavailable: ${spawnError?.message ?? stderr}`);
         try {
           const { bytesRead } = await ackFile.read(buffer, 0, buffer.length, null);
           reply += buffer.subarray(0, bytesRead).toString();
@@ -429,8 +438,38 @@ export async function measureCpuWindow(
         }
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
-      fail(`perf ${name} ACK timed out: ${stderr}`);
+      fail(`perf ${prefix}${name} ACK timed out: ${stderr}`);
     };
+    return {
+      command,
+      finish: async () => {
+        if (spawnError !== undefined || exited) fail(`perf ${prefix}exited early: ${spawnError?.message ?? stderr}`);
+        perfChild.kill("SIGINT");
+        const code = await waitForExit();
+        if (code !== 0 && !(code === null && perfChild.signalCode === "SIGINT"))
+          fail(`perf ${prefix}failed (${code}/${perfChild.signalCode}): ${stderr}`);
+      },
+    };
+  };
+  try {
+    const profileDirectory = process.env.TN_PLAYTEST_CPU_PROFILE_DIR;
+    let profile: ICpuWindow["profile"];
+    if (profileDirectory !== undefined) {
+      if (profileDirectory.trim().length === 0) fail("profile directory must be nonempty");
+      await mkdir(profileDirectory, { recursive: true });
+      const path = join(profileDirectory, `${encodeURIComponent(label)}.perf.data`);
+      // Reserve our output exclusively: perf must never replace another run's profile.
+      await (await open(path, "wx")).close();
+      profile = { kind: "perf-record", path };
+    }
+    const countersProcess = await startPerf("", [
+      "stat", "--no-inherit", "--no-scale", "-x", ";", "-o", outputPath,
+      "-t", String(owner.tid), "-e", "instructions:u,cycles:u", "-D", "-1",
+    ]);
+    const recorder = profile === undefined ? undefined : await startPerf("record-", [
+      "record", "--no-inherit", "-t", String(owner.tid), "-e", "cycles:u", "-F", "250", "-m", "64",
+      "--call-graph", "dwarf,32768", "-D", "-1", "-o", profile.path,
+    ]);
     const request = {
       entities: [],
       include: ["resources"],
@@ -443,16 +482,26 @@ export async function measureCpuWindow(
     const beforeTree = await readTree(owner.rootPid, procRoot);
     if (!beforeTree.has(owner.pid)) fail("measured process is outside owned tree");
     const before = await readThread(owner, procRoot);
-    await command("enable");
-    let startUs: number;
-    let endUs: number;
+    let startUs = 0;
+    let endUs = 0;
+    const windowErrors: unknown[] = [];
     try {
+      await countersProcess.command("enable");
+      await recorder?.command("enable");
       startUs = Number(process.hrtime.bigint() / 1000n);
       await advance();
       endUs = Number(process.hrtime.bigint() / 1000n);
+    } catch (error) {
+      windowErrors.push(error);
     } finally {
-      await command("disable");
+      const disabled = await Promise.allSettled([
+        countersProcess.command("disable"), recorder?.command("disable"),
+      ]);
+      for (const result of disabled) if (result.status === "rejected") windowErrors.push(result.reason);
     }
+    if (windowErrors.length === 1) throw windowErrors[0];
+    if (windowErrors.length > 1)
+      throw new AggregateError(windowErrors, "CPU window and perf disable failed", { cause: windowErrors[0] });
     if (![startUs, endUs].every((us) => Number.isSafeInteger(us) && us > 0) || endUs <= startUs)
       return fail("invalid monotonic CPU window boundaries");
     const after = await readThread(owner, procRoot);
@@ -477,23 +526,11 @@ export async function measureCpuWindow(
       fail("measured process/thread identity changed");
     const cpuNs = after.cpuNs - before.cpuNs;
     if (!Number.isSafeInteger(cpuNs) || cpuNs <= 0) fail("schedstat CPU runtime did not advance");
-    child.kill("SIGINT");
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    let code: number | null;
-    try {
-      code = await Promise.race([
-        closed,
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => reject(new Error("perf exit timed out")), 3000);
-        }),
-      ]);
-    } finally {
-      clearTimeout(timeout);
-    }
-    if (code !== 0 && !(code === null && child.signalCode === "SIGINT"))
-      fail(`perf counters failed (${code}/${child.signalCode}): ${stderr}`);
+    await countersProcess.finish();
+    await recorder?.finish();
+    if (profile !== undefined && (await stat(profile.path)).size === 0) fail("empty perf record profile");
     const counters = parsePerfCounters(await readFile(outputPath, "utf8"));
-    return {
+    result = {
       label,
       frames: FRAMES,
       startTick,
@@ -514,16 +551,19 @@ export async function measureCpuWindow(
       },
       processTree: processTreeDelta(beforeTree, afterTree, hz),
       host,
+      ...(profile === undefined ? {} : { profile }),
     };
+  } catch (error) {
+    errors.push(error);
   } finally {
-    if (child !== undefined && !exited) {
-      child.kill("SIGKILL");
-      await closed;
-    }
-    try {
-      await Promise.all([control?.close(), ack?.close()]);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    const cleaned = await Promise.allSettled(cleanups.map((cleanup) => cleanup()));
+    for (const result of cleaned) if (result.status === "rejected") errors.push(result.reason);
+    try { await rm(root, { recursive: true, force: true }); }
+    catch (error) { errors.push(error); }
   }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1)
+    throw new AggregateError(errors, "CPU window cleanup failed", { cause: errors[0] });
+  if (result === undefined) return fail("CPU window result unavailable");
+  return result;
 }

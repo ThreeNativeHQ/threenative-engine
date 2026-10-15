@@ -2418,6 +2418,17 @@ it("reconciles exact CPU boundaries rather than release/sample ticks", () => {
   expect(matchedCpuWindows(JSON.stringify(cpuReport(120)))).toHaveLength(3);
 });
 
+it("excludes stack-sampled CPU windows even with valid counters and completion", () => {
+  for (const profile of [{ kind: "perf-record", path: "/tmp/pose.perf.data" }, null, false, ""]) {
+    const r = cpuReport(120, "native");
+    Object.assign(r.acquisition.cpuWindows[0] as object, { profile });
+    const log = `${cpuRecords(r.acquisition.cpuWindows).join("\n")}\n${JSON.stringify(r)}`;
+    expect(nativeWindowCompletion(log)).toBe("reconciled");
+    expect(matchedCpuWindows(log)).toBeUndefined();
+    expect(run("sampled-desktop", log, parityText(true)).profiled).toBe(true);
+  }
+});
+
 it("rejects invalid tick boundaries and host metadata", () => {
   for (const change of [
     { mainThread: undefined },

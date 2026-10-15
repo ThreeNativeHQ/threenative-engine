@@ -168,8 +168,15 @@ async function fixture() {
 const fs = require('node:fs');
 const path = require('node:path');
 const args = process.argv.slice(2);
+const record = args[0] === 'record';
+const prefix = record ? 'record-' : '';
 const fifo = args.find(arg => arg.startsWith('--control=fifo:')).slice('--control=fifo:'.length).split(',');
-fs.writeFileSync(path.join(__dirname, 'paths'), JSON.stringify(fifo));
+fs.writeFileSync(path.join(__dirname, prefix + 'paths'), JSON.stringify(fifo));
+if (record) {
+  fs.writeFileSync(path.join(__dirname, 'record-args'), JSON.stringify(args));
+  fs.writeFileSync(path.join(__dirname, 'record-pid'), String(process.pid));
+  if (fs.existsSync(path.join(__dirname, 'record-denied'))) { console.error('record permission denied'); process.exit(1); }
+}
 if (fs.existsSync(path.join(__dirname, 'denied'))) { console.error('permission denied'); process.exit(1); }
 const control = fs.openSync(fifo[0], fs.constants.O_RDWR | fs.constants.O_NONBLOCK);
 const ack = fs.openSync(fifo[1], fs.constants.O_RDWR);
@@ -180,8 +187,9 @@ setInterval(() => {
     const n = fs.readSync(control, buffer, 0, buffer.length, null);
     if (!n) return;
     const command = buffer.subarray(0,n).toString().trim();
-    fs.appendFileSync(path.join(__dirname, 'commands'), command + '\\n');
-    if (command === 'disable') fs.writeFileSync(output, fs.existsSync(path.join(__dirname, 'bad')) ? '<not counted>;;instructions:u;10000;100.00\\n' : '2000;;instructions:u;10000;100.00\\n3000;;cycles:u;10000;100.00\\n');
+    fs.appendFileSync(path.join(__dirname, prefix + 'commands'), command + '\\n');
+    if (record && command === 'disable' && fs.existsSync(path.join(__dirname, 'record-disable-denied'))) { console.error('record disable failed'); process.exit(1); }
+    if (command === 'disable') fs.writeFileSync(output, record ? fs.existsSync(path.join(__dirname, 'record-empty')) ? '' : 'fake perf data' : fs.existsSync(path.join(__dirname, 'bad')) ? '<not counted>;;instructions:u;10000;100.00\\n' : '2000;;instructions:u;10000;100.00\\n3000;;cycles:u;10000;100.00\\n');
     fs.writeSync(ack, 'ack\\n\\0');
   } catch(error) { if(error.code !== 'EAGAIN') throw error; }
 }, 2);
@@ -270,6 +278,103 @@ function rendererSessions(mode: string) {
 }
 
 describe("fake proc/perf acquisition (no benchmark claims)", () => {
+  it("records only the owned thread inside the ACKed pose and keeps separate stat FIFOs", async () => {
+    const f = await fixture();
+    const directory = join(f.root, "profiles");
+    vi.stubEnv("TN_PLAYTEST_CPU_PROFILE_DIR", directory);
+    try {
+      const result = await measureCpuWindow("pose/one", f.owner, f.bridge, async () => {
+        expect(await readFile(join(f.root, "record-commands"), "utf8")).toBe("enable\n");
+        await f.advance();
+      }, f.options);
+      const artifact = join(directory, "pose%2Fone.perf.data");
+      expect(result).toMatchObject({ profile: { kind: "perf-record", path: artifact } });
+      expect(await readFile(artifact, "utf8")).toBe("fake perf data");
+      const args: string[] = JSON.parse(await readFile(join(f.root, "record-args"), "utf8"));
+      expect(args).toEqual([
+        "record", "--no-inherit", "-t", "101", "-e", "cycles:u", "-F", "250", "-m", "64",
+        "--call-graph", "dwarf,32768", "-D", "-1", "-o", artifact, expect.stringMatching(/^--control=fifo:/),
+      ]);
+      const statPaths: string[] = JSON.parse(await readFile(join(f.root, "paths"), "utf8"));
+      const recordPaths: string[] = JSON.parse(await readFile(join(f.root, "record-paths"), "utf8"));
+      expect(new Set([...statPaths, ...recordPaths]).size).toBe(4);
+      expect(await readFile(join(f.root, "record-commands"), "utf8")).toBe("enable\ndisable\n");
+      expect(await readFile(join(f.root, "commands"), "utf8")).toBe("enable\ndisable\n");
+      for (const path of recordPaths) await expect(access(path)).rejects.toThrow();
+      const pid = Number(await readFile(join(f.root, "record-pid"), "utf8"));
+      expect(() => process.kill(pid, 0)).toThrow();
+      await f.cleaned();
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+  for (const failure of ["advance", "record-denied", "record-disable-denied"]) {
+    it(`fails closed and reaps both profilers on ${failure}`, async () => {
+      const f = await fixture();
+      vi.stubEnv("TN_PLAYTEST_CPU_PROFILE_DIR", join(f.root, "profiles"));
+      try {
+        if (failure !== "advance") await writeFile(join(f.root, failure), "");
+        await expect(measureCpuWindow("pose", f.owner, f.bridge, async () => {
+          await f.advance();
+          if (failure === "advance") throw new Error("advance failed");
+        }, f.options)).rejects.toThrow(failure === "advance" ? "advance failed" : /record|perf/i);
+        if (failure !== "record-denied") {
+          expect(await readFile(join(f.root, "commands"), "utf8")).toBe("enable\ndisable\n");
+          expect(await readFile(join(f.root, "record-commands"), "utf8")).toBe("enable\ndisable\n");
+        }
+        const paths: string[] = JSON.parse(await readFile(join(f.root, "record-paths"), "utf8"));
+        for (const path of paths) await expect(access(path)).rejects.toThrow();
+        const pid = Number(await readFile(join(f.root, "record-pid"), "utf8"));
+        expect(() => process.kill(pid, 0)).toThrow();
+        await f.cleaned();
+      } finally {
+        vi.unstubAllEnvs();
+        await rm(f.root, { recursive: true, force: true });
+      }
+    });
+  }
+  it("preserves the advance error when recorder disable also fails", async () => {
+    const f = await fixture();
+    vi.stubEnv("TN_PLAYTEST_CPU_PROFILE_DIR", join(f.root, "profiles"));
+    try {
+      await writeFile(join(f.root, "record-disable-denied"), "");
+      const original = new Error("original advance failure");
+      const error = await measureCpuWindow("pose", f.owner, f.bridge, async () => {
+        throw original;
+      }, f.options).catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(AggregateError);
+      expect((error as AggregateError).cause).toBe(original);
+      expect((error as AggregateError).errors).toContain(original);
+      expect(await readFile(join(f.root, "commands"), "utf8")).toBe("enable\ndisable\n");
+      await f.cleaned();
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+  for (const failure of ["existing", "empty"]) {
+    it(`rejects ${failure} profile output`, async () => {
+      const f = await fixture();
+      const directory = join(f.root, "profiles");
+      const artifact = join(directory, "pose.perf.data");
+      vi.stubEnv("TN_PLAYTEST_CPU_PROFILE_DIR", directory);
+      try {
+        if (failure === "existing") {
+          await mkdir(directory);
+          await writeFile(artifact, "keep existing profile");
+        } else {
+          await writeFile(join(f.root, "record-empty"), "");
+        }
+        await expect(measureCpuWindow("pose", f.owner, f.bridge, () => f.advance(), f.options)).rejects.toThrow();
+        if (failure === "existing") expect(await readFile(artifact, "utf8")).toBe("keep existing profile");
+        else await f.cleaned();
+      } finally {
+        vi.unstubAllEnvs();
+        await rm(f.root, { recursive: true, force: true });
+      }
+    });
+  }
   it("ACKs enable/disable around the advance, accounts for the owned child and removes FIFOs", async () => {
     const f = await fixture();
     try {

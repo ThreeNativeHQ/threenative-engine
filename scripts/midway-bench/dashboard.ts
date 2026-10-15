@@ -411,6 +411,7 @@ export function matchedCpuWindows(log: string): ICpuWindow[] | undefined {
     const w = matches[0];
     if (
       matches.length !== 1 ||
+      "profile" in w ||
       ![w.startTick, w.endTick].every((n) => Number.isSafeInteger(n) && n >= 0) ||
       w.endTick - w.startTick !== PLAYER_FRAME_WINDOW ||
       !Array.isArray(w.host?.load) ||
@@ -551,7 +552,12 @@ export function runOf(
     ...(parity ? { parity } : {}),
     ...(cullPct === undefined ? {} : { cullPct }),
     ...(pkg ? { pkg } : {}),
-    ...(tag.startsWith("perf-") || /\bTN_AC3_(?:RIG|WALK|ROOT):/.test(log)
+    ...(tag.startsWith("perf-") ||
+    /\bTN_AC3_(?:RIG|WALK|ROOT):/.test(log) ||
+    (Array.isArray(report?.acquisition?.cpuWindows) &&
+      report.acquisition.cpuWindows.some(
+        (window: unknown) => typeof window === "object" && window !== null && "profile" in window,
+      ))
       ? { profiled: true as const }
       : {}),
     ...(parityText !== undefined && !parity ? { parityMalformed: true as const } : {}),

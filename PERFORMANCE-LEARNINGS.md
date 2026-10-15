@@ -15,7 +15,12 @@ PRD's "Tried and rejected" or "Decisions" section, for example
   frame times cost per call. On 2026-10-14, two levers chosen from profile shares were flat in A/B.
 - **A profile window must exclude loading.** A 100 s call-graph capture of the Midway player included load-time
   garbage collections, so it gave the V8 GC prologue 4.9% of samples. Inside the pose windows there was one GC per
-  34 frames.
+  34 frames. `TN_PLAYTEST_CPU_PROFILE_DIR` now records only the existing ACK-controlled 1,000-frame pose windows;
+  sampled windows and runs are excluded from benchmark qualification.
+- **Bound symbol decoding too.** On the native monolith, full inline expansion left `addr2line` at 99% CPU.
+  `perf report --no-inline` decoded all three recordings in under one second each. Set `DEBUGINFOD_URLS=` for
+  local-only decoding; use `TN_V8_FLAGS=--perf-basic-prof` before launch when JIT names are needed, and preserve
+  that player's `/tmp/perf-<pid>.map`. Unresolved anonymous samples are not proven JavaScript.
 - **Instructions per frame are the low-noise metric on a loaded host.** Milliseconds and cycles moved by 13 to 17%
   when only the host load changed (load 18 to 11) on 2026-10-14. Alternate off and on runs, and judge with at least
   two pairs.
@@ -27,6 +32,13 @@ PRD's "Tried and rejected" or "Decisions" section, for example
   absolute cost but does not move the native or web Wasm ratio against three.js.
 
 ## Levers
+
+### 2026-10-15 — Exact-window native stack sampling — KEEP (diagnostic)
+- Where: PRD-610 AC-15/AC-20, branch `perf/prd610-resume`; existing Linux CPU-window collector and dashboard qualification.
+- Ceiling: diagnostic only; removes loading and pose-boundary ambiguity, not game CPU work.
+- Result: `perf-rt-exact-off-1` passes runtime assertions and three exact 1,000-update/render windows. Samples: 1,769 / 2,106 / 2,847; zero lost, decoded callchains. `RenderDatabase::project` has 6.10% / 5.41% / 6.06% self cycles. Unresolved shares are 7.11% / 7.96% / 9.25%; no JIT map was enabled. Real sampled run is excluded from CPU qualification, including with a non-`perf-` tag. Focused red/green: eight feature failures, then 179 passing tests; typecheck, build, publint and independent review pass.
+- Cause: the recorder has its own FIFO/ACK lifecycle and samples the owned main TID only around the same fixed-step advance as the counters.
+- Artifact: `~/.cache/tmp-tn/screens/perf-rt-exact-off-1/profiles/`, dashboard cycle `native-exact-window-profile`, and saved source patch in the original handover scratchpad (`exact-window-profile.patch`). No speed winner promoted.
 
 ### 2026-10-15 — PRD-613 Stage 1 encode thread, resumed screen — INCONCLUSIVE
 - Where: PRD-613, branch `perf/prd610-resume`, candidate `a57423817`; `TN_RENDER_THREAD` remains default off.
