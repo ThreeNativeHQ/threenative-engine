@@ -366,6 +366,8 @@ if(SDL3_SOURCE_DIRS)
         # SDL_appid.c member when mystral-tools pulls it in. SDL_uclibc contributes objects to the
         # same archive, so keep both static producers position independent.
         if(TARGET SDL3-static)
+            # The desktop tray symbol rewrite uses objcopy, which requires non-LTO objects.
+            set_property(TARGET SDL3-static PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
             set_target_properties(SDL3-static PROPERTIES POSITION_INDEPENDENT_CODE ON)
         endif()
         if(TARGET SDL_uclibc)
