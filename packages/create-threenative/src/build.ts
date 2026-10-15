@@ -1102,7 +1102,13 @@ export async function buildWeb(
 ): Promise<void> {
   const config = await loadConfig(cwd, { target: "web", profile });
   announceProfile(config);
-  await compileAssets({ config: config.assets, cwd, platform: "web" });
+  // The engine's glTF loader decodes no Meshopt (addons/gltf-loader-web.ts), so its models are cooked without.
+  await compileAssets({
+    config: config.assets,
+    cwd,
+    platform: "web",
+    ...(config.engine === "native" ? { runtimeDecoders: { ktx2: true, meshopt: false } } : {}),
+  });
   const assets = assetRoot(cwd, config);
   // Vite empties and rewrites its outDir in place, so a build that dies half-way through leaves a
   // truncated `dist` where a working one used to be — the same failure a native artifact had, and

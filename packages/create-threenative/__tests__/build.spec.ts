@@ -387,7 +387,12 @@ describe("threenative build", () => {
       path.join(root, "custom.vite.ts"),
       'export default { build: { target: "es2022" } };\n',
     );
+    // The engine's glTF loader decodes no Meshopt, so the web cook for the native engine is decoder-free.
+    await mkdir(path.join(root, "assets"), { recursive: true });
+    await writeFile(path.join(root, "assets/hero.glb"), await buildFixtureGlb());
     await buildWeb(root, args);
+    const cooked = JSON.parse(await readFile(path.join(root, "dist/assets.manifest.json"), "utf8"));
+    expect(cooked.entries["hero.glb"].extensions ?? []).not.toContain("EXT_meshopt_compression");
     const assets = path.join(root, "dist/assets");
     const chunks = (await readdir(assets)).filter((name) => name.endsWith(".js"));
     const output = (
