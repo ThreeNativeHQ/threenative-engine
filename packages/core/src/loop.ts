@@ -102,6 +102,10 @@ export interface IRenderPerformanceMetrics {
 
 export interface IRenderPerformanceSample extends IRenderPerformanceMetrics {
   readonly frameMs: number;
+  /** Successful render-callback completion ID; absolute across clears and retention. */
+  readonly sequence?: number;
+  /** Completion boundary from the monotonic phase clock, not the rAF timestamp or render-body cost. */
+  readonly completedAtMs?: number;
   /** Where this frame's milliseconds went. Present whenever a frame budget is installed. */
   readonly phases?: IFramePhaseSample;
 }
@@ -169,6 +173,7 @@ export class FixedStepLoop {
   #fps = 0;
   #lastRenderTime: number | undefined;
   #renderPerformanceSamples: IRenderPerformanceSample[] = [];
+  #renderCompletionSequence = 0;
   #frameCallback: (time: number) => void;
   #budget: FrameBudget | undefined;
   #spans: SpanRecorder | undefined;
@@ -390,6 +395,7 @@ export class FixedStepLoop {
     let updates = 0;
     let frameMs: number | undefined;
     let callbackMs: number | undefined;
+    let callbackFinishedAt = Number.NaN;
     let metrics: IRenderPerformanceMetrics | undefined;
     let phases: IFramePhaseSample | undefined;
     try {
@@ -422,15 +428,19 @@ export class FixedStepLoop {
         if (renderMs !== undefined && spans.depth === 0) spans.endFrame(renderMs);
         else spans.abandonFrame();
       }
-      const callbackFinishedAt = this.#now();
+      callbackFinishedAt = this.#now();
       if (Number.isFinite(callbackStartedAt) && Number.isFinite(callbackFinishedAt)) {
         callbackMs = Math.max(0, callbackFinishedAt - callbackStartedAt);
       }
     }
+    // Reached only after successful rendering; IDs also reveal gaps across disabled collection.
+    const sequence = ++this.#renderCompletionSequence;
     if (callbackMs !== undefined) this.#onFrame(callbackMs);
     if (this.#collectMetrics && frameMs !== undefined && frameMs > 0) {
       const sample: IRenderPerformanceSample = {
         frameMs,
+        sequence,
+        completedAtMs: callbackFinishedAt,
         ...(metrics === undefined || metrics.drawCalls === undefined
           ? {}
           : { drawCalls: metrics.drawCalls }),

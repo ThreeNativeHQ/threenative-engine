@@ -105,10 +105,15 @@ describe("FixedStepLoop", () => {
   });
 
   it("should record frame timing and renderer metrics after each rendered frame", () => {
+    let clock = 0;
     const loop = new FixedStepLoop({
+      now: () => clock,
       // The collector itself under test — a diagnostics consumer's view.
       collectMetrics: true,
-      onRender: () => ({ drawCalls: 3, triangles: 24 }),
+      onRender: () => {
+        clock += 1;
+        return { drawCalls: 3, triangles: 24 };
+      },
       onUpdate: () => undefined,
     });
 
@@ -117,8 +122,8 @@ describe("FixedStepLoop", () => {
     loop.stepFrame(32);
 
     expect(loop.runtimeDiagnosticsSeries()).toEqual([
-      { drawCalls: 3, frameMs: 16, triangles: 24 },
-      { drawCalls: 3, frameMs: 16, triangles: 24 },
+      { completedAtMs: 2, sequence: 2, drawCalls: 3, frameMs: 16, triangles: 24 },
+      { completedAtMs: 3, sequence: 3, drawCalls: 3, frameMs: 16, triangles: 24 },
     ]);
   });
 
@@ -482,6 +487,103 @@ describe("FixedStepLoop metrics collection", () => {
     });
     return { loop, state };
   }
+
+  it("records completion cadence including outer-loop delay without changing frameMs", () => {
+    let clock = 10;
+    const callbackMs: number[] = [];
+    const loop = new FixedStepLoop({
+      collectMetrics: true,
+      now: () => clock,
+      onUpdate: () => undefined,
+      onRender: () => {
+        clock += 2;
+        return undefined;
+      },
+      onFrame: (ms) => callbackMs.push(ms),
+    });
+    loop.stepFrame(0);
+    clock = 40;
+    loop.stepFrame(16);
+    clock = 90;
+    loop.stepFrame(32);
+    expect(callbackMs).toEqual([2, 2, 2]);
+    expect(loop.runtimeDiagnosticsSeries()).toEqual([
+      { frameMs: 16, sequence: 2, completedAtMs: 42 },
+      { frameMs: 16, sequence: 3, completedAtMs: 92 },
+    ]);
+  });
+
+  it("counts successful completions only and exposes collection gaps and clears", () => {
+    let clock = 0;
+    let fail = false;
+    const loop = new FixedStepLoop({
+      collectMetrics: true,
+      now: () => clock,
+      onUpdate: () => undefined,
+      onRender: () => {
+        clock += 1;
+        if (fail) throw new Error("render failed");
+        return undefined;
+      },
+    });
+    loop.start(0);
+    loop.stepFrame(0);
+    loop.advance(2, { render: false });
+    fail = true;
+    expect(() => loop.stepFrame(16)).toThrow("render failed");
+    expect(loop.runtimeDiagnosticsSeries()).toEqual([]);
+    fail = false;
+    loop.stepFrame(32);
+    expect(loop.runtimeDiagnosticsSeries()[0]?.sequence).toBe(2);
+    loop.setCollectMetrics(false);
+    loop.stepFrame(48);
+    loop.setCollectMetrics(true);
+    loop.stepFrame(64);
+    expect(loop.runtimeDiagnosticsSeries().map((s) => s.sequence)).toEqual([2, 4]);
+    loop.clearRuntimeDiagnostics();
+    loop.stepFrame(80);
+    expect(loop.runtimeDiagnosticsSeries().map((s) => s.sequence)).toEqual([5]);
+    loop.stop();
+  });
+
+  it("keeps absolute completion IDs through bounded retention and copied snapshots", () => {
+    let clock = 0;
+    const loop = new FixedStepLoop({
+      collectMetrics: true,
+      now: () => clock,
+      onUpdate: () => undefined,
+      onRender: () => {
+        clock += 1;
+        return undefined;
+      },
+    });
+    for (let frame = 1; frame <= 1_027; frame += 1) loop.stepFrame(frame * 16);
+    const series = loop.runtimeDiagnosticsSeries();
+    expect(series).toHaveLength(1_024);
+    expect(series[0]).toMatchObject({ sequence: 4, completedAtMs: 4 });
+    expect(series.at(-1)).toMatchObject({ sequence: 1_027, completedAtMs: 1_027 });
+    Object.assign(series[0] ?? {}, { sequence: -1, completedAtMs: -1 });
+    expect(loop.runtimeDiagnosticsSeries()[0]).toMatchObject({ sequence: 4, completedAtMs: 4 });
+  });
+
+  it("retains invalid completion intervals for later fail-closed consumption", () => {
+    let clock = 10;
+    const loop = new FixedStepLoop({
+      collectMetrics: true,
+      now: () => clock,
+      onUpdate: () => undefined,
+    });
+    loop.stepFrame(0);
+    loop.stepFrame(16);
+    clock = 5;
+    loop.stepFrame(32);
+    clock = Number.NaN;
+    loop.stepFrame(48);
+    const series = loop.runtimeDiagnosticsSeries();
+    expect(series.map((s) => s.sequence)).toEqual([2, 3, 4]);
+    expect(series.map((s) => s.completedAtMs)).toEqual([10, 5, Number.NaN]);
+    expect(series.map((s) => s.frameMs)).toEqual([16, 16, 16]);
+  });
 
   it("collects no samples by default - nothing reads them outside a diagnostics consumer", () => {
     const { loop } = makeLoop();
