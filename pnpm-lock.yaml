@@ -1356,9 +1356,24 @@ importers:
 
   packages/runtime-native:
     dependencies:
+      '@threenative/assets':
+        specifier: workspace:*
+        version: link:../assets
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../core
+      '@threenative/three-native':
+        specifier: workspace:*
+        version: link:../three-native
+      esbuild:
+        specifier: 'catalog:'
+        version: 0.27.0
       pngjs:
         specifier: 'catalog:'
         version: 7.0.0
+      typescript:
+        specifier: 'catalog:'
+        version: '@typescript/typescript6@6.0.2'
     devDependencies:
       '@dimforge/rapier3d-compat':
         specifier: 'catalog:'
@@ -1369,9 +1384,6 @@ importers:
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3
-      esbuild:
-        specifier: 'catalog:'
-        version: 0.27.0
       publint:
         specifier: 'catalog:'
         version: 0.3.22

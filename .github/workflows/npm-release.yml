@@ -148,6 +148,7 @@ jobs:
       #   @threenative/raw-unreal
       #   @threenative/runtime-native
       #   @threenative/terrain
+      #   @threenative/three-native
       #   @threenative/ueformat
       #   @threenative/ui
       #   create-threenative

@@ -755,8 +755,16 @@ test('the actual packed archive excludes C++ runtime source', async () => {
   roots.push(root);
   const packed = await packRuntime(root);
   const files = packed.files.join('\n');
+  for (const file of ['scripts/package-engine-desktop.mjs', 'scripts/bundle-native-engine.mjs',
+    'src/engine/player/core-three.mjs', 'src/engine/player/core-webgpu.mjs',
+    'src/engine/player/core-tsl.mjs', 'src/engine/player/core-addons.mjs',
+    'src/engine/player/core-host.mjs', 'src/engine/player/core-assets.mjs',
+    'src/engine/player/core-audio.mjs', 'src/engine/player/core-textures.mjs',
+    'src/engine/player/core-hdr.mjs']) {
+    assert.ok(packed.files.includes(file), `pnpm pack omitted ${file}`);
+  }
   // The Wasm engine (build/web) is the one build output the package ships, for the web native engine.
-  assert.doesNotMatch(files, /^(?:src|include|cmake|native|third_party|build(?!\/web\/))\//mu);
+  assert.doesNotMatch(files, /^(?:src(?!\/engine\/player\/[^/]+\.mjs$)|include|cmake|native|third_party|build(?!\/web\/))\//mu);
   assert.doesNotMatch(files, /\.(?:c|cc|cpp|cxx|h|hh|hpp|m|mm)$/mu);
 
   const manifest = JSON.parse(

@@ -456,6 +456,10 @@
         "@threenative/terrain#validatePlacementOverrides": "export function validatePlacementOverrides( value: unknown = { … }"
       }
     },
+    "@threenative/three-native": {
+      "exports": ["./package.json"],
+      "symbols": {}
+    },
     "@threenative/ueformat": {
       "exports": [".", "./package.json"],
       "symbols": {

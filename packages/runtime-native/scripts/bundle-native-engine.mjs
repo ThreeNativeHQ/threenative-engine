@@ -13,7 +13,10 @@ const repo = resolve(native, "../..");
 const player = resolve(native, "src/engine/player");
 const require = createRequire(resolve(native, "package.json"));
 const { build } = require("esbuild");
-const ts = createRequire(resolve(repo, "packages/create-threenative/package.json"))("typescript");
+const ts = require("typescript");
+const core = dirname(require.resolve("@threenative/core/package.json"));
+const threeNative = dirname(require.resolve("@threenative/three-native/package.json"));
+const assetsEntry = resolve(dirname(require.resolve("@threenative/assets/package.json")), "dist/index.js");
 
 function rejectUpstream(metafile) {
   const upstream = Object.keys(metafile.inputs).filter((file) => /(?:^|\/)node_modules\/(?:.*\/)?three\//.test(file));
@@ -126,7 +129,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     // browser loader and its GLTFLoader; it reads the cooked package like core's own imports do.
     plugins: [{ name: "native-assets", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
-        if (resolve(args.resolveDir, args.path) === resolve(repo, "packages/core/src/assets.js"))
+        if (resolve(args.resolveDir, args.path) === resolve(core, "src/assets.js"))
           return { path: resolve(player, "core-assets.mjs"), external: true };
       });
     } }],
@@ -134,14 +137,14 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
   rejectUpstream(game.metafile);
   const code = game.outputFiles[0].text;
   const coreIndex = ts.createSourceFile("index.ts",
-    await readFile(resolve(repo, "packages/core/src/index.ts"), "utf8"), ts.ScriptTarget.Latest, true);
+    await readFile(resolve(core, "src/index.ts"), "utf8"), ts.ScriptTarget.Latest, true);
   const coreExports = imports(code, "@threenative/core").map((name) => {
     const declaration = coreIndex.statements.find((node) => ts.isExportDeclaration(node) &&
       !node.isTypeOnly && node.exportClause && ts.isNamedExports(node.exportClause) &&
       node.exportClause.elements.some((item) => !item.isTypeOnly && item.name.text === name));
     if (!declaration?.moduleSpecifier)
       throw new Error(`TN_NATIVE_ENGINE_UNBOUND: @threenative/core:${name}`);
-    const source = JSON.stringify(resolve(repo, "packages/core/src", declaration.moduleSpecifier.text));
+    const source = JSON.stringify(resolve(core, "src", declaration.moduleSpecifier.text));
     if (name === "defineGame") return `import { defineGame as coreDefineGame } from ${source};
       import { platform } from ${JSON.stringify(resolve(player, "core-host.mjs"))};
       export function defineGame(options) { return coreDefineGame({ ...options, platform: options.platform ?? platform }); }`;
@@ -167,8 +170,8 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     "three/addons/tsl/display/SharpenNode.js": resolve(player, "core-addons.mjs"),
     "three/addons/loaders/LUTCubeLoader.js": resolve(player, "core-lut.mjs"),
     "three/addons/loaders/HDRLoader.js": resolve(player, "core-hdr.mjs"),
-    "three-mesh-bvh": resolve(repo, "packages/three-native/src/addons/mesh-bvh.ts"),
-    "three/addons/utils/BufferGeometryUtils.js": resolve(repo, "packages/three-native/src/addons/buffer-geometry-utils.ts"),
+    "three-mesh-bvh": resolve(threeNative, "src/addons/mesh-bvh.ts"),
+    "three/addons/utils/BufferGeometryUtils.js": resolve(threeNative, "src/addons/buffer-geometry-utils.ts"),
   };
   const exports = new Map(await Promise.all(Object.values(modules).map(async (facade) => {
     // A facade's own exports; `three` inside one (an addon over the engine) is the facade above.
@@ -186,7 +189,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     logLevel: "silent", outfile, sourcemap: "external", sourcesContent: true,
     plugins: [{ name: "native-engine", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
-        if (args.importer.startsWith(`${resolve(repo, "packages/core/src")}/`))
+        if (args.importer.startsWith(`${resolve(core, "src")}/`))
           return { path: resolve(player, "core-assets.mjs") };
       });
       builder.onResolve({ filter: /^tn:game$/ }, () => ({ path: "game", namespace: "native-game" }));
@@ -194,7 +197,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
       builder.onResolve({ filter: /^@threenative\/core$/ }, () => ({ path: "core", namespace: "native-core" }));
       builder.onLoad({ filter: /.*/, namespace: "native-core" }, () => ({ contents: coreExports, resolveDir: repo }));
       builder.onResolve({ filter: /^@threenative\/core\// }, (args) => ({
-        path: resolve(repo, "packages/core/src", `${args.path.split("/").at(-1)}.ts`),
+        path: resolve(core, "src", `${args.path.split("/").at(-1)}.ts`),
       }));
       builder.onResolve({ filter: /^(three(?:\/|$)|three-mesh-bvh(?:\/|$))/ }, async (args) => {
         const source = args.namespace === "native-game" ? code : await readFile(args.importer, "utf8");
@@ -257,7 +260,7 @@ export async function cookNativeEngineAssets({ project, outfile, source }) {
     const module = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString("base64")}`);
     assets = module.default?.assets ?? {};
   }
-  const { compileAssets } = await import(resolve(repo, "packages/assets/dist/index.js"));
+  const { compileAssets } = await import(assetsEntry);
   await compileAssets({ cwd: project, config: { ...assets, ...(source && { source: resolve(source) }), nativePackage: true }, platform: "desktop",
     runtimeDecoders: { ktx2: false, meshopt: false } });
   const output = resolve(project, assets.output ?? "public", "native/assets.tnpk");
