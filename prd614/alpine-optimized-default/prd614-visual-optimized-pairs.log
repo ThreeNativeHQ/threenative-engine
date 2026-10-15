@@ -1,0 +1,552 @@
+Reading additional input from stdin...
+OpenAI Codex v0.162.1
+--------
+workdir: /home/joao/projects/threenative/threenative-engine/.worktrees/strata-terrain-hardening
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a13f3e-d875-7281-bc84-d19a8861f592
+--------
+user
+Fresh read-only visual judge. You did not implement any change. No source/Git/GPU edits/jobs or recursive agents. View all8 pair images artifacts/prd614/judge/alpine-optimized-default/pairs/{ground,edge,boulders,overview}-run-{1,2}.png, one pair perimage. Each is BEFORE left/AFTER right, fulloriginalpixelsunscaled, labelsabove andblackdivider. Thusall16framesareincluded. If anysideappearsmissing/blank orcannotbeinspected, open the corresponding original artifacts/prd614/judge/alpine-optimized-default/{before,after}/run-N/POSE.png individually andverifywhatactuallyappears; ifstilluncertainreportUNVERIFIED, neverinfermountainabsencefromambiguousdisplay. Taskfixedcriterion: defaultalpineappearanceunchanged, samecamera/framing/terrain/mountain/snow/boulders/material/shadow/light,2runsperarmheadedNVIDIATuring. AFTERfreshcurrentSDKscaffold/cookedpackage, noedits/tint; BEFOREsealedbaseline. Rateeach8pair NEUTRAL/IMPROVEMENT/REGRESSION andoverall based onVISIBLEframes. AnyREGRESSIONfails;NEUTRALorIMPpreservationpasses. No hashes/assertions/codec inference substitutedforpixels. Give concretevisibleevidence, under20lines. No code-review; this isvisualjudgmentonly.\n
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+hook: UserPromptSubmit Completed
+hook: UserPromptSubmit Completed
+codex
+Step 1 of 2: I’m using the visual-feedback and ponytail instructions to keep this pixel-only, read-only, and limited to the eight supplied pairs. About 3 minutes.
+exec
+/usr/bin/zsh -lc 'cat /home/joao/.codex/skills/visual-feedback-loop/SKILL.md' in /home/joao/projects/threenative/threenative-engine/.worktrees/strata-terrain-hardening
+ succeeded in 0ms:
+---
+name: visual-feedback-loop
+description: Use when asked to recreate, clone, match, polish, or visually compare a web page, landing page, component, or app screen against a screenshot, live URL, mockup, or reference; use Playwright, Playwright MCP when available, screenshots, responsive checks, and visual diffs to iterate on layout, typography, colors, spacing, and UI fidelity.
+---
+
+# Visual Feedback Loop
+
+Use this skill when the task depends on how a web UI looks, not just whether the code compiles. Examples: matching a screenshot, cloning a landing page, reverse engineering a design, polishing a UI, comparing local output to a reference, or using Playwright to inspect and iterate.
+
+## Operating Rules
+
+- Always capture screenshots before making visual claims.
+- Use Playwright MCP when available for quick interactive inspection: accessibility snapshots for structure, screenshots for visual verification, resize for responsive checks, console messages for debugging.
+- If MCP tools are not available, use local Playwright scripts or the project's existing Playwright setup.
+- Check desktop, tablet, and mobile unless the user gives specific dimensions.
+- Fix the largest visible mismatches first: layout, hero composition, type scale, spacing, colors, images, shadows, borders, radius, then micro details.
+- After each pass, capture fresh screenshots. Do not assume a CSS change worked.
+- Keep changes targeted. Prefer layout/CSS/Tailwind adjustments over component rewrites unless the structure prevents matching.
+- Do not fake completion. Only say it matches after screenshots were captured and inspected.
+
+## Default Viewports
+
+Use these unless the user specifies otherwise:
+
+```ts
+const viewports = [
+  { name: "desktop", width: 1440, height: 900 },
+  { name: "tablet", width: 1024, height: 768 },
+  { name: "mobile", width: 390, height: 844 },
+];
+```
+
+## Workflow
+
+1. Identify the reference: uploaded screenshot, live URL, local image, competitor page, or specific section.
+2. Start or locate the local app using the existing project command from `package.json` or local docs.
+3. Capture the reference and local implementation at the same viewport sizes.
+4. Inspect screenshots and, when possible, generate pixel diffs.
+5. List the top 3-7 mismatches before editing.
+6. Apply a focused pass of UI changes.
+7. Re-capture and compare.
+8. Repeat up to 5 passes unless the user sets a different budget.
+
+Default stop criteria:
+
+```text
+Desktop diff < 5%
+Tablet diff < 7%
+Mobile diff < 8%
+```
+
+Treat these as guidelines. Pixel diffs can overstate harmless differences from images, fonts, antialiasing, icons, and browser rendering.
+
+## Playwright MCP
+
+When Playwright MCP is configured, prefer it for interactive inspection before writing scripts:
+
+- `browser_navigate`: open reference or local URLs.
+- `browser_snapshot`: inspect the accessibility tree and locate elements by role/text.
+- `browser_take_screenshot`: capture the page or element for visual verification.
+- `browser_resize`: test responsive layouts.
+- `browser_click`, `browser_hover`, `browser_wait_for`: reach interactive states and dismiss banners/popups.
+- `browser_console_messages`: check runtime errors while debugging visual issues.
+- `browser_install`: install the configured browser if needed.
+
+Official setup pattern:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    }
+  }
+}
+```
+
+For headless runs:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--headless"]
+    }
+  }
+}
+```
+
+MCP snapshots are structural, not pixel analysis. Use them to understand page state and interact reliably; use screenshots and diffs to judge visual fidelity.
+
+## Screenshot Capture
+
+Before screenshots:
+
+- Wait for network idle when practical.
+- Wait for fonts to load.
+- Disable animations and smooth scrolling.
+- Hide cookie banners, modals, chat widgets, and other blockers if they are not part of the target.
+- Use the same viewport and device scale factor for reference and actual.
+
+Create artifacts under:
+
+```text
+.visual-feedback/
+  reference-desktop.png
+  actual-desktop-pass-1.png
+  diff-desktop-pass-1.png
+  notes-pass-1.md
+```
+
+Minimal capture script:
+
+```ts
+import { chromium } from "playwright";
+import fs from "fs";
+import path from "path";
+
+const outputDir = ".visual-feedback";
+const viewports = [
+  { name: "desktop", width: 1440, height: 900 },
+  { name: "tablet", width: 1024, height: 768 },
+  { name: "mobile", width: 390, height: 844 },
+];
+
+async function capture(url: string, label: string) {
+  fs.mkdirSync(outputDir, { recursive: true });
+  const browser = await chromium.launch();
+
+  for (const viewport of viewports) {
+    const page = await browser.newPage({
+      viewport: { width: viewport.width, height: viewport.height },
+      deviceScaleFactor: 1,
+    });
+
+    await page.goto(url, { waitUntil: "networkidle" });
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      const style = document.createElement("style");
+      style.textContent = `
+        *, *::before, *::after {
+          animation-duration: 0s !important;
+          animation-delay: 0s !important;
+          transition-duration: 0s !important;
+          transition-delay: 0s !important;
+          scroll-behavior: auto !important;
+        }
+      `;
+      document.head.appendChild(style);
+    });
+
+    await page.screenshot({
+      path: path.join(outputDir, `${label}-${viewport.name}.png`),
+      fullPage: true,
+    });
+    await page.close();
+  }
+
+  await browser.close();
+}
+
+const [url, label] = process.argv.slice(2);
+if (!url || !label) {
+  console.error("Usage: tsx capture.ts <url> <label>");
+  process.exit(1);
+}
+
+capture(url, label);
+```
+
+## Visual Diff
+
+Use `pixelmatch` and `pngjs` when the project does not already have a visual comparison helper:
+
+```bash
+npm install -D pixelmatch pngjs playwright
+```
+
+Minimal diff script:
+
+```ts
+import fs from "fs";
+import path from "path";
+import pixelmatch from "pixelmatch";
+import { PNG } from "pngjs";
+
+const outputDir = ".visual-feedback";
+const viewports = ["desktop", "tablet", "mobile"];
+const results = [];
+
+function compare(referencePath: string, actualPath: string, diffPath: string) {
+  const reference = PNG.sync.read(fs.readFileSync(referencePath));
+  const actual = PNG.sync.read(fs.readFileSync(actualPath));
+  const width = Math.min(reference.width, actual.width);
+  const height = Math.min(reference.height, actual.height);
+  const refCropped = new PNG({ width, height });
+  const actualCropped = new PNG({ width, height });
+  const diff = new PNG({ width, height });
+
+  PNG.bitblt(reference, refCropped, 0, 0, width, height, 0, 0);
+  PNG.bitblt(actual, actualCropped, 0, 0, width, height, 0, 0);
+
+  const diffPixels = pixelmatch(
+    refCropped.data,
+    actualCropped.data,
+    diff.data,
+    width,
+    height,
+    { threshold: 0.1 }
+  );
+
+  fs.writeFileSync(diffPath, PNG.sync.write(diff));
+  const totalPixels = width * height;
+  return {
+    width,
+    height,
+    diffPixels,
+    totalPixels,
+    diffPercent: Number(((diffPixels / totalPixels) * 100).toFixed(2)),
+  };
+}
+
+for (const viewport of viewports) {
+  const referencePath = path.join(outputDir, `reference-${viewport}.png`);
+  const actualPath = path.join(outputDir, `actual-${viewport}.png`);
+  const diffPath = path.join(outputDir, `diff-${viewport}.png`);
+  if (fs.existsSync(referencePath) && fs.existsSync(actualPath)) {
+    results.push({ viewport, ...compare(referencePath, actualPath, diffPath) });
+  }
+}
+
+fs.writeFileSync(
+  path.join(outputDir, "diff-results.json"),
+  JSON.stringify(results, null, 2)
+);
+console.table(results);
+```
+
+## Inspection Checklist
+
+Layout:
+
+- Page width, max-width, grid/column alignment, section order, hero composition, fold composition.
+
+Typography:
+
+- Font family, size, weight, line height, letter spacing, text color, heading width, paragraph width.
+
+Spacing:
+
+- Section padding, nav-to-hero gap, heading-to-copy gap, CTA gap, card padding, grid gaps, image margins.
+
+Colors:
+
+- Backgrounds, text, muted text, accent color, buttons, borders, gradients, overlays.
+
+Components:
+
+- Button height/radius/shadow, card radius/border/shadow, input height, badge style, navbar height.
+
+Images:
+
+- Asset choice, crop, aspect ratio, object-fit, position, size, shadow/glow.
+
+Responsive:
+
+- Mobile stacking, nav behavior, hero image visibility, font scaling, CTA wrapping, horizontal overflow.
+
+## Tailwind Matching
+
+For pixel-specific references, exact arbitrary values are acceptable:
+
+```tsx
+className="text-[64px] leading-[0.95] tracking-[-0.04em]"
+className="mx-auto max-w-[1180px] px-[32px] py-[96px]"
+className="h-[48px] rounded-[14px] px-[22px] text-[15px] font-semibold"
+```
+
+Do not overuse broad classes like `text-5xl`, `py-20`, or `gap-8` when the reference is visibly pixel-specific.
+
+## Reference Page Analysis
+
+For live references, inspect CSS and loaded assets when useful:
+
+```ts
+const data = await page.evaluate(() => ({
+  title: document.title,
+  bodyText: document.body.innerText.slice(0, 3000),
+  fonts: [...document.fonts].map((font) => ({
+    family: font.family,
+    weight: font.weight,
+    style: font.style,
+    status: font.status,
+  })),
+  stylesheets: [...document.querySelectorAll("link")]
+    .map((link) => ({ rel: link.rel, href: link.href }))
+    .filter((x) => x.rel.includes("stylesheet") || x.href.includes("font")),
+}));
+```
+
+For colors and type samples:
+
+```ts
+const samples = await page.evaluate(() =>
+  [...document.querySelectorAll("*")].slice(0, 200).map((el) => {
+    const style = getComputedStyle(el);
+    return {
+      tag: el.tagName,
+      className: String(el.className),
+      color: style.color,
+      backgroundColor: style.backgroundColor,
+      borderColor: style.borderColor,
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      lineHeight: style.lineHeight,
+    };
+  })
+);
+```
+
+## Pass Notes
+
+Write a short notes file after each pass:
+
+```md
+# Visual Feedback Pass 1
+
+## Diff Summary
+
+- Desktop: 14.2%
+- Tablet: 18.5%
+- Mobile: 21.7%
+
+## Biggest Mismatches
+
+1. Hero heading is too small by approximately 12px.
+2. Hero section starts too low; reduce top padding by around 32px.
+3. CTA buttons are too rounded and too tall.
+
+## Changes Applied
+
+- Increased hero heading to `text-[68px]`.
+- Reduced hero top padding from `pt-32` to `pt-20`.
+- Changed button radius from `rounded-full` to `rounded-[14px]`.
+
+## Remaining Issues
+
+- Mobile hero image still stacks too low.
+- Card shadows are too strong.
+```
+
+## Final Response
+
+Summarize evidence, not guesses:
+
+```text
+Completed visual feedback loop.
+
+Passes run: 4
+
+Final visual diff:
+- Desktop: 4.8%
+- Tablet: 6.2%
+- Mobile: 7.4%
+
+Main fixes:
+- Matched hero layout and heading scale.
+- Adjusted section spacing.
+- Corrected CTA sizing/radius.
+- Improved card shadows and image proportions.
+
+Remaining differences:
+- Exact font differs from reference because the source font was unavailable.
+- Minor antialiasing differences remain.
+
+Artifacts:
+- .visual-feedback/reference-desktop.png
+- .visual-feedback/actual-desktop-pass-4.png
+- .visual-feedback/diff-desktop-pass-4.png
+```
+
+## Sources Behind This Skill
+
+- Playwright MCP documentation: `https://playwright.dev/docs/getting-started-mcp`
+- `eyes` skill by mintuz: `https://github.com/mintuz/claude-plugins/blob/main/plugins/web/skills/eyes/SKILL.md`
+
+exec
+/usr/bin/zsh -lc 'cat .agents/skills/ponytail/SKILL.md' in /home/joao/projects/threenative/threenative-engine/.worktrees/strata-terrain-hardening
+ succeeded in 0ms:
+---
+name: ponytail
+description: >
+  Force the laziest solution that actually works: smallest, shortest, most minimal.
+  Use on any coding task in this game — writing, adding, refactoring, fixing,
+  reviewing, or picking a dependency — and whenever a request smells over-built
+  ("simplest", "minimal", "yagni", "do less", "shortest path", "too much code",
+  "bloat", "boilerplate"). Adds YAGNI and reuse to the engine's capability-first
+  rule: never hand-write what an installed @threenative system already does.
+  Source: github.com/DietrichGebert/ponytail (MIT). Do NOT use for non-coding
+  requests (general knowledge, prose, translation, summaries, recipes).
+argument-hint: "[off]"
+license: MIT
+---
+
+# Ponytail — lazy senior dev
+
+You are a lazy senior developer. Lazy means efficient, not careless. The best code
+is the code never written. Active every response; this project's hook re-injects the
+ruleset every session and prompt, and `PONYTAIL=off` or "stop ponytail" turns it off.
+
+## The ladder
+
+Stop at the first rung that holds. The ladder runs *after* you understand the
+problem, not instead of it: read the code the change touches and trace the real
+flow end to end, then climb. Two rungs work → take the higher one and move on.
+
+1. **Does this need to exist at all?** Speculative need = skip it, say so in one line. (YAGNI)
+2. **Already installed in the engine?** Search `engine_search_capabilities` for the full request and each concrete mechanic, inspect hits with `engine_capability_detail`, and reuse the returned system — a node, convention, helper or subpath that already ships is the answer, not a thing to re-implement. This rung *is* the critical capability gate; never skip it because the task looks small, and never jump to hand-written code while it is unsearched.
+3. **Already in this game?** Reuse a helper, type, or pattern that already lives in `src/`. Re-implementing what sits a few files over is the most common slop.
+4. **Stdlib or engine convention does it?** `loadAll`, `addInSlices`, `GroundSnap`, an input vector, a physics query — reach for those before writing your own loop.
+5. **Already-installed dependency solves it?** Use it; never add a new one for what a few lines can do.
+6. **Can it be one line?** One line.
+7. **Only then:** the minimum code that works, in this game's `src/`.
+
+## Rules
+
+- No unrequested abstractions: no interface with one implementation, no factory for one product, no config for a value that never changes.
+- No boilerplate, no scaffolding "for later"; later can scaffold for itself. Deletion over addition. Boring over clever.
+- Fewest files possible. Shortest working diff wins — but only once you understand the problem. The smallest change in the wrong place is a second bug.
+- Complex request? Ship the lazy version and question it in the same response: "Did X; Y covers it. Need full X? Say so." Never stall on a question you can default.
+- Two same-size options? Take the one correct on edge cases — lazy means less code, not the flimsier algorithm.
+- Bug fix = root cause, not symptom: grep every caller of the function you touch and fix the shared one. One guard where all callers route through is smaller than a guard per caller, and patching only the path the ticket names leaves a sibling caller broken.
+- Mark a deliberate corner cut with a `ponytail:` comment naming the ceiling and the upgrade path.
+
+## Output
+
+Code first. Then at most three short lines: what was skipped, when to add it.
+Pattern: `[code] → skipped: [X], add when [Y].` No essays, no feature tours, no
+design notes. Explanation the user explicitly asked for (a plan, a report, per-phase
+notes) is not debt — give it in full.
+
+## When NOT to be lazy
+
+Never simplify away: understanding the problem (a small diff you do not understand is
+just laziness dressed up as efficiency), input validation at trust boundaries, error
+handling that prevents data loss, security, accessibility, anything explicitly
+requested, and the calibration real hardware needs. Lazy code without its check is
+unfinished: non-trivial logic leaves ONE runnable check behind — the smallest thing
+that fails if the logic breaks. In this game the proof is a playtest scenario, never a
+new test framework; trivial one-liners need no test.
+
+## Boundaries
+
+Ponytail governs what you build, not how you talk. "stop ponytail" / "normal mode" /
+`PONYTAIL=off`: revert. Level persists until changed or session end.
+
+The shortest path to done is the right path.
+
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+ERROR: Reconnecting... 2/5
+ERROR: Reconnecting... 3/5
+ERROR: Reconnecting... 4/5
+ERROR: Reconnecting... 5/5
+warning: Falling back from WebSockets to HTTPS transport. stream disconnected before completion: websocket closed by server before response.completed
+codex
+Step 2 of 2 done — **PASS: overall NEUTRAL**.
+
+- Ground run 1 — **NEUTRAL**: same framing, terrain relief, grey material, horizon, and light.
+- Ground run 2 — **NEUTRAL**: same visible surface detail, slope profile, exposure, and shadows.
+- Edge run 1 — **NEUTRAL**: same camera, terrain edge, distant boulder, material, and lighting.
+- Edge run 2 — **NEUTRAL**: same terrain silhouette, boulder placement, texture, and exposure.
+- Boulders run 1 — **NEUTRAL**: same boulder geometry/material, placement, cast shadow, and ground detail.
+- Boulders run 2 — **NEUTRAL**: same boulder highlights, shadow direction/length, horizon, and framing.
+- Overview run 1 — **NEUTRAL**: same mountain silhouette, snow coverage, exposed rock, material, and light.
+- Overview run 2 — **NEUTRAL**: same mountain framing, snow/rock boundaries, shading, and visible boulders.
+
+All 16 frames were visible and inspectable; no side was blank or missing. Originals were not opened because no pair was ambiguous.
+hook: Stop
+hook: Stop
+hook: Stop Completed
+hook: Stop Completed
+tokens used
+64,267
+Step 2 of 2 done — **PASS: overall NEUTRAL**.
+
+- Ground run 1 — **NEUTRAL**: same framing, terrain relief, grey material, horizon, and light.
+- Ground run 2 — **NEUTRAL**: same visible surface detail, slope profile, exposure, and shadows.
+- Edge run 1 — **NEUTRAL**: same camera, terrain edge, distant boulder, material, and lighting.
+- Edge run 2 — **NEUTRAL**: same terrain silhouette, boulder placement, texture, and exposure.
+- Boulders run 1 — **NEUTRAL**: same boulder geometry/material, placement, cast shadow, and ground detail.
+- Boulders run 2 — **NEUTRAL**: same boulder highlights, shadow direction/length, horizon, and framing.
+- Overview run 1 — **NEUTRAL**: same mountain silhouette, snow coverage, exposed rock, material, and light.
+- Overview run 2 — **NEUTRAL**: same mountain framing, snow/rock boundaries, shading, and visible boulders.
+
+All 16 frames were visible and inspectable; no side was blank or missing. Originals were not opened because no pair was ambiguous.

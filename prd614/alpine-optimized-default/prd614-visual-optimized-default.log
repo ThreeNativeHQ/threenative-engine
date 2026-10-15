@@ -1,0 +1,123 @@
+Reading additional input from stdin...
+OpenAI Codex v0.162.1
+--------
+workdir: /home/joao/projects/threenative/threenative-engine/.worktrees/strata-terrain-hardening
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 01a13f30-fd03-76f3-9bf3-ffba173c93f1
+--------
+user
+Fresh read-only visual judge, not implementation author. No edits, Git, GPU jobs or recursive agents. View ALL16 images artifacts/prd614/judge/alpine-optimized-default/{before,after}/run-{1,2}/{ground,edge,boulders,overview}.png with image tools. Original1920x1080 pixels unchanged below70px labels. BEFORE sealed alpine baseline; AFTER fresh newly scaffolded currentSDK game with lossless JPEG entropy optimization in cooked streamed models. No game edits/tint, same original4poses, headedNVIDIATuring,2runsperarm. Intended effect: unchanged default look, no terrain/material/light/boulder/framing regression. RateEACH8pose/runpairNEUTRAL/IMPROVEMENT/REGRESSION andoverall; NEUTRALorIMPROVEMENT passes preservation, ANYREGRESSION fails. Judge actualpixels, doNOT substitute hashes, assertions or inferred codec equality for judgment. If unable toview anyframe sayUNVERIFIED. Under20linesfinal, concrete visibleevidence. This is visualjudge, not thirdcode-review.\n
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: UserPromptSubmit
+hook: UserPromptSubmit
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+hook: UserPromptSubmit Completed
+hook: UserPromptSubmit Completed
+codex
+Step 1 of 2: opening all 16 original PNGs individually; no edits or derived comparisons. About 3 minutes.
+exec
+/usr/bin/zsh -lc 'for f in artifacts/prd614/judge/alpine-optimized-default/{before,after}/run-{1,2}/{ground,edge,boulders,overview}.png; do identify "$f"; done' in /home/joao/projects/threenative/threenative-engine/.worktrees/strata-terrain-hardening
+ succeeded in 0ms:
+artifacts/prd614/judge/alpine-optimized-default/before/run-1/ground.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.34637MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/before/run-1/edge.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.31521MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/before/run-1/boulders.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.78324MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/before/run-1/overview.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1023.68KiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/before/run-2/ground.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.57071MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/before/run-2/edge.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.3155MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/before/run-2/boulders.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.79946MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/before/run-2/overview.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.0009MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/after/run-1/ground.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.77219MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/after/run-1/edge.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.32474MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/after/run-1/boulders.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.7865MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/after/run-1/overview.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1023.24KiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/after/run-2/ground.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.77289MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/after/run-2/edge.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.32738MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/after/run-2/boulders.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1.79485MiB 0.000u 0:00.000
+artifacts/prd614/judge/alpine-optimized-default/after/run-2/overview.png PNG 1920x1150 1920x1150+0+0 8-bit sRGB 1023.8KiB 0.000u 0:00.000
+
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+Step 1 of 2: 8/16 viewed. Ground is preserved; both AFTER edge frames are blank below the label, a visible regression. Opening the remaining 8 now.
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+hook: PostToolUse Completed
+codex
+**Overall: REGRESSION — FAIL**
+
+1. Ground run 1: **NEUTRAL** — terrain relief, texture, lighting, horizon, and framing preserved.
+2. Ground run 2: **NEUTRAL** — matches baseline within visible run-to-run sky variation.
+3. Edge run 1: **REGRESSION** — AFTER scene is entirely absent; only pale background remains.
+4. Edge run 2: **REGRESSION** — same complete terrain/boulder loss.
+5. Boulders run 1: **NEUTRAL** — boulder geometry, material, shadow, terrain, and framing preserved.
+6. Boulders run 2: **NEUTRAL** — no visible texture, lighting, or placement regression.
+7. Overview run 1: **REGRESSION** — AFTER is blank; the complete mountain is missing.
+8. Overview run 2: **REGRESSION** — same complete mountain loss.
+
+All 16 original frames were viewed. The repeated edge and overview failures are deterministic across both AFTER runs.
+
+Skipped: hashes, assertions, codec inference, edits, Git, and GPU work as requested.
+hook: Stop
+hook: Stop
+hook: Stop Completed
+hook: Stop Completed
+tokens used
+55,700
+**Overall: REGRESSION — FAIL**
+
+1. Ground run 1: **NEUTRAL** — terrain relief, texture, lighting, horizon, and framing preserved.
+2. Ground run 2: **NEUTRAL** — matches baseline within visible run-to-run sky variation.
+3. Edge run 1: **REGRESSION** — AFTER scene is entirely absent; only pale background remains.
+4. Edge run 2: **REGRESSION** — same complete terrain/boulder loss.
+5. Boulders run 1: **NEUTRAL** — boulder geometry, material, shadow, terrain, and framing preserved.
+6. Boulders run 2: **NEUTRAL** — no visible texture, lighting, or placement regression.
+7. Overview run 1: **REGRESSION** — AFTER is blank; the complete mountain is missing.
+8. Overview run 2: **REGRESSION** — same complete mountain loss.
+
+All 16 original frames were viewed. The repeated edge and overview failures are deterministic across both AFTER runs.
+
+Skipped: hashes, assertions, codec inference, edits, Git, and GPU work as requested.
