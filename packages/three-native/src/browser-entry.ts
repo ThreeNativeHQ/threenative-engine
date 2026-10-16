@@ -222,7 +222,8 @@ export async function bindWebEngine(
       },
       classes.RenderTarget === undefined
         ? undefined
-        : // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
+        : // quality-allow: three's class name, so a back end passes its class map.
+          // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
           { RenderTarget: classes.RenderTarget as never },
     );
     drawSecondaryPasses = passes.updateSecondaryPasses;
