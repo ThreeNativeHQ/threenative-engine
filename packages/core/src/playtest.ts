@@ -397,8 +397,9 @@ function holdUntilAttached(
     if (applySetup !== undefined) {
       bridge.applySetup = async (request) => {
         try {
-          await applySetup(request);
+          const confirmation = await applySetup(request);
           release();
+          return confirmation;
         } catch (error) {
           fail(error);
           throw error;
