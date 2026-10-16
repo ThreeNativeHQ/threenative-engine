@@ -1210,8 +1210,12 @@ if (runtime.tsl !== undefined) {
       branch.Else(() => acc.assign(2));
     });
   });
-  const built = shade();
-  check(shade() === built, "Fn returns cached graph built once at definition");
+  const graphA = shade() as Record<symbol, number>;
+  const graphB = shade() as Record<symbol, number>;
+  check(
+    graphA !== graphB && (graphA[TSL_NODE] ?? 0) > 0 && (graphB[TSL_NODE] ?? 0) > 0,
+    "each Fn call builds its own graph",
+  );
   let fnThrew = false;
   try {
     tsl.Fn(() => {
@@ -1372,7 +1376,7 @@ if (runtime.tsl !== undefined) {
         const branch = t.tsl.If(i.lessThan(1), () => acc.assign(1));
         branch.Else(() => acc.assign(2));
       });
-    });
+    })();
     const names = () => t.calls.map(({ name }) => name);
     check(
       isDeepStrictEqual(names(), [
@@ -1408,7 +1412,7 @@ if (runtime.tsl !== undefined) {
     try {
       t.tsl.Fn(() => {
         throw new Error("original");
-      });
+      })();
     } catch (error) {
       threw = String(error);
     }
