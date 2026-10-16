@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
-import { Data3DTexture, Vector3, PerspectiveCamera, OrthographicCamera } from "three";
-import { NodeMaterial, QuadMesh, RenderTarget } from "three/webgpu";
-import { rtt as upstreamRtt, vec4 } from "three/tsl";
-import TRAANode from "three/addons/tsl/display/TRAANode.js";
+import { Data3DTexture, OrthographicCamera, PerspectiveCamera, Vector3 } from "three";
 import { LUTCubeLoader as UpstreamLUTCubeLoader } from "three/addons/loaders/LUTCubeLoader.js";
+import TRAANode from "three/addons/tsl/display/TRAANode.js";
+import { rtt as upstreamRtt, vec4 } from "three/tsl";
+import { NodeMaterial, QuadMesh, RenderTarget } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { defineLUTCubeLoader } from "../src/addons/lut-cube-loader.js";
 import { definePostEffects } from "../src/addons/post-effects.js";

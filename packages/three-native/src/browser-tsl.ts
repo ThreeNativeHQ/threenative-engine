@@ -418,6 +418,7 @@ export function defineTsl(
     classes && "Mesh" in classes
       ? ({
           ...(classes as unknown as IRttClasses),
+          // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
           QuadMesh: defineQuadMesh(classes as never),
         } as IRttClasses)
       : undefined,
@@ -539,6 +540,7 @@ export function defineTsl(
       exports,
       defineStorage(
         { storage: makeStorage as never },
+        // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
         (classes as unknown as { BufferAttribute: never }).BufferAttribute,
       ),
     );

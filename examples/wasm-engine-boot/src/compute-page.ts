@@ -215,7 +215,10 @@ try {
   const row = await renderer.readRenderTargetPixelsAsync(wide, 0, 0, 8, 1);
   probe.vertexRead = Array.from({ length: 8 }, (_, i) => row[i * 4]).join(",");
 
-  renderer.deleteAttribute(filled.value);
+  // The engine's renderer drops an attribute's GPU copy; upstream's typings do not declare it.
+  (renderer as unknown as { deleteAttribute(attribute: unknown): void }).deleteAttribute(
+    filled.value,
+  );
   probe.done = true;
 } catch (error) {
   probe.error = error instanceof Error ? error.message : String(error);

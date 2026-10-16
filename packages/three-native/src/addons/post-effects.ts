@@ -54,9 +54,10 @@ export function definePostEffects(tsl: IEffectTsl) {
         clearViewOffset(): void;
       };
       let jitterIndex = 0;
-      const halton = (index: number, base: number): number => {
-        let fraction = 1,
-          result = 0;
+      const halton = (start: number, base: number): number => {
+        let index = start;
+        let fraction = 1;
+        let result = 0;
         while (index > 0) {
           fraction /= base;
           result += fraction * (index % base);
