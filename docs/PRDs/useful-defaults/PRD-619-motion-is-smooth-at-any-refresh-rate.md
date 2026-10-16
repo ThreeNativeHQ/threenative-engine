@@ -1,6 +1,6 @@
 # PRD-619 — Motion is smooth at any refresh rate: interpolate between physics ticks
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P0 — AC-1 to AC-6 are open: every game that moves a body or a camera shows stepped motion on any display that does not present at exactly the 60 Hz simulation rate (owner report on the starter template, 2026-10-15; measured below).
 **Complexity:** 4 (MEDIUM) — 4–7 implementation files (`packages/core/src/loop.ts`, `game.ts`, a new `interpolation.ts`, `packages/physics/src/{CharacterBody3D,RigidBody3D,VehicleBody3D}.ts`) (+2); the fixed-step/render contract every game reads (+2). Risk override: none.
 **Owner:** unassigned
@@ -43,7 +43,7 @@ A game that moves a body or a camera in its fixed update presents motion whose p
 ## Phases
 
 ### Phase 1 — Reproduce in a test
-- [ ] Loop spec drives `FixedStepLoop` with present intervals of 1/56, 1/75, 1/120 and 1/144 s and records a 2 m/s body's rendered x per frame; asserts AC-5's CV bound. Red today. proof: `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts`
+- [x] Loop spec drives `FixedStepLoop` with present intervals of 1/56, 1/75, 1/120 and 1/144 s and records a 2 m/s body's rendered x per frame; asserts AC-5's CV bound. Red reproduced: 4/4 failures, CV 0.242/0.496/1.000/1.179; exit 1. proof: `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts`
 
 ### Phase 2 — Engine mechanism
 - [ ] `loop.ts` exposes `alpha` per presented frame (AC-1). proof: the Phase 1 spec, alpha assertions
