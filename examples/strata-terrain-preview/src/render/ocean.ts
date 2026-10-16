@@ -16,9 +16,11 @@ import {
   float,
   fwidth,
   mix,
+  mrt,
   mx_fractal_noise_float,
   mx_noise_float,
   normalize,
+  output,
   positionLocal,
   positionWorld,
   smoothstep,
@@ -28,10 +30,12 @@ import {
   uniform,
   vec2,
   vec3,
+  vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import type { IBakedWorld } from "./terrain.js";
+import { waterProofEnabled, waterProofForcedFoam } from "./waterProof.js";
 
 /** This game's spectral sea state; two non-overlapping wave bands. */
 export const SEA = {
@@ -309,6 +313,24 @@ export function createWaterMesh(ocean: SpectralOcean, data: IBakedWorld): Mesh {
     float(0.7),
     shoreFoam,
   );
+  if (waterProofEnabled()) {
+    // The forced-foam control changes the real foam, so beauty and the mask move together; it
+    // never writes a fake diagnostic zero. The proof reads W = 1 - (shoreFoam + swash) from R and
+    // the water identity from G, leaving B and A for later callers.
+    const foam = waterProofForcedFoam() ? float(1) : shoreFoam;
+    const wash = waterProofForcedFoam() ? float(0) : swash;
+    material.colorNode = mix(water, color(FOAM), foam.add(wash));
+    material.opacityNode = smoothstep(0, Math.min(2.5, deepDepth), depth).max(foam.mul(0.9));
+    material.roughnessNode = mix(
+      float(0.12).add(smoothstep(70, 700, eyeDistance).mul(0.07)),
+      float(0.7),
+      foam,
+    );
+    material.mrtNode = mrt({
+      output,
+      diagnostic: vec4(float(1).sub(foam.add(wash)), float(1), float(0), float(1)),
+    });
+  }
   material.addEventListener("dispose", () => heightTexture.dispose());
 
   const mesh = new Mesh(geometry, material);

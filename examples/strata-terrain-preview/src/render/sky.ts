@@ -1,6 +1,16 @@
 // Game-owned sun, shadows and daylight; atmosphere.ts owns the LUT sky and surface air.
 import { Atmosphere, Daylight, type ICtx, VirtualShadowNode } from "@threenative/core";
-import { Color, DirectionalLight, Mesh, type Object3D, SphereGeometry, Vector3 } from "three";
+import {
+  Color,
+  DirectionalLight,
+  HalfFloatType,
+  Mesh,
+  NoColorSpace,
+  type Object3D,
+  RGBAFormat,
+  SphereGeometry,
+  Vector3,
+} from "three";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
@@ -31,6 +41,7 @@ import type { Node } from "three/webgpu";
 import { aerialPerspective, cloudDome, createAtmosphere, skyColour } from "./atmosphere.js";
 import { BIOMES, type IBiome } from "./biomes.js";
 import { setCanopySun } from "./propMaterials.js";
+import { installWaterProof, waterProofEnabled, waterProofMode } from "./waterProof.js";
 
 const omitted = new Set(
   new URLSearchParams(globalThis.location?.search ?? "").get("off")?.split(",") ?? [],
@@ -225,7 +236,25 @@ export function installOutdoorOcclusion(
   // their own captures are judged.
   const temporal = look.world === "forest" && !omitted.has("traa");
   const world = pass(scene, camera, temporal ? { samples: 0 } : undefined);
-  world.setMRT(mrt({ output, normal: normalView }));
+  // Proof opt-in, coastal only: keep the 4x MSAA pass and add one resolved RGBA16F diagnostic
+  // attachment. The forest's TRAA single-sample path is untouched.
+  const proofing = look.world === "coastal" && !temporal && waterProofEnabled();
+  world.setMRT(mrt({ output, normal: normalView, ...(proofing ? { diagnostic: vec4(0) } : {}) }));
+  let disposeWaterProof: (() => void) | undefined;
+  if (proofing) {
+    const diagnostic = world.getTexture("diagnostic");
+    diagnostic.format = RGBAFormat;
+    diagnostic.type = HalfFloatType;
+    diagnostic.colorSpace = NoColorSpace;
+    disposeWaterProof = installWaterProof({
+      world,
+      worldName: look.world,
+      mode: waterProofMode(),
+      renderer: renderer.raw,
+      camera,
+      texture: diagnostic,
+    });
+  }
   const daylight = scene.children.find((child) => child instanceof Daylight);
   const depth = world.getTextureNode("depth");
   // An uncovered MSAA depth sample must not leave a one-pixel terrain edge against the sky.
@@ -324,6 +353,7 @@ export function installOutdoorOcclusion(
     ],
   });
   return () => {
+    disposeWaterProof?.();
     if (scene.fogNode === null) scene.fogNode = previousFog;
     if (scene.fog === null) scene.fog = previousClassicFog;
     // The example owns these shadow maps. Removing the lights alone retained their targets.

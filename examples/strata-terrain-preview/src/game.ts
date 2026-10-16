@@ -1,4 +1,11 @@
-import { type ICtx, Scene, VirtualShadowNode, defineGame, markStatic } from "@threenative/core";
+import {
+  type ICtx,
+  type IGamePluginRuntime,
+  Scene,
+  VirtualShadowNode,
+  defineGame,
+  markStatic,
+} from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import { Heightfield } from "@threenative/core/world";
 import {
@@ -41,6 +48,7 @@ import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./rend
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
 import { type IBakedWorld, createTerrain } from "./render/terrain.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
+import { sampleActiveWaterProof, waterProofEnabled } from "./render/waterProof.js";
 import {
   beginViewVisit,
   medianOfGrowingSamples as median,
@@ -1307,6 +1315,18 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
   };
 }
 
+// The coastal water-contribution proof rides in only when the URL opts in, so a plain run pays for
+// no diagnostic attachment and no observation. It contributes one JSON-safe `waterProof` key.
+const waterProof = {
+  setup(_ctx: TerrainCtx, runtime?: IGamePluginRuntime) {
+    if (!waterProofEnabled()) return undefined;
+    return runtime?.observations.contribute({
+      capabilities: [],
+      sample: (request) => sampleActiveWaterProof(request),
+    });
+  },
+};
+
 const game = defineGame<TerrainState, IPhysicsContext>({
   camera: { projection: "perspective", fov: 60, far: 5000 },
   initialState,
@@ -1389,7 +1409,7 @@ const game = defineGame<TerrainState, IPhysicsContext>({
     // a view change is discarded; the scenario waits for three kept windows before leaving a view.
     reportEvery: 10,
   },
-  plugins: [rapier({ deterministicRestart: true }), playtest()],
+  plugins: [rapier({ deterministicRestart: true }), playtest(), waterProof],
   // HiDPI displays ask for 2-3x the pixels; the engine scaler trims to what the GPU affords.
   render: {
     preferWebGPU: true,
