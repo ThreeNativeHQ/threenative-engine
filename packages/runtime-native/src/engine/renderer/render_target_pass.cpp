@@ -3,6 +3,7 @@
 #include "engine/renderer/render_database.h"
 
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <utility>
 
@@ -31,11 +32,25 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
 }  // namespace
 
 std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Object3D& root, Camera& camera,
-                                        std::array<double, 4> clear, bool shadowMap) {
+                                        std::array<double, 4> clear, bool shadowMap, bool deferred) {
+    if (deferred && target.depthTexture)
+        return {"TN_NATIVE_DEFERRED_TARGET_DEPTH: a deferred render target cannot carry a depth texture"};
+    main.flushDeferred(&target);  // an earlier plan for this target is recorded first, never dropped or drawn twice
     TargetGpu& gpu = gpuOf(main, target);
     gpu.database->shadowMapEnabled = shadowMap;
     gpu.renderer->setSourceAttachments(main.sceneColorView(), main.sceneDepthView());
-    gpu.database->render(*gpu.renderer, root, camera, clear);
+    if (deferred) {
+        std::vector<std::function<void()>> jobs;
+        struct Reset {
+            RenderDatabase& database;
+            ~Reset() { database.encodeJobs = nullptr; }
+        } reset{*gpu.database};
+        gpu.database->encodeJobs = &jobs;
+        gpu.database->render(*gpu.renderer, root, camera, clear);
+        main.deferTarget(&target, target.gpu, std::move(jobs));
+    } else {
+        gpu.database->render(*gpu.renderer, root, camera, clear);
+    }
     gpu.rendered = true;
     if (target.depthTexture) gpu.renderer->copyDepthToTexture(*target.depthTexture);
     std::vector<std::string> diagnostics = gpu.database->diagnostics();

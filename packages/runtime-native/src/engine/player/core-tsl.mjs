@@ -46,10 +46,16 @@ export const { storage, instancedArray, attributeArray, StorageBufferAttribute, 
 
 // three's pass(), mrt() and MRT slots over the player's one scene pass (shared with the Wasm back
 // end); the player draws the scene and camera a pass is pointed at.
-export const { pass, mrt, output, normalView, metalness, roughness } = definePass(globalThis.tsl, (scene, camera) => {
-  globalThis.tn.scene = scene;
-  globalThis.tn.camera = camera;
-});
+// An offscreen `new PassNode(PassNode.COLOR, scene, camera)` owns a RenderTarget that the renderer draws before the
+// frame (updateSecondaryPasses, called from core-webgpu.mjs); only pass() publishes the frame's scene and camera.
+export const { pass, PassNode, updateSecondaryPasses, mrt, output, normalView, metalness, roughness } = definePass(
+  globalThis.tsl,
+  (scene, camera) => {
+    globalThis.tn.scene = scene;
+    globalThis.tn.camera = camera;
+  },
+  { RenderTarget: globalThis.RenderTarget, surface: () => globalThis.tn.surfaceSize() },
+);
 
 export const reflector = defineReflector(globalThis.tsl.reflector, { Object3D, PerspectiveCamera });
 

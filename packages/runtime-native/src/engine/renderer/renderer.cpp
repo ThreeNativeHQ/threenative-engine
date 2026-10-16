@@ -897,6 +897,7 @@ void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
     postEffects_.reset();
     postTextures_.clear();
     postTextureVersions_.clear();
+    postTextureViews_.clear();
     postUniforms_ = post ? post->uniforms : std::map<std::string,std::vector<double>>{};
     post_ = std::move(post);
     outputVertex_ = {};  // rebuild the output program with (or without) the post graph
@@ -1988,6 +1989,32 @@ void Renderer::encodePending() {
     encodeFrame(*job_);
 }
 
+void Renderer::deferTarget(const void* key, std::weak_ptr<void> owner, std::vector<std::function<void()>> jobs) {
+    flushDeferred(key);
+    deferred_.push_back({key, std::move(owner), std::move(jobs)});
+}
+
+void Renderer::flushDeferred(const void* key) {
+    const auto found = std::find_if(deferred_.begin(), deferred_.end(), [&](const auto& entry) { return entry.key == key; });
+    if (found == deferred_.end()) return;
+    DeferredTarget entry = std::move(*found);
+    deferred_.erase(found);
+    if (!entry.owner.expired())
+        for (const auto& job : entry.jobs) job();
+}
+
+bool Renderer::postSamples(const void* key) const {
+    return std::any_of(postTextures_.begin(), postTextures_.end(),
+                       [&](const auto& texture) { return texture.second->renderTarget.lock().get() == key; });
+}
+
+void Renderer::recordDeferred(bool sampled) {
+    std::vector<const void*> keys;
+    for (const auto& entry : deferred_)
+        if (postSamples(entry.key) == sampled) keys.push_back(entry.key);
+    for (const void* key : keys) flushDeferred(key);
+}
+
 std::vector<std::shared_ptr<PipelineCompilation>> Renderer::compileAsync(std::span<const DrawItem> items,
     const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat) {
     std::vector<std::shared_ptr<PipelineCompilation>> compilation;
@@ -2002,6 +2029,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // One frame in flight per renderer: the game thread may not plan while the encode half is pending or running.
     if (!compilation && (pendingEncode_ || encoding_))
         throw std::logic_error("TN_RENDER_THREAD_BATON: a frame was planned before the previous one was encoded");
+    // Target draws the post graph does not sample (a sky the world material reads) are recorded ahead of the scene pass.
+    if (!compilation) recordDeferred(false);
     const uint64_t id = compilation ? renderId_ : ++renderId_;
     // Taken at once: a frame that throws must not leave a borrowed view armed for the next one.
     const WGPUTextureView presentTarget = compilation ? nullptr : std::exchange(presentTarget_, nullptr);
@@ -3040,11 +3069,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // Upload authored LUT textures while the game thread is idle, as for live uniforms.
     const bool newTextures = postTextureVersions_.size() != postTextures_.size();
     postTextureVersions_.resize(postTextures_.size());
+    postTextureViews_.resize(postTextures_.size());
     for (size_t i = 0; i < postTextures_.size(); ++i) {
         const auto& [name, source] = postTextures_[i];
         const auto* texture = materialTexture(*source);
-        if (newTextures || postTextureVersions_[i] != source->version()) releaseOutputGroup();
+        if (newTextures || postTextureVersions_[i] != source->version() || postTextureViews_[i] != texture->view) releaseOutputGroup();
         postTextureVersions_[i] = source->version();
+        postTextureViews_[i] = texture->view;
         if (postEffects_) postEffects_->input(name, texture->view, texture->sampler);
     }
     if (!postTextures_.empty() && !outputGroup_)
@@ -3334,12 +3365,30 @@ void Renderer::encodeFrame(FrameJob& job) {
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
         traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
+    // A game's RenderTarget the post graph samples is drawn where the frame first reads it, after the render-to-texture
+    // passes its own scene samples: what the frame has recorded so far is submitted ahead of the target's draw.
+    const auto recordSampledTargets = [&](WGPUCommandEncoder current) {
+        if (std::none_of(deferred_.begin(), deferred_.end(), [&](const auto& entry) { return postSamples(entry.key); }))
+            return current;
+        submit(wgpuCommandEncoderFinish(current, nullptr));
+        wgpuCommandEncoderRelease(current);
+        recordDeferred(true);
+        WGPUCommandEncoderDescriptor next = {};
+        return wgpuDeviceCreateCommandEncoder(device_, &next);
+    };
     if (postEffects_) {
         // three's Info counts each fullscreen effect pass as one draw of one triangle, like the output pass below.
-        const uint32_t effectPasses = postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_, frameTime_, static_cast<float>(output_.toneMappingExposure), &lights);
+        const uint32_t effectPasses = postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_, frameTime_, static_cast<float>(output_.toneMappingExposure), &lights,
+            [&](const std::string& input) {
+                return std::any_of(postTextures_.begin(), postTextures_.end(), [&](const auto& texture) {
+                    return texture.first == input && std::any_of(deferred_.begin(), deferred_.end(), [&](const auto& entry) { return entry.key == texture.second->renderTarget.lock().get(); });
+                });
+            },
+            recordSampledTargets);
         lastFrame_.draws += effectPasses;
         lastFrame_.triangles += effectPasses;
     }
+    encoder = recordSampledTargets(encoder);
     outputPass(encoder, timed, presentTarget, presentFormat);
     if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 6, gpu_.buffer(timestampResolve_), 0);
     WGPUCommandBufferDescriptor commandDesc = {};

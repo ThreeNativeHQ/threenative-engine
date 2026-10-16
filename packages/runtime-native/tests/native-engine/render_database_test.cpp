@@ -1323,6 +1323,85 @@ void renderTarget() {
     CHECK(renderer.diagnostics().empty());
 }
 
+// PRD-617: an offscreen PassNode's target is planned in the JS frame and recorded by the renderer. A target the post
+// graph samples is drawn after the post render-to-texture passes of the same frame, so what its scene samples from an
+// RTT is this frame's value; planned immediately it would show the previous frame's. The sampled target keeps working
+// when it is resized, because the output pass's bind group follows the new view.
+void deferredTargetFollowsPostRtt() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    // The post RTT: the live colour, drawn every frame into rttTarget.
+    const auto rttTarget = RenderTarget::make(32, 32, kTextureHalfFloatType);
+    const auto live = g::uniform("deferredLive", shader::Type::vec(4), {0.25f, 0.5f, 0.25f, 1});
+    auto rtt = std::make_shared<g::NodeData>();
+    rtt->kind = g::Kind::RenderTexture;
+    rtt->type = shader::Type::vec(4);
+    rtt->name = "rtt_deferred";
+    rtt->args = {live, g::uv()};
+    rtt->rtt = std::make_shared<g::RttState>();
+    auto& state = *rtt->rtt;
+    state.width = state.height = 32;
+    state.autoUpdate = true;
+    state.target = rttTarget;
+    state.source = live;
+    state.quad = std::make_shared<Mesh>(makePlaneGeometry(2, 2), std::make_shared<Material>(MaterialType::Basic, true));
+    state.material = state.quad->material;
+    state.material->rawNodeMaterial = true;
+    state.material->nodes.fragmentNode = live;
+    // The offscreen pass: a plane whose material samples the post RTT, drawn into `side` and sampled by the post graph.
+    const auto side = RenderTarget::make(32, 32, kTextureHalfFloatType);
+    Scene inner;
+    OrthographicCamera innerCamera(-1, 1, 1, -1, 0.1, 10);
+    innerCamera.position.z = 5;
+    innerCamera.updateMatrixWorld();
+    auto mapped = std::make_shared<Material>(MaterialType::Basic);
+    mapped->maps["map"] = rttTarget->texture;
+    Mesh plane(makePlaneGeometry(2, 2), mapped);
+    inner.add(plane);
+    inner.updateMatrixWorld(true);
+    renderer.setPostGraph(g::add(g::objectTexture(side->texture, "deferredSide", g::uv()), g::mul(rtt, g::float_(0))));
+    // One frame at red channel `value`; the byte the output holds at the middle.
+    const auto frame = [&](float value, bool deferred) {
+        g::setUniformValues(live, {value, 0.5f, 0.25f, 1});
+        CHECK(renderToTarget(renderer, *side, inner, innerCamera, {0, 0, 0, 1}, false, deferred).empty());
+        CHECK(renderer.deferredTargets() == (deferred ? 1u : 0u));
+        renderer.render({}, CameraState{}, LightState{}, {0, 0, 0, 1});
+        CHECK(renderer.deferredTargets() == 0);  // recorded in this frame, once
+        const auto bytes = read(renderer, events);
+        CHECK(bytes.size() == 64 * 64 * 4);
+        return bytes.size() == 64 * 64 * 4 ? int(bytes[(32 * 64 + 32) * 4]) : -1;
+    };
+    frame(0.25f, true);
+    frame(0.25f, true);
+    // (a) deferred: the target shows the value the RTT was given this frame.
+    CHECK(std::abs(frame(0.75f, true) - 191) <= 1);
+    CHECK(std::abs(frame(0.25f, true) - 64) <= 1);
+    // Planned and drawn at once (the control), it samples the RTT as the previous frame left it.
+    CHECK(std::abs(frame(0.75f, false) - 64) <= 1);
+    CHECK(std::abs(frame(0.25f, false) - 191) <= 1);
+    // A second plan before a frame records the first: nothing is dropped, nothing is drawn twice.
+    CHECK(renderToTarget(renderer, *side, inner, innerCamera, {0, 0, 0, 1}, false, true).empty());
+    CHECK(renderToTarget(renderer, *side, inner, innerCamera, {0, 0, 0, 1}, false, true).empty());
+    CHECK(renderer.deferredTargets() == 1);
+    renderer.render({}, CameraState{}, LightState{}, {0, 0, 0, 1});
+    CHECK(renderer.deferredTargets() == 0);
+    // A deferred target cannot carry a depth texture: the copy would read the previous draw.
+    side->depthTexture = std::make_shared<Texture>();
+    CHECK(!renderToTarget(renderer, *side, inner, innerCamera, {0, 0, 0, 1}, false, true).empty());
+    side->depthTexture.reset();
+    // (b) resized: the post graph's bind group follows the sampled target's new view.
+    side->setSize(16, 16);
+    CHECK(std::abs(frame(0.5f, true) - 128) <= 1);
+    side->setSize(48, 48);
+    CHECK(std::abs(frame(0.75f, true) - 191) <= 1);
+    CHECK(renderer.diagnostics().empty());
+}
+
 // three draws the normal target in the scene pass it counts once, so a post graph that reads `normal`
 // adds no draws and no triangles to the frame's counters (the engine's extra normal pass used to land
 // in the shadow tally, which put the web platformer at 873 draws against three's 431).
@@ -3616,7 +3695,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},

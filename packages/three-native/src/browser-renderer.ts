@@ -6,6 +6,7 @@
  */
 import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
 import { type ITslRuntime, isTslNode } from "./browser-tsl.js";
+import type { PassDraw } from "./pass-node.js";
 import { defineRenderTargets } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
 import { readStorageBytes } from "./storage.js";
@@ -65,6 +66,11 @@ export function defineWebRenderer(
   Color: new (...args: unknown[]) => IColorLike,
   beforeRender: () => void = () => {},
   tsl?: ITslRuntime,
+  /** Draws the offscreen PassNodes into their targets (pass-node.ts); given the drawing buffer and the target draw. */
+  drawSecondaryPasses: (
+    surface: () => { width: number; height: number },
+    draw: PassDraw,
+  ) => void = () => {},
 ): new (
   parameters?: Record<string, unknown>,
 ) => object {
@@ -259,6 +265,10 @@ export function defineWebRenderer(
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
       beforeRender();
+      drawSecondaryPasses(
+        () => ({ width: this.#drawWidth(), height: this.#drawHeight() }),
+        (target, root, view) => this[DRAW_TARGET](target, root, view, true),
+      );
       this.#last = [scene, camera];
       this.#applyState();
       writeHandle(0, scene, "scene");
@@ -312,8 +322,11 @@ export function defineWebRenderer(
       this.#state = key;
     }
 
-    /** render() while a render target is set (render-target.ts): draws into the target. */
-    [DRAW_TARGET](target: unknown, root: unknown, camera: unknown): void {
+    /**
+     * render() while a render target is set (render-target.ts): draws into the target. `deferred` (an offscreen PassNode)
+     * plans the draw and has the engine record it in the frame that samples the target.
+     */
+    [DRAW_TARGET](target: unknown, root: unknown, camera: unknown, deferred = false): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
       beforeRender();
@@ -321,7 +334,15 @@ export function defineWebRenderer(
       writeHandle(0, root, "scene");
       writeHandle(12, camera, "camera");
       writeHandle(24, target, "render target");
-      check(module._tnw_web_render_target(handles + 24, handles, handles + 12, ...this.#clear));
+      check(
+        module._tnw_web_render_target(
+          handles + 24,
+          handles,
+          handles + 12,
+          ...this.#clear,
+          deferred ? 1 : 0,
+        ),
+      );
     }
 
     /** The last scene and camera again: RenderPipeline.render() draws through its post graph. */

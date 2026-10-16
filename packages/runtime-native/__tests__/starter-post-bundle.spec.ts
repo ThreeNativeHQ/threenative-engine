@@ -32,17 +32,22 @@ describe("starter post import bindings", () => {
     expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
   });
 
-  it.each(["atomicAdd", "atomicStore", "lightShadowMatrix", "rtt", "wgslFn", "DepthTexture"])(
-    "bundles %s through its native implementation",
-    async (name) => {
-      const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
-      directories.push(directory);
-      const entry = path.join(directory, "entry.ts");
-      const outfile = path.join(directory, "game.js");
-      const source = name === "DepthTexture" ? "three/webgpu" : "three/tsl";
-      await writeFile(entry, `import { ${name} } from "${source}"; globalThis.bound = ${name};`);
-      await bundleNativeEngine({ entry, outfile, boot: false, host: false });
-      expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
-    },
-  );
+  it.each([
+    "atomicAdd",
+    "atomicStore",
+    "lightShadowMatrix",
+    "rtt",
+    "wgslFn",
+    "DepthTexture",
+    "PassNode",
+  ])("bundles %s through its native implementation", async (name) => {
+    const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
+    directories.push(directory);
+    const entry = path.join(directory, "entry.ts");
+    const outfile = path.join(directory, "game.js");
+    const source = name === "DepthTexture" || name === "PassNode" ? "three/webgpu" : "three/tsl";
+    await writeFile(entry, `import { ${name} } from "${source}"; globalThis.bound = ${name};`);
+    await bundleNativeEngine({ entry, outfile, boot: false, host: false });
+    expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
+  });
 });

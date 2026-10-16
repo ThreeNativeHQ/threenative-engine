@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <vector>
 #include "engine/shader/graph/post_effects.h"
 #include "engine/renderer/pipeline_cache.h"
@@ -29,9 +30,15 @@ class PostEffects {
     void input(const std::string& name, WGPUTextureView view, WGPUSampler sampler = nullptr);
     /** True when any pass reads the named resource ("normal" asks the renderer for a normal target). */
     bool reads(const std::string& name) const;
+    /**
+     * `encoder` is replaced when `split` runs: just before the first pass that reads an input `isDeferred` names, `split`
+     * takes the encoder (to finish and submit it ahead of a game render target's draw) and returns the one to go on with.
+     */
     /** The fullscreen passes it drew, which three's renderer.info counts as one draw and one triangle each. */
-    uint32_t render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
-                const CameraState& camera, uint64_t frame, float time = 0, float exposure = 1, const LightState* lights = nullptr);
+    uint32_t render(WGPUCommandEncoder& encoder, WGPUTextureView scene, WGPUTextureView depth, WGPUBuffer triangle,
+                const CameraState& camera, uint64_t frame, float time = 0, float exposure = 1, const LightState* lights = nullptr,
+                const std::function<bool(const std::string&)>& isDeferred = {},
+                const std::function<WGPUCommandEncoder(WGPUCommandEncoder)>& split = {});
     WGPUTextureView view(const std::string& name) const;
     WGPUSampler sampler(const std::string& name) const;
 

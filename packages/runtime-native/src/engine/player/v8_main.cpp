@@ -665,9 +665,11 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
         isolate->ThrowException(v8::Exception::Error(v8str(isolate, reason)));
     };
     if (game.renderer_ == nullptr) return refuse("TN_NATIVE_RENDER_TARGET: the player has no renderer before its first frame");
-    auto* target = info.Length() == 3 ? game.engineObject(info[0], "RenderTarget") : nullptr;
-    auto* root = info.Length() == 3 ? game.engineObject(info[1], "Object3D") : nullptr;
-    auto* camera = info.Length() == 3 ? game.engineObject(info[2], "Camera") : nullptr;
+    // The optional fourth argument defers the draw to the frame that samples the target (an offscreen PassNode).
+    const bool shaped = info.Length() == 3 || (info.Length() == 4 && info[3]->IsBoolean());
+    auto* target = shaped ? game.engineObject(info[0], "RenderTarget") : nullptr;
+    auto* root = shaped ? game.engineObject(info[1], "Object3D") : nullptr;
+    auto* camera = shaped ? game.engineObject(info[2], "Camera") : nullptr;
     if (target == nullptr || root == nullptr || camera == nullptr)
         return refuse("TN_NATIVE_RENDER_TARGET: expected a RenderTarget, an Object3D and a camera");
     game.idleRenderer();
@@ -675,7 +677,7 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     // three's WebGPURenderer clears a target to its clear colour (setClearColor), black and opaque by default.
     const auto refused = renderToTarget(*game.renderer_, *static_cast<RenderTarget*>(target->ptr.get()),
                                         *static_cast<Object3D*>(root->ptr.get()), *static_cast<Camera*>(camera->ptr.get()),
-                                        game.clear_, game.shadowMap_);
+                                        game.clear_, game.shadowMap_, info.Length() == 4 && info[3]->BooleanValue(isolate));
     if (!refused.empty()) refuse(refused.front());
 }
 

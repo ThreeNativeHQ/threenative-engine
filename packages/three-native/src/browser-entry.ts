@@ -25,7 +25,7 @@ import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { withMathUtilsExtras } from "./math-utils.js";
 import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
-import { definePass } from "./pass-node.js";
+import { type PassDraw, definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { defineReflector } from "./reflector.js";
@@ -34,6 +34,8 @@ import { defineTextureSources } from "./texture-sources.js";
 
 // quality-allow: the JSON import is typed by its literal values, which ICatalog does not accept.
 const engineCatalog = catalogJson as unknown as ICatalog;
+
+type PassUpdate = (surface: () => { width: number; height: number }, draw: PassDraw) => void;
 
 const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
 
@@ -178,6 +180,8 @@ export async function bindWebEngine(
   bound.BlendMode = BlendMode;
   // The engine's four MathUtils functions, with the rest of three's number-only ones beside them.
   bound.MathUtils = withMathUtilsExtras(bound.MathUtils as new () => object);
+  // Offscreen PassNodes (pass-node.ts) draw into their targets at the top of each frame; the TSL block below binds it.
+  let drawSecondaryPasses: PassUpdate = () => {};
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
   // and the wrapper safe point runs (collect: held while the engine references them).
@@ -191,6 +195,7 @@ export async function bindWebEngine(
         audio.updateAudio();
       },
       runtime.tsl,
+      (surface, draw) => drawSecondaryPasses(surface, draw),
     );
   // A GLB through the engine's own glTF loader, for the web GLTFLoader (addons/gltf-loader-web.ts).
   const { loadGltf } = runtime;
@@ -209,13 +214,19 @@ export async function bindWebEngine(
     // draws the scene and camera the pass points at.
     const target: { scene?: unknown; camera?: unknown } = {};
     bound.RenderPipeline = defineRenderPipeline(runtime.tsl, target);
-    Object.assign(
-      bound,
-      definePass(tsl.exports as never, (scene, camera) => {
+    const passes = definePass(
+      tsl.exports as never,
+      (scene, camera) => {
         target.scene = scene;
         target.camera = camera;
-      }),
+      },
+      classes.RenderTarget === undefined
+        ? undefined
+        : // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
+          { RenderTarget: classes.RenderTarget as never },
     );
+    drawSecondaryPasses = passes.updateSecondaryPasses;
+    Object.assign(bound, passes);
   }
   return bindUpstreamExports(names, engineCatalog, bound);
 }

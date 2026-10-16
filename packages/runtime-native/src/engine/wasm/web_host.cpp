@@ -243,10 +243,12 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
 /**
  * three's render() while a render target is set (PRD-551): draws `root` through `camera` into the
  * target, the linear scene colour, as r185 writes a target. Fails, naming the first refusal, when the
- * target's render refused or skipped anything.
+ * target's render refused or skipped anything. A nonzero `deferred` plans the draw now and records it in the frame that
+ * samples the target (Renderer::deferTarget).
  */
 extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_handle_t* rootHandle,
-                                     const tn_handle_t* cameraHandle, double r, double g, double b, double a) {
+                                     const tn_handle_t* cameraHandle, double r, double g, double b, double a,
+                                     int deferred) {
     tnw_web_poll();
     if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
     auto* target = objectAs<RenderTarget>(targetHandle, "RenderTarget");
@@ -255,7 +257,7 @@ extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_h
     if (target == nullptr || root == nullptr || camera == nullptr)
         return fail("TN_WASM_RENDER_TARGET: target, root or camera handle invalid");
     flushCompute();  // a material in the target may read what a queued kernel writes
-    const auto refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap);
+    const auto refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, deferred != 0);
     if (!refused.empty()) return fail(refused.front());
     return 0;
 }

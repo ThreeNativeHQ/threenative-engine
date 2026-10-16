@@ -23,9 +23,13 @@ class Object3D;
  * Draws `root` (a Scene or any Object3D) through `camera` into `target`, clearing to `clear`, with
  * shadow maps when `shadowMap` (three's renderer.shadowMap.enabled). Returns what the target's render
  * refused or skipped by name (empty when it drew).
+ *
+ * `deferred` plans the draw now and hands its recording to `main` (Renderer::deferTarget): it happens in the next frame,
+ * after the post render-to-texture passes when the post graph samples the target, else ahead of the scene pass. A deferred
+ * target has no depth texture to copy (refused by name): the copy would read the depth of the previous draw.
  */
 std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Object3D& root, Camera& camera,
-                                        std::array<double, 4> clear, bool shadowMap);
+                                        std::array<double, 4> clear, bool shadowMap, bool deferred = false);
 
 /** The colour view a material samples for `target`, drawing an empty frame first if it never rendered. */
 WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target);

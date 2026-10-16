@@ -24,6 +24,8 @@ const registry = JSON.parse(
 function host(
   frame: (field: number) => number = () => 0,
   render: (...args: number[]) => number = () => 0,
+  secondary?: Parameters<typeof defineWebRenderer>[4],
+  renderTarget: (...args: number[]) => number = () => 0,
 ) {
   const types = new Map<string, number>();
   const runtime: IBrowserRuntime = {
@@ -55,14 +57,21 @@ function host(
     _tnw_web_error: () => 0,
     _tnw_web_resize: () => 0,
     _tnw_web_render: render,
+    _tnw_web_render_target: renderTarget,
     _tnw_web_frame: frame,
     _tnw_web_renderer_state: state,
   } as unknown as WebEngineModule;
-  const Renderer = defineWebRenderer(module, classes.Color as never);
+  const Renderer = defineWebRenderer(
+    module,
+    classes.Color as never,
+    undefined,
+    undefined,
+    secondary,
+  );
   const canvas = { width: 300, height: 150, style: {}, setAttribute: () => undefined };
   const scene = new (classes.Scene as new () => object)();
   const camera = new (classes.PerspectiveCamera as new () => object)();
-  return { Renderer, canvas, scene, camera, state };
+  return { Renderer, canvas, scene, camera, state, classes };
 }
 
 async function drawn(parameters: Record<string, unknown>) {
@@ -179,5 +188,40 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     };
     await unsupported.init();
     expect(unsupported.backend.trackTimestamp).toBe(false);
+  });
+});
+
+describe("the Wasm engine's offscreen PassNode draw", () => {
+  it("hands the drawing buffer and a deferred target draw to the passes before the frame is drawn", async () => {
+    const order: string[] = [];
+    const deferredFlags: number[] = [];
+    let surface: { width: number; height: number } | undefined;
+    const made = host(
+      () => 0,
+      () => {
+        order.push("frame");
+        return 0;
+      },
+      (read, draw) => {
+        surface = read();
+        draw(target as never, made.scene as never, made.camera as never);
+      },
+      (...args) => {
+        order.push("target");
+        deferredFlags.push(args[args.length - 1] ?? -1);
+        return 0;
+      },
+    );
+    const target = new (made.classes.RenderTarget as new (w: number, h: number) => object)(4, 4);
+    const renderer = new made.Renderer({ canvas: made.canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(made.scene, made.camera);
+    expect(surface).toEqual({ width: 300, height: 150 });
+    expect(order).toEqual(["target", "frame"]);
+    // The engine plans the target's draw now and records it in the frame that samples the target.
+    expect(deferredFlags).toEqual([1]);
   });
 });

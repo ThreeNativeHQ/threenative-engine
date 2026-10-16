@@ -1,7 +1,7 @@
 export * from "./core-three.mjs";
 import { BufferAttribute, Color, Material, NormalBlending } from "./core-three.mjs";
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
-import { StorageBufferAttribute, StorageInstancedBufferAttribute, syncUniforms } from "./core-tsl.mjs";
+import { PassNode, StorageBufferAttribute, StorageInstancedBufferAttribute, syncUniforms, updateSecondaryPasses } from "./core-tsl.mjs";
 import { readStorageBytes } from "../../../../three-native/src/storage.ts";
 import { GAME_SPANS } from "../../../../core/src/profiling/Spans.ts";
 import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
@@ -34,6 +34,19 @@ function warnFogNode(scene) {
   if (fogNodeWarned || scene?.fogNode == null) return;
   fogNodeWarned = true;
   console.warn("TN_NATIVE_FOG_NODE_IGNORED: scene.fogNode is not applied by the native engine; scene.fog is.");
+}
+
+function drawTarget(renderer, target, root, camera, deferred) {
+  syncUniforms();
+  globalThis.tn.setRendererState(renderer);  // the target clears to the renderer's current clear colour
+  if (deferred) globalThis.tn.renderTarget(target, root, camera, true);
+  else globalThis.tn.renderTarget(target, root, camera);
+}
+
+// Every offscreen PassNode plans its draw into its own target; the player records it in this frame, after the post
+// render-to-texture passes when the post graph samples the target, else ahead of the scene pass.
+function drawSecondaryPasses(renderer) {
+  updateSecondaryPasses(() => globalThis.tn.surfaceSize(), (target, root, camera) => drawTarget(renderer, target, root, camera, true));
 }
 
 export class WebGPURenderer {
@@ -84,6 +97,7 @@ export class WebGPURenderer {
     return target.set(width, height);
   }
   render(scene, camera) {
+    drawSecondaryPasses(this);
     warnFogNode(scene);
     globalThis.__tnGameSpan?.(GAME_SPANS.transport, 0);
     try { syncUniforms(); } finally { globalThis.__tnGameSpan?.(GAME_SPANS.transport, 1); }
@@ -119,11 +133,7 @@ export class WebGPURenderer {
 // three's render targets (shared with the Wasm back end): render() while a target is set draws into
 // it at the call, and readRenderTargetPixelsAsync reads it back once the GPU copy lands.
 defineRenderTargets(WebGPURenderer.prototype, (renderer) => ({
-  draw(target, root, camera) {
-    syncUniforms();
-    globalThis.tn.setRendererState(renderer);  // the target clears to the renderer's current clear colour
-    globalThis.tn.renderTarget(target, root, camera);
-  },
+  draw: (target, root, camera) => drawTarget(renderer, target, root, camera),
   read: (target, x, y, width, height) => globalThis.tn.readTarget(target, x, y, width, height),
 }));
 // three's QuadMesh over the engine Mesh (shared with the Wasm back end).
@@ -143,6 +153,7 @@ export class RenderPipeline {
   render() {
     this.context.onBeforeRenderPipeline?.();
     try {
+    drawSecondaryPasses(this.renderer);
     syncUniforms();
     globalThis.tn.setRendererState(this.renderer);
     if (this._source !== this.outputNode) {
@@ -156,6 +167,8 @@ export class RenderPipeline {
   }
   dispose() { globalThis.tn.setPostGraph(null); }
 }
+// three's PassNode: pass() is the frame's pass; `new PassNode(PassNode.COLOR, scene, camera)` is an offscreen one (pass-node.ts).
+export { PassNode };
 // three's NodeUpdateType, the constants a node's update schedule names.
 export const NodeUpdateType = Object.freeze({ NONE: "none", FRAME: "frame", RENDER: "render", OBJECT: "object" });
 // three's StorageBufferAttribute and StorageInstancedBufferAttribute: BufferAttributes that TSL storage() binds

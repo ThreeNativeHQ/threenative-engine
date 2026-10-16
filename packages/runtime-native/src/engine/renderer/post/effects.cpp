@@ -368,9 +368,10 @@ void PostEffects::captureUniforms() {
     }
     captured_ = true;
 }
-uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, WGPUTextureView depth,
+uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene, WGPUTextureView depth,
                              WGPUBuffer triangle, const CameraState& camera, uint64_t frame, float time, float exposure,
-                             const LightState* lights) {
+                             const LightState* lights, const std::function<bool(const std::string&)>& isDeferred,
+                             const std::function<WGPUCommandEncoder(WGPUCommandEncoder)>& split) {
     if (!captured_)
         captureUniforms();
     captured_ = false;
@@ -406,10 +407,18 @@ uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, 
     Matrix4 inverse;
     inverse.fromArray(camera.projectionMatrix.data()).invert();
     uint32_t drawn = 0;
+    bool splitDone = false;
     for (const auto index : plan.order) {
         auto& pass = passes_.at(index);
         if (!pass.source.autoUpdate && (pass.source.rtt ? pass.rttRevision == pass.rttRequested : pass.rendered))
             continue;
+        if (split && isDeferred && !splitDone)
+            for (const auto& read : pass.source.reads)
+                if (isDeferred(read.second)) {
+                    encoder = split(encoder);
+                    splitDone = true;
+                    break;
+                }
         auto& target = targets_.at(pass.source.output);
         if (pass.source.rtt)
             pass.rttRevision = pass.rttRequested;

@@ -389,6 +389,17 @@ public:
     uint64_t renderDeferred(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
                             std::array<double, 4> clear = {0, 0, 0, 0});
     void encodePending();
+    /**
+     * A game's RenderTarget whose draw was planned and not yet recorded (`jobs`: one encodePending per renderer it planned).
+     * A target the post graph samples is recorded where the frame first reads it, after the render-to-texture passes its own
+     * scene samples; any other is recorded at the top of the next frame, ahead of the scene pass. `owner` is the target's
+     * GPU state, and a job whose owner is gone is dropped. Never recorded twice: a second plan for `key` records the first.
+     */
+    void deferTarget(const void* key, std::weak_ptr<void> owner, std::vector<std::function<void()>> jobs);
+    /** Records the planned draw of `key` now, if it has one. */
+    void flushDeferred(const void* key);
+    /** How many planned target draws wait for the frame. */
+    std::size_t deferredTargets() const { return deferred_.size(); }
     /** True from `renderDeferred` until `encodePending` returns: the game thread plans nothing meanwhile. */
     bool framePending() const { return pendingEncode_ || encoding_; }
     /** Pipeline preparation only: shares render's planning, submits no frame. */
@@ -781,7 +792,17 @@ private:
     };
     std::vector<RttTarget> rttTargets_;
 
+    struct DeferredTarget {
+        const void* key;
+        std::weak_ptr<void> owner;
+        std::vector<std::function<void()>> jobs;
+    };
+    std::vector<DeferredTarget> deferred_;
+    /** Records (and forgets) the planned target draws that the post graph samples (`sampled`) or does not. */
+    void recordDeferred(bool sampled);
+    bool postSamples(const void* key) const;
     std::vector<uint32_t> postTextureVersions_;
+    std::vector<WGPUTextureView> postTextureViews_;  // a resized render target's texture is a new view
     std::unique_ptr<TraaPass> traa_;
     std::shared_ptr<const shader::graph::PostEffect> liveTraa_;
     std::unique_ptr<PostEffects> postEffects_;
