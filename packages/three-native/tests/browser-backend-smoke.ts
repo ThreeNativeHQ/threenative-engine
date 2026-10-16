@@ -13,6 +13,7 @@ import { defineBufferGeometryUtils } from "../src/addons/merge-geometries.js";
 import { definePostEffects } from "../src/addons/post-effects.js";
 import type { defineAudioClasses } from "../src/audio.js";
 import {
+  type IEngineRef,
   type IRegistryDump,
   TSL_NODE,
   type TnAbiModule,
@@ -820,6 +821,116 @@ engine.collect();
     late.version,
   ].join();
   check(got === "true,true,6,6,6,true,36,true,9,4,1", `attribute arrays ${got}`);
+}
+// PRD-617: an engine `setY` and a later game edit to the same kept array must not clobber each other.
+// The engine's range is copied back into the array, so the game's later edit wins; an edit before the
+// setter is overwritten at that component, as the setter is last.
+{
+  const web = (await bindWebEngine(createTnAbi, [
+    "Float32BufferAttribute",
+  ])) as unknown as typeof THREE;
+  const mixed = new web.Float32BufferAttribute(new Float32Array([0, 0, 0, 1, 2, 3]), 3);
+  const array = mixed.array;
+  mixed.setY(0, 5);
+  array[1] = 7;
+  (mixed as unknown as { needsUpdate: boolean }).needsUpdate = true;
+  check(
+    array[1] === 7 && mixed.getY(0) === 7,
+    `a later game edit wins over an engine setY: ${String(array[1])}, ${String(mixed.getY(0))}`,
+  );
+  const setterLast = new web.Float32BufferAttribute(new Float32Array(3), 3);
+  setterLast.array[1] = 3;
+  setterLast.setY(0, 9);
+  (setterLast as unknown as { needsUpdate: boolean }).needsUpdate = true;
+  check(
+    setterLast.getY(0) === 9,
+    `an engine setY wins over an earlier edit: ${String(setterLast.getY(0))}`,
+  );
+}
+// PRD-617: the private attribute range API (`attributeArray`/`attributeWrite`) validates its bounds.
+// A full-data write with no offset must be the exact length; an explicit offset writes a subrange;
+// every offset and count is a finite safe integer inside the data, with no truncation or clamping.
+{
+  const Attribute = engine.classes.BufferAttribute as unknown as new (
+    array: Float32Array,
+    itemSize: number,
+  ) => object;
+  const attribute = new Attribute(new Float32Array([1, 2, 3, 4, 5, 6]), 3);
+  const ref = engineRef(attribute) as IEngineRef;
+  const read = runtime.attributeArray;
+  const write = runtime.attributeWrite;
+  check(read !== undefined && write !== undefined, "the real ABI exposes the attribute range API");
+  if (read !== undefined && write !== undefined) {
+    const throws = (work: () => unknown): boolean => {
+      try {
+        work();
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    check(read(ref).length === 6, "attributeArray full default is the whole attribute");
+    check(read(ref, 0, 6).length === 6, "attributeArray offset zero, full count");
+    check(read(ref, 3, 3).length === 3, "attributeArray last item length");
+    check(read(ref, 5, 1)[0] === 6, "attributeArray last element value");
+    check(
+      throws(() => read(ref, 1.5, 1)),
+      "attributeArray fractional offset throws",
+    );
+    check(
+      throws(() => read(ref, Number.NaN, 1)),
+      "attributeArray NaN offset throws",
+    );
+    check(
+      throws(() => read(ref, Number.POSITIVE_INFINITY, 1)),
+      "attributeArray Infinity throws",
+    );
+    check(
+      throws(() => read(ref, -1, 1)),
+      "attributeArray negative offset throws",
+    );
+    check(
+      throws(() => read(ref, 0, 7)),
+      "attributeArray overflow count throws",
+    );
+    check(
+      throws(() => read(ref, 7)),
+      "attributeArray offset past end throws",
+    );
+    check(
+      throws(() => write(ref, new Float32Array(3))),
+      "attributeWrite short default throws",
+    );
+    check(
+      throws(() => write(ref, new Float32Array(7))),
+      "attributeWrite long default throws",
+    );
+    check(!throws(() => write(ref, new Float32Array(6))), "attributeWrite exact default works");
+    check(
+      !throws(() => write(ref, new Float32Array(3), 0)),
+      "attributeWrite partial at zero works",
+    );
+    check(
+      !throws(() => write(ref, new Float32Array(3), 3)),
+      "attributeWrite partial at last works",
+    );
+    check(
+      throws(() => write(ref, new Float32Array(3), 4)),
+      "attributeWrite partial overflow throws",
+    );
+    check(
+      throws(() => write(ref, new Float32Array(3), 0.5)),
+      "attributeWrite fractional throws",
+    );
+    check(
+      throws(() => write(ref, new Float32Array(3), Number.NaN)),
+      "attributeWrite NaN throws",
+    );
+    check(
+      throws(() => write(ref, new Float32Array(3), -1)),
+      "attributeWrite negative throws",
+    );
+  }
 }
 // three's geometry.clone() is a deep copy of the same class, dispose() leaves the CPU data usable,
 // and morphAttributes reads back the attributes it was given, on the web as on V8.

@@ -73,10 +73,16 @@ export interface IBrowserRuntime {
   readByte?(address: number): number;
   /** Writes one double at `address` in the engine's memory; Wasm only. */
   writeDouble?(address: number, value: number): void;
-  /** A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it. */
-  attributeArray?(self: IEngineRef): TypedArray;
-  /** Writes `array` into the attribute's data; present with attributeArray. */
-  attributeWrite?(self: IEngineRef, array: TypedArray): void;
+  /**
+   * A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it.
+   * With `offset`/`count`, a copy of that scalar subrange only (a per-vertex setter syncs one item).
+   */
+  attributeArray?(self: IEngineRef, offset?: number, count?: number): TypedArray;
+  /**
+   * Writes `array` into the attribute's data; present with attributeArray. With `offset`, writes that
+   * subrange; without it, `array` must be the attribute's whole data.
+   */
+  attributeWrite?(self: IEngineRef, array: TypedArray, offset?: number): void;
   /** Sets (or, with null, clears) a callback the engine runs; `handler` gets the engine's arguments. */
   setCallback(
     self: IEngineRef,
@@ -450,21 +456,74 @@ export function defineBrowserClasses(
   const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
   // three's `attribute.array` is the attribute's own JS typed array (PRD-540): the array the
   // constructor was handed, or a copy of the engine's data on first read. A view of Wasm memory
-  // would detach when the memory grows. A read hands the game the array, so the attribute is
-  // `pending` until its array is written back before the next engine call; a geometry or attribute
-  // method that may write attribute data bumps `epoch`, and a later read refreshes the copy.
-  // ponytail: a game that writes a kept array after such a method and before its next read loses
-  // that write to the refresh; track writes per attribute if a game does that.
+  // would detach when the memory grows, so the shadow is a JS array. The shadow and the engine's
+  // store are kept in step (PRD-617): an engine mutator copies back ONLY the range it wrote, so a
+  // later game edit to the array wins, and `needsUpdate` sends the array to the engine. A read hands
+  // the game the array, so the attribute is `pending` until its array is written back before the next
+  // engine call (a per-vertex setter reads no kept array and flushes nothing).
   const { attributeArray, attributeWrite } = runtime;
-  const arrays = new WeakMap<object, { array: TypedArray; epoch: number }>();
+  const arrays = new WeakMap<object, { array: TypedArray }>();
+  const itemSizes = new WeakMap<object, number>();
   const pending = new Set<object>();
-  let epoch = 0;
   const writeBack = (): void => {
     for (const attribute of pending) {
       const entry = arrays.get(attribute);
       if (entry !== undefined) attributeWrite?.call(runtime, refOf(attribute), entry.array);
     }
     pending.clear();
+  };
+  const itemSizeOf = (attribute: object): number => {
+    let size = itemSizes.get(attribute);
+    if (size === undefined) {
+      size = Number(runtime.get(refOf(attribute), "itemSize"));
+      itemSizes.set(attribute, size);
+    }
+    return size;
+  };
+  // The scalar range an attribute mutator wrote: derived from the method and its arguments, so the
+  // engine syncs back only those elements. A component setter writes one, setXY/XYZ/XYZW an item's
+  // lanes, copyAt a whole destination item.
+  const lanes: Record<string, number> = { setX: 0, setY: 1, setZ: 2, setW: 3 };
+  const rangeOf = (
+    method: string,
+    args: readonly unknown[],
+    itemSize: number,
+  ): readonly [number, number] => {
+    const at = Number(args[0]) * itemSize;
+    if (method === "copyAt") return [at, itemSize];
+    const component = lanes[method];
+    if (component !== undefined) return [at + component, 1];
+    if (method === "setComponent") return [at + Number(args[1]), 1];
+    return [at, method === "setXY" ? 2 : method === "setXYZ" ? 3 : 4];
+  };
+  const syncRange = (
+    attribute: object,
+    entry: { array: TypedArray },
+    offset: number,
+    count: number,
+  ): void => {
+    // A malformed range (a fraction, NaN, Infinity, a negative offset or a non-positive count) names
+    // no element: it must fail, not slip to element 0 through subarray's own coercion. A range that
+    // only runs past the end is the engine's documented bounds no-op (`setComponent`/`setRaw`
+    // ignore it, as JS does), so there is nothing to read back. A required range read that comes
+    // back missing or short is a provider fault, never a silently stale shadow.
+    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(count) || offset < 0 || count <= 0)
+      throw new RangeError(
+        `TN_NATIVE_ATTRIBUTE_RANGE: [${String(offset)}, ${String(count)}) is not a valid element range`,
+      );
+    if (offset + count > entry.array.length) return;
+    const fresh = attributeArray?.call(runtime, refOf(attribute), offset, count);
+    if (fresh === undefined || fresh.length !== count)
+      throw new TypeError(
+        `TN_NATIVE_ATTRIBUTE_SYNC: attributeArray gave ${fresh === undefined ? "no array" : `${String(fresh.length)} elements`} for [${String(offset)}, ${String(count)})`,
+      );
+    entry.array.set(fresh, offset);
+  };
+  const syncFull = (attribute: object, entry: { array: TypedArray }): void => {
+    const fresh = attributeArray?.call(runtime, refOf(attribute));
+    if (fresh === undefined) return;
+    if (fresh.length === entry.array.length) entry.array.set(fresh);
+    else entry.array = fresh;
   };
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
@@ -554,12 +613,74 @@ export function defineBrowserClasses(
       );
     return value;
   };
+  // A geometry bulk mutator (`translate`, `applyMatrix4`, `computeVertexNormals`, ...) writes the
+  // bytes of its attributes. The engine already keeps the geometry's current attribute list, so the
+  // wrapper enumerates it (one `__attributeNames` read, then a `getAttribute` each) rather than track
+  // links that an engine-side attribute replacement would leave stale. A game's edit reaches the
+  // engine before the call, and a kept array follows the transform after it.
+  const geometryAttributes = (geometry: object): object[] => {
+    const listed = runtime.get(refOf(geometry), "__attributeNames");
+    if (typeof listed !== "string" || listed === "") return [];
+    const found: object[] = [];
+    for (const name of listed.split("\n")) {
+      const attribute = fromEngine(runtime.invoke(refOf(geometry), "getAttribute", [name]));
+      if (typeof attribute === "object" && attribute !== null) found.push(attribute);
+    }
+    return found;
+  };
+  const uploadGeometry = (geometry: object): void => {
+    for (const attribute of geometryAttributes(geometry)) {
+      const entry = arrays.get(attribute);
+      if (entry !== undefined) attributeWrite?.call(runtime, refOf(attribute), entry.array);
+    }
+  };
+  const refreshGeometry = (geometry: object): void => {
+    for (const attribute of geometryAttributes(geometry)) {
+      const entry = arrays.get(attribute);
+      if (entry !== undefined) syncFull(attribute, entry);
+    }
+  };
+  // Attribute methods that write only their own range, and the full-array transforms that read their
+  // own data. A per-vertex setter must not flush a whole shadow (O(N) per call); a full transform
+  // uploads its own shadow once before the call (O(N), bulk, as three reads its array).
+  const rangeMethods = new Set([
+    "setX",
+    "setY",
+    "setZ",
+    "setW",
+    "setXY",
+    "setXYZ",
+    "setXYZW",
+    "setComponent",
+    "copyAt",
+  ]);
+  const transformMethods = new Set([
+    "applyMatrix3",
+    "applyMatrix4",
+    "applyNormalMatrix",
+    "transformDirection",
+  ]);
+  // Geometry methods that write attribute bytes, so a kept shadow must be refreshed after them.
+  const geometryWrites = new Set([
+    "applyMatrix4",
+    "translate",
+    "rotateX",
+    "rotateY",
+    "rotateZ",
+    "scale",
+    "center",
+    "computeVertexNormals",
+    "normalizeNormals",
+    "setFromPoints",
+    "setIndex",
+  ]);
 
   for (const [name, binding] of Object.entries(registry.classes)) {
     const adopts =
       attributeWrite !== undefined &&
       (name === "BufferAttribute" || name === "InstancedBufferAttribute");
-    const writesAttributes = ATTRIBUTE_CLASSES.has(name) || name.endsWith("Geometry");
+    const attributeClass = ATTRIBUTE_CLASSES.has(name);
+    const geometryClass = name.endsWith("Geometry");
     const engineClass = class {
       constructor(...args: unknown[]) {
         if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
@@ -576,7 +697,8 @@ export function defineBrowserClasses(
         // three's BufferAttribute keeps the typed array it is handed; the typed subclasses copy.
         const handed = args[0];
         if (adopts && ArrayBuffer.isView(handed) && !(handed instanceof DataView)) {
-          arrays.set(this, { array: handed as TypedArray, epoch });
+          arrays.set(this, { array: handed as TypedArray });
+          itemSizes.set(this, Number(args[1]));
           pending.add(this);
         }
       }
@@ -600,12 +722,17 @@ export function defineBrowserClasses(
       });
     for (const method of binding.methods) {
       if (valueClass !== undefined && Object.hasOwn(prototype, method)) continue;
-      const bumps = writesAttributes && !/^(get|has|clone|equals|toJSON)/u.test(method);
       // A geometry's attribute lookups are kept with its labels, until anything else runs on it.
       const query = method === "getAttribute" || method === "hasAttribute";
       // A read-only method keeps them too: core's projection asks each mesh __tnVisibleInWorld a frame,
       // and dropping the labels there re-crossed and re-kept every mesh's geometry and material each frame.
       const keeps = query || /^(get|has|clone|equals|toJSON|__tnVisibleInWorld$)/u.test(method);
+      // PRD-617 shadows. Apart from an attribute's own range, an engine mutator touches the game's
+      // kept arrays: a geometry transform sends and refreshes its attributes' shadows. The three
+      // kinds are exclusive, so an attribute setter never enumerates a geometry and vice versa.
+      const rangeMethod = attributeClass && rangeMethods.has(method);
+      const transformMethod = attributeClass && transformMethods.has(method);
+      const geometryWrite = geometryClass && geometryWrites.has(method);
       Object.defineProperty(prototype, method, {
         configurable: true,
         writable: true,
@@ -613,7 +740,34 @@ export function defineBrowserClasses(
           const intersections = method === "intersectObject" || method === "intersectObjects";
           const key = query ? `${method} ${String(args[0])}` : "";
           if (query && labels.get(this)?.has(key)) return labels.get(this)?.get(key);
-          if (pending.size > 0) writeBack();
+          // A per-vertex setter writes its own range and reads no kept array, so a whole-shadow flush
+          // would cost O(N) a call; it syncs just its range back below. Anything else flushes edits.
+          if (pending.size > 0 && !rangeMethod) writeBack();
+          // A full-array attribute transform reads its own array: send the game's shadow first.
+          if (transformMethod) {
+            const entry = arrays.get(this);
+            if (entry !== undefined) attributeWrite?.call(runtime, refOf(this), entry.array);
+          }
+          if (geometryWrite) uploadGeometry(this);
+          // copyAt reads the source attribute's item: send that item first, then the engine copies it.
+          if (
+            rangeMethod &&
+            method === "copyAt" &&
+            typeof args[1] === "object" &&
+            args[1] !== null
+          ) {
+            const source = args[1] as object;
+            const entry = arrays.get(source);
+            if (entry !== undefined) {
+              const item = itemSizeOf(source) * Number(args[2]);
+              attributeWrite?.call(
+                runtime,
+                refOf(source),
+                entry.array.subarray(item, item + itemSizeOf(source)),
+                item,
+              );
+            }
+          }
           if (!keeps) labels.delete(this);
           const mark = loans.length;
           let result: unknown;
@@ -628,7 +782,17 @@ export function defineBrowserClasses(
           } finally {
             if (loans.length > mark) result = repay(mark, result);
           }
-          if (bumps) epoch++;
+          // The engine wrote only this range: copy it back, so a later game edit to the shadow wins.
+          if (rangeMethod) {
+            const entry = arrays.get(this);
+            if (entry !== undefined) {
+              const [offset, count] = rangeOf(method, args, itemSizeOf(this));
+              syncRange(this, entry, offset, count);
+            }
+          } else if (transformMethod) {
+            const entry = arrays.get(this);
+            if (entry !== undefined) syncFull(this, entry);
+          } else if (geometryWrite) refreshGeometry(this);
           if (intersections && args[2] !== undefined) {
             if (!Array.isArray(args[2]) || !Array.isArray(result))
               throw new TypeError("intersection target must be an array");
@@ -1072,13 +1236,8 @@ export function defineBrowserClasses(
         get(this: object) {
           let entry = arrays.get(this);
           if (entry === undefined) {
-            entry = { array: attributeArray.call(runtime, refOf(this)), epoch };
+            entry = { array: attributeArray.call(runtime, refOf(this)) };
             arrays.set(this, entry);
-          } else if (entry.epoch !== epoch && !pending.has(this)) {
-            const fresh = attributeArray.call(runtime, refOf(this));
-            if (fresh.length === entry.array.length) entry.array.set(fresh);
-            else entry.array = fresh;
-            entry.epoch = epoch;
           }
           // A storage attribute's array is its initial contents: a kernel writes the GPU copy, never this array,
           // so reading it is not an edit, and writing it back would overwrite the kernel's result.
@@ -1091,7 +1250,7 @@ export function defineBrowserClasses(
           return entry.array;
         },
       });
-      // needsUpdate is a property write, not a call, so it writes the array back itself.
+      // needsUpdate is a property write, not a call: it hands the shadow to the engine as it stands.
       const needsUpdate = Object.getOwnPropertyDescriptor(cls.prototype, "needsUpdate");
       if (needsUpdate?.set !== undefined)
         Object.defineProperty(cls.prototype, "needsUpdate", {
@@ -1817,14 +1976,39 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         abi._tn_object_release(handleOf(self), diag);
         abi._tn_diagnostic_release(diag);
       }),
-    attributeArray: (self) => withAttributeView(self, (array) => array.slice()),
-    attributeWrite: (self, array) =>
+    attributeArray: (self, offset, count) =>
       withAttributeView(self, (target) => {
-        if (target.length !== array.length)
+        const from = offset === undefined ? 0 : offset;
+        const length = count === undefined ? target.length - from : count;
+        if (
+          !Number.isSafeInteger(from) ||
+          !Number.isSafeInteger(length) ||
+          from < 0 ||
+          length < 0 ||
+          from + length > target.length
+        )
           throw new RangeError(
-            `TN_NATIVE_ATTRIBUTE_LENGTH: attribute.array has ${String(array.length)} elements, the attribute ${String(target.length)}`,
+            `TN_NATIVE_ATTRIBUTE_RANGE: [${String(from)}, ${String(length)}) is outside ${String(target.length)} elements`,
           );
-        target.set(array);
+        return target.subarray(from, from + length).slice();
+      }),
+    attributeWrite: (self, array, offset) =>
+      withAttributeView(self, (target) => {
+        // An omitted offset writes the whole attribute, so the array must be its exact data; an
+        // explicit offset (including 0) writes that subrange.
+        if (offset === undefined) {
+          if (target.length !== array.length)
+            throw new RangeError(
+              `TN_NATIVE_ATTRIBUTE_LENGTH: attribute.array has ${String(array.length)} elements, the attribute ${String(target.length)}`,
+            );
+          target.set(array);
+          return;
+        }
+        if (!Number.isSafeInteger(offset) || offset < 0 || offset + array.length > target.length)
+          throw new RangeError(
+            `TN_NATIVE_ATTRIBUTE_LENGTH: attribute.array has ${String(array.length)} elements at ${String(offset)}, the attribute ${String(target.length)}`,
+          );
+        target.set(array, offset);
       }),
     setCallback: (self, name, handler) =>
       scoped(() => {
