@@ -40,6 +40,12 @@ struct LoadOptions {
      * thread) answers by glTF image index; null leaves that image to this loader's decoders.
      */
     std::function<std::shared_ptr<const ExternalImage>(std::size_t image)> externalImage;
+    /**
+     * The bytes of a file the glTF names by relative uri (an image kept beside the model, as the asset
+     * cook writes shared images); empty when the host has no such file. Null leaves such an image
+     * undecoded, and the player refuses the model by name.
+     */
+    std::function<std::span<const uint8_t>(const std::string& uri)> readUri;
 };
 
 /** Loads a GLB (or glTF JSON with embedded buffers) from memory. */

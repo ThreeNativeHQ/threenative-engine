@@ -728,7 +728,7 @@ class Builder {
     }
 
     // The texture's image bytes (a GLB view or a base64 data URI) become RGBA8. A format this loader
-    // does not decode, or an image in an external file, stays undecoded and the player refuses the
+    // does not decode, or an image in an external file the host cannot read, stays undecoded and the player refuses the
     // model by name; a PNG or JPEG that will not decode is a damaged file and fails the load.
     void decodeImage(Texture& texture) {
         if (texture.source < 0 || static_cast<std::size_t>(texture.source) >= data_.images_count) return;
@@ -762,6 +762,13 @@ class Builder {
             bytes = static_cast<const uint8_t*>(decoded);
             size = decodedSize;
             freeAfter = decoded;
+        } else if (image.uri && options_.readUri) {
+            std::string uri = image.uri;
+            cgltf_decode_uri(uri.data());  // percent escapes, in place; the string only shrinks
+            uri.resize(std::strlen(uri.c_str()));
+            const auto file = options_.readUri(uri);
+            bytes = file.data();
+            size = file.size();
         }
         if (bytes && imageFormat(bytes, size) != ImageFormat::Unknown &&
             !gltf::decodeImage(bytes, size, texture.width, texture.height, texture.data)) {

@@ -158,6 +158,7 @@ describe("createWebEnginePlugin", () => {
       "web-engine-mesh-bvh",
       "web-engine-mesh-bvh-webgpu",
       "web-engine-buffer-geometry-utils",
+      "web-engine-decal-geometry",
       "web-engine-hdr-loader",
       "web-engine-lut-cube-loader",
       "web-engine-gltf-loader",
@@ -246,6 +247,15 @@ describe("createWebEnginePlugin", () => {
     );
   });
 
+  it("resolves DecalGeometry to the engine port, never the upstream addon", () => {
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+      "three/addons/geometries/DecalGeometry.js",
+    );
+    expect(resolved).toMatch(
+      /(?:three-native\/src\/addons\/decal-geometry\.ts|web-engine-decal-geometry\.js)$/u,
+    );
+  });
+
   it("resolves three's RoundedBoxGeometry addon to the engine's own class, never upstream", async () => {
     const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
     const resolved = plugin.resolveId("three/addons/geometries/RoundedBoxGeometry.js");
@@ -270,6 +280,13 @@ describe("createWebEnginePlugin", () => {
     expect(
       createWebEnginePlugin({ root: "/game" }).resolveId("three/addons/utils/SkeletonUtils.js"),
     ).toBeNull();
+  });
+
+  it("resolves an addon under three's older examples/jsm path as under addons", () => {
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
+    expect(plugin.resolveId("three/examples/jsm/utils/SkeletonUtils.js")).toBe(
+      "\0threenative:web-engine-skeleton-utils",
+    );
   });
 
   it("resolves three's HDRLoader addon to the engine's own loader, never upstream", () => {

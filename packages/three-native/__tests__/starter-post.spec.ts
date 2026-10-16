@@ -382,11 +382,11 @@ describe("starter post bindings", () => {
     });
     const seen: unknown[] = [];
     const blend = (
-      tsl.Fn as (f: (input: unknown[]) => unknown) => {
+      tsl.Fn as (f: (input: [unknown, unknown]) => unknown) => {
         (...args: unknown[]): unknown;
         setLayout(layout: object): unknown;
       }
-    )(([colour, weight]) => {
+    )(([colour, weight]: [unknown, unknown]) => {
       seen.push(colour, weight);
     });
     expect(blend.setLayout({ name: "blend" })).toBe(blend);

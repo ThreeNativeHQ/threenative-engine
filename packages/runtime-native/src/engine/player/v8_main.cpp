@@ -421,7 +421,16 @@ void V8Game::loadAsset(const v8::FunctionCallbackInfo<v8::Value>& info) {
 #if TN_PLAYER_NATIVE_GLTF
         if (entry->kind != static_cast<uint16_t>(assets::EntryKind::Scene))
             return refuse("TN_NATIVE_ASSET_KIND_MISMATCH: model requires a Scene entry: " + path);
-        auto loaded = gltf::load(data);
+        // An image the model names by relative uri is another entry of the package, beside the model.
+        gltf::LoadOptions options;
+        options.readUri = [&](const std::string& uri) -> std::span<const uint8_t> {
+            const std::string directory = path.substr(0, path.find_last_of('/') == std::string::npos ? 0 : path.find_last_of('/') + 1);
+            for (const auto& candidate : game.assets_.entries)
+                if (candidate.name == directory + uri || candidate.name == "/" + directory + uri)
+                    return game.assets_.data(candidate);
+            return {};
+        };
+        auto loaded = gltf::load(data, options);
         if (!loaded.error.empty()) return refuse(loaded.error);
         bool undecoded = false;
         loaded.scene->traverse([](Object3D& object, void* result) {

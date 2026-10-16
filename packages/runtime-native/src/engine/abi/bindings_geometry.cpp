@@ -490,6 +490,33 @@ void registerBufferGeometry(ClassBinding& b) {
     b.setters["morphTargetsRelative"] = [](void* self, const Value& v) {
         as<BufferGeometry>(self)->morphTargetsRelative = v.kind == Value::Kind::Bool ? v.flag : number(v) != 0;
     };
+    // three's setFromPoints: Vector3 or Vector2 points (z reads 0) fill `position`, or overwrite the
+    // positions already there up to the shorter of the two.
+    b.methods["setFromPoints"] = [](void* self, const Args& a, Store& store) {
+        BufferGeometry* geometry = as<BufferGeometry>(self);
+        std::vector<double> xyz;
+        for (const Value& ref : refsOf(a.at(0))) {
+            Object* found = store.find(ref);
+            if (found != nullptr && found->cls == "Vector3") {
+                const auto* point = static_cast<const Vector3*>(found->ptr.get());
+                xyz.insert(xyz.end(), {point->x, point->y, point->z});
+            } else if (found != nullptr && found->cls == "Vector2") {
+                const auto* point = static_cast<const Vector2*>(found->ptr.get());
+                xyz.insert(xyz.end(), {point->x, point->y, 0.0});
+            } else {
+                throw Unsupported{"setFromPoints needs Vector3 or Vector2 points"};
+            }
+        }
+        const std::shared_ptr<BufferAttribute> position = geometry->getAttribute("position");
+        if (position == nullptr) {
+            geometry->setAttribute("position", BufferAttribute::fromDoubles(Scalar::F32, xyz, 3));
+        } else {
+            const uint64_t shared = std::min<uint64_t>(xyz.size() / 3, position->count());
+            for (uint64_t i = 0; i < shared; ++i) position->setXYZ(i, xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2]);
+            position->setNeedsUpdate();
+        }
+        return chain();
+    };
     b.methods["setAttribute"] = [](void* self, const Args& a, Store& store) {
         if (a.at(0).kind != Value::Kind::String) throw Unsupported{"setAttribute needs a name"};
         as<BufferGeometry>(self)->setAttribute(a.at(0).text, sharedAttributeArg(store, a.at(1)));

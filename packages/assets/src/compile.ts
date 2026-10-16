@@ -2337,6 +2337,7 @@ async function nativePackageEntries(
   cookOutputs: ReadonlySet<string>,
 ): Promise<{ entries: INativePackageEntry[]; skipped: number }> {
   const specs: INativePackageEntry[] = [];
+  const shared = new Set<string>();
   let skipped = 0;
   for (const logical of Object.keys(entries).sort()) {
     const entry = entries[logical];
@@ -2345,6 +2346,19 @@ async function nativePackageEntries(
     if (entry.kind === "model") {
       // The GLB bytes the native glTF loader reads; it refuses by name any extension it cannot decode.
       specs.push({ data, kind: NativeEntryKind.Scene, name: logical, uploadSize: 0 });
+      // The images it names by uri sit beside it as raw bytes, which the loader decodes: the model
+      // is a root file, so the uri is the entry name.
+      for (const image of declaredAuxiliaryOutputs(entry))
+        if (image.producer === "image" && !shared.has(image.path)) {
+          shared.add(image.path);
+          const bytes = await readFile(path.join(outputRoot, image.path));
+          specs.push({
+            data: bytes,
+            kind: NativeEntryKind.Buffer,
+            name: image.path,
+            uploadSize: 0,
+          });
+        }
       continue;
     }
     const texture = entry.kind === "texture" ? await nativeTextureEntry(logical, data) : undefined;

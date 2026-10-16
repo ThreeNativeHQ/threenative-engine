@@ -353,6 +353,41 @@ int main() {
     if (released != std::vector<uint32_t>{7}) {
         std::printf("image textures: the host image was released %zu times\n", released.size()); ++differ;
     }
+    // An image the glTF names by relative uri (the cook keeps shared images beside the model) reads through
+    // the host's `readUri`; without one the texture stays image-less and the player refuses the model.
+    {
+        const std::string marker = "data:image/png;base64,";
+        const std::size_t from = imageBytes.find(marker), to = imageBytes.find('"', from);
+        std::string base64 = imageBytes.substr(from + marker.size(), to - from - marker.size());
+        std::vector<uint8_t> png;
+        uint32_t accumulator = 0;
+        int bits = 0;
+        for (const char c : base64) {
+            const char* at = std::strchr("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", c);
+            if (c == '=' || !at) break;
+            accumulator = accumulator << 6 | uint32_t(at - "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/");
+            if ((bits += 6) >= 8) png.push_back(uint8_t(accumulator >> (bits -= 8)));
+        }
+        std::string named = imageBytes;
+        named.replace(from, to - from, "pictures/pixel%20one.png");
+        const auto bytes = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(named.data()), named.size());
+        std::string asked;
+        gltf::LoadOptions options;
+        options.readUri = [&](const std::string& uri) -> std::span<const uint8_t> { asked = uri; return png; };
+        auto read = gltf::load(bytes, options);
+        auto* mesh = read.scene ? dynamic_cast<Mesh*>(read.scene->children.empty() ? nullptr : read.scene->children[0]) : nullptr;
+        const Texture* map = mesh && mesh->material && mesh->material->maps.count("map") ? mesh->material->maps.at("map").get() : nullptr;
+        if (!read.error.empty() || !map || !map->hasImage() || map->width != 2 || map->height != 2 || map->data != pngPixels ||
+            asked != "pictures/pixel one.png") {
+            std::printf("image textures: an image named by uri was not read through the host (%s, asked '%s')\n", read.error.c_str(), asked.c_str()); ++differ;
+        }
+        auto unread = gltf::load(bytes);
+        auto* bare = unread.scene ? dynamic_cast<Mesh*>(unread.scene->children.empty() ? nullptr : unread.scene->children[0]) : nullptr;
+        const Texture* none = bare && bare->material && bare->material->maps.count("map") ? bare->material->maps.at("map").get() : nullptr;
+        if (!none || none->hasImage()) {
+            std::printf("image textures: an image in an external file decoded with no host to read it\n"); ++differ;
+        }
+    }
     // A damaged PNG is refused, not left as an image-less texture.
     std::string damaged = imageBytes;
     damaged.replace(damaged.find("R4nGP4z8Dw"), 10, "R4nGP4zzzz"); // the PNG signature stays, its pixel stream breaks

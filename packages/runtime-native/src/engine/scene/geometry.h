@@ -13,7 +13,7 @@
 //     (PRD-508 phase 3).
 //   - `onUpload`/`onUploadCallback`, `toJSON`, `clone` and `dispose`: a callback, a serializer and a
 //     GPU lifecycle that belong to the renderer (PRD-514), not the object model.
-//   - BufferGeometry's `setFromPoints`, `computeTangents`, `setIndirect`/`getIndirect`, `lookAt`,
+//   - BufferGeometry's `computeTangents`, `setIndirect`/`getIndirect`, `lookAt`,
 //     `applyQuaternion`, `toJSON`: tangents and the indirect draw buffer are later work; the rest is
 //     a serializer or a call the caller can write.
 
