@@ -106,7 +106,6 @@ function stamp(target, x, y, coverage, colour) {
 
 /** Rasterise one tapered needle: a segment from `from` to `to`, `width` pixels thick at its base. */
 function drawNeedle(target, from, to, width, colour) {
-  if (target.strokes) return target.strokes.push([drawNeedle, [from, to], width, colour]);
   const [ax, ay] = from;
   const [bx, by] = to;
   const minX = Math.max(0, Math.floor(Math.min(ax, bx) - width - 1));
@@ -190,7 +189,6 @@ function twigAt(t, root, tip) {
  */
 function spruceBranch(seed, { count, length, droop, needleWidth, tipOnly = false }) {
   const target = card();
-  target.strokes = [];
   const rnd = random(seed);
   const root = [CELL * 0.06, tipOnly ? CELL * 0.12 : CELL * 0.08];
   const tip = [CELL * 0.97, root[1] + droop * CELL];
@@ -198,33 +196,11 @@ function spruceBranch(seed, { count, length, droop, needleWidth, tipOnly = false
   const twig = [];
   for (let i = 0; i <= segments; i += 1) twig.push(twigAt(i / segments, root, tip));
   for (let i = 0; i + 1 < twig.length; i += 1) {
-    target.strokes.push([drawTwig, [twig[i], twig[i + 1]], tipOnly ? 5 : 7, TWIG]);
+    drawTwig(target, [twig[i], twig[i + 1]], tipOnly ? 5 : 7, TWIG);
   }
   const ctx = { droop, length, needleWidth, rnd, segments, target, tipOnly, twig };
   drawBundles(ctx, count);
   drawSilhouetteSprays(ctx, count);
-  // Fit complete strokes before rasterization: clipping first permanently squares the silhouette.
-  const strokes = target.strokes;
-  target.strokes = undefined;
-  const min = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
-  const max = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
-  for (const [, points, width] of strokes) {
-    for (const point of points) {
-      for (let axis = 0; axis < 2; axis += 1) {
-        min[axis] = Math.min(min[axis], point[axis] - width - 1);
-        max[axis] = Math.max(max[axis], point[axis] + width + 1);
-      }
-    }
-  }
-  // One transparent texel isolates whole-cell UVs from neighbouring cells under bilinear filtering.
-  const scale = (CELL - 2) / Math.max(max[0] - min[0], max[1] - min[1]);
-  for (const [draw, points, width, colour] of strokes) {
-    const fitted = points.map((point) =>
-      point.map((value, axis) => 1 + (value - min[axis]) * scale),
-    );
-    if (draw === drawNeedle) draw(target, fitted[0], fitted[1], width * scale, colour);
-    else draw(target, fitted, width * scale, colour);
-  }
   return target;
 }
 
@@ -236,15 +212,15 @@ function shootBundle(ctx, x, y, angle, shoot) {
   // The tip card has no side twigs: a leader's growth is needles on a stem, and dark twigs across the
   // brightest cell of the atlas read as dirt on the new growth.
   if (!tipOnly)
-    target.strokes.push([
-      drawTwig,
+    drawTwig(
+      target,
       [
         [x, y],
         [ex, ey],
       ],
       3.4,
       TWIG,
-    ]);
+    );
   const needles = ctx.needlesPerBundle;
   for (let n = 0; n < needles; n += 1) {
     // Needles sit along the shoot and each fans either side of it.
