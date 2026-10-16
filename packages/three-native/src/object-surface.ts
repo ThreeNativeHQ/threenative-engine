@@ -198,6 +198,9 @@ export function defineObjectSurface(classes: ISurfaceClasses): void {
 // three's scene classes and the `is<Class>` flag each one defines; every light is also `isLight`.
 const FLAGGED_CLASSES = [
   "NodeMaterial",
+  "MeshBasicNodeMaterial",
+  "MeshStandardNodeMaterial",
+  "SpriteNodeMaterial",
   "Texture",
   "DataTexture",
   "CanvasTexture",
@@ -232,7 +235,11 @@ export function defineTypeFlags(classes: Readonly<Record<string, unknown>>): voi
   for (const name of FLAGGED_CLASSES) {
     const cls = classes[name] as Constructor | undefined;
     if (typeof cls !== "function") continue;
-    const flags = name.endsWith("Light") ? [`is${name}`, "isLight"] : [`is${name}`];
+    const flags = name.endsWith("Light")
+      ? [`is${name}`, "isLight"]
+      : name.endsWith("NodeMaterial")
+        ? [`is${name}`, "isNodeMaterial"]
+        : [`is${name}`];
     for (const flag of flags)
       Object.defineProperty(cls.prototype, flag, {
         configurable: true,

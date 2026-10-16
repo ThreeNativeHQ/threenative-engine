@@ -31,5 +31,7 @@ Use the upstream three.js API only (`instancedArray`, `storage`, `Fn().compute(c
 Recovery verification 2026-10-15, source `687729c5a`: product desktop player rebuilt with physics and UI overlay enabled; Wasm rebuilt (3,567,874 bytes). `native_engine_player_compute`, `native_engine_player_compute_ops`, `native_engine_player_ui_overlay` and `native_engine_player_real_input_ui`: 4/4 passed. Starter/snow gameplay and visual acceptance remain unverified.
 
 #### Phase 3: templates
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 - [ ] Starter and snow pass their playtests on native desktop and web, judged NEUTRAL or better (AC-4). proof: template playtests + judge.
+
+2026-10-15: Starter web startup failed with `TN_START_FAILED` at the SoftBody3D node-material guard on the discrete NVIDIA/Turing adapter. The browser facade omitted concrete node-material identity; the native-facade SoftBody regression reproduced the error, then passed after the shared type-flag repair. Focused checks: three-native suite plus core SoftBody, 205 tests passed; three-native/core TypeScript checks passed. Browser startup replay, snow, and the visual judge remain pending; AC-4 stays open.
