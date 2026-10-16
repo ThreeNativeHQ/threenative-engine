@@ -176,6 +176,11 @@ Value attributeArray(const BufferGeometry& geometry, const char* name) {
 // ---------------------------------------------------------------- BufferAttribute
 
 void registerBufferAttribute(ClassBinding& b, const char* cls) {
+    registerEventBindings(b, [](void* self) -> EventDispatcher* { return as<BufferAttribute>(self); }, {"dispose"});
+    b.methods["dispose"] = [](void* self, const Args&, Store&) {
+        as<BufferAttribute>(self)->dispose();
+        return Value{Value::Kind::Undefined};
+    };
     b.ctorTakesBytes = true;
     b.ctor = [cls](const Args& a, Store&) {
         // fromDoubles reads the list in place; copying a vertex buffer here cost a malloc and a memcpy.

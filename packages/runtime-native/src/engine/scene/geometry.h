@@ -18,6 +18,7 @@
 //     a serializer or a call the caller can write.
 
 #include "engine/foundation/buffers.h"
+#include "engine/scene/object3d.h"
 #include "engine/foundation/uuid.h"
 #include "engine/foundation/math/Matrix.h"
 #include "engine/foundation/math/Primitives.h"
@@ -37,7 +38,7 @@ namespace tn::engine {
 std::string jsNumber(double value);
 
 /** three's BufferAttribute. The data lives in `store`; `itemSize` groups it per vertex. */
-class BufferAttribute {
+class BufferAttribute : public EventDispatcher {
 public:
     BufferAttribute(Scalar scalar, uint64_t count, int itemSize, bool normalized = false);
 
@@ -59,6 +60,10 @@ public:
     uint64_t id = 0;
     /** three's InstancedBufferAttribute: read once per instance (meshPerAttribute 1), not per vertex. */
     bool perInstance = false;
+    /** A live compute queue owns ordered release; other attributes invalidate their store directly. */
+    std::weak_ptr<void> gpuReleaseOwner;
+    std::function<void()> releaseGpuCopy;
+    void dispose();
 
     [[nodiscard]] uint64_t count() const { return store->count() / static_cast<uint64_t>(itemSize); }
     [[nodiscard]] uint32_t version() const { return store->version(); }

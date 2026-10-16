@@ -103,6 +103,7 @@ const dispatcherMethods = (owner: string) => ({
 const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns: string }[]> = {
   ...dispatcherMethods("AnimationMixer"),
   ...dispatcherMethods("Object3D"),
+  ...dispatcherMethods("BufferAttribute"),
   // three sets `targetObject` when it binds and @types/three does not declare it; the engine answers
   // it as a call, which the shared facade (src/property-binding.ts) publishes as three's property.
   "PropertyBinding.targetObject": [{ parameters: [], returns: "Object3D | Material | null" }],

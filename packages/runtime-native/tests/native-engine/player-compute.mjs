@@ -21,8 +21,10 @@ const same = (label, got, want) => {
 let started = false;
 const waiting = [];
 const frames = (n) => new Promise((done) => waiting.push({ left: n, done }));
-globalThis.tn.onUpdate(() => {
+globalThis.tn.onFrame(() => {
   for (const wait of waiting.splice(0)) { wait.left -= 1; if (wait.left <= 0) wait.done(); else waiting.push(wait); }
+});
+globalThis.tn.onUpdate(() => {
   if (started) return;
   started = true;
   globalThis.tn.scene = new Scene();
@@ -35,6 +37,33 @@ globalThis.tn.onUpdate(() => {
 
 async function run() {
   const renderer = new WebGPURenderer({ canvas: { width: 8, height: 8 } });
+
+  // Disposal observes every event but releases GPU storage after already queued work/readbacks.
+  const lifetime = instancedArray(new Float32Array([7]), "float");
+  const advance = Fn(() => { lifetime.element(instanceIndex).addAssign(100); })().compute(1);
+  renderer.compute(advance);
+  same("dispose warm", new Float32Array(await renderer.getArrayBufferAsync(lifetime.value)), [107]);
+  let disposals = 0, lastEvent;
+  function onDispose(event) {
+    if (this !== lifetime.value || event.target !== lifetime.value) faults.push("dispose target identity");
+    disposals += 1;
+    lastEvent = event;
+  }
+  lifetime.value.addEventListener("dispose", onDispose);
+  lifetime.value.addEventListener("dispose", onDispose);
+  renderer.compute(advance);
+  const queuedRead = renderer.getArrayBufferAsync(lifetime.value);
+  lifetime.value.dispose();
+  lifetime.value.dispose();
+  same("dispose queued read", new Float32Array(await queuedRead), [207]);
+  same("dispose CPU retained", lifetime.value.array, [7]);
+  same("dispose GPU released", new Float32Array(await renderer.getArrayBufferAsync(lifetime.value)), [7]);
+  if (disposals !== 2 || lastEvent.target !== null) faults.push("dispose event count/clear " + disposals);
+  lifetime.value.removeEventListener("dispose", onDispose);
+  lifetime.value.dispose();
+  renderer.compute(advance);
+  same("dispose reuse", new Float32Array(await renderer.getArrayBufferAsync(lifetime.value)), [107]);
+  if (disposals !== 2) faults.push("dispose listener removal");
 
   // Storage: a count, a packed vec3 typed array (three pads it to WGSL's 16-byte stride), a uint array.
   const filled = instancedArray(256, "float");

@@ -70,9 +70,10 @@ using RenderCallback = std::shared_ptr<const std::function<bool(const RenderCall
  * A dispatched event, three's shape: the type, the dispatcher as `target`, and `child` for the two
  * child-lifecycle events. `type` names a static string; it never owns one.
  */
+class EventDispatcher;
 struct Event {
     std::string_view type;
-    Object3D* target = nullptr;
+    EventDispatcher* target = nullptr;
     Object3D* child = nullptr;
 };
 
@@ -81,8 +82,7 @@ struct Event {
  * before calling it, so a listener may remove itself while the event is being delivered. A listener
  * is a function pointer plus a context, so registering one costs no allocation.
  *
- * It exists here only as Object3D's base, so the `target` a dispatch stamps on the event is
- * `static_cast<Object3D*>(this)`.
+ * The target is the dispatcher itself, including attributes and scene objects.
  */
 class EventDispatcher {
 public:
@@ -93,6 +93,8 @@ public:
     [[nodiscard]] bool hasEventListener(std::string_view type, Listener listener, void* context) const;
     void removeEventListener(std::string_view type, Listener listener, void* context);
     void dispatchEvent(Event& event);
+    /** Owned by the language event bridge; dies with the dispatcher. */
+    std::shared_ptr<void> languageListeners;
 
 private:
     struct Entry {
@@ -352,8 +354,6 @@ public:
     bool frustumCulled = true;
     /** core's alwaysRender() marker, mirrored for the engine's projected-size cull (projected_cull.h). */
     bool alwaysRender = false;
-    /** Owned for a language binding that listens to this object's graph events; dies with the object. */
-    std::shared_ptr<void> languageListeners;
 
     /** The renderer's inputs. Each setter bumps `revision()`; a direct field write cannot. */
     [[nodiscard]] bool visible() const { return visible_; }

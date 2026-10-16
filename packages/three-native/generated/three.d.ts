@@ -346,6 +346,14 @@ onUploadCallback: () => void;
   setXYZW(index: number, x: number, y: number, z: number, w: number): this;
 
   dispose(): void;
+  /** callback listener: EventListener */
+  addEventListener(type: string, listener: EventListener): void;
+
+  dispatchEvent(event: BaseEvent): void;
+  /** callback listener: EventListener */
+  hasEventListener(type: string, listener: EventListener): boolean;
+  /** callback listener: EventListener */
+  removeEventListener(type: string, listener: EventListener): void;
 }
 
 /** Catalog supported: three/BufferGeometry. */
@@ -434,6 +442,8 @@ constructor();
 readonly matrixWorldInverse: Matrix4;
 readonly projectionMatrix: Matrix4;
 readonly projectionMatrixInverse: Matrix4;
+coordinateSystem: CoordinateSystem;
+readonly reversedDepth: boolean;
 }
 
 /** Catalog supported: three/CanvasTexture. */

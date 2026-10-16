@@ -186,10 +186,10 @@ struct ObjectListeners {
     }
 };
 
-void registerObject3DEvents(ClassBinding& b) {
-    for (const char* type : {"added", "removed", "childadded", "childremoved"}) {
-        b.events[type] = [type](void* self, EventCallback callback, Store& store) {
-            auto* object = as<Object3D>(self);
+void registerEvents(ClassBinding& b, EventDispatcher* (*dispatcher)(void*), std::initializer_list<const char*> types) {
+    for (const char* type : types) {
+        b.events[type] = [type, dispatcher](void* self, EventCallback callback, Store& store) {
+            auto* object = dispatcher(self);
             if (!object->languageListeners) {
                 auto listeners = std::make_shared<ObjectListeners>();
                 listeners->store = &store;
@@ -687,13 +687,24 @@ void registerObject3D(ClassBinding& b) {
         as<Object3D>(self)->copy(objectArg(store, a.at(0)));
         return chain();
     };
-    registerObject3DEvents(b);
+    registerEvents(b, [](void* self) -> EventDispatcher* { return as<Object3D>(self); },
+                   {"added", "removed", "childadded", "childremoved"});
 }
 
 // ----------------------------------------------------------------------------- Camera
 
 /** The members and inputs both cameras share. */
 void registerCameraCommon(ClassBinding& b) {
+    b.getters["coordinateSystem"] = [](void* self) {
+        return Value::of(static_cast<double>(as<Camera>(self)->coordinateSystem));
+    };
+    b.setters["coordinateSystem"] = [](void* self, const Value& value) {
+        const double system = number(value);
+        if (system != static_cast<int>(CoordinateSystem::WebGL) && system != static_cast<int>(CoordinateSystem::WebGPU))
+            throw Unsupported{"unknown coordinate system"};
+        as<Camera>(self)->coordinateSystem = static_cast<CoordinateSystem>(static_cast<int>(system));
+    };
+    b.getters["reversedDepth"] = [](void* self) { return Value::of(as<Camera>(self)->reversedDepth()); };
     nestedMatrix<Camera>(b, "projectionMatrix", &Camera::projectionMatrix);
     nestedMatrix<Camera>(b, "projectionMatrixInverse", &Camera::projectionMatrixInverse);
     nestedMatrix<Camera>(b, "matrixWorldInverse", &Camera::matrixWorldInverse);
@@ -1788,6 +1799,11 @@ void registerBatchedMesh(ClassBinding& b) {
 }
 
 }  // namespace
+
+void registerEventBindings(ClassBinding& binding, EventDispatcher* (*dispatcher)(void*),
+                           std::initializer_list<const char*> types) {
+    registerEvents(binding, dispatcher, types);
+}
 
 std::string& pendingListenerError() {
     thread_local std::string error;

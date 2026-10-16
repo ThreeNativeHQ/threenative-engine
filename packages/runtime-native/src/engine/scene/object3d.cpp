@@ -261,8 +261,7 @@ void EventDispatcher::removeEventListener(std::string_view type, Listener listen
 void EventDispatcher::dispatchEvent(Event& event) {
     const auto found = listeners_.find(event.type);
     if (found == listeners_.end()) return;
-    // EventDispatcher is only ever Object3D's base, so this downcast is total; see the header.
-    event.target = static_cast<Object3D*>(this);
+    event.target = this;
     // A copy, so a listener that removes itself while the event is delivered does not shift the list.
     const std::vector<Entry> array = found->second;
     for (const Entry& entry : array) entry.listener(event, entry.context);

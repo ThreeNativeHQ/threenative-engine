@@ -286,11 +286,11 @@ namespace graph = shader::graph;
 
 namespace {
 // The BufferAttributes a compute graph's storage(attribute) / instancedArray nodes name, by binding name.
-void collectStorages(const graph::Node& node, std::unordered_map<std::string, const BufferAttribute*>& out,
+void collectStorages(const graph::Node& node, std::unordered_map<std::string, std::shared_ptr<BufferAttribute>>& out,
                      std::unordered_set<const graph::NodeData*>& seen) {
     if (!node || !seen.insert(node.get()).second) return;
     if (node->kind == graph::Kind::StorageElement && node->object)
-        out.emplace(node->name, static_cast<const BufferAttribute*>(node->object.get()));
+        out.emplace(node->name, std::const_pointer_cast<BufferAttribute>(std::static_pointer_cast<const BufferAttribute>(node->object)));
     for (const auto* list : {&node->args, &node->body, &node->otherwise})
         for (const auto& child : *list) collectStorages(child, out, seen);
 }
@@ -339,7 +339,7 @@ ComputePass& GraphCompute::prepare(const graph::Node& node) {
 
 void GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock) {
     ComputePass& pass = prepare(dispatch.node);
-    std::unordered_map<std::string, const BufferAttribute*> attributes;
+    std::unordered_map<std::string, std::shared_ptr<BufferAttribute>> attributes;
     std::unordered_set<const graph::NodeData*> seen;
     collectStorages(dispatch.node, attributes, seen);
     std::vector<Handle> storage;
@@ -356,9 +356,33 @@ void GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dis
     pass.dispatchValues(encoder, storage, static_cast<uint32_t>(dispatch.node->bits), dispatch.uniforms, clock);
 }
 
-void ComputeQueue::dispatch(const graph::Node& node) { items_.push_back({ComputeDispatch::of(node), nullptr, {}, false}); }
+void ComputeQueue::bindDisposal(const std::shared_ptr<BufferAttribute>& attribute) {
+    if (const auto owner = attribute->gpuReleaseOwner.lock()) {
+        if (owner != lifetime_) throw std::runtime_error("TN_COMPUTE_STORAGE_OWNER: attribute belongs to another live compute queue");
+        return;
+    }
+    const std::weak_ptr<void> alive = lifetime_;
+    const std::weak_ptr<BufferAttribute> weak = attribute;
+    attribute->releaseGpuCopy = [alive, weak, this] {
+        if (const auto held = weak.lock()) {
+            if (alive.expired()) held->store->releaseGpuCopy();
+            else release(held);
+        }
+    };
+    attribute->gpuReleaseOwner = lifetime_;
+}
+
+void ComputeQueue::dispatch(const graph::Node& node) {
+    auto dispatch = ComputeDispatch::of(node);
+    std::unordered_map<std::string, std::shared_ptr<BufferAttribute>> attributes;
+    std::unordered_set<const graph::NodeData*> seen;
+    collectStorages(node, attributes, seen);
+    for (const auto& [name, attribute] : attributes) bindDisposal(attribute);
+    items_.push_back({std::move(dispatch), nullptr, {}, false});
+}
 
 void ComputeQueue::readback(std::shared_ptr<BufferAttribute> attribute, ReadbackCallback done) {
+    bindDisposal(attribute);
     items_.push_back({{}, std::move(attribute), std::move(done), false});
 }
 

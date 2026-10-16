@@ -48,7 +48,7 @@ void record(const Event& event, void* context) {
     auto* log = static_cast<Recorded*>(context);
     std::string line(event.type);
     line += ':';
-    line += event.target->name;
+    line += static_cast<Object3D*>(event.target)->name;
     if (event.child != nullptr) {
         line += '/';
         line += event.child->name;

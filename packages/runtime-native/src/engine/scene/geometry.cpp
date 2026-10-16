@@ -590,6 +590,13 @@ const std::vector<std::shared_ptr<BufferGeometry>>& BufferGeometry::groupViews()
     return groupViews_;
 }
 
+void BufferAttribute::dispose() {
+    if (releaseGpuCopy) releaseGpuCopy();
+    else store->releaseGpuCopy();
+    Event event{"dispose"};
+    dispatchEvent(event);
+}
+
 void BufferGeometry::dispose() {
     if (index) index->store->releaseGpuCopy();
     for (const auto& [name, attribute] : attributes) attribute->store->releaseGpuCopy();

@@ -25,6 +25,8 @@ test failed once at blue share 0 despite receiving its click intent, then passed
 diagnostic rerun; its asynchronous presentation race remains under investigation.
 No AC is ticked by this note.
 
+2026-10-15 current-consumer replay: starter and snow web/desktop builds and installed/package artifact comparisons passed (player `5e40a3d5363c`, Wasm `490bfaa43d73`). Starter web movement passed; play failed frame-time P95 at 38.4 ms against 33 ms with no console errors. Production-readiness reached scene teardown and failed because native storage attributes lack `dispose()`. Snow web footsteps reached particle culling and failed because the Camera facade omitted its live projection conventions. These are engine issues; no game workaround or performance threshold change was made. Camera bindings now pass native ABI culling tests and rebuilds; a guarded Snow desktop survives replay passes all three assertions on rebuilt player `df34fb682d6d` with its unchanged game bundle. Fresh consumer-package/web replay, lifecycle repair and remaining qualification are pending. No acceptance box is newly verified.
+
 ## Context
 
 On 2026-10-15 the owner made the native C++ engine the default (`engine: "native"`) for v1. On the

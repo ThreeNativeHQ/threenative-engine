@@ -109,6 +109,9 @@ class Renderer;
  */
 class ComputeQueue {
 public:
+    ComputeQueue() = default;
+    ComputeQueue(const ComputeQueue&) = delete;
+    ComputeQueue& operator=(const ComputeQueue&) = delete;
     /** Queues a dispatch with the node's uniform values as of now. Lowers the node at once, so a kernel
      *  the engine cannot hold refuses here, by name, at the game's call. */
     void dispatch(const shader::graph::Node& node);
@@ -124,6 +127,7 @@ public:
     void flush(Renderer& renderer, const std::function<void(const std::string&)>& failed);
 
 private:
+    void bindDisposal(const std::shared_ptr<BufferAttribute>& attribute);
     struct Item {
         ComputeDispatch dispatch;
         std::shared_ptr<BufferAttribute> attribute;  // a readback or release
@@ -131,6 +135,8 @@ private:
         bool release = false;
     };
     std::vector<Item> items_;
+    // Weak hooks expire before queued attributes are destroyed; none keeps this queue alive.
+    std::shared_ptr<void> lifetime_ = std::make_shared<int>(0);
 };
 
 // Internal palette kernel. Indices are joint/packed-TRS/matrix offsets, never byte offsets.

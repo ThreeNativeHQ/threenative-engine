@@ -192,6 +192,47 @@ void generic() {
     tn_value_t copyX{};
     CHECK(tn_get(result.handle, "x", &copyX, &d.value) == TN_OK && copyX.number == 11);
 
+    // Particle culling passes the camera's live projection conventions into Frustum.
+    for (const char* cls : {"Camera", "PerspectiveCamera", "OrthographicCamera"}) {
+        tn_handle_t camera{};
+        CHECK(tn_construct(ctx, cls, nullptr, 0, &camera, &d.value) == TN_OK);
+        CHECK(tn_get(camera, "coordinateSystem", &result, &d.value) == TN_OK && result.number == 2000);
+        CHECK(tn_get(camera, "reversedDepth", &result, &d.value) == TN_OK && result.kind == TN_VALUE_BOOL && !result.boolean);
+        const tn_value_t gpu = num(2001);
+        CHECK(tn_set(camera, "coordinateSystem", &gpu, &d.value) == TN_OK);
+        CHECK(tn_get(camera, "coordinateSystem", &result, &d.value) == TN_OK && result.number == 2001);
+        CHECK(tn_set(camera, "reversedDepth", &gpu, &d.value) == TN_ERROR_UNSUPPORTED);
+        const tn_value_t invalid = num(2000.5);
+        CHECK(tn_set(camera, "coordinateSystem", &invalid, &d.value) == TN_ERROR_UNSUPPORTED);
+        CHECK(tn_get(camera, "coordinateSystem", &result, &d.value) == TN_OK && result.number == 2001);
+        if (std::string(cls) != "PerspectiveCamera") continue;
+        tn_handle_t frustum{};
+        CHECK(tn_construct(ctx, "Frustum", nullptr, 0, &frustum, &d.value) == TN_OK);
+        for (const auto system : {2000, 2001}) {
+            const tn_value_t convention = num(system);
+            CHECK(tn_set(camera, "coordinateSystem", &convention, &d.value) == TN_OK);
+            for (const bool reversed : {false, true}) {
+                // The renderer owns reversedDepth; the public Camera property is read-only.
+                static_cast<tn::engine::Camera*>(tn::abi::objectOf(camera)->ptr.get())->setReversedDepth(reversed);
+                CHECK(tn_invoke(camera, "updateProjectionMatrix", nullptr, 0, &result, &d.value) == TN_OK);
+                tn_value_t args[3]{};
+                CHECK(tn_get(camera, "projectionMatrix", &args[0], &d.value) == TN_OK);
+                CHECK(tn_get(camera, "coordinateSystem", &args[1], &d.value) == TN_OK);
+                CHECK(tn_get(camera, "reversedDepth", &args[2], &d.value) == TN_OK);
+                CHECK(tn_invoke(frustum, "setFromProjectionMatrix", args, 3, &result, &d.value) == TN_OK);
+                for (const double z : {-0.05, -0.2, -3000.0}) {
+                    const tn_value_t depth = num(z);
+                    CHECK(tn_set(v, "x", &offset[1], &d.value) == TN_OK);
+                    CHECK(tn_set(v, "y", &offset[1], &d.value) == TN_OK);
+                    CHECK(tn_set(v, "z", &depth, &d.value) == TN_OK);
+                    const tn_value_t point = ref(v);
+                    CHECK(tn_invoke(frustum, "containsPoint", &point, 1, &result, &d.value) == TN_OK);
+                    CHECK(result.kind == TN_VALUE_BOOL && bool(result.boolean) == (z == -0.2));
+                }
+            }
+        }
+    }
+
     // Refusals are statuses with named reasons, never a crash or an exception across the ABI.
     CHECK(tn_invoke(v, "teleport", nullptr, 0, &result, &d.value) == TN_ERROR_UNSUPPORTED);
     CHECK(d.message().find("Vector3.teleport()") != std::string::npos);
@@ -1237,6 +1278,24 @@ void typed_bytes() {
     CHECK(tn_construct(ctx, "BufferAttribute", f32, 2, &attribute, &d.value) == TN_OK);
     CHECK(numbersOf(attribute, "array", d) == std::vector<double>(positions, positions + 6));
     CHECK(numbersOf(attribute, "__shape", d) == (std::vector<double>{2, 3, 0, 1015}));
+
+    Calls disposed;
+    auto* nativeAttribute = engineObject<tn::engine::BufferAttribute>(attribute);
+    nativeAttribute->addEventListener("dispose", [](const tn::engine::Event& event, void* target) {
+        CHECK(event.target == static_cast<tn::engine::BufferAttribute*>(target));
+    }, nativeAttribute);
+    CHECK(tn_set_callback(attribute, "dispose", recordCall, &disposed, releaseCall, &d.value) == TN_OK);
+    tn_value_t disposal{};
+    for (int i = 0; i < 2; ++i) {
+        CHECK(tn_invoke(attribute, "dispose", nullptr, 0, &disposal, &d.value) == TN_OK);
+        CHECK(disposal.kind == TN_VALUE_UNDEFINED);
+        CHECK(numbersOf(attribute, "array", d) == std::vector<double>(positions, positions + 6));
+    }
+    CHECK(disposed.invoked == 2 && disposed.count == 1);
+    CHECK(tn_set_callback(attribute, "dispose", nullptr, nullptr, nullptr, &d.value) == TN_OK);
+    CHECK(disposed.released == 1);
+    CHECK(tn_invoke(attribute, "dispose", nullptr, 0, &disposal, &d.value) == TN_OK);
+    CHECK(disposed.invoked == 2);
 
     const uint16_t index[3] = {0, 65535, 7};
     const tn_value_t u16[2] = {bytes("Uint16Array", index, 3), num(1)};

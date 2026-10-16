@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/renderer/geometry_cache.h"
+#include "engine/renderer/compute.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/render_database.h"
 #include "engine/scene/geometries.h"
@@ -58,6 +59,31 @@ std::vector<uint8_t> readBack(GpuResources& gpu, EventQueue& events, Handle buff
 
 std::vector<uint8_t> bytesOf(const BufferStore& s, uint64_t size) {
     return std::vector<uint8_t>(reinterpret_cast<const uint8_t*>(s.data()), reinterpret_cast<const uint8_t*>(s.data()) + size);
+}
+
+void attributeDisposalLifetime() {
+    auto attribute = BufferAttribute::fromFloats({7, 8}, 1);
+    const auto read = [](GpuStatus, std::vector<uint8_t>) {};
+    auto first = std::make_unique<ComputeQueue>();
+    first->readback(attribute, read);
+    const auto releases = attribute->store->gpuReleases();
+    attribute->dispose();
+    attribute->dispose();
+    CHECK(attribute->store->gpuReleases() == releases);
+    ComputeQueue second;
+    bool refused = false;
+    try { second.readback(attribute, read); } catch (const std::runtime_error&) { refused = true; }
+    CHECK(refused);  // a second live owner cannot silently replace the release hook
+    first.reset();
+    attribute->dispose();
+    CHECK(attribute->store->gpuReleases() == releases + 1);
+    second.readback(attribute, read);  // an expired owner can be replaced
+    attribute->dispose();
+    CHECK(attribute->store->gpuReleases() == releases + 1);
+    CHECK(attribute->toNumbers() == (std::vector<double>{7, 8}));
+    auto plain = BufferAttribute::fromFloats({3}, 1);
+    plain->dispose();
+    CHECK(plain->store->gpuReleases() == 1 && plain->getX(0) == 3);
 }
 
 void geometry() {
@@ -502,7 +528,7 @@ void initializeTexture() {
 
 }  // namespace
 
-TN_TEST_MAIN({"geometry", geometry}, {"pipelines", pipelines}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}
+TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}
 #ifdef TN_TEST_PIPELINE_WORKERS
     , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
     {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException}

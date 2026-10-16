@@ -3,10 +3,12 @@
 #include "engine/abi/binding.h"
 
 #include <memory>
+#include <initializer_list>
 #include <string>
 
 namespace tn::engine {
 class BufferAttribute;
+class EventDispatcher;
 }
 
 namespace tn::binding {
@@ -29,6 +31,9 @@ inline constexpr const char* kEulerOrderNames[6] = {"XYZ", "YXZ", "ZXY", "ZYX", 
 
 /** The scene graph (PRD-508): Object3D, Scene, Group, Mesh and the cameras. */
 void registerSceneBindings(Registry& classes);
+/** Existing native EventDispatcher callbacks, surfaced by both language adapters. */
+void registerEventBindings(ClassBinding& binding, engine::EventDispatcher* (*dispatcher)(void*),
+                           std::initializer_list<const char*> types);
 
 /** Object3D's own getters, setters, members and methods, for a derived node to build on. */
 void registerObject3DBindings(ClassBinding& b);

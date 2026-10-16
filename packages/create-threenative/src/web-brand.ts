@@ -99,7 +99,8 @@ function updateLaunchMarkup(
     );
   }
   const links = metadataLinks(root, config);
-  output = output.replace(/\s*<link\s+rel="icon"[^>]*>/giu, "");
+  if (publicUrl(root, config.app.icons?.web?.favicon ?? config.app.icon) !== undefined)
+    output = output.replace(/\s*<link\s+rel="icon"[^>]*>/giu, "");
   output = output.replace(/\s*<link\s+rel="apple-touch-icon"[^>]*>/giu, "");
   output = output.replace(/\s*<link\s+rel="manifest"[^>]*>/giu, "");
   output = output.replace(/(<\/head>)/iu, `    ${links}\n  $1`);

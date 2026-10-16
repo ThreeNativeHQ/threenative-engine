@@ -102,6 +102,40 @@ try {
   while (probe.ticks < 30)
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
+  // Public disposal events preserve queued GPU results and CPU-seeded reuse on Wasm too.
+  const lifetime = instancedArray(new Float32Array([7]), "float");
+  const advance = Fn(() => {
+    lifetime.element(instanceIndex).addAssign(100);
+  })().compute(1);
+  renderer.compute(advance);
+  if (bytes(await renderer.getArrayBufferAsync(lifetime.value), "f") !== "107")
+    throw new Error("dispose warmup");
+  let disposals = 0;
+  let lastEvent: { target?: unknown } | undefined;
+  function onDispose(this: unknown, event: { target?: unknown }) {
+    if (this !== lifetime.value || event.target !== lifetime.value)
+      throw new Error("dispose target identity");
+    disposals += 1;
+    lastEvent = event;
+  }
+  lifetime.value.addEventListener("dispose", onDispose);
+  lifetime.value.addEventListener("dispose", onDispose);
+  renderer.compute(advance);
+  const queuedRead = renderer.getArrayBufferAsync(lifetime.value);
+  lifetime.value.dispose();
+  lifetime.value.dispose();
+  if (bytes(await queuedRead, "f") !== "207") throw new Error("dispose lost queued readback");
+  if (Array.from(lifetime.value.array).join(",") !== "7") throw new Error("dispose lost CPU data");
+  if (bytes(await renderer.getArrayBufferAsync(lifetime.value), "f") !== "7")
+    throw new Error("dispose retained GPU data");
+  if (disposals !== 2 || lastEvent?.target !== null)
+    throw new Error("dispose event count/target cleanup");
+  lifetime.value.removeEventListener("dispose", onDispose);
+  lifetime.value.dispose();
+  renderer.compute(advance);
+  if (bytes(await renderer.getArrayBufferAsync(lifetime.value), "f") !== "107" || disposals !== 2)
+    throw new Error("dispose reuse/listener removal");
+
   // A kernel writes 256 floats; the readback is exact. Threads past the count write nothing.
   const filled = instancedArray(256, "float");
   renderer.compute(
