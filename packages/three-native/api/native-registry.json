@@ -812,6 +812,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -938,6 +940,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -1231,6 +1235,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -1333,6 +1339,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -1456,6 +1464,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -1535,6 +1545,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -1980,6 +1992,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -2081,6 +2095,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -2606,6 +2622,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -2734,6 +2752,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "instanceCount",
         "morphAttributes.normal",
         "morphAttributes.position",
@@ -3278,6 +3298,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -5266,6 +5288,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -5764,6 +5788,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -6158,6 +6184,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -6237,6 +6265,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -6520,6 +6550,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -6966,6 +6998,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -7580,7 +7614,9 @@
         "polygonOffsetUnits",
         "positionNode",
         "rotation",
+        "rotationNode",
         "roughnessNode",
+        "scaleNode",
         "side",
         "sizeAttenuation",
         "toneMapped",
@@ -7618,7 +7654,9 @@
         "polygonOffsetUnits",
         "positionNode",
         "rotation",
+        "rotationNode",
         "roughnessNode",
+        "scaleNode",
         "side",
         "sizeAttenuation",
         "toneMapped",
@@ -7742,6 +7780,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -7821,6 +7861,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",
@@ -7900,6 +7942,8 @@
         "uuid"
       ],
       "setters": [
+        "boundingBox",
+        "boundingSphere",
         "morphAttributes.normal",
         "morphAttributes.position",
         "morphTargetsRelative",

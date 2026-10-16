@@ -139,6 +139,33 @@ describe("the browser-JS back end", () => {
     }
   });
 
+  it("writes geometry bounds and clears them through the native bridge while keeping id read-only", () => {
+    const writes: unknown[][] = [];
+    const runtime: IBrowserRuntime = {
+      ...surfaceOnly(),
+      construct: (name) => ({ key: name, type: runtime.typeId(name) }),
+      set: (self, property, value) => void writes.push([self.key, property, value]),
+    };
+    const { classes: bound } = defineBrowserClasses(registry, runtime);
+    const Geometry = bound.BufferGeometry as new () => Record<string, unknown>;
+    const Sphere = bound.Sphere as new () => object;
+    const Box3 = bound.Box3 as new () => object;
+    const geometry = new Geometry();
+    geometry.boundingSphere = new Sphere();
+    geometry.boundingBox = new Box3();
+    geometry.boundingSphere = null;
+    geometry.boundingBox = null;
+    expect(writes).toEqual([
+      ["BufferGeometry", "boundingSphere", { key: "Sphere", type: runtime.typeId("Sphere") }],
+      ["BufferGeometry", "boundingBox", { key: "Box3", type: runtime.typeId("Box3") }],
+      ["BufferGeometry", "boundingSphere", null],
+      ["BufferGeometry", "boundingBox", null],
+    ]);
+    expect(Reflect.set(geometry, "id", 42)).toBe(false);
+    expect(Object.hasOwn(geometry, "boundingSphere")).toBe(false);
+    expect(Object.hasOwn(geometry, "boundingBox")).toBe(false);
+  });
+
   it("sends a write-only setter to the engine instead of keeping a JS property", () => {
     const writes: unknown[][] = [];
     const runtime: IBrowserRuntime = {

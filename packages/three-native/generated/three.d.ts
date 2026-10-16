@@ -2608,6 +2608,8 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 colorWrite: boolean;
+rotationNode: Node | null;
+scaleNode: Node | null;
 
   clone(): this;
 
