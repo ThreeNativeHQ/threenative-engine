@@ -781,6 +781,13 @@ void registerCatmullRomCurve3(ClassBinding& b) {
     b.methods["getTangentAt"] = [](void* self, const Args& a, Store& store) {
         return vectorAnswer(as<CatmullRomCurve3>(self)->getTangentAt(number(a.at(0))), a, 1, store);
     };
+    // three's Curve.computeFrenetFrames(segments, closed): {tangents, normals, binormals}.
+    b.methods["computeFrenetFrames"] = [](void* self, const Args& a, Store& store) {
+        const FrenetFrames frames = computeFrenetFrames(*as<CatmullRomCurve3>(self), number(a.at(0)), boolean(a, 1, false));
+        return Value::record({{"tangents", vectorList(frames.tangents, store)},
+                              {"normals", vectorList(frames.normals, store)},
+                              {"binormals", vectorList(frames.binormals, store)}});
+    };
     b.methods["getPoints"] = [](void* self, const Args& a, Store& store) {
         return vectorList(as<CatmullRomCurve3>(self)->getPoints(optional(a, 0, 5)), store);
     };
