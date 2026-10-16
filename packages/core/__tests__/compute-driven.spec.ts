@@ -234,14 +234,16 @@ describe("ComputeDrivenRegistry", () => {
       for (let index = 0; index < 4; index += 1) await Promise.resolve();
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       await Promise.resolve();
-      for (const time of [32, 48, 64, 80, 96]) {
+      // Readiness needs five in-budget frames after compile settles, then two rendered quiet
+      // polls once the world has been admitted, before render-cadence compute is allowed.
+      for (const time of [32, 48, 64, 80, 96, 112, 128]) {
         frame(time);
         await Promise.resolve();
       }
       await ready;
 
-      frame(112);
-      frame(128);
+      frame(144);
+      frame(160);
       expect(dispatched).toHaveLength(2);
     } finally {
       game.stop();

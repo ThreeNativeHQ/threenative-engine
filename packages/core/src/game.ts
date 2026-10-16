@@ -1,6 +1,5 @@
 import {
   type Camera,
-  DirectionalLight,
   type Object3D,
   OrthographicCamera,
   PerspectiveCamera,
@@ -1664,9 +1663,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           for (const node of startupShadows) node.startupCovered = false;
           startupShadows.clear();
           threeScene.traverseVisible((object) => {
-            if (!(object instanceof DirectionalLight) || !object.castShadow || !object.visible)
-              return;
-            const node = object.shadow.shadowNode;
+            if (!object.castShadow || !object.visible) return;
+            const node: unknown = Reflect.get(object, "shadow")?.shadowNode;
             if (node instanceof VirtualShadowNode) {
               startupShadows.add(node);
               node.startupCovered = startupCoverActive();
