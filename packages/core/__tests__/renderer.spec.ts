@@ -1,6 +1,6 @@
-import { Object3D, PerspectiveCamera, Scene } from "three";
+import { Color, Object3D, PerspectiveCamera, Scene } from "three";
 import { pass } from "three/tsl";
-import { RenderPipeline } from "three/webgpu";
+import { NodeFrame, NodeUpdateType, RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { createRenderer, prewarm } from "../src/renderer.js";
 
@@ -1289,6 +1289,292 @@ describe("createRenderer", () => {
       else Object.defineProperty(globalThis, "navigator", descriptor);
     }
   });
+
+  it.each([
+    { throws: false, nextFrame: false },
+    { throws: false, nextFrame: true },
+    { throws: true, nextFrame: false },
+    { throws: true, nextFrame: true },
+  ])(
+    "refreshes a scoped world warm-up and its following main render in one outer render with nested post passes: %j",
+    async ({ throws, nextFrame }) => {
+      const canvas = testCanvas();
+      const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: { gpu: {} },
+      });
+      const nodeFrame = new NodeFrame();
+      nodeFrame.frameId = 1;
+      const draws: {
+        scene: Object3D;
+        visibleObjects: string[];
+        target: unknown;
+        warm: boolean;
+      }[] = [];
+      const canvasSubmissions: Object3D[] = [];
+      let boundTarget: unknown = null;
+      let boundMrt: unknown = null;
+      let warm = false;
+      let targetScene: Scene | undefined;
+      let worldPass: ReturnType<typeof pass> | undefined;
+      const renderPipeline = vi.spyOn(RenderPipeline.prototype, "render").mockImplementation(() => {
+        nodeFrame.renderId += 1;
+        if (worldPass === undefined) throw new Error("Missing world pass");
+        nodeFrame.updateBeforeNode(worldPass);
+        // Bloom/temporal quads sample the same pass under a new renderId.
+        nodeFrame.renderId += 1;
+        nodeFrame.updateBeforeNode(worldPass);
+        if (!warm) canvasSubmissions.push(worldPass.scene as Object3D);
+      });
+      const rawRender = (scene: Object3D): void => {
+        draws.push({
+          scene,
+          visibleObjects: scene.children
+            .filter((child) => child.visible)
+            .map((child) => child.name),
+          target: boundTarget,
+          warm,
+        });
+        if (throws && warm && scene === targetScene) throw new Error("scoped warm failed");
+      };
+      const raw = {
+        _renderTarget: boundTarget,
+        autoClear: true,
+        contextNode: null,
+        dispose: () => undefined,
+        domElement: canvas,
+        getActiveCubeFace: () => 0,
+        getActiveMipmapLevel: () => 0,
+        getClearAlpha: () => 1,
+        getClearColor: (target: Color) => target.set(0),
+        getDrawingBufferSize: (size: { set: (width: number, height: number) => unknown }) =>
+          size.set(320, 180),
+        getMRT: () => boundMrt,
+        getOutputRenderTarget: () => null,
+        getPixelRatio: () => 1,
+        getRenderObjectFunction: () => null,
+        getRenderTarget: () => boundTarget,
+        getScissorTest: () => false,
+        init: async () => undefined,
+        opaque: false,
+        outputColorSpace: "srgb",
+        render: rawRender,
+        setClearColor: () => undefined,
+        setMRT: (value: unknown) => {
+          boundMrt = value;
+        },
+        setPixelRatio: () => undefined,
+        setRenderObjectFunction: () => undefined,
+        setRenderTarget: (value: unknown) => {
+          boundTarget = value;
+          raw._renderTarget = value;
+        },
+        setScissorTest: () => undefined,
+        setSize: () => undefined,
+        toneMapping: 0,
+        toneMappingExposure: 1,
+        transparent: false,
+        xr: { enabled: false },
+      };
+      nodeFrame.renderer = raw as never;
+
+      try {
+        const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+        const authoredScene = new Scene();
+        const authoredCamera = new PerspectiveCamera();
+        worldPass = pass(authoredScene, authoredCamera);
+        const outputNode = worldPass.add(pass(new Scene(), new PerspectiveCamera()));
+        renderer.setOutputNode(outputNode, worldPass);
+        const authoredUpdateBeforeType = worldPass.updateBeforeType;
+        const authoredUpdateBefore = worldPass.updateBefore;
+        const hadOwnUpdateBefore = Object.hasOwn(worldPass, "updateBefore");
+        expect(authoredUpdateBeforeType).toBe(NodeUpdateType.FRAME);
+        targetScene = new Scene();
+        const terrain = new Object3D();
+        terrain.name = "terrain";
+        targetScene.add(terrain);
+        const worldObject = new Object3D();
+        worldObject.name = "world-object";
+        targetScene.add(worldObject);
+        const chunk = new Object3D();
+        chunk.name = "requested-chunk";
+
+        renderer.render(authoredScene, authoredCamera);
+        const warmStart = canvasSubmissions.length;
+        warm = true;
+        const warmUp = () =>
+          renderer.warmUpWorldPass?.(chunk, new PerspectiveCamera(), targetScene);
+        if (throws) expect(warmUp).toThrow("scoped warm failed");
+        else warmUp();
+        warm = false;
+
+        expect(worldPass.updateBeforeType).toBe(authoredUpdateBeforeType);
+        expect(canvasSubmissions).toHaveLength(warmStart);
+        expect(draws[1]?.scene).toBe(targetScene);
+        expect(draws[1]?.visibleObjects).toEqual(["terrain", "world-object", "requested-chunk"]);
+        expect(draws[1]?.target).not.toBeNull();
+        expect(draws[1]?.warm).toBe(true);
+
+        if (nextFrame) nodeFrame.frameId += 1;
+        renderer.render(authoredScene, authoredCamera);
+        expect(worldPass.updateBefore).toBe(authoredUpdateBefore);
+        expect(Object.hasOwn(worldPass, "updateBefore")).toBe(hadOwnUpdateBefore);
+        expect(draws.map((draw) => draw.scene)).toEqual([
+          authoredScene,
+          targetScene,
+          authoredScene,
+        ]);
+        expect(draws[2]?.visibleObjects).toEqual([]);
+        expect(canvasSubmissions).toEqual([authoredScene, authoredScene]);
+        expect(worldPass.updateBeforeType).toBe(authoredUpdateBeforeType);
+        renderer.dispose();
+      } finally {
+        renderPipeline.mockRestore();
+        if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+        else Object.defineProperty(globalThis, "navigator", descriptor);
+      }
+    },
+  );
+
+  it.each([false, true])(
+    "warms a scoped output pass offscreen and restores state after %s failure",
+    async (throws) => {
+      const canvas = testCanvas();
+      const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: { gpu: {} },
+      });
+      let boundTarget: unknown = "previous-target";
+      let boundMrt: unknown = "previous-mrt";
+      let renderObjectFunction: ((...args: unknown[]) => void) | null = null;
+      let pixelRatio = 1;
+      let clearAlpha = 0.25;
+      let scissorTest = true;
+      const clearColor = new Color(0x123456);
+      const targetCalls: unknown[] = [];
+      let chunk: Object3D | undefined;
+      let worldPass: ReturnType<typeof pass> | undefined;
+      let invokePassUpdate: (() => void) | undefined;
+      let seenScene: unknown;
+      let seenChunkParent: unknown;
+      const originalContextNode = { getFlowContextData: () => ({ original: true }) };
+      const rawRender = vi.fn(() => {
+        seenScene = worldPass?.scene;
+        seenChunkParent = chunk?.parent;
+        const update = invokePassUpdate;
+        invokePassUpdate = undefined;
+        update?.();
+        if (throws) throw new Error("covered output render failed");
+      });
+      const raw = {
+        _renderTarget: boundTarget,
+        autoClear: false,
+        compute: () => undefined,
+        contextNode: originalContextNode,
+        dispose: () => undefined,
+        domElement: canvas,
+        getActiveCubeFace: () => 3,
+        getActiveMipmapLevel: () => 2,
+        getClearAlpha: () => clearAlpha,
+        getClearColor: (target: Color) => target.copy(clearColor),
+        getMRT: () => boundMrt,
+        getPixelRatio: () => pixelRatio,
+        getDrawingBufferSize: (size: { set: (width: number, height: number) => unknown }) =>
+          size.set(320, 180),
+        getOutputRenderTarget: () => null,
+        getRenderObjectFunction: () => renderObjectFunction,
+        // Match compileAsync's temporary getter without changing the bound target.
+        getRenderTarget: () => "compiler-target",
+        getScissorTest: () => scissorTest,
+        init: async () => undefined,
+        opaque: false,
+        outputColorSpace: "original-output-color-space",
+        render: rawRender,
+        setMRT: (value: unknown) => {
+          boundMrt = value;
+        },
+        setClearColor: (value: Color, alpha?: number) => {
+          clearColor.copy(value);
+          if (alpha !== undefined) clearAlpha = alpha;
+        },
+        setPixelRatio: (value: number) => {
+          pixelRatio = value;
+        },
+        setRenderObjectFunction: (value: ((...args: unknown[]) => void) | null) => {
+          renderObjectFunction = value;
+        },
+        setRenderTarget: (value: unknown) => {
+          targetCalls.push(value);
+          boundTarget = value;
+          raw._renderTarget = value;
+        },
+        setScissorTest: (value: boolean) => {
+          scissorTest = value;
+        },
+        setSize: () => undefined,
+        toneMapping: 17,
+        transparent: false,
+        xr: { enabled: true },
+      };
+
+      try {
+        const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+        const authoredScene = new Scene();
+        const authoredCamera = new PerspectiveCamera();
+        worldPass = pass(authoredScene, authoredCamera);
+        const outputNode = worldPass.add(pass(new Scene(), new PerspectiveCamera()));
+        worldPass.name = "warm-world-pass";
+        worldPass.contextNode = { getFlowContextData: () => ({ pass: true }) } as never;
+        worldPass.overrideMaterial = {} as never;
+        worldPass.setLayers({ mask: 2 } as never);
+        renderer.setOutputNode(outputNode, worldPass);
+
+        const targetScene = new Scene();
+        chunk = new Object3D();
+        chunk.position.set(3, 4, 5);
+        const originalMatrix = chunk.matrix.clone();
+        const camera = new PerspectiveCamera();
+        const originalCameraMask = camera.layers.mask;
+        targetScene.name = "target-scene";
+        targetScene.overrideMaterial = {} as never;
+        const originalTargetName = targetScene.name;
+        const targetOverrideMaterial = targetScene.overrideMaterial;
+        invokePassUpdate = () => worldPass?.updateBefore({ renderer: raw } as never);
+
+        const warm = () => renderer.warmUpWorldPass?.(chunk as Object3D, camera, targetScene);
+        if (throws) expect(warm).toThrow("covered output render failed");
+        else warm();
+
+        expect(seenScene).toBe(targetScene);
+        expect(seenChunkParent).toBe(targetScene);
+        expect(worldPass.scene).toBe(authoredScene);
+        expect(worldPass.camera).toBe(authoredCamera);
+        expect(chunk.parent).toBeNull();
+        expect(chunk.matrix.equals(originalMatrix)).toBe(true);
+        expect(boundTarget).toBe("previous-target");
+        expect(boundMrt).toBe("previous-mrt");
+        expect(raw.autoClear).toBe(false);
+        expect(raw.transparent).toBe(false);
+        expect(raw.opaque).toBe(false);
+        expect(raw.contextNode).toBe(originalContextNode);
+        expect(raw.toneMapping).toBe(17);
+        expect(raw.outputColorSpace).toBe("original-output-color-space");
+        expect(raw.xr.enabled).toBe(true);
+        expect(camera.layers.mask).toBe(originalCameraMask);
+        expect(targetScene.name).toBe(originalTargetName);
+        expect(targetScene.overrideMaterial).toBe(targetOverrideMaterial);
+        expect(targetCalls.length).toBeGreaterThan(0);
+        expect(targetCalls).not.toContain(null);
+        expect(rawRender).toHaveBeenCalled();
+        renderer.dispose();
+      } finally {
+        if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+        else Object.defineProperty(globalThis, "navigator", descriptor);
+      }
+    },
+  );
 
   it("rejects an output graph with multiple passes when no world pass is named", async () => {
     const canvas = testCanvas();

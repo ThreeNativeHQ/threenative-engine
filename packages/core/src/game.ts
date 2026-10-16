@@ -1235,6 +1235,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
+      // With an explicit warm-up, this held pass is only the first half of startup. Stamp after
+      // the explicit pass so its own pipelines remain inside the settled boundary; without one,
+      // this is the only warm-up completion.
+      if (stamp || !this.#warmUpConfiguredExplicitly()) renderer.warmUpSettled?.();
       warmUpStatus =
         report === undefined
           ? { status: "unavailable" }
@@ -2141,6 +2145,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
+      this.#renderer.warmUpSettled?.();
       warmUpStatus =
         report === undefined
           ? { status: "unavailable" }

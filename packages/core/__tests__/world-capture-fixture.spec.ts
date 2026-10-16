@@ -8,6 +8,8 @@ import {
   PerspectiveCamera,
   Scene as ThreeScene,
 } from "three";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { pass } from "three/tsl";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { evaluateRichPlaytestAssertions } from "../../playtest/src/assertion-evaluators.js";
@@ -49,6 +51,8 @@ async function probe() {
         if (name === "@threenative/core") return { Scene, VirtualShadowNode: class {} };
         if (name === "@threenative/core/world") return { WorldCells: { load: async () => world } };
         if (name === "three") return { Color, DirectionalLight, HemisphereLight };
+        if (name === "three/tsl") return { pass };
+        if (name === "three/addons/tsl/display/BloomNode.js") return { bloom };
         if (name === "../render/terrain.js") return { terrainMaterial: () => ({}) };
         // Only the `?world&viewDistance` flight applies it, and this context has no location.
         if (name === "../render/worldFog.js") return { worldFog: () => undefined };

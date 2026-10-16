@@ -28,6 +28,88 @@ function evaluate(assert_: IPlaytestScenario["assert"], extra: object = {}) {
 }
 
 describe("evaluator semantics (characterization)", () => {
+  test("fails the pipeline census ceiling on work observed after warm-up settled", () => {
+    const event = (sequence: number, settledMs: number, beforeWarmUpSettled: boolean, nodeBuilds: number) => ({
+      sequence,
+      programIdentity: `program-${sequence}`,
+      pipelineIdentity: `pipeline-${sequence}`,
+      kind: "render",
+      pass: "main",
+      mode: "sync",
+      status: "created",
+      vertex: { hash: `vertex-${sequence}`, bytes: 10 },
+      fragment: { hash: `fragment-${sequence}`, bytes: 10 },
+      provenance: { material: { name: "material" }, unknown: false },
+      reasons: ["map"],
+      startedMs: settledMs - 1,
+      settledMs,
+      serviceMs: 1,
+      beforeFirstPresent: sequence === 1,
+      beforeWarmUpSettled,
+      ...(sequence === 2 ? { afterWarmUpScope: "chunk:0" } : {}),
+      nodeBuilds,
+    });
+    const result = evaluate(
+      {
+        pipelineCensus: {
+          maxNodeBuildsAfterWarmUpSettled: 0,
+          maxRenderPipelineCreationsAfterWarmUpSettled: 0,
+          warmUpScope: "chunk:0",
+          maxRenderPipelineCreationsAfterWarmUpScope: 0,
+        },
+      } as never,
+      {
+        observations: {
+          ...base.observations,
+          pipelineCensus: {
+            version: 1,
+            complete: true,
+            overflowed: false,
+            backend: { kind: "webgpu", identity: "webgpu:test" },
+            clock: { source: "performance", originMs: 0 },
+            build: { identity: "build:test" },
+            adapter: { identity: "adapter:test", thermal: "unavailable" },
+            firstPresent: { boundaryMs: 1, eventsSettled: 1 },
+            warmUpSettled: { boundaryMs: 1, eventsSettled: 1, nodeBuilds: 1, renderPipelineCreations: 1 },
+            warmUpScopes: [{
+              label: "chunk:0",
+              boundaryMs: 1.5,
+              eventsSettled: 1,
+              nodeBuilds: 1,
+              renderPipelineCreations: 1,
+              firstDraw: { nodeBuilds: 1, renderPipelineCreations: 1 },
+            }],
+            counts: {
+              lookups: 2,
+              creations: 2,
+              failures: 0,
+              pending: 0,
+              uniquePrograms: 2,
+              uniquePipelines: 2,
+              recordedEvents: 2,
+              droppedEvents: 0,
+              nodeBuilds: 2,
+            },
+            events: [event(1, 1, true, 1), event(2, 2, false, 1)],
+            incompleteReasons: [],
+          },
+        },
+      },
+    );
+
+    expect(result.assertions.map(({ id, pass }) => ({ id, pass }))).toEqual([
+      { id: "pipelineCensus.maxRenderPipelineCreationsAfterWarmUpScope", pass: false },
+      { id: "pipelineCensus.maxNodeBuildsAfterWarmUpSettled", pass: false },
+      { id: "pipelineCensus.maxRenderPipelineCreationsAfterWarmUpSettled", pass: false },
+      { id: "diagnostics", pass: true },
+    ]);
+    expect(result.diagnostics.map(({ code }) => code)).toEqual([
+      "TN_PLAYTEST_PIPELINE_CENSUS_CEILING_EXCEEDED",
+      "TN_PLAYTEST_PIPELINE_CENSUS_CEILING_EXCEEDED",
+      "TN_PLAYTEST_PIPELINE_CENSUS_CEILING_EXCEEDED",
+    ]);
+  });
+
   test("movement pins its verdict id and minimum-distance details", () => {
     const result = evaluate(
       { movement: { entity: "player", minDistance: 1 } } as never,
