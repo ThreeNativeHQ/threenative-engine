@@ -52,7 +52,11 @@ import {
   IMPOSTOR_FAR_CULL_ATTRIBUTE,
   WorldImpostorSurface,
 } from "../src/render/world-impostor-surface.js";
-import { type IImpostorRawRenderer, WorldImpostorAtlas } from "../src/render/world-impostor.js";
+import {
+  type IImpostorRawRenderer,
+  WorldImpostorAtlas,
+  WorldImpostorBaker,
+} from "../src/render/world-impostor.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { type IKernelInput, WorldGpuScene, cullAndSelect } from "../src/world-gpu-scene.js";
 import { type IWorldAsset, type IWorldRun, cellPlacements } from "../src/world-package.js";
@@ -88,7 +92,11 @@ function farMatrixRoute(mesh: InstancedMesh) {
   const material = mesh.material as NodeMaterial;
   const body = (
     material.positionNode as unknown as {
-      node: { shaderNode: { jsFunc: (inputs: unknown, builder: { object: Object3D }) => Node } };
+      node: {
+        shaderNode: {
+          jsFunc: (inputs: unknown, builder: { object: Object3D; nodes: Set<Node> }) => Node;
+        };
+      };
     }
   ).node.shaderNode.jsFunc;
   const previous = getCurrentStack();
@@ -106,7 +114,7 @@ function farMatrixRoute(mesh: InstancedMesh) {
   };
   setCurrentStack(scope);
   try {
-    body([], { object: mesh }).traverse(collect);
+    body([], { object: mesh, nodes: new Set() }).traverse(collect);
     scope.traverse(collect);
   } finally {
     setCurrentStack(previous);
@@ -516,6 +524,88 @@ afterEach(() => {
 });
 
 describe("WorldCells automatic impostors", () => {
+  it("keeps authored parts and draws a terminal impostor beyond the game far boundary", async () => {
+    const pkg = pineOnly();
+    const definition = pkg.assets.pine as IWorldAsset;
+    const data = { ...pkg, assets: { pine: { ...definition, impostorDistance: 150 } } };
+    const placements = new Float32Array([-32, 0, -32, 0, 0, 0, 1, 1]);
+    const one = {
+      ...data,
+      cells: [{ x: 1, z: 1, runs: [{ asset: "pine", offset: 0, count: 1 }] }],
+    };
+    stubPlacementFetch(one, placements);
+    const follow = { position: { x: -32, z: -32 } };
+    const loader = treeLoader();
+    const world = await loadPine(loader, {
+      follow,
+      terrain: false,
+      ring: 10,
+      gpuScene: false,
+      preserveAuthoredParts: true,
+      impostors: true,
+      lodHysteresis: 0.2,
+      adaptiveLod: false,
+    });
+    try {
+      await flushed(world);
+      runBake(world, rendererStub());
+      await flushed(world);
+      expect(world.stats().impostor.assets).toBe(1);
+      expect(world.stats().impostor.pending).toBe(0);
+      expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
+      expect(partsOf(world, "pine", 0, 1).length).toBeGreaterThan(0);
+      follow.position.z = -232;
+      for (let i = 0; i < 100; i++) {
+        world.update();
+        await flush();
+      }
+      expect(world.stats().impostor.drawn).toBeGreaterThan(0);
+      expect(partsOf(world, "pine", 2, 0)[0]?.geometry.index?.count).toBe(6);
+      expect(partsOf(world, "pine", 2, 1)).toHaveLength(0);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it.each([false, true])(
+    "drains distinct queued atlases in one covered update (in-flight: %s)",
+    async (inFlight) => {
+      stubManifestFetch(manyAlphaAssets(2));
+      const world = await loadPine(treeLoader());
+      try {
+        await flushed(world);
+        const renderer = rendererStub();
+        const capture = vi.spyOn(renderer.raw as IImpostorRawRenderer, "render");
+        if (inFlight) {
+          world.process(renderer, undefined, false);
+          expect(capture).toHaveBeenCalledTimes(1);
+        }
+        expect(world.stats().impostor.pending).toBe(2);
+        world.process(renderer, undefined, true);
+        expect(capture).toHaveBeenCalledTimes(32);
+        expect(world.stats().impostor.assets).toBe(2);
+        expect(world.stats().impostor.pending).toBe(0);
+      } finally {
+        world.dispose();
+      }
+    },
+  );
+
+  it("yields a covered bake when a view makes no progress", async () => {
+    stubManifestFetch(pineOnly());
+    const world = await loadPine(treeLoader());
+    try {
+      await flushed(world);
+      const step = vi.spyOn(WorldImpostorBaker.prototype, "step").mockReturnValue(undefined);
+      world.process(rendererStub(), undefined, true);
+      expect(step).toHaveBeenCalledTimes(1);
+      expect(world.stats().impostor.assets).toBe(0);
+      expect(world.stats().impostor.pending).toBeGreaterThan(0);
+    } finally {
+      world.dispose();
+    }
+  });
+
   it("bakes an alpha-cutout asset over the render cadence and appends a two-triangle terminal level", async () => {
     stubManifestFetch(pineOnly());
     const loader = treeLoader();

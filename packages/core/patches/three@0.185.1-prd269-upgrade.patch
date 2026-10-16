@@ -18369,3 +18369,90 @@ index 0fbcc307d39cbf6d74d9dbc5f199f2b0e4f58b33..add7f3284d411fd3eb188c2568775595
  
  				}
  
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index f9ea33ac39db20e96822fda6b90e2bed02817435..1071a6d91ee953f1fcc6769d0b6ba5230b67bfa1 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -18581,10 +18581,13 @@
+ 
+ 		const instancedMesh = builder.object;
+ 
+-		const updatePrevious = ( object, array ) => {
++		const updatePrevious = ( object, array, scheduled = false ) => {
+ 
+-			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			const data = _previousInstanceMatrices.get( object );
++			if ( scheduled && data.scheduledPrevious === array ) return;
++			const { previousInstanceMatrix } = data;
+ 			previousInstanceMatrix.array.set( array );
++			data.scheduledPrevious = scheduled ? array : undefined;
+ 			previousInstanceMatrix.needsUpdate = true;
+ 			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
+ 			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
+@@ -18595,7 +18598,7 @@
+ 		OnBeforeObjectUpdate( ( { object } ) => {
+ 
+ 			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+-			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious, true );
+ 
+ 		} );
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 93cedce745291edfbd333fb76d8154b8eff685bd..f656265a47ffb6034da0c6ce768264762096b197 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -18581,10 +18581,13 @@
+ 
+ 		const instancedMesh = builder.object;
+ 
+-		const updatePrevious = ( object, array ) => {
++		const updatePrevious = ( object, array, scheduled = false ) => {
+ 
+-			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			const data = _previousInstanceMatrices.get( object );
++			if ( scheduled && data.scheduledPrevious === array ) return;
++			const { previousInstanceMatrix } = data;
+ 			previousInstanceMatrix.array.set( array );
++			data.scheduledPrevious = scheduled ? array : undefined;
+ 			previousInstanceMatrix.needsUpdate = true;
+ 			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
+ 			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
+@@ -18595,7 +18598,7 @@
+ 		OnBeforeObjectUpdate( ( { object } ) => {
+ 
+ 			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+-			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious, true );
+ 
+ 		} );
+ 
+diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
+index 18e2b7943393fd07b7989b1e3a5231a61ca24187..faf500ca41898100d46b56ce322ddee86ef8de2a 100644
+--- a/src/nodes/accessors/Instance.js
++++ b/src/nodes/accessors/Instance.js
+@@ -218,10 +218,13 @@
+ 
+ 		const instancedMesh = builder.object;
+ 
+-		const updatePrevious = ( object, array ) => {
++		const updatePrevious = ( object, array, scheduled = false ) => {
+ 
+-			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			const data = _previousInstanceMatrices.get( object );
++			if ( scheduled && data.scheduledPrevious === array ) return;
++			const { previousInstanceMatrix } = data;
+ 			previousInstanceMatrix.array.set( array );
++			data.scheduledPrevious = scheduled ? array : undefined;
+ 			previousInstanceMatrix.needsUpdate = true;
+ 			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
+ 			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
+@@ -232,7 +235,7 @@
+ 		OnBeforeObjectUpdate( ( { object } ) => {
+ 
+ 			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+-			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious, true );
+ 
+ 		} );
+ 

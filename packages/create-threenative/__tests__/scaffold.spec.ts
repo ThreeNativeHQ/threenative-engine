@@ -189,6 +189,10 @@ const BUG_REPORT_SKILL_PATHS = [
 // Three patch. Restoring the previous patch recovers every prior fingerprint.
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
+// PRD-618: byte-compared all 1,484 files across thirteen actual no-install trees at
+// 919dc0356 against f281d95c9: only patches/three@0.185.1.patch changes, deduplicating
+// scheduled previous-instance history uploads in source and both WebGPU bundles.
+// The migration patch is not copied; predecessor patch bytes recover every prior fingerprint.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
@@ -253,20 +257,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
   // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
   // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
-  "action-rpg": "2ad57690b87fe80faa26931ea11d6ea210ac787bb58c7bb0f83e7b653426eeb7",
-  minimal: "6e9d255a6033e239e73dfabec172dfebb4a88849c01ca461d476ab8b17b91cbd",
-  platformer: "2ccf93236a0d6c1b8aa00bd3f86585427149f3788640dccb491f8d451c2c6894",
-  puzzle: "a25a9129f070b8a4cd25c1d3a174950b0367eba85d5a414b62325a571e2c40f3",
-  racing: "0fb3b6a6eacfc54acd74ae086cb5502789fdfe83e0466306202053843314f663",
-  rain: "9523312a5c0573b6ae886bd63ade36922a86f7a9b8e3730f7ead743609357bd7",
-  rts: "8a8d80b543d77717243274896b5b7a6a723b92e3a3f252fd470b2fb6dcfc12c8",
-  runner: "b14123d911dc3eb7d73e1ab3f91269b480a028938efff4a2bea4f56f2e570906",
+  "action-rpg": "02844ed9ee786d1974368dda7788cb9e5c2937d2ffe2bb58e20bca912af8333f",
+  minimal: "872c3d3d2c8a31b5787b2c3903c913be3b438b85960dcad6f9fb49aa9e453f67",
+  platformer: "a3d50a816ca38072b5f119bb8b278b6faf717a9156da8062fe1c8d3cb17869c5",
+  puzzle: "edd94e0e83c6b11f699f1eddbb27c9ccef9498789b5f3aa0be14d5013135d819",
+  racing: "587e197af3849d1e86dd8fcde93aa9e95b3415531973ad123dbffa0fd2c0ebf6",
+  rain: "da0d5d44d2dd7c67d862438b324673ff030954e8d806c860e68c3946113ce0f2",
+  rts: "6d9e8539bf955792742f9735c843a68dd61094081f84d41debfa4f24216e4311",
+  runner: "2c471ae34e4461ebe51a13986885a1b855495e86f7d4bc21cc3170ad8f416d91",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "73da167ba1fdc6360c58e61b51a2f3dba047fbe1c4e88648e9bce4abb64325da",
-  shooter: "ca09b0b25f3ba689af53772d82be0978d82cdaff8f997b04b160874428ec3e54",
-  snow: "482c1c7f1cd2f233d43cc3fd378c983b4ab8f13dca4bd6fca008e5b120cb0705",
-  starter: "fe84f7a992a2ffa07792e10efe4b673e01499f3d4d21bc09dac8e4397645c1c4",
-  "tower-defense": "7d816e530aee8842027a1666782d96c51b2cbfde55c4c23a7cdd1b0fd6a267ac",
+  sailing: "7a027d3d5a791fea6edb1ef969375362ecff576158b887889b046dc188f4758c",
+  shooter: "6391e4df9d4233d1239ed82e9abed74d28a6da15860d11b56cf8d404c74cb356",
+  snow: "e836d6b316d99273cb45e88770199a0ccb2333b2ad83953b4660f945f83cb049",
+  starter: "99806a1649ae75ea5fb48051c48250b898fddd083d29c559faf7ea3a84c14bce",
+  "tower-defense": "1cac420eee7bbbed3a703fcb21d53af0bc6c185a905eca4698503a09dcbfa575",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

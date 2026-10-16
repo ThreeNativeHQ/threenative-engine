@@ -838,10 +838,10 @@
       "generator": "examples/strata-terrain-preview/scripts/make-needle-atlas.mjs",
       "seed": 466468,
       "command": "node scripts/make-needle-atlas.mjs",
-      "bytes": 321934,
+      "bytes": 277676,
       "dimensions": "1024x1024 (4 cells of 512x512)",
       "preprocessing": "none. Drawn from a seeded PRNG and deflated as PNG by the script itself: no image library, no upload, byte-identical on every run.",
-      "sha256": "d2f1fd6eb3f87083a1c72a07add0c485f477b7b5e64e1d9db0108298c75eae50",
+      "sha256": "6bebd788b446d26a4b98738e9ba78686f98323e654d83c43741a0c50c31533f2",
       "why": "A photograph of foliage does not give a card with the twig down the middle and needles fanning off both sides, which is what makes an alpha-cutout branch read as a branch from every angle."
     },
     "needle-surface.png": {
@@ -849,10 +849,10 @@
       "generator": "examples/strata-terrain-preview/scripts/make-needle-atlas.mjs",
       "seed": 466468,
       "command": "node scripts/make-needle-atlas.mjs",
-      "bytes": 1021932,
+      "bytes": 819103,
       "dimensions": "1024x1024 (4 cells of 512x512)",
       "preprocessing": "none. Cooked from the coverage and ridge the same run recorded while drawing the albedo, and deflated as PNG by the script itself: no image library, byte-identical on every run.",
-      "sha256": "45d236f6b61f745753fd86b06b0c27d451ae118c9f0164ce44dda51f297ecbf5",
+      "sha256": "f057b920099776c979607b9270199dc828c05bd8aa71e39c875c69c9160f4239",
       "why": "An alpha-tested quad has no thickness, so a crown built from cards had exactly one flat normal per card and read as stacked flat quads. A normal per needle plus the spray's own occlusion is what makes a card a mass of needles rather than a silhouette."
     }
   },

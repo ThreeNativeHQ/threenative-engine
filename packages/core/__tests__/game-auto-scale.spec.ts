@@ -409,6 +409,12 @@ describe('resolutionScale: "auto"', () => {
       // in the window record, then the refund gives it back because 100 ms frames never
       // improve on fewer pixels.
       releaseTier();
+      // Final settlement observes rendered frames after the held warm-up, including two quiet ones.
+      for (let index = 0; index < 10; index += 1) {
+        time += 8;
+        frame(time);
+        await Promise.resolve();
+      }
       await game.ctx?.startup.whenReady();
       postReadiness.length = 0;
       for (let index = 0; index < 6; index += 1) {

@@ -1,13 +1,18 @@
 import { fileURLToPath } from "node:url";
 import {
+  BoxGeometry,
   DoubleSide,
+  Group,
   InstancedBufferAttribute,
   InstancedInterleavedBuffer,
+  Matrix4,
+  Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   Texture,
   Vector3,
 } from "three";
+import { uniform } from "three/tsl";
 import { MeshStandardNodeMaterial, NodeUpdateType } from "three/webgpu";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
@@ -18,6 +23,7 @@ import {
   impostorFrameUv,
   instanceSyncEvent,
   syncInstanceRanges,
+  worldLodMaterial,
 } from "../src/render/world-impostor-surface.js";
 import {
   IMPOSTOR_VIEWS,
@@ -373,4 +379,68 @@ describe("covered continuous depth geometry controls", () => {
   it("rejects a depth discontinuity with no surface crossing", () => {
     expect(coveredCrossing((t) => ({ alpha: 1, gap: t > 0 ? 1 : -1 }))).toBeNull();
   });
+});
+
+it.each([MeshStandardMaterial, MeshStandardNodeMaterial])(
+  "partitions every dither pixel with opposite comparisons in both render passes",
+  (MaterialClass) => {
+    const eye = uniform(new Vector3());
+    const source = new MaterialClass({ alphaTest: 0.42 });
+    const near = worldLodMaterial(source, new Matrix4(), [0, 60], 0, 0.2, eye, uniform(1), false);
+    const far = worldLodMaterial(source, new Matrix4(), [0, 60], 1, 0.2, eye, uniform(1), false);
+    expect(near.alphaTest).toBe(source.alphaTest);
+    expect(far.alphaTest).toBe(source.alphaTest);
+    const comparisons = (material: typeof near) => {
+      const operators: string[] = [];
+      material.maskNode?.traverse((node) => {
+        const op = Reflect.get(node, "op");
+        if (op === "<" || op === ">=") operators.push(op);
+      });
+      return operators;
+    };
+    expect(comparisons(near)).toEqual([">="]);
+    expect(comparisons(far)).toEqual(["<"]);
+    expect(near.maskShadowNode).toBe(near.maskNode);
+    expect(far.maskShadowNode).toBe(far.maskNode);
+    // Includes the exact equality boundary: using <= on either side would double one pixel.
+    for (const mix of [0, 0.001, 0.25, 0.5, 0.75, 0.999, 1]) {
+      for (let pixel = 0; pixel < 1024; pixel++) {
+        const noise = pixel / 1024;
+        expect(Number(noise >= mix) + Number(noise < mix)).toBe(1);
+      }
+    }
+    near.dispose();
+    far.dispose();
+    source.dispose();
+  },
+);
+
+it("Strata shadow cutout uses the view sampled alpha and mip-adjusted threshold", async () => {
+  const { loadPack } = await import("../../../examples/strata-terrain-preview/src/render/pack.js");
+  const { createAssetLoader } = await import("../src/assets.js");
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  vi.spyOn(assets, "texture").mockRejectedValue(new Error("optional texture absent"));
+  const source = new MeshStandardMaterial({ map: new Texture(), alphaTest: 0.42 });
+  vi.spyOn(assets, "model").mockImplementation(async (path) => {
+    if (path !== "temperate/spruce/0.glb") throw new Error("optional model absent");
+    return { scene: new Group().add(new Mesh(new BoxGeometry(), source)) } as never;
+  });
+  const pack = await loadPack(assets);
+  try {
+    const material = pack.parts.get("spruce:0")?.[0]?.material as MeshStandardNodeMaterial;
+    expect(material).toBeTruthy();
+    const wrapped = material.maskShadowNode as unknown as {
+      node: { op: string; aNode: unknown; bNode: unknown };
+    };
+    const mask = wrapped.node;
+    expect(mask.op).toBe(">");
+    expect(mask.aNode).toBe(material.opacityNode);
+    expect(mask.bNode).toBe(material.alphaTestNode);
+    expect(material.alphaTest).toBe(0.42);
+    expect(material.userData.tnImpostorAlphaTest).toBe(0.42);
+  } finally {
+    pack.dispose();
+    source.dispose();
+  }
 });

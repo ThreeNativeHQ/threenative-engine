@@ -444,10 +444,12 @@ it("submits a rotated offset model when its actual geometry intersects the camer
   }
 });
 
-it("rejects exact authored parts combined with whole-asset impostors before model admission", async () => {
-  const model = vi.fn();
-  const promise = WorldCells.load({
+it("allows authored parts with terminal impostors on the CPU path", async () => {
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const world = await WorldCells.load({
     url: "world.json",
+    assets,
     surface: new MeshBasicMaterial(),
     follow: { position: new Vector3() },
     terrain: false,
@@ -457,15 +459,10 @@ it("rejects exact authored parts combined with whole-asset impostors before mode
     gpuScene: false,
     preserveAuthoredParts: true,
     impostors: true,
-    loadModel: model,
+    lodHysteresis: 0.2,
+    loadModel: async () => new Group(),
   });
-  await expect(
-    promise.then((world) => {
-      world.dispose();
-      return world;
-    }),
-  ).rejects.toThrow(/preserveAuthoredParts.*impostors/u);
-  expect(model).not.toHaveBeenCalled();
+  world.dispose();
 });
 
 it("admits a queued run for the current camera rather than its obsolete enqueue position", async () => {
@@ -693,4 +690,90 @@ it("runs an owed stationary-camera refilter after the last byte-identical public
   } finally {
     world.dispose();
   }
+});
+
+it("draws both authored levels in the dither band in view and shadow with one shared mask", async () => {
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  const follow = { position: new Vector3(32, 0, -28) };
+  const surface = new MeshBasicMaterial();
+  const world = await WorldCells.load({
+    url: "world.json",
+    assets,
+    surface,
+    follow,
+    terrain: false,
+    ring: 10,
+    budgets: { residentCells: 4, instances: 4, bytes: 128 },
+    data: {
+      manifest: {
+        ...manifest,
+        cells: [manifest.cells[0] as import("../src/world.js").IWorldCell],
+        assets: {
+          tree: {
+            ...(manifest.assets.tree as import("../src/world.js").IWorldAsset),
+            lods: [{ glb: "far.glb", distance: 60 }],
+          },
+        },
+      },
+      placements: new Float32Array([32, 0, 32, 0, 0, 0, 1, 1]).buffer,
+    },
+    gpuScene: false,
+    preserveAuthoredParts: true,
+    lodHysteresis: 0.2,
+    shadows: { cast: true, castLevels: 2 },
+    loadModel: async () => new Group().add(new Mesh(new BoxGeometry(), surface)),
+  });
+  try {
+    for (let frame = 0; frame < 100; frame++) {
+      world.update();
+      await Promise.resolve();
+    }
+    const drawn = [new Set<number>(), new Set<number>()];
+    world.traverse((node) => {
+      if (!(node instanceof InstancedMesh)) return;
+      let live = 0;
+      for (let i = 0; i < node.count; i++) if (node.instanceMatrix.array[i * 16 + 15]) live++;
+      if (!live) return;
+      const material = node.material as import("three/webgpu").NodeMaterial;
+      expect(material.maskNode).toBeTruthy();
+      expect(material.maskShadowNode).toBe(material.maskNode);
+      drawn[node.layers.mask & 1 ? 0 : 1]?.add(Number(node.name.split(":")[1]));
+    });
+    expect([...(drawn[0] ?? [])].sort()).toEqual([0, 1]);
+    expect([...(drawn[1] ?? [])].sort()).toEqual([0, 1]);
+    follow.position.z = -168;
+    for (let frame = 0; frame < 100; frame++) {
+      world.update();
+      await Promise.resolve();
+    }
+    let nearLive = 0;
+    world.traverse((node) => {
+      if (!(node instanceof InstancedMesh) || node.name.split(":")[1] !== "0") return;
+      for (let i = 0; i < node.count; i++) if (node.instanceMatrix.array[i * 16 + 15]) nearLive++;
+    });
+    expect(nearLive).toBe(0);
+  } finally {
+    world.dispose();
+  }
+});
+
+it("keeps the unsupported authored GPU impostor guard before model admission", async () => {
+  const model = vi.fn(async () => new Group());
+  await expect(
+    WorldCells.load({
+      url: "world.json",
+      surface: new MeshBasicMaterial(),
+      follow: { position: new Vector3() },
+      terrain: false,
+      ring: 1,
+      budgets: { residentCells: 4, instances: 4, bytes: 128 },
+      data: { manifest, placements },
+      gpuScene: true,
+      preserveAuthoredParts: true,
+      impostors: true,
+      loadModel: model,
+    }),
+  ).rejects.toThrow(/gpuScene:false/);
+  expect(model).not.toHaveBeenCalled();
 });

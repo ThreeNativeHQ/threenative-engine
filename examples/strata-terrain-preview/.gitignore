@@ -2,3 +2,4 @@
 /dist/
 /src/world/.bake-stamp
 /assets/
+/assets.manifest.json

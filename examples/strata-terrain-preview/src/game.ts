@@ -10,6 +10,8 @@ import {
 } from "@threenative/physics";
 import {
   CapsuleGeometry,
+  Frustum,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   OrthographicCamera,
@@ -196,6 +198,7 @@ const initialState = {
   canopyComparison: { normals: "authored", specular: "disabled" } as ICanopyComparison,
   showcase: false,
   worldReady: false,
+  revealComplete: false,
   loadingError: "",
   spawnCellsRequired: 0,
   spawnCellsLoaded: 0,
@@ -302,8 +305,74 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       const data = this.#data;
       if (!data) throw new Error(`World ${world} was not loaded`);
       // ctx.goto carries state; camera names from the outgoing biome must not carry with it.
-      ctx.state.set({ view: "player", worldReady: false, loadingError: "" });
+      ctx.state.set({ view: "player", worldReady: false, loadingError: "", revealComplete: false });
       let released = false;
+      const reveal = {
+        startedMs: -1,
+        elapsedMs: 0,
+        complete: false,
+        samples: 0,
+        publishedBatchesInView: -1,
+        shadowInvalidated: -1,
+        impostorPendingPeak: -1,
+        pipelinesCreated: -1,
+        pipelineCensusAvailable: false,
+      };
+      let shadowAtReveal = -1;
+      let pipelinesAtReveal: number | undefined;
+      const revealFrustum = new Frustum();
+      const revealMatrix = new Matrix4();
+      function initializeRevealProbe(): void {
+        if (released || reveal.complete || reveal.startedMs >= 0) return;
+        if (ctx.canvasLayer.opaque || ctx.startup.phase !== "ready" || !props)
+          throw new Error("Reveal probe requires ready props and an uncovered world");
+        const shadows = sky.sun.shadow.shadowNode;
+        if (!(shadows instanceof VirtualShadowNode))
+          throw new Error("Reveal probe requires virtual shadows");
+        const creations = ctx.renderer.pipelineCensus?.()?.counts.deviceCreations;
+        reveal.startedMs = performance.now();
+        reveal.publishedBatchesInView = 0;
+        shadowAtReveal = shadows.stats.byInvalidation;
+        pipelinesAtReveal = creations;
+        ctx.camera.updateMatrixWorld(true);
+        revealFrustum.setFromProjectionMatrix(
+          revealMatrix.multiplyMatrices(ctx.camera.projectionMatrix, ctx.camera.matrixWorldInverse),
+          ctx.camera.coordinateSystem,
+        );
+      }
+      ctx.afterPhysics(() => {
+        if (
+          released ||
+          reveal.complete ||
+          reveal.startedMs < 0 ||
+          ctx.canvasLayer.opaque ||
+          ctx.startup.phase !== "ready" ||
+          !props
+        )
+          return;
+        const shadows = sky.sun.shadow.shadowNode;
+        if (!(shadows instanceof VirtualShadowNode))
+          throw new Error("Reveal probe requires virtual shadows");
+        const census = ctx.renderer.pipelineCensus?.();
+        const creations = census?.counts.deviceCreations;
+        reveal.samples++;
+        reveal.elapsedMs = performance.now() - reveal.startedMs;
+        reveal.shadowInvalidated = shadows.stats.byInvalidation - shadowAtReveal;
+        reveal.impostorPendingPeak = Math.max(
+          reveal.impostorPendingPeak,
+          props.worlds.reduce((sum, stream) => sum + stream.stats().impostor.pending, 0),
+        );
+        reveal.pipelineCensusAvailable =
+          census?.complete === true && creations !== undefined && pipelinesAtReveal !== undefined;
+        if (
+          reveal.pipelineCensusAvailable &&
+          creations !== undefined &&
+          pipelinesAtReveal !== undefined
+        )
+          reveal.pipelinesCreated = creations - pipelinesAtReveal;
+        reveal.complete = reveal.elapsedMs >= 3000;
+        if (reveal.complete) ctx.state.set({ revealComplete: true });
+      });
       const textureUploads = new AbortController();
       let propsStage = "waiting-for-physics";
       let propsSettled = false;
@@ -323,7 +392,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
               stage: propsStage,
               propsSettled,
               ...(preparation === undefined ? {} : { preparation }),
-              coverage: props?.readinessAt(spawn),
+              coverage: props?.readinessAt(ctx.camera),
               assets: ctx.assets.progress,
               startup: ctx.startup,
             }),
@@ -340,9 +409,12 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           // Core polls this once per rendered frame, so the gate settles under a playtest's
           // deterministic clock, which advances no fixed step while startup is held.
           () => {
-            const region = props?.readinessAt(spawn);
+            const region =
+              !admission.ready || ctx.startup.phase !== "ready"
+                ? props?.readinessAt(ctx.camera)
+                : undefined;
             admission.observe(region?.ready === true, region?.failures ?? 0);
-            return admission.ready || admission.error !== "";
+            return (region?.ready === true && admission.ready) || admission.error !== "";
           },
           120_000,
           () =>
@@ -352,6 +424,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         );
       const loading = createLoadingScreen({
         ...ctx,
+        onReveal: initializeRevealProbe,
         keepWorldRendering: false,
         startup: {
           get progress() {
@@ -754,6 +827,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
             completedPropsWork += Math.max(0, progress.added - previous);
             preparation = progress;
           },
+          onPublication: (bounds) => {
+            if (reveal.startedMs < 0 || reveal.complete) return;
+            if (revealFrustum.intersectsBox(bounds)) reveal.publishedBatchesInView++;
+          },
           invalidateShadows: (region) => {
             const shadows = sky.sun.shadow.shadowNode;
             if (shadows instanceof VirtualShadowNode) invalidatePropShadows(shadows, region);
@@ -778,6 +855,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         ctx.entities.add("props", {
           object: props.worlds[0],
           debug: () => ({
+            reveal,
             streaming: props?.stats(),
             boulders: scatter.counts.boulder,
             bushes: scatter.counts.bush,
@@ -961,7 +1039,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           };
         }
         const streaming = props?.stats();
-        const region = props?.readinessAt(spawn);
+        const region =
+          !admission.ready || ctx.startup.phase !== "ready"
+            ? props?.readinessAt(ctx.camera)
+            : undefined;
         admission.observe(region?.ready === true, region?.failures ?? 0);
         const worldReady = admission.ready;
         if (region)

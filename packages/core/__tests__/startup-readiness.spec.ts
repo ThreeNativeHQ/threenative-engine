@@ -2,6 +2,114 @@ import { describe, expect, it, vi } from "vitest";
 import { StartupReadiness } from "../src/startup-readiness.js";
 
 describe("StartupReadiness", () => {
+  it.each(["compile", "hold", "warmup"])("cancels timers and late %s completion", async (phase) => {
+    vi.useFakeTimers();
+    try {
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const readiness = new StartupReadiness({
+        stableFrames: 1,
+        settled: () => false,
+        afterHolds: () => pending,
+      });
+      const ready = vi.fn();
+      const failed = vi.fn();
+      void readiness.whenReady().then(ready, failed);
+      if (phase !== "compile")
+        readiness.hold("view", phase === "hold" ? pending : Promise.resolve());
+      readiness.start(phase === "compile" ? () => pending : undefined);
+      await Promise.resolve();
+      readiness.observe(1);
+      readiness.cancel();
+      readiness.cancel();
+      expect(vi.getTimerCount()).toBe(0);
+      finish();
+      await vi.advanceTimersByTimeAsync(60_000);
+      readiness.observe(1);
+      readiness.observe(1);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(ready).not.toHaveBeenCalled();
+      expect(failed).not.toHaveBeenCalled();
+      expect(readiness.ready).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["world", "hold"])(
+    "rejects when required %s settlement never arrives",
+    async (missing) => {
+      vi.useFakeTimers();
+      try {
+        let resident = true;
+        const readiness = new StartupReadiness({
+          stableFrames: 1,
+          stableWindowMs: 100,
+          settled: () => missing !== "world",
+        });
+        readiness.hold("view", () => resident);
+        const failed = vi.fn();
+        void readiness.whenReady().catch(failed);
+        readiness.start();
+        readiness.observe(1);
+        resident = missing !== "hold";
+        readiness.observe(1);
+        await vi.advanceTimersByTimeAsync(99);
+        expect(failed).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(failed).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: expect.stringContaining("TN_STARTUP_SETTLEMENT_TIMEOUT"),
+          }),
+        );
+        resident = true;
+        readiness.observe(1);
+        readiness.observe(1);
+        expect(readiness.ready).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("requires two quiet rendered polls after warm-up and resets for late work", async () => {
+    let shadowSettled = false;
+    let resident = true;
+    let finishWarmup!: () => void;
+    const readiness = new StartupReadiness({
+      stableFrames: 1,
+      settled: () => shadowSettled,
+      afterHolds: () =>
+        new Promise<void>((resolve) => {
+          finishWarmup = resolve;
+        }),
+    });
+    readiness.hold("view", () => resident);
+    readiness.start();
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    finishWarmup();
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    shadowSettled = true;
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    resident = false;
+    readiness.observe(1);
+    resident = true;
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    shadowSettled = false;
+    readiness.observe(1);
+    shadowSettled = true;
+    readiness.observe(1);
+    expect(readiness.ready).toBe(false);
+    readiness.observe(1);
+    expect(readiness.ready).toBe(true);
+    await readiness.whenReady();
+  });
+
   it("waits for compile work and consecutive in-budget frames", async () => {
     let resolveCompile: () => void = () => undefined;
     const readiness = new StartupReadiness({

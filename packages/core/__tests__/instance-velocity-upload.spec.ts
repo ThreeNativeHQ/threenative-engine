@@ -12,7 +12,7 @@ import { AttributeType } from "three/src/renderers/common/Constants.js";
 import Renderer from "three/src/renderers/common/Renderer.js";
 import { instance } from "three/tsl";
 import { type Node, NodeFrame, WGSLNodeBuilder } from "three/webgpu";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { VelocityTracker } from "../src/render/velocity.js";
 
 /** Three's runtime builder methods are not included in its published declarations. */
@@ -136,6 +136,54 @@ describe("instance matrix uploads at the actual draw boundary", () => {
       f.tracker.clear();
     },
   );
+
+  it.each([false, true])("reuses unchanged scheduled history (dynamic=%s)", (dynamic) => {
+    const f = fixture(dynamic);
+    f.draw();
+    f.tracker.commit(f.scene);
+    f.tracker.update(f.scene);
+    const first = f.draw();
+    if (!f.previous) throw new Error("Previous instance attribute missing");
+    const data = f.previous.data;
+    const version = data.version;
+    const copy = vi.spyOn(data.array, "set");
+    for (let draw = 0; draw < 4; draw += 1) {
+      f.tracker.commit(f.scene);
+      f.tracker.update(f.scene);
+      const drawn = f.draw();
+      if (!dynamic) expect(drawn.updates).toBe(first.updates);
+      expect(data.version).toBe(version);
+    }
+    expect(copy).not.toHaveBeenCalled();
+    copy.mockRestore();
+    f.tracker.clear();
+  });
+
+  it("uploads changed A/B/A scheduled buffers and restores history after fallback", () => {
+    const f = fixture(false);
+    const key = Symbol.for("threenative.velocity.previousInstanceMatrices");
+    const a = Float32Array.from(f.crowd.instanceMatrix.array);
+    const b = Float32Array.from(a);
+    b[28] = 7;
+    for (const source of [a, b, a]) {
+      if (source === a) {
+        const x = a[28];
+        if (x === undefined) throw new Error("Missing second instance matrix in fixture");
+        a[28] = x + 1;
+      }
+      Reflect.set(f.crowd, key, source);
+      expect(f.draw().previous).toEqual(source);
+      const updates = f.draw().updates;
+      expect(f.draw().updates).toBe(updates);
+    }
+    Reflect.deleteProperty(f.crowd, key);
+    f.crowd.setMatrixAt(1, new Matrix4().makeTranslation(9, 0, -4));
+    f.crowd.instanceMatrix.needsUpdate = true;
+    f.draw();
+    Reflect.set(f.crowd, key, a);
+    expect(f.draw().previous).toEqual(a);
+    f.tracker.clear();
+  });
 
   it("keeps unscheduled Three history advancing after each upload", () => {
     const f = fixture(false, true, false);
