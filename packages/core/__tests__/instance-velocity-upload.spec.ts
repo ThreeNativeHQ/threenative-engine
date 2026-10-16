@@ -166,7 +166,11 @@ describe("instance matrix uploads at the actual draw boundary", () => {
     const b = Float32Array.from(a);
     b[28] = 7;
     for (const source of [a, b, a]) {
-      if (source === a) a[28] += 1;
+      if (source === a) {
+        const x = a[28];
+        if (x === undefined) throw new Error("Missing second instance matrix in fixture");
+        a[28] = x + 1;
+      }
       Reflect.set(f.crowd, key, source);
       expect(f.draw().previous).toEqual(source);
       const updates = f.draw().updates;
