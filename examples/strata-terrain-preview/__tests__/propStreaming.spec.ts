@@ -31,4 +31,17 @@ describe("streamed spruce terminal gates", () => {
     expect(doubleScaleGate).toBeGreaterThan(LOD_BANDS.far);
     expect(doubleScaleGate * 2).toBeGreaterThan(LOD_BANDS.far);
   });
+
+  it("uses mirrored placement magnitude for the terminal distance and rejects zero or invalid scales", () => {
+    expect(impostorDistanceForScale(-0.5, LOD_BANDS.far)).toBe(300);
+    expect(() => impostorDistanceForScale(0, LOD_BANDS.far)).toThrow(
+      "positive finite placement scale",
+    );
+    expect(() => impostorDistanceForScale(Number.NaN, LOD_BANDS.far)).toThrow(
+      "positive finite placement scale",
+    );
+    expect(() => impostorDistanceForScale(Number.POSITIVE_INFINITY, LOD_BANDS.far)).toThrow(
+      "positive finite placement scale",
+    );
+  });
 });

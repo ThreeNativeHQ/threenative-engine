@@ -65,9 +65,9 @@ const CELL_SIZE = 128;
 
 /** Keep the terminal gate beyond the last authored step and the scaled 150 m canopy band. */
 export function impostorDistanceForScale(minScale: number, lastLodDistance: number): number {
-  if (!Number.isFinite(minScale) || minScale <= 0)
+  if (!Number.isFinite(minScale) || minScale === 0)
     throw new Error("Spruce terminal distance requires a positive finite placement scale.");
-  return Math.max(LOD_BANDS.far / minScale, lastLodDistance * (1 + Number.EPSILON));
+  return Math.max(LOD_BANDS.far / Math.abs(minScale), lastLodDistance * (1 + Number.EPSILON));
 }
 
 /** Compile the game's poses/appearance into world-v1 records; WorldCells owns every streaming step. */
@@ -155,7 +155,10 @@ export async function createStreamedProps(options: IStreamOptions) {
       if (placement.asset === "spruce")
         minSpruceScaleByVariant.set(
           variant,
-          Math.min(minSpruceScaleByVariant.get(variant) ?? Number.POSITIVE_INFINITY, scalar),
+          Math.min(
+            minSpruceScaleByVariant.get(variant) ?? Number.POSITIVE_INFINITY,
+            Math.abs(scalar),
+          ),
         );
       byId.set(placement.id, { ...pose, pose: pose.matrix, placement });
     },
