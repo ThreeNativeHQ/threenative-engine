@@ -57,7 +57,7 @@ Runtime proof used the unchanged epic forest consumer with a temporary exact hel
 
 The diagnostic command was `trace --url 'http://127.0.0.1:5296/?world=forest&showcase=1' --no-wait --no-input --settle 0.001 --seconds 90 --stall-ms 250 --allow-virtual-display --out <arm>.trace.json --text`, using shipped capture/display handling. Animation-callback counts (baseline 3,030/2,836, candidate 3,001/2,927) are a normalization cross-check, not rendered-frame or FPS evidence. Named guard self time per callback was approximately 4.15 → 3.40 ms. Two runs per arm on one host support this bounded CPU result; all epic runtime budgets remain separate.
 
-The Argon gateway visual attempt returned HTTP 400 and no verdict. A new Go review used actual image-returning Read calls and supplied the NEUTRAL verdict above. Full local build/test qualification is running; native crash-handler/adapter policy failures have appeared and remain under read-only triage. Do not treat the full suite as passing.
+The Argon gateway visual attempt returned HTTP 400 and no verdict. A new Go review used actual image-returning Read calls and supplied the NEUTRAL verdict above. Full local candidate build passed; `pnpm test` stopped with 21 native failures (1,562 native tests passed, 70 skipped). Read-only triage confirmed missing V8/QuickJS executables before the changed guard can run. Shipped doctor passed Node/Chromium/Xvfb/ADB prerequisites; iOS is not claimed here. V8 host and native contract targets, then QuickJS host/timestamp/renderable targets are building before the focused six-file rerun. Full test and actual native render qualification remain open.
 
 ## Decisions
 
