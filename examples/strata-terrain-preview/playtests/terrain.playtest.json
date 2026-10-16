@@ -601,7 +601,7 @@
         "path": "oceanSteps",
         "gte": 300
       },
-      "timeoutMs": 10000,
+      "timeoutMs": 120000,
       "release": true
     },
     {

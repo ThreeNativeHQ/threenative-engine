@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { afterEach, expect, it, vi } from "vitest";
-import { medianOfGrowingSamples } from "../src/viewStatistics.js";
+import {
+  type IViewVisit,
+  beginViewVisit,
+  medianOfGrowingSamples,
+  retainViewWindow,
+} from "../src/viewStatistics.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -52,4 +57,44 @@ it("waits for three kept windows at every measured view instead of fixed ticks",
     expect(step.timeoutMs).toBe(120000);
     expect(step.waitTicks).toBeUndefined();
   }
+});
+
+it("counts only fresh steady windows after each scene or camera visit", () => {
+  const oldVisit: IViewVisit = { windows: 3, discard: false, ready: true };
+  const steady = { gpuMs: 5, gpuFrames: { first: 100, last: 109 } };
+  expect(retainViewWindow(oldVisit, steady, 100)).toBe(true);
+  for (const reason of ["scene reload", "camera revisit"]) {
+    const visit = beginViewVisit();
+    expect(retainViewWindow(visit, steady, Number.POSITIVE_INFINITY), reason).toBe(false);
+    visit.ready = true;
+    expect(retainViewWindow(visit, steady, Number.POSITIVE_INFINITY), reason).toBe(false);
+    expect(retainViewWindow(visit, steady, 100), reason).toBe(false);
+    expect(visit.windows, reason).toBe(0);
+    for (let i = 1; i <= 3; i++) {
+      expect(retainViewWindow(visit, steady, 100), reason).toBe(true);
+      expect(visit.windows, reason).toBe(i);
+    }
+    expect(oldVisit.windows, reason).toBe(4);
+  }
+});
+
+it("rejects startup, compilation, late GPU frames and missing observations", () => {
+  const visit: IViewVisit = { windows: 0, discard: false, ready: true };
+  const steady = { gpuMs: 5, gpuFrames: { first: 100, last: 109 } };
+  for (const window of [
+    {},
+    { gpuMs: 5 },
+    { gpuFrames: steady.gpuFrames },
+    { ...steady, gpuFrames: { first: 99, last: 109 } },
+    { ...steady, surface: { compiling: true } },
+  ]) {
+    expect(retainViewWindow(visit, window as typeof steady, 100)).toBe(false);
+    expect(visit.windows).toBe(0);
+  }
+  visit.ready = false;
+  expect(retainViewWindow(visit, steady, 100)).toBe(false);
+  visit.ready = true;
+  expect(retainViewWindow(visit, steady, 100)).toBe(false);
+  expect(retainViewWindow(visit, steady, 100)).toBe(true);
+  expect(visit.windows).toBe(1);
 });

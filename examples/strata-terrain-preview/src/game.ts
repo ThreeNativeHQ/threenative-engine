@@ -41,7 +41,11 @@ import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./rend
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
 import { type IBakedWorld, createTerrain } from "./render/terrain.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
-import { medianOfGrowingSamples as median } from "./viewStatistics.js";
+import {
+  beginViewVisit,
+  medianOfGrowingSamples as median,
+  retainViewWindow,
+} from "./viewStatistics.js";
 import baked from "./world/baked.json";
 import {
   type ForestStageWorld,
@@ -88,7 +92,7 @@ interface IViewWindow {
 }
 const viewBudgets = new Map<string, IViewWindow>();
 let currentView = "";
-let reportedView = "";
+let viewVisit = beginViewVisit();
 let measuredView = "";
 let firstViewGpuFrame = Number.POSITIVE_INFINITY;
 const renderedFrames: Record<WorldName, number> = {
@@ -255,7 +259,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #river: IRiverWater | undefined;
     #lake: IRiverWater | undefined;
 
-    override exit(): void {
+    override exit(ctx: TerrainCtx): void {
+      currentView = "";
+      viewVisit = beginViewVisit();
+      firstViewGpuFrame = Number.POSITIVE_INFINITY;
+      measuredView = "";
+      ctx.state.set({ currentViewWindows: 0 });
       this.#stageLoad++;
       const stage = this.#stage;
       this.#stage = undefined;
@@ -274,6 +283,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // ctx.goto carries state; camera names from the outgoing biome must not carry with it.
       ctx.state.set({
         view: "player",
+        currentViewWindows: 0,
         worldReady: false,
         loadingError: "",
         spawnCellsRequired: 0,
@@ -900,6 +910,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       let propCounts = { draws: 0, instances: 0, triangles: 0 };
       let travel = 0;
       currentView = `${world}:player`;
+      viewVisit = beginViewVisit();
+      firstViewGpuFrame = Number.POSITIVE_INFINITY;
+      measuredView = "";
       viewBudgets.set(currentView, {
         view: currentView,
         p50s: [],
@@ -1093,7 +1106,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           tasksAvailable: budget.tasksAvailable,
           longestLoadTaskMs: budget.longestTaskMs,
           afterFirstFrameTaskMs: budget.afterFirstFrameTaskMs,
-          currentViewWindows: viewBudgets.get(currentView)?.p50s.length ?? 0,
+          currentViewWindows: viewVisit.windows,
           viewFrameP50s,
           maxViewFrameP50: Math.max(0, ...viewFrameP50s.map((group) => group.p50)),
           maxViewPresentedP95: Math.max(0, ...viewFrameP50s.map((group) => group.presentedP95)),
@@ -1173,6 +1186,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         new Vector3(x, field.heightAt(x, z) + up, z);
       ctx.beforeRender(() => {
         renderedFrames[world]++;
+        viewVisit.ready = ctx.state.getState().worldReady && ctx.startup.phase === "ready";
+        if (!viewVisit.ready) viewVisit.discard = true;
         if (
           measuredView !== currentView ||
           !ctx.state.getState().worldReady ||
@@ -1244,6 +1259,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // Keyed by world as well as view: `meadow-close` frames a different hillside in each world,
         // so folding them together would report one number for two different pictures.
         currentView = `${world}:${next}`;
+        viewVisit = beginViewVisit();
+        firstViewGpuFrame = Number.POSITIVE_INFINITY;
+        measuredView = "";
         // Cumulative, not reset: a view is entered once per cycle but latched across every pass the
         // run makes through it, so a second visit measures the same framing with more samples behind
         // it rather than starting the count from nothing.
@@ -1263,7 +1281,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           });
         ctx.state.set({
           view: next,
-          currentViewWindows: viewBudgets.get(currentView)?.p50s.length ?? 0,
+          currentViewWindows: viewVisit.windows,
         });
       }
       this.#ocean?.advance(this.#elapsed);
@@ -1328,9 +1346,7 @@ const game = defineGame<TerrainState, IPhysicsContext>({
         budget.afterFirstFrameTaskMs = window.longTasks.afterFirstFrameMs;
       }
       const group = viewBudgets.get(currentView);
-      const sameView = reportedView === currentView;
-      reportedView = currentView;
-      if (group && sameView) {
+      if (group && retainViewWindow(viewVisit, window, firstViewGpuFrame)) {
         if (
           window.gpuMs !== undefined &&
           window.gpuFrames &&
