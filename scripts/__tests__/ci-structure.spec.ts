@@ -1084,11 +1084,7 @@ describe("CI pipeline structure", () => {
       ".github/workflows/native-platforms.yml",
       // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
       // overran its 45-minute budget on a pinned 4-thread slot (run 37082733117).
-      new Set([
-        "android-emulator-parity",
-        "publish-android-v8",
-        "publish-linux-arm64-v8",
-      ]),
+      new Set(["android-emulator-parity", "publish-android-v8", "publish-linux-arm64-v8"]),
     ],
     [
       ".github/workflows/integration.yml",
