@@ -20,7 +20,12 @@ const outfile = resolve(work, "game.js");
 await writeFile(
   entry,
   `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { Scene, PerspectiveCamera } from "three";
+// What the game's canvas listeners see: a press the page did not take, and the mouse's look and wheel.
+for (const type of ["pointerdown", "pointermove", "mousemove", "wheel"])
+  globalThis.canvas.addEventListener(type, (event) =>
+    globalThis.tn.log("GAME_POINTER " + type + " x=" + event.clientX + " buttons=" + event.buttons + " mx=" + event.movementX + " dy=" + event.deltaY));
 globalThis.tn.scene = new Scene();
 globalThis.tn.camera = new PerspectiveCamera();
 globalThis.__tnUiGameReceive = (frame) => globalThis.tn.log("UI_RECEIVED " + frame);
@@ -98,6 +103,18 @@ try {
   const seen = presses();
   assert.equal(seen.length, 1, `the page saw ${seen.length} presses: ${seen.join(" | ")}`);
   assert.match(seen[0], /"side":"inside"/u, `the page's press was not the inside one: ${seen[0]}`);
+  // The press outside the island is the game's, as a window's press would be; the inside one is not.
+  const gamePresses = [...output.matchAll(/GAME_POINTER pointerdown x=(\d+) buttons=(\d+)/gu)].map((match) => match.slice(1, 3).join(":"));
+  assert.deepEqual(gamePresses, ["960:1"], `the game's presses: ${gamePresses.join(" | ")}\n${output.slice(-2000)}`);
+  // Outside the island a mouse move reaches the game as pointermove and mousemove with its movement, and
+  // a wheel with its delta.
+  await call("input.pointer", { type: "move", x: 1000, y: 360, buttons: 0 });
+  await call("advance", 2);
+  assert.match(output, /GAME_POINTER pointermove x=1000 buttons=0 mx=40/u, `no pointermove with movement:\n${output.slice(-1500)}`);
+  assert.match(output, /GAME_POINTER mousemove x=1000 buttons=0 mx=40/u, `no mousemove with movement:\n${output.slice(-1500)}`);
+  await call("input.wheel", { x: 1000, y: 360, deltaX: 0, deltaY: 120 });
+  await call("advance", 2);
+  assert.match(output, /GAME_POINTER wheel x=1000 buttons=0 mx=0 dy=120/u, `no wheel:\n${output.slice(-1500)}`);
   await call("input.keyDown", { key: "KeyW" });
   await call("advance", 2);
   assert.match(output, /HELD [^\n]*KeyW/u, `a held W never reached the game by code:\n${output.slice(-2000)}`);
@@ -105,4 +122,4 @@ try {
   child.kill();
   await exited;
 }
-console.log("PASS the UI takes the press on its island, the game keeps the rest and every held key code");
+console.log("PASS the UI takes the press on its island, the game keeps the rest (press, move, wheel) and every held key code");
