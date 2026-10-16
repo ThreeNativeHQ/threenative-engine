@@ -778,6 +778,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -903,6 +904,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -1195,6 +1197,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -1295,6 +1298,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -1417,6 +1421,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -1495,6 +1500,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -1939,6 +1945,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -2039,6 +2046,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -2563,6 +2571,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -2689,6 +2698,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -3233,6 +3243,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -5220,6 +5231,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -5717,6 +5729,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -6110,6 +6123,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -6188,6 +6202,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -6470,6 +6485,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -6915,6 +6931,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -7690,6 +7707,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -7768,6 +7786,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
@@ -7846,6 +7865,7 @@
         "scale",
         "setAttribute",
         "setDrawRange",
+        "setFromPoints",
         "setIndex",
         "toNonIndexed",
         "translate"
