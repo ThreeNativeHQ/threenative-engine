@@ -257,10 +257,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
   // Recomputed 2026-10-15: puzzle drops its legacy pin and its Engine paragraph (PRD-617); the other twelve are unchanged.
   // Recomputed 2026-10-15 through createProject after recovery: all kits now share the decoder-aware asset watch.
+  // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
+  // boot-failure text both engines now show, so only puzzle's tree moves.
   "action-rpg": "b7ed7d42d302b9b6387b3071a69d27db349ff4132a6fcc15ae3e6bf4fcbce29e",
   minimal: "1e713e749ad7dbfbf57f0ec8dc3f2838f66e472b9fd5ea4307b313e3b0ba6460",
   platformer: "4ba41b98be364abca521c6ceb3cec443f3388f3e116d8a0ffcf5d380a166a5e5",
-  puzzle: "d9fa51f39fe93ff6506d5abdbba7ba8c4f737a1ab13ca2adaa3b3982455d1e9d",
+  puzzle: "33c1425da91663c2232b863efe8f3575a50abff61ce4109925ab53fb916bfeeb",
   racing: "4acbf1b680c3d64b16c20476285e1e706d32bfd4675e93586012cca60e85c6d8",
   rain: "8dc2e4befc061ea163506985806d2a6c9e116d40d8c47add1f67799983f46259",
   rts: "752c4b3881d8e998379dead571cbfdb6eb7314fba83a58df99ea1b978436fd89",

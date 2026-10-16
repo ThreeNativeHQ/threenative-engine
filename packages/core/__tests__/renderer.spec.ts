@@ -909,6 +909,45 @@ describe("createRenderer", () => {
     }
   });
 
+  it("reports a named boot failure when neither WebGPU nor the WebGL fallback can start", async () => {
+    // The native (Wasm) engine binds `WebGLRenderer` to a facade that refuses on use, so the
+    // fallback throws "TN_NATIVE_UNCATALOGUED_WEBGLRENDERER" instead of a WebGL context error. The
+    // player must read a named, human message — never that internal facade code.
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const refusal = (): never => {
+      throw new Error(
+        "TN_NATIVE_UNCATALOGUED_WEBGLRENDERER: WebGLRenderer is not available on the Wasm engine.",
+      );
+    };
+    try {
+      await expect(
+        createRenderer({
+          canvas,
+          preferWebGPU: true,
+          webgl2Factory: refusal,
+          webgpuFactory: () => {
+            throw new Error("no adapter");
+          },
+        }),
+      ).rejects.toThrow(/^TN_NO_RENDERER: WebGPU is not available on this device/u);
+      await expect(
+        createRenderer({
+          canvas,
+          preferWebGPU: true,
+          webgl2Factory: refusal,
+          webgpuFactory: () => {
+            throw new Error("no adapter");
+          },
+        }),
+      ).rejects.not.toThrow(/UNCATALOGUED|Wasm engine/u);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("should use an explicit resolution scale while keeping CSS size unchanged", async () => {
     const canvas = testCanvas();
     const sizes: Array<[number, number]> = [];

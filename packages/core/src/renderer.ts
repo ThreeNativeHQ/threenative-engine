@@ -1535,11 +1535,23 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   }
 
   if (renderer === undefined) {
-    const raw = (
-      options.webgl2Factory
-        ? options.webgl2Factory(canvas, rendererParameters)
-        : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters })
-    ) as RendererInstance;
+    let raw: RendererInstance;
+    try {
+      raw = (
+        options.webgl2Factory
+          ? options.webgl2Factory(canvas, rendererParameters)
+          : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters })
+      ) as RendererInstance;
+    } catch (error) {
+      // No WebGPU adapter and no WebGL fallback is a boot failure the player must read. The native
+      // engine binds `WebGLRenderer` to a facade that refuses on use, and reporting that refusal
+      // verbatim would show an internal "uncatalogued" code; a browser with no context throws
+      // three's own message. Neither belongs in front of a player, so both become one named failure.
+      throw new Error(
+        "TN_NO_RENDERER: WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.",
+        { cause: error },
+      );
+    }
     const alphaAntialiasing = arm(raw);
     const pipelineCensus = createRendererPipelineCensus(raw, "webgl2", options);
     installDrawHook(raw, alphaAntialiasing);
