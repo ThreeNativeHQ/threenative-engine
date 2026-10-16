@@ -1,10 +1,12 @@
 # PRD-617 — Every template runs on the native engine
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P0 — the owner blocks the v1 release until AC-1 to AC-7 pass (Decisions, 2026-10-15); 11 of 13 templates, the starter among them, still pin `engine: "legacy"`.
 **Complexity:** 4 (MEDIUM)
 **Owner:** João
 **Depends on:** PRD-573 (PR #493 carries this work: native default, the `legacy` pins, the pin ratchet test, the CI engine artifact builds)
+
+Recovery snapshots integrated into PR #493; publish-state tests: 46 passed. Runtime matrix and visual proof remain pending; no acceptance criteria are newly verified.
 
 ## Context
 
