@@ -1010,7 +1010,7 @@ jobs:
     # `workspace-dist-*` entry it publishes is what every pull request into develop restores.
     if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'warm' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
@@ -1023,6 +1023,9 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Before the pack inside workspace-dist: runtime-native lists the web engine in `files`, and
+      # `pnpm pack` drops a file that is not there yet.
+      - uses: ./.github/actions/native-engine-wasm
       - uses: ./.github/actions/workspace-dist
       - run: pnpm --filter abyss-framework build
       - name: Enforce entity registry boundaries
@@ -1047,6 +1050,7 @@ jobs:
           path: |
             artifacts/workspace-packages
             packages/*/dist
+            packages/runtime-native/build/web
           retention-days: 1
           if-no-files-found: error
 

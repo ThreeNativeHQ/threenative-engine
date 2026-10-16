@@ -1589,7 +1589,9 @@ async function main() {
 
   // Downloadable dependencies and the complete --only allowlist.
   const allDeps = [...new Set([...desktopDeps, ...iosDeps, ...androidDeps, ...windowsDeps])];
-  const availableDeps = [...new Set([...allDeps, ...sourceBuildDeps, 'openriglogic'])];
+  // gradle-wrapper is one checksummed file the published package ships in `files`; the release packs
+  // without any Android payload, so it is reachable on its own.
+  const availableDeps = [...new Set([...allDeps, ...sourceBuildDeps, 'openriglogic', 'gradle-wrapper'])];
 
   let depsToDownload;
   if (onlyIndex !== -1) {
@@ -1598,6 +1600,11 @@ async function main() {
       console.error(`Unknown dependency: ${depName}`);
       console.error(`Available: ${availableDeps.join(', ')}`);
       process.exit(1);
+    }
+    if (depName === 'gradle-wrapper') {
+      await ensureGradleWrapper();
+      console.log('\n=== Summary ===\n  gradle-wrapper: OK');
+      return;
     }
     if (depName === 'skia-android') {
       const { buildSkiaAndroidFromStagedSource } = await import('./build-skia-android.mjs');

@@ -732,6 +732,32 @@ export async function relativeSpecifiers(file: string, source: string): Promise<
 }
 
 /**
+ * `pnpm pack` drops a `files` entry that does not exist without a word, so a release packed before
+ * a build step publishes a package without the built file. Every literal `files` entry must be in
+ * the tarball. Glob entries are skipped: a glob that matches nothing is legitimate.
+ */
+export function missingPackedFiles(
+  item: IPublishPackage,
+  contents: ITarballContents,
+): readonly IPublishFinding[] {
+  const manifest = contents.text.get("package.json");
+  const files =
+    manifest === undefined ? undefined : (JSON.parse(manifest) as { files?: unknown }).files;
+  if (!Array.isArray(files)) return [];
+  return files
+    .filter((entry): entry is string => typeof entry === "string" && !/[*?[\]{}!]/u.test(entry))
+    .map((entry) => entry.replace(/^\.\//u, "").replace(/\/$/u, ""))
+    .filter(
+      (entry) => !contents.entries.some((file) => file === entry || file.startsWith(`${entry}/`)),
+    )
+    .map((entry) => ({
+      detail: `${item.name} lists '${entry}' in files, but its tarball does not hold it. pnpm pack drops a missing entry without an error, so the release would publish the package without it. Build it before packing.`,
+      package: item.name,
+      severity: "fail" as const,
+    }));
+}
+
+/**
  * The engine player sources share files with the sibling core and three-native packages by relative
  * path. `bundle-native-engine.mjs` resolves those imports to the installed packages, so they are
  * not an installed copy reaching a sibling checkout.
@@ -892,6 +918,7 @@ export async function checkPublishState(
     const contents = readTarball(item);
     findings.push(...unresolvedTarballSpecifiers(item, contents));
     findings.push(...(await unresolvableTarballImports(item, contents)));
+    findings.push(...missingPackedFiles(item, contents));
   }
   const blocked = findings.some((finding) => finding.severity === "blocked");
   return {

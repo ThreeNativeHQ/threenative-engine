@@ -14,6 +14,7 @@ import {
   checkPublishState,
   gitSourceCommits,
   missingPackageReadmes,
+  missingPackedFiles,
   pnpmPackReader,
   prebuiltReleaseCensus,
   publishSet,
@@ -654,6 +655,24 @@ describe("pnpm publish:check", () => {
     expect(findings[0]?.detail).toMatch(
       /ships scripts\/package-android\.mjs.*'\.\/asset-preflight\.mjs'.*ERR_MODULE_NOT_FOUND/u,
     );
+  });
+
+  it("fails when a files entry is missing from the tarball, and passes once it is built", () => {
+    // runtime-native lists build/web/tn-native-engine-web.wasm in `files`. No workflow built it, and
+    // pnpm pack drops the missing entry silently, so a release shipped without the web engine.
+    const manifest = JSON.stringify({
+      files: ["build/web/tn-native-engine-web.wasm", "scripts", "dist/*.js", "./README.md"],
+      name: PACKED.name,
+      version: PACKED.version,
+    });
+    const common = { "README.md": "x", "package.json": manifest, "scripts/a.mjs": "export {};\n" };
+    const missing = missingPackedFiles(PACKED, tarball(common));
+    expect(missing).toHaveLength(1);
+    expect(missing[0]).toMatchObject({ package: PACKED.name, severity: "fail" });
+    expect(missing[0]?.detail).toContain("build/web/tn-native-engine-web.wasm");
+    expect(
+      missingPackedFiles(PACKED, tarball({ ...common, "build/web/tn-native-engine-web.wasm": "" })),
+    ).toEqual([]);
   });
 
   it("accepts a shipped script whose imports all shipped beside it", async () => {
