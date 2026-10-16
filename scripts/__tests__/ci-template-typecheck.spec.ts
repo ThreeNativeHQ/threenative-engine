@@ -64,8 +64,8 @@ describe("pristine template compiler ownership", () => {
     },
     {
       workflow: workflow.replace(
-        "    # Hosted on purpose: template legs",
-        "    continue-on-error: true\n    # Hosted on purpose: template legs",
+        "  template-nonvisual:\n",
+        "  template-nonvisual:\n    continue-on-error: true\n",
       ),
     },
     {
