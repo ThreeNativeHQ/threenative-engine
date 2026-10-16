@@ -535,6 +535,23 @@ export class Heightfield extends Group implements IComputeDriven {
       throw new Error(
         `Heightfield geometry has ${position.count} vertices, expected ${this.rows * this.columns}.`,
       );
+    // Only a plain BufferAttribute exposes its lanes raw; a custom subclass or an own setter would be bypassed.
+    const floatLanes = (attribute: typeof position): Float32Array | undefined => {
+      if (Object.getPrototypeOf(attribute) !== BufferAttribute.prototype) return undefined;
+      if (Object.hasOwn(attribute, "setY") || Object.hasOwn(attribute, "setXYZ")) return undefined;
+      if (attribute.itemSize !== 3 || attribute.normalized === true) return undefined;
+      if (
+        (attribute as { isInterleavedBufferAttribute?: boolean }).isInterleavedBufferAttribute ===
+        true
+      )
+        return undefined;
+      const array: unknown = attribute.array;
+      return array instanceof Float32Array && array.length === position.count * 3
+        ? array
+        : undefined;
+    };
+    const positionArray = floatLanes(position);
+    const normalArray = normalAttribute === undefined ? undefined : floatLanes(normalAttribute);
     const column =
       bounds === undefined
         ? { count: this.columns, start: 0 }
@@ -549,11 +566,12 @@ export class Heightfield extends Group implements IComputeDriven {
         const source = column.start + offset;
         const vertex = target * this.columns + source;
         const height = this.#height(vertex);
-        position.setY(vertex, height);
+        if (positionArray === undefined) position.setY(vertex, height);
+        else positionArray[vertex * 3 + 1] = height;
         lowest = Math.min(lowest, height);
         highest = Math.max(highest, height);
         if (normalAttribute === undefined) continue;
-        this.#gridNormal(source, target, normalAttribute, vertex);
+        this.#gridNormal(source, target, normalArray ?? normalAttribute, vertex);
       }
     }
     position.needsUpdate = true;
@@ -681,7 +699,7 @@ export class Heightfield extends Group implements IComputeDriven {
   #gridNormal(
     column: number,
     row: number,
-    target: { setXYZ(index: number, x: number, y: number, z: number): unknown },
+    target: { setXYZ(index: number, x: number, y: number, z: number): unknown } | Float32Array,
     vertex: number,
   ): void {
     const left = Math.max(0, column - 1);
@@ -695,7 +713,16 @@ export class Heightfield extends Group implements IComputeDriven {
       (this.#height(far * this.columns + column) - this.#height(near * this.columns + column)) /
       ((far - near) * this.#cellDepth);
     const length = Math.hypot(slopeX, 1, slopeZ);
-    target.setXYZ(vertex, -slopeX / length, 1 / length, -slopeZ / length);
+    const x = -slopeX / length;
+    const y = 1 / length;
+    const z = -slopeZ / length;
+    if (target instanceof Float32Array) {
+      target[vertex * 3] = x;
+      target[vertex * 3 + 1] = y;
+      target[vertex * 3 + 2] = z;
+    } else {
+      target.setXYZ(vertex, x, y, z);
+    }
   }
 
   #height(index: number): number {
