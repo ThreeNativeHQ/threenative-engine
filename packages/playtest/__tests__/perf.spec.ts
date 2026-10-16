@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   absolutesVerdict,
   assessPerfMarkers,
+  computeLinuxCpu,
   formatPerfReport,
   newestProcessLines,
   parsePerformanceMarkers,
@@ -16,9 +17,11 @@ import {
   perfCommand,
   rankExactReasons,
   readHostLoad,
+  readLinuxCpuSnapshot,
   SOAK_MIN_FRAMES,
   soakVerdict,
   type IFrameBudgetWindowJson,
+  type ILinuxCpuSnapshot,
   type ISoakSample,
 } from "../src/runner/perf.js";
 import { PlaytestCliUsageError } from "../src/runner/config.js";
@@ -1081,4 +1084,150 @@ describe("perfCommand --soak", () => {
     expect(report.soak?.samples).toBeGreaterThan(0);
     expect(report.violations).toContainEqual(expect.objectContaining({ code: "TN_SOAK_CRASH" }));
   });
+});
+
+/** A fake `/proc/<pid>/task/<tid>/{schedstat,comm}` tree, shaped as the kernel reports it. */
+async function fakeProcTree(
+  root: string,
+  pid: number,
+  threads: Record<number, { name: string; cpuNs: number }>,
+): Promise<void> {
+  const taskDir = join(root, String(pid), "task");
+  for (const [tid, thread] of Object.entries(threads)) {
+    await mkdir(join(taskDir, tid), { recursive: true });
+    await writeFile(join(taskDir, tid, "schedstat"), `${thread.cpuNs} 0 0\n`, "utf8");
+    await writeFile(join(taskDir, tid, "comm"), `${thread.name}\n`, "utf8");
+  }
+}
+
+describe("per-frame CPU from the kernel's thread accounting", () => {
+  it("measures process and main-thread ms/frame across a 60-frame window", async () => {
+    const dir = await makeTempDir("tn-perf-cpu-");
+    const pid = 1000;
+    await fakeProcTree(dir, pid, {
+      1000: { name: "main", cpuNs: 1_000_000 },
+      1001: { name: "renderer", cpuNs: 500_000 },
+    });
+    const before = readLinuxCpuSnapshot(pid, dir);
+    await fakeProcTree(dir, pid, {
+      1000: { name: "main", cpuNs: 7_000_000 },
+      1001: { name: "renderer", cpuNs: 5_500_000 },
+    });
+    const after = readLinuxCpuSnapshot(pid, dir);
+
+    const cpu = computeLinuxCpu(
+      [{ window: 0, frames: 300 }, { window: 1, frames: 60 }],
+      [before, after],
+      pid,
+    );
+
+    expect(cpu.method).toBe("linux-schedstat");
+    expect(cpu.windows).toHaveLength(1);
+    expect(cpu.windows[0]?.frames).toBe(60);
+    // Process delta 6,000,000 + 5,000,000 ns over 60 frames.
+    expect(cpu.windows[0]?.processCpuMsPerFrame).toBeCloseTo(11_000_000 / 1e6 / 60, 6);
+    expect(cpu.summary.processCpuMsPerFrameMedian).toBeCloseTo(11_000_000 / 1e6 / 60, 6);
+    // Main thread is the one whose tid equals the pid: 6,000,000 ns / 60.
+    expect(cpu.summary.mainThread).toEqual({ name: "main", cpuMsPerFrameMedian: 0.1 });
+    expect(cpu.windows[0]?.threads.map((thread) => thread.name)).toEqual(["main", "renderer"]);
+  });
+
+  it("skips and counts a thread that started inside the window", async () => {
+    const dir = await makeTempDir("tn-perf-cpu-");
+    const pid = 2000;
+    await fakeProcTree(dir, pid, { 2000: { name: "main", cpuNs: 1_000_000 } });
+    const before = readLinuxCpuSnapshot(pid, dir);
+    await fakeProcTree(dir, pid, {
+      2000: { name: "main", cpuNs: 2_000_000 },
+      2001: { name: "late", cpuNs: 9_999_999 },
+    });
+    const after = readLinuxCpuSnapshot(pid, dir);
+
+    const cpu = computeLinuxCpu(
+      [{ window: 0, frames: 60 }, { window: 1, frames: 60 }],
+      [before, after],
+      pid,
+    );
+
+    expect(cpu.windows[0]?.skippedThreads).toBe(1);
+    // The late thread's impossible total is not booked: only main's 1,000,000 ns count.
+    expect(cpu.windows[0]?.processCpuMsPerFrame).toBeCloseTo(1_000_000 / 1e6 / 60, 6);
+    expect(cpu.windows[0]?.threads.map((thread) => thread.name)).toEqual(["main"]);
+  });
+
+  it("fails closed on a malformed schedstat rather than reading a zero", async () => {
+    const dir = await makeTempDir("tn-perf-cpu-");
+    const pid = 3000;
+    await fakeProcTree(dir, pid, { 3000: { name: "main", cpuNs: 1 } });
+    await writeFile(join(dir, String(pid), "task", String(pid), "schedstat"), "not a counter\n", "utf8");
+    expect(() => readLinuxCpuSnapshot(pid, dir)).toThrow(/schedstat/u);
+  });
+
+  it("fails closed when a window does not state its frame count", () => {
+    const snapshot: ILinuxCpuSnapshot = { threads: new Map([[7, { name: "main", cpuNs: 1_000 }]]) };
+    const next: ILinuxCpuSnapshot = { threads: new Map([[7, { name: "main", cpuNs: 2_000 }]]) };
+    expect(() => computeLinuxCpu([{ window: 0 }, { window: 1 }], [snapshot, next], 7)).toThrow(
+      /TN_PERF_CPU_FRAME_COUNT_UNREADABLE/u,
+    );
+  });
+
+  it("prints the summary and the busiest threads, and names when it could not measure", () => {
+    const base = assessPerfMarkers(parsePerformanceMarkers(sampleStream()), { requireWindows: 2 }, "test");
+    const text = formatPerfReport({
+      ...base,
+      cpu: {
+        method: "linux-schedstat",
+        summary: {
+          mainThread: { cpuMsPerFrameMedian: 0.1, name: "main" },
+          processCpuMsPerFrameMedian: 0.2,
+        },
+        windows: [
+          {
+            frames: 60,
+            processCpuMsPerFrame: 0.2,
+            skippedThreads: 1,
+            threads: [
+              { cpuMsPerFrame: 0.1, name: "main" },
+              { cpuMsPerFrame: 0.08, name: "renderer" },
+            ],
+          },
+        ],
+      },
+    });
+    expect(text).toContain("cpu: 0.200 ms/frame process median (linux-schedstat), main thread main 0.100");
+    expect(text).toContain("renderer");
+    expect(text).toContain("skipped, not counted as zero");
+
+    expect(formatPerfReport({ ...base, cpuUnavailable: "on-CPU time needs Linux" })).toContain(
+      "cpu: not reported — on-CPU time needs Linux",
+    );
+  });
+});
+
+describe("perfCommand --executable CPU", () => {
+  it.runIf(process.platform === "linux")(
+    "reports per-frame CPU from the host's own threads",
+    async () => {
+      const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+      const script = `setInterval(() => {}, 1000); process.stdout.write(${JSON.stringify(`${output}\n`)});`;
+      const written: string[] = [];
+      const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+        written.push(String(chunk));
+        return true;
+      });
+      const code = await perfCommand([
+        "--executable", process.execPath,
+        "--host-arg", "-e",
+        "--host-arg", script,
+      ]);
+      spy.mockRestore();
+      expect(code).toBe(0);
+      const report = JSON.parse(written.join("")) as {
+        cpu?: { method: string; windows: unknown[]; summary: { mainThread: { name: string } } };
+      };
+      expect(report.cpu?.method).toBe("linux-schedstat");
+      expect(report.cpu?.windows).toHaveLength(2);
+      expect(report.cpu?.summary.mainThread.name.length).toBeGreaterThan(0);
+    },
+  );
 });

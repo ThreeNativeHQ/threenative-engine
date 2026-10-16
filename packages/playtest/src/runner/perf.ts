@@ -1,8 +1,8 @@
 import { execFile, spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { availableParallelism, constants as osConstants, loadavg } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { decideDisplayStrategy } from "./captureEnvironment.js";
 
@@ -10,6 +10,7 @@ import { discoverAdb } from "./android.js";
 import { formatPipelineCacheObservations, parsePipelineCacheObservations, type IPipelineCacheObservation } from "./pipeline-cache-observations.js";
 import { PlaytestCliUsageError } from "./config.js";
 import { parsePipelineEventMarkers, type IPipelineCaptureEvent } from "./pipeline-summary.js";
+import { parseSchedstatCpuNs } from "./linuxCpuWindow.js";
 
 /**
  * `threenative-playtest perf` — read the frame the host already reports, without opening a log by
@@ -250,6 +251,144 @@ export interface IPerfMemory {
   readonly rssPeakMb?: number;
 }
 
+/**
+ * What each window cost the CPU, from the kernel's own per-thread accounting rather than a wall
+ * clock. `/proc/<pid>/task/<tid>/schedstat` field 1 is the nanoseconds a thread spent on a CPU, so
+ * the delta between two window boundaries is the time that window's frames really ran. It is the
+ * one reading comparable across hosts: a loop that spins faster than it presents reports a cadence
+ * the display never saw, and only on-CPU time measures the work in a way both engines share.
+ */
+export interface IPerfCpuThread {
+  readonly cpuMsPerFrame: number;
+  readonly name: string;
+}
+export interface IPerfCpuWindow {
+  readonly frames: number;
+  readonly processCpuMsPerFrame: number;
+  /** Threads that started or exited between this window's boundaries; booked in neither. */
+  readonly skippedThreads: number;
+  readonly threads: readonly IPerfCpuThread[];
+}
+export interface IPerfCpu {
+  readonly method: "linux-schedstat";
+  readonly summary: {
+    readonly mainThread: { readonly cpuMsPerFrameMedian: number; readonly name: string };
+    readonly processCpuMsPerFrameMedian: number;
+  };
+  readonly windows: readonly IPerfCpuWindow[];
+}
+
+/** One thread's on-CPU total at a window boundary, named by the kernel's own `comm`. */
+export interface ILinuxCpuThread {
+  readonly cpuNs: number;
+  readonly name: string;
+}
+export interface ILinuxCpuSnapshot {
+  readonly threads: ReadonlyMap<number, ILinuxCpuThread>;
+}
+
+/**
+ * Every thread of `pid`, with its on-CPU nanoseconds, read from `/proc`. Synchronous on purpose:
+ * the `perf` command takes this snapshot from a stdout data handler, the moment a window boundary
+ * line arrives, so the reading belongs to that boundary and not to a later turn of the event loop.
+ */
+export function readLinuxCpuSnapshot(pid: number, procRoot = "/proc"): ILinuxCpuSnapshot {
+  const taskDir = join(procRoot, String(pid), "task");
+  const threads = new Map<number, ILinuxCpuThread>();
+  for (const tid of readdirSync(taskDir)) {
+    const threadDir = join(taskDir, tid);
+    threads.set(Number(tid), {
+      cpuNs: parseSchedstatCpuNs(readFileSync(join(threadDir, "schedstat"), "utf8")),
+      name: readFileSync(join(threadDir, "comm"), "utf8").trim(),
+    });
+  }
+  return { threads };
+}
+
+/**
+ * Turn consecutive window snapshots into per-frame CPU cost.
+ *
+ * Each window after the first is measured between the snapshot that closed the previous window and
+ * the one that closed it. Its frame count comes from the marker itself: a window that does not say
+ * how many frames it held cannot yield a per-frame figure, and guessing it is exactly the
+ * fabrication this command refuses. A thread present at only one boundary started or exited inside
+ * the window; it is skipped and counted, never booked as a zero-cost thread.
+ */
+export function computeLinuxCpu(
+  windows: readonly Partial<IFrameBudgetWindowJson>[],
+  snapshots: readonly ILinuxCpuSnapshot[],
+  pid: number,
+): IPerfCpu {
+  const cpuWindows: IPerfCpuWindow[] = [];
+  const mainSamples: number[] = [];
+  let mainName: string | undefined;
+  for (let index = 1; index < snapshots.length; index += 1) {
+    const window = windows[index];
+    const frames = window?.frames;
+    if (typeof frames !== "number" || !Number.isFinite(frames) || frames <= 0) {
+      throw new Error(
+        `TN_PERF_CPU_FRAME_COUNT_UNREADABLE: window ${window?.window ?? index} carries no frame ` +
+          "count; CPU time per frame cannot be derived from a window that does not say its frames",
+      );
+    }
+    const before = snapshots[index - 1] as ILinuxCpuSnapshot;
+    const after = snapshots[index] as ILinuxCpuSnapshot;
+    const byName = new Map<string, number>();
+    let processNs = 0;
+    let skippedThreads = 0;
+    for (const [tid, thread] of after.threads) {
+      const previous = before.threads.get(tid);
+      if (previous === undefined) {
+        skippedThreads += 1;
+        continue;
+      }
+      const delta = thread.cpuNs - previous.cpuNs;
+      if (delta < 0) {
+        throw new Error(`TN_PERF_CPU_REGRESSED: thread ${tid} (${thread.name}) on-CPU time went backwards`);
+      }
+      processNs += delta;
+      byName.set(thread.name, (byName.get(thread.name) ?? 0) + delta);
+    }
+    for (const tid of before.threads.keys()) if (!after.threads.has(tid)) skippedThreads += 1;
+    const beforeMain = before.threads.get(pid);
+    const afterMain = after.threads.get(pid);
+    if (beforeMain !== undefined && afterMain !== undefined) {
+      mainName = afterMain.name;
+      mainSamples.push((afterMain.cpuNs - beforeMain.cpuNs) / 1e6 / frames);
+    }
+    cpuWindows.push({
+      frames,
+      processCpuMsPerFrame: processNs / 1e6 / frames,
+      skippedThreads,
+      threads: [...byName]
+        .map(([name, ns]) => ({ cpuMsPerFrame: ns / 1e6 / frames, name }))
+        .sort((left, right) => right.cpuMsPerFrame - left.cpuMsPerFrame),
+    });
+  }
+  if (cpuWindows.length === 0) {
+    throw new Error("TN_PERF_CPU_UNAVAILABLE: fewer than two window boundaries were sampled");
+  }
+  if (mainName === undefined) {
+    throw new Error("TN_PERF_CPU_MAIN_THREAD_UNREADABLE: no snapshot held the process leader thread");
+  }
+  return {
+    method: "linux-schedstat",
+    summary: {
+      mainThread: { cpuMsPerFrameMedian: median(mainSamples), name: mainName },
+      processCpuMsPerFrameMedian: median(cpuWindows.map((window) => window.processCpuMsPerFrame)),
+    },
+    windows: cpuWindows,
+  };
+}
+
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = sorted.length >> 1;
+  return sorted.length % 2 === 1
+    ? (sorted[middle] as number)
+    : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
+}
+
 /** kB per MB, the unit `/proc` and `dumpsys meminfo` both report in. */
 const KB_PER_MB = 1024;
 
@@ -425,6 +564,9 @@ export const PRESENTS_REACHED_DISPLAY_RATIO = 0.95;
 
 export interface IPerfReport {
   readonly budgets: readonly IFrameBudgetWindowJson[];
+  readonly cpu?: IPerfCpu;
+  /** Why per-frame CPU could not be measured. Never a fabricated zero, as the memory fields. */
+  readonly cpuUnavailable?: string;
   readonly discardedWindows: readonly number[];
   readonly hitches: readonly IHitchWindowJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
@@ -853,6 +995,9 @@ export async function perfCommand(argv: readonly string[]): Promise<number> {
 
 /** What one run measured beyond its windows: the host's own memory, and a soak's verdict. */
 export interface IPerfRun {
+  readonly cpu?: IPerfCpu;
+  /** Set when per-frame CPU could not be measured. A named failure, never a missing column. */
+  readonly cpuUnavailable?: string;
   readonly display?: { readonly strategy: string; readonly virtual: boolean };
   readonly hostStatus?: number;
   readonly memory?: IPerfMemory;
@@ -876,6 +1021,16 @@ async function runExecutable(args: IPerfArgs, executable: string): Promise<numbe
   let nextSampleFrame = SOAK_SAMPLE_EVERY_FRAMES;
   let memory: IPerfMemory | undefined;
   let memoryError: string | undefined;
+  // Per-frame CPU from the kernel's own accounting. A snapshot is taken at each window boundary,
+  // from the live process, so the delta between two snapshots is the CPU the window between them
+  // cost. Absent or unreadable, it is a named reason — never a fabricated zero.
+  const procRoot = process.env.TN_PLAYTEST_PROC_ROOT ?? "/proc";
+  const cpuSnapshots: ILinuxCpuSnapshot[] = [];
+  const cpuWindows: IFrameBudgetWindowJson[] = [];
+  let cpuUnavailable: string | undefined =
+    process.platform === "linux"
+      ? undefined
+      : `on-CPU time needs Linux schedstat accounting; this host is ${process.platform}`;
   // The first window is discarded as startup, so a complete run closes requireWindows + 1.
   const enoughWindows = (): boolean =>
     collected.split(FRAME_BUDGET_MARKER).length - 1 >= args.requireWindows + 1;
@@ -916,6 +1071,23 @@ async function runExecutable(args: IPerfArgs, executable: string): Promise<numbe
         nextSampleFrame += SOAK_SAMPLE_EVERY_FRAMES;
       }
     }
+    if (cpuUnavailable === undefined) {
+      // One snapshot per window boundary, taken the moment the boundary line completes. Partial
+      // lines are held until their newline, so a window still arriving is never parsed as malformed.
+      const windows = completeFrameWindows(collected);
+      while (cpuSnapshots.length < windows.length) {
+        const index = cpuSnapshots.length;
+        try {
+          if (child.pid === undefined) throw new Error("the host has no PID");
+          cpuSnapshots.push(readLinuxCpuSnapshot(child.pid, procRoot));
+        } catch (error) {
+          cpuUnavailable =
+            `TN_PERF_CPU_UNAVAILABLE: ${error instanceof Error ? error.message : String(error)}`;
+          break;
+        }
+        cpuWindows.push(windows[index] as IFrameBudgetWindowJson);
+      }
+    }
     if (done()) stop();
   });
   child.stderr.on("data", (chunk: Buffer) => { collected += chunk.toString("utf8"); });
@@ -933,7 +1105,18 @@ async function runExecutable(args: IPerfArgs, executable: string): Promise<numbe
     child.on("close", (code, signal) => {
       clearTimeout(timeout);
       if (spawnFailed) return;
+      let cpu: IPerfCpu | undefined;
+      if (cpuUnavailable === undefined) {
+        try {
+          cpu = computeLinuxCpu(cpuWindows, cpuSnapshots, child.pid as number);
+        } catch (error) {
+          cpuUnavailable =
+            `TN_PERF_CPU_UNAVAILABLE: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
       const exitCode = emit(parsePerformanceMarkers(collected), args, source, {
+        ...(cpu === undefined ? {} : { cpu }),
+        ...(cpuUnavailable === undefined ? {} : { cpuUnavailable }),
         hostStatus: hostFailureStatus(code, signal, stopped),
         ...(memory === undefined ? {} : { memory }),
         ...(memoryError === undefined ? {} : { memoryError }),
@@ -954,6 +1137,22 @@ function framesReported(text: string): number {
     if (window !== undefined) total += window.frames;
   }
   return total;
+}
+
+/**
+ * The frame-budget windows that have fully arrived. Only text before the last newline is read, so a
+ * marker line still streaming in is never seen as malformed JSON — the same partial-line danger the
+ * whole-stream parse avoids by running at close.
+ */
+function completeFrameWindows(text: string): IFrameBudgetWindowJson[] {
+  const end = text.lastIndexOf("\n");
+  if (end === -1) return [];
+  const windows: IFrameBudgetWindowJson[] = [];
+  for (const line of text.slice(0, end).split("\n")) {
+    const window = parseMarkerLine<IFrameBudgetWindowJson>(line, FRAME_BUDGET_MARKER);
+    if (window !== undefined) windows.push(window);
+  }
+  return windows;
 }
 
 function readProcStatusMemory(pid: number | undefined): IPerfMemory {
@@ -1083,6 +1282,8 @@ function emit(parse: IPerfMarkerParse, args: IPerfArgs, source: string, run?: IP
   const violations = [...assessed.violations, ...findings.violations];
   const report: IPerfReport = {
     ...assessed,
+    ...(run?.cpu === undefined ? {} : { cpu: run.cpu }),
+    ...(run?.cpuUnavailable === undefined ? {} : { cpuUnavailable: run.cpuUnavailable }),
     ...(findings.hostLoad === undefined ? {} : { hostLoad: findings.hostLoad }),
     ...(run?.memory === undefined ? {} : { memory: run.memory }),
     ...(run?.soak === undefined ? {} : { soak: run.soak }),
@@ -1123,6 +1324,7 @@ export function formatPerfReport(report: IPerfReport): string {
   }
   if (report.presentMode !== undefined) lines.push(`present mode: ${report.presentMode}`);
   lines.push(...formatRunContext(report));
+  lines.push(...formatCpu(report));
   // Reported once, from the last window, next to the fps it explains. Named as unreported when
   // absent rather than left off: a reader who sees no scale line must not assume a full-resolution
   // single-sample frame, which is exactly how a perf record and its tree came to disagree.
@@ -1248,6 +1450,39 @@ function formatRunContext(report: IPerfReport): string[] {
         `${report.soak.baselineMb.toFixed(1)} MB after frame ${SOAK_BASELINE_FRAME} to ${report.soak.endMb.toFixed(1)} MB ` +
         `(${report.soak.growthPct.toFixed(1)}% against a ${SOAK_GROWTH_LIMIT_PCT}% limit) — ${report.soak.pass ? "PASS" : `FAIL ${report.soak.code}`}`,
     );
+  }
+  return lines;
+}
+
+/**
+ * The run's per-frame CPU cost, from the kernel's schedstat counters.
+ *
+ * One line names the process median and the main thread, then the busiest threads by median
+ * ms/frame. A host the counters could not be read from says why instead of printing nothing: a
+ * missing CPU line must not read as a run that cost the CPU nothing.
+ */
+function formatCpu(report: IPerfReport): string[] {
+  const cpu = report.cpu;
+  if (cpu === undefined) {
+    return report.cpuUnavailable === undefined ? [] : [`cpu: not reported — ${report.cpuUnavailable}`];
+  }
+  const lines = [
+    `cpu: ${cpu.summary.processCpuMsPerFrameMedian.toFixed(3)} ms/frame process median (${cpu.method}), ` +
+      `main thread ${cpu.summary.mainThread.name} ${cpu.summary.mainThread.cpuMsPerFrameMedian.toFixed(3)} ms/frame`,
+  ];
+  const byName = new Map<string, number[]>();
+  let skipped = 0;
+  for (const window of cpu.windows) {
+    skipped += window.skippedThreads;
+    for (const thread of window.threads) byName.set(thread.name, [...(byName.get(thread.name) ?? []), thread.cpuMsPerFrame]);
+  }
+  const ranked = [...byName]
+    .map(([name, samples]) => ({ median: median(samples), name }))
+    .sort((left, right) => right.median - left.median)
+    .slice(0, 4);
+  for (const thread of ranked) lines.push(`  ${thread.name.padEnd(16)}${thread.median.toFixed(3)} ms/frame`);
+  if (skipped > 0) {
+    lines.push(`  ${skipped} thread(s) started or exited mid-run and were skipped, not counted as zero`);
   }
   return lines;
 }

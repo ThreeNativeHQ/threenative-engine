@@ -306,6 +306,18 @@ async function readTree(rootPid: number, procRoot: string): Promise<Map<number, 
   return tree;
 }
 
+/**
+ * Field 1 of `/proc/<pid>/task/<tid>/schedstat`: nanoseconds this thread spent on the CPU.
+ * Exported so the `perf` command reads the same counter the same way, rather than re-parsing it.
+ */
+export function parseSchedstatCpuNs(raw: string): number {
+  const schedstat = raw.trim();
+  if (!/^\d+\s+\d+\s+\d+$/u.test(schedstat)) fail("malformed schedstat runtime");
+  const cpuNs = Number(schedstat.split(/\s+/u)[0]);
+  if (!Number.isSafeInteger(cpuNs) || cpuNs < 0) return fail("invalid schedstat runtime");
+  return cpuNs;
+}
+
 async function readThread(
   owner: ICpuProcess,
   procRoot: string,
@@ -313,10 +325,7 @@ async function readThread(
   const path = join(procRoot, `${owner.pid}/task/${owner.tid}`);
   const stat = procStat(await readFile(join(path, "stat"), "utf8"), owner.tid);
   if (owner.tid !== owner.pid) fail("main TID must equal process PID");
-  const schedstat = (await readFile(join(path, "schedstat"), "utf8")).trim();
-  if (!/^\d+\s+\d+\s+\d+$/u.test(schedstat)) fail("malformed schedstat runtime");
-  const cpuNs = Number(schedstat.split(/\s+/u)[0]);
-  if (!Number.isSafeInteger(cpuNs) || cpuNs < 0) return fail("invalid schedstat runtime");
+  const cpuNs = parseSchedstatCpuNs(await readFile(join(path, "schedstat"), "utf8"));
   return { starttime: stat.starttime, cpuNs };
 }
 
