@@ -35,8 +35,8 @@ export interface IStartupReadinessOptions {
    * then hit 28 main-thread tasks over 40 ms, the worst 267 ms, dominated by TSL graph `build` and
    * by the main thread idling on GPU pipeline creation.
    *
-   * Rejections are swallowed: a warm-up that fails must cost hitches, never a game that will not
-   * start.
+   * A rejection fails `whenReady()` so the loading layer can report a first-use failure instead
+   * of revealing a world whose pipeline creation failed. The wait is bounded by `stableWindowMs`.
    */
   readonly afterHolds?: () => Promise<void> | void;
 }
@@ -396,13 +396,13 @@ export class StartupReadiness {
     if (this.#cancelled || this.#ready || this.#finishing || !this.#frameWindowDone) return;
     for (const hold of this.#holds.values()) if (!hold.settled) return;
     this.#finishing = true;
-    // Legacy users keep their bounded startup contract; render-owned settlement is opt-in here.
-    if (this.#settled === undefined) this.#ready = true;
     const finish = (): void => {
-      if (this.#cancelled) return;
+      if (this.#cancelled || this.#failed) return;
       this.#afterHoldsDone = true;
-      if (this.#settled === undefined) this.#resolveReady();
-      else {
+      if (this.#settled === undefined) {
+        this.#ready = true;
+        this.#resolveReady();
+      } else {
         // Required world/shadow work must fail closed within the existing frame-window budget.
         this.#windowTimer = setTimeout(() => {
           this.#windowTimer = undefined;
@@ -420,13 +420,36 @@ export class StartupReadiness {
       finish();
       return;
     }
-    void (async () => {
-      try {
-        await afterHolds();
-      } finally {
+    this.#windowTimer = setTimeout(() => {
+      this.#windowTimer = undefined;
+      if (this.#cancelled || this.#failed || this.#ready) return;
+      this.#failed = true;
+      this.#rejectReady(
+        new Error(
+          `TN_STARTUP_SETTLEMENT_TIMEOUT: startup work after holds did not complete within ${this.#stableWindowMs}ms.`,
+        ),
+      );
+    }, this.#stableWindowMs);
+    let afterHoldsWork: Promise<void> | void;
+    try {
+      afterHoldsWork = afterHolds();
+    } catch (error) {
+      afterHoldsWork = Promise.reject(error);
+    }
+    void Promise.resolve(afterHoldsWork).then(
+      () => {
+        if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
+        this.#windowTimer = undefined;
         finish();
-      }
-    })().catch(() => undefined);
+      },
+      (error: unknown) => {
+        if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
+        this.#windowTimer = undefined;
+        if (this.#cancelled || this.#failed || this.#ready) return;
+        this.#failed = true;
+        this.#rejectReady(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
   }
 }
 
