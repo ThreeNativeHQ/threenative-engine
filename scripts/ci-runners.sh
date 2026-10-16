@@ -82,7 +82,7 @@ load_config() {
 }
 
 repo_name() {
-  gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null \
+  gh api 'repos/{owner}/{repo}' --jq .full_name 2>/dev/null \
     || fail 2 "gh could not resolve this checkout's owner/repo"
 }
 

@@ -62,7 +62,7 @@ describe.skipIf(process.platform !== "linux")("local runner physical core alloca
       lscpu: `cat <<'DATA'\n${topology.join("\n")}\nDATA`,
       nproc: "echo 24",
       docker: "exit 0",
-      gh: 'case "$*" in *"repo view"*) echo test/repo;; *offline*) ;; *runners*) echo 3;; esac',
+      gh: 'case "$*" in *"repos/{owner}/{repo}"*) echo test/repo;; *offline*) ;; *runners*) echo 3;; esac',
       setsid: `printf '%s\n' "\${9:-balancer}" >> '${shapes}'`,
     };
     for (const [name, body] of Object.entries(commands)) {
@@ -184,7 +184,7 @@ function runBalance(
   const gh = `#!/bin/sh
 printf '%s\\n' "$*" >> '${callsFile}'
 case "$*" in
-  *"repo view"*) printf 'test/repo\\n'; exit 0 ;;
+  *"repos/{owner}/{repo}"*) printf 'test/repo\\n'; exit 0 ;;
 esac
 if [ "$1" = "variable" ]; then
   shift
