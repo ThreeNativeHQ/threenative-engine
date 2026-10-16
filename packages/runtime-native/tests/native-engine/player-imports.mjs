@@ -43,7 +43,7 @@ await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { ${names.join(", ")} } from "three";
 const THREE = { ${names.join(", ")} };
-import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3, NodeUpdateType, WebGPURenderer, StorageBufferAttribute } from "three/webgpu";
+import { MeshStandardNodeMaterial, MeshBasicNodeMaterial, Vector3, NodeUpdateType, WebGPURenderer, StorageBufferAttribute, BlendMode } from "three/webgpu";
 import { screenCoordinate, positionGeometry, normalGeometry, tangentGeometry, positionViewDirection } from "three/tsl";
 import { atan, mod, fwidth, saturation, mat2, hash, time } from "three/tsl";
 import { AudioBus } from "@threenative/core";
@@ -180,6 +180,8 @@ check(new THREE.Float32BufferAttribute([0.1, 0.2], 2) instanceof THREE.BufferAtt
 check(new THREE.DataTexture(new Uint8Array([255, 0, 0, 255]), 1, 1) instanceof THREE.Texture, "texture inheritance");
 check(Vector3 === THREE.Vector3, "cross-entry identity");
 check(Math.abs(THREE.MathUtils.euclideanModulo(-1, 3) - 2) < 1e-6, "MathUtils namespace");
+check(Math.abs(THREE.MathUtils.damp(0, 1, 1, 1) - (1 - Math.exp(-1))) < 1e-9 && THREE.MathUtils.pingpong(3, 2) === 1, "MathUtils number-only functions (damp, pingpong)");
+check(new BlendMode().blendSrc === 204 && new BlendMode(2).clone().blending === 2, "three/webgpu BlendMode");
 const scene = new THREE.Scene(); scene.add(mesh); scene.updateMatrixWorld(true);
 check(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(scene.uuid) && scene.uuid !== mesh.uuid, "native object UUID");
 check(scene.children[0] === mesh && mesh.parent === scene, "native child identity");

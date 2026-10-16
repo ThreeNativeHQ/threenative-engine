@@ -43,6 +43,7 @@ import {
   describeNativeCssFindings,
   findNativeCssViolations,
 } from "./native-css-compat.js";
+import { webRuntimeDecoders } from "./web-engine.js";
 
 export type BuildTarget = "android" | "desktop" | "ios" | "web";
 type NativeBuildTarget = Exclude<BuildTarget, "web">;
@@ -1107,10 +1108,8 @@ export async function buildWeb(
     config: config.assets,
     cwd,
     platform: "web",
-    ...(config.engine === "native" && {
-      runtimeDecoders: { ktx2: false, meshopt: false },
-      runtimeIdentity: "web:native-engine",
-    }),
+    runtimeDecoders: webRuntimeDecoders(config),
+    ...(config.engine !== "legacy" && { runtimeIdentity: "web:native-engine" }),
   });
   const assets = assetRoot(cwd, config);
   // Vite empties and rewrites its outDir in place, so a build that dies half-way through leaves a

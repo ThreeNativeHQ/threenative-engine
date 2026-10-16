@@ -828,9 +828,11 @@ describe("playtest holdUntilAttached", () => {
       expect(events).toEqual(["load"]);
       const installed = bridge();
       if (installed.applySetup === undefined) throw new Error("Setup channel was not installed.");
-      await installed.applySetup({
+      const confirmation = await installed.applySetup({
         entities: [{ entity: "player", transform: { position: [7, 2.5, -3] } }],
       });
+      // The held wrapper hands the bridge's read-back to the runner (a desktop mailbox needs JSON, not void).
+      expect(confirmation).toEqual({ entities: ["player"], resources: [] });
       const description = await installed.describe();
       events.push("describe returned");
       await started;

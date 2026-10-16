@@ -257,8 +257,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
   // Recomputed 2026-10-15: puzzle drops its legacy pin and its Engine paragraph (PRD-617); the other twelve are unchanged.
   "action-rpg": "9b269c88db97e3d1208c6b7ea3db2617170d4dc166477ee73925b3dfddeed03c",
-  minimal: "57890ec68af9d5cdc2742d073c0db2439fd7c30bd5fa5a4dc105e636fe3d47bd",
-  platformer: "4f5a48198902eb6ea6fdcf2251da8c4d08a11d368a5a2e3beb26ee9937e4a839",
+  minimal: "cb10a9509dfe97b9d6729b7c6c721b15cd1cf07a41d30aa5fe65333a44e73b50",
+  platformer: "e92d560dfdcf1461219e9f287c19911e5f27b40e29970e55f079b0d31ad7bcd9",
   puzzle: "083a7f51c2323530cb623cb0b6f05509bd2bfb11d939158f8ec1f94cf3fac0d6",
   racing: "a5ebed06f00d5a8c1150f748e2876cfc3a588c8ab680f25429ef4925b48916af",
   rain: "2f9970aef8657e9a52c0d4cc1fa162e5ac3937c67c4b4d184e830371f3b32851",

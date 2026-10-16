@@ -213,9 +213,11 @@ class V8Game {
         bool pointer = false;
     };
     std::deque<WindowInput> windowInput_;
-    double pointerX_ = 0, pointerY_ = 0;  // the playtest mouse's last position, for movementX/Y
-    bool pointerSeen_ = false;
     void installWindowInput();
+    /** A runner's synthetic pointer, queued for delivery as a window's would be. */
+    void queuePlaytestPointer(const inspect::InputEvent& event);
+    double playtestPointerX_ = 0, playtestPointerY_ = 0;
+    bool playtestPointerSeen_ = false;
     void deliverWindowInput(v8::Local<v8::Context> ctx);
     inspect::Endpoint* endpoint_ = nullptr;
     std::string assetPath_;
@@ -973,7 +975,10 @@ bool V8Game::observe(const std::string& method, const json::Value* argument, jso
     if (!v8::JSON::Stringify(ctx, output).ToLocal(&encoded)) return fail("observation is not JSON");
     v8::String::Utf8Value text(isolate_, encoded);
     json::Error parseError;
-    if (!json::parse(std::string_view(*text, text.length()), result, parseError)) return fail("invalid JSON observation: " + parseError.code + " " + parseError.detail + " at byte " + std::to_string(parseError.offset) + " near `" + std::string(*text, parseError.offset > 24 ? parseError.offset - 24 : 0, 56) + "`");
+    if (!json::parse(std::string_view(*text, text.length()), result, parseError))
+        return fail("invalid JSON observation from " + method + ": " + parseError.code + " at byte " +
+                    std::to_string(parseError.offset) + " (" + parseError.detail + "): " +
+                    std::string(*text, std::min<std::size_t>(text.length(), 120)));
     return true;
 }
 
@@ -1239,6 +1244,27 @@ void V8Game::installWindowInput() {
     });
 }
 
+void V8Game::queuePlaytestPointer(const inspect::InputEvent& event) {
+    const int buttons = static_cast<int>(event.buttons);
+    const int button = buttons == 0 ? 0 : buttons - 1;
+    const bool mouse = event.pointerType == "mouse";
+    double movementX = 0, movementY = 0;
+    if (event.type == "pointermove" && mouse) {
+        movementX = playtestPointerSeen_ ? event.x - playtestPointerX_ : 0;
+        movementY = playtestPointerSeen_ ? event.y - playtestPointerY_ : 0;
+        windowInput_.push_back({.type = "mousemove", .x = event.x, .y = event.y, .movementX = movementX,
+                                .movementY = movementY, .button = button, .buttons = buttons});
+    }
+    if (mouse && event.type != "pointerup" && event.type != "pointercancel") {
+        playtestPointerX_ = event.x;
+        playtestPointerY_ = event.y;
+        playtestPointerSeen_ = true;
+    }
+    windowInput_.push_back({.type = event.type, .pointerType = event.pointerType, .x = event.x, .y = event.y,
+                            .movementX = movementX, .movementY = movementY, .button = button, .buttons = buttons,
+                            .pointerId = event.pointerId, .pointer = true});
+}
+
 void V8Game::deliverWindowInput(v8::Local<v8::Context> ctx) {
     if (windowInput_.empty()) return;
     v8::Local<v8::Value> dispatch;
@@ -1324,21 +1350,7 @@ void V8Game::tick(double dt) {
                                             .deltaX = event.deltaX, .deltaY = event.deltaY});
                     continue;
                 }
-                const bool mouse = event.pointerType == "mouse";
-                const double moveX = mouse && pointerSeen_ ? event.x - pointerX_ : 0;
-                const double moveY = mouse && pointerSeen_ ? event.y - pointerY_ : 0;
-                if (mouse && event.type != "pointerup" && event.type != "pointercancel") {
-                    pointerX_ = event.x;
-                    pointerY_ = event.y;
-                    pointerSeen_ = true;
-                }
-                const int button = event.buttons == 0 ? 0 : int(event.buttons) - 1;
-                if (event.type == "pointermove" && mouse)
-                    windowInput_.push_back({.type = "mousemove", .x = event.x, .y = event.y, .movementX = moveX,
-                                            .movementY = moveY, .button = button, .buttons = int(event.buttons)});
-                windowInput_.push_back({.type = event.type, .pointerType = event.pointerType, .x = event.x,
-                                        .y = event.y, .movementX = moveX, .movementY = moveY, .button = button,
-                                        .buttons = int(event.buttons), .pointerId = event.pointerId, .pointer = true});
+                queuePlaytestPointer(event);
             }
         }
     }
