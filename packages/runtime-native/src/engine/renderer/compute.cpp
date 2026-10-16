@@ -58,7 +58,7 @@ bool ComputePass::dispatch(WGPUCommandEncoder encoder, std::span<const Handle> s
 }
 
 void ComputePass::dispatchValues(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
-                                 const std::map<std::string, std::vector<float>>& uniforms, const FrameClock& clock) {
+                                 const std::map<std::string, std::vector<double>>& uniforms, const FrameClock& clock) {
     std::vector<uint8_t> block(module_.uniformBlockSize);
     for (const shader::UniformField& f : module_.uniforms) {
         // The engine's own frame clock, as the render passes get it.
@@ -70,17 +70,11 @@ void ComputePass::dispatchValues(WGPUCommandEncoder encoder, std::span<const Han
         const auto found = uniforms.find(f.name);
         if (found == uniforms.end())
             throw std::runtime_error("TN_COMPUTE_UNIFORM: " + f.name + " is the engine's own value and has no meaning in a compute kernel");
-        const std::vector<float>& lanes = found->second;
+        const std::vector<double>& lanes = found->second;
         if (f.type.isMatrix() || lanes.size() != f.type.rows)
             throw std::runtime_error("TN_COMPUTE_UNIFORM: " + f.name + " is " + f.type.name() + " and the node holds " +
                                      std::to_string(lanes.size()) + " value(s)");
-        for (size_t i = 0; i < lanes.size(); ++i) {
-            // A uint or int uniform holds its whole number; a float one holds the float.
-            const uint32_t word = f.type.scalar == shader::Type::Scalar::U32 ? static_cast<uint32_t>(lanes[i])
-                : f.type.scalar == shader::Type::Scalar::I32 ? static_cast<uint32_t>(static_cast<int32_t>(lanes[i]))
-                : std::bit_cast<uint32_t>(lanes[i]);
-            std::memcpy(&block[f.offset + i * 4], &word, 4);
-        }
+        shader::writeUniform(block, f, lanes);
     }
     if (!pipeline_ || !encode(encoder, storage, invocations, block))
         throw std::runtime_error(error_.empty() ? std::string("TN_COMPUTE_PIPELINE_REFUSED") : error_);

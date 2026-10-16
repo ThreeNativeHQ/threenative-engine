@@ -14,7 +14,7 @@ struct PostImage {
 struct PostEffect {
     std::string kind, output;
     std::vector<Node> inputs;
-    std::map<std::string, std::vector<float>> parameters;
+    std::map<std::string, std::vector<double>> parameters;
     std::vector<PostImage> images;
     float resolutionScale = 1;
     bool normal = false, temporal = false;
@@ -27,7 +27,7 @@ struct PostPass {
     ShaderPackage package;
     // Shader binding name -> render graph resource name. All inputs require a producer.
     std::map<std::string, std::string> reads;
-    std::map<std::string, std::vector<float>> uniforms;
+    std::map<std::string, std::vector<double>> uniforms;
     /** The graph's uniform nodes, read each frame over `uniforms`: three's `uniform.value = x` after install. */
     std::vector<Node> live;
     std::vector<PostImage> images;

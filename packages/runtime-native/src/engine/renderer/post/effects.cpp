@@ -33,14 +33,6 @@ WGPUTexture makeTexture(WGPUDevice device, uint32_t width, uint32_t height, WGPU
     desc.sampleCount = desc.mipLevelCount = 1;
     return wgpuDeviceCreateTexture(device, &desc);
 }
-void writeUniform(std::vector<uint8_t>& block, const shader::UniformField& field, const std::vector<float>& values) {
-    const auto& t = field.type;
-    if (values.size() != size_t(t.rows) * t.cols)
-        throw std::runtime_error("TN_POST_UNIFORM_SIZE: " + field.name);
-    const size_t stride = t.isMatrix() ? shader::uniformLayout(shader::Type::vec(t.rows)).align : t.rows * 4;
-    for (size_t col = 0; col < t.cols; col++)
-        std::memcpy(block.data() + field.offset + col * stride, values.data() + col * t.rows, t.rows * 4);
-}
 } // namespace
 
 PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader::graph::PostPass> sources)
@@ -357,7 +349,7 @@ void PostEffects::captureUniforms() {
                 return camera.projectionMatrix;
             }();
             const auto put = [&](const char* name, const auto& matrix) {
-                pass.captured[name] = std::vector<float>(matrix.elements.begin(), matrix.elements.end());
+                pass.captured[name] = std::vector<double>(matrix.elements.begin(), matrix.elements.end());
             };
             put("modelMatrix", quad.matrixWorld);
             put("viewMatrix", Matrix4{});
@@ -457,12 +449,12 @@ uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, 
                         if (!lights)
                             throw std::runtime_error("TN_NATIVE_LIGHT_STATE_MISSING");
                         const auto& matrix = lights->shadowMatrix(std::stoull(field.name.substr(prefix.size())));
-                        values[field.name] = std::vector<float>(matrix.begin(), matrix.end());
+                        values[field.name] = std::vector<double>(matrix.begin(), matrix.end());
                     }
                     const auto value = values.find(field.name);
                     if (value == values.end())
                         throw std::runtime_error("TN_POST_UNIFORM_MISSING: " + field.name);
-                    writeUniform(block, field, value->second);
+                    shader::writeUniform(block, field, value->second);
                 }
                 wgpuQueueWriteBuffer(queue_, buffer, 0, block.data(), block.size());
             }

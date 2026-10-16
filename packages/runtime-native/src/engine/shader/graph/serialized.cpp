@@ -131,11 +131,11 @@ public:
             if (kind == "UniformNode") {
                 const std::string name = field(record, "name").string();
                 if (name.empty()) return fail("TN_TSL_EXPORT_INVALID: uniform name");
-                std::vector<float> values;
+                std::vector<double> values;
                 const std::vector<Value> data = value.isArray() ? value.items() : std::vector<Value>{value};
                 for (const auto& v : data) {
                     if (!scalar(v)) return {};
-                    values.push_back(v.isBool() ? float(v.boolean()) : static_cast<float>(v.number()));
+                    values.push_back(v.isBool() ? double(v.boolean()) : v.number());
                 }
                 result = uniform(name, t, std::move(values));
             } else if (value.isArray()) {

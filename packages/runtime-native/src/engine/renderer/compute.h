@@ -56,7 +56,7 @@ public:
      * Throws std::runtime_error naming the uniform or storage buffer the program cannot be given.
      */
     void dispatchValues(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
-                        const std::map<std::string, std::vector<float>>& uniforms, const FrameClock& clock = {});
+                        const std::map<std::string, std::vector<double>>& uniforms, const FrameClock& clock = {});
     const shader::StageModule& module() const { return module_; }
 
 private:
@@ -74,7 +74,7 @@ private:
 /** A compute node and the uniform values it was called with, so a later edit reaches only later calls. */
 struct ComputeDispatch {
     shader::graph::Node node;
-    std::map<std::string, std::vector<float>> uniforms;
+    std::map<std::string, std::vector<double>> uniforms;
     /** Snapshots `node`'s uniforms now. Throws unless `node` is a `Fn(...)().compute(n)` node. */
     static ComputeDispatch of(const shader::graph::Node& node);
 };

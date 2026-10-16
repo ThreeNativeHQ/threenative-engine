@@ -546,7 +546,7 @@ std::atomic<uint64_t> nextLiveEffect{0};
 
 std::string liveName() { return "native_live_post_" + std::to_string(++nextLiveEffect); }
 
-std::vector<float> identity16() {
+std::vector<double> identity16() {
     return {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 }
 
@@ -684,7 +684,7 @@ std::shared_ptr<PostEffect> denoiseEffect(Node input, Node depth, Node normal, u
     effect->inputs = normal ? std::vector<Node>{input, depth, normal} : std::vector<Node>{input, depth};
     effect->normal = normal != nullptr;
     // generateDenoiseSamples(16, 2, 1): float32, as the uniform array stores them.
-    std::vector<float> samples;
+    std::vector<double> samples;
     for (int i = 0; i < 16; ++i) {
         const double angle = 2 * std::numbers::pi * 2 * i / 16;
         samples.insert(samples.end(), {float(std::cos(angle)), float(std::sin(angle)), float(std::pow(i / 15.0, 1))});

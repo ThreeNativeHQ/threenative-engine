@@ -70,7 +70,8 @@ struct NodeData {
     uint64_t bits = 0;
     // A uniform's value: data, not part of the program key. The one field that changes after a node
     // is built (three's `uniform.value = x`, through setUniformValues); every draw reads it afresh.
-    mutable std::vector<float> values;
+    // Keep i32/u32 exact; f32 lanes are rounded by setUniformValues before storage.
+    mutable std::vector<double> values;
     UnOp unary = UnOp::Negate;
     BinOp binary = BinOp::Add;
     std::vector<Node> args;
@@ -100,9 +101,9 @@ Node uint_(uint32_t value);
 /** TSL's `uint(node)`: a conversion. */
 Node uint_(Node value);
 
-Node uniform(std::string_view name, Type type, std::vector<float> values = {});
-/** three's `uniform.value = x`: one float per lane of the uniform's type; the program is unchanged. */
-void setUniformValues(const Node& uniform, std::vector<float> values);
+Node uniform(std::string_view name, Type type, std::vector<double> values = {});
+/** three's `uniform.value = x`: one number per lane of the uniform's type; the program is unchanged. */
+void setUniformValues(const Node& uniform, std::vector<double> values);
 Node attribute(std::string_view name, Type type);
 Node varying(std::string_view name, Type type);
 /** TSL's `varying(node, name)`: `value` computed in the vertex stage, read by name in the fragment. */
@@ -262,7 +263,7 @@ uint64_t keyBuilds();
 /** key(graph) interned: equal structures answer the same id, computed once per node (0 for null). */
 uint64_t keyId(const Graph& graph);
 /** Named uniform data reachable from the graph. Conflicting values fail rather than pick one. */
-std::map<std::string, std::vector<float>> uniforms(const Graph& graph);
+std::map<std::string, std::vector<double>> uniforms(const Graph& graph);
 /** How many maps uniforms() has built in this process; a steady frame builds none. */
 uint64_t uniformMapBuilds();
 /** Every uniform node reachable from the graph, in first-visit order, found once per graph; a node

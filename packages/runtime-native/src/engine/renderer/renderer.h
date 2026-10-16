@@ -776,7 +776,7 @@ private:
     std::unique_ptr<TraaPass> traa_;
     std::shared_ptr<const shader::graph::PostEffect> liveTraa_;
     std::unique_ptr<PostEffects> postEffects_;
-    std::map<std::string, std::vector<float>> postUniforms_;
+    std::map<std::string, std::vector<double>> postUniforms_;
     /** three's `time` (its NodeFrame clock): seconds since this renderer was made, read once a frame. */
     std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
     float frameTime_ = 0;

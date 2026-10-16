@@ -54,7 +54,7 @@ class PostEffects {
         uint64_t rttRevision = 0, rttRequested = 0, rttDisposal = 0;
         uint16_t rttMin = 1006, rttMag = 1006;
         bool rendered = false;
-        std::map<std::string, std::vector<float>> captured;  // the live nodes' and effect's values, over `source.uniforms`
+        std::map<std::string, std::vector<double>> captured;  // the live nodes' and effect's values, over `source.uniforms`
         // The bind group of the last frame and what it binds: reused while every entry is the same,
         // dropped with the targets (a released view's handle can come back for a new one).
         WGPUBindGroup group = nullptr, vertexGroup = nullptr;

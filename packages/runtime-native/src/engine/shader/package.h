@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -86,6 +87,9 @@ struct Layout {
     uint32_t size;
 };
 Layout uniformLayout(const Type& type);
+
+/** Write numeric uniform lanes using their WGSL scalar type and column alignment. */
+void writeUniform(std::span<uint8_t> block, const UniformField& field, std::span<const double> values);
 
 /** Builds a stage module: emits WGSL and derives the layouts that WGSL declares. */
 StageModule buildStage(const Program& program, uint32_t group = 0);

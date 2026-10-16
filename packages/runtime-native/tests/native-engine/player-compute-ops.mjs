@@ -75,8 +75,29 @@ async function run() {
   // A typed uniform: uniform(3, "uint") adds to a uint index, and a later edit reaches the next dispatch.
   const ring = uniform(3, "uint");
   const wrapped = instancedArray(8, "uint");
-  renderer.compute(Fn(() => { wrapped.element(ring.add(instanceIndex).mod(uint(8))).assign(instanceIndex.add(1)); })().compute(8));
+  const wrapKernel = Fn(() => { wrapped.element(ring.add(instanceIndex).mod(uint(8))).assign(instanceIndex.add(1)); })().compute(8);
+  renderer.compute(wrapKernel);
   same("typed uniform", await words(wrapped), [6, 7, 8, 1, 2, 3, 4, 5]);
+  ring.value = 4;
+  renderer.compute(wrapKernel);
+  same("typed uniform reassigned", await words(wrapped), [5, 6, 7, 8, 1, 2, 3, 4]);
+
+  const exact = uniform(16777217, "uint");
+  const signed = uniform(-16777217, "int");
+  const unsignedOut = instancedArray(1, "uint");
+  const signedOut = instancedArray(1, "int");
+  const exactKernel = Fn(() => {
+    unsignedOut.element(0).assign(exact);
+    signedOut.element(0).assign(signed);
+  })().compute(1);
+  renderer.compute(exactKernel);
+  same("uint above float precision", await words(unsignedOut), [16777217]);
+  same("int above float precision", new Int32Array(await renderer.getArrayBufferAsync(signedOut.value)), [-16777217]);
+  exact.value = 4294967295;
+  signed.value = -2147483648;
+  renderer.compute(exactKernel);
+  same("uint max reassigned", await words(unsignedOut), [4294967295]);
+  same("int min reassigned", new Int32Array(await renderer.getArrayBufferAsync(signedOut.value)), [-2147483648]);
 
   // mod(vec2, float) widens the scalar, and a negative lane wraps up (GLSL mod, not WGSL's remainder).
   const folded = instancedArray(2, "float");
@@ -112,7 +133,8 @@ async function run() {
     spots.element(instanceIndex).assign(vec3(float(instanceIndex).mul(1).sub(0.5), 0, 0));
   })().compute(2));
   const quad = new MeshBasicNodeMaterial();
-  quad.colorNode = vec3(1, 0, 0);
+  // Both typed uniforms are consumed by a fragment: the max uint stays odd and the min int stays negative.
+  quad.colorNode = vec3(float(exact.mod(uint(2))).mul(float(ring).div(4)).mul(select(signed.lessThan(0), 1, 0)), 0, 0);
   quad.positionNode = positionLocal.mul(vec3(0.25, 1, 1)).add(spots.toAttribute());
   const field = new Scene();
   const instances = new InstancedMesh(new PlaneGeometry(2, 2), quad, 2);

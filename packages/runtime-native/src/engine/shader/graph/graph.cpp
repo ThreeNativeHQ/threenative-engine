@@ -6,6 +6,8 @@
 #include "engine/shader/output.h"
 
 #include <bit>
+#include <cmath>
+#include <limits>
 #include <unordered_map>
 #include <utility>
 #include <stdexcept>
@@ -611,19 +613,33 @@ Node reflectorTexture(std::shared_ptr<const void> reflector, Node uvs) {
     return data;
 }
 
-Node uniform(std::string_view name, Type type, std::vector<float> values) {
+Node uniform(std::string_view name, Type type, std::vector<double> values) {
     auto data = makeNode(Kind::Uniform, type);
     data->name = std::string(name);
     data->values = std::move(values);
+    if (type.scalar == Type::Scalar::I32 || type.scalar == Type::Scalar::U32) {
+        if (!data->values.empty()) setUniformValues(data, data->values);
+    } else for (double& value : data->values) value = static_cast<float>(value);
     return data;
 }
-void setUniformValues(const Node& uniform, std::vector<float> values) {
+void setUniformValues(const Node& uniform, std::vector<double> values) {
     if (!uniform || uniform->kind != Kind::Uniform) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: not a uniform node");
     // A uniform built without a value (cameraViewMatrix, materialColor) is the engine's to fill.
     if (uniform->values.empty()) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " is engine-provided");
-    if (uniform->type.isMatrix() || uniform->type.scalar != Type::Scalar::F32 || values.size() != uniform->type.rows)
+    const Type type = uniform->type;
+    if (type.isMatrix() || type.scalar == Type::Scalar::Bool || values.size() != type.rows)
         throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " takes " +
-                                 std::to_string(uniform->type.rows) + " float value(s)");
+                                 std::to_string(type.rows) + " " + type.name() + " value(s)");
+    for (double& value : values) {
+        if (type.scalar == Type::Scalar::F32) value = static_cast<float>(value);
+        else {
+            const bool unsignedType = type.scalar == Type::Scalar::U32;
+            const double minimum = unsignedType ? 0 : std::numeric_limits<int32_t>::min();
+            const double maximum = unsignedType ? double(std::numeric_limits<uint32_t>::max()) : std::numeric_limits<int32_t>::max();
+            if (!std::isfinite(value) || value != std::floor(value) || value < minimum || value > maximum)
+                throw std::runtime_error("TN_TSL_UNIFORM_VALUE: " + uniform->name + " needs a whole number in " + type.name() + " range");
+        }
+    }
     uniform->values = std::move(values);
 }
 Node attribute(std::string_view name, Type type) {
@@ -890,8 +906,8 @@ std::vector<Node> uniformNodes(const Graph& graph) {
     return result;
 }
 
-std::map<std::string, std::vector<float>> uniforms(const Graph& graph) {
-    std::map<std::string, std::vector<float>> result;
+std::map<std::string, std::vector<double>> uniforms(const Graph& graph) {
+    std::map<std::string, std::vector<double>> result;
     if (!graph) return result;
     ++uniformMaps;
     for (const Node& n : uniformList(graph)) {

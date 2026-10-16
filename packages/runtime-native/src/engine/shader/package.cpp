@@ -1,6 +1,9 @@
 #include "package.h"
 
 #include <string_view>
+#include <bit>
+#include <cstring>
+#include <stdexcept>
 
 namespace tn::engine::shader {
 
@@ -24,6 +27,21 @@ UpdateSchedule scheduleFor(std::string_view name) {
 }
 
 }  // namespace
+
+void writeUniform(std::span<uint8_t> block, const UniformField& field, std::span<const double> values) {
+    const auto& type = field.type;
+    if (values.size() != size_t(type.rows) * type.cols)
+        throw std::runtime_error("TN_POST_UNIFORM_SIZE: " + field.name);
+    const size_t stride = type.isMatrix() ? uniformLayout(Type::vec(type.rows)).align : type.rows * 4;
+    for (size_t col = 0; col < type.cols; ++col)
+        for (size_t row = 0; row < type.rows; ++row) {
+            const double value = values[col * type.rows + row];
+            const uint32_t word = type.scalar == Type::Scalar::U32 ? static_cast<uint32_t>(value)
+                : type.scalar == Type::Scalar::I32 ? static_cast<uint32_t>(static_cast<int32_t>(value))
+                : std::bit_cast<uint32_t>(static_cast<float>(value));
+            std::memcpy(block.data() + field.offset + col * stride + row * 4, &word, 4);
+        }
+}
 
 Layout uniformLayout(const Type& type) {
     // WGSL host-shareable layout: scalars 4/4; vec2 8/8; vec3 16/12; vec4 16/16; a matrix is

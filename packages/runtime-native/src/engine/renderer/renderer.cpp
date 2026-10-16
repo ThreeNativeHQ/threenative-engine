@@ -132,11 +132,12 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 // bound to two different values across the material's graphs fails rather than pick one.
 void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModule& stage,
               const shader::MaterialNodes& nodes, float time, float delta, const LightState& lights) {
-    using Named = std::pair<std::string_view, std::span<const float>>;
+    using Named = std::pair<std::string_view, std::span<const double>>;
     thread_local std::vector<Named> values;
     values.clear();
-    values.emplace_back("time", std::span<const float>(&time, 1));
-    values.emplace_back("deltaTime", std::span<const float>(&delta, 1));
+    const double timeValue = time, deltaValue = delta;
+    values.emplace_back("time", std::span<const double>(&timeValue, 1));
+    values.emplace_back("deltaTime", std::span<const double>(&deltaValue, 1));
     for (const auto& graph : nodes.graphs()) {
         if (!graph) continue;
         for (const auto& node : shader::graph::uniformList(graph)) {
@@ -154,9 +155,9 @@ void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModul
         }
         const auto found = std::ranges::find(values, std::string_view(field.name), &Named::first);
         if (found == values.end()) continue;
-        if (field.type.isMatrix() || field.type.scalar != shader::Type::Scalar::F32 || found->second.size() != field.type.rows)
+        if (field.type.isMatrix() || field.type.scalar == shader::Type::Scalar::Bool || found->second.size() != field.type.rows)
             throw std::runtime_error("TN_TSL_UNIFORM_TYPE: " + field.name);
-        std::memcpy(block.data() + base + field.offset, found->second.data(), found->second.size() * sizeof(float));
+        shader::writeUniform(std::span(block).subspan(base), field, found->second);
     }
 }
 
@@ -895,7 +896,7 @@ void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
     postEffects_.reset();
     postTextures_.clear();
     postTextureVersions_.clear();
-    postUniforms_ = post ? post->uniforms : std::map<std::string,std::vector<float>>{};
+    postUniforms_ = post ? post->uniforms : std::map<std::string,std::vector<double>>{};
     post_ = std::move(post);
     outputVertex_ = {};  // rebuild the output program with (or without) the post graph
     const OutputState output = output_;
@@ -2017,7 +2018,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         unjitteredCamera.projectionMatrix = liveTraa_->originalProjection;
     CameraState camera = unjitteredCamera;
     if (liveTraa_ && traa_ && !compilation) {
-        const auto parameter = [&](const char* name) { return liveTraa_->parameters.at(name).at(0); };
+        const auto parameter = [&](const char* name) { return static_cast<float>(liveTraa_->parameters.at(name).at(0)); };
         traa_->setOptions({parameter("depthThreshold"), parameter("edgeDepthDiff"),
                            parameter("maxVelocityLength"), parameter("useSubpixelCorrection") != 0});
     }
@@ -2141,7 +2142,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 signature += "#" + std::to_string(shader::graph::keyId(item.nodes.positionNode));
                 for (const auto& node : shader::graph::uniformList(item.nodes.positionNode)) {
                     signature += node->name;
-                    signature.append(reinterpret_cast<const char*>(node->values.data()), node->values.size() * sizeof(float));
+                    signature.append(reinterpret_cast<const char*>(node->values.data()), node->values.size() * sizeof(double));
                 }
             }
             if (item.positionNode || item.boneMatrices || item.morphGeometry ||
@@ -3049,7 +3050,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         constexpr std::string_view prefix = "authoredLightShadowMatrix";
         if (field.name.starts_with(prefix)) {
             const auto& matrix = lights.shadowMatrix(std::stoull(field.name.substr(prefix.size())));
-            postUniforms_[field.name] = std::vector<float>(matrix.begin(), matrix.end());
+            postUniforms_[field.name] = std::vector<double>(matrix.begin(), matrix.end());
         }
     }
     postUniforms_["cameraNear"] = {static_cast<float>(camera.near)};
@@ -3363,10 +3364,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureVie
     for (const auto& field : outputFragment_.uniforms) {
         const auto value = postUniforms_.find(field.name);
         if (value == postUniforms_.end()) continue;
-        const auto& values = value->second;
-        if (values.size() != size_t(field.type.rows)*field.type.cols) throw std::runtime_error("TN_POST_UNIFORM_SIZE: " + field.name);
-        const size_t stride = field.type.isMatrix() ? shader::uniformLayout(shader::Type::vec(field.type.rows)).align : field.type.rows*4;
-        for (size_t col = 0; col < field.type.cols; ++col) std::memcpy(block.data()+field.offset+col*stride, values.data()+col*field.type.rows, field.type.rows*4);
+        shader::writeUniform(block, field, value->second);
     }
     put(block, outputFragment_, "toneMappingExposure", std::array<double, 1>{output_.toneMappingExposure});
     if (outputFragment_.uniformBlockSize) gpu_.writeBuffer(outputUniforms_, 0, block.data(), outputFragment_.uniformBlockSize);

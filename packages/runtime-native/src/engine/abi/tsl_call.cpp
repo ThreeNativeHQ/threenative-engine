@@ -533,7 +533,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             const Type wanted = type(text(args[1]));
             if (wanted.isScalar() && wanted.scalar != Type::Scalar::F32 && wanted.scalar != Type::Scalar::Bool) {
                 if (args[0].number != std::floor(args[0].number)) throw std::runtime_error("a " + wanted.name() + " uniform holds a whole number");
-                return g::uniform("nodeUniform" + std::to_string(++serial), wanted, {static_cast<float>(args[0].number)});
+                return g::uniform("nodeUniform" + std::to_string(++serial), wanted, {args[0].number});
             }
         }
         if (args.size() == 2) {
@@ -546,7 +546,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const auto value = arg(0);
         if (value->type == Type{})
             throw std::runtime_error("uniform value needs a concrete type");
-        std::vector<float> values;
+        std::vector<double> values;
         const std::function<void(g::Node)> constant = [&](g::Node n) {
             if (n->kind == g::Kind::Constant && n->type == Type::f32()) {
                 values.push_back(std::bit_cast<float>(static_cast<uint32_t>(n->bits)));
@@ -1053,10 +1053,10 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
 }
 
 void tslSetUniform(const g::Node& uniform, const double* values, size_t count) {
-    std::vector<float> lanes;
+    std::vector<double> lanes;
     for (size_t i = 0; i < count; ++i) {
         if (!std::isfinite(values[i])) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: values must be finite");
-        lanes.push_back(static_cast<float>(values[i]));
+        lanes.push_back(values[i]);
     }
     g::setUniformValues(uniform, std::move(lanes));
 }

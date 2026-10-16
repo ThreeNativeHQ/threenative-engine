@@ -661,13 +661,13 @@ void uniformValue() {
     const std::string key = g::key(graph);
     auto values = g::uniforms(graph);
     CHECK(values.size() == 2);
-    std::vector<std::vector<float>> before;
+    std::vector<std::vector<double>> before;
     for (const auto& [name, lanes] : values) before.push_back(lanes);
-    CHECK((before == std::vector<std::vector<float>>{{0}, {1, 2}}) || (before == std::vector<std::vector<float>>{{1, 2}, {0}}));
+    CHECK((before == std::vector<std::vector<double>>{{0}, {1, 2}}) || (before == std::vector<std::vector<double>>{{1, 2}, {0}}));
     evaluate("tsl.setUniform(clock, 0.5); tsl.setUniform(origin, 3, 4); 0");
-    std::vector<std::vector<float>> after;
+    std::vector<std::vector<double>> after;
     for (const auto& [name, lanes] : g::uniforms(graph)) after.push_back(lanes);
-    CHECK((after == std::vector<std::vector<float>>{{0.5f}, {3, 4}}) || (after == std::vector<std::vector<float>>{{3, 4}, {0.5f}}));
+    CHECK((after == std::vector<std::vector<double>>{{0.5f}, {3, 4}}) || (after == std::vector<std::vector<double>>{{3, 4}, {0.5f}}));
     CHECK(g::key(graph) == key);
     const auto refused = evaluate(R"JS(
         (() => { try { tsl.setUniform(clock, 1, 2); return false; } catch (e) { return e.message.includes('TN_TSL_UNIFORM_VALUE'); } })()

@@ -907,17 +907,60 @@ void tsl_uniform_value() {
     namespace g = tn::engine::shader::graph;
     const auto graph = tn::abi::shaderNode(material, "colorNode");
     const std::string key = g::key(graph);
-    CHECK(g::uniforms(graph).begin()->second == std::vector<float>{0});
+    CHECK(g::uniforms(graph).begin()->second == std::vector<double>{0});
 
     const double quarter = 0.25;
     CHECK(tn_tsl_set_uniform(ctx, &clock, &quarter, 1, &d.value) == TN_OK);
-    CHECK(g::uniforms(graph).begin()->second == std::vector<float>{0.25f});
+    CHECK(g::uniforms(graph).begin()->second == std::vector<double>{0.25f});
     CHECK(g::key(graph) == key);  // same program: the value is data
     const double pair[2] = {1, 2};
     CHECK(tn_tsl_set_uniform(ctx, &clock, pair, 2, &d.value) != TN_OK);  // a float takes one value
     tn_diagnostic_release(&d.value);
     CHECK(tn_tsl_set_uniform(ctx, &color, &quarter, 1, &d.value) != TN_OK);  // not a uniform
     tn_diagnostic_release(&d.value);
+    // f32 values retain the previous rounding and uploaded bits.
+    for (const double value : {0.1, -0.0}) {
+        CHECK(tn_tsl_set_uniform(ctx, &clock, &value, 1, &d.value) == TN_OK);
+        const auto node = tn::abi::tslNode(ctx, clock);
+        const float rounded = static_cast<float>(value);
+        CHECK(node->values.at(0) == rounded);
+        std::vector<uint8_t> upload(4);
+        tn::engine::shader::writeUniform(upload, {"float", node->type, 0, 4}, node->values);
+        CHECK(std::memcmp(upload.data(), &rounded, 4) == 0);
+    }
+    // Integer uniforms keep every 32-bit integer, through creation and public value reassignment.
+    for (const bool unsignedType : {false, true}) {
+        tn_tsl_arg_t args[2]{};
+        args[0].kind = TN_TSL_ARG_NUMBER;
+        args[0].number = unsignedType ? 16777217 : -16777217;
+        args[1].kind = TN_TSL_ARG_STRING;
+        args[1].text = unsignedType ? "uint" : "int";
+        uint64_t integer = 0;
+        CHECK(tn_tsl_call(ctx, "uniform", nullptr, args, 2, &integer, &d.value) == TN_OK);
+        const auto node = tn::abi::tslNode(ctx, integer);
+        CHECK(node && node->values.at(0) == args[0].number);
+        const std::string integerKey = g::key(node);
+        const double updated = unsignedType ? 4294967295.0 : -2147483648.0;
+        CHECK(tn_tsl_set_uniform(ctx, &integer, &updated, 1, &d.value) == TN_OK);
+        tn_diagnostic_release(&d.value);
+        CHECK(node->values.at(0) == updated && g::key(node) == integerKey);
+        tn::engine::shader::UniformField field{"typed", node->type, 0, 4};
+        std::vector<uint8_t> upload(4);
+        tn::engine::shader::writeUniform(upload, field, node->values);
+        uint32_t word = 0;
+        std::memcpy(&word, upload.data(), 4);
+        CHECK(word == (unsignedType ? 0xffffffffu : 0x80000000u));
+        for (const double invalid : {0.5, unsignedType ? -1.0 : -2147483649.0,
+                                     unsignedType ? 4294967296.0 : 2147483648.0, double(INFINITY), double(NAN)}) {
+            CHECK(tn_tsl_set_uniform(ctx, &integer, &invalid, 1, &d.value) != TN_OK);
+            tn_diagnostic_release(&d.value);
+            CHECK(node->values.at(0) == updated);
+            args[0].number = invalid;
+            uint64_t refused = 0;
+            CHECK(tn_tsl_call(ctx, "uniform", nullptr, args, 2, &refused, &d.value) != TN_OK);
+            tn_diagnostic_release(&d.value);
+        }
+    }
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 

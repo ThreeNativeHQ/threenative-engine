@@ -65,7 +65,7 @@ struct PostNode {
     std::string key;
     std::function<uint32_t(Program& fragment, uint32_t sceneTexture, uint32_t screenUv)> build;
     std::vector<graph::PostPass> passes;
-    std::map<std::string, std::vector<float>> uniforms;
+    std::map<std::string, std::vector<double>> uniforms;
     /** The graph's uniform nodes, read each frame over `uniforms` (three's `uniform.value = x`). */
     std::vector<graph::Node> live;
     bool outputTransform = true;
