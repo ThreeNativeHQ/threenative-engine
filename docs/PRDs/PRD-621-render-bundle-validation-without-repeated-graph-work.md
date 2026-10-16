@@ -46,12 +46,18 @@ The first broader typecheck caught the new partial Node fixture's direct typed a
 
 ### Phase 2: Runtime proof and delivery
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** Existing forest consumer and runtime harness; no new harness.
 
-- [ ] Measure reduced named guard CPU work on the forest consumer under matched conditions. proof: existing playtest `trace` command on baseline and candidate — pending, keep actual trace settings with results.
-- [ ] Preserve visual output on the forest consumer. proof: two matched headed WebGPU captures per arm and a fresh read-only visual judge — pending.
+- [x] Measure reduced named guard CPU work on the forest consumer under matched conditions. proof: existing playtest `trace` command on baseline and candidate — four 90-second ABBA runs passed on RTX 2080/Turing. Named guard sampled self time: baseline 12,035/12,284 ms versus candidate 10,219/9,950 ms, mean reduction 17.1%. Sampled non-idle main-thread time fell 17.3%; generic Three child traversal stayed roughly flat. Static startup-inclusive, private-Xvfb function attribution only; no FPS or original 1,619 ms task claim. The larger allocation-callback aggregate is not claimed because the printed tables truncate.
+- [x] Preserve visual output on the forest consumer. proof: two matched headed WebGPU captures per arm and a fresh read-only visual judge — native OpenCode Read viewed all four labeled PNGs; both pairs and overall NEUTRAL, no systematic forest/terrain/water/lighting/contact regression. Still images do not prove motion or transitions.
 - [ ] Pass the required selected repository checks for the candidate. proof: `pnpm typecheck`, `pnpm lint`, `pnpm test` and selected native/playtest lanes — pending; use focused checks while iterating and laptop for long CPU jobs.
+
+Runtime proof used the unchanged epic forest consumer with a temporary exact helper patch from `2ee1a937d`, then restored source byte-for-byte and rebuilt baseline core. Served `world.js` response hashes differed as expected (`a248431df27b…` baseline, `5aa51204ce48…` candidate), including the actual helper signature; all four scenes retained 12,263,370 main triangles, 41 draws and zero WorldCells failures, at fixed 0.72 scale, surface 4× and single-sampled world/TRAA. Source restored to `bf938bba…`, epic tracked tree clean, owned server stopped and capture lease released. Artifacts remain ignored under the epic's `artifacts/resume-pr483/prd621-local/`.
+
+The diagnostic command was `trace --url 'http://127.0.0.1:5296/?world=forest&showcase=1' --no-wait --no-input --settle 0.001 --seconds 90 --stall-ms 250 --allow-virtual-display --out <arm>.trace.json --text`, using shipped capture/display handling. Animation-callback counts (baseline 3,030/2,836, candidate 3,001/2,927) are a normalization cross-check, not rendered-frame or FPS evidence. Named guard self time per callback was approximately 4.15 → 3.40 ms. Two runs per arm on one host support this bounded CPU result; all epic runtime budgets remain separate.
+
+The Argon gateway visual attempt returned HTTP 400 and no verdict. A new Go review used actual image-returning Read calls and supplied the NEUTRAL verdict above. Full local build/test qualification is running; native crash-handler/adapter policy failures have appeared and remain under read-only triage. Do not treat the full suite as passing.
 
 ## Decisions
 
