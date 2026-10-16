@@ -426,6 +426,13 @@ void Program::assign(VarId var, ExprId value, Where where) {
 uint32_t Program::storageBuffer(std::string_view name, Type element, bool atomic, Where where) {
     if (atomic && element != Type::i32() && element != Type::u32())
         fail("storageBuffer " + std::string(name), "atomic elements are i32 or u32, not " + element.name(), where);
+    for (uint32_t i = 0; i < storage_.size(); ++i) {
+        const Storage& storage = storage_[i];
+        if (storage.name != name) continue;
+        if (storage.element != element || storage.atomic != atomic)
+            fail("storageBuffer " + std::string(name), "conflicting element type or atomic access", where);
+        return i;
+    }
     storage_.push_back(Storage{std::string(name), element, atomic});
     return static_cast<uint32_t>(storage_.size() - 1);
 }

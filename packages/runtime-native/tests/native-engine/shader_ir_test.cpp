@@ -11,6 +11,7 @@ namespace {
 void order() {
     Program p(Stage::Compute);
     const uint32_t out = p.storageBuffer("out", Type::f32());
+    CHECK(p.storageBuffer("out", Type::f32()) == out);
     const ExprId time = p.uniform("time", Type::f32());
     const ExprId two = p.constant(2.0f);
     CHECK(p.add(time, two) == p.add(time, two));        // pure: one node
@@ -86,6 +87,16 @@ void types() {
              const ExprId v = p.uniform("v", Type::vec(4));
              line = __LINE__ + 1;
              p.swizzle(v, "xg");
+         }},
+        {"conflicting storage type", Stage::Compute, [](Program& p, uint32_t& line) {
+             p.storageBuffer("shared", Type::f32());
+             line = __LINE__ + 1;
+             p.storageBuffer("shared", Type::vec(3));
+         }},
+        {"conflicting storage atomic access", Stage::Compute, [](Program& p, uint32_t& line) {
+             p.storageBuffer("shared", Type::u32());
+             line = __LINE__ + 1;
+             p.storageBuffer("shared", Type::u32(), true);
          }},
         {"storage write in vertex", Stage::Vertex, [](Program& p, uint32_t& line) {
              const uint32_t b = p.storageBuffer("b", Type::f32());

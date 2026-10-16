@@ -830,10 +830,19 @@ void tsl_call() {
         tn_diagnostic_release(&d.value);
         tn::engine::shader::VertexVariant variant;
         variant.nodes.colorNode = tn::abi::shaderNode(material, "colorNode");
+        uint64_t positionNode = 0;
+        CHECK(tn_tsl_call(ctx, "swizzle:xyz", &element, nullptr, 0, &positionNode, &d.value) == TN_OK);
+        CHECK(tn_tsl_set(ctx, material, "positionNode", positionNode, &d.value) == TN_OK);
+        variant.nodes.positionNode = tn::abi::shaderNode(material, "positionNode");
         const auto programs = tn::engine::shader::buildSprite(variant);
         const auto vertex = tn::engine::shader::buildStage(programs.vertex);
         const auto fragment = tn::engine::shader::buildStage(programs.fragment);
         CHECK(vertex.wgsl.ok() && fragment.wgsl.ok());
+        size_t storageBindings = 0;
+        for (const auto& binding : vertex.bindings)
+            storageBindings += binding.kind == tn::engine::shader::BindingKind::Storage;
+        CHECK(storageBindings == 1);  // The sprite's position and fragment varying share this storage.
+
         CHECK(vertex.wgsl.code.find("var<storage") != std::string::npos);
         CHECK(fragment.wgsl.code.find("var<storage") == std::string::npos);
         CHECK(vertex.wgsl.code.find(std::string("@builtin(") + (std::string(name) == "instanceIndex" ? "instance_index" : "vertex_index")) != std::string::npos);

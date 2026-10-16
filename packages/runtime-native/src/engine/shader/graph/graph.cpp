@@ -84,7 +84,6 @@ private:
     std::unordered_map<const NodeData*, ExprId> exprs_, effects_;
     std::unordered_map<const NodeData*, std::vector<ExprId>> aggregates_;
     std::unordered_map<const NodeData*, VarId> vars_;
-    std::unordered_map<std::string, uint32_t> buffers_;
     std::unordered_map<const NodeData*, ExprId> loopIndex_;
     static constexpr VarId noVar = UINT32_MAX;
     VarId returnVar_ = noVar, doneVar_ = noVar;
@@ -408,11 +407,7 @@ VarId Lowerer::ensureVar(Node var) {
 }
 
 uint32_t Lowerer::ensureStorage(const NodeData& element) {
-    const auto found = buffers_.find(element.name);
-    if (found != buffers_.end()) return found->second;
-    const uint32_t buffer = program_.storageBuffer(element.name, element.type, element.atomic ? *element.atomic : element.bits == 1);
-    buffers_.emplace(element.name, buffer);
-    return buffer;
+    return program_.storageBuffer(element.name, element.type, element.atomic ? *element.atomic : element.bits == 1);
 }
 
 void Lowerer::statement(Node node) {
