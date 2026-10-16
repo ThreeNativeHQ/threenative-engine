@@ -46,16 +46,21 @@ A game that moves a body or a camera in its fixed update presents motion whose p
 - [x] Loop spec drives `FixedStepLoop` with present intervals of 1/56, 1/75, 1/120 and 1/144 s and records a 2 m/s body's rendered x per frame; asserts AC-5's CV bound. Red reproduced: 4/4 failures, CV 0.242/0.496/1.000/1.179; exit 1. proof: `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts`
 
 ### Phase 2 — Engine mechanism
-- [ ] `loop.ts` exposes `alpha` per presented frame (AC-1). proof: the Phase 1 spec, alpha assertions
-- [ ] Previous/current tick transforms recorded for physics bodies and `ctx.camera`; interpolated before the world draw and restored after (AC-2). proof: Phase 1 spec green; `pnpm exec vitest run packages/physics/__tests__`
-- [ ] Overrides, opt-in and `TN_PHYSICS_INTERPOLATION` report (AC-3). proof: `packages/core/__tests__/loop-interpolation.spec.ts` override cases
-- [ ] Teleport and scene-change history reset (AC-4). proof: spec case — a teleport frame draws the destination, never a midpoint
+- [x] `loop.ts` exposes `alpha` per presented frame (AC-1). proof: `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts packages/core/__tests__/game.spec.ts packages/physics/__tests__/interpolation.spec.ts` — 72/72 passed (exit 0), including bounded alpha, camera default and override, frozen tick state, teleport and exception restoration.
+- [x] Previous/current tick transforms recorded for physics bodies and `ctx.camera`; interpolated before the world draw and restored after (AC-2). proof: Phase 1 green; focused core/game/physics run 299/299 passed (exit 0). Full core/physics: 258 suites passed; three suites hit concurrent rebuilds and passed isolated rerun (18 tests).
+- [x] Overrides, opt-in and `TN_PHYSICS_INTERPOLATION` report (AC-3). proof: `packages/core/__tests__/loop-interpolation.spec.ts` override cases and physics registration spec passed in the 72-test run (exit 0).
+- [x] Teleport and scene-change history reset (AC-4). proof: core history reset and physical character/rigid teleport cases passed in the 72-test run (exit 0); scene history and stale removal are covered.
 
 ### Phase 3 — Proof in games
 - [ ] Starter playtest: walking scenario records the presented camera and player positions per frame and asserts AC-5's bound on a real browser clock. proof: `node packages/playtest/dist/runner/cli.js <starter>/playtests/movement.playtest.json --browser-recipe webgpu` (extend the scenario or add `smooth-motion.playtest.json`)
 - [ ] Existing template scenarios still pass (they read tick state, which must be unchanged). proof: `pnpm test:templates` and the starter suite (`pnpm test` in a scaffold, 25 scenarios plus movement)
 - [ ] Native: the same scenario on the desktop host (AC-6). proof: playtest `--target desktop` run
 - [ ] Template `AGENTS.md` names the convention and its override in one sentence. proof: `pnpm sync:agents` and `pnpm check:docs`
+
+## Decisions
+
+- 2026-10-15: expose read-only `ctx.frameTime` alongside `alpha`, so the presentation probe uses the real frame callback timestamp rather than variable post-render wall time. Frozen playtests continue to draw the current tick pose.
+- The live-clock scenario lives in `playtests/live/` and is invoked explicitly with `--live-clock`; the ordinary top-level tick-counted scenario glob remains unchanged.
 
 ## Blocked on
 
@@ -65,3 +70,5 @@ A game that moves a body or a camera in its fixed update presents motion whose p
 
 - Visual judge: frames at rest must be identical (interpolation is a no-op when nothing moves); a moving capture is judged on stepping, not on look.
 - Out of scope: render-rate game logic, variable-step physics, extrapolation.
+
+Current verification: root `pnpm typecheck`, `pnpm lint`, `pnpm check:docs` passed. `pnpm test` reached native package tests and failed on 21 assertions, including unbuilt V8/QuickJS timestamp-query and rg11b10 host test binaries; no native C++ test result is claimed. Browser motion proof is still open: overloaded captures dropped simulation time; frame timestamp instrumentation is being corrected before rerun.

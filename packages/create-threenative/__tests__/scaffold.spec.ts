@@ -251,22 +251,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // createProject on the merged tree.
   // PRD-566/569/609 merge: measured all thirteen trees; action-rpg carries emitParticle bursts and onCull instructions.
   // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
+  // PRD-619: all kits name interpolation; starter adds the live-clock motion proof.
   // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
   // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
-  "action-rpg": "2ad57690b87fe80faa26931ea11d6ea210ac787bb58c7bb0f83e7b653426eeb7",
-  minimal: "6e9d255a6033e239e73dfabec172dfebb4a88849c01ca461d476ab8b17b91cbd",
-  platformer: "2ccf93236a0d6c1b8aa00bd3f86585427149f3788640dccb491f8d451c2c6894",
-  puzzle: "a25a9129f070b8a4cd25c1d3a174950b0367eba85d5a414b62325a571e2c40f3",
-  racing: "0fb3b6a6eacfc54acd74ae086cb5502789fdfe83e0466306202053843314f663",
-  rain: "9523312a5c0573b6ae886bd63ade36922a86f7a9b8e3730f7ead743609357bd7",
-  rts: "8a8d80b543d77717243274896b5b7a6a723b92e3a3f252fd470b2fb6dcfc12c8",
-  runner: "b14123d911dc3eb7d73e1ab3f91269b480a028938efff4a2bea4f56f2e570906",
+  "action-rpg": "214dc7ba0ffb4536caee192567438224bdf5ca476acf8aae9bc3d81e928d74c6",
+  minimal: "ce852f4f33c464f6b4e6e79fca3250bb6b595d43c6f971129d6b853eaadaaa12",
+  platformer: "650b82c0c37154f754138ea1d64a420df07b4e7c9ba8c97d3a58c597b103172e",
+  puzzle: "415adba744b0da4abdaa9c1817fc0f4e27fd48e2c293aa194787554756e11f6c",
+  racing: "530ba7197fa096ba4a2cb802f5adf15472c93868a3a8a24926dd6d4325cc2ba6",
+  rain: "bf0448a691b98d0146b6e1ddbbc6c030371c296c4bf6d2d87affc281d4bb27c5",
+  rts: "c960f69292026412acace1f6f08929e73b99aed307c862dd0e19d54cc3352271",
+  runner: "152cb64a4013b6a0f4f6cd3e479f56e0b818870849bf84938bfaad10ef7e9303",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "73da167ba1fdc6360c58e61b51a2f3dba047fbe1c4e88648e9bce4abb64325da",
-  shooter: "ca09b0b25f3ba689af53772d82be0978d82cdaff8f997b04b160874428ec3e54",
-  snow: "482c1c7f1cd2f233d43cc3fd378c983b4ab8f13dca4bd6fca008e5b120cb0705",
-  starter: "fe84f7a992a2ffa07792e10efe4b673e01499f3d4d21bc09dac8e4397645c1c4",
-  "tower-defense": "7d816e530aee8842027a1666782d96c51b2cbfde55c4c23a7cdd1b0fd6a267ac",
+  sailing: "d3713ceb22da1d7de88577f7e1eabac7d149d274fae7285f9ca5e268ffd2c787",
+  shooter: "08245bce4fac7527880a882ee060ae536a99aaae46b047fd8af9fefcffa239d8",
+  snow: "e2c71fa135994940d247990997fd1ffa5fc324d193e7795abe3b6d2b3dd7a0c9",
+  starter: "74eab942d4b0417c654bc18a964842beeb8cf445fc7cfd331b85fa19f3c72bdc",
+  "tower-defense": "cb3f87416281a4a9cfbdd0ff40fcffcbf0fc004eb174e7e8ca1661affee959b1",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -405,6 +406,7 @@ const STARTER_PATHS = [
   // `packages/create-threenative/template-playtests/starter/`, copied by `pnpm test:templates`.
   "playtests/survives.playtest.json",
   "playtests/movement.playtest.json",
+  "playtests/live/smooth-motion.playtest.json",
   "playtests/play.playtest.json",
   "native-playtests/react-hud.playtest.json",
   "playtests/production-readiness.playtest.json",

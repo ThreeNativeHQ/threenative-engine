@@ -450,6 +450,65 @@ describe("IGame", () => {
     }
   });
 
+  it.each([undefined, false])(
+    "interpolates the camera by default and restores tick state (override %s)",
+    async (physicsInterpolation) => {
+      const canvas = testCanvas();
+      let frame: ((time: number) => void) | undefined;
+      let context: ICtx | undefined;
+      const drawn: number[] = [];
+      class MovingCamera extends Scene {
+        static override readonly initialState = {};
+        override enter(ctx: ICtx): void {
+          context = ctx;
+        }
+        override update(ctx: ICtx): void {
+          ctx.camera.position.x += 2;
+        }
+      }
+      const game = defineGame({
+        physicsInterpolation,
+        renderer: {
+          canvas,
+          preferWebGPU: false,
+          webgl2Factory: () => ({
+            domElement: canvas,
+            render: () => drawn.push(context?.camera.position.x ?? Number.NaN),
+            setSize: () => undefined,
+          }),
+        },
+        scenes: { test: MovingCamera },
+        start: "test",
+      });
+      const requestFrame = globalThis.requestAnimationFrame;
+      const nowSpy = vi.spyOn(globalThis.performance, "now").mockReturnValue(0);
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: (callback: (time: number) => void) => {
+          frame = callback;
+          return 1;
+        },
+      });
+      try {
+        await game.start();
+        if (frame === undefined || context === undefined) throw new Error("Loop did not start.");
+        const initialX = context.camera.position.x;
+        frame(25);
+        expect(context.alpha).toBeCloseTo(0.5);
+        expect(drawn.at(-1)).toBeCloseTo(initialX + (physicsInterpolation === false ? 2 : 1));
+        expect(context.camera.position.x).toBe(initialX + 2);
+        context.resetInterpolation(context.camera);
+        frame(26);
+        expect(drawn.at(-1)).toBe(initialX + 2);
+      } finally {
+        game.stop();
+        nowSpy.mockRestore();
+        if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+        else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+      }
+    },
+  );
+
   it("runs ctx.beforeRender once per world draw after the frame's last fixed update", async () => {
     const canvas = testCanvas();
     const events: string[] = [];
