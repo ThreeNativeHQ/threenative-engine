@@ -63,6 +63,13 @@ interface IRecord {
 // Geometry, per-placement reach and LOD selection are independent of this export grouping.
 const CELL_SIZE = 128;
 
+/** Keep the terminal gate beyond the last authored step and the scaled 150 m canopy band. */
+export function impostorDistanceForScale(minScale: number, lastLodDistance: number): number {
+  if (!Number.isFinite(minScale) || minScale <= 0)
+    throw new Error("Spruce terminal distance requires a positive finite placement scale.");
+  return Math.max(LOD_BANDS.far / minScale, lastLodDistance * (1 + Number.EPSILON));
+}
+
 /** Compile the game's poses/appearance into world-v1 records; WorldCells owns every streaming step. */
 export async function createStreamedProps(options: IStreamOptions) {
   if (!options.whileCurrent()) return undefined;
@@ -107,6 +114,7 @@ export async function createStreamedProps(options: IStreamOptions) {
     }
   >();
   const variantIndices = new Map<string, number>();
+  const minSpruceScaleByVariant = new Map<string, number>();
   const shapes = new Map<string, { parts: IPropPart[]; ratio: Vector3 }>();
   startPhase("grounding", "", options.placements.length);
   const report = await addInSlices(
@@ -144,6 +152,11 @@ export async function createStreamedProps(options: IStreamOptions) {
         reach = 28 + (reach - 28) * (1 - Math.sqrt(seed));
       }
       records.push({ key, placement, pose, reach, ratio, position, quaternion, scale: scalar });
+      if (placement.asset === "spruce")
+        minSpruceScaleByVariant.set(
+          variant,
+          Math.min(minSpruceScaleByVariant.get(variant) ?? Number.POSITIVE_INFINITY, scalar),
+        );
       byId.set(placement.id, { ...pose, pose: pose.matrix, placement });
     },
     {
@@ -220,6 +233,10 @@ export async function createStreamedProps(options: IStreamOptions) {
           const levels = [...new Set(shape.parts.map((part) => part.level ?? 0))].sort(
             (a, b) => a - b,
           );
+          const lods = levels.slice(1).map((level, i) => ({
+            glb: `${record.key}/${level}.glb`,
+            distance: i === 0 ? LOD_BANDS.mid : LOD_BANDS.far,
+          }));
           const bounds = new Box3();
           for (const level of levels) {
             const group = new Group();
@@ -234,14 +251,18 @@ export async function createStreamedProps(options: IStreamOptions) {
           }
           definitions[record.key] = {
             glb: `${record.key}/0.glb`,
-            ...(record.key.startsWith("spruce:") && levels.length <= 2
-              ? { impostorDistance: LOD_BANDS.far }
+            ...(record.key.startsWith("spruce:")
+              ? {
+                  impostorDistance: impostorDistanceForScale(
+                    minSpruceScaleByVariant.get(
+                      `${record.placement.asset}:${variantFor(record.placement, record.placement.asset)}`,
+                    ) ?? record.scale,
+                    lods.at(-1)?.distance ?? 0,
+                  ),
+                }
               : {}),
             bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() },
-            lods: levels.slice(1).map((level, i) => ({
-              glb: `${record.key}/${level}.glb`,
-              distance: i === 0 ? LOD_BANDS.mid : LOD_BANDS.far,
-            })),
+            lods,
           };
         }))
       ) {
