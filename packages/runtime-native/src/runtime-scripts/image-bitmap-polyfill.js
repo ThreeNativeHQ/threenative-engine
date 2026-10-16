@@ -120,7 +120,8 @@ class Image {
   set src(value) {
     this._src = String(value);
     this.currentSrc = this._src;
-    const token = (this._loadToken += 1);
+    this._loadToken += 1;
+    const token = this._loadToken;
     this.complete = false;
     this._loadPromise = (async () => {
       try {
