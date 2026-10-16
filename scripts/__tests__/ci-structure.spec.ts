@@ -3592,10 +3592,16 @@ describe("PRD-373 selective feature verification", () => {
     // purging it. Agents run without a TTY, so the prompt hangs them until `CI=true` is added by
     // hand; this setting answers it for every install. pnpm reads workspace config from
     // pnpm-workspace.yaml, so a plain grep of package.json would not prove it.
-    const result = spawnSync("pnpm", ["config", "get", "confirmModulesPurge"], {
-      cwd: repo,
-      encoding: "utf8",
-    });
+    // pnpm 10 (the pinned packageManager) only reports a workspace-file setting at the `project`
+    // location, while pnpm 11 reports it from the default lookup; accept either.
+    const read = (extra: string[]) =>
+      spawnSync("pnpm", ["config", "get", "confirmModulesPurge", ...extra], {
+        cwd: repo,
+        encoding: "utf8",
+      });
+    const defaultLookup = read([]);
+    const result =
+      defaultLookup.stdout.trim() === "false" ? defaultLookup : read(["--location=project"]);
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe("false");
   });
