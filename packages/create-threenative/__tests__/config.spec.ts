@@ -1320,7 +1320,6 @@ const LEGACY_PINNED_TEMPLATES = [
   "action-rpg",
   "minimal",
   "platformer",
-  "puzzle",
   "racing",
   "rain",
   "rts",
