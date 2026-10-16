@@ -4,7 +4,7 @@
  * surface and every draw; this class turns three's calls into host calls and reports what the
  * engine did. What it does not implement throws its diagnostic rather than doing nothing.
  */
-import { type TnAbiModule, TSL_NODE, engineRef } from "./browser-backend.js";
+import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
 import { type ITslRuntime, isTslNode } from "./browser-tsl.js";
 import { defineRenderTargets } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";

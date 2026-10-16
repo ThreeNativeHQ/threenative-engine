@@ -731,6 +731,18 @@ export async function relativeSpecifiers(file: string, source: string): Promise<
   return [...found].sort();
 }
 
+/**
+ * The engine player sources share files with the sibling core and three-native packages by relative
+ * path. `bundle-native-engine.mjs` resolves those imports to the installed packages, so they are
+ * not an installed copy reaching a sibling checkout.
+ */
+function resolvedByEngineBundler(file: string, specifier: string): boolean {
+  return (
+    file.startsWith("src/engine/player/") &&
+    /^\.\.\/\.\.\/\.\.\/\.\.\/(?:three-native|core)\/src\//u.test(specifier)
+  );
+}
+
 /** Every relative import of every shipped script must resolve to something else that shipped. */
 export async function unresolvableTarballImports(
   item: IPublishPackage,
@@ -742,7 +754,7 @@ export async function unresolvableTarballImports(
     if (file.endsWith(".json")) continue;
     for (const specifier of await relativeSpecifiers(file, source)) {
       const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
-      if (shipped.has(resolved)) continue;
+      if (shipped.has(resolved) || resolvedByEngineBundler(file, specifier)) continue;
       const escaped = resolved === ".." || resolved.startsWith("../");
       findings.push({
         detail: escaped

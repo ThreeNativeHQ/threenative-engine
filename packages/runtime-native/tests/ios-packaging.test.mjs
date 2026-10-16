@@ -522,7 +522,9 @@ test('iOS CLI forwards the declared orientation before host validation', async (
 test('the published package includes the iOS packager without C++ source', () => {
   const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.ok(manifest.files.includes('scripts/package-ios.mjs'));
-  assert.ok(!manifest.files.some((path) => /^(?:src|include|cmake|ios\/main\.mm)/u.test(path)));
+  // The engine player's JavaScript sources ship for the desktop bundler; they are not C++.
+  const shipped = manifest.files.filter((path) => path !== 'src/engine/player/*.mjs');
+  assert.ok(!shipped.some((path) => /^(?:src|include|cmake|ios\/main\.mm)/u.test(path)));
 });
 
 test('release lane locks and launches the packed simulator host with physics controls', () => {

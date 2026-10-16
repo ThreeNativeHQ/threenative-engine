@@ -25,7 +25,8 @@
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
         "TN_ENABLE_DEBUG_SERVER": "OFF",
-        "TN_ENABLE_NATIVE_PHYSICS": "OFF"
+        "TN_ENABLE_NATIVE_PHYSICS": "ON",
+        "THREENATIVE_PHYSICS_LIBRARY": "${sourceDir}/.runtime/physics-target/x86_64-unknown-linux-gnu/release/libthreenative_native_physics.a"
       }
     },
     {
@@ -47,7 +48,8 @@
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
         "TN_ENABLE_DEBUG_SERVER": "OFF",
-        "TN_ENABLE_NATIVE_PHYSICS": "OFF"
+        "TN_ENABLE_NATIVE_PHYSICS": "ON",
+        "THREENATIVE_PHYSICS_LIBRARY": "${sourceDir}/.runtime/physics-target/x86_64-pc-windows-msvc/release/threenative_native_physics.lib"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
@@ -70,7 +72,8 @@
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
         "TN_ENABLE_DEBUG_SERVER": "OFF",
-        "TN_ENABLE_NATIVE_PHYSICS": "OFF"
+        "TN_ENABLE_NATIVE_PHYSICS": "ON",
+        "THREENATIVE_PHYSICS_LIBRARY": "${sourceDir}/.runtime/physics-target/aarch64-apple-darwin/release/libthreenative_native_physics.a"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
     },

@@ -964,6 +964,31 @@ export async function writeScaffoldScript(
   return script;
 }
 
+/**
+ * A packed package installs its own `@threenative/*` dependencies too (the engine player's runtime
+ * depends on three-native), and none of them is on the npm registry before a release. The scaffold
+ * overrides those from the same packed set.
+ */
+async function withPackedDependencies(
+  declared: ReadonlySet<string>,
+  sources: PackageSources,
+): Promise<ReadonlySet<string>> {
+  const manifests = new Map(
+    (await workspacePackages()).map(({ manifest }) => [manifest.name, manifest]),
+  );
+  const all = new Set(declared);
+  for (const name of all) {
+    const manifest = manifests.get(name);
+    const dependencies = [
+      ...Object.keys(manifest?.dependencies ?? {}),
+      ...Object.keys(manifest?.optionalDependencies ?? {}),
+    ];
+    for (const dependency of dependencies)
+      if (sources[dependency] !== undefined) all.add(dependency);
+  }
+  return all;
+}
+
 export async function scaffold(
   template: string,
   target: string,
@@ -972,7 +997,7 @@ export async function scaffold(
   options: { readonly ignoreInstallScripts?: boolean; readonly noInstall?: boolean } = {},
 ): Promise<void> {
   const templateManifest = await readManifest(path.join(templatesRoot, template, PACKAGE_FILE));
-  const declared = declaredDependencies(templateManifest);
+  const declared = await withPackedDependencies(declaredDependencies(templateManifest), sources);
   const packageArgs: string[] = [];
   for (const dependency of declared) {
     const source = sources[dependency];

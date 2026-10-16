@@ -13,11 +13,13 @@
   "scripts": {
     "generate": "pnpm --workspace-root exec tsx packages/three-native/scripts/generate.ts",
     "sync-native-status": "pnpm --workspace-root exec tsx packages/three-native/scripts/sync-native-status.ts",
+    "test": "publint --strict",
     "test:reference": "pnpm --workspace-root exec tsx packages/three-native/tests/compatibility/run-reference.ts",
     "typecheck": "pnpm run generate && tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
     "@types/three": "0.185.3",
+    "publint": "0.3.22",
     "three": "catalog:",
     "typescript": "catalog:"
   },

@@ -464,8 +464,10 @@ void registerBufferGeometry(ClassBinding& b) {
             const std::vector<double>& values = a.at(0).numbers;
             const bool wide = std::any_of(values.begin(), values.end(), [](double v) { return v >= 65535; });
             geometry->setIndex(BufferAttribute::fromDoubles(wide ? Scalar::U32 : Scalar::U16, values, 1));
+        } else if (!a.empty() && a.at(0).kind == Value::Kind::Null) {
+            geometry->setIndex(nullptr);  // three: setIndex(null) removes the index
         } else {
-            throw Unsupported{"setIndex needs a BufferAttribute or an array"};
+            throw Unsupported{"setIndex needs a BufferAttribute, an array or null"};
         }
         return chain();
     };

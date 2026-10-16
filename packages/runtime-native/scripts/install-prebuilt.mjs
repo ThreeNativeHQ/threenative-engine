@@ -24,11 +24,14 @@ export const PREBUILT_ASSET_NAMES = Object.freeze({
   'android-x86_64-v8': 'threenative-v8-android-x86_64.so',
   'android-x86_64-libcxx': 'threenative-libcxx-android-x86_64.so',
   'android-x86_64-v8-snapshot': 'threenative-v8-snapshot-android-x86_64.bin',
+  'darwin-arm64-engine-player': 'threenative-engine-player-darwin-arm64',
   'darwin-arm64': 'threenative-runtime-darwin-arm64',
   'darwin-arm64-tools': 'threenative-tools-darwin-arm64',
   'ios-simulator-arm64': 'threenative-ios-simulator-arm64.zip',
+  'linux-x64-engine-player': 'threenative-engine-player-linux-x64',
   'linux-x64': 'threenative-runtime-linux-x64',
   'linux-x64-tools': 'threenative-tools-linux-x64',
+  'win32-x64-engine-player': 'threenative-engine-player-win32-x64.exe',
   'win32-x64': 'threenative-runtime-win32-x64.exe',
   'win32-x64-tools': 'threenative-tools-win32-x64.exe',
 });
@@ -49,7 +52,7 @@ export const PREBUILT_KEYS = Object.freeze(Object.keys(PREBUILT_ASSET_NAMES));
  * place of building every claimed row. Publishing it again is one entry, once the Apple identity
  * exists. Status and cost of every platform's signing inputs: `docs/RELEASE-SIGNING.md`.
  */
-export const UNPUBLISHED_PREBUILT_KEYS = Object.freeze(['darwin-arm64', 'darwin-arm64-tools']);
+export const UNPUBLISHED_PREBUILT_KEYS = Object.freeze(['darwin-arm64', 'darwin-arm64-tools', 'darwin-arm64-engine-player']);
 
 /** The exact cohort a release publishes and a consumer may download. */
 export const PUBLISHED_PREBUILT_KEYS = Object.freeze(
@@ -99,7 +102,9 @@ function releaseFromManifest(manifest, key) {
   }
   const release = manifest?.artifacts?.[key];
   if (!release?.url || !release?.sha256) {
-    throw new Error(`No prebuilt release asset is recorded for '${key}'.`);
+    const error = new Error(`No prebuilt release asset is recorded for '${key}'.`);
+    if (key.endsWith('-engine-player')) error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
+    throw error;
   }
   if (typeof release.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(release.sha256)) {
     throw new Error(`Invalid prebuilt SHA-256 for '${key}'.`);
@@ -227,7 +232,7 @@ export function generateReleaseManifest(directory, { repository, tag, sourceSha,
 export function readRelease(manifestPath, key) {
   if (!existsSync(manifestPath)) {
     const error = new Error(`No prebuilt release manifest exists for '${key}'; this target remains OPEN.`);
-    error.code = 'PREBUILT_RELEASE_MISSING';
+    error.code = key.endsWith('-engine-player') ? 'PREBUILT_RELEASE_UNPUBLISHED' : 'PREBUILT_RELEASE_MISSING';
     throw error;
   }
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -262,12 +267,15 @@ export function writeInstallStatus(status, statusPath = join(packageRoot, 'prebu
 
 function createInstallPlan(options) {
   const platform = options.platform ?? process.platform;
-  const key = `${platform}-${options.arch ?? process.arch}`;
-  const filename = platform === 'win32' ? 'threenative-runtime.exe' : 'threenative-runtime';
-  const output = resolve(options.output ?? join(packageRoot, 'prebuilt', key, filename));
+  const platformId = `${platform}-${options.arch ?? process.arch}`;
+  const key = options.enginePlayer ? `${platformId}-engine-player` : platformId;
+  const filename = options.enginePlayer
+    ? `tn-native-engine-player-v8${platform === 'win32' ? '.exe' : ''}`
+    : platform === 'win32' ? 'threenative-runtime.exe' : 'threenative-runtime';
+  const output = resolve(options.output ?? join(packageRoot, 'prebuilt', platformId, filename));
   const statusPath = resolve(options.statusPath ?? (options.output
-    ? join(dirname(output), 'install-status.json')
-    : join(packageRoot, 'prebuilt', 'install-status.json')));
+    ? join(dirname(output), options.enginePlayer ? 'engine-player-install-status.json' : 'install-status.json')
+    : join(packageRoot, 'prebuilt', options.enginePlayer ? 'engine-player-install-status.json' : 'install-status.json')));
   if (output === statusPath) throw new Error('Prebuilt output and install status paths must differ.');
   const toolsOutput = join(dirname(output), toolsFilename(platform));
   if (toolsOutput === output) throw new Error('Prebuilt runtime and build tool helper paths must differ.');
@@ -278,7 +286,7 @@ function createInstallPlan(options) {
 
 function beginInstall(plan, arch) {
   rmSync(plan.output, { force: true });
-  rmSync(plan.toolsOutput, { force: true });
+  if (plan.toolsKey) rmSync(plan.toolsOutput, { force: true });
   rmSync(plan.statusPath, { force: true });
   writeInstallStatus({ ...plan.status, ok: false, reason: 'installing' }, plan.statusPath);
   platformKey(plan.platform, arch);
@@ -296,20 +304,20 @@ function publishBinary(target, contents, platform) {
   }
 }
 
-// The success marker is written only once both binaries are in place: a desktop build that finds
+// The success marker is written only once all requested binaries are in place: a desktop build that finds
 // the runtime but not the helper dies inside the packager with exit 127, which is exactly the
 // stale-success shape this install exists to prevent.
 function publishInstall(plan, contents, toolsContents) {
   publishBinary(plan.output, contents, plan.platform);
-  publishBinary(plan.toolsOutput, toolsContents, plan.platform);
+  if (plan.toolsKey) publishBinary(plan.toolsOutput, toolsContents, plan.platform);
   writeInstallStatus({ ...plan.status, ok: true, reason: 'installed', sha256: sha256(contents),
-    toolsSha256: sha256(toolsContents) }, plan.statusPath);
+    ...(plan.toolsKey ? { toolsSha256: sha256(toolsContents) } : {}) }, plan.statusPath);
 }
 
 function recordInstallFailure(plan, error) {
   try {
     rmSync(plan.output, { force: true });
-    rmSync(plan.toolsOutput, { force: true });
+    if (plan.toolsKey) rmSync(plan.toolsOutput, { force: true });
     writeInstallStatus({ ...plan.status, ok: false,
       reason: error instanceof Error ? error.message : String(error) }, plan.statusPath);
   } catch (statusError) {
@@ -335,7 +343,7 @@ async function fetchRelease(manifestUrl, key) {
     const error = new Error(
       `Prebuilt release manifest fetch failed for '${key}' at ${url.href}: HTTP ${response.status}.`,
     );
-    if (response.status === 404) error.code = 'PREBUILT_RELEASE_MISSING';
+    if (response.status === 404) error.code = key.endsWith('-engine-player') ? 'PREBUILT_RELEASE_UNPUBLISHED' : 'PREBUILT_RELEASE_MISSING';
     throw error;
   }
   return releaseFromManifest(validateReleaseManifest(await response.json()), key);
@@ -384,6 +392,7 @@ function isVerifiedInstall(plan, options) {
     const contents = readFileSync(plan.output);
     if (contents.length === 0 || (pinned?.size !== undefined && contents.length !== pinned.size)) return false;
     verifyChecksum(contents, status.sha256, plan.key);
+    if (!plan.toolsKey) return true;
     // A cached runtime without its verified helper is not a reusable desktop install.
     if (typeof status.toolsSha256 !== 'string') return false;
     const pinnedTools = manifestPath ? readRelease(resolve(manifestPath), plan.toolsKey) : undefined;
@@ -409,9 +418,9 @@ export async function installPrebuilt(options = {}) {
     // A failed retry must not leave an earlier binary usable or its old success marker intact.
     beginInstall(plan, options.arch);
     const contents = await downloadReleaseArtifact(plan.key, options);
-    const toolsContents = await downloadReleaseArtifact(plan.toolsKey, options);
+    const toolsContents = plan.toolsKey ? await downloadReleaseArtifact(plan.toolsKey, options) : undefined;
     publishInstall(plan, contents, toolsContents);
-    console.log(`Installed verified ThreeNative runtime and build tool helper for '${plan.key}'.`);
+    console.log(`Installed verified ThreeNative ${plan.toolsKey ? 'runtime and build tool helper' : 'engine player'} for '${plan.key}'.`);
     return plan.output;
   } catch (error) {
     recordInstallFailure(plan, error);
@@ -427,7 +436,7 @@ if (process.argv[1] && existsSync(process.argv[1]) &&
   if (sourceCheckout) {
     console.log('ThreeNative runtime source checkout detected; prebuilt install is deferred to package testing.');
   } else {
-    installPrebuilt()
+    installPrebuilt().then(() => installPrebuilt({ enginePlayer: true }))
       .catch((error) => {
         const reason = error instanceof Error ? error.message : String(error);
         // An unpublished release is a packaging-state fact, not a broken download. The web game

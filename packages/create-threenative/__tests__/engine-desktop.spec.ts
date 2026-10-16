@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { copyFile, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { bundleNativeEngine } from "../../runtime-native/scripts/bundle-native-engine.mjs";
 import {
   launcher,
   packageEngineDesktop,
@@ -97,6 +98,72 @@ describe("engine: native on desktop", () => {
     },
   );
 
+  it("accepts installed playtest's three directory but refuses the actual upstream package", async () => {
+    const root = await temp("threenative-installed-playtest-");
+    const playtest = path.join(
+      root,
+      "node_modules/.pnpm/@threenative+playtest@1/node_modules/@threenative/playtest",
+    );
+    await mkdir(path.join(playtest, "dist/three"), { recursive: true });
+    await writeFile(
+      path.join(playtest, "package.json"),
+      JSON.stringify({
+        name: "@threenative/playtest",
+        type: "module",
+        exports: "./dist/three/index.js",
+      }),
+    );
+    await writeFile(path.join(playtest, "dist/three/index.js"), "export const marker = 42;");
+    await mkdir(path.join(root, "node_modules/@threenative"), { recursive: true });
+    await symlink(playtest, path.join(root, "node_modules/@threenative/playtest"));
+    const entry = path.join(root, "game.ts");
+    const outfile = path.join(root, "game.js");
+    await writeFile(
+      entry,
+      'import { marker } from "@threenative/playtest"; globalThis.installedMarker = marker; export default { marker };',
+    );
+    await bundleNativeEngine({ entry, outfile, boot: false });
+    expect(readFileSync(outfile, "utf8")).toContain("42");
+    const upstream = path.join(root, "node_modules/.pnpm/three@1/node_modules/three");
+    await mkdir(upstream, { recursive: true });
+    await writeFile(path.join(upstream, "index.js"), "export const marker = 43;");
+    await writeFile(
+      entry,
+      'import { marker } from "./node_modules/.pnpm/three@1/node_modules/three/index.js"; globalThis.installedMarker = marker; export default { marker };',
+    );
+    await expect(bundleNativeEngine({ entry, outfile, boot: false })).rejects.toThrow(
+      /TN_NATIVE_ENGINE_UPSTREAM/u,
+    );
+  });
+
+  it("resolves player facade siblings from installed dependencies", async () => {
+    const root = await temp("threenative-installed-facades-");
+    const native = path.join(root, "node_modules/@threenative/runtime-native");
+    await mkdir(path.join(native, "scripts"), { recursive: true });
+    await copyFile(
+      path.resolve("packages/runtime-native/scripts/bundle-native-engine.mjs"),
+      path.join(native, "scripts/bundle-native-engine.mjs"),
+    );
+    await cp(
+      path.resolve("packages/runtime-native/src/engine/player"),
+      path.join(native, "src/engine/player"),
+      { recursive: true },
+    );
+    for (const name of ["node_modules", "package.json"])
+      await symlink(path.resolve("packages/runtime-native", name), path.join(native, name));
+    const { bundleNativeEngine: installedBundle } = await import(
+      path.join(native, "scripts/bundle-native-engine.mjs")
+    );
+    const entry = path.join(root, "game.ts");
+    const outfile = path.join(root, "game.js");
+    await writeFile(
+      entry,
+      'import { Vector3 } from "three"; globalThis.installedVector = new Vector3(1, 2, 3); export default {};',
+    );
+    await installedBundle({ entry, outfile, boot: false });
+    expect(readFileSync(outfile, "utf8")).toContain("installedVector");
+  });
+
   it("routes the build to the engine player, never to the legacy host's prebuilt", async () => {
     const root = await temp("threenative-engine-desktop-");
     // An installed runtime-native with no engine bundler: the build must name that, not install a prebuilt.
@@ -117,12 +184,22 @@ describe("engine: native on desktop", () => {
     );
   });
 
-  it("finds the player through THREENATIVE_ENGINE_PLAYER, else beside the runtime", () => {
+  it("finds the player through THREENATIVE_ENGINE_PLAYER, checkout, then installed prebuilt", async () => {
     expect(engineDesktopPlayer("/rt", { THREENATIVE_ENGINE_PLAYER: "bin/player" }, "/game")).toBe(
       "/game/bin/player",
     );
-    expect(engineDesktopPlayer("/rt", {}, "/game")).toBe(
-      "/rt/build/tn-engine-ui/tn-native-engine-player-v8",
+    const root = await temp("threenative-player-resolution-");
+    const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
+    const checkout = path.join(root, "build/tn-engine-ui", filename);
+    const installed = path.join(root, `prebuilt/${process.platform}-${process.arch}/${filename}`);
+    await mkdir(path.dirname(installed), { recursive: true });
+    await writeFile(installed, "installed");
+    expect(engineDesktopPlayer(root, {}, "/game")).toBe(installed);
+    await mkdir(path.dirname(checkout), { recursive: true });
+    await writeFile(checkout, "checkout");
+    expect(engineDesktopPlayer(root, {}, "/game")).toBe(checkout);
+    expect(engineDesktopPlayer(root, { THREENATIVE_ENGINE_PLAYER: "bin/player" }, "/game")).toBe(
+      "/game/bin/player",
     );
   });
 });

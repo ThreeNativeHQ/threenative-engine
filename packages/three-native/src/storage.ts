@@ -51,6 +51,7 @@ function padded(array: StorageArray, itemSize: number): [StorageArray, number] {
   if (itemSize !== 3) return [array, itemSize];
   const count = array.length / 3;
   const out = new (array.constructor as new (length: number) => StorageArray)(count * 4);
+  // quality-allow: the typed array's set() is called on a view the constructor cast cannot name.
   const target = out as unknown as { set(source: ArrayLike<number>, offset: number): void };
   for (let i = 0; i < count; i += 1) target.set(array.subarray(i * 3, i * 3 + 3) as never, i * 4);
   return [out, 4];

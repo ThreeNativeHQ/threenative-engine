@@ -14,6 +14,12 @@ const POST_EFFECT_ADDONS: readonly string[] = [
   "TRAANode",
   "FilmNode",
   "Lut3DNode",
+  // Refused on use, as on the V8 player: upstream's copies run `Fn(...).setLayout(...)` at import.
+  "FXAANode",
+  "GodraysNode",
+  "SSGINode",
+  "SSRNode",
+  "SharpenNode",
 ].map((node) => `three/addons/tsl/display/${node}.js`);
 /**
  * Addons the engine binds as its own classes (as the V8 bundler maps them): the addon path becomes a

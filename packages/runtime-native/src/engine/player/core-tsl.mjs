@@ -5,7 +5,7 @@ import { definePass, markNormalTarget } from "../../../../three-native/src/pass-
 import { BufferAttribute, Color, Object3D, PerspectiveCamera, Vector2, Vector3, Vector4 } from "./core-three.mjs";
 import { defineStorage } from "../../../../three-native/src/storage.ts";
 import { defineStruct } from "../../../../three-native/src/tsl-struct.ts";
-import { unsupportedExport } from "../../../../three-native/src/refused.ts";
+import { defineTslExtras } from "../../../../three-native/src/tsl-extras.ts";
 
 // r185's ConstNode.value on float(), vec3(), color() and the other constants (shared with the Wasm back end).
 const constants = { ...globalThis.tsl };
@@ -53,28 +53,15 @@ export const { pass, mrt, output, normalView, metalness, roughness } = definePas
 
 export const reflector = defineReflector(globalThis.tsl.reflector, { Object3D, PerspectiveCamera });
 
-// r185's saturate(x) is clamp(x, 0, 1).
-export const saturate = (value) => globalThis.tsl.clamp(value, 0, 1);
-
-// r185's densityFogFactor (nodes/fog/Fog.js): 1 - exp(-density^2 * viewZ^2). The fragment's view-space
-// depth is the one linearDepth() encodes, so -positionView.z = near + linearDepth() * (far - near).
-export const densityFogFactor = (density) => {
-  const { cameraNear, cameraFar, linearDepth, float } = globalThis.tsl;
-  const viewZ = cameraNear.add(linearDepth().mul(cameraFar.sub(cameraNear)));
-  const d = typeof density === "number" ? float(density) : density;
-  return d.mul(d).mul(viewZ).mul(viewZ).negate().exp().oneMinus();
-};
-
-// r185's fog(color, factor) composes the finished fragment (`output.rgb`), which a native material
-// graph cannot read. It returns the description `scene.fogNode` holds; the renderer reports once that
-// the engine does not apply it (TN_NATIVE_FOG_NODE_IGNORED), and `scene.fog` still does.
-export const fog = (color, factor) => Object.freeze({ isFogNode: true, color, factor });
-
-// context() and velocity: the context that carries the previous-frame velocity, and that accessor. The
-// native engine has neither (develop's temporal chain reaches them only through core's velocity
-// provision, which the native renderer does not provide), so they refuse at use, by name.
-export const context = unsupportedExport("context");
-export const velocity = unsupportedExport("velocity");
+// saturate, densityFogFactor, fog, context and velocity: plain JS over the engine's TSL functions,
+// shared with the Wasm back end.
+export const { saturate, densityFogFactor, fog, context, velocity } = defineTslExtras({
+  get cameraNear() { return globalThis.tsl.cameraNear; },
+  get cameraFar() { return globalThis.tsl.cameraFar; },
+  clamp: (...args) => globalThis.tsl.clamp(...args),
+  float: (value) => globalThis.tsl.float(value),
+  linearDepth: () => globalThis.tsl.linearDepth(),
+});
 
 export const struct = defineStruct(globalThis.tsl.struct);
 

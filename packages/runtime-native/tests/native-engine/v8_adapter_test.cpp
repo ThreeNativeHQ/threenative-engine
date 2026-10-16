@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <functional>
 #include <map>
 #include <limits>
 #include <memory>
@@ -57,7 +58,8 @@ struct Runtime {
 };
 
 // Runs a script in a fresh context with the engine installed; returns the script's string result.
-std::string run(Runtime& rt, Adapter& adapter, const char* source) {
+std::string run(Runtime& rt, Adapter& adapter, const char* source,
+                const std::function<void(v8::Local<v8::Value>)>& observe = {}) {
     v8::HandleScope scope(rt.isolate);
     v8::Local<v8::Context> ctx = v8::Context::New(rt.isolate);
     v8::Context::Scope contextScope(ctx);
@@ -70,6 +72,7 @@ std::string run(Runtime& rt, Adapter& adapter, const char* source) {
         v8::String::Utf8Value error(rt.isolate, tryCatch.Exception());
         return std::string("THROWN ") + (*error ? *error : "?");
     }
+    if (observe) observe(result);
     v8::String::Utf8Value text(rt.isolate, result);
     return *text ? *text : "";
 }
@@ -595,6 +598,9 @@ void catalogCoverage() {
             const std::string head = path.substr(0, dot);
             if (binding.members.count(head) == 0 && binding.getters.count(head) == 0) expected.insert(head);
         }
+        // Object3D.raycast is the adapter's own JavaScript over Raycaster.intersectObject (it pushes onto the
+        // caller's array), so no registry method stands behind it.
+        if (binding.methods.count("worldToLocal")) expected.insert("raycast");
         v8::Local<v8::Value> ctor;
         v8::Local<v8::Value> prototype;
         if (!global->Get(ctx, key(name)).ToLocal(&ctor) || !ctor->IsObject() ||
@@ -678,15 +684,16 @@ void tslApi() {
             const { Fn, If, Loop, float, uint, vec3, uniform, instancedArray } = tsl;
             let calls = 0;
             const fn = Fn(() => { calls++; float(0).toVar(); });
-            const checks = [calls === 1, fn() === fn(), calls === 1];
+            // Fn builds per call, not at definition: nothing runs until it is called, and each call is its own graph.
+            const checks = [calls === 0, fn() !== fn(), calls === 2];
             const bad = (body) => {
                 try { body(); return false; } catch (e) { return e instanceof TypeError && e.message.startsWith('TN_TSL'); }
             };
             checks.push(bad(() => float({})), bad(() => float(NaN)), bad(() => uint(-1)),
                 bad(() => uniform(vec3(1)).setName('')), bad(() => instancedArray(0, 'vec4')),
                 bad(() => float(0).toVar()), bad(() => float(0).assign(1)),
-                bad(() => Fn(() => Loop(1.5, () => {}))),
-                bad(() => Fn(() => If(float(0).equal(0), 7))));
+                bad(() => Fn(() => Loop(1.5, () => {}))()),
+                bad(() => Fn(() => If(float(0).equal(0), 7))()));
             let branch;
             const nested = Fn(() => {
                 try { If(float(0).equal(0), () => { throw new Error('original'); }); }
@@ -697,12 +704,12 @@ void tslApi() {
                 });
                 checks.push(bad(() => branch.Else(() => {})));
             });
-            checks.push(nested() === nested(), bad(() => float(1).add.call(new Vector3(), 2)));
+            checks.push(nested() !== nested(), bad(() => float(1).add.call(new Vector3(), 2)));
             return checks.map(Number).join('');
         })()
     )JS");
-    CHECK(got == "1111111111111111");
-    if (got != "1111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
+    CHECK(got == "111111111111111111");
+    if (got != "111111111111111111") std::fprintf(stderr, "TSL API got %s\n", got.c_str());
 
     // Compare the actual native DAG, not just the presence of fluent methods. r185's
     // stepElement/mixElement/smoothstepElement reorder the fluent receiver to the last argument.
@@ -1589,6 +1596,32 @@ void jsMath() {
 
 // A transform member is a view over the object's own memory (PRD-573 v1.11 step 4b): component writes
 // cross nothing, the next updateMatrix sees them, and the matrix it writes is the one three composes.
+// three's Object3D.raycast(raycaster, intersects): core's picking calls it for every object it has no
+// tree for (a Group, a skinned mesh). A Mesh pushes its own hits, a Group none, and nothing recurses.
+void objectRaycast() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string result = run(rt, adapter, R"JS(
+      (() => {
+        let checks = 0; const assert = (v) => { checks++; if (!v) throw Error('Object3D.raycast differs at check ' + checks); };
+        const m = new MeshBasicMaterial(); m.side = 2;
+        const mesh = new Mesh(new BoxGeometry(), m);
+        const root = new Group(); root.add(mesh);
+        root.updateMatrixWorld(true);
+        const r = new Raycaster(new Vector3(0.2, -0.3, 5), new Vector3(0, 0, -1));
+        const into = [];
+        mesh.raycast(r, into);
+        assert(into.length === 2 && into[0].object === mesh);
+        const none = [];
+        root.raycast(r, none);
+        assert(none.length === 0);
+        return 'PASS Object3D.raycast';
+      })()
+    )JS");
+    CHECK(result == "PASS Object3D.raycast");
+}
+
 void jsMathViews() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
@@ -1948,12 +1981,124 @@ void jsMathMembers() {
     CHECK(got == want);
 }
 
+// PRD-617: exercise the same native bindings that templates call.
+void templateMaterial() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const m = new MeshStandardMaterial({ flatShading: true });
+        const initial = m.flatShading;
+        const copy = m.clone();
+        m.flatShading = false;
+        if (!initial || !copy.flatShading || m.flatShading !== false) throw new Error('flatShading state');
+        copy
+    )JS", [&](v8::Local<v8::Value> result) {
+        tn_handle_t handle{};
+        CHECK(adapter.unwrap(result, handle));
+        const auto* object = tn::abi::objectOf(handle);
+        if (!object) { CHECK(false); return; }
+        const auto& material = *static_cast<tn::engine::Material*>(object->ptr.get());
+        CHECK(material.flatShading);
+        tn::engine::shader::VertexVariant variant;
+        variant.flatShading = material.flatShading;
+        const auto program = tn::engine::shader::buildStandard({}, variant);
+        const auto wgsl = tn::engine::shader::WgslEmitter::emit(program.fragment);
+        CHECK(wgsl.ok());
+        CHECK(wgsl.code.find("dpdx(") != std::string::npos);
+        CHECK(wgsl.code.find("dpdy(") != std::string::npos);
+    });
+    std::printf("template material: %s\n", got.c_str());
+    CHECK(got == "[object Object]");
+}
+
+void templateBounds() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const geometry = new BoxGeometry(2, 4, 6);
+        const mesh = new InstancedMesh(geometry, new MeshStandardMaterial(), 2);
+        mesh.setMatrixAt(0, new Matrix4().makeTranslation(-5, 0, 0));
+        mesh.setMatrixAt(1, new Matrix4().makeTranslation(5, 0, 0));
+        const result = mesh.computeBoundingSphere();
+        const sphere = geometry.boundingSphere;
+        [result === undefined, sphere.center.x === 0, sphere.center.y === 0,
+         sphere.center.z === 0, Math.abs(sphere.radius - Math.sqrt(14)) < 1e-12,
+         Math.abs(mesh.boundingSphere.radius - (5 + Math.sqrt(14))) < 1e-12].join(' ')
+    )JS");
+    std::printf("template bounds: %s\n", got.c_str());
+    CHECK(got == "true true true true true true");
+}
+
+void templateRanges() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const a = new BufferAttribute(new Float32Array(12), 3);
+        const ranges = a.updateRanges;
+        const checks = [Array.isArray(ranges), ranges === a.updateRanges];
+        checks.push(ranges.push({ start: 3, count: 6 }) === 1);
+        checks.push(a.updateRanges[0].start === 3 && a.updateRanges[0].count === 6);
+        a.addUpdateRange(0, 3);
+        checks.push(ranges.length === 2);
+        a.clearUpdateRanges();
+        checks.push(ranges.length === 0 && ranges === a.updateRanges);
+        ranges.push({ start: 0, count: 3 });
+        ranges[0].count = 6;
+        a.addUpdateRange(6, 3);
+        a.needsUpdate = true;
+        checks.push(ranges[0].count === 6 && ranges.length === 2);
+        const append = ranges.push;
+        const other = [];
+        append.call(other, { start: 0, count: 1 });
+        checks.push(other.length === 1 && ranges.length === 2);
+        let refused = false;
+        try { append({ start: 0, count: 1 }); } catch (error) { refused = error instanceof TypeError; }
+        checks.push(refused);
+        const push = ranges.push.bind(ranges);
+        a.clearUpdateRanges();
+        push({ start: 9, count: 3 });
+        checks.push(ranges.length === 1 && ranges[0].start === 9);
+        a.clearUpdateRanges();
+        ranges.push({ start: 6, count: 3 });
+        const version = a.version;
+        a.needsUpdate = true;
+        checks.push(a.version === version + 1 && a.updateRanges.length === 1);
+        const range = ranges[0]; range.count = 2;
+        a.needsUpdate = true;
+        if (!checks.every(Boolean)) throw new Error(checks.join(' '));
+        a
+    )JS", [&](v8::Local<v8::Value> result) {
+        tn_handle_t handle{};
+        CHECK(adapter.unwrap(result, handle));
+        const auto* object = tn::abi::objectOf(handle);
+        if (!object) { CHECK(false); return; }
+        auto& attribute = *static_cast<tn::engine::BufferAttribute*>(object->ptr.get());
+        CHECK(attribute.updateRanges().size() == 1);
+        if (attribute.updateRanges().size() == 1) {
+            CHECK(attribute.updateRanges()[0].start == 6);
+            CHECK(attribute.updateRanges()[0].count == 2);
+        }
+        // The renderer clears this same store after uploading its ranges.
+        attribute.clearUpdateRanges();
+        auto ctx = rt.isolate->GetCurrentContext();
+        v8::Local<v8::Value> cleared;
+        CHECK(v8::Script::Compile(ctx, v8::String::NewFromUtf8Literal(rt.isolate,
+            "ranges.length === 0 && a.updateRanges === ranges")).ToLocalChecked()->Run(ctx).ToLocal(&cleared));
+        CHECK(!cleared.IsEmpty() && cleared->IsTrue());
+    });
+    std::printf("template ranges: %s\n", got.c_str());
+    CHECK(got == "[object Object]");
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
+TN_TEST_MAIN({"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn},
              {"crossing_bench", crossingBench},
-             {"scene", scene}, {"raycaster_lod", raycasterLOD},
+             {"scene", scene}, {"raycaster_lod", raycasterLOD}, {"object_raycast", objectRaycast},
              {"catalog_coverage", catalogCoverage},
              {"callback_cycle", callbackCycle}, {"wrapper_lifetime", wrapperLifetime}, {"tsl_api", tslApi}, {"uniform_value", uniformValue}, {"node_materials", nodeMaterials}, {"skeletal", skeletal},
              {"attribute_arrays", attributeArrays}, {"geometry_lifecycle", geometryLifecycle},

@@ -32,6 +32,44 @@ import {
 
 const repo = path.resolve(import.meta.dirname, "../..");
 
+it("release engine players include the desktop physics ABI", async () => {
+  const presets = JSON.parse(
+    await readFile(path.join(repo, "packages/runtime-native/CMakePresets.json"), "utf8"),
+  );
+  const release = requiredJob(
+    await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8"),
+    "build",
+  );
+  for (const [name, target, library] of [
+    ["tn-linux", "x86_64-unknown-linux-gnu", "libthreenative_native_physics.a"],
+    ["tn-windows", "x86_64-pc-windows-msvc", "threenative_native_physics.lib"],
+    ["tn-macos", "aarch64-apple-darwin", "libthreenative_native_physics.a"],
+  ]) {
+    const preset = presets.configurePresets.find((entry: { name: string }) => entry.name === name);
+    expect(preset?.cacheVariables.TN_ENABLE_NATIVE_PHYSICS, name).toBe("ON");
+    expect(preset?.cacheVariables.THREENATIVE_PHYSICS_LIBRARY, name).toBe(
+      `\${sourceDir}/.runtime/physics-target/${target}/release/${library}`,
+    );
+    expect(release).toContain(`preset: ${name}`);
+  }
+  // native:build already builds the host Rust crate before either engine-player configure.
+  for (const name of ["Build native runtime with MSVC", "Build Release engine player"]) {
+    const step = workflowRunScript(release, name);
+    const configure = "cmake --preset ${{ matrix.preset }} -B build/tn-engine-ui";
+    const configureIndex = release.indexOf(configure, release.indexOf(`- name: ${name}`));
+    const before = release.slice(0, configureIndex);
+    expect(step).toContain(configure);
+    expect(before).toContain("pnpm --filter @threenative/runtime-native native:build");
+    expect(step).not.toContain("-DTN_ENABLE_NATIVE_PHYSICS=OFF");
+    expect(step).toContain("--config Release --target tn-native-engine-player-v8");
+  }
+  const builder = await readFile(
+    path.join(repo, "packages/runtime-native/scripts/native-build.mjs"),
+    "utf8",
+  );
+  expect(builder).toContain("'build-native-physics.mjs'), '--desktop'");
+});
+
 // A git command can return while a background auto-gc still writes
 // .git/objects/pack, so a plain recursive rm races it and throws ENOTEMPTY.
 // Node retries ENOTEMPTY when maxRetries/retryDelay are set.
@@ -3765,10 +3803,16 @@ describe("PRD-373 selective feature verification", () => {
     // purging it. Agents run without a TTY, so the prompt hangs them until `CI=true` is added by
     // hand; this setting answers it for every install. pnpm reads workspace config from
     // pnpm-workspace.yaml, so a plain grep of package.json would not prove it.
-    const result = spawnSync("pnpm", ["config", "get", "confirmModulesPurge"], {
-      cwd: repo,
-      encoding: "utf8",
-    });
+    // pnpm 10 (the pinned packageManager) only reports a workspace-file setting at the `project`
+    // location, while pnpm 11 reports it from the default lookup; accept either.
+    const read = (extra: string[]) =>
+      spawnSync("pnpm", ["config", "get", "confirmModulesPurge", ...extra], {
+        cwd: repo,
+        encoding: "utf8",
+      });
+    const defaultLookup = read([]);
+    const result =
+      defaultLookup.stdout.trim() === "false" ? defaultLookup : read(["--location=project"]);
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe("false");
   });

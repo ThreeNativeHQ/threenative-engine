@@ -192,6 +192,18 @@ const allowedProductionCreators = new Map<string, string>([
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],
   [
+    "packages/runtime-native/__tests__/starter-post-bundle.spec.ts",
+    "The bundler resolves packages from the package directory, so the staging directory sits inside it and the spec removes it in afterAll.",
+  ],
+  [
+    "packages/runtime-native/tests/distribution.test.mjs",
+    "The packed cohort tarballs outlive the test that asks for them, so the suite removes them in afterAll.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/compute-harness.mjs",
+    "The harness stages its bundle under the package's untracked build directory and removes it in a finally block.",
+  ],
+  [
     "packages/runtime-native/tests/native-engine/player-read-target-osr.mjs",
     "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
   ],

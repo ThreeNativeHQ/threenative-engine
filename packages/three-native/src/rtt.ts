@@ -9,8 +9,16 @@ interface IRttQuad {
   render(renderer: unknown): void;
 }
 export interface IRttClasses {
+  // quality-allow: three's class name, so a back end passes its class map.
+  // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
   NodeMaterial: new () => { name: string; needsUpdate: boolean; fragmentNode: unknown };
-  QuadMesh: new (...args: never[]) => object;
+  // quality-allow: three's class name, so a back end passes its class map.
+  // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
+  QuadMesh: new (
+    ...args: never[]
+  ) => object;
+  // quality-allow: three's class name, so a back end passes its class map.
+  // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
   RenderTarget: new (
     width: number,
     height: number,

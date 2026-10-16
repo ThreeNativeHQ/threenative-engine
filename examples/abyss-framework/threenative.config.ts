@@ -3,7 +3,8 @@ import type { IThreeNativeConfig } from "@threenative/core";
 // Typed rather than `satisfies`, so `vite.config.ts` can read `config.assets` and hand the same
 // options to the dev watcher that `threenative build` uses.
 const config: IThreeNativeConfig = {
-  // The GPU gates build this example for web, and the web Wasm engine does not run its TSL yet (PRD-573 slice 8).
+  // Temporary legacy pin (PRD-617 debt): CI jobs run `threenative build` here and CI does not build the
+  // product web Wasm engine, so a native-engine build stops at TN_WASM_ENGINE_MISSING. Drop the pin when CI builds it.
   engine: "legacy",
   app: {
     id: "com.threenative.loadingleak",

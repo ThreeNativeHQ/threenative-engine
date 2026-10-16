@@ -54,6 +54,7 @@ export function defineDecalGeometry(T: Classes) {
   }
 
   /** Clips every face (three consecutive vertices) against one side of the projector box. */
+  // quality-allow: three's own clipping stays in three's shape so the port reads against upstream.
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: three's own clipping, kept in three's shape so the port reads against upstream.
   function clipGeometry(inVertices: DecalVertex[], plane: Vector3, size: Vector3): DecalVertex[] {
     const outVertices: DecalVertex[] = [];
@@ -153,6 +154,7 @@ export function defineDecalGeometry(T: Classes) {
         }
       };
 
+      // quality-allow: three's own clipping stays in three's shape so the port reads against upstream.
       // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: three's own clipping, kept in three's shape so the port reads against upstream.
       const generate = (): void => {
         let decalVertices: DecalVertex[] = [];

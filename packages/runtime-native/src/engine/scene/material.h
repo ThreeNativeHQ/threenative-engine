@@ -81,6 +81,7 @@ public:
     double alphaTest = 0;
     bool depthTest = true;
     bool depthWrite = true;
+    bool colorWrite = true;  // three's: false draws depth only, with every colour channel masked
     /** three's polygonOffset, polygonOffsetFactor and polygonOffsetUnits: a depth bias. */
     bool polygonOffset = false;
     double polygonOffsetFactor = 0, polygonOffsetUnits = 0;

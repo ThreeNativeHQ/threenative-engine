@@ -570,6 +570,7 @@ class Builder {
         to.alphaTest = from.alphaTest;
         to.depthTest = from.depthTest;
         to.depthWrite = from.depthWrite;
+        to.colorWrite = from.colorWrite;
         to.side = from.side;
         to.visible = from.visible;
         to.color = from.color;

@@ -146,6 +146,14 @@ const INLINED_BY_DESIGN: Readonly<Record<string, readonly string[]>> = {
   "create-threenative": ["threenative-blender-mcp"],
 };
 
+// A package that ships TypeScript source (three-native) has no built output to inspect.
+function shipsBuiltOutput(directory: string): boolean {
+  const manifest = JSON.parse(fs.readFileSync(path.join(directory, "package.json"), "utf8")) as {
+    files?: string[];
+  };
+  return (manifest.files ?? []).some((file) => file.startsWith("dist"));
+}
+
 describe("published packages keep their runtime dependencies external", () => {
   it("copies Blender GPL sources without Python interpreter caches", () => {
     const fixture = makeTempDirSync("tn-blender-gpl-bundle-");
@@ -221,7 +229,9 @@ describe("published packages keep their runtime dependencies external", () => {
   // not the source the workspace resolves.
   it("leaves the shared browser runtimes external in the built output", () => {
     const offenders: string[] = [];
-    for (const { directory, imports, name } of packagesUnderTest()) {
+    for (const { directory, imports, name } of packagesUnderTest().filter((entry) =>
+      shipsBuiltOutput(entry.directory),
+    )) {
       const needed = [...new Set(imports.map(packageRootOf))].filter((root) =>
         SHARED_RUNTIMES.includes(root),
       );

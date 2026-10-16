@@ -14,6 +14,7 @@
 
 import { defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
+import { withUpdateRanges } from "./update-ranges.js";
 
 export interface IRegistryClass {
   readonly constructor: boolean;
@@ -213,12 +214,13 @@ export interface ICatalogShape {
   }[];
 }
 
-/** Members every scene-graph class gets in JavaScript: game state and walks over `children`. */
+/** Members every scene-graph class gets in JavaScript: game state, walks over `children` and `raycast`. */
 export const LANGUAGE_MEMBERS = [
   "userData",
   "traverse",
   "traverseVisible",
   "traverseAncestors",
+  "raycast",
 ] as const;
 
 type TraverseCallback = (object: object) => void;
@@ -269,6 +271,19 @@ function defineTraversal(
   };
   for (const [name, value] of Object.entries(methods))
     Object.defineProperty(prototype, name, { configurable: true, writable: true, value });
+  // three's Object3D.raycast(raycaster, intersects): push this object's own hits, no recursion. The engine
+  // answers them through Raycaster.intersectObject (the object's native raycast; a Group answers none).
+  Object.defineProperty(prototype, "raycast", {
+    configurable: true,
+    writable: true,
+    value(
+      this: object,
+      raycaster: { intersectObject(object: object, recursive: boolean): unknown[] },
+      intersects: unknown[],
+    ) {
+      intersects.push(...raycaster.intersectObject(this, false));
+    },
+  });
 }
 
 /**
@@ -1043,6 +1058,10 @@ export function defineBrowserClasses(
     classes[name] = cls;
     byType.set(runtime.typeId(name), { prototype: accessors });
     typeNames.set(runtime.typeId(name), name);
+  }
+  for (const name of ATTRIBUTE_CLASSES) {
+    const cls = classes[name];
+    if (cls !== undefined) withUpdateRanges(cls.prototype);
   }
   if (attributeArray !== undefined && attributeWrite !== undefined) {
     for (const name of ATTRIBUTE_CLASSES) {

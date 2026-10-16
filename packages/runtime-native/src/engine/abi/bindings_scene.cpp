@@ -653,11 +653,11 @@ void registerObject3D(ClassBinding& b) {
     };
     b.methods["localToWorld"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->localToWorld(store.ref<Vector3>(a.at(0), "Vector3"));
-        return a.at(0);  // three answers the vector it was handed, so a call chains into `.project(camera)`
+        return a.at(0);  // three answers the vector it converted, not the object
     };
     b.methods["worldToLocal"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->worldToLocal(store.ref<Vector3>(a.at(0), "Vector3"));
-        return a.at(0);  // three answers the vector it was handed, so a call chains into `.project(camera)`
+        return a.at(0);  // three answers the vector it converted, not the object
     };
     b.methods["lookAt"] = [](void* self, const Args& a, Store& store) {
         if (a.at(0).kind == Value::Kind::Ref) {
@@ -1646,14 +1646,14 @@ void registerInstancedMesh(ClassBinding& b) {
     registerMesh(b);
     registerObjectBounds<InstancedMesh>(b);
     b.methods["computeBoundingSphere"] = [](void* self, const Args&, Store&) {
-        as<InstancedMesh>(self)->computeBoundingSphere(); return Value::undefined();
+        as<InstancedMesh>(self)->computeBoundingSphere();
+        return Value::undefined();
     };
     b.members["boundingSphere"] = [](void* self, const Args&, Store& store) {
         return store.share("Sphere", as<InstancedMesh>(self)->boundingSphere);
     };
     b.setters["boundingSphere"] = [](void* self, const Value& value, Store& store) {
-        as<InstancedMesh>(self)->boundingSphere =
-            value.kind == Value::Kind::Null ? nullptr : store.shared<Sphere>(value, "Sphere");
+        as<InstancedMesh>(self)->boundingSphere = value.kind == Value::Kind::Null ? nullptr : store.shared<Sphere>(value, "Sphere");
     };
     b.ctor = [](const Args& a, Store& store) -> std::shared_ptr<void> {
         std::shared_ptr<BufferGeometry> geometry;

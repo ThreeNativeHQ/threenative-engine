@@ -222,10 +222,14 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     wgpuTextureViewRelease(view);
     wgpuTextureRelease(frame.texture);
     // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
-    // so a page that draws less than its scene says why.
+    // so a page that draws less than its scene says why. TN_POST_NORMAL_SKIPPED is a note, not a fault (the
+    // post pass reads a depth-derived normal there), so it goes to the console log, which a playtest's
+    // no-console-errors policy does not fail on.
     static std::set<std::string> reported;
     for (const std::string& diagnostic : renderer->diagnostics())
-        if (reported.insert(diagnostic).second) std::fprintf(stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
+        if (reported.insert(diagnostic).second)
+            std::fprintf(diagnostic.rfind("TN_POST_NORMAL_SKIPPED", 0) == 0 ? stdout : stderr, "TN_RENDERER: %s\n",
+                         diagnostic.c_str());
     if (!refused.empty()) return fail(refused);
     if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
     return 0;

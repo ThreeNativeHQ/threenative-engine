@@ -270,12 +270,12 @@ async function tryReadDesktopScreenshot(path: string): Promise<unknown | undefin
   }
 }
 
-function desktopConsoleType(stream: "stderr" | "stdout", line: string): string {
+export function desktopConsoleType(stream: "stderr" | "stdout", line: string): string {
   const text = line.trimStart();
   // A stream is not a severity: native console.error can use stdout, while GLib/EGL
   // send explicitly labelled warnings to stderr. Keep every line and fail closed on
   // unclassified stderr instead of dropping platform diagnostics to make a run pass.
-  if (/^(?:\[error\]|(?:error|fatal):)/iu.test(text)) return "error";
+  if (/^(?:\[error\]|(?:error|fatal):|\[Playtest\] TN_V8_(?:FRAME|UPDATE)_FAILED:)/iu.test(text)) return "error";
   if (
     /^(?:\[warn(?:ing)?\]|warning:|MESA-EGL:\s*warning:|libEGL\s+warning:|\*\* \([^)]*\): WARNING \*\*:|\([^)]*\): dbind-WARNING \*\*:)/iu.test(
       text,

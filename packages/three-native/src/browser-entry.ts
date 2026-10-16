@@ -11,6 +11,7 @@ import catalogJson from "../api/catalog.json" with { type: "json" };
 import registry from "../api/native-registry.json" with { type: "json" };
 import { DataUtils } from "./addons/data-utils.js";
 import { type IAudioEngine, defineAudioClasses } from "./audio.js";
+import { BlendMode } from "./blend-mode.js";
 import {
   type IBrowserRuntime,
   type IRegistryDump,
@@ -22,6 +23,7 @@ import {
 import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
+import { withMathUtilsExtras } from "./math-utils.js";
 import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
 import { definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
@@ -172,6 +174,10 @@ export async function bindWebEngine(
   Object.assign(bound, { AudioContext, AudioListener, Audio, PositionalAudio, AudioLoader });
   // three's QuadMesh over the engine Mesh (quad-mesh.ts), shared with the V8 player.
   bound.QuadMesh = defineQuadMesh(classes as never);
+  // three/webgpu's BlendMode, the record mrt().setBlendMode takes (data only, as on the engine's scene pass).
+  bound.BlendMode = BlendMode;
+  // The engine's four MathUtils functions, with the rest of three's number-only ones beside them.
+  bound.MathUtils = withMathUtilsExtras(bound.MathUtils as new () => object);
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
   // and the wrapper safe point runs (collect: held while the engine references them).

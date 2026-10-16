@@ -917,6 +917,7 @@ count: number;
 instanceColor: InstancedBufferAttribute | null;
 readonly instanceMatrix: InstancedBufferAttribute;
 boundingBox: Box3 | null;
+boundingSphere: Sphere | null;
 
   getColorAt(index: number, color: Color): Color;
 
@@ -927,6 +928,8 @@ boundingBox: Box3 | null;
   setMatrixAt(index: number, matrix: Matrix4): this;
 
   computeBoundingBox(): void;
+
+  computeBoundingSphere(): void;
 }
 
 /** Catalog partial (native-not-implemented): three/IntType. */
@@ -1078,6 +1081,7 @@ forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -1483,6 +1487,7 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 fragmentNode: Node | null;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -1627,6 +1632,8 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 bumpMap: Texture | null;
 fragmentNode: Node | null;
+flatShading: boolean;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -1736,6 +1743,7 @@ readonly type: string;
 vertexColors: boolean;
 vertexNode: Node | null;
 visible: boolean;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -2554,6 +2562,7 @@ forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -2596,6 +2605,7 @@ vertexNode: Node | null;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -3269,6 +3279,8 @@ forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+flatShading: boolean;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -3306,6 +3318,8 @@ forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+flatShading: boolean;
+colorWrite: boolean;
 
   clone(): this;
 
