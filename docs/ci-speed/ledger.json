@@ -3399,8 +3399,8 @@
           "wall": {
             "started_at_min": "2026-10-16T03:37:58Z",
             "completed_at_max": "2026-10-16T04:34:09Z",
-            "wall_seconds": 3378,
-            "wall_minutes": 56.3,
+            "wall_seconds": 3371,
+            "wall_minutes": 56.2,
             "full_board_including_initial_queue_seconds": 3378,
             "full_board_started_at": "2026-10-16T03:37:51Z",
             "full_board_completed_at": "2026-10-16T04:34:09Z",
