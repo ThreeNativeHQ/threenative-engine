@@ -117,6 +117,12 @@ the native host, which installs the same global before the game module loads. Ev
 says `clock: "wall-clock"`. A counted desktop run refuses an inherited `TN_PLAYTEST_CLOCK`. Full rule:
 [docs/determinism.md](docs/determinism.md).
 
+Optional scenario `startTick` is an absolute nonnegative safe integer fixed-step anchor, reached
+after startup readiness and warmup, before baseline observations or input. It requires
+`runtime.fixedStep` and an observed fixed-step clock; `--live-clock`, missing ticks, startup
+overshoot and a resampled tick unequal to the anchor fail closed. It neither resets the game
+nor changes relative step counts. Absent `startTick` leaves existing behavior unchanged.
+
 ## Where things live
 
 | Concern | File |

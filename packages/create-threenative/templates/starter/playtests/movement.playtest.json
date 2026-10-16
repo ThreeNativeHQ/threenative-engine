@@ -1,0 +1,192 @@
+{
+  "name": "movement",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 60,
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "forward",
+      "press": ["KeyW"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "right",
+      "press": ["KeyD"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "back",
+      "press": ["KeyS"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "left",
+      "press": ["KeyA"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "running",
+      "press": ["KeyD", "ShiftLeft"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run-back",
+      "press": ["KeyA", "ShiftLeft"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stopped",
+      "press": [],
+      "holdTicks": 45,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "jump",
+      "press": ["Space"],
+      "holdTicks": 3,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "landed",
+      "press": [],
+      "holdTicks": 90,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "aligned-with-crate",
+      "press": ["KeyW"],
+      "holdTicks": 60,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "pushed-crate",
+      "press": ["KeyD"],
+      "holdTicks": 120,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "facingAxis",
+        "atSteps": [
+          {
+            "label": "forward",
+            "equals": "-z"
+          },
+          {
+            "label": "right",
+            "equals": "+x"
+          },
+          {
+            "label": "back",
+            "equals": "+z"
+          },
+          {
+            "label": "left",
+            "equals": "-x"
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "clip",
+        "atSteps": [
+          {
+            "label": "forward",
+            "equals": "Walk_Loop"
+          },
+          {
+            "label": "right",
+            "equals": "Walk_Loop"
+          },
+          {
+            "label": "stopped",
+            "equals": "Idle_Loop"
+          },
+          {
+            "label": "jump",
+            "equals": "Jump_Start"
+          },
+          {
+            "label": "running",
+            "equals": "Jog_Fwd_Loop"
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "strideSynced",
+        "atSteps": [
+          {
+            "label": "forward",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "position",
+        "path": "2",
+        "gte": -1.7,
+        "lte": -1.3,
+        "changed": true
+      },
+      {
+        "entity": "crate",
+        "component": "position",
+        "path": "0",
+        "gte": 0,
+        "changed": true
+      },
+      {
+        "entity": "player",
+        "component": "gait",
+        "atSteps": [
+          {
+            "label": "forward",
+            "equals": "walk"
+          },
+          {
+            "label": "running",
+            "equals": "run"
+          }
+        ]
+      }
+    ]
+  },
+  "subject": "player"
+}

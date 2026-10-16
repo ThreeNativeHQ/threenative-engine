@@ -65,7 +65,7 @@ describe("native coverage gate", () => {
     ).toThrow(/duplicate row: src\/js\//u);
   });
 
-  it("should retain the established floor when regeneration measures a regression", async () => {
+  it("should ratchet improved coverage while retaining established regression floors", async () => {
     const coverageModule = (await import(
       new URL("../../packages/runtime-native/scripts/measure-native-coverage.mjs", import.meta.url)
         .href
@@ -75,6 +75,16 @@ describe("native coverage gate", () => {
         subsystems: Array<{ name: string; percent: number }>,
       ): Array<{ name: string; percent: number }>;
     };
+    const improved = record.replace("34.00%", "20.00%");
+    expect(
+      coverageModule.retainedCoverageFloors(improved, [
+        { name: "webgpu", percent: 35 },
+        { name: "js", percent: 40 },
+      ]),
+    ).toEqual([
+      { name: "src/webgpu/", percent: 30 },
+      { name: "src/js/", percent: 40 },
+    ]);
     const established = record.replace("34.00%", "33.82%");
     expect(
       coverageModule.retainedCoverageFloors(established, [

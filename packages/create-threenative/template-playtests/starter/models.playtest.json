@@ -18,15 +18,15 @@
     {
       "kind": "input",
       "label": "run-toward-the-flag",
-      "press": "ArrowRight",
-      "holdTicks": 205,
+      "press": ["ArrowRight", "ShiftLeft"],
+      "holdTicks": 90,
       "release": false
     },
     {
       "kind": "input",
       "label": "jump-the-gap",
-      "press": "Space",
-      "holdTicks": 2,
+      "press": ["ArrowRight", "ShiftLeft", "Space"],
+      "holdTicks": 36,
       "release": true
     },
     {

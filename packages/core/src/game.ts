@@ -1598,7 +1598,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               return {
                 ...renderer.surface(),
                 ...(scaler === undefined ? {} : { atFloor: scaler.atFloor }),
-                ...(compilingInWindow ? { compiling: true } : {}),
+                compiling: compilingInWindow,
               };
             },
           });
@@ -2019,11 +2019,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (this.#scene !== scene || this.#sceneFrame !== frame) return;
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
-        const computeBlockedByStartup =
-          !worldRendered &&
-          ((this.#warmUpConfiguredExplicitly() && !explicitWarmUpSettled) ||
-            (startupCoverActive() && !this.#warmUpConfiguredExplicitly()));
-        if (this.#renderer !== undefined && this.#sceneEntered && !computeBlockedByStartup)
+        if (this.#renderer !== undefined && this.#sceneEntered)
           this.#computeDriven.process(this.#renderer);
       },
       onFrame: (frameMs) => startupReadiness.observe(frameMs),
