@@ -5,9 +5,6 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { gunzipSync, gzipSync } from "node:zlib";
-import { NodeIO } from "@gltf-transform/core";
-import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { PNG } from "pngjs";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { copyTerrainKit } from "../../create-threenative/src/terrain-kit.js";
@@ -215,38 +212,3 @@ it("every starter asset directory has a kit or example reference", async () => {
       `${dir.name} has no asset reference`,
     ).toBe(true);
 });
-
-it.each(["fir-b-lod1", "fir-b-lod2", "fir-c-lod1", "fir-c-lod2"])(
-  "original starter %s retains its source needle cutout coverage",
-  async (name) => {
-    const file = join(root, "starter-assets/fir_tree_01", `${name}.glb`);
-    const document = await new NodeIO()
-      .registerExtensions(ALL_EXTENSIONS)
-      .readBinary(await readFile(file));
-    const materials = new Set(
-      document
-        .getRoot()
-        .listMeshes()
-        .flatMap((mesh) =>
-          mesh.listPrimitives().map((primitive) => {
-            const material = primitive.getMaterial();
-            expect(material, file).not.toBeNull();
-            return material;
-          }),
-        ),
-    );
-    const twigs = [...materials].filter((material) => material?.getName() === "fir_tree_01_twig");
-    expect(twigs.length, file).toBeGreaterThan(0);
-    for (const material of twigs) {
-      expect(material?.getAlphaMode(), file).toBe("MASK");
-      const texture = material?.getBaseColorTexture();
-      expect(texture?.getMimeType(), file).toBe("image/png");
-      const image = texture?.getImage();
-      if (!image) throw new Error(`${file}: fir_tree_01_twig has no embedded base colour`);
-      const { data } = PNG.sync.read(Buffer.from(image));
-      let under = 0;
-      for (let i = 3; i < data.length; i += 4) if ((data[i] as number) < 128) under++;
-      expect(Math.abs(under / (data.length / 4) - 0.7637729644775391), file).toBeLessThan(0.005);
-    }
-  },
-);

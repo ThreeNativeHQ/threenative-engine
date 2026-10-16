@@ -776,7 +776,7 @@
         "authors": "Rob Tuytel, Rico Cilliers",
         "license": "CC0",
         "url": "https://polyhaven.com/a/fir_tree_01",
-        "note": "Poly Haven's own authored LOD2 of tree b (fir_tree_01_b_LOD2, 54,927 triangles, full crown), exported by examples/strata-terrain-preview/scripts/prep-polyhaven-fir.py from the 1k .blend; the forest starter kit's fir. The existing quantized b/c LOD1/2 GLBs received an alpha-only patch from the official fir_tree_01_twig_alpha_1k.png red channel (>=128 opaque; cut coverage 0.7637729644775391); original RGB, raw geometry/accessors, transforms, material constants and other embedded images are byte-preserved. GLB container hashes changed; file records below identify all four repaired GLBs. The embedded 34-color palette PNG is lossless, preserving every decoded RGBA byte including transparent RGB and pHYs metadata."
+        "note": "Poly Haven's own authored LOD2 of tree b (fir_tree_01_b_LOD2, 54,927 triangles, full crown), exported by examples/strata-terrain-preview/scripts/prep-polyhaven-fir.py from the 1k .blend; the forest starter kit's fir."
       },
       {
         "asset": "Rock Moss Set 01",
@@ -894,10 +894,10 @@
         "sha256": "d98074cc7944de0c428502264c2d35b01f6a8b87cd10715132a6a7e0847d8e48"
       },
       {
-        "bytes": 3764276,
+        "bytes": 5153060,
         "dimensions": null,
         "file": "fir_tree_01/fir-b-lod2.glb",
-        "sha256": "88799ec1333f02a2a1965cb32efaaa4f6b6beb03478f8da64b00e2daeb976ace"
+        "sha256": "a7e1f126ba7c09aa160f82e200689312334204928c9d822a1eaf13ed9d259dc8"
       },
       {
         "bytes": 2464264,
@@ -912,22 +912,10 @@
         "sha256": "4d4a1026047d229d6fbe992d061b4b4e9ef5f837e64239f18e0664a77aed8d84"
       },
       {
-        "bytes": 2959652,
+        "bytes": 3971572,
         "dimensions": null,
         "file": "fir_tree_01/fir-c-lod2.glb",
-        "sha256": "351c1bee2fbd236e2e757b6e0a154c2945ddb6cf632b9d426a2a507003a0aa46"
-      },
-      {
-        "bytes": 4662432,
-        "dimensions": null,
-        "file": "fir_tree_01/fir-b-lod1.glb",
-        "sha256": "0af64c3f93986905a5732c2f275904ff52ad258f680f75e38c84ca4b1257b670"
-      },
-      {
-        "bytes": 3400360,
-        "dimensions": null,
-        "file": "fir_tree_01/fir-c-lod1.glb",
-        "sha256": "2616989e119c07cec013d94ab5510f7082fc55194c182d0cb523ca0a7e7288e1"
+        "sha256": "9dba8a8a30f204a2c60f45bd059676cdabbe7287180338c38c1ce54d8530bd7b"
       }
     ]
   }
