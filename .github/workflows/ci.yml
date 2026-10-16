@@ -59,7 +59,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          # Manual full qualification does not consult history; automatic scope selection does.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 1 || 0 }}
           # Until protected develop exists, retain the qualified-main scheduled flow.
           ref: ${{ github.event_name == 'schedule' && vars.TN_DEVELOP_CI_ENABLED == 'true' && 'develop' || github.sha }}
       - id: classify

@@ -701,7 +701,9 @@ describe("CI pipeline structure", () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const scope = requiredJob(ci, "scope");
     expect(scope).toContain("scripts/ci-change-scope.mjs");
-    expect(scope).toContain("fetch-depth: 0");
+    expect(scope).toContain(
+      "fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 1 || 0 }}",
+    );
     expect(scope).toContain("scope: ${{ steps.classify.outputs.scope }}");
     expect(scope).toContain("selection: ${{ steps.classify.outputs.selection }}");
     expect(scope).toContain("reason: ${{ steps.classify.outputs.reason }}");
