@@ -19,6 +19,7 @@ import {
   Vector3,
 } from "three";
 import { BIOMES, type WorldName } from "./render/biomes.js";
+import { createGroundSampler } from "./render/groundSampler.js";
 import {
   createLoadingScreen,
   createSpawnReadiness,
@@ -700,19 +701,26 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       mesh.updateMatrixWorld(true);
       mesh.geometry.computeBoundingBox();
       const top = mesh.geometry.boundingBox?.max.y ?? 0;
+      // The extracted exact sampler replaces the per-sample surface ray; the ray stays as the
+      // fallback for points it cannot answer, exactly as the physics ray stays for both.
+      const groundSample = createGroundSampler(field, mesh.geometry, mesh.matrixWorld);
       const groundAt: PropGroundQuery = (placement, at) => {
         const [x, , z] = at;
-        const visual = ctx.raycast({
-          direction: new Vector3(0, -1, 0),
-          origin: new Vector3(x, top + 2, z),
-          targets: [mesh],
-        });
+        let visual = groundSample(x, z);
+        if (visual === null) {
+          visual =
+            ctx.raycast({
+              direction: new Vector3(0, -1, 0),
+              origin: new Vector3(x, top + 2, z),
+              targets: [mesh],
+            })?.point.y ?? null;
+        }
         const physical = ctx.physics.directSpaceState.intersectRay({
           collisionMask: 4,
           from: { x, y: top + 2, z },
           to: { x, y: -100, z },
         });
-        let height = visual?.point.y ?? physical?.position.y ?? null;
+        let height = visual ?? physical?.position.y ?? null;
         if (
           height !== null &&
           (world === "forest" || world === "coastal") &&
@@ -735,12 +743,17 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
               [0, -reach],
               [0, reach],
             ]) {
-              const foot = ctx.raycast({
-                direction: new Vector3(0, -1, 0),
-                origin: new Vector3(x + (dx ?? 0), top + 2, z + (dz ?? 0)),
-                targets: [mesh],
-              });
-              if (foot) height = Math.min(height, foot.point.y);
+              const footX = x + (dx ?? 0);
+              const footZ = z + (dz ?? 0);
+              const foot =
+                groundSample(footX, footZ) ??
+                ctx.raycast({
+                  direction: new Vector3(0, -1, 0),
+                  origin: new Vector3(footX, top + 2, footZ),
+                  targets: [mesh],
+                })?.point.y ??
+                null;
+              if (foot !== null) height = Math.min(height, foot);
             }
             height -= (box.max.y - box.min.y) * placement.scale * 0.12;
           }
