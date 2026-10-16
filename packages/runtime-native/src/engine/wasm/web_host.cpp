@@ -88,6 +88,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     device = result;
     queue = wgpuDeviceGetQueue(device);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
+    renderer->setGpuTimer(true);
     configureWebSurface();
     if (pendingPost) renderer->setPostGraph(pendingPost);
     state = Ready;
@@ -111,7 +112,10 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     WGPURequestDeviceCallbackInfo callback = {};
     callback.mode = WGPUCallbackMode_AllowProcessEvents;
     callback.callback = onDevice;
+    const WGPUFeatureName timestamp = WGPUFeatureName_TimestampQuery;
     WGPUDeviceDescriptor desc = {};
+    desc.requiredFeatureCount = wgpuAdapterHasFeature(adapter, timestamp) ? 1 : 0;
+    desc.requiredFeatures = &timestamp;
     desc.uncapturedErrorCallbackInfo.callback = [](WGPUDevice const*, WGPUErrorType, WGPUStringView message, void*, void*) {
         events.post([message = text(message)] { fail("TN_WASM_DEVICE_ERROR: " + message); });
     };
@@ -194,7 +198,7 @@ extern "C" int tnw_web_resize(uint32_t w, uint32_t h) {
 
 /** Draws `scene` from `camera` into the canvas; the browser presents it at its animation boundary. */
 extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t* cameraHandle, double r, double g,
-                              double b, double a) {
+                              double b, double a, uint32_t sourceFrame) {
     tnw_web_poll();
     if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
     auto* scene = rootOf(sceneHandle);
@@ -214,6 +218,7 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     std::string refused;
     try {
         renderer->setSampleCount(sampleCount);
+        renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
         Renderer::PresentScope present(*renderer, view, surfaceFormat);
         database.render(*renderer, *scene, *camera, {r, g, b, a});
     } catch (const std::exception& error) {
@@ -469,7 +474,9 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
 /**
  * The last frame's draws (0) and triangles (1), as three's `renderer.info.render` reports them, then
  * the setup work done so far, which a steady frame must not add to: pipeline compiles (2), pipeline
- * text-key lookups (3), bind groups created (4), graph keys serialized (5) and programs built (6).
+ * text-key lookups (3), bind groups created (4), graph keys serialized (5), programs built (6),
+ * the last resolved GPU frame time in ms (7), how many GPU times have resolved (8), the caller
+ * frame id that sample was submitted under (9), and whether frames are timed at all (10).
  */
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
@@ -483,6 +490,10 @@ extern "C" double tnw_web_frame(int field) {
         case 4: return double(bindGroupsCreated());
         case 5: return double(shader::graph::keyBuilds());
         case 6: return double(renderer->programCount());
+        case 7: return renderer->lastGpuMs();
+        case 8: return double(renderer->gpuSamples());
+        case 9: return double(renderer->gpuSourceFrame());
+        case 10: return renderer->gpuTimerEnabled() ? 1 : 0;
         default: return 0;
     }
 }

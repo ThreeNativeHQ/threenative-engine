@@ -503,12 +503,21 @@ public:
      */
     void setGpuTimer(bool on) { gpuTimer_ = on; }
     /**
+     * The caller's frame id for the next timed render, reported with its sample once the readback
+     * lands. The caller owns the id: the engine's own render ids are not one per present.
+     */
+    void setGpuTimerSourceFrame(uint64_t frame) { sourceFrame_ = frame; }
+    /**
      * The last timed frame's GPU time by segment, in ms: shadow passes (0 when the frame drew none),
      * scene pass, everything between the scene and output passes (post, TRAA), output pass.
      */
     std::array<double, 4> lastGpuSegments() const { return timing_->segments; }
     /** How many GPU times have come back, so a caller samples each one once. */
     uint64_t gpuSamples() const { return timing_->samples; }
+    /** The caller's frame id of the most recent resolved GPU time: the frame it was submitted with, not the one that read it back. */
+    uint64_t gpuSourceFrame() const { return timing_->source; }
+    /** Whether frames are actually timed: the device negotiated timestamp-query and the timer is on. */
+    bool gpuTimerEnabled() const { return timestamps_ != nullptr && gpuTimer_; }
     /** Whether the last timed frame's GPU time began at its first shadow pass (else at the scene pass). */
     bool gpuTimerBeganAtShadow() const { return timerBeganAtShadow_; }
 
@@ -804,6 +813,7 @@ private:
     FrameStats mainBundleStats_;
     bool timerBeganAtShadow_ = false;
     bool gpuTimer_ = false;
+    uint64_t sourceFrame_ = 0;  // the caller frame id the next timed frame is submitted with
     WGPUQuerySet timestamps_ = nullptr;  // scene pass begin/end [0, 1], output pass begin/end [2, 3], first shadow pass begin [4, 5]
     Handle timestampResolve_;
     // Shared with the readback callback by weak reference: a backend may deliver it after this
@@ -813,6 +823,7 @@ private:
         double lastMs = -1;
         std::array<double, 4> segments{};  // shadow passes, scene pass, post (between), output pass, in ms
         uint64_t samples = 0;
+        uint64_t source = 0;  // the caller frame id the successful sample was submitted with
     };
     std::shared_ptr<Timing> timing_ = std::make_shared<Timing>();
     std::vector<uint8_t> frameUniforms_;  // every draw's uniform blocks, written to the GPU once a frame

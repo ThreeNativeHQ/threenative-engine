@@ -125,6 +125,8 @@ export function defineWebRenderer(
      */
     readonly backend: {
       readonly gpu: { requestAdapter(): Promise<{ info: IAdapterInfo }> };
+      trackTimestamp: boolean;
+      getTimestampFrames(type: string): number[];
       pipelineCompiles(): number;
     };
     #pixelRatio = 1;
@@ -135,6 +137,8 @@ export function defineWebRenderer(
     #adapter: IAdapterInfo | undefined;
     #last: [unknown, unknown] | undefined;
     #state: string | undefined;
+    #gpuSamples = 0;
+    #timestampFrames: number[] = [];
 
     constructor(parameters: Record<string, unknown> = {}) {
       if (claimed)
@@ -149,6 +153,7 @@ export function defineWebRenderer(
       this.#width = this.domElement.width || 300;
       this.#height = this.domElement.height || 150;
       const adapter = () => this.#adapter;
+      const timestampFrames = (type: string) => (type === "render" ? this.#timestampFrames : []);
       this.backend = {
         gpu: {
           async requestAdapter() {
@@ -157,6 +162,8 @@ export function defineWebRenderer(
             return { info };
           },
         },
+        trackTimestamp: Boolean(parameters.trackTimestamp ?? true),
+        getTimestampFrames: timestampFrames,
         pipelineCompiles: () => module._tnw_web_frame(2),
       };
     }
@@ -184,6 +191,9 @@ export function defineWebRenderer(
           description: field(2),
           device: field(2),
         };
+        // Honest, like the engine: a device without timestamp-query times no frame, so no caller
+        // may be told timestamps are enabled. An explicit opt-out stays off.
+        if (module._tnw_web_frame(10) === 0) this.backend.trackTimestamp = false;
         return this;
       })();
       return this.#initialized;
@@ -253,12 +263,24 @@ export function defineWebRenderer(
       this.#applyState();
       writeHandle(0, scene, "scene");
       writeHandle(12, camera, "camera");
-      check(module._tnw_web_render(handles, handles + 12, ...this.#clear));
+      const renderFrame = this.info.frame;
+      check(module._tnw_web_render(handles, handles + 12, ...this.#clear, renderFrame));
       this.info.frame += 1;
       this.info.render.frameCalls = module._tnw_web_frame(0);
       this.info.render.calls += this.info.render.frameCalls;
       this.info.render.drawCalls = this.info.render.frameCalls;
       this.info.render.triangles = module._tnw_web_frame(1);
+      const gpuSamples = module._tnw_web_frame(8);
+      if (gpuSamples > this.#gpuSamples) {
+        this.#gpuSamples = gpuSamples;
+        const gpuMs = module._tnw_web_frame(7);
+        // The engine reports which submitted frame this sample belongs to; the readback can land
+        // many frames later, so the arrival frame is never the sample's age.
+        if (Number.isFinite(gpuMs) && gpuMs > 0) {
+          this.info.render.timestamp = gpuMs;
+          this.#timestampFrames = [module._tnw_web_frame(9)];
+        }
+      }
       const engine = this.info.engine;
       engine.compiles = module._tnw_web_frame(2);
       engine.textLookups = module._tnw_web_frame(3);
@@ -314,6 +336,11 @@ export function defineWebRenderer(
 
     compileAsync(): Promise<void> {
       return Promise.resolve();
+    }
+
+    async resolveTimestampsAsync(type = "render"): Promise<number | undefined> {
+      if (type !== "render") return undefined;
+      return this.info.render.timestamp > 0 ? this.info.render.timestamp : undefined;
     }
 
     /**

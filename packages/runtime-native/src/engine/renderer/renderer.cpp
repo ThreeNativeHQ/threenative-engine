@@ -442,6 +442,7 @@ struct Renderer::FrameJob {
     WGPUTextureView presentTarget = nullptr;
     WGPUTextureFormat presentFormat = WGPUTextureFormat_Undefined;
     bool timed = false, normalPass = false;
+    uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     std::vector<uint64_t> bundleKey;  // the main bundle's inputs, built while the draws' stores were live
 };
 
@@ -3065,6 +3066,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.depth = depth;
     job.sceneTimes = sceneTimes;
     job.timed = timed;
+    job.source = sourceFrame_;
     job.normalPass = normalPass;
     job.camera = camera; job.lights = lights;
     job.pageClear = pageClear;
@@ -3087,6 +3089,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     WGPURenderPassColorAttachment& color = job.color;
     WGPURenderPassDepthStencilAttachment& depth = job.depth;
     const bool timed = job.timed, normalPass = job.normalPass;
+    const uint64_t source = job.source;
     const CameraState& camera = job.camera;
     const LightState& lights = job.lights;
     WGPURenderPipeline pageClear = job.pageClear;
@@ -3345,7 +3348,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     if (timed) {
         timing_->pending = true;
         std::weak_ptr<Timing> timing = timing_;
-        gpu_.readBuffer(timestampResolve_, 0, 48, [timing, shadowTimed](GpuStatus status, std::vector<uint8_t> bytes) {
+        gpu_.readBuffer(timestampResolve_, 0, 48, [timing, shadowTimed, source](GpuStatus status, std::vector<uint8_t> bytes) {
             const std::shared_ptr<Timing> t = timing.lock();
             if (!t) return;  // the renderer is gone
             t->pending = false;
@@ -3357,6 +3360,7 @@ void Renderer::encodeFrame(FrameJob& job) {
             t->lastMs = double(ns[3] - begin) / 1e6;
             const auto span = [](uint64_t from, uint64_t to) { return to > from ? double(to - from) / 1e6 : 0.0; };
             t->segments = {shadowTimed ? span(ns[4], ns[0]) : 0.0, span(ns[0], ns[1]), span(ns[1], ns[2]), span(ns[2], ns[3])};
+            t->source = source;  // the submitted frame id, set before `samples` so a reader sees both
             ++t->samples;
         });
     }

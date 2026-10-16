@@ -21,7 +21,10 @@ const registry = JSON.parse(
   readFileSync(path.join(REPO, "packages/three-native/api/native-registry.json"), "utf8"),
 ) as IRegistryDump;
 
-function host() {
+function host(
+  frame: (field: number) => number = () => 0,
+  render: (...args: number[]) => number = () => 0,
+) {
   const types = new Map<string, number>();
   const runtime: IBrowserRuntime = {
     typeId: (name) => types.get(name) ?? types.set(name, types.size + 1).get(name) ?? 0,
@@ -51,8 +54,8 @@ function host() {
     _tnw_web_adapter: () => 0,
     _tnw_web_error: () => 0,
     _tnw_web_resize: () => 0,
-    _tnw_web_render: () => 0,
-    _tnw_web_frame: () => 0,
+    _tnw_web_render: render,
+    _tnw_web_frame: frame,
     _tnw_web_renderer_state: state,
   } as unknown as WebEngineModule;
   const Renderer = defineWebRenderer(module, classes.Color as never);
@@ -82,5 +85,99 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
   it("is single-sampled without antialias, and an explicit samples wins", async () => {
     expect(await drawn({})).toEqual({ samples: 1, handed: 1 });
     expect(await drawn({ antialias: true, samples: 1 })).toEqual({ samples: 1, handed: 1 });
+  });
+
+  it("reports the submitted frame's sample, never the readback arrival frame", async () => {
+    let gpuMs = -1;
+    let gpuSamples = 0;
+    let gpuSource = 0;
+    const submitted: number[] = [];
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => {
+        if (field === 7) return gpuMs;
+        if (field === 8) return gpuSamples;
+        if (field === 9) return gpuSource;
+        if (field === 10) return 1;
+        return 0;
+      },
+      (...args) => {
+        submitted.push(args[args.length - 1] ?? 0);
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas, trackTimestamp: true }) as {
+      info: { frame: number; render: { timestamp: number } };
+      backend: {
+        trackTimestamp?: boolean;
+        getTimestampFrames?(type: string): number[];
+      };
+      resolveTimestampsAsync?(type?: string): Promise<number | undefined>;
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    expect(renderer.backend.trackTimestamp).toBe(true);
+    expect(typeof renderer.resolveTimestampsAsync).toBe("function");
+
+    const draw = async (frame: number): Promise<void> => {
+      renderer.info.frame = frame;
+      renderer.render(scene, camera);
+      await renderer.resolveTimestampsAsync?.();
+    };
+
+    // Unsupported or unresolved before any readback completes: absent, never zero.
+    await draw(0);
+    expect(renderer.backend.getTimestampFrames?.("render")).toEqual([]);
+    expect(renderer.info.render.timestamp).toBe(0);
+
+    // Frame 1 is submitted; its readback only lands at frame 4. The sample is frame 1, not frame 4.
+    await draw(1);
+    await draw(2);
+    await draw(3);
+    gpuMs = 1.75;
+    gpuSamples = 1;
+    gpuSource = 1;
+    await draw(4);
+    expect(renderer.backend.getTimestampFrames?.("render")).toEqual([1]);
+    expect(renderer.info.render.timestamp).toBe(1.75);
+
+    // Same duration, a distinct sample whose source is frame 3, arriving at frame 6: the source advances.
+    await draw(5);
+    gpuMs = 1.75;
+    gpuSamples = 2;
+    gpuSource = 3;
+    await draw(6);
+    expect(renderer.backend.getTimestampFrames?.("render")).toEqual([3]);
+    expect(renderer.info.render.timestamp).toBe(1.75);
+
+    // A non-finite duration despite a new sample is absent: the last valid sample stands.
+    gpuMs = Number.NaN;
+    gpuSamples = 3;
+    gpuSource = 7;
+    await draw(7);
+    expect(renderer.backend.getTimestampFrames?.("render")).toEqual([3]);
+    expect(renderer.info.render.timestamp).toBe(1.75);
+
+    // Every caller frame id reaches the engine: the mapping is passed, never assumed.
+    expect(submitted).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(renderer.backend.getTimestampFrames?.("compute")).toEqual([]);
+  });
+
+  it("does not claim enabled timestamps when the caller opts out or the device has none", async () => {
+    const opted = host((field) => (field === 10 ? 1 : 0));
+    const off = new opted.Renderer({ canvas: opted.canvas, trackTimestamp: false }) as {
+      backend: { trackTimestamp: boolean };
+      init(): Promise<unknown>;
+    };
+    await off.init();
+    expect(off.backend.trackTimestamp).toBe(false);
+
+    const bare = host((field) => (field === 10 ? 0 : 0));
+    const unsupported = new bare.Renderer({ canvas: bare.canvas, trackTimestamp: true }) as {
+      backend: { trackTimestamp: boolean };
+      init(): Promise<unknown>;
+    };
+    await unsupported.init();
+    expect(unsupported.backend.trackTimestamp).toBe(false);
   });
 });
