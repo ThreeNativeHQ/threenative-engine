@@ -2,6 +2,12 @@ name: Build owned quiche dependency
 
 on:
   workflow_dispatch:
+    inputs:
+      dependency:
+        description: Owned dependency to build
+        type: choice
+        options: [quiche, dawn]
+        default: quiche
   pull_request:
     branches:
       - main
@@ -38,6 +44,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_dispatch' || inputs.dependency != 'dawn'
     strategy:
       fail-fast: false
       matrix:
@@ -224,3 +231,56 @@ jobs:
             --repo "${{ github.repository }}" \
             --verify-tag --title "Owned quiche ${{ github.ref_name }}" \
             --generate-notes
+
+  dawn:
+    if: github.event_name == 'workflow_dispatch' && inputs.dependency == 'dawn'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build pinned Linux x64 Dawn in isolated manylinux container
+        run: node packages/runtime-native/scripts/build-dawn-linux.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dawn-linux-x64
+          path: |
+            packages/runtime-native/artifacts/dawn-linux-x64/Dawn-*.tar.gz
+            packages/runtime-native/artifacts/dawn-linux-x64/manifest-linux-x64.json
+          if-no-files-found: error
+
+  publish-dawn:
+    if: github.event_name == 'workflow_dispatch' && inputs.dependency == 'dawn'
+    needs: dawn
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dawn-linux-x64
+          path: dist-dawn
+      - name: Publish immutable dependency cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ARCHIVE=dist-dawn/Dawn-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2-ubuntu-latest-Release.tar.gz
+          test -s "$ARCHIVE"
+          test -s dist-dawn/manifest-linux-x64.json
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path('dist-dawn')
+          manifest = json.loads((root / 'manifest-linux-x64.json').read_text())
+          sha = 'd14ae3d97ad74100e9f382efef5e9c0872ddbeb2'
+          archive = f'Dawn-{sha}-ubuntu-latest-Release.tar.gz'
+          assert manifest['source_commit'] == manifest['upstream_commit'] == sha
+          assert manifest['expected_tag'] == 'dawn-linux-x64-v1'
+          assert manifest['target'] == 'linux-x64' and manifest['archive'] == archive
+          assert manifest['archive_sha256'] == hashlib.sha256((root / archive).read_bytes()).hexdigest()
+          PY
+          gh release create dawn-linux-x64-v1 "$ARCHIVE" dist-dawn/manifest-linux-x64.json \
+            --target "$SOURCE_REF" --title "Dawn Linux x64 dependency cache v1" \
+            --prerelease --latest=false --generate-notes
