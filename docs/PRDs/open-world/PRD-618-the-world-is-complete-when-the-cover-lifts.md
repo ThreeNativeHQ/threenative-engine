@@ -132,10 +132,10 @@ The boxes live in the phases below; each names the AC it proves.
 **Implementation:** Solution steps 1–3. A unit spec proves that a covered `VirtualShadowNode` renders all due levels in one frame and reports `settled`, and that an uncovered node keeps the current delays.
 **Verification:** `pnpm --filter @threenative/core test -- virtual-shadow world-cells`, then AC-1 to AC-5.
 
-- [ ] AC-1, AC-3 final qualification: **FAIL** (source `b69509f68`, medians **10013.2 → 15129.9 ms**, ratio **1.510995**, limit 1.25); all three current-source AFTER reveal scenarios pass. Historical green on web at startup implementation `3ccb616b6`. proof: three sequential paired headed WebGPU reveal runs; all AFTER counters zero; median ratio 1.06844. Rerun after Phase 3 changes before final completion.
+- [ ] AC-1, AC-3 final qualification: **FAIL** (source `b25bb33b7`, medians **9439.4 → 13343.5 ms**, ratio **1.413596**, limit 1.25); all three current-source AFTER reveal scenarios pass. Historical green on web at startup implementation `3ccb616b6`. Rerun after Phase 3 changes before final completion.
 - [ ] AC-2 green (after PRD-616). proof: AC-1 command with the census assertion.
-- [ ] AC-4 current-source desktop rerun pending after readiness and native staging changes. Historical green on desktop at `42ac0c371`. proof: AC-1 command `--target desktop`, owned native host on RTX 2080, exit 0 with zero diagnostics; measured reveal window completes and all three late-work counters stay zero. Artifacts: `examples/strata-terrain-preview/artifacts/playtest/prd618-desktop-fixed/`; full result `/tmp/prd618-desktop-fixed.log`. Rerun if later changes affect reveal behavior.
-- [ ] AC-5 judge IMPROVEMENT. proof: judge subagent verdict on the PR.
+- [x] AC-4 current-source desktop confirmation: source `b7a03b112` (executable `919dc0356`), freshly staged assets/bundle, original uninstrumented bundle, `--target desktop`, NVIDIA RTX 2080/Turing, exit 0, all 8 assertions pass, no diagnostics. Window **3120.48 ms / 14 samples**, all three late counters **0**; startup **40434 ms**. Artifacts: `examples/strata-terrain-preview/artifacts/playtest/prd618-desktop-confirm/`. Earlier attempt rejected non-finite camera data; a temporary diagnostic also passed and was restored byte-for-byte. That intermittent failure remains unexplained; no camera fix is claimed. Rerun if later changes affect reveal behavior.
+- [ ] AC-5 **FAIL**: fresh read-only judge on `b25bb33b7` returned temporal **NEUTRAL**, requiring IMPROVEMENT; secondary appearance preservation **FAIL** (thinner fragmented AFTER crowns). All eight delayed endpoint captures inspected; exact first-visible-frame timing remains unproven. Atlas-only ablation pending.
 
 **Implementation and checks (2026-10-15):**
 
