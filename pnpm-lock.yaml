@@ -1432,6 +1432,9 @@ importers:
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3
+      publint:
+        specifier: 0.3.22
+        version: 0.3.22
       three:
         specifier: 'catalog:'
         version: 0.185.1(patch_hash=00ce98ec952e72dff1f8f10e10ecc691f27365e9ae7a7482becdad1614181437)
