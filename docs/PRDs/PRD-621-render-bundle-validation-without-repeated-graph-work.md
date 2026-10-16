@@ -34,11 +34,13 @@ Integration: unchanged — WorldCells main cull → `recordCpuMain` → `bundleI
 
 ### Phase 1: Safe algorithm and regression proof
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `packages/core/src/world-cells.ts`, `packages/core/__tests__/world-bundles.spec.ts`.
 
-- [ ] Reduce graph work through the real WorldCells caller. proof: `pnpm exec vitest run packages/core/__tests__/world-bundles.spec.ts` — pending test-first falsifier and algorithm selection.
-- [ ] Preserve existing mutation/error/repair safety behavior. proof: `pnpm exec vitest run packages/core/__tests__/world-bundles.spec.ts` — pending, including any new intra-pass risk.
+- [x] Reduce temporary graph allocation through the real WorldCells caller. proof: `pnpm exec vitest run packages/core/__tests__/world-bundles.spec.ts` — baseline 41/41; candidate 42/42, exit 0. Unchanged ordered children retain the existing witness without re-recording; capture removes property tuples/map copies and traversal removes the combined spread array. This proves the caller's allocation path, not a CPU-time gain.
+- [x] Preserve existing mutation/error/repair safety behavior. proof: `pnpm exec vitest run packages/core/__tests__/world-bundles.spec.ts` — 42/42, exit 0; added stable-reader length/order changes, late iterator failure, malformed children and repair. Existing deep nonenumerable/inherited/sparse/overflow cases remain green. Per-batch checks remain, so no pass-cache invalidation rule is introduced.
+
+Core typecheck passed (`pnpm --filter @threenative/core typecheck`, exit 0); focused Biome passed with 23 existing warnings and no errors. Parent diff review found no new public API, cache scope, limit or property-enumeration change. Baseline/candidate suite durations are not a performance claim; matched runtime evidence remains open.
 
 ### Phase 2: Runtime proof and delivery
 
