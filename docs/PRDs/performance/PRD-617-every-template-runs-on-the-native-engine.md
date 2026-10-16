@@ -240,3 +240,18 @@ AC-1 to AC-4 sit under Phase 1 and AC-5 to AC-7 under Phase 2, each with its pro
 2026-10-16 fresh Snow CPU profile: /tmp/pr493-snow-timing-cpu-profile/snow.cpuprofile contains 13390 valid samples across 14.23 s on hardware NVIDIA/Turing at the original 1920×1080. Browser-native writeBuffer accounts for 4863 ms (34.2% of wall samples), versus idle 26.3%, Wasm aggregate 10.05%, GC 0.72% and onSubmittedWorkDone 1.3%. Upload cost persists in all thirds (1.11/1.97/1.78 s), including steady gameplay. Leading ancestry is native writeBuffer through the Wasm render path; the separately named heightfield/Wasm function is 1.7%. This supports inspecting buffer uploads before another terrain-update change. The instrumented run is diagnostic, not a speed verdict; unnamed Wasm/browser-native internals limit resolution. No acceptance box is newly verified.
 
 2026-10-16 upload probe and coalescing candidate REJECTED: temporary diagnostic Snow copy measures 398–438 MB and 2466–3024 queue writes per three-second steady window (133–146 MB/s); large writes carry nearly all bytes. No full-Wasm-heap copy was observed. The 401×401 position/normal buffers and two-channel Snow state are dynamic; the two-channel buffer is not evidence of redundant static UV uploads. Existing BufferStore ranges append independently and GeometryCache uploads each separately. A candidate coalesces overlapping/nested/adjacent existing ranges before upload, retaining disjoint gaps and the single-range fast path. The focused native regression reproduced five writes/136 bytes instead of two/120, then passed with exact full readback after the fix (red then green, native_engine_renderer_geometry_cache 1/1, 0.26 s). Wasm build passes. Baseline Snow footsteps captures pass 9/9 twice on NVIDIA/Turing at 1280×720, and a fresh visual judge returns NEUTRAL for both pairs. The frozen 13-run paired cohort (render-P95 AA noise 2.5 ms) records only 2/5 tail wins beyond noise at 5.3/1.1/0.5/2.9/1.0 ms against the required 5/5, and the original 33 ms frame-P95 gate passes 0/13; speed failed. The coalescing source and its regression test are reverted to HEAD; experiment artifacts remain outside the repo; no speed claim is made. Broad acceptance boxes remain open. Results: `/tmp/pr493-coalesce-perf/summary.json`.
+
+2026-10-16 Starter antialias on the legacy native host, without a three.js patch. Cause: three.js
+`SMAANode` constructs `Image` for its two embedded PNG lookup tables, and the native host had no
+`Image`, so the legacy quality path dropped antialias (`build: Image is not defined`). A first repair
+patched three.js; it was rejected under the three-patch-last-resort rule and reverted. The fix is a
+host `Image` shim (`image-bitmap-polyfill.js`, recorded in `shim-manifest.json`) that loads `src`
+through `fetch` and `createImageBitmap`, plus standard `data:` URL decoding in `fetch-polyfill.js`.
+- Unit: `image-bitmap-polyfill`, `runtime-next-contract`, `fetch-shim` 74 pass, 1 skip;
+  `check-native-shims` passes. `mystral-runtime` now exports the Linux link policy, so both QuickJS
+  test targets link.
+- Native, stock three.js consumer cohort (core tgz `8706ddca…`, legacy host `07d53635…`, owned player
+  `d6953a29…`), original render-chain scenario plus two same-pose repeats per arm: 6/6 runs pass,
+  6/6 assertions each, tier high, antialias applied and not dropped, zero diagnostics, NVIDIA RTX 2080
+  1280×720. Legacy logs both SMAA textures (66×33, 160×560).
+Not claimed: browser rebuild, visual judge, paired CPU (AC-3, AC-4 stay open).
