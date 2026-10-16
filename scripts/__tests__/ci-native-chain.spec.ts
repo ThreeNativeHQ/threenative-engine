@@ -506,3 +506,56 @@ it("excludes only the compiler cache from source dirt while exposing adjacent un
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+describe("opt-in Linux arm64 V8 auxiliary producer", () => {
+  const workflow = readFileSync(
+    path.join(repository, ".github/workflows/native-platforms.yml"),
+    "utf8",
+  );
+  it("validates auxiliary jobs without growing either product inventory", () => {
+    expect(() => validateNativeWorkflow(workflow)).not.toThrow();
+    const common = [
+      "scope",
+      "web-reference",
+      "android-v8-source",
+      "android-emulator-parity",
+      "desktop-parity",
+      "release-reports",
+      "performance-coverage",
+      "networking-matrix",
+    ];
+    for (const nativeTier of ["full", "reduced"]) {
+      const legs = nativeInventory({
+        jobs: { "native-platforms": { required: true } },
+        nativeTier,
+      });
+      expect(legs.map((leg: { key: string }) => leg.key)).toEqual([
+        ...common,
+        ...(nativeTier === "full" ? ["desktop:Windows", "desktop:macOS"] : []),
+        "starter-linux:linux-x64",
+        ...(nativeTier === "full" ? ["starter-linux:linux-arm64"] : []),
+      ]);
+    }
+  });
+  it.each([
+    ["manual event gate", "github.event_name == 'workflow_dispatch' && ", ""],
+    ["explicit choice gate", "inputs.build_linux_arm64_v8 == true && ", ""],
+    [
+      "disabled choice",
+      "inputs.build_linux_arm64_v8 == true",
+      "inputs.build_linux_arm64_v8 != false",
+    ],
+    ["producer registration", "  linux-arm64-v8-source:\n", "  unknown-cache-producer:\n"],
+    ["completion join", ", linux-arm64-v8-source, publish-linux-arm64-v8]", "]"],
+  ])("rejects a changed %s", (_label, before, after) => {
+    expect(workflow).toContain(before);
+    expect(() => validateNativeWorkflow(workflow.replace(before, after))).toThrow(
+      "CI_NATIVE_WORKFLOW_POLICY",
+    );
+  });
+  it("rejects an additional unregistered job", () => {
+    expect(() =>
+      validateNativeWorkflow(`${workflow}\n  unknown-cache-producer:\n    name: Unknown\n`),
+    ).toThrow("CI_NATIVE_WORKFLOW_POLICY");
+  });
+});

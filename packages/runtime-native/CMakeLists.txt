@@ -844,6 +844,9 @@ if(MYSTRAL_USE_V8)
             elseif(UNIX)
                 # V8 on Linux needs pthread and dl
                 set(V8_SYSTEM_LIBS pthread dl)
+                if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+                    list(APPEND V8_SYSTEM_LIBS atomic)
+                endif()
             elseif(WIN32)
                 # V8 on Windows needs these
                 set(V8_SYSTEM_LIBS winmm dbghelp shlwapi)

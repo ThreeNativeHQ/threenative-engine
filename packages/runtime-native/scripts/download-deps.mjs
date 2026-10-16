@@ -29,6 +29,7 @@ import { tmpdir } from 'node:os';
 import { SDL3_ANDROID_VERSION } from './package-android.mjs';
 import { SDL3_IOS_VERSION } from './package-ios.mjs';
 import { provisionAndroidV8 } from './build-android-v8.mjs';
+import { verifyLinuxArm64V8Installation } from './build-linux-arm64-v8.mjs';
 import { assertAndroid16KbAlignment } from './check-android-16kb-alignment.mjs';
 import { resolveWgpuCacheToolchain } from './wgpu-cache-toolchain.mjs';
 
@@ -178,16 +179,20 @@ const DEPS = {
     needsHeaders: true,
   },
   v8: {
-    // V8 prebuilts from kuoruan/libv8 (see docs/V8_PREBUILTS.md for fork info)
-    // https://github.com/kuoruan/libv8/releases
+    // Linux arm64 uses the locked source-built cache; other targets use kuoruan/libv8.
     version: 'v13.1.201.22',
-    getUrl: () => {
+    getUrl: (lock) => {
+      if (platformName === 'linux' && ARCH === 'arm64') {
+        const payload = lock.payloads.get('v8-linux-arm64');
+        if (!payload) throw new Error('TN_NATIVE_DEP_LOCK_MISSING: v8-linux-arm64 requires the verified cached archive descriptor; refusing x64 fallback or a source build.');
+        return payload.url;
+      }
       // Platform mapping for kuoruan/libv8 releases
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x64';
         return `https://github.com/kuoruan/libv8/releases/download/${DEPS.v8.version}/v8_macOS_${arch}.tar.xz`;
       }if (platformName === 'linux') {
-        // Only x64 available for Linux
+        // Linux x64 keeps the upstream prebuilt.
         return `https://github.com/kuoruan/libv8/releases/download/${DEPS.v8.version}/v8_Linux_x64.tar.xz`;
       }if (platformName === 'windows') {
         // Only x64 available for Windows (7z format)
@@ -805,7 +810,21 @@ function lockPayloadForUrl(payloads, url) {
 }
 
 function receiptPathFor(destDir) {
+  // The frozen V8 build receipt covers every file in its installation tree.
+  if (platformName === 'linux' && ARCH === 'arm64' && destDir === join(THIRD_PARTY, 'v8')) {
+    return join(THIRD_PARTY, LOCK_RECEIPT_DIRNAME, 'v8-linux-arm64.json');
+  }
   return join(destDir, LOCK_RECEIPT_DIRNAME, 'receipt.json');
+}
+
+function verifyLockedLinuxArm64V8(destDir, payload) {
+  const expected = payload.provenance?.receiptSha256;
+  if (!/^[a-f0-9]{64}$/u.test(expected ?? ''))
+    throw new Error(`TN_V8_RECEIPT_PIN_MISSING: ${payload.id} requires a locked producer receipt SHA-256.`);
+  const actual = sha256Bytes(readFileSync(join(destDir, 'build-receipt.json')));
+  if (actual !== expected)
+    throw new Error(`TN_V8_RECEIPT_PIN_MISMATCH: ${payload.id} producer receipt differs from the locked archive.`);
+  return verifyLinuxArm64V8Installation(destDir);
 }
 
 function readReceipt(destDir, lockHash) {
@@ -1318,7 +1337,7 @@ export async function downloadDep(name, options = {}) {
     }
   }
 
-  const url = dep.getUrl();
+  const url = dep.getUrl(lock);
   if (!url) {
     console.warn(`Skipping ${name} - no prebuilt available for this platform`);
     return false;
@@ -1343,6 +1362,9 @@ export async function downloadDep(name, options = {}) {
         if (!receipt || !Array.isArray(receipt.payloads) || !receipt.payloads.includes(selectedPayload.id)) {
           console.warn(`${name} has no receipt for ${selectedPayload.id} under the current lock; replacing the stale dependency cache`);
         } else {
+          if (name === 'v8' && platformName === 'linux' && ARCH === 'arm64') {
+            verifyLockedLinuxArm64V8(destDir, selectedPayload);
+          }
           console.log('Skipping (use --force to re-download)');
           return true;
         }
@@ -1402,6 +1424,9 @@ export async function downloadDep(name, options = {}) {
         rmSync(headersTempDir, { recursive: true });
         console.log(`Headers merged into ${destDir}`);
       }
+    }
+    if (name === 'v8' && platformName === 'linux' && ARCH === 'arm64') {
+      verifyLockedLinuxArm64V8(destDir, payload);
     }
     writeReceipt(destDir, {
       schemaVersion: 1, dependency: name, lockHash: lock.lockHash,
@@ -1570,17 +1595,11 @@ async function main() {
   if (requestedBackend === 'dawn') assertDawnAndroidArchive();
   if (requestedWgpuVersion) configureWgpuOverride(requestedWgpuVersion);
 
-  // Linux arm64 keeps the QuickJS engine over wgpu-native, whose `wgpu-linux-aarch64` prebuilt
-  // is already in the dependency lock: kuoruan/libv8 ships Linux x64 only and Dawn's
-  // `ubuntu-latest` release asset is x64, and a source V8 build is not allowed in CI. Everything
-  // else the x64 desktop set links now has an arm64 archive, so the arm64 host builds the same
-  // feature set instead of dropping Canvas2D, WebP textures, TypeScript and WebTransport.
-  // libuv is the exception: library-builder ships libuv-linux-x64 only, so arm64 fetches the
-  // architecture-independent `libuv-source` and CMake builds it from that pinned source. See
-  // scripts/native-build.mjs for the matching configure overrides.
+  // Linux arm64 uses cached V8 over wgpu-native; QuickJS remains available for paired builds.
+  // Keep the desktop feature set; libuv builds from locked source where no prebuilt exists.
   const linuxArm64 = platformName === 'linux' && ARCH === 'arm64';
   const desktopDeps = linuxArm64
-    ? ['wgpu', 'sdl3', 'quickjs', 'stb', 'webp', 'skia', 'swc', 'quiche', 'libuv-source']
+    ? ['wgpu', 'sdl3', 'v8', 'quickjs', 'stb', 'webp', 'skia', 'swc', 'quiche', 'libuv-source']
     : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
