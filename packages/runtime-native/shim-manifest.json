@@ -12,6 +12,7 @@
     { "name": "Event", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
     { "name": "Headers", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
     { "name": "HTMLCanvasElement", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js" },
+    { "name": "Image", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js", "reason": "Stock three.js addons such as SMAANode construct Image and assign an embedded base64 PNG data URI to .src; the host decodes it through fetch plus createImageBitmap." },
     { "name": "KeyboardEvent", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
     { "name": "OffscreenCanvas", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js" },
     { "name": "PointerEvent", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
@@ -50,10 +51,6 @@
     {
       "name": "HTMLElement",
       "reason": "Framework uses HTMLElement only as a DOM-compatible TypeScript annotation; native mounting receives the host's compatibility object."
-    },
-    {
-      "name": "Image",
-      "reason": "Asset loading probes Image as an optional browser decoder and falls back to the native createImageBitmap path when it is absent."
     },
     {
       "name": "PerformanceObserver",
