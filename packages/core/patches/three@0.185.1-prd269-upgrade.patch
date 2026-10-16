@@ -18456,3 +18456,500 @@ index 18e2b7943393fd07b7989b1e3a5231a61ca24187..faf500ca41898100d46b56ce322ddee8
  
  		} );
  
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 1071a6d91ee953f1fcc6769d0b6ba5230b67bfa1..8db7f2048e19c957452527a556790c28767c485b 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -30944,6 +30944,7 @@ class RenderObjects {
+ 			this.pipelines.delete( renderObject );
+ 			this.bindings.deleteForRender( renderObject );
+ 			this.nodes.delete( renderObject );
++			this.geometries.releaseRenderObject( renderObject );
+ 
+ 			chainMap.delete( renderObject.getChainArray() );
+ 
+@@ -31330,6 +31331,9 @@ class Geometries extends DataMap {
+ 		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
+ 		 */
+ 		this._settledAttributes = new WeakMap();
++		this._geometryAttributeOwners = new WeakMap();
++		this._sharedAttributeOwners = new WeakMap();
++		this._renderObjectAttributeGeometry = new WeakMap();
+ 
+ 	}
+ 
+@@ -31355,6 +31359,7 @@ class Geometries extends DataMap {
+ 	updateForRender( renderObject ) {
+ 
+ 		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
++		if ( this.geometryAttributesChanged( renderObject ) ) this.syncGeometryAttributes( renderObject );
+ 
+ 		// A settled static object has no attribute that could have changed since the last refresh,
+ 		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
+@@ -31419,6 +31424,108 @@ class Geometries extends DataMap {
+ 
+ 	}
+ 
++	/** Compare the published attribute identities without allocating on settled frames. */
++	geometryAttributesChanged( renderObject ) {
++
++		const geometry = renderObject.geometry;
++		const owner = this._geometryAttributeOwners.get( geometry )?.get( renderObject );
++		if ( owner === undefined || owner.index !== geometry.index ) return true;
++
++		const attributes = renderObject.getAttributes();
++		if ( owner.attributes.length !== attributes.length ) return true;
++		for ( let i = 0; i < attributes.length; i ++ ) {
++			const attribute = attributes[ i ];
++			if ( owner.attributes[ i ] !== ( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) ) return true;
++		}
++
++		return false;
++
++	}
++
++	/** Add this render object's current geometry attributes to the renderer's shared-resource owners. */
++	syncGeometryAttributes( renderObject ) {
++
++		const { geometry } = renderObject;
++		const previousGeometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( previousGeometry !== undefined && previousGeometry !== geometry ) this.releaseRenderObject( renderObject );
++		this._renderObjectAttributeGeometry.set( renderObject, geometry );
++		let geometryOwners = this._geometryAttributeOwners.get( geometry );
++
++		if ( geometryOwners === undefined ) {
++			geometryOwners = new Map();
++			this._geometryAttributeOwners.set( geometry, geometryOwners );
++		}
++
++		const previous = geometryOwners.get( renderObject )?.keys ?? new Map();
++		const current = new Map();
++		const attributes = renderObject.getAttributes();
++		const attributeKeys = [];
++
++		for ( const attribute of attributes ) {
++			const key = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			current.set( key, true );
++			attributeKeys.push( key );
++		}
++		const index = geometry.index;
++		if ( index !== null ) current.set( index, true );
++
++		for ( const key of current.keys() ) {
++			let record = this._sharedAttributeOwners.get( key );
++			if ( record === undefined ) record = { owners: new Set() };
++			if ( previous.has( key ) === false ) record.owners.add( renderObject );
++			this._sharedAttributeOwners.set( key, record );
++		}
++
++		for ( const key of previous.keys() ) {
++			if ( current.has( key ) === false ) this.releaseSharedAttribute( key, renderObject );
++		}
++
++		geometryOwners.set( renderObject, { keys: current, attributes: attributeKeys, index } );
++
++	}
++
++	/** Drop a render object from its geometry before its material-owned node attributes go stale. */
++	releaseRenderObject( renderObject ) {
++
++		const geometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( geometry === undefined ) return;
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		const owned = geometryOwners?.get( renderObject )?.keys;
++		if ( owned !== undefined ) {
++			for ( const key of owned.keys() ) this.releaseSharedAttribute( key, renderObject );
++			geometryOwners.delete( renderObject );
++			if ( geometryOwners.size === 0 ) this._geometryAttributeOwners.delete( geometry );
++		}
++		this._renderObjectAttributeGeometry.delete( renderObject );
++
++	}
++
++	/** Release a shared GPU resource only after its last live geometry render object lets it go. */
++	releaseSharedAttribute( key, owner ) {
++
++		const record = this._sharedAttributeOwners.get( key );
++		if ( record === undefined ) return;
++		record.owners.delete( owner );
++		if ( record.owners.size !== 0 ) return;
++
++		this.attributes.delete( key );
++		this._sharedAttributeOwners.delete( key );
++
++	}
++
++	/** Release the recorded sets, not a potentially replaced render object's current attributes. */
++	releaseGeometryAttributes( geometry ) {
++
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		if ( geometryOwners === undefined ) return;
++		for ( const [ owner, attributes ] of geometryOwners ) {
++			for ( const key of attributes.keys.keys() ) this.releaseSharedAttribute( key, owner );
++			this._renderObjectAttributeGeometry.delete( owner );
++		}
++		this._geometryAttributeOwners.delete( geometry );
++
++	}
++
+ 	/**
+ 	 * Initializes the geometry of the given render object.
+ 	 *
+@@ -31437,20 +31544,7 @@ class Geometries extends DataMap {
+ 
+ 			this.info.memory.geometries --;
+ 
+-			const index = geometry.index;
+-			const geometryAttributes = renderObject.getAttributes();
+-
+-			if ( index !== null ) {
+-
+-				this.attributes.delete( index );
+-
+-			}
+-
+-			for ( const geometryAttribute of geometryAttributes ) {
+-
+-				this.attributes.delete( geometryAttribute );
+-
+-			}
++			this.releaseGeometryAttributes( geometry );
+ 
+ 			const wireframeAttribute = this.wireframes.get( geometry );
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index f656265a47ffb6034da0c6ce768264762096b197..82653bfe9e926c2fb7d4a8579f34e31f266eb291 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -30899,6 +30899,7 @@ class RenderObjects {
+ 			this.pipelines.delete( renderObject );
+ 			this.bindings.deleteForRender( renderObject );
+ 			this.nodes.delete( renderObject );
++			this.geometries.releaseRenderObject( renderObject );
+ 
+ 			chainMap.delete( renderObject.getChainArray() );
+ 
+@@ -31285,6 +31286,9 @@ class Geometries extends DataMap {
+ 		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
+ 		 */
+ 		this._settledAttributes = new WeakMap();
++		this._geometryAttributeOwners = new WeakMap();
++		this._sharedAttributeOwners = new WeakMap();
++		this._renderObjectAttributeGeometry = new WeakMap();
+ 
+ 	}
+ 
+@@ -31310,6 +31314,7 @@ class Geometries extends DataMap {
+ 	updateForRender( renderObject ) {
+ 
+ 		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
++		if ( this.geometryAttributesChanged( renderObject ) ) this.syncGeometryAttributes( renderObject );
+ 
+ 		// A settled static object has no attribute that could have changed since the last refresh,
+ 		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
+@@ -31374,6 +31379,108 @@ class Geometries extends DataMap {
+ 
+ 	}
+ 
++	/** Compare the published attribute identities without allocating on settled frames. */
++	geometryAttributesChanged( renderObject ) {
++
++		const geometry = renderObject.geometry;
++		const owner = this._geometryAttributeOwners.get( geometry )?.get( renderObject );
++		if ( owner === undefined || owner.index !== geometry.index ) return true;
++
++		const attributes = renderObject.getAttributes();
++		if ( owner.attributes.length !== attributes.length ) return true;
++		for ( let i = 0; i < attributes.length; i ++ ) {
++			const attribute = attributes[ i ];
++			if ( owner.attributes[ i ] !== ( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) ) return true;
++		}
++
++		return false;
++
++	}
++
++	/** Add this render object's current geometry attributes to the renderer's shared-resource owners. */
++	syncGeometryAttributes( renderObject ) {
++
++		const { geometry } = renderObject;
++		const previousGeometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( previousGeometry !== undefined && previousGeometry !== geometry ) this.releaseRenderObject( renderObject );
++		this._renderObjectAttributeGeometry.set( renderObject, geometry );
++		let geometryOwners = this._geometryAttributeOwners.get( geometry );
++
++		if ( geometryOwners === undefined ) {
++			geometryOwners = new Map();
++			this._geometryAttributeOwners.set( geometry, geometryOwners );
++		}
++
++		const previous = geometryOwners.get( renderObject )?.keys ?? new Map();
++		const current = new Map();
++		const attributes = renderObject.getAttributes();
++		const attributeKeys = [];
++
++		for ( const attribute of attributes ) {
++			const key = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			current.set( key, true );
++			attributeKeys.push( key );
++		}
++		const index = geometry.index;
++		if ( index !== null ) current.set( index, true );
++
++		for ( const key of current.keys() ) {
++			let record = this._sharedAttributeOwners.get( key );
++			if ( record === undefined ) record = { owners: new Set() };
++			if ( previous.has( key ) === false ) record.owners.add( renderObject );
++			this._sharedAttributeOwners.set( key, record );
++		}
++
++		for ( const key of previous.keys() ) {
++			if ( current.has( key ) === false ) this.releaseSharedAttribute( key, renderObject );
++		}
++
++		geometryOwners.set( renderObject, { keys: current, attributes: attributeKeys, index } );
++
++	}
++
++	/** Drop a render object from its geometry before its material-owned node attributes go stale. */
++	releaseRenderObject( renderObject ) {
++
++		const geometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( geometry === undefined ) return;
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		const owned = geometryOwners?.get( renderObject )?.keys;
++		if ( owned !== undefined ) {
++			for ( const key of owned.keys() ) this.releaseSharedAttribute( key, renderObject );
++			geometryOwners.delete( renderObject );
++			if ( geometryOwners.size === 0 ) this._geometryAttributeOwners.delete( geometry );
++		}
++		this._renderObjectAttributeGeometry.delete( renderObject );
++
++	}
++
++	/** Release a shared GPU resource only after its last live geometry render object lets it go. */
++	releaseSharedAttribute( key, owner ) {
++
++		const record = this._sharedAttributeOwners.get( key );
++		if ( record === undefined ) return;
++		record.owners.delete( owner );
++		if ( record.owners.size !== 0 ) return;
++
++		this.attributes.delete( key );
++		this._sharedAttributeOwners.delete( key );
++
++	}
++
++	/** Release the recorded sets, not a potentially replaced render object's current attributes. */
++	releaseGeometryAttributes( geometry ) {
++
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		if ( geometryOwners === undefined ) return;
++		for ( const [ owner, attributes ] of geometryOwners ) {
++			for ( const key of attributes.keys.keys() ) this.releaseSharedAttribute( key, owner );
++			this._renderObjectAttributeGeometry.delete( owner );
++		}
++		this._geometryAttributeOwners.delete( geometry );
++
++	}
++
+ 	/**
+ 	 * Initializes the geometry of the given render object.
+ 	 *
+@@ -31392,20 +31499,7 @@ class Geometries extends DataMap {
+ 
+ 			this.info.memory.geometries --;
+ 
+-			const index = geometry.index;
+-			const geometryAttributes = renderObject.getAttributes();
+-
+-			if ( index !== null ) {
+-
+-				this.attributes.delete( index );
+-
+-			}
+-
+-			for ( const geometryAttribute of geometryAttributes ) {
+-
+-				this.attributes.delete( geometryAttribute );
+-
+-			}
++			this.releaseGeometryAttributes( geometry );
+ 
+ 			const wireframeAttribute = this.wireframes.get( geometry );
+ 
+diff --git a/src/nodes/accessors/Batch.js b/src/nodes/accessors/Batch.js
+index 2cf4bb6039853d5c922e89041419250b243694ef..4a05be529b3a7adfd8b40e17cc10539671cfcca9 100644
+--- a/src/nodes/accessors/Batch.js
++++ b/src/nodes/accessors/Batch.js
+@@ -118,3 +118,5 @@ export const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+ 	}
+ 
+ }, 'void' );
++
++
+diff --git a/src/renderers/common/Geometries.js b/src/renderers/common/Geometries.js
+index 979da2ffc4d0dcda6fdd72747a7e7125e3f8a3a3..74100c31a7d8d09986cbf327d31a824aaf6bf9ae 100644
+--- a/src/renderers/common/Geometries.js
++++ b/src/renderers/common/Geometries.js
+@@ -146,6 +146,9 @@ class Geometries extends DataMap {
+ 		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
+ 		 */
+ 		this._settledAttributes = new WeakMap();
++		this._geometryAttributeOwners = new WeakMap();
++		this._sharedAttributeOwners = new WeakMap();
++		this._renderObjectAttributeGeometry = new WeakMap();
+ 
+ 	}
+ 
+@@ -171,6 +174,7 @@ class Geometries extends DataMap {
+ 	updateForRender( renderObject ) {
+ 
+ 		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
++		if ( this.geometryAttributesChanged( renderObject ) ) this.syncGeometryAttributes( renderObject );
+ 
+ 		// A settled static object has no attribute that could have changed since the last refresh,
+ 		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
+@@ -235,6 +239,108 @@ class Geometries extends DataMap {
+ 
+ 	}
+ 
++	/** Compare the published attribute identities without allocating on settled frames. */
++	geometryAttributesChanged( renderObject ) {
++
++		const geometry = renderObject.geometry;
++		const owner = this._geometryAttributeOwners.get( geometry )?.get( renderObject );
++		if ( owner === undefined || owner.index !== geometry.index ) return true;
++
++		const attributes = renderObject.getAttributes();
++		if ( owner.attributes.length !== attributes.length ) return true;
++		for ( let i = 0; i < attributes.length; i ++ ) {
++			const attribute = attributes[ i ];
++			if ( owner.attributes[ i ] !== ( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) ) return true;
++		}
++
++		return false;
++
++	}
++
++	/** Add this render object's current geometry attributes to the renderer's shared-resource owners. */
++	syncGeometryAttributes( renderObject ) {
++
++		const { geometry } = renderObject;
++		const previousGeometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( previousGeometry !== undefined && previousGeometry !== geometry ) this.releaseRenderObject( renderObject );
++		this._renderObjectAttributeGeometry.set( renderObject, geometry );
++		let geometryOwners = this._geometryAttributeOwners.get( geometry );
++
++		if ( geometryOwners === undefined ) {
++			geometryOwners = new Map();
++			this._geometryAttributeOwners.set( geometry, geometryOwners );
++		}
++
++		const previous = geometryOwners.get( renderObject )?.keys ?? new Map();
++		const current = new Map();
++		const attributes = renderObject.getAttributes();
++		const attributeKeys = [];
++
++		for ( const attribute of attributes ) {
++			const key = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			current.set( key, true );
++			attributeKeys.push( key );
++		}
++		const index = geometry.index;
++		if ( index !== null ) current.set( index, true );
++
++		for ( const key of current.keys() ) {
++			let record = this._sharedAttributeOwners.get( key );
++			if ( record === undefined ) record = { owners: new Set() };
++			if ( previous.has( key ) === false ) record.owners.add( renderObject );
++			this._sharedAttributeOwners.set( key, record );
++		}
++
++		for ( const key of previous.keys() ) {
++			if ( current.has( key ) === false ) this.releaseSharedAttribute( key, renderObject );
++		}
++
++		geometryOwners.set( renderObject, { keys: current, attributes: attributeKeys, index } );
++
++	}
++
++	/** Drop a render object from its geometry before its material-owned node attributes go stale. */
++	releaseRenderObject( renderObject ) {
++
++		const geometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( geometry === undefined ) return;
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		const owned = geometryOwners?.get( renderObject )?.keys;
++		if ( owned !== undefined ) {
++			for ( const key of owned.keys() ) this.releaseSharedAttribute( key, renderObject );
++			geometryOwners.delete( renderObject );
++			if ( geometryOwners.size === 0 ) this._geometryAttributeOwners.delete( geometry );
++		}
++		this._renderObjectAttributeGeometry.delete( renderObject );
++
++	}
++
++	/** Release a shared GPU resource only after its last live geometry render object lets it go. */
++	releaseSharedAttribute( key, owner ) {
++
++		const record = this._sharedAttributeOwners.get( key );
++		if ( record === undefined ) return;
++		record.owners.delete( owner );
++		if ( record.owners.size !== 0 ) return;
++
++		this.attributes.delete( key );
++		this._sharedAttributeOwners.delete( key );
++
++	}
++
++	/** Release the recorded sets, not a potentially replaced render object's current attributes. */
++	releaseGeometryAttributes( geometry ) {
++
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		if ( geometryOwners === undefined ) return;
++		for ( const [ owner, attributes ] of geometryOwners ) {
++			for ( const key of attributes.keys.keys() ) this.releaseSharedAttribute( key, owner );
++			this._renderObjectAttributeGeometry.delete( owner );
++		}
++		this._geometryAttributeOwners.delete( geometry );
++
++	}
++
+ 	/**
+ 	 * Initializes the geometry of the given render object.
+ 	 *
+@@ -253,20 +359,7 @@ class Geometries extends DataMap {
+ 
+ 			this.info.memory.geometries --;
+ 
+-			const index = geometry.index;
+-			const geometryAttributes = renderObject.getAttributes();
+-
+-			if ( index !== null ) {
+-
+-				this.attributes.delete( index );
+-
+-			}
+-
+-			for ( const geometryAttribute of geometryAttributes ) {
+-
+-				this.attributes.delete( geometryAttribute );
+-
+-			}
++			this.releaseGeometryAttributes( geometry );
+ 
+ 			const wireframeAttribute = this.wireframes.get( geometry );
+ 
+diff --git a/src/renderers/common/RenderObjects.js b/src/renderers/common/RenderObjects.js
+index 72569d0339314d26eb7a35ff2a8462a803c852a6..d52f6a1171d6ffb3f84cba575de890bb97a8e1a9 100644
+--- a/src/renderers/common/RenderObjects.js
++++ b/src/renderers/common/RenderObjects.js
+@@ -217,6 +217,7 @@ class RenderObjects {
+ 			this.pipelines.delete( renderObject );
+ 			this.bindings.deleteForRender( renderObject );
+ 			this.nodes.delete( renderObject );
++			this.geometries.releaseRenderObject( renderObject );
+ 
+ 			chainMap.delete( renderObject.getChainArray() );
+ 

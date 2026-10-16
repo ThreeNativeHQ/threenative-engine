@@ -205,6 +205,15 @@ const QUEUE_ORDER_BLOBS = {
   "src/renderers/webgpu/WebGPUBackend.js": "94b48d64ed8f2e57f00cb5fd5bd0112da085aeae",
 };
 
+// Exact installed blobs before PRD618 shared-resource lifetime ownership.
+const RESOURCE_LIFETIME_PREDECESSOR_BLOBS = {
+  "build/three.webgpu.js": "1071a6d91ee953f1fcc6769d0b6ba5230b67bfa1",
+  "build/three.webgpu.nodes.js": "f656265a47ffb6034da0c6ce768264762096b197",
+  "src/nodes/accessors/Batch.js": "2cf4bb6039853d5c922e89041419250b243694ef",
+  "src/renderers/common/Geometries.js": "979da2ffc4d0dcda6fdd72747a7e7125e3f8a3a3",
+  "src/renderers/common/RenderObjects.js": "72569d0339314d26eb7a35ff2a8462a803c852a6",
+};
+
 function blobHash(contents: string): string {
   return createHash("sha1")
     .update(`blob ${Buffer.byteLength(contents)}\0`)
@@ -256,6 +265,7 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
 }
 
 describe.each([
+  ["PRD618 resource-lifetime predecessor", RESOURCE_LIFETIME_PREDECESSOR_BLOBS],
   ["PRD618 instance-history predecessor", INSTANCE_HISTORY_BLOBS],
   ["PR486 matrix-guard predecessor", MATRIX_GUARD_BLOBS],
   ["PR486 abort predecessor", ABORT_PREDECESSOR_BLOBS],
