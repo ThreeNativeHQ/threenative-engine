@@ -61,6 +61,8 @@ The diagnostic command was `trace --url 'http://127.0.0.1:5296/?world=forest&sho
 
 The Argon gateway visual attempt returned HTTP 400 and no verdict. A new Go review used actual image-returning Read calls and supplied the NEUTRAL verdict above. Full local candidate build passed; the first `pnpm test` stopped with 21 missing-native-binary failures. Read-only triage confirmed absent V8/QuickJS executables before the changed guard could run. Building the V8 host/contract targets and QuickJS host/timestamp/renderable targets resolved them: six-file rerun 72 passed/1 skipped, then full `pnpm test` and desktop render qualification passed. Shipped doctor passed Node/Chromium/Xvfb/ADB prerequisites; iOS is not claimed here. PR CI and merge are delivery steps and remain unverified at this local completion point.
 
+Delivery incorporated develop `14d688819` without conflicts. Its added Dawn build tooling and Xvfb scratch cleanup left the optimized helpers and native C++ runtime unchanged; the new native/distribution tests passed 70/70, CI contracts 209/209, and current lint/docs checks passed. Existing runtime proof is retained for those unchanged inputs. Archive checks passed 248/248 across six files; the official closure helper verified all five phase and three acceptance boxes before moving this file.
+
 ## Decisions
 
 - 2026-10-15 (Codex): A module-level WeakMap alone does not eliminate graph walks and is rejected. The validation counter must continue to report actual work; do not optimize only the metric.
