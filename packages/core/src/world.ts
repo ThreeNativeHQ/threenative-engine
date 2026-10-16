@@ -574,8 +574,17 @@ export class Heightfield extends Group implements IComputeDriven {
         this.#gridNormal(source, target, normalArray ?? normalAttribute, vertex);
       }
     }
-    position.needsUpdate = true;
-    if (normalAttribute !== undefined) normalAttribute.needsUpdate = true;
+    // Upload only the rows this refresh touched. Ranges accumulate until the renderer uploads, and
+    // an unbounded refresh records the full range so a later window cannot shrink a pending one.
+    const first = row.start * this.columns + column.start;
+    const last = (row.start + row.count - 1) * this.columns + column.start + column.count;
+    for (const attribute of normalAttribute === undefined
+      ? [position]
+      : [position, normalAttribute]) {
+      if (attribute instanceof BufferAttribute && row.count > 0 && column.count > 0)
+        attribute.addUpdateRange(first * 3, (last - first) * 3);
+      attribute.needsUpdate = true;
+    }
     // Only heights move, so a windowed refresh grows the existing bounds by the window's own
     // range instead of walking every vertex again: on a 321-sample field the full recompute cost
     // two milliseconds for a footprint-sized window. Bounds may stay conservative after a refill.

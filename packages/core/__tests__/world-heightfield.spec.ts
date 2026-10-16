@@ -173,6 +173,26 @@ describe("Heightfield", () => {
     geometry.dispose();
   });
 
+  it("should upload only the refreshed rows, and never shrink a pending full refresh", () => {
+    const value = field(1337);
+    const geometry = value.toGeometry();
+    const position = geometry.getAttribute("position") as BufferAttribute;
+    const normal = geometry.getAttribute("normal") as BufferAttribute;
+    position.clearUpdateRanges();
+    normal.clearUpdateRanges();
+
+    // Rows 2..4, columns 3..7 of a 17-column field: one span from (2,3) to the end of (4,7).
+    value.refreshGeometry(geometry, { column: 3, columns: 5, row: 2, rows: 3 });
+    const window = { count: (4 * 17 + 8 - (2 * 17 + 3)) * 3, start: (2 * 17 + 3) * 3 };
+    expect(position.updateRanges).toEqual([window]);
+    expect(normal.updateRanges).toEqual([window]);
+
+    // A full refresh in the same frame records the whole buffer, so the upload covers it.
+    value.refreshGeometry(geometry);
+    expect(position.updateRanges).toContainEqual({ count: position.array.length, start: 0 });
+    expect(normal.updateRanges).toContainEqual({ count: normal.array.length, start: 0 });
+  });
+
   it("should keep per-vertex setters for interleaved and normalized geometry", () => {
     const value = field(1337);
     const count = value.rows * value.columns;
