@@ -42,6 +42,8 @@ Integration: unchanged — WorldCells main cull → `recordCpuMain` → `bundleI
 
 Core typecheck passed (`pnpm --filter @threenative/core typecheck`, exit 0); focused Biome passed with 23 existing warnings and no errors. Parent diff review found no new public API, cache scope, limit or property-enumeration change. Baseline/candidate suite durations are not a performance claim; matched runtime evidence remains open.
 
+The first broader typecheck caught the new partial Node fixture's direct typed assignment at `world-bundles.spec.ts:1159`; it now uses reflective assignment, preserving the same runtime property write. Root `tsc --noEmit -p tsconfig.json` then passed locally. Laptop job `prd621-type-lint-r2` passed workspace `pnpm typecheck` and `pnpm lint`, exit 0 (3,805 linted files, 1,445 warnings, no errors). The earlier workspace build passed on the identical engine source. Full unit/native/runtime qualification remains open.
+
 ### Phase 2: Runtime proof and delivery
 
 **Status:** NOT STARTED

@@ -1156,7 +1156,7 @@ describe("the main pass's draw bundles", () => {
         for (const child of produced) yield child;
       })();
     Reflect.set(holder, "getChildren", reader);
-    painted.colorNode = holder;
+    Reflect.set(painted, "colorNode", holder);
     const { renderer, world: cells } = await world({
       bundles: true,
       gpuScene: false,
