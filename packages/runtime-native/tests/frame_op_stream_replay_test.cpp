@@ -735,6 +735,34 @@ void runPlanContract() {
     expectAccepted(state, patchPacket(41, "[{index:2,runs:[{offset:8,words:[1,901]}]}]"),
                    emptyFrameOrder, "a patch of unchanged words applies and replays");
 
+    // A frame may finish a command encoder and never submit it: three's transient-depth abort ends
+    // a pass, finishes the encoder, and discards the command buffer. A finished buffer is closed
+    // work, not an object still recording, so the frame is accepted and the completed buffer is
+    // released with the rest of the frame rather than reported as unfinished.
+    auto discardPacket = [](int sequence) {
+        std::ostringstream out;
+        out << "() => { const b = new ArrayBuffer(56); const v = new DataView(b);"
+               " v.setUint32(0, 0x544e4652, true); v.setUint32(4, 3, true); v.setUint32(8, 56, true);"
+               " v.setUint32(12, 1, true); v.setUint32(16, "
+            << sequence
+            << ", true); v.setUint32(20, 2, true);"
+               " v.setUint32(24, 2, true); v.setUint32(28, 16, true); v.setUint32(32, 900, true);"
+               " v.setUint32(40, 28, true); v.setUint32(44, 16, true); v.setUint32(48, 900, true);"
+               " v.setUint32(52, 901, true); return b; }";
+        return out.str();
+    };
+    expectAccepted(state, discardPacket(42), {"createCommandEncoder", "finish"},
+                   "a frame that finishes a command buffer without submitting it is accepted");
+    // The same encoder left open still fails closed, so accepting a finished buffer did not weaken
+    // the guard on the objects that are genuinely still recording.
+    expectMalformed(state,
+        "() => { const b = new ArrayBuffer(40); const v = new DataView(b);"
+        " v.setUint32(0, 0x544e4652, true); v.setUint32(4, 3, true); v.setUint32(8, 40, true);"
+        " v.setUint32(12, 1, true); v.setUint32(16, 44, true); v.setUint32(20, 1, true);"
+        " v.setUint32(24, 2, true); v.setUint32(28, 16, true); v.setUint32(32, 900, true); return b; }",
+        "frame ended with unfinished GPU objects",
+        "native parser rejects a frame that leaves its command encoder open");
+
     // A rejection drops the plan, so every structural case is judged against a capture it sets up
     // itself rather than against whatever the case before it left behind.
     int caseSequence = 50;
