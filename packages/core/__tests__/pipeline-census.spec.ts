@@ -800,6 +800,48 @@ describe("pipeline census", () => {
     });
   });
 
+  it("keeps draw-time scope matching flat as streamed targets accumulate", () => {
+    const { backend } = webgpuStub();
+    const world = {};
+    const state = {};
+    const nodes = { getForRender: (_renderObject: unknown) => state };
+    const raw = {
+      _nodes: nodes,
+      backend,
+      renderObject: (object: unknown, scene: unknown, _camera: unknown, ...rest: unknown[]) => {
+        nodes.getForRender({ object });
+        void scene;
+        void rest;
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+    const streamed = { parent: world };
+    const drawn = { parent: streamed };
+    const fastestDrawsMs = (): number => {
+      let fastest = Number.POSITIVE_INFINITY;
+      for (let round = 0; round < 3; round += 1) {
+        census.beginWorldFrame(world);
+        const startedMs = performance.now();
+        for (let draw = 0; draw < 100; draw += 1) {
+          raw.renderObject(drawn, world, {}, {}, {}, null, null, null, "main");
+        }
+        fastest = Math.min(fastest, performance.now() - startedMs);
+        census.endWorldFrame(world, true);
+      }
+      return fastest;
+    };
+    census.warmUpScopeSettled("streamed:0", streamed);
+    const soloMs = fastestDrawsMs();
+    for (let index = 1; index < 10_000; index += 1) {
+      census.warmUpScopeSettled(`streamed:${index}`, { parent: world });
+    }
+    const crowdedMs = fastestDrawsMs();
+
+    expect(census.snapshot().warmUpScopes?.[0]?.firstDraw).toBeDefined();
+    expect(crowdedMs / Math.max(soloMs, 1), "draw cost with 10,000 scopes vs one").toBeLessThan(50);
+  });
+
   it("fails closed when the renderer-owned node seam cannot be installed", () => {
     const { backend } = webgpuStub();
     const raw = {

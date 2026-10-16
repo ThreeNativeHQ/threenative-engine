@@ -283,7 +283,6 @@ interface IMutableWarmUpScope {
   eventsSettled: number;
   nodeBuilds: number;
   renderPipelineCreations: number;
-  target?: object;
   firstDraw?: {
     nodeBuilds: number;
     renderPipelineCreations: number;
@@ -359,6 +358,10 @@ export class PipelineCensus {
   #nodeBuildsAtWarmUpSettled = 0;
   #renderPipelineCreationsAtWarmUpSettled = 0;
   readonly #warmUpScopes: IMutableWarmUpScope[] = [];
+  /** Scope lists keyed weakly by streamed root, so an evicted chunk graph is not kept alive here. */
+  readonly #warmUpTargets = new WeakMap<object, IMutableWarmUpScope[]>();
+  /** Scopes a draw touched in the open world frame; only these reset when it closes. */
+  #frameWarmUpScopes: IMutableWarmUpScope[] = [];
   #activeWarmUpScope: { label: string; boundaryMs: number } | undefined;
   #activeWorldFrame: { root: object } | undefined;
   #nodeBuilderObservationUnavailable = false;
@@ -575,7 +578,7 @@ export class PipelineCensus {
       nodeBuilds: 0,
     };
     this.#activeRenderObject = active;
-    for (const scope of this.#matchingWarmUpScopes()) scope.frameObserved = true;
+    this.#observeWarmUpScopes(this.#matchingWarmUpScopes());
     try {
       return callback();
     } finally {
@@ -583,7 +586,7 @@ export class PipelineCensus {
     }
   }
 
-  #matchingWarmUpScopes(active = this.#activeRenderObject): IMutableWarmUpScope[] {
+  #matchingWarmUpScopes(active = this.#activeRenderObject): readonly IMutableWarmUpScope[] {
     const activeObject = active?.object;
     if (
       active === undefined ||
@@ -591,10 +594,16 @@ export class PipelineCensus {
       !isObject(activeObject) ||
       !isMainWorldPass(active.passId)
     )
-      return [];
-    return this.#warmUpScopes.filter(
-      (scope) => scope.target !== undefined && belongsToWarmUpTarget(activeObject, scope.target),
-    );
+      return NO_WARM_UP_SCOPES;
+    return warmUpScopesOf(this.#warmUpTargets, activeObject);
+  }
+
+  #observeWarmUpScopes(scopes: readonly IMutableWarmUpScope[]): void {
+    for (const scope of scopes) {
+      if (scope.frameObserved) continue;
+      scope.frameObserved = true;
+      this.#frameWarmUpScopes.push(scope);
+    }
   }
 
   /** Begin the outer world render that can close target-bound streamed warm-up scopes. */
@@ -607,8 +616,8 @@ export class PipelineCensus {
     const frame = this.#activeWorldFrame;
     this.#activeWorldFrame = undefined;
     const matches = completed && frame !== undefined && frame.root === root;
-    for (const scope of this.#warmUpScopes) {
-      if (matches && scope.frameObserved && scope.firstDraw === undefined)
+    for (const scope of this.#frameWarmUpScopes) {
+      if (matches && scope.firstDraw === undefined)
         scope.firstDraw = {
           nodeBuilds: scope.frameNodeBuilds,
           renderPipelineCreations: scope.frameRenderPipelineCreations,
@@ -617,6 +626,7 @@ export class PipelineCensus {
       scope.frameNodeBuilds = 0;
       scope.frameRenderPipelineCreations = 0;
     }
+    this.#frameWarmUpScopes = [];
   }
 
   /** Observe state creation at Three's renderer-owned NodeManager seam, never on the game Mesh. */
@@ -685,10 +695,8 @@ export class PipelineCensus {
     if (this.#activeRenderObject !== undefined) this.#activeRenderObject.nodeBuilds += 1;
     const startedMs = this.#clock();
     const matching = this.#matchingWarmUpScopes();
-    for (const scope of matching) {
-      scope.frameObserved = true;
-      scope.frameNodeBuilds += 1;
-    }
+    this.#observeWarmUpScopes(matching);
+    for (const scope of matching) scope.frameNodeBuilds += 1;
     const legacyScope =
       this.#activeWarmUpScope !== undefined && startedMs > this.#activeWarmUpScope.boundaryMs
         ? this.#activeWarmUpScope.label
@@ -755,7 +763,7 @@ export class PipelineCensus {
   warmUpScopeSettled(label: string, target?: object): void {
     if (label.trim() === "") throw new Error("TN_PIPELINE_CENSUS_SCOPE_INVALID: empty label");
     const boundaryMs = this.#clock();
-    this.#warmUpScopes.push({
+    const scope: IMutableWarmUpScope = {
       label,
       boundaryMs,
       eventsSettled: this.#events.filter(
@@ -769,11 +777,16 @@ export class PipelineCensus {
           event.settledMs !== undefined &&
           event.settledMs <= boundaryMs,
       ).length,
-      ...(target === undefined ? {} : { target }),
       frameObserved: false,
       frameNodeBuilds: 0,
       frameRenderPipelineCreations: 0,
-    });
+    };
+    this.#warmUpScopes.push(scope);
+    if (target !== undefined) {
+      const scopes = this.#warmUpTargets.get(target);
+      if (scopes === undefined) this.#warmUpTargets.set(target, [scope]);
+      else scopes.push(scope);
+    }
     if (target === undefined) this.#activeWarmUpScope = { label, boundaryMs };
   }
 
@@ -1078,10 +1091,8 @@ export class PipelineCensus {
     this.#creations += 1;
     const matching =
       input.kind === "render" && input.direct !== true ? this.#matchingWarmUpScopes() : [];
-    for (const scope of matching) {
-      scope.frameObserved = true;
-      scope.frameRenderPipelineCreations += 1;
-    }
+    this.#observeWarmUpScopes(matching);
+    for (const scope of matching) scope.frameRenderPipelineCreations += 1;
     // A direct creation has no logical Three pipeline to be identified by, and one shared
     // placeholder would make two of them look like one. Each takes its own until its handle lands.
     const pipelineIdentity =
@@ -1359,19 +1370,34 @@ function isMainWorldPass(passId: unknown): boolean {
   return passId === undefined || passId === null || passId === "main";
 }
 
-function belongsToWarmUpTarget(value: object, target: object): boolean {
-  if (value === target) return true;
-  const record = value as { userData?: unknown; parent?: unknown };
-  const userData = isObject(record.userData) ? record.userData : undefined;
-  if (userData?.tnChunkRoot === target) return true;
-  const seen = new Set<object>();
-  let current: unknown = record.parent;
-  while (isObject(current) && !seen.has(current)) {
-    if (current === target) return true;
-    seen.add(current);
-    current = (current as { parent?: unknown }).parent;
-  }
-  return false;
+const NO_WARM_UP_SCOPES: readonly IMutableWarmUpScope[] = [];
+
+/** Scopes bound to the value, its `tnChunkRoot`, or any ancestor: O(depth) lookups per draw. */
+function warmUpScopesOf(
+  targets: WeakMap<object, IMutableWarmUpScope[]>,
+  value: object,
+): readonly IMutableWarmUpScope[] {
+  const userData = (value as { userData?: unknown }).userData;
+  const chunkRoot = isObject(userData) ? userData.tnChunkRoot : undefined;
+  let found = addWarmUpScopes(undefined, targets.get(value));
+  if (isObject(chunkRoot)) found = addWarmUpScopes(found, targets.get(chunkRoot));
+  for (
+    let current = (value as { parent?: unknown }).parent;
+    isObject(current);
+    current = (current as { parent?: unknown }).parent
+  )
+    found = addWarmUpScopes(found, targets.get(current));
+  return found ?? NO_WARM_UP_SCOPES;
+}
+
+function addWarmUpScopes(
+  found: IMutableWarmUpScope[] | undefined,
+  scopes: readonly IMutableWarmUpScope[] | undefined,
+): IMutableWarmUpScope[] | undefined {
+  if (scopes === undefined) return found;
+  const next = found ?? [];
+  for (const scope of scopes) if (!next.includes(scope)) next.push(scope);
+  return next;
 }
 
 function asyncPromises(value: unknown): Promise<unknown>[] {
