@@ -302,9 +302,8 @@ function cutoutSurface(
       : float(world === "forest" ? source.alphaTest : 0.42).div(float(1).add(mip.mul(0.25)));
   material.opacityNode = sampled.a;
   material.maskShadowNode = sampled.a.greaterThan(material.alphaTestNode as Node<"float">);
-  // The shared mask owns the mip-aware cutoff; the scalar only classifies the shadow caster.
+  // Keep the authored scalar for cutout classification and impostor capture.
   material.userData.tnImpostorAlphaTest = source.alphaTest;
-  material.alphaTest = 1e-4;
   if (canopy) {
     lightNeedles(material, material.aoNode as Node<"float">);
     if (!otherBiome) material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.18);
