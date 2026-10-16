@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { BufferAttribute, BufferGeometry, Group, Matrix4, Mesh, MeshBasicMaterial } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
@@ -83,7 +84,7 @@ function renderer(dispatched: unknown[]): IRendererLike {
 
 describe("SoftBody3D cloth", () => {
   it("lets SoftBody3D clone a browser node material and install its cloth position node", async () => {
-    const catalog = loadCatalog(process.cwd());
+    const catalog = loadCatalog(fileURLToPath(new URL("../../../", import.meta.url)));
     const registry = JSON.parse(
       readFileSync(new URL("../../three-native/api/native-registry.json", import.meta.url), "utf8"),
     ) as IRegistryDump;
