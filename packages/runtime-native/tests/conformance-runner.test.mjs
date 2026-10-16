@@ -123,13 +123,11 @@ test("the GPU scene BVH row requires a hardware adapter", () => {
   assert.equal(row?.requiresHardwareAdapter, true);
 });
 
-test("a diagnostic row reusing a scene fixture keeps that scene's visual tolerance", () => {
-  // Both rows render buildVirtualShadowScene; first-frame GPU assertions add the diagnostic proof.
+test("virtual shadow first-frame parity retains its strict visual tolerance", () => {
   const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
-  const scene = registry.tests.find(({ id }) => id === "33-virtual-shadow");
   const diagnostic = registry.tests.find(({ id }) => id === "virtual-shadow-first-frame");
-  assert.ok(scene && diagnostic, "both virtual-shadow rows must be registered");
-  assert.deepEqual(diagnostic.tolerance, scene.tolerance);
+  assert.ok(diagnostic, "the first-frame virtual-shadow row must be registered");
+  assert.deepEqual(diagnostic.tolerance, { pixelMismatchRatio: 0.01, perceptualDeltaE: 3.0 });
 });
 
 test("World GPU readback gives awaited scene frames time to reach their proof deadline", () => {
