@@ -235,7 +235,8 @@ describe("forest stage arm", () => {
   it("routes the game's forest scene through the stage arm and drops a stale load", async () => {
     const Forest = terrainScene("forest");
     const camera = new PerspectiveCamera();
-    const sceneCtx = { camera } as never;
+    const setState = vi.fn();
+    const sceneCtx = { camera, state: { set: setState } } as never;
     vi.stubGlobal("location", { search: "?world=forest&stage=nope" });
     await expect(new Forest().load(sceneCtx)).rejects.toThrow(/not one of before, after/);
     expect(kit.calls).toHaveLength(0);
@@ -252,6 +253,7 @@ describe("forest stage arm", () => {
     ];
     expect([passedCtx, follow, arm, whileCurrent()]).toEqual([sceneCtx, camera, "after", true]);
     scene.exit(sceneCtx);
+    expect(setState).toHaveBeenCalledWith({ currentViewWindows: 0 });
     expect(whileCurrent()).toBe(false);
     kit.release?.();
     await loading;

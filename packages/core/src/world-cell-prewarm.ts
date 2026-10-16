@@ -110,8 +110,7 @@ export class CellPrewarm {
         if (object.onBeforeRender === beforeHook) this.#handBack(object, hadBefore, ownBefore);
         if (object.onAfterRender === afterHook) {
           if (hadAfter) object.onAfterRender = ownAfter;
-          // biome-ignore lint/performance/noDelete: restore the inherited callback.
-          else delete (object as Partial<InstancedMesh>).onAfterRender;
+          else Reflect.deleteProperty(object, "onAfterRender");
         }
         this.#drawBorrows.delete(object);
       };
