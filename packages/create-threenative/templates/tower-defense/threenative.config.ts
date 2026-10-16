@@ -1,9 +1,6 @@
 import type { IThreeNativeConfig } from "@threenative/core";
 
 const config: IThreeNativeConfig = {
-  // Pinned to the legacy engine: the native engine does not bind MeshStandardMaterial.flatShading yet (PRD-573 slice 8).
-  // Delete this line when the game boots with `pnpm build --target desktop` without it, and it runs on the native engine.
-  engine: "legacy",
   app: {
     id: "com.threenative.__PROJECT_ID__",
     name: "__PROJECT_NAME__",

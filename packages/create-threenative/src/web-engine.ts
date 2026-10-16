@@ -3,6 +3,17 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+/**
+ * The asset decoders the web engine ships: its glTF loader decodes no Meshopt (addons/gltf-loader-web.ts), so a
+ * native-engine game's models are cooked without it. `undefined` (the cooker's default) for `engine: "legacy"`.
+ * `threenative build` and each template's dev-server asset watch both read it, so the two cook the same bytes.
+ */
+export function webRuntimeDecoders(config: {
+  readonly engine?: "legacy" | "native";
+}): { readonly ktx2: boolean; readonly meshopt: boolean } | undefined {
+  return config.engine === "legacy" ? undefined : { ktx2: true, meshopt: false };
+}
+
 /** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "native"`. */
 export const WEB_ENGINE_ID = "\0threenative:web-engine";
 const UPSTREAM = ["three", "three/webgpu", "three/tsl"] as const;

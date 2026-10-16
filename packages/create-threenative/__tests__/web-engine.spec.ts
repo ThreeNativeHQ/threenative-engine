@@ -2,6 +2,7 @@
  * PRD-540 phase 1: `engine: "native"` routes a web build's `three`, `three/webgpu` and `three/tsl`
  * imports to the Wasm engine; the legacy build is unchanged.
  */
+import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -9,7 +10,12 @@ import { build, createServer } from "vite";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createWebBrandPlugin } from "../src/web-brand.js";
-import { WASM_ENGINE_ENTRY, WEB_ENGINE_ID, createWebEnginePlugin } from "../src/web-engine.js";
+import {
+  WASM_ENGINE_ENTRY,
+  WEB_ENGINE_ID,
+  createWebEnginePlugin,
+  webRuntimeDecoders,
+} from "../src/web-engine.js";
 
 const roots: string[] = [];
 /** A string only upstream three's own Object3D carries (the binding's JS Vector3 keeps three's messages). */
@@ -324,4 +330,24 @@ describe("createWebEnginePlugin", () => {
     expect(legacy).toContain(UPSTREAM_OBJECT3D);
     expect(legacy).not.toContain("is not available on the Wasm engine");
   }, 120_000);
+});
+
+describe("the web engine's asset decoders", () => {
+  it("cooks without Meshopt unless the game pins the legacy engine", () => {
+    expect(webRuntimeDecoders({})).toEqual({ ktx2: true, meshopt: false });
+    expect(webRuntimeDecoders({ engine: "native" })).toEqual({ ktx2: true, meshopt: false });
+    expect(webRuntimeDecoders({ engine: "legacy" })).toBeUndefined();
+  });
+
+  it("is what every template's dev-server asset watch cooks with, as its build does", async () => {
+    const templates = path.resolve(import.meta.dirname, "../templates");
+    const watching = (await readdir(templates)).filter((name) =>
+      existsSync(path.join(templates, name, "vite.config.ts")),
+    );
+    expect(watching.length).toBeGreaterThan(0);
+    for (const name of watching) {
+      const source = await readFile(path.join(templates, name, "vite.config.ts"), "utf8");
+      expect(source, name).toContain("runtimeDecoders: webRuntimeDecoders(config)");
+    }
+  });
 });

@@ -214,6 +214,10 @@ class V8Game {
     };
     std::deque<WindowInput> windowInput_;
     void installWindowInput();
+    /** A runner's synthetic pointer, queued for delivery as a window's would be. */
+    void queuePlaytestPointer(const inspect::InputEvent& event);
+    double playtestPointerX_ = 0, playtestPointerY_ = 0;
+    bool playtestPointerSeen_ = false;
     void deliverWindowInput(v8::Local<v8::Context> ctx);
     inspect::Endpoint* endpoint_ = nullptr;
     std::string assetPath_;
@@ -1148,6 +1152,27 @@ void V8Game::installWindowInput() {
     });
 }
 
+void V8Game::queuePlaytestPointer(const inspect::InputEvent& event) {
+    const int buttons = static_cast<int>(event.buttons);
+    const int button = buttons == 0 ? 0 : buttons - 1;
+    const bool mouse = event.pointerType == "mouse";
+    double movementX = 0, movementY = 0;
+    if (event.type == "pointermove" && mouse) {
+        movementX = playtestPointerSeen_ ? event.x - playtestPointerX_ : 0;
+        movementY = playtestPointerSeen_ ? event.y - playtestPointerY_ : 0;
+        windowInput_.push_back({.type = "mousemove", .x = event.x, .y = event.y, .movementX = movementX,
+                                .movementY = movementY, .button = button, .buttons = buttons});
+    }
+    if (mouse && event.type != "pointerup" && event.type != "pointercancel") {
+        playtestPointerX_ = event.x;
+        playtestPointerY_ = event.y;
+        playtestPointerSeen_ = true;
+    }
+    windowInput_.push_back({.type = event.type, .pointerType = event.pointerType, .x = event.x, .y = event.y,
+                            .movementX = movementX, .movementY = movementY, .button = button, .buttons = buttons,
+                            .pointerId = event.pointerId, .pointer = true});
+}
+
 void V8Game::deliverWindowInput(v8::Local<v8::Context> ctx) {
     if (windowInput_.empty()) return;
     v8::Local<v8::Value> dispatch;
@@ -1216,11 +1241,17 @@ void V8Game::tick(double dt) {
             // A pointer goes to the UI first, through the legacy host's hit test and gesture latch
             // (PRD-554): a press on a published UI island is the page's, any other is the game's.
             // The runner sends viewport pixels, which are the drawing buffer's; the hit test takes 0..1.
-            else if (event.type.rfind("pointer", 0) == 0 && mystral::platform::uiOverlayAttached() && renderer_ &&
-                     renderer_->width() > 0 && renderer_->height() > 0)
-                mystral::platform::uiOverlayRoutePointer(event.type.c_str(), float(event.x / renderer_->width()),
-                                                         float(event.y / renderer_->height()), int(event.buttons),
-                                                         event.pointerId);
+            // A press the page does not take reaches the game as the DOM pointer event a person's would be (and, for
+            // a mouse, the mousemove beside it), as the legacy host's playtest pointer does; before this a synthetic
+            // pointer was dropped and every pointer-driven scenario saw a game nobody touched.
+            else if (event.type.rfind("pointer", 0) == 0) {
+                bool pageTook = false;
+                if (mystral::platform::uiOverlayAttached() && renderer_ && renderer_->width() > 0 && renderer_->height() > 0)
+                    pageTook = mystral::platform::uiOverlayRoutePointer(event.type.c_str(), float(event.x / renderer_->width()),
+                                                                        float(event.y / renderer_->height()), int(event.buttons),
+                                                                        event.pointerId);
+                if (!pageTook) queuePlaytestPointer(event);
+            }
         }
     }
     deliverWindowInput(ctx);
