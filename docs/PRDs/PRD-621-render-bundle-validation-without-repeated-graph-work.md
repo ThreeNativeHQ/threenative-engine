@@ -14,7 +14,7 @@ The shared engine owns this fix: every WorldCells bundled scene reaches these ch
 
 ## Solution
 
-Preserve the current graph witness and fail-closed semantics. First test whether repeated checks within a cull pass can be safely eliminated; arbitrary callbacks, custom readers and unversioned graph edits must remain observable. Reject pass caching if atomicity cannot be proved. Alternatively reduce allocations in witness comparison while preserving the exact enumeration and reader semantics. Do not use version-only or frame-only safety caching.
+Preserve per-batch validation and the current graph witness. Reuse the stored child witness only as comparison storage while consuming the current reader's full output; never reuse its safety verdict without checking. Remove tuple/map/spread allocations from graph capture and traversal while preserving exact enumeration, property-read order, limits, reader error handling and repair. Do not use version-only, pass-only or frame-only safety caching.
 
 Scope: existing WorldCells implementation and bundle tests, plus the existing runtime harness. No public API, rendering quality, materials, scene content, tolerances or budgets change. No module extraction or unrelated cleanup.
 
@@ -52,3 +52,4 @@ Integration: unchanged — WorldCells main cull → `recordCpuMain` → `bundleI
 ## Decisions
 
 - 2026-10-15 (Codex): A module-level WeakMap alone does not eliminate graph walks and is rejected. The validation counter must continue to report actual work; do not optimize only the metric.
+- 2026-10-15 (Codex, Argon read-only architecture review): Pass caching rejected. Graph getters/readers and synchronous Three added/removed listeners can mutate shared material graphs between batches. Keep each check and reduce temporary allocation instead. Initial docs check passed: 3,097 links; pre-push hook refused missing workspace build, so no remote branch or PR exists yet.
