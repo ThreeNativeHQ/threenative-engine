@@ -83,6 +83,7 @@ const FUNCTIONS = [
   "exp",
   "exp2",
   "log2",
+  "log",
   "normalize",
   "length",
   "atan",
@@ -163,6 +164,7 @@ const CONSTANTS = [
   "materialMetalness",
   "materialRoughness",
   "time",
+  "deltaTime",
   "normalView",
   "positionViewDirection",
   "screenCoordinate",
@@ -200,6 +202,7 @@ const METHODS = [
   "exp",
   "exp2",
   "log2",
+  "log",
   "normalize",
   "length",
   "dFdx",
@@ -458,6 +461,12 @@ export function defineTsl(
     return Object.assign(inline, { setLayout: () => inline });
   };
   for (const name of ["atomicAdd", "atomicStore"])
+    exports[name] = (...args: unknown[]) => {
+      statement(name);
+      return wrap(call(name, null, args));
+    };
+  // r185's Break(), Continue() and Return(): a loop or kernel ends early (statements, like atomicAdd).
+  for (const name of ["Break", "Continue", "Return"])
     exports[name] = (...args: unknown[]) => {
       statement(name);
       return wrap(call(name, null, args));

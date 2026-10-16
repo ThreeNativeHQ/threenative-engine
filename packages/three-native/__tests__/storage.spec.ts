@@ -269,6 +269,26 @@ describe("TSL operators SoftBody3D needs, on the Wasm facade", () => {
     expect(elseIf?.args.map((arg) => arg.kind)).toEqual(["node", "node"]);
   });
 
+  it("makes Break, Continue and Return statements, and log and deltaTime nodes", () => {
+    const calls: ICall[] = [];
+    const tsl = tslOver(calls);
+    (tsl.Fn as (f: () => void) => () => void)(() => {
+      (tsl.Loop as (n: number, f: () => void) => void)(2, () => {
+        (tsl.Continue as () => unknown)();
+        (tsl.Break as () => unknown)();
+      });
+      (tsl.Return as () => unknown)();
+    })();
+    expect(
+      calls.map((call) => call.name).filter((n) => /^(Break|Continue|Return)$/u.test(n)),
+    ).toEqual(["Continue", "Break", "Return"]);
+    const one = (tsl.float as (n: number) => Node)(1);
+    (tsl.log as (a: unknown) => unknown)(one);
+    expect(calls.some((call) => call.name === "log")).toBe(true);
+    expect(tsl.deltaTime).toBeDefined();
+    expect(() => (tsl.Break as () => unknown)()).toThrow(/outside Fn|Fn/u);
+  });
+
   it("takes three's object-form Loop: type, start, end and the index name", () => {
     const calls: ICall[] = [];
     const tsl = tslOver(calls);

@@ -854,7 +854,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         return g::symbol(lhs());                                                                                       \
     }
             UNARY(negate) UNARY(abs) UNARY(sin) UNARY(cos) UNARY(floor) UNARY(fract) UNARY(sqrt) UNARY(exp) UNARY(exp2)
-                UNARY(log2) UNARY(normalize) UNARY(length) UNARY(dFdx) UNARY(dFdy) UNARY(sign) UNARY(fwidth) UNARY(all) UNARY(any)
+                UNARY(log2) UNARY(log) UNARY(normalize) UNARY(length) UNARY(dFdx) UNARY(dFdy) UNARY(sign) UNARY(fwidth) UNARY(all) UNARY(any)
 #undef UNARY
     // r185's cbrt (MathNode.js): sign(a) * pow(abs(a), 1 / 3).
     if (name == "cbrt") {
@@ -1019,7 +1019,9 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"materialMetalness", g::uniform("metalness", Type::f32())},
             {"materialRoughness", g::uniform("roughness", Type::f32())},
             // three's time (utils/Timer.js): the frame's elapsed seconds, a uniform the renderer fills.
-            {"time", g::uniform("time", Type::f32())}};
+            {"time", g::uniform("time", Type::f32())},
+            // three's deltaTime: seconds since the frame before, filled the same way.
+            {"deltaTime", g::uniform("deltaTime", Type::f32())}};
     // The node constants tslCall also answers by name; neither takes a serial.
     uint64_t serial = 0;
     for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "cameraNear", "cameraFar", "screenSize", "depth",
@@ -1132,6 +1134,17 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         block.assign(target, value);
         statements.push_back(block.node()->body[0]);
         out = target;
+        return true;
+    }
+    // r185's Break(), Continue() and Return(): a loop or kernel ends early. `Return(value)` belongs to a Fn that
+    // returns one, which the live graph does not build yet, so it refuses by name.
+    if (name == "Break" || name == "Continue" || name == "Return") {
+        if (name == "Return" && !args.empty()) throw std::runtime_error("Return(value) is not supported; Return() ends a compute kernel");
+        arity(0);
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = name == "Break" ? g::Kind::Break : name == "Continue" ? g::Kind::Continue : g::Kind::Return;
+        open().back().statements.push_back(node);
+        out = node;
         return true;
     }
     if (name == "If") {

@@ -22,6 +22,12 @@ namespace tn::engine {
 
 class BufferAttribute;
 
+/** three's `time` and `deltaTime` (its NodeFrame clock) at the dispatch: seconds since the renderer was made, and since the frame before. */
+struct FrameClock {
+    float time = 0;
+    float delta = 0;
+};
+
 /**
  * A compute program from the shader IR dispatched over storage buffers (PRD-513 phase 1): one
  * pipeline per program; the storage buffers bind in the program's declaration order, and its scalar
@@ -50,7 +56,7 @@ public:
      * Throws std::runtime_error naming the uniform or storage buffer the program cannot be given.
      */
     void dispatchValues(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
-                        const std::map<std::string, std::vector<float>>& uniforms);
+                        const std::map<std::string, std::vector<float>>& uniforms, const FrameClock& clock = {});
     const shader::StageModule& module() const { return module_; }
 
 private:
@@ -85,7 +91,7 @@ public:
     /** Compiles the node's pass if it has none; throws std::runtime_error TN_COMPUTE_* with the reason. */
     ComputePass& prepare(const shader::graph::Node& node);
     /** Records one dispatch into `encoder`. */
-    void record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch);
+    void record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock);
 
 private:
     WGPUDevice device_;

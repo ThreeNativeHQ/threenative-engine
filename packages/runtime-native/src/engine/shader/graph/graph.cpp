@@ -422,6 +422,7 @@ void Lowerer::statement(Node node) {
         case Kind::Return: {
             if (s.args.empty()) {
                 if (doneVar_ != noVar) program_.assign(doneVar_, program_.constant(true));
+                else program_.returnEarly();  // the kernel's own body: this invocation stops
                 return;
             }
             if (!aggregateReturns_.empty()) {
@@ -670,6 +671,7 @@ TN_GRAPH_UNARY(sqrt)
 TN_GRAPH_UNARY(exp)
 TN_GRAPH_UNARY(exp2)
 TN_GRAPH_UNARY(log2)
+TN_GRAPH_UNARY(log)
 TN_GRAPH_UNARY(normalize)
 TN_GRAPH_UNARY(length)
 TN_GRAPH_UNARY(dFdx)

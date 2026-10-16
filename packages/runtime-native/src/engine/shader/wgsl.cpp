@@ -224,6 +224,7 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
                     out += indent + "s_" + p_.storage_[s.a].name + "[" + expr(s.b) + "] = " + expr(s.c) + ";\n";
                 break;
             case Kind::Discard: out += indent + "discard;\n"; break;
+            case Kind::Return: out += indent + "return;\n"; break;
             case Kind::Break: out += indent + "break;\n"; break;
             case Kind::Continue: out += indent + "continue;\n"; break;
             case Kind::Output: {

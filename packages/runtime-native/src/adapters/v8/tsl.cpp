@@ -311,6 +311,11 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(2); statement();
         return result(scoped(name.c_str(), nullptr, {abi::TslArg::of(arg(0)), abi::TslArg::of(arg(1))}));
     }
+    if (name == "Break" || name == "Continue" || name == "Return") {
+        if (name == "Return" && info.Length() > 0) throw std::runtime_error("Return(value) is not supported; Return() ends a compute kernel");
+        arity(0); statement();
+        return result(scoped(name.c_str(), nullptr, {}));
+    }
     if (name == "toVar") {
         arity(0);
         return result(scoped("toVar", &receiver, {}));
@@ -587,7 +592,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     nodeTemplate_.Reset(isolate_, node);
     const auto module = v8::Object::New(isolate_);
     for (const char* name : {"float",      "int",   "uint",    "vec2",      "vec3",   "vec4",     "uniform",
-                             "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",     "instancedArray", "storage",
+                             "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",   "Break", "Continue", "Return", "log",     "instancedArray", "storage",
                              "add",        "sub",   "mul",     "div",       "negate", "lessThan", "greaterThan",
                              "equal",      "lessThanEqual", "greaterThanEqual", "and", "or", "not", "all", "any", "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
                              "exp",        "exp2",  "log2",    "normalize", "length", "atan",     "min",      "max",

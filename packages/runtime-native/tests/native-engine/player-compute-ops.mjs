@@ -9,7 +9,7 @@ assert(executable, "Usage: player-compute-ops.mjs <tn-native-engine-player-v8>")
 
 const { verdict, output } = await runComputeGame(executable, `
 import { InstancedMesh, Matrix4, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RenderTarget, Scene, UnsignedByteType } from "three";
-import { Fn, If, Loop, all, and, any, float, instanceIndex, instancedArray, not, or, positionLocal, select, uint, vec3 } from "three/tsl";
+import { Break, Continue, Fn, If, Loop, Return, all, and, any, deltaTime, float, instanceIndex, instancedArray, log, not, or, positionLocal, select, time, uint, vec3 } from "three/tsl";
 import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
 
 const faults = [];
@@ -103,10 +103,44 @@ async function run() {
   const row = await renderer.readRenderTargetPixelsAsync(strip, 0, 0, 8, 1);
   same("toAttribute", Array.from({ length: 8 }, (_, i) => row[i * 4]), [0, 255, 255, 0, 0, 255, 255, 0]);
 
+  // Return() ends one invocation, Break() and Continue() steer a loop: 0 + 2 + 4 + 6 = 12 (odd skipped, stop past 6).
+  const early = instancedArray(6, "uint");
+  const steered = instancedArray(1, "uint");
+  renderer.compute(Fn(() => {
+    If(instanceIndex.greaterThanEqual(uint(3)), () => { Return(); });
+    early.element(instanceIndex).assign(uint(7));
+  })().compute(6));
+  same("return", await words(early), [7, 7, 7, 0, 0, 0]);
+  renderer.compute(Fn(() => {
+    const sum = uint(0).toVar();
+    Loop({ type: "uint", end: 10 }, ({ i }) => {
+      If(i.greaterThan(6), () => { Break(); });
+      If(i.toFloat().mod(2).equal(1), () => { Continue(); });
+      sum.addAssign(i);
+    });
+    steered.element(0).assign(sum);
+  })().compute(1));
+  same("break and continue", await words(steered), [12]);
+
+  // log is the natural logarithm; deltaTime and time are the frame clock a kernel is called under.
+  const clock = instancedArray(3, "float");
+  renderer.compute(Fn(() => {
+    clock.element(0).assign(log(float(10)));
+    clock.element(1).assign(deltaTime);
+    clock.element(2).assign(time);
+  })().compute(1));
+  const [ln10, delta, elapsed] = await floats(clock);
+  if (Math.abs(ln10 - Math.log(10)) > 1e-5) faults.push("log(10) was " + ln10);
+  if (!(delta > 0 && delta < 5)) faults.push("deltaTime was " + delta);
+  if (!(elapsed > 0 && elapsed < 600)) faults.push("time was " + elapsed);
+
   // A refusal names the unsupported form.
   let refusal = "";
   try { Fn(() => { Loop({ type: "uint", end: 3, update: "+= 2" }, () => {}); })(); } catch (error) { refusal = String(error.message); }
   if (!/Loop update is not supported/u.test(refusal)) faults.push("loop update refusal was [" + refusal + "]");
+  refusal = "";
+  try { Fn(() => { Return(float(1)); })(); } catch (error) { refusal = String(error.message); }
+  if (!/Return[(]value[)] is not supported/u.test(refusal)) faults.push("Return(value) refusal was [" + refusal + "]");
 }
 `);
 assert.equal(verdict, "COMPUTE_OK", `${verdict}\n${output.slice(-2000)}`);

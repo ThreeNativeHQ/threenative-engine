@@ -150,6 +150,8 @@ public:
     void breakLoop(Where where = Where::current());
     void continueLoop(Where where = Where::current());
     void discard(Where where = Where::current());
+    /** TSL's `Return()` in a compute kernel: this invocation stops. */
+    void returnEarly(Where where = Where::current());
     /**
      * A stage output: "position" (vec4, vertex) and "color" (vec4, fragment) are the fixed ones;
      * any other name is a varying, located in order of first output.
@@ -198,7 +200,7 @@ private:
     friend class WgslEmitter;
     friend StageModule buildStage(const Program& program, uint32_t group);
 
-    enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop, Output, Break, Continue };
+    enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop, Output, Break, Continue, Return };
     struct Stmt {
         StmtKind kind;
         uint32_t a = 0;  // var, buffer, condition, or count

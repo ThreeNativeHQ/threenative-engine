@@ -131,11 +131,12 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 // (no map built per draw): three's `time` (the frame's elapsed seconds), then each named value. A name
 // bound to two different values across the material's graphs fails rather than pick one.
 void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModule& stage,
-              const shader::MaterialNodes& nodes, float time, const LightState& lights) {
+              const shader::MaterialNodes& nodes, float time, float delta, const LightState& lights) {
     using Named = std::pair<std::string_view, std::span<const float>>;
     thread_local std::vector<Named> values;
     values.clear();
     values.emplace_back("time", std::span<const float>(&time, 1));
+    values.emplace_back("deltaTime", std::span<const float>(&delta, 1));
     for (const auto& graph : nodes.graphs()) {
         if (!graph) continue;
         for (const auto& node : shader::graph::uniformList(graph)) {
@@ -2029,7 +2030,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // A sibling replaced or released a shared map texture: this renderer's groups may bind its old view.
     if (texturesSeen_ != textures_->generation) texturesChanged();
     diagnostics_.clear();
-    frameTime_ = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
+    {
+        const float now = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
+        frameDelta_ = frameTime_ == 0 ? 1.0f / 60.0f : std::max(0.0f, now - frameTime_);
+        frameTime_ = now;
+    }
     // storage(attribute) reads: each attribute's data is the storage buffer its name binds, synced
     // like a vertex buffer. A new or regrown buffer rebinds the programs' groups before any draw.
     bool storagesMoved = false;
@@ -2566,8 +2571,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (field.name == "spriteNoAttenuation") put(frameUniforms_, v, &field,
                 std::array<double, 1>{!item.spriteSizeAttenuation && camera.projectionMatrix[11] == -1 ? 1.0 : 0.0});
         }
-        putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, lights);
-        putNodes(frameUniforms_, f, program.fragment, item.nodes, frameTime_, lights);
+        putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
+        putNodes(frameUniforms_, f, program.fragment, item.nodes, frameTime_, frameDelta_, lights);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
     }
 
@@ -2646,7 +2651,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, v, program.vertexSlots[kCameraPosition], shadowPosition);
             put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], page ? page->projection.elements : shadow.projection);
             putSkin(v, program.vertexSlots, item);
-            putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, lights);
+            putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
             pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});
         }
         }
@@ -3354,6 +3359,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureVie
     std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
     // post_->live was copied into postUniforms_ while the frame was planned: the game writes those nodes.
     postUniforms_["time"] = {frameTime_};
+    postUniforms_["deltaTime"] = {frameDelta_};
     for (const auto& field : outputFragment_.uniforms) {
         const auto value = postUniforms_.find(field.name);
         if (value == postUniforms_.end()) continue;
@@ -3541,7 +3547,14 @@ void Renderer::dispatchCompute(const ComputeDispatch& dispatch) {
     WGPUCommandEncoderDescriptor desc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &desc);
     try {
-        graphCompute().record(encoder, dispatch);
+        // The clock moves once per rendered frame, as three's NodeFrame does; a dispatch before the first render gets 1/60.
+        const float now = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
+        if (renderId_ != computeFrame_) {
+            computeDelta_ = computeFrame_ == ~uint64_t{0} ? 1.0f / 60.0f : std::max(0.0f, now - computeTime_);
+            computeTime_ = now;
+            computeFrame_ = renderId_;
+        }
+        graphCompute().record(encoder, dispatch, {now, computeDelta_});
     } catch (...) {
         wgpuCommandEncoderRelease(encoder);
         throw;

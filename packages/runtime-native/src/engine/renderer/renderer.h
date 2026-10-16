@@ -780,6 +780,9 @@ private:
     /** three's `time` (its NodeFrame clock): seconds since this renderer was made, read once a frame. */
     std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
     float frameTime_ = 0;
+    float frameDelta_ = 0;  // three's deltaTime for the draws: frameTime_ minus the frame before's
+    float computeTime_ = 0, computeDelta_ = 1.0f / 60.0f;  // the same clock as the compute dispatches see it
+    uint64_t computeFrame_ = ~uint64_t{0};
     shader::StageModule blitVertex_, blitFragment_;  // blitTo's pass-through copy
     shader::StageModule outputVertex_;
     shader::StageModule outputFragment_;
