@@ -1658,6 +1658,21 @@ export class WorldCells extends Group implements IComputeDriven {
     };
   }
 
+  /** Terrain data needed by the current camera, including visible tiles not yet admitted. */
+  terrainReadinessInView(camera: Camera): { required: number; loaded: number } {
+    return (
+      this.#terrain?.readinessInView(camera, [
+        this.#manifest.terrain.heightMin,
+        this.#manifest.terrain.heightMax,
+      ]) ?? { required: 0, loaded: 0 }
+    );
+  }
+
+  /** Visible CPU scatter batches still awaiting a nonempty main-camera backend submission. */
+  pendingCpuDrawsInView(camera: Camera): number {
+    return this.#prewarm.pendingCpuDrawsInView(this, camera, this.#chunks.renderer);
+  }
+
   /**
    * Resolves when the content a fixed spawn needs has finished loading.
    *

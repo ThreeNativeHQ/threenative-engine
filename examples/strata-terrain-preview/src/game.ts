@@ -11,6 +11,7 @@ import {
 import {
   CapsuleGeometry,
   Float32BufferAttribute,
+  InstancedMesh,
   Mesh,
   MeshStandardMaterial,
   OrthographicCamera,
@@ -42,6 +43,12 @@ import { type IBakedWorld, createTerrain } from "./render/terrain.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
 import { medianOfGrowingSamples as median } from "./viewStatistics.js";
 import baked from "./world/baked.json";
+import {
+  type ForestStageWorld,
+  addForestStage,
+  forestStageArm,
+  forestStageTerrainTargets,
+} from "./world/forestStage.js";
 
 /** The last closed frame-budget window, published into state by the scene. */
 const budget = {
@@ -190,7 +197,7 @@ const initialState = {
 type TerrainState = typeof initialState;
 type TerrainCtx = ICtx<TerrainState, IPhysicsContext>;
 
-function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsContext> {
+export function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsContext> {
   return class TerrainScene extends Scene<TerrainState, IPhysicsContext> {
     static override readonly initialState = initialState;
     #data: IBakedWorld | undefined;
@@ -199,12 +206,27 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
     #scatter: Awaited<ReturnType<typeof loadPlacements>> | undefined;
     #terrain: ReturnType<typeof createTerrain> | undefined;
     #fallbackParts: ReturnType<typeof buildPropVariants> | undefined;
+    #stage: ForestStageWorld | undefined;
+    #stageLoad = 0;
     override async load(ctx: TerrainCtx): Promise<void> {
       this.#data =
         world === "forest" || world === "coastal"
           ? baked[world]
           : (await worldLoads[world]()).default;
       this.#biome = measureBiome(BIOMES[world], this.#data.heights);
+      // `?stage=before|after` replaces this world's terrain, water, colliders and props with one
+      // baked forest kit copy, streamed by the kit's own `addForest`; the sky, camera and views stay.
+      const arm =
+        world === "forest" ? forestStageArm(globalThis.location?.search ?? "") : undefined;
+      if (arm) {
+        this.#sky = createOutdoorSky(ctx.camera, this.#biome);
+        const load = ++this.#stageLoad;
+        const stage = await addForestStage(ctx, ctx.camera, arm, () => this.#stageLoad === load);
+        if (this.#stageLoad === load) {
+          this.#stage = stage;
+        }
+        return;
+      }
       this.#scatter = await loadPlacements(ctx.assets, world);
       // Prepare scenery while the scene loads; enter only attaches it.
       this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome);
@@ -231,6 +253,17 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
     #water: ReturnType<typeof createWaterMesh> | undefined;
     #river: IRiverWater | undefined;
     #lake: IRiverWater | undefined;
+
+    override exit(): void {
+      this.#stageLoad++;
+      const stage = this.#stage;
+      this.#stage = undefined;
+      if (!stage) return;
+      stage.world.dispose();
+      stage.colliders.detach();
+      stage.ground.dispose();
+      stage.water?.dispose();
+    }
 
     override enter(ctx: TerrainCtx): void {
       const enterStart = performance.now();
@@ -332,32 +365,41 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       ctx.afterPhysics(() => loading.update());
       const biome = this.#biome;
       if (!biome) throw new Error(`World ${world} elevations were not measured`);
+      const stage = this.#stage;
       const terrain = this.#terrain;
-      if (!terrain) throw new Error(`World ${world} terrain was not loaded`);
-      const { field, mesh } = terrain;
-      ctx.add(mesh);
-      // Scenery: nothing moves the ground, so its transform is composed once instead of every frame.
-      markStatic(mesh);
-      const ground = new RigidBody3D({
-        object: mesh,
-        physics: ctx.physics,
-        type: "fixed",
-        entity: "terrain",
-        collisionLayer: 4,
-        shape: CollisionShape3D.heightfield(field.rows, field.columns, field.toColliderHeights(), {
-          x: data.size,
-          y: 1,
-          z: data.size,
-        }),
-      });
-      ctx.entities.add("terrain", {
-        mesh,
-        dispose: () => {
-          ground.dispose();
-          mesh.geometry.dispose();
-          (mesh.material as MeshStandardMaterial).dispose();
-        },
-      });
+      const field = stage?.field ?? terrain?.field;
+      if (!field) throw new Error(`World ${world} terrain was not loaded`);
+      const mesh = stage ? undefined : terrain?.mesh;
+      if (mesh) {
+        ctx.add(mesh);
+        // Scenery: nothing moves the ground, so its transform is composed once instead of every frame.
+        markStatic(mesh);
+        const ground = new RigidBody3D({
+          object: mesh,
+          physics: ctx.physics,
+          type: "fixed",
+          entity: "terrain",
+          collisionLayer: 4,
+          shape: CollisionShape3D.heightfield(
+            field.rows,
+            field.columns,
+            field.toColliderHeights(),
+            {
+              x: data.size,
+              y: 1,
+              z: data.size,
+            },
+          ),
+        });
+        ctx.entities.add("terrain", {
+          mesh,
+          dispose: () => {
+            ground.dispose();
+            mesh.geometry.dispose();
+            (mesh.material as MeshStandardMaterial).dispose();
+          },
+        });
+      }
       // One rig owns the whole of the sky, the sun, the shadows that follow the eye, the haze the
       // far ridges fade into and the tone curve. It used to be a flat `Color` background, a
       // hand-set `FogExp2`, a sun with a five metre shadow box that missed everything, and no tone
@@ -404,7 +446,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         entity: "player",
         shape: CollisionShape3D.capsule(0.5, 0.35),
         snapToGround: 0.4,
-        collisionMask: 4,
+        // The kit's ground and prop colliders keep the default layer.
+        ...(stage ? {} : { collisionMask: 4 }),
       });
       this.#player = player;
       ctx.entities.add("player", {
@@ -413,10 +456,12 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           grounded: player.grounded,
           position: actor.position.toArray(),
           visible: actor.visible && actor.material.visible,
-          horizon: {
-            seamGap: mesh.userData.horizonSeamGap,
-            samples: mesh.userData.horizonSeamSamples,
-          },
+          horizon: mesh
+            ? {
+                seamGap: mesh.userData.horizonSeamGap,
+                samples: mesh.userData.horizonSeamSamples,
+              }
+            : { observed: false },
         }),
         dispose: () => {
           player.dispose();
@@ -529,12 +574,14 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       const erosionDepositSamples = this.#erosionSamples.deposition;
       // Every fixed camera stands in a clearing: a trunk a metre from the lens is a green wall, not a
       // framing, and the seed decides where trees land, so the eyes are kept open by rule.
-      const river = createRivers(
-        data.rivers ?? [],
-        field,
-        world === "tundra" || world === "forest",
-        world === "tundra" ? lake?.reflectionAt : undefined,
-      );
+      const river = stage
+        ? undefined
+        : createRivers(
+            data.rivers ?? [],
+            field,
+            world === "tundra" || world === "forest",
+            world === "tundra" ? lake?.reflectionAt : undefined,
+          );
       this.#river = river;
       if (river) {
         ctx.state.set({
@@ -544,14 +591,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         ctx.entities.add("river", { mesh: river.mesh, dispose: () => river.dispose() });
       }
       const scatter = this.#scatter;
-      if (!scatter || scatter.canopy.length !== data.resolution ** 2)
-        throw new Error(`World ${world} placements do not match the terrain`);
-      mesh.geometry.setAttribute("canopy", new Float32BufferAttribute(scatter.canopy, 1));
-      const fallbackSaplingHeight = world === "alpine" ? 2 : world === "tundra" ? 1.4 : undefined;
       const fallbackParts = this.#fallbackParts;
-      if (!fallbackParts) throw new Error(`World ${world} prop variants were not loaded`);
-      let propParts = fallbackParts;
-      const flat = flatPropMaterials();
       let props: Awaited<ReturnType<typeof createStreamedProps>>;
       let readyTimePending = false;
       let building = false;
@@ -562,256 +602,298 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       let compressedTexturesPrepared = 0;
       let preparedLevelsWithoutSolid = 0;
       let surfacesDispose: (() => void) | undefined;
-      ctx.entities.add("props-lifetime", {
-        dispose: () => {
-          released = true;
-          textureUploads.abort(new Error("Strata scene released during texture preparation."));
-          settleSpawn(new Error("Strata spawn cancelled"));
-          loading.finish();
-          surfacesDispose?.();
-          flat.dispose();
-          preparedDispose?.();
-          props?.dispose();
-          for (const parts of propParts.values()) for (const part of parts) part.geometry.dispose();
-        },
-      });
-      // Ground contact is a ray query against the drawn terrain and the terrain's collider, never
-      // the bilinear sampler: a spruce floating a centimetre above the visible surface reads as a
-      // mistake at exactly the distance a player spends most of their time at.
-      mesh.updateMatrixWorld(true);
-      mesh.geometry.computeBoundingBox();
-      const top = mesh.geometry.boundingBox?.max.y ?? 0;
-      const groundAt: PropGroundQuery = (placement, at) => {
-        const [x, , z] = at;
-        const visual = ctx.raycast({
-          direction: new Vector3(0, -1, 0),
-          origin: new Vector3(x, top + 2, z),
-          targets: [mesh],
-        });
-        const physical = ctx.physics.directSpaceState.intersectRay({
-          collisionMask: 4,
-          from: { x, y: top + 2, z },
-          to: { x, y: -100, z },
-        });
-        let height = visual?.point.y ?? physical?.position.y ?? null;
-        if (
-          height !== null &&
-          (world === "forest" || world === "coastal") &&
-          ["boulder", "riverrock", "scree", "mountain", "volcanic", "reveal"].includes(
-            placement.asset,
-          )
-        ) {
-          const stone = propParts
-            .get(`${placement.asset}:${variantFor(placement, placement.asset)}`)
-            ?.find((part) => part.role === "stone")?.geometry;
-          stone?.computeBoundingBox();
-          const box = stone?.boundingBox;
-          if (box) {
-            // GroundSnap's single lowest point left the downhill footprint hanging on thin stones.
-            const reach =
-              Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * placement.scale * 0.5;
-            for (const [dx, dz] of [
-              [-reach, 0],
-              [reach, 0],
-              [0, -reach],
-              [0, reach],
-            ]) {
-              const foot = ctx.raycast({
-                direction: new Vector3(0, -1, 0),
-                origin: new Vector3(x + (dx ?? 0), top + 2, z + (dz ?? 0)),
-                targets: [mesh],
-              });
-              if (foot) height = Math.min(height, foot.point.y);
-            }
-            height -= (box.max.y - box.min.y) * placement.scale * 0.12;
-          }
-        }
-        const [originX, originY, originZ] = placement.position;
-        return {
-          height,
-          offset: originY - field.heightAt(originX, originZ),
-        };
-      };
-      // The prepared art is asked for here rather than in `enter`, and the variants it fills are
-      // not built again: a game with the licensed Landscape Pro models has the pack's own pines,
-      // shrubs and photoscanned stone, a game without them has the procedural spruce, the
-      // procedural boulder and the starter's own clumps, and neither waits on the other. Both
-      // loaders run together and fail soft per file, so one missing species costs that species and
-      // nothing else. One load, because `afterPhysics` runs every frame.
-      const buildProps = async (): Promise<void> => {
-        propsStage = "assets";
-        const [prepared, pack, skyLight] = await Promise.all([
-          loadPreparedProps(ctx.assets),
-          loadPack(ctx.assets, world, data, ctx.state.getState().canopyComparison, biome),
-          ctx.assets ? loadSkyLight(ctx.assets) : Promise.resolve(undefined),
-        ]);
-        preparedDispose = () => {
-          prepared.dispose();
-          pack.dispose();
-        };
-        if (released) {
-          preparedDispose();
-          return;
-        }
-        preparedLodBaseSpread = prepared.lodBaseSpread;
-        preparedLevelsWithoutSolid = prepared.levelsWithoutSolid;
-        const parts = new Map([...prepared.parts, ...pack.parts]);
-        // The shipped dry-world stones use both CC0 scans, including the otherwise primitive slot.
-        const dryStone = prepared.parts.get("boulder:1");
-        if (world === "desert" && dryStone && !pack.parts.has("boulder:0"))
-          parts.set("boulder:0", dryStone);
-        propParts = buildPropVariants(parts, fallbackSaplingHeight);
-        propsStage = "surfaces";
-        const surfaces = await createPropSurfaces(ctx.assets, data, biome, skyLight);
-        this.#surfaces = surfaces;
-        surfacesDispose = surfaces.dispose;
-        if (released) {
-          surfaces.dispose();
-          return;
-        }
-        propsStage = "textures";
-        let preparedTextures = 0;
-        await preparePropTextures(
-          ctx.renderer,
-          [
-            ...[...propParts.values()].flatMap((parts) =>
-              parts.flatMap((part) => (part.material ? [part.material] : [])),
-            ),
-            ...Object.values(surfaces.materials),
-          ],
-          textureUploads.signal,
-          (completed) => {
-            completedPropsWork += completed - preparedTextures;
-            preparedTextures = completed;
-          },
-          (completed) => {
-            compressedTexturesPrepared = completed;
-          },
-        );
-        if (released) return;
-        propsStage = "streaming";
-        props = await createStreamedProps({
-          placements: scatter.placements,
-          groundAt,
-          parts: propParts,
-          materials: surfaces.materials,
-          assets: ctx.assets,
-          follow: ctx.camera,
-          size: data.size,
-          horizonDistance:
-            ctx.camera instanceof PerspectiveCamera || ctx.camera instanceof OrthographicCamera
-              ? ctx.camera.far
-              : 5000,
-          whileCurrent: () => !released,
-          onProgress: (progress) => {
-            const previous =
-              preparation?.phase === progress.phase && preparation.bucket === progress.bucket
-                ? preparation.added
-                : 0;
-            completedPropsWork += Math.max(0, progress.added - previous);
-            preparation = progress;
-          },
-          invalidateShadows: (region) => {
-            const shadows = sky.sun.shadow.shadowNode;
-            if (shadows instanceof VirtualShadowNode) invalidatePropShadows(shadows, region);
+      let buildProps: (() => Promise<void>) | undefined;
+      if (stage) {
+        ctx.entities.add("forest-stage", {
+          object: stage.world,
+          dispose: () => {
+            released = true;
+            settleSpawn(new Error("Strata spawn cancelled"));
+            loading.finish();
           },
         });
-        if (!props) return;
-        if (released) {
-          props.dispose();
-          return;
-        }
-        // ctx.add registers render-cadence processing. Never manually update these worlds.
-        for (const stream of props.worlds) ctx.add(stream);
-        // Prewarm borrows actual world draws only after registration. Grounding and package
-        // preparation have no attached stream to prewarm and keep the opaque curtain's draw gate.
         ctx.canvasLayer.keepWorldRendering = true;
         propsStage = "attached";
-        // Armed once, after the streams attach: the fixed spawn data join plus each draw join,
-        // bounded by the deadline taken at scene entry. `WorldCells.whenSpawnReady` owns the data
-        // authority and each streamed world's `prewarmed` owns the draw.
         const remaining = deadlineAt - performance.now();
-        if (remaining <= 0) {
-          failSpawn("Strata spawn admission exceeded 120000 ms");
-        } else {
+        if (remaining <= 0) failSpawn("Strata spawn admission exceeded 120000 ms");
+        else
           void Promise.all([
-            Promise.all(props.worlds.map((stream) => stream.whenSpawnReady(spawn, 60, remaining))),
-            ...props.worlds.map((stream) => stream.prewarmed),
+            stage.world.whenSpawnReady(spawn, 60, remaining),
+            stage.world.prewarmed,
           ]).then(
-            ([regions]) => {
+            ([region]) => {
               if (released || spawnSettled) return;
-              spawnCells = {
-                required: regions.reduce((sum, region) => sum + region.requiredCells, 0),
-                loaded: regions.reduce((sum, region) => sum + region.loadedCells, 0),
-              };
+              spawnCells = { required: region.requiredCells, loaded: region.loadedCells };
               settleSpawn();
             },
             (reason) => failSpawn(reason),
           );
-        }
+      } else {
+        if (!mesh || !scatter || scatter.canopy.length !== data.resolution ** 2)
+          throw new Error(`World ${world} placements do not match the terrain`);
+        if (!fallbackParts) throw new Error(`World ${world} prop variants were not loaded`);
+        mesh.geometry.setAttribute("canopy", new Float32BufferAttribute(scatter.canopy, 1));
+        const fallbackSaplingHeight = world === "alpine" ? 2 : world === "tundra" ? 1.4 : undefined;
+        let propParts = fallbackParts;
+        const flat = flatPropMaterials();
+        ctx.entities.add("props-lifetime", {
+          dispose: () => {
+            released = true;
+            textureUploads.abort(new Error("Strata scene released during texture preparation."));
+            settleSpawn(new Error("Strata spawn cancelled"));
+            loading.finish();
+            surfacesDispose?.();
+            flat.dispose();
+            preparedDispose?.();
+            props?.dispose();
+            for (const parts of propParts.values())
+              for (const part of parts) part.geometry.dispose();
+          },
+        });
+        // Ground contact is a ray query against the drawn terrain and the terrain's collider, never
+        // the bilinear sampler: a spruce floating a centimetre above the visible surface reads as a
+        // mistake at exactly the distance a player spends most of their time at.
+        mesh.updateMatrixWorld(true);
+        mesh.geometry.computeBoundingBox();
+        const top = mesh.geometry.boundingBox?.max.y ?? 0;
+        const groundAt: PropGroundQuery = (placement, at) => {
+          const [x, , z] = at;
+          const visual = ctx.raycast({
+            direction: new Vector3(0, -1, 0),
+            origin: new Vector3(x, top + 2, z),
+            targets: [mesh],
+          });
+          const physical = ctx.physics.directSpaceState.intersectRay({
+            collisionMask: 4,
+            from: { x, y: top + 2, z },
+            to: { x, y: -100, z },
+          });
+          let height = visual?.point.y ?? physical?.position.y ?? null;
+          if (
+            height !== null &&
+            (world === "forest" || world === "coastal") &&
+            ["boulder", "riverrock", "scree", "mountain", "volcanic", "reveal"].includes(
+              placement.asset,
+            )
+          ) {
+            const stone = propParts
+              .get(`${placement.asset}:${variantFor(placement, placement.asset)}`)
+              ?.find((part) => part.role === "stone")?.geometry;
+            stone?.computeBoundingBox();
+            const box = stone?.boundingBox;
+            if (box) {
+              // GroundSnap's single lowest point left the downhill footprint hanging on thin stones.
+              const reach =
+                Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * placement.scale * 0.5;
+              for (const [dx, dz] of [
+                [-reach, 0],
+                [reach, 0],
+                [0, -reach],
+                [0, reach],
+              ]) {
+                const foot = ctx.raycast({
+                  direction: new Vector3(0, -1, 0),
+                  origin: new Vector3(x + (dx ?? 0), top + 2, z + (dz ?? 0)),
+                  targets: [mesh],
+                });
+                if (foot) height = Math.min(height, foot.point.y);
+              }
+              height -= (box.max.y - box.min.y) * placement.scale * 0.12;
+            }
+          }
+          const [originX, originY, originZ] = placement.position;
+          return {
+            height,
+            offset: originY - field.heightAt(originX, originZ),
+          };
+        };
+        // The prepared art is asked for here rather than in `enter`, and the variants it fills are
+        // not built again: a game with the licensed Landscape Pro models has the pack's own pines,
+        // shrubs and photoscanned stone, a game without them has the procedural spruce, the
+        // procedural boulder and the starter's own clumps, and neither waits on the other. Both
+        // loaders run together and fail soft per file, so one missing species costs that species and
+        // nothing else. One load, because `afterPhysics` runs every frame.
+        buildProps = async (): Promise<void> => {
+          propsStage = "assets";
+          const [prepared, pack, skyLight] = await Promise.all([
+            loadPreparedProps(ctx.assets),
+            loadPack(ctx.assets, world, data, ctx.state.getState().canopyComparison, biome),
+            ctx.assets ? loadSkyLight(ctx.assets) : Promise.resolve(undefined),
+          ]);
+          preparedDispose = () => {
+            prepared.dispose();
+            pack.dispose();
+          };
+          if (released) {
+            preparedDispose();
+            return;
+          }
+          preparedLodBaseSpread = prepared.lodBaseSpread;
+          preparedLevelsWithoutSolid = prepared.levelsWithoutSolid;
+          const parts = new Map([...prepared.parts, ...pack.parts]);
+          // The shipped dry-world stones use both CC0 scans, including the otherwise primitive slot.
+          const dryStone = prepared.parts.get("boulder:1");
+          if (world === "desert" && dryStone && !pack.parts.has("boulder:0"))
+            parts.set("boulder:0", dryStone);
+          propParts = buildPropVariants(parts, fallbackSaplingHeight);
+          propsStage = "surfaces";
+          const surfaces = await createPropSurfaces(ctx.assets, data, biome, skyLight);
+          this.#surfaces = surfaces;
+          surfacesDispose = surfaces.dispose;
+          if (released) {
+            surfaces.dispose();
+            return;
+          }
+          propsStage = "textures";
+          let preparedTextures = 0;
+          await preparePropTextures(
+            ctx.renderer,
+            [
+              ...[...propParts.values()].flatMap((parts) =>
+                parts.flatMap((part) => (part.material ? [part.material] : [])),
+              ),
+              ...Object.values(surfaces.materials),
+            ],
+            textureUploads.signal,
+            (completed) => {
+              completedPropsWork += completed - preparedTextures;
+              preparedTextures = completed;
+            },
+            (completed) => {
+              compressedTexturesPrepared = completed;
+            },
+          );
+          if (released) return;
+          propsStage = "streaming";
+          props = await createStreamedProps({
+            placements: scatter.placements,
+            groundAt,
+            parts: propParts,
+            materials: surfaces.materials,
+            assets: ctx.assets,
+            follow: ctx.camera,
+            size: data.size,
+            horizonDistance:
+              ctx.camera instanceof PerspectiveCamera || ctx.camera instanceof OrthographicCamera
+                ? ctx.camera.far
+                : 5000,
+            whileCurrent: () => !released,
+            onProgress: (progress) => {
+              const previous =
+                preparation?.phase === progress.phase && preparation.bucket === progress.bucket
+                  ? preparation.added
+                  : 0;
+              completedPropsWork += Math.max(0, progress.added - previous);
+              preparation = progress;
+            },
+            invalidateShadows: (region) => {
+              const shadows = sky.sun.shadow.shadowNode;
+              if (shadows instanceof VirtualShadowNode) invalidatePropShadows(shadows, region);
+            },
+          });
+          if (!props) return;
+          if (released) {
+            props.dispose();
+            return;
+          }
+          // ctx.add registers render-cadence processing. Never manually update these worlds.
+          for (const stream of props.worlds) ctx.add(stream);
+          // Prewarm borrows actual world draws only after registration. Grounding and package
+          // preparation have no attached stream to prewarm and keep the opaque curtain's draw gate.
+          ctx.canvasLayer.keepWorldRendering = true;
+          propsStage = "attached";
+          // Armed once, after the streams attach: the fixed spawn data join plus each draw join,
+          // bounded by the deadline taken at scene entry. `WorldCells.whenSpawnReady` owns the data
+          // authority and each streamed world's `prewarmed` owns the draw.
+          const remaining = deadlineAt - performance.now();
+          if (remaining <= 0) {
+            failSpawn("Strata spawn admission exceeded 120000 ms");
+          } else {
+            void Promise.all([
+              Promise.all(
+                props.worlds.map((stream) => stream.whenSpawnReady(spawn, 60, remaining)),
+              ),
+              ...props.worlds.map((stream) => stream.prewarmed),
+            ]).then(
+              ([regions]) => {
+                if (released || spawnSettled) return;
+                spawnCells = {
+                  required: regions.reduce((sum, region) => sum + region.requiredCells, 0),
+                  loaded: regions.reduce((sum, region) => sum + region.loadedCells, 0),
+                };
+                settleSpawn();
+              },
+              (reason) => failSpawn(reason),
+            );
+          }
 
-        const alpineCrags =
-          world === "alpine"
-            ? [...props.byId.values()].filter((instance) => instance.placement.asset === "mountain")
-            : [];
-        ctx.entities.add("props", {
-          object: props.worlds[0],
-          debug: () => ({
-            streaming: props?.stats(),
-            boulders: scatter.counts.boulder,
-            bushes: scatter.counts.bush,
-            ferns: scatter.counts.fern,
-            draws: props?.meshes.length ?? 0,
-            grass: scatter.counts.grass,
-            poppies: scatter.counts.poppy,
-            saplings: scatter.counts.sapling,
-            scrub: scatter.counts.scrub,
-            spruces: scatter.counts.spruce,
-            mountains: scatter.counts.mountain,
-            volcanic: scatter.counts.volcanic,
-            reveals: scatter.counts.reveal,
-            licensedCragParts: [...pack.parts]
-              .filter(([key]) => /^(mountain|volcanic|reveal):/.test(key))
-              .reduce((sum, [, parts]) => sum + parts.length, 0),
-            crags: {
-              ...(world === "alpine"
-                ? {
-                    maxBaseClearance: alpineCrags.length
-                      ? Math.max(...alpineCrags.map((instance) => instance.cragBaseClearance ?? 1))
-                      : 1,
-                    baseRingSamples: alpineCrags.reduce(
-                      (sum, instance) => sum + (instance.cragRingSamples ?? 0),
-                      0,
-                    ),
-                    count: alpineCrags.length,
-                    baseRingBuried:
-                      alpineCrags.length > 0 &&
-                      alpineCrags.every(
-                        (instance) =>
-                          (instance.cragBaseClearance ?? 1) <= -0.49 &&
-                          (instance.cragRingSamples ?? 0) >= 4,
-                      ),
-                    baseRingMeasured:
-                      alpineCrags.reduce(
+          const alpineCrags =
+            world === "alpine"
+              ? [...props.byId.values()].filter(
+                  (instance) => instance.placement.asset === "mountain",
+                )
+              : [];
+          ctx.entities.add("props", {
+            object: props.worlds[0],
+            debug: () => ({
+              streaming: props?.stats(),
+              boulders: scatter.counts.boulder,
+              bushes: scatter.counts.bush,
+              ferns: scatter.counts.fern,
+              draws: props?.meshes.length ?? 0,
+              grass: scatter.counts.grass,
+              poppies: scatter.counts.poppy,
+              saplings: scatter.counts.sapling,
+              scrub: scatter.counts.scrub,
+              spruces: scatter.counts.spruce,
+              mountains: scatter.counts.mountain,
+              volcanic: scatter.counts.volcanic,
+              reveals: scatter.counts.reveal,
+              licensedCragParts: [...pack.parts]
+                .filter(([key]) => /^(mountain|volcanic|reveal):/.test(key))
+                .reduce((sum, [, parts]) => sum + parts.length, 0),
+              crags: {
+                ...(world === "alpine"
+                  ? {
+                      maxBaseClearance: alpineCrags.length
+                        ? Math.max(
+                            ...alpineCrags.map((instance) => instance.cragBaseClearance ?? 1),
+                          )
+                        : 1,
+                      baseRingSamples: alpineCrags.reduce(
                         (sum, instance) => sum + (instance.cragRingSamples ?? 0),
                         0,
-                      ) >= 100,
-                  }
-                : {}),
-              drawn:
-                props?.meshes.some(
-                  (draw) => draw.count > 0 && /(mountain|volcanic)/.test(draw.name),
-                ) ?? false,
-            },
-            totalInstances: props?.meshes.reduce((sum, draw) => sum + draw.count, 0) ?? 0,
-            triangles:
-              props?.meshes.reduce(
-                (sum, draw) => sum + (draw.count * (draw.geometry.index?.count ?? 0)) / 3,
-                0,
-              ) ?? 0,
-          }),
-        });
-      };
+                      ),
+                      count: alpineCrags.length,
+                      baseRingBuried:
+                        alpineCrags.length > 0 &&
+                        alpineCrags.every(
+                          (instance) =>
+                            (instance.cragBaseClearance ?? 1) <= -0.49 &&
+                            (instance.cragRingSamples ?? 0) >= 4,
+                        ),
+                      baseRingMeasured:
+                        alpineCrags.reduce(
+                          (sum, instance) => sum + (instance.cragRingSamples ?? 0),
+                          0,
+                        ) >= 100,
+                    }
+                  : {}),
+                drawn:
+                  props?.meshes.some(
+                    (draw) => draw.count > 0 && /(mountain|volcanic)/.test(draw.name),
+                  ) ?? false,
+              },
+              totalInstances: props?.meshes.reduce((sum, draw) => sum + draw.count, 0) ?? 0,
+              triangles:
+                props?.meshes.reduce(
+                  (sum, draw) => sum + (draw.count * (draw.geometry.index?.count ?? 0)) / 3,
+                  0,
+                ) ?? 0,
+            }),
+          });
+        };
+      }
 
       let frames = 0;
       let propCounts = { draws: 0, instances: 0, triangles: 0 };
@@ -845,7 +927,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         // Query actual triangles, not bilinear interpolation, after the shared solver step.
         if (frames === 0) {
           probeMesh.updateMatrixWorld(true);
-          mesh.updateMatrixWorld(true);
+          mesh?.updateMatrixWorld(true);
           const points = [
             [-7.75, -7.75],
             [-7.25, -7.25],
@@ -880,23 +962,33 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
             contactSamples++;
           }
         }
-        // An oblique traversal crosses cells; exact vertical edge/corner probes remain above.
-        const visual = ctx.raycast({
-          origin: new Vector3(actor.position.x, 300, actor.position.z),
-          direction: new Vector3(1, -400, 1).normalize(),
-          targets: mesh,
-        });
-        const physical = ctx.physics.directSpaceState.intersectRay({
-          from: { x: actor.position.x, y: 300, z: actor.position.z },
-          to: { x: actor.position.x + 1, y: -100, z: actor.position.z + 1 },
-          collisionMask: 4,
-        });
-        if (!visual || !physical)
-          throw new Error(
-            `Missing playable terrain contact: world=${world}, frame=${frames}, player=${actor.position.toArray()}, visual=${!!visual}, physical=${!!physical}, terrain=${mesh.position.toArray()}`,
+        // An oblique traversal crosses cells; exact vertical edge/corner probes remain above. A
+        // staged world admits no terrain tile before its first update, which the loop's settle
+        // steps precede, so its contact is observed once its spawn region is ready.
+        if (!stage || spawnReady) {
+          const terrainTargets = stage ? forestStageTerrainTargets(stage.world) : mesh;
+          const visual =
+            terrainTargets &&
+            ctx.raycast({
+              origin: new Vector3(actor.position.x, 300, actor.position.z),
+              direction: new Vector3(1, -400, 1).normalize(),
+              targets: terrainTargets,
+            });
+          const physical = ctx.physics.directSpaceState.intersectRay({
+            from: { x: actor.position.x, y: 300, z: actor.position.z },
+            to: { x: actor.position.x + 1, y: -100, z: actor.position.z + 1 },
+            collisionMask: 4,
+          });
+          if (!visual || !physical || (stage && physical.body.id !== stage.ground.body.id))
+            throw new Error(
+              `Missing playable terrain contact: world=${world}, frame=${frames}, player=${actor.position.toArray()}, visual=${!!visual}, physical=${!!physical}, body=${physical?.body.id}:${physical?.body.entity}, expectedGround=${stage?.ground.body.id}, terrain=${mesh?.position.toArray() ?? "stage"}`,
+            );
+          maxContactError = Math.max(
+            maxContactError,
+            Math.abs(visual.point.y - physical.position.y),
           );
-        maxContactError = Math.max(maxContactError, Math.abs(visual.point.y - physical.position.y));
-        contactSamples++;
+          contactSamples++;
+        }
         const wave = ocean?.sampleHeight(130, 140);
         const east = ocean?.sampleHeight(131, 140);
         if (wave && east) {
@@ -911,7 +1003,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         // The props are placed here rather than in `enter`: their ground query asks the stepped
         // world where the surface is, and neither the ray tree nor the collider answers before the
         // solver has run once.
-        if (props === undefined && !building) {
+        if (buildProps && props === undefined && !building) {
           building = true;
           const work = buildProps();
           if (ctx.startup.phase !== "ready") ctx.startup.hold("strata-props", work);
@@ -926,7 +1018,12 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         // `props.meshes` walks every streamed world; three walks per fixed step were 8.3 s of a
         // 15.6 s main-thread stall in a profiled session (PRD-541). Half a second is fresh enough.
         if (frames % 30 === 1) {
-          const meshes = props?.meshes ?? [];
+          const meshes = stage ? ([] as InstancedMesh[]) : (props?.meshes ?? []);
+          if (stage)
+            stage.world.traverseVisible((object) => {
+              if (object instanceof InstancedMesh && ctx.camera.layers.test(object.layers))
+                meshes.push(object);
+            });
           propCounts = {
             draws: meshes.length,
             instances: meshes.reduce((sum, draw) => sum + draw.count, 0),
@@ -936,7 +1033,14 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
             ),
           };
         }
-        const streaming = props?.stats();
+        const stagedStreaming = stage?.world.stats();
+        const streaming = stagedStreaming
+          ? {
+              ...stagedStreaming,
+              admissionMs: stagedStreaming.admission.spentMs,
+              admissionBacklog: stagedStreaming.admission.backlog,
+            }
+          : props?.stats();
         const worldReady = spawnReady;
         if (spawnError) ctx.state.set({ loadingError: spawnError });
         if (
@@ -993,7 +1097,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           maxViewPresentedP95: Math.max(0, ...viewFrameP50s.map((group) => group.presentedP95)),
           measuredViewCount: viewFrameP50s.filter((group) => group.windows > 0).length,
           world,
-          groundBiome: (mesh.material as MeshStandardMaterial).userData.biome ?? "baked",
+          groundBiome: mesh
+            ? ((mesh.material as MeshStandardMaterial).userData.biome ?? "baked")
+            : `stage:${forestStageArm(globalThis.location?.search ?? "")}`,
           worldReady,
           spawnCellsRequired: spawnCells.required,
           spawnCellsLoaded: spawnCells.loaded,
@@ -1007,7 +1113,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           streamingAdmissionMs: streaming?.admissionMs ?? 0,
           streamingAdmissionBacklog: streaming?.admissionBacklog ?? 0,
           terrainTransportBound:
-            (mesh.material as MeshStandardMaterial).userData.erosion === true &&
+            (mesh?.material as MeshStandardMaterial | undefined)?.userData.erosion === true &&
             erosionFlowSamples > 1000 &&
             erosionDepositSamples > 100,
           erosionFlowSamples,
@@ -1267,7 +1373,13 @@ const game = defineGame<TerrainState, IPhysicsContext>({
   },
   plugins: [rapier({ deterministicRestart: true }), playtest()],
   // HiDPI displays ask for 2-3x the pixels; the engine scaler trims to what the GPU affords.
-  render: { preferWebGPU: true, resolutionScale: "auto" },
+  render: {
+    preferWebGPU: true,
+    resolutionScale:
+      forestStageArm(typeof location === "undefined" ? "" : location.search) === undefined
+        ? "auto"
+        : 1,
+  },
   scenes: {
     forest: terrainScene("forest"),
     coastal: terrainScene("coastal"),

@@ -19,6 +19,17 @@ const stand = { fir: { x: 0, z: 0 }, spawn: { x: 4, z: 0 }, edge: { x: 24, z: 10
 function harness() {
   vi.useFakeTimers();
   let covered = false;
+  const visible = { required: 4, loaded: 4 };
+  const warmup = {
+    pendingPrewarm: 0,
+    pendingCpuDraws: 0,
+    residentCells: 1,
+    loadedCells: 1,
+    loadsInFlight: 0,
+    loadsQueued: 0,
+    admission: { backlog: 0 },
+  };
+  const shadow = { frame: 1, levels: 3, deferred: 0, held: 0, rendered: 3, cached: 0 };
   let admit = () => {};
   const body = {
     velocity: new three.Vector3(),
@@ -29,7 +40,9 @@ function harness() {
   const forest = {
     world: Object.assign(new three.Group(), {
       dispose: vi.fn(),
-      stats: () => ({ pendingPrewarm: 0 }),
+      stats: () => warmup,
+      terrainReadinessInView: () => visible,
+      pendingCpuDrawsInView: () => warmup.pendingCpuDraws,
       whenSpawnReady: () =>
         new Promise<void>((resolve) => {
           admit = resolve;
@@ -64,7 +77,8 @@ function harness() {
     },
     "kit.js": {
       addKit: addForest,
-      kitDaylight: () => new three.Group(),
+      kitDaylight: () =>
+        Object.assign(new three.Group(), { sun: { shadow: { shadowNode: { stats: shadow } } } }),
       forestStand: stand,
       KIT: "Forest",
     },
@@ -130,6 +144,9 @@ function harness() {
     scene: new Forest(),
     ctx,
     forest,
+    visible,
+    warmup,
+    shadow,
     body,
     addForest,
     setCovered: (value = true) => {
@@ -137,6 +154,7 @@ function harness() {
       if (value) admit();
     },
     draw: () => {
+      shadow.frame++;
       for (const callback of callbacks) callback();
     },
     state: () => state,
@@ -158,6 +176,8 @@ it("keeps actual Forest controls held for coverage, then permits play after spaw
     expect(h.ctx.input.justPressed).not.toHaveBeenCalled();
     expect(h.body.velocity.x).toBe(0);
     h.setCovered();
+    await vi.advanceTimersByTimeAsync(0);
+    h.draw();
     h.draw();
     await h.ctx.startup.hold.mock.calls[0]?.[1];
     await Promise.resolve();
@@ -211,4 +231,116 @@ it("disposes a late forest completion and does not publish into an exited scene"
   expect(h.state().propColliders).toBe(-1);
   expect(h.ctx.canvasLayer.opaque).toBe(false);
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("holds the actual loading cover for missing visible terrain and completed shadow draws", async () => {
+  const h = harness();
+  try {
+    h.visible.loaded = 1;
+    await h.scene.load(h.ctx);
+    h.scene.enter(h.ctx);
+    h.setCovered();
+    await vi.advanceTimersByTimeAsync(0);
+    h.ctx.startup.phase = "ready";
+    h.draw();
+    expect(h.state().worldReady).toBe(0);
+    expect(h.ctx.canvasLayer.opaque).toBe(true);
+    h.visible.loaded = 4;
+    h.shadow.held = 2;
+    h.draw();
+    expect(h.state().worldReady).toBe(0);
+    h.shadow.held = 0;
+    h.shadow.deferred = 1;
+    h.draw();
+    expect(h.state().worldReady).toBe(0);
+    h.shadow.deferred = 0;
+    h.warmup.pendingPrewarm = 1;
+    h.draw();
+    h.draw();
+    expect(h.state().worldReady).toBe(0);
+    h.warmup.pendingPrewarm = 0;
+    h.warmup.loadedCells = 0;
+    h.draw();
+    h.draw();
+    expect(h.state().worldReady).toBe(0);
+    h.warmup.loadedCells = 1;
+    h.warmup.pendingCpuDraws = 1;
+    h.draw();
+    h.draw();
+    expect(h.state().worldReady).toBe(0);
+    h.warmup.pendingCpuDraws = 0;
+    h.draw();
+    h.draw();
+    await Promise.resolve();
+    h.draw();
+    expect(h.state().worldReady).toBe(1);
+  } finally {
+    h.scene.exit();
+  }
+});
+
+it("does not mistake zero shadow counters before the first draw for completed startup", async () => {
+  const h = harness();
+  try {
+    h.shadow.frame = -3;
+    h.shadow.levels = 0;
+    await h.scene.load(h.ctx);
+    h.scene.enter(h.ctx);
+    h.setCovered();
+    await vi.advanceTimersByTimeAsync(0);
+    h.draw();
+    h.draw();
+    expect(h.state().worldReady).toBe(0);
+    h.shadow.levels = 3;
+    h.draw();
+    expect(h.state().worldReady).toBe(0);
+    h.draw();
+    expect(h.state().worldReady).toBe(0);
+    h.draw();
+    expect(h.state().worldReady).toBe(1);
+  } finally {
+    h.scene.exit();
+  }
+});
+
+it("runs the asymmetric contact witness without a legacy terrain mesh", () => {
+  const source = readFileSync(new URL("../src/game.ts", import.meta.url), "utf8");
+  const ast = ts.createSourceFile("game.ts", source, ts.ScriptTarget.Latest, true);
+  let witness: ts.IfStatement | undefined;
+  const visit = (node: ts.Node): void => {
+    if (
+      !witness &&
+      ts.isIfStatement(node) &&
+      node.thenStatement.getText(ast).includes("Missing asymmetric terrain contact")
+    )
+      witness = node;
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  if (!witness) throw new Error("Missing asymmetric witness block");
+  const probeMesh = new three.Mesh(new three.PlaneGeometry(16, 16), new three.MeshBasicMaterial());
+  const context = {
+    mesh: undefined,
+    frames: 0,
+    probeMesh,
+    Vector3: three.Vector3,
+    fixture: { heightAt: () => 0 },
+    ctx: {
+      raycast: vi.fn(() => ({ point: { y: 1 } })),
+      physics: { directSpaceState: { intersectRay: vi.fn(() => ({ position: { y: 1 } })) } },
+    },
+    maxContactError: 0,
+    bilinearDifference: 0,
+    contactSamples: 0,
+  };
+  const code = ts.transpileModule(witness.getText(ast), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  runInNewContext(code, context);
+  expect(context.contactSamples).toBe(8);
+  expect(context.bilinearDifference).toBe(1);
+  context.ctx.raycast.mockReturnValue(undefined as never);
+  expect(() => runInNewContext(code, context)).toThrow("Missing asymmetric terrain contact");
+  probeMesh.geometry.dispose();
+  probeMesh.material.dispose();
 });

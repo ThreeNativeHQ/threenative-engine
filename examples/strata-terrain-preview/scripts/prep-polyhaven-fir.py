@@ -1,4 +1,7 @@
-"""Export Poly Haven's authored fir LODs from the 1k .blend as six game GLBs.
+"""Export a Poly Haven tree's authored LODs from its 1k .blend as six game GLBs.
+
+The fir is the default. `--asset fir_sapling_medium --prefix fir-young` runs the same
+steps on another Poly Haven tree with the same a/b/c and LOD0/1/2 layout.
 
 Run headless:
 
@@ -31,9 +34,12 @@ Three blockers had to be cleared before any of it could be a GLB a game can load
    non-textured constants carried over, so the export is a plain metallic-roughness
    material instead of a guess at one.
 3. The twig material needs an alpha clip. Its alpha already exists as
-   `fir_tree_01_twig_alpha_1k.png`, so it is wired Alpha -> Math(GREATER_THAN, 0.5)
-   -> Alpha, which is the shape the exporter's `detect_alpha_clip` recognises and
-   writes as `alphaMode: MASK` with the glTF default cutoff of 0.5.
+   `fir_tree_01_twig_alpha_1k.png`, an RGB map with no alpha channel, so its image
+   node's Alpha output is 1.0 on every texel. It is wired Color -> Separate Color
+   (Red) -> Math(GREATER_THAN, 0.5) -> Alpha: the exporter takes the source channel
+   from the Separate Color socket (`image.py`, `src_chan`), its `detect_alpha_clip`
+   reads the Math node as `alphaMode: MASK` with the glTF default cutoff of 0.5, and
+   an Alpha socket makes it write the composite as PNG.
 
 One authored detail is deliberately NOT carried: `fir_tree_01_bark` scales its UVs
 by (1.2, 0.1) through a Mapping node. glTF can only carry that as
@@ -43,8 +49,9 @@ the bark tiled 1:1 instead. The wood tiles 1:1 in these files; the report says s
 The gate is the exported file, never the report
 -----------------------------------------------
 Every variant is read back by parsing its own GLB JSON chunk and held to: the
-source triangle count, one mesh, POSITION/NORMAL/TEXCOORD_0 only, base at y=0, and
-its textures at most 1024 px on a side. The exporter has no downscale knob, so the
+source triangle count, one mesh, POSITION/NORMAL/TEXCOORD_0 only, base at y=0,
+every cut-out material MASK at 0.5 with the share of its exported texels under the
+cutoff equal to its source alpha map's, and its textures at most 1024 px on a side. The exporter has no downscale knob, so the
 size limit is checked rather than requested. A variant that misses any of it
 raises and the script exits non-zero.
 """
@@ -64,6 +71,9 @@ LEVELS = (1, 2)
 # The alpha a needle card is drawn at, and the glTF MASK cutoff. It is the value
 # the starter's own crown material cuts at.
 ALPHA_CUTOFF = 0.5
+# How far the share of exported texels under the cutoff may drift from the source alpha
+# map's. The exporter copies the channel into a lossless PNG, so only resampling moves it.
+CUT_TOLERANCE = 0.005
 
 # The largest texture the game binds. The 1k .blend is already at this size, so the
 # export only has to be checked against it rather than resized to it.
@@ -101,6 +111,32 @@ MATERIAL_MAPS = {
 # and rebuilding is idempotent, so the set only keeps the log readable.
 REBUILT = set()
 
+# The Poly Haven asset whose authored LODs are moved, and the GLB name prefix; set from
+# `--asset` and `--prefix`. Every Poly Haven tree .blend names its objects
+# `<asset>_<variant>_LOD<n>` and its maps `<asset>_<map>_diff.png`.
+ASSET = ["fir_tree_01"]
+PREFIX = ["fir"]
+# Metres a NAMED opaque material may reach below the trunk base, measured per asset and never
+# global. fir_sapling_medium's dead lower branches go 9.2, 12.2 and 15.6 cm (a, b, c) into the
+# soil; its trunk and its alpha twig cards stay at or above y=0.
+BELOW_BASE = {"fir_sapling_medium_branches_dead": 0.16}
+
+
+def material_maps(name):
+    """The authored maps for one material: the table for the fir, the naming rule otherwise.
+
+    Dead branches share the bark (or branch) maps; only the twig material is cut out.
+    """
+    if name in MATERIAL_MAPS:
+        return MATERIAL_MAPS[name]
+    asset = ASSET[0]
+    if asset == "fir_tree_01" or not name.startswith(f"{asset}_"):
+        raise SystemExit(f"prep-fir: {name} is not in MATERIAL_MAPS; refusing to guess its maps")
+    part = name[len(asset) + 1 :]
+    part = {"dead_branches": "bark", "branches_dead": "branches"}.get(part, part)
+    alpha = f"{asset}_{part}_alpha.png" if part.startswith("twig") else None
+    return (f"{asset}_{part}_diff.png", f"{asset}_{part}_nor_gl.png", alpha)
+
 
 def log(message):
     print(f"prep-fir: {message}", flush=True)
@@ -116,12 +152,25 @@ def parse_args(argv):
     parser.add_argument(
         "--previews", default=None, help="directory to write one PNG per LOD2 variant into"
     )
+    parser.add_argument("--asset", default="fir_tree_01", help="Poly Haven tree asset id")
+    parser.add_argument("--prefix", default="fir", help="output GLB name prefix")
     parser.add_argument(
         "--only",
         default=None,
         help="one variant to redo, `a:1`, instead of all six (used to re-run a single failure)",
     )
-    return parser.parse_args(tail)
+    parser.add_argument(
+        "--triangles",
+        default=None,
+        help="near,mid triangle budgets, `30000,12000`; collapse-decimates a level above its budget",
+    )
+    args = parser.parse_args(tail)
+    if args.triangles is not None:
+        budgets = [float(value) for value in args.triangles.split(",")]
+        if len(budgets) != len(LEVELS) or not all(math.isfinite(b) and b >= 1 for b in budgets):
+            raise SystemExit(f"prep-fir: --triangles needs {len(LEVELS)} finite budgets >= 1")
+        args.triangles = dict(zip(LEVELS, (int(b) for b in budgets)))
+    return args
 
 
 def export_kwargs(**wanted):
@@ -279,14 +328,19 @@ def rebuild_material(material, colour_image, normal_image, alpha_image=None):
         alpha_tex = tree.nodes.new("ShaderNodeTexImage")
         alpha_tex.location = (-200.0, -500.0)
         alpha_tex.image = find_image(alpha_image)
+        alpha_tex.image.colorspace_settings.name = "Non-Color"
         alpha_tex.extension = "REPEAT"
+        # The map is RGB: its coverage is the red channel, and its Alpha output is 1.0.
+        red = tree.nodes.new("ShaderNodeSeparateColor")
+        red.location = (-100.0, -500.0)
         clip = tree.nodes.new("ShaderNodeMath")
         clip.location = (0.0, -500.0)
         # X > cutoff is the shape the exporter's detect_alpha_clip reads as an alpha
         # clip, and the shape Alpha CLIP means in Blender's own materials.
         clip.operation = "GREATER_THAN"
         clip.inputs[1].default_value = ALPHA_CUTOFF
-        tree.links.new(alpha_tex.outputs["Alpha"], clip.inputs[0])
+        tree.links.new(alpha_tex.outputs["Color"], red.inputs["Color"])
+        tree.links.new(red.outputs["Red"], clip.inputs[0])
         tree.links.new(clip.outputs["Value"], bsdf.inputs["Alpha"])
         # Blender's own alpha-clip flag, for anything that reads the material instead
         # of the nodes. The exporter reads the nodes.
@@ -324,6 +378,14 @@ def fix_uvs(obj):
         raise SystemExit(f"prep-fir: {obj.name} has no UV layer after conversion")
 
 
+def is_trunk(name):
+    """The fir names its trunks; other Poly Haven trees grow from their bark or branch material."""
+    asset = ASSET[0]
+    return "trunk" in name or (
+        asset != "fir_tree_01" and name in (f"{asset}_bark", f"{asset}_branches")
+    )
+
+
 def trunk_base(obj):
     """Where the trunk meets the ground: its lowest point, on the trunk's axis.
 
@@ -337,11 +399,13 @@ def trunk_base(obj):
     slots = [
         index
         for index, slot in enumerate(obj.material_slots)
-        if slot.material is not None and "trunk" in slot.material.name
+        if slot.material is not None and is_trunk(slot.material.name)
     ]
     if not slots:
         raise SystemExit(f"prep-fir: {obj.name} has no trunk material to stand it on")
-    trunk = slots[0]
+    # A named trunk wins over bark: pine_tree_01's bark is its branches, and standing on it left the
+    # real trunk 6 m below the origin.
+    trunk = next((i for i in slots if "trunk" in obj.material_slots[i].material.name), slots[0])
     mesh = obj.data
     band = []
     for polygon in mesh.polygons:
@@ -372,7 +436,7 @@ def isolate(keep):
     survivors = set()
     for variant in VARIANTS:
         for level in LEVELS:
-            survivors.add(f"fir_tree_01_{variant}_LOD{level}")
+            survivors.add(f"{ASSET[0]}_{variant}_LOD{level}")
             survivors.add(f"fir_{variant}_lod{level}")
     for obj in list(bpy.data.objects):
         if obj is keep or obj.name in survivors:
@@ -409,9 +473,59 @@ def triangle_count(obj):
     return len(obj.data.loop_triangles)
 
 
+def under_cutoff(image, channel):
+    """The share of an image's texels whose `channel` (0 red ... 3 alpha) is under the cutoff."""
+    import numpy
+
+    pixels = numpy.empty(len(image.pixels), dtype=numpy.float32)
+    image.pixels.foreach_get(pixels)
+    return float((pixels[channel :: image.channels] < ALPHA_CUTOFF).mean())
+
+
+def exported_cut(path, document, material):
+    """The share of a material's exported base colour texels whose alpha is under the cutoff."""
+    import tempfile
+
+    import bpy
+
+    texture = document["textures"][material["pbrMetallicRoughness"]["baseColorTexture"]["index"]]
+    image = document["images"][texture["source"]]
+    view = document["bufferViews"][image["bufferView"]]
+    with open(path, "rb") as handle:
+        data = handle.read()
+    # 12-byte header, 8-byte JSON chunk header, the JSON, then the BIN chunk's 8-byte header.
+    start = 28 + struct.unpack_from("<I", data, 12)[0] + view.get("byteOffset", 0)
+    suffix = {"image/png": ".png", "image/jpeg": ".jpg"}[image["mimeType"]]
+    with tempfile.TemporaryDirectory() as scratch:
+        file = os.path.join(scratch, f"exported{suffix}")
+        with open(file, "wb") as handle:
+            handle.write(data[start : start + view["byteLength"]])
+        loaded = bpy.data.images.load(file)
+        try:
+            return under_cutoff(loaded, 3)
+        finally:
+            bpy.data.images.remove(loaded)
+
+
 def check_written(path, expected_triangles):
     """Hold the written GLB to what the scene held, then report what it carries."""
     document = read_glb_json(path)
+    cut = {}
+    for material in document.get("materials", []):
+        name = material.get("name", "?")
+        alpha = material_maps(name)[2]
+        if alpha is None:
+            continue
+        mode = material.get("alphaMode", "OPAQUE")
+        if mode != "MASK" or material.get("alphaCutoff", 0.5) != ALPHA_CUTOFF:
+            raise SystemExit(f"prep-fir: {path} {name} is {mode}, not MASK at {ALPHA_CUTOFF}")
+        source = under_cutoff(find_image(alpha), 0)
+        exported = exported_cut(path, document, material)
+        cut[name] = {"source": round(source, 4), "exported": round(exported, 4)}
+        if abs(exported - source) > CUT_TOLERANCE:
+            raise SystemExit(
+                f"prep-fir: {path} {name} cuts {exported:.4f} of its texels, its alpha map {source:.4f}"
+            )
     triangles = 0
     semantics = set()
     lowest = None
@@ -423,9 +537,15 @@ def check_written(path, expected_triangles):
             triangles += document["accessors"][primitive["indices"]]["count"] // 3
             semantics.update(primitive["attributes"].keys())
     accessors = document["accessors"]
+    trunk = None
     for primitive in meshes[0]["primitives"]:
-        position = accessors[primitive["attributes"]["POSITION"]]
-        lowest = position["min"][1] if lowest is None else min(lowest, position["min"][1])
+        low = accessors[primitive["attributes"]["POSITION"]]["min"][1]
+        name = document["materials"][primitive["material"]].get("name", "?")
+        lowest = low if lowest is None else min(lowest, low)
+        if is_trunk(name):
+            trunk = low if trunk is None else min(trunk, low)
+        elif low < -BELOW_BASE.get(name, 1e-3):
+            raise SystemExit(f"prep-fir: {path} {name} reaches y={low}, below the trunk base")
     materials = {
         material.get("name", "?"): {
             "alphaMode": material.get("alphaMode", "OPAQUE"),
@@ -443,42 +563,79 @@ def check_written(path, expected_triangles):
         raise SystemExit(f"prep-fir: {path} has no primitive with a POSITION accessor")
     if semantics != ALLOWED_SEMANTICS:
         raise SystemExit(f"prep-fir: {path} carries {sorted(semantics)}, not {sorted(ALLOWED_SEMANTICS)}")
-    if abs(lowest) > 1e-3:
-        raise SystemExit(f"prep-fir: {path} has its base at y={lowest}, not 0")
+    # The opaque trunk stands on y=0, so the cooked instance keeps its soil contact.
+    if trunk is None or abs(trunk) > 1e-3:
+        raise SystemExit(f"prep-fir: {path} has its trunk base at y={trunk}, not 0")
     summary = {
         "triangles": triangles,
         "bytes": os.path.getsize(path),
         "primitives": len(meshes[0]["primitives"]),
         "materials": materials,
+        "cut": cut,
         "textures": len(document.get("images", [])),
         "attributes": sorted(semantics),
         "baseY": round(lowest, 5),
+        "trunkBaseY": round(trunk, 5),
     }
     log(f"{os.path.basename(path)}: {summary}")
     return summary
 
 
-def export_variant(variant, level, out_dir):
+def card_area(obj):
+    twigs = {i for i, slot in enumerate(obj.material_slots) if slot.material and "twig" in slot.material.name}
+    return sum(polygon.area for polygon in obj.data.polygons if polygon.material_index in twigs)
+
+
+# The share of the twig cards' area a decimated level must keep. Collapse keeps every card in place
+# with its UVs; a level that lost more area than this lost cards, which is the crown going sparse.
+MIN_CARD_AREA = 0.9
+
+
+def decimate(obj, budget):
+    """Collapse-decimate one level to its triangle budget, and fail if the crown lost its cards."""
     import bpy
 
-    obj = bpy.data.objects[f"fir_tree_01_{variant}_LOD{level}"]
+    triangles = triangle_count(obj)
+    if budget is None or triangles <= budget:
+        return
+    area = card_area(obj)
+    modifier = obj.modifiers.new("budget", "DECIMATE")
+    modifier.decimate_type = "COLLAPSE"
+    modifier.ratio = budget / triangles
+    modifier.use_collapse_triangulate = True
+    with bpy.context.temp_override(object=obj, active_object=obj, selected_objects=[obj]):
+        bpy.ops.object.modifier_apply(modifier=modifier.name)
+    kept = card_area(obj) / area if area > 0 else 1.0
+    log(f"{obj.name}: {triangles} -> {triangle_count(obj)} triangles, twig card area kept {kept:.3f}")
+    if kept < MIN_CARD_AREA:
+        raise SystemExit(f"prep-fir: {obj.name} kept {kept:.3f} of its twig card area")
+
+
+def export_variant(variant, level, out_dir, budgets=None):
+    import bpy
+
+    obj = bpy.data.objects[f"{ASSET[0]}_{variant}_LOD{level}"]
+    # Before the origin: collapse moves the trunk's lowest ring, and the base must sit on what ships.
+    decimate(obj, (budgets or {}).get(level))
     prepare(obj, variant, level)
+    # A slot no face uses exports nothing (pine_tree_01's LOD1 carries an empty one); a used one
+    # still fails below.
+    with bpy.context.temp_override(object=obj, active_object=obj, selected_objects=[obj]):
+        bpy.ops.object.material_slot_remove_unused()
     for slot in obj.material_slots:
         if slot.material is None:
             raise SystemExit(f"prep-fir: {obj.name} has an empty material slot")
         name = slot.material.name
         if name in REBUILT:
             continue
-        if name not in MATERIAL_MAPS:
-            raise SystemExit(f"prep-fir: {name} is not in MATERIAL_MAPS; refusing to guess its maps")
-        colour, normal, alpha = MATERIAL_MAPS[name]
+        colour, normal, alpha = material_maps(name)
         rebuild_material(slot.material, colour, normal, alpha)
         REBUILT.add(name)
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
     before = triangle_count(obj)
-    path = os.path.join(out_dir, f"fir-{variant}-lod{level}.glb")
+    path = os.path.join(out_dir, f"{PREFIX[0]}-{variant}-lod{level}.glb")
     os.makedirs(out_dir, exist_ok=True)
     call_export(path)
     return check_written(path, before)
@@ -570,7 +727,7 @@ def preview(variant, obj, directory):
     log(f"{obj.name}: framed at {distance:.1f} m, tree spans {widest * 100:.0f}% of the frame")
 
     os.makedirs(directory, exist_ok=True)
-    path = os.path.join(directory, f"fir-{variant}-lod2-preview.png")
+    path = os.path.join(directory, f"{PREFIX[0]}-{variant}-lod2-preview.png")
     scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
 
@@ -588,6 +745,7 @@ def main(argv):
     import bpy
 
     args = parse_args(argv)
+    ASSET[0], PREFIX[0] = args.asset, args.prefix
     scene = bpy.context.scene
     if scene.unit_settings.system != "METRIC" or scene.unit_settings.scale_length != 1.0:
         raise SystemExit("prep-fir: this .blend is not in metres")
@@ -602,7 +760,7 @@ def main(argv):
         for level in LEVELS:
             if wanted and (variant, level) not in wanted:
                 continue
-            exported[f"{variant}:{level}"] = export_variant(variant, level, args.out)
+            exported[f"{variant}:{level}"] = export_variant(variant, level, args.out, args.triangles)
 
     if args.previews:
         for variant in VARIANTS:

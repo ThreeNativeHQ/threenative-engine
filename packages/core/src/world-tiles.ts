@@ -17,8 +17,9 @@ import {
   BufferAttribute,
   BufferGeometry,
   type Camera,
+  Frustum,
   LOD,
-  type Matrix4,
+  Matrix4,
   Mesh,
   Object3D,
   Sphere,
@@ -983,33 +984,61 @@ function interpolatedLevelNormal(
     .normalize();
 }
 
+const morphSourceVersions = new WeakMap<
+  BufferGeometry,
+  readonly { attribute: BufferAttribute; version: number }[]
+>();
+
 /** Immutable stock morph buffers; shared sides keep the canonical surface used by seam jobs. */
 function* buildLodMorphTargets(
   finer: ILevelGeometry,
   coarserLevels: readonly ILevelGeometry[],
   sharedEdges: number,
   chunked: boolean,
+  previous?: BufferGeometry,
 ): Generator<void> {
+  const sources = [finer, ...coarserLevels].flatMap((level) =>
+    ["position", "normal"].map((name) => {
+      const attribute = level.geometry.getAttribute(name) as BufferAttribute;
+      return { attribute, version: attribute.version };
+    }),
+  );
+  const retained = previous === undefined ? undefined : morphSourceVersions.get(previous);
+  const boundaryOnly =
+    retained?.length === sources.length &&
+    sources.every(
+      ({ attribute, version }, index) =>
+        retained[index]?.attribute === attribute && retained[index]?.version === version,
+    );
   const position = finer.geometry.getAttribute("position");
   const normal = finer.geometry.getAttribute("normal");
   const positions: BufferAttribute[] = [];
   const normals: BufferAttribute[] = [];
   const coarseNormal = new Vector3();
   const last = finer.resolution - 1;
-  for (const coarser of coarserLevels) {
-    const deltaPosition = new BufferAttribute(new Float32Array(position.count * 3), 3);
-    const deltaNormal = new BufferAttribute(new Float32Array(position.count * 3), 3);
+  for (const [target, coarser] of coarserLevels.entries()) {
+    const deltaPosition = boundaryOnly
+      ? (finer.geometry.morphAttributes.position?.[target] as BufferAttribute).clone()
+      : new BufferAttribute(new Float32Array(position.count * 3), 3);
+    const deltaNormal = boundaryOnly
+      ? (finer.geometry.morphAttributes.normal?.[target] as BufferAttribute).clone()
+      : new BufferAttribute(new Float32Array(position.count * 3), 3);
     const coarsePosition = coarser.geometry.getAttribute("position") as BufferAttribute;
     const coarseNormals = coarser.geometry.getAttribute("normal") as BufferAttribute;
     for (let row = 0; row <= last; row += 1) {
-      for (let column = 0; column <= last; column += 1) {
+      // Mask changes only affect the perimeter when every source buffer is unchanged.
+      const columnStep = boundaryOnly && row > 0 && row < last ? last : 1;
+      for (let column = 0; column <= last; column += columnStep) {
         const index = row * finer.resolution + column;
         const pinned =
           (row === 0 && sharedEdges & 1) ||
           (row === last && sharedEdges & 2) ||
           (column === 0 && sharedEdges & 4) ||
           (column === last && sharedEdges & 8);
-        if (!pinned) {
+        if (pinned) {
+          deltaPosition.setY(index, 0);
+          deltaNormal.setXYZ(index, 0, 0, 0);
+        } else {
           deltaPosition.setY(
             index,
             interpolatedLevelHeight(coarser, coarsePosition, column / last, row / last) -
@@ -1043,6 +1072,7 @@ function* buildLodMorphTargets(
   }
   finer.geometry.morphAttributes.position = positions;
   finer.geometry.morphAttributes.normal = normals;
+  morphSourceVersions.set(finer.geometry, sources);
 }
 
 function updateLodMorph(tile: IResidentTile, transition: ILodTransition, progress: number): void {
@@ -2022,6 +2052,54 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return { required, loaded };
   }
 
+  /** Loaded selected tiles intersecting the camera; bounds include terrain heights before admission. */
+  readinessInView(
+    camera: Camera,
+    heightBounds: readonly [number, number],
+  ): { required: number; loaded: number } {
+    if (
+      heightBounds.length !== 2 ||
+      !Number.isFinite(heightBounds[0]) ||
+      !Number.isFinite(heightBounds[1]) ||
+      heightBounds[0] > heightBounds[1]
+    )
+      throw new Error("TerrainTiles visible readiness requires finite ordered height bounds.");
+    camera.updateWorldMatrix(true, false);
+    this.updateWorldMatrix(true, false);
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+      camera.coordinateSystem,
+    );
+    const focus = this.#focus ?? this.worldToLocal(camera.getWorldPosition(new Vector3()));
+    const centerX = Math.floor((focus.x + this.tileSize / 2) / this.tileSize);
+    const centerZ = Math.floor((focus.z + this.tileSize / 2) / this.tileSize);
+    const wanted: Array<{ x: number; z: number; distance: number }> = [];
+    for (let z = centerZ - this.#streamRadius; z <= centerZ + this.#streamRadius; z++)
+      for (let x = centerX - this.#streamRadius; x <= centerX + this.#streamRadius; x++)
+        wanted.push({
+          x,
+          z,
+          distance: Math.hypot(focus.x - x * this.tileSize, focus.z - z * this.tileSize),
+        });
+    wanted.sort((a, b) => a.distance - b.distance || a.z - b.z || a.x - b.x);
+    const bounds = new Box3();
+    let required = 0;
+    let loaded = 0;
+    for (const { x, z } of wanted.slice(0, this.residentTileBudget)) {
+      bounds.min.set(
+        (x - 0.5) * this.tileSize,
+        heightBounds[0] - this.skirtDepth,
+        (z - 0.5) * this.tileSize,
+      );
+      bounds.max.set((x + 0.5) * this.tileSize, heightBounds[1], (z + 0.5) * this.tileSize);
+      bounds.applyMatrix4(this.matrixWorld);
+      if (!frustum.intersectsBox(bounds)) continue;
+      required++;
+      if (!this.#released && this.#resident.has(keyFor(x, z))) loaded++;
+    }
+    return { required, loaded };
+  }
+
   debug(): Record<string, unknown> {
     const topology = this.#topology;
     const view = this.#lodView;
@@ -2488,7 +2566,14 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         geometry.boundingSphere = previous.boundingSphere?.clone() ?? null;
         const influences = level.mesh.morphTargetInfluences?.slice();
         // Three caches morph textures by geometry, ignoring attribute versions; retire that cache.
-        for (const _ of buildLodMorphTargets({ ...level, geometry }, coarser, shared, false)) {
+        geometry.morphAttributes = { ...previous.morphAttributes };
+        for (const _ of buildLodMorphTargets(
+          { ...level, geometry },
+          coarser,
+          shared,
+          false,
+          previous,
+        )) {
         }
         level.geometry = geometry;
         level.mesh.geometry = geometry;

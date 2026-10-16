@@ -1,5 +1,6 @@
-import type { Box3, InstancedMesh, Object3D } from "three";
+import { type Box3, type Camera, Frustum, InstancedMesh, Matrix4, type Object3D } from "three";
 import { markEngineRenderHook } from "./engine-render-hook.js";
+import type { IRendererLike } from "./renderer.js";
 import { SharedBatch } from "./world-cell-batches.js";
 import type { IBatchShape, IPrewarmEntry } from "./world-cell-data.js";
 import type { IAssetState } from "./world-cells.js";
@@ -62,6 +63,88 @@ const PREWARM_RELEASE_UPDATES = 8;
 export const WIDE_CLUSTER = "*";
 
 export class CellPrewarm {
+  readonly #drawBatches = new WeakMap<InstancedMesh, SharedBatch>();
+  readonly #submitted = new WeakSet<InstancedMesh>();
+  readonly #drawBorrows = new Map<InstancedMesh, { before: unknown; release(): void }>();
+
+  /** Strict CPU submission gate; idle legacy prewarm settlement is not a submitted draw. */
+  pendingCpuDrawsInView(root: Object3D, camera: Camera, renderer?: IRendererLike): number {
+    camera.updateWorldMatrix(true, false);
+    root.updateWorldMatrix(true, true);
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+      camera.coordinateSystem,
+    );
+    const active = new Set<InstancedMesh>();
+    let pending = 0;
+    root.traverseVisible((object) => {
+      if (!(object instanceof InstancedMesh)) return;
+      const batch = this.#drawBatches.get(object);
+      if (
+        !batch ||
+        batch.gpu !== undefined ||
+        batch.role !== "main" ||
+        object.count <= 0 ||
+        !camera.layers.test(object.layers) ||
+        !frustum.intersectsObject(object)
+      )
+        return;
+      if (this.#submitted.has(object)) return;
+      pending++;
+      active.add(object);
+      const previous = this.#drawBorrows.get(object);
+      if (previous && object.onBeforeRender !== previous.before) previous.release();
+      if (this.#drawBorrows.has(object) || renderer === undefined) return;
+      const ownBefore = object.onBeforeRender;
+      const ownAfter = object.onAfterRender;
+      const hadBefore = Object.hasOwn(object, "onBeforeRender");
+      const hadAfter = Object.hasOwn(object, "onAfterRender");
+      let before: number | undefined;
+      const calls = (): number | undefined => {
+        const value = (renderer.info as { render?: { drawCalls?: number; calls?: number } }).render;
+        const count = value?.drawCalls ?? value?.calls;
+        return Number.isSafeInteger(count) && (count as number) >= 0 ? count : undefined;
+      };
+      const submitted = this.#submitted;
+      const release = () => {
+        if (object.onBeforeRender === beforeHook) this.#handBack(object, hadBefore, ownBefore);
+        if (object.onAfterRender === afterHook) {
+          if (hadAfter) object.onAfterRender = ownAfter;
+          // biome-ignore lint/performance/noDelete: restore the inherited callback.
+          else delete (object as Partial<InstancedMesh>).onAfterRender;
+        }
+        this.#drawBorrows.delete(object);
+      };
+      const beforeHook: typeof object.onBeforeRender = function (this: InstancedMesh, ...args) {
+        before = undefined;
+        ownBefore.apply(this, args);
+        before = args[2] === camera && renderer.compiling !== true ? calls() : undefined;
+      };
+      const afterHook: typeof object.onAfterRender = function (this: InstancedMesh, ...args) {
+        const after = calls();
+        if (
+          args[2] === camera &&
+          renderer.compiling !== true &&
+          object.count > 0 &&
+          before !== undefined &&
+          after !== undefined &&
+          after > before
+        ) {
+          submitted.add(object);
+          release();
+        }
+        before = undefined;
+        ownAfter.apply(this, args);
+      };
+      markEngineRenderHook(beforeHook);
+      markEngineRenderHook(afterHook);
+      object.onBeforeRender = beforeHook;
+      object.onAfterRender = afterHook;
+      this.#drawBorrows.set(object, { before: beforeHook, release });
+    });
+    for (const [mesh, borrow] of this.#drawBorrows) if (!active.has(mesh)) borrow.release();
+    return pending;
+  }
   /**
    * Every `asset:level:part` of a loaded asset is minted empty, before any placement wants it, so
    * the node build lands in the loading phase instead of the frame a cell row first draws the key.
@@ -237,6 +320,7 @@ export class CellPrewarm {
   /** Count this batch's first submitted draw, once, then hand `onBeforeRender` back to whoever had it. */
   awaitDraw(shared: SharedBatch): void {
     const mesh = shared.mesh;
+    this.#drawBatches.set(mesh, shared);
     const caster = shared.role !== "main";
     this.#prewarmOwed += 1;
     if (caster) {
@@ -401,6 +485,8 @@ export class CellPrewarm {
    * new is prewarmed here — the batch still owes exactly the one draw it owed.
    */
   carryPrewarm(old: InstancedMesh, next: InstancedMesh): void {
+    const batch = this.#drawBatches.get(old);
+    if (batch) this.#drawBatches.set(next, batch);
     const entry = this.#awaited.get(old);
     if (entry === undefined) return;
     this.#awaited.delete(old);
@@ -432,6 +518,7 @@ export class CellPrewarm {
     return this.#prewarmSettled;
   }
   releaseHooks(): void {
+    for (const borrow of this.#drawBorrows.values()) borrow.release();
     for (const [mesh, entry] of [...this.#awaited]) {
       if (mesh.onBeforeRender === entry.borrow) this.#handBack(mesh, entry.hadOwn, entry.own);
     }

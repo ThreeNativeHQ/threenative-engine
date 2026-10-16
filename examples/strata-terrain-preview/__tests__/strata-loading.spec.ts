@@ -346,10 +346,14 @@ it("uploads the status canvas only when its displayed text changes", async () =>
     screen.update();
     expect(texture.version).toBe(version + 1);
     expect(drawn).toEqual(["0%", "95%", "96%"]);
+    Object.assign(source.startup, { warmup: { status: "incomplete" } });
+    source.startup.progress = 1;
+    screen.update();
+    expect(drawn.at(-1)).toBe("Preparing");
     reject(new Error("Forest spawn: missing cell"));
     await Promise.resolve();
     screen.update();
-    expect(texture.version).toBe(version + 2);
+    expect(texture.version).toBe(version + 3);
     expect(drawn.at(-1)).toBe("Forest spawn: missing cell");
     expect(source.canvasLayer.opaque).toBe(true);
   } finally {

@@ -3,6 +3,7 @@ import {
   Heightfield,
   type IWorldCellsLoadOptions,
   type IWorldPackage,
+  TerrainTiles,
   WorldCells,
   heightSamplerFromHeightmap,
   loadWorldHeightmap,
@@ -59,6 +60,8 @@ export interface IStarterWorldSpec<Extra extends { dispose(): void }> {
    * @override grounding defaults on; `grounding: false` keeps the authored Y coordinate
    */
   readonly edits?: IWorldPlacementEdits;
+  /** Terrain query layer; omitted keeps the physics body's default layer. */
+  readonly groundCollisionLayer?: number;
   readonly loadSurface: (ctx: StarterContext, url: string) => Promise<Material>;
   readonly lighting: {
     readonly sky: string;
@@ -173,7 +176,19 @@ export async function addStarterWorld<Extra extends { dispose(): void } = { disp
     };
     world = await WorldCells.load(options);
     assertCurrent();
-    ground = groundCollider(ctx, manifest, field);
+    const tiles = world.children.find((child) => child instanceof TerrainTiles);
+    ground = groundCollider(
+      ctx,
+      manifest,
+      field,
+      heightSamplerFromHeightmap(manifest.terrain, manifest.extent, heightmap),
+      tiles,
+      follow,
+      spec.streaming.terrain === false
+        ? spec.streaming.ring
+        : (spec.streaming.terrain?.colliderRadius ?? spec.streaming.ring),
+      spec.groundCollisionLayer,
+    );
     if (spec.water) {
       const file = await (
         await fetchAsset(ctx, `${base}water.json`, assertCurrent, spec.name)
@@ -283,24 +298,111 @@ function starterField(manifest: IWorldPackage, heightmap: Uint16Array): Heightfi
 }
 
 function groundCollider(
-  ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
+  ctx: StarterContext,
   manifest: IWorldPackage,
   field: Heightfield,
+  sampleHeight: (x: number, z: number) => number,
+  tiles: TerrainTiles | undefined,
+  follow: Object3D,
+  radius: number,
+  collisionLayer?: number,
 ): RigidBody3D {
   const { extent } = manifest;
   const anchor = new Object3D();
-  anchor.position.set(extent.minX + extent.sizeX / 2, 0, extent.minZ + extent.sizeZ / 2);
-  return new RigidBody3D({
+  const position = new Vector3();
+  let tileX = Number.NaN;
+  let tileZ = Number.NaN;
+  const window = () => {
+    if (!tiles) return field;
+    follow.getWorldPosition(position);
+    tileX = Math.floor((position.x + tiles.tileSize / 2) / tiles.tileSize);
+    tileZ = Math.floor((position.z + tiles.tileSize / 2) / tiles.tileSize);
+    const spacing = tiles.tileSize / (tiles.tileResolution - 1);
+    // Tile vertices start half a tile before its centre, independent of world origin.
+    const axis = (center: number, min: number, size: number) => {
+      const cells = tiles.tileResolution - 1;
+      const first = Math.floor((min + tiles.tileSize / 2) / spacing);
+      // Cover boundary strips on the render lattice, including sub-cell worlds.
+      const last = Math.max(first + 1, Math.ceil((min + size + tiles.tileSize / 2) / spacing));
+      // Out-of-world teleports retain the nearest edge window.
+      const tile = Math.max(
+        Math.floor(first / cells),
+        Math.min(center, Math.ceil(last / cells) - 1),
+      );
+      return [
+        Math.max(first, (tile - radius) * cells),
+        Math.min(last, (tile + radius + 1) * cells),
+      ] as const;
+    };
+    const [x0, x1] = axis(tileX, extent.minX, extent.sizeX);
+    const [z0, z1] = axis(tileZ, extent.minZ, extent.sizeZ);
+    return Heightfield.fromSampler({
+      columns: x1 - x0 + 1,
+      rows: z1 - z0 + 1,
+      width: (x1 - x0) * spacing,
+      depth: (z1 - z0) * spacing,
+      origin: {
+        x: ((x0 + x1) * spacing) / 2 - tiles.tileSize / 2,
+        z: ((z0 + z1) * spacing) / 2 - tiles.tileSize / 2,
+      },
+      sampleHeight,
+    });
+  };
+  const shape = (part: Heightfield) => {
+    anchor.position.set(part.origin.x, 0, part.origin.z);
+    return CollisionShape3D.heightfield(part.rows, part.columns, part.toColliderHeights(), {
+      x: part.width,
+      y: 1,
+      z: part.depth,
+    });
+  };
+  const simulation = ctx.physics.simulation;
+  const replaceShape = simulation.setColliderShape?.bind(simulation);
+  if (tiles && !replaceShape)
+    throw new Error("Starter terrain requires in-place heightfield replacement.");
+  const body = new RigidBody3D({
     object: anchor,
     physics: ctx.physics,
     type: "fixed",
     entity: "terrain",
-    shape: CollisionShape3D.heightfield(field.rows, field.columns, field.toColliderHeights(), {
-      x: extent.sizeX,
-      y: 1,
-      z: extent.sizeZ,
-    }),
+    ...(collisionLayer === undefined ? {} : { collisionLayer }),
+    shape: shape(window()),
   });
+  if (tiles) {
+    const dispose = body.dispose.bind(body);
+    let released = false;
+    let cancel: (() => void) | undefined;
+    body.dispose = () => {
+      if (released) return;
+      released = true;
+      cancel?.();
+      dispose();
+    };
+    try {
+      // Scheduler work runs before scene movement and the physics plugin's fixed step.
+      cancel = ctx.every(() => {
+        if (released) return;
+        follow.getWorldPosition(position);
+        if (
+          tileX === Math.floor((position.x + tiles.tileSize / 2) / tiles.tileSize) &&
+          tileZ === Math.floor((position.z + tiles.tileSize / 2) / tiles.tileSize)
+        )
+          return;
+        const next = shape(window());
+        Object.assign(body.shape.descriptor, next.descriptor, {
+          collisionLayer: body.shape.descriptor.collisionLayer,
+          collisionMask: body.shape.descriptor.collisionMask,
+        });
+        replaceShape?.(body.collider, body.shape.descriptor);
+        body.shape.bindRaw(next.raw);
+        simulation.setBodyTransform(body.body.id, anchor.position);
+      });
+    } catch (error) {
+      body.dispose();
+      throw error;
+    }
+  }
+  return body;
 }
 
 /** Stream caller-specified fixed collision shapes around a moving follow object.

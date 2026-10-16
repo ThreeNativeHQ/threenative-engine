@@ -46,7 +46,8 @@ world before it returns. Set the camera's `far` to at least the sky size in `sky
 - **The water:** the recipe's `lake-bed`, `river` and `lake` layers set where it lies and how deep;
   `water.ts` sets how it looks.
 - **The look:** `surface.json` for the ground, `sky.ts` for the light, `PROP_SKY_LIGHT` in
-  `world.ts` for how strongly the sky lights the props.
+  `world.ts` for how strongly the sky lights the props and `GROUND_SPECULAR` for the sheen on the
+  ground (0 is matte; three's default is 1).
 
 ## Edit at startup, without rebaking
 

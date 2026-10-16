@@ -256,7 +256,7 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
       host.startup.warmup !== undefined && host.startup.warmup.status !== "complete";
     progress = observationUnknown ? Math.min(0.9, bounded) : bounded;
     setFillUv(fill.geometry, progress, fillBaseU);
-    status?.update(progress);
+    status?.update(observationUnknown ? "Preparing" : progress);
     layout();
   };
 

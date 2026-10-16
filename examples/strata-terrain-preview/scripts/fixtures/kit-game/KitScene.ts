@@ -1,4 +1,9 @@
-import { type ICtx, type IFrameBudgetWindow, Scene } from "@threenative/core";
+import {
+  type ICtx,
+  type IFrameBudgetWindow,
+  Scene,
+  type VirtualShadowNode,
+} from "@threenative/core";
 import {
   CharacterBody3D,
   CollisionShape3D,
@@ -418,6 +423,9 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
   #stand: IStand | undefined;
   #released = false;
   #ready = false;
+  #spawnReady = false;
+  #visibleShadowFrame = -1;
+  #daylight: ReturnType<typeof kitDaylight> | undefined;
   #promoted: Object3D | undefined;
   #promotedLight: PointLight | undefined;
   #fixedRigidBody: RigidBody3D | undefined;
@@ -458,18 +466,26 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
       ctx.startup.hold(`${KIT.toLowerCase()}-spawn`, spawn, 120_000);
     let kit: IKitWorld | undefined;
     // A holder rather than a `let`: the progress getter reads it, and the spawn is set once it is known.
+    const loadingScene = this;
     const spawnView: { at?: Vector3 } = { at: this.#stand?.views.ground?.at };
     this.#loading = createLoadingScreen({
       ...ctx,
       startup: {
+        get warmup() {
+          return { status: loadingScene.#ready ? ("complete" as const) : ("incomplete" as const) };
+        },
         get progress() {
           // The spawn is unknown until the world resolves, so the bar reads the startup alone until then.
           const region = spawnView.at && kit?.world.readinessAt(spawnView.at, 60);
           const required = (region?.requiredCells ?? 0) + (region?.requiredTerrainTiles ?? 0);
           const loaded = (region?.loadedCells ?? 0) + (region?.loadedTerrainTiles ?? 0);
+          const visible = kit?.world.terrainReadinessInView(ctx.camera);
           return Math.min(
             0.99,
-            (ctx.startup.progress + (required > 0 ? loaded / required : 0)) / 2,
+            (ctx.startup.progress +
+              (required > 0 ? loaded / required : 0) +
+              (visible && visible.required > 0 ? visible.loaded / visible.required : 0)) /
+              3,
           );
         },
         whenReady: () => Promise.all([ctx.startup.whenReady(), spawn]).then(() => undefined),
@@ -550,7 +566,9 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
           ])
         : Promise.reject(new Error(`${KIT} spawn admission exceeded 120000 ms`))
     ).then(
-      () => this.#settle?.(),
+      () => {
+        this.#spawnReady = true;
+      },
       (error: unknown) => this.#fail(ctx, error instanceof Error ? error.message : String(error)),
     );
     const player = new Object3D();
@@ -568,7 +586,8 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
   }
 
   override enter(ctx: Ctx): void {
-    ctx.add(kitDaylight(ctx.camera));
+    this.#daylight = kitDaylight(ctx.camera);
+    ctx.add(this.#daylight);
     if (!this.#kit || !this.#stand) {
       ctx.beforeRender(() => this.#loading?.update());
       return;
@@ -604,6 +623,32 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
       if (!kit || !stand) return;
       const region = kit.world.readinessAt(stand.views.ground.at, 60);
       if (!region) return;
+      if (!this.#ready && this.#spawnReady) {
+        const visible = kit.world.terrainReadinessInView(ctx.camera);
+        const shadow = (this.#daylight?.sun.shadow.shadowNode as VirtualShadowNode | undefined)
+          ?.stats;
+        const stats = kit.world.stats();
+        const dataReady =
+          visible.loaded === visible.required &&
+          stats.loadedCells === stats.residentCells &&
+          stats.loadsInFlight === 0 &&
+          stats.loadsQueued === 0 &&
+          stats.admission.backlog === 0 &&
+          stats.pendingPrewarm === 0;
+        const pendingCpuDraws = dataReady ? kit.world.pendingCpuDrawsInView(ctx.camera) : -1;
+        const complete = dataReady && pendingCpuDraws === 0;
+        if (!complete) this.#visibleShadowFrame = -1;
+        else if (shadow && shadow.frame > 0 && shadow.levels > 0) {
+          // Observe a completed render after the visible terrain joined, including deferred shadow levels.
+          if (this.#visibleShadowFrame < 0) this.#visibleShadowFrame = shadow.frame;
+          else if (
+            shadow.frame > this.#visibleShadowFrame &&
+            shadow.held === 0 &&
+            shadow.deferred === 0
+          )
+            this.#settle?.();
+        }
+      }
       ctx.state.set({
         spawnCellsLoaded: region.loadedCells,
         spawnCellsRequired: region.requiredCells,

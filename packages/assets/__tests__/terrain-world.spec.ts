@@ -394,7 +394,7 @@ describe("cookTerrainWorld", () => {
     }
   });
 
-  it("gives each map kind one lossless size and encoding across layers so the splat arrays stack", async () => {
+  it("normalizes map dimensions losslessly while preserving already-sized source bytes", async () => {
     const sharp = (await import("sharp")).default;
     const noise = { type: "gaussian", mean: 128, sigma: 40 } as const;
     const jpeg = (size: number) =>
@@ -403,7 +403,10 @@ describe("cookTerrainWorld", () => {
         .toBuffer();
     // The forest's shape scaled down: rock authored at half the size of grass, dirt and moss.
     const [large, small] = await Promise.all([jpeg(64), jpeg(32)]);
-    const largeRgba = new Uint8Array(await sharp(large).ensureAlpha().raw().toBuffer());
+    const largeRgba = (await decodeImageBytes(large, "source.jpg")).data;
+    const smallRgba = new Uint8Array(
+      await sharp(small).resize(64, 64).ensureAlpha().raw().toBuffer(),
+    );
     const ids = ["grass", "dirt", "rock", "moss"];
     const kinds = { diff: "diffBytes", nrm: "nrmBytes", orm: "ormBytes", h: "hBytes" } as const;
     await cookTerrainWorld({
@@ -430,9 +433,13 @@ describe("cookTerrainWorld", () => {
       );
       for (const { id, bytes, decoded } of maps) {
         expect([decoded.width, decoded.height, decoded.data.length]).toEqual([64, 64, 64 * 64 * 4]);
-        // One lossless PNG encoding for the whole kind; larger maps keep every decoded pixel.
-        expect([...bytes.subarray(1, 4)]).toEqual([0x50, 0x4e, 0x47]);
-        if (id !== "rock") expect(decoded.data).toEqual(largeRgba);
+        if (id === "rock") {
+          expect([...bytes.subarray(1, 4)]).toEqual([0x50, 0x4e, 0x47]);
+          expect(decoded.data).toEqual(smallRgba);
+        } else {
+          expect(bytes).toEqual(large);
+          expect(decoded.data).toEqual(largeRgba);
+        }
       }
       const copies: number[] = [];
       const renderer = {
@@ -963,6 +970,71 @@ describe("cookTerrainWorld", () => {
     expect(instanceCounts.sort((a, b) => a - b)).toEqual(
       [count("fir"), count("pine")].sort((a, b) => a - b),
     );
+  });
+
+  it("keeps an alpha-cut understory species and an opaque deadwood species through the cook", async () => {
+    const image = new PNG({ width: 2, height: 2 });
+    image.data.set([0, 160, 40, 255, 80, 100, 20, 0, 40, 120, 10, 255, 0, 80, 30, 255]);
+    const imageBytes = PNG.sync.write(image);
+    const species = async (cut: boolean) => {
+      const doc = new Document();
+      const texture = doc.createTexture("map").setImage(imageBytes).setMimeType("image/png");
+      const material = doc.createMaterial(cut ? "fern" : "deadwood").setBaseColorTexture(texture);
+      if (cut) material.setAlphaMode("MASK").setAlphaCutoff(0.5).setDoubleSided(true);
+      const mesh = doc.createMesh("m").addPrimitive(triangle(doc, doc.createBuffer(), material));
+      doc.createScene("Scene").addChild(doc.createNode("n").setMesh(mesh));
+      return io().writeBinary(doc);
+    };
+    const state = evaluatedTerrain(["fern", "deadwood"]);
+    const result = await cookTerrainWorld({
+      state,
+      species: {
+        fern: { glb: await species(true), maxDistance: 70 },
+        deadwood: { glb: await species(false), maxDistance: 90 },
+      },
+      out: dir,
+    });
+
+    const root = (await io().readBinary(result.worldGlb)).getRoot();
+    const count = (asset: string) => state.instances.filter((item) => item.asset === asset).length;
+    for (const asset of ["fern", "deadwood"]) {
+      const nodes = root
+        .listScenes()
+        .flatMap((scene) => scene.listChildren())
+        .filter(
+          (node) =>
+            node.getName() === `${asset}_instances` || node.getName() === `${asset}_lod1_instances`,
+        );
+      expect(nodes.map((node) => node.getName()).sort()).toEqual(
+        [`${asset}_instances`, `${asset}_lod1_instances`].sort(),
+      );
+      expect(root.getDefaultScene()?.listChildren()).toContain(
+        nodes.find((node) => node.getName() === `${asset}_instances`),
+      );
+      const assertDrawnSpecies = (node: (typeof nodes)[number]) => {
+        const batch = node.getExtension<GltfInstancedMesh>("EXT_mesh_gpu_instancing");
+        assert.ok(batch);
+        expect(count(asset)).toBeGreaterThan(0);
+        expect(batch.getAttribute("TRANSLATION")?.getCount()).toBe(count(asset));
+        const primitives = node.getMesh()?.listPrimitives();
+        assert.ok(primitives && primitives.length > 0);
+        for (const primitive of primitives) {
+          const material = primitive.getMaterial();
+          assert.ok(material, `${asset} drawn primitive must have a material`);
+          expect(material.getName()).toBe(asset);
+          expect(material.getAlphaMode()).toBe(asset === "fern" ? "MASK" : "OPAQUE");
+          if (asset === "fern") {
+            expect(material.getAlphaCutoff()).toBe(0.5);
+            expect(material.getDoubleSided()).toBe(true);
+          }
+          const texture = material.getBaseColorTexture();
+          assert.ok(texture, `${asset} drawn primitive must retain its map`);
+          expect(texture.getImage()).toEqual(new Uint8Array(imageBytes));
+        }
+      };
+      for (const node of nodes) assertDrawnSpecies(node);
+    }
+    expect(result.placementCounts).toEqual({ fern: count("fern"), deadwood: count("deadwood") });
   });
 
   it("flattens one shared mesh at each node's own transform", async () => {

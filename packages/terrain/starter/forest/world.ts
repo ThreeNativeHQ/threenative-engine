@@ -1,6 +1,7 @@
 import type { ICtx } from "@threenative/core";
 import {
   type ILoadTerrainSplatOptions,
+  type ITerrainSplatMaterialContext,
   type IWorldPackage,
   loadTerrainSplat,
 } from "@threenative/core/world";
@@ -22,6 +23,8 @@ import {
   type Texture,
   Vector3,
 } from "three";
+import { cameraViewMatrix, normalWorld, vec3, vec4 } from "three/tsl";
+import { MeshPhysicalNodeMaterial } from "three/webgpu";
 import surface from "./surface.json" with { type: "json" };
 import { type IForestWater, type IForestWaterFile, addForestWater } from "./water.js";
 /** Where the game's asset source holds the baked `world/` folder. */
@@ -47,6 +50,36 @@ export const PROP_SKY_LIGHT = 0.65;
 /** Multiplies every boulder's albedo: the CC0 scan photographed pink-orange, the forest's stone is cool grey. */
 export const BOULDER_TINT = new Color(0.6, 0.74, 0.86);
 
+/**
+ * The ground's dielectric specular, 0 to 1 (three's `specularIntensity`). The default 1 lays a pale
+ * sheen over soil and grass wherever the sun is low or ahead of the camera, so sunlit ground reads
+ * lighter than its albedo and the shaded floor loses its contrast. 0 leaves the photographed albedo.
+ */
+export const GROUND_SPECULAR = 0;
+
+/** The splat's own shading in a physical material, which is what carries `specularIntensity`. */
+function groundMaterial({
+  color,
+  normal,
+  orm,
+}: ITerrainSplatMaterialContext): MeshPhysicalNodeMaterial {
+  const material = new MeshPhysicalNodeMaterial();
+  material.name = "terrain-splat";
+  material.colorNode = color;
+  // A top-down tangent frame, as the engine's own splat material builds it.
+  const n = normalWorld;
+  const tangent = vec3(1, 0, 0).sub(n.mul(n.x)).normalize();
+  const bitangent = n.cross(tangent).normalize();
+  const t = normal.mul(2).sub(1);
+  const perturbed = tangent.mul(t.x).add(bitangent.mul(t.y)).add(n.mul(t.z)).normalize();
+  material.normalNode = cameraViewMatrix.mul(vec4(perturbed, 0)).xyz.normalize();
+  material.aoNode = orm.r;
+  material.roughnessNode = orm.g;
+  material.metalnessNode = orm.b;
+  material.specularIntensity = GROUND_SPECULAR;
+  return material;
+}
+
 /** Metres around `follow` within which props collide; beyond it they only draw. */
 export const PROP_COLLIDER_REACH = 60;
 
@@ -63,6 +96,7 @@ const spec: IStarterWorldSpec<IForestWater> = {
       assets: ctx.assets,
       url,
       table: surface as unknown as ILoadTerrainSplatOptions["table"],
+      materialFactory: groundMaterial,
     }),
   lighting: { sky: "sky.hdr", lods: true, dress: dressProp },
   streaming: {

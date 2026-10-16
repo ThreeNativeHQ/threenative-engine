@@ -106,13 +106,12 @@ interface ILayerMap {
 }
 
 /**
- * One kind of map (diff, nrm, orm or h) at one size and one input encoding across every layer, so
+ * One kind of map (diff, nrm, orm or h) at one decoded size across every layer, so
  * `loadTerrainSplat` can stack it into one array: one texture binding and one sampler instead of
  * one per layer. This normalizes inputs only. The asset compiler still picks each texture's codec
  * from its content, so a compiled kind can still mix codecs, and a mixed kind does not stack.
- * A kind whose maps already share size, format and alpha keeps its authored bytes. Otherwise every
- * map, the largest included, becomes lossless PNG at the largest width and height: decoded pixels
- * kept, smaller maps resampled up, never down.
+ * Already-sized JPEG/PNG maps keep their authored bytes; only maps needing resampling or alpha
+ * normalization become lossless PNG. Array stacking compares decoded textures, not file encoding.
  */
 async function normalizeKind(maps: readonly ILayerMap[]): Promise<void> {
   if (maps.length < 2) return;
@@ -127,11 +126,23 @@ async function normalizeKind(maps: readonly ILayerMap[]): Promise<void> {
   const alpha = sizes.some((size) => size.hasAlpha);
   await Promise.all(
     maps.map(async (map, i) => {
+      const size = sizes[i];
+      if (
+        size?.width === width &&
+        size.height === height &&
+        size.hasAlpha === alpha &&
+        (size.format === "jpeg" || size.format === "png")
+      ) {
+        map.mimeType = `image/${size.format}`;
+        return;
+      }
       let image = sharp(map.bytes);
       if (sizes[i]?.width !== width || sizes[i]?.height !== height)
         image = image.resize(width, height, { fit: "fill" });
       if (alpha) image = image.ensureAlpha();
-      map.bytes = new Uint8Array(await image.png().toBuffer());
+      map.bytes = new Uint8Array(
+        await image.png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer(),
+      );
       map.mimeType = "image/png";
     }),
   );
