@@ -322,10 +322,29 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       let pipelinesAtReveal: number | undefined;
       const revealFrustum = new Frustum();
       const revealMatrix = new Matrix4();
+      function initializeRevealProbe(): void {
+        if (released || reveal.complete || reveal.startedMs >= 0) return;
+        if (ctx.canvasLayer.opaque || ctx.startup.phase !== "ready" || !props)
+          throw new Error("Reveal probe requires ready props and an uncovered world");
+        const shadows = sky.sun.shadow.shadowNode;
+        if (!(shadows instanceof VirtualShadowNode))
+          throw new Error("Reveal probe requires virtual shadows");
+        const creations = ctx.renderer.pipelineCensus?.()?.counts.deviceCreations;
+        reveal.startedMs = performance.now();
+        reveal.publishedBatchesInView = 0;
+        shadowAtReveal = shadows.stats.byInvalidation;
+        pipelinesAtReveal = creations;
+        ctx.camera.updateMatrixWorld(true);
+        revealFrustum.setFromProjectionMatrix(
+          revealMatrix.multiplyMatrices(ctx.camera.projectionMatrix, ctx.camera.matrixWorldInverse),
+          ctx.camera.coordinateSystem,
+        );
+      }
       ctx.afterPhysics(() => {
         if (
           released ||
           reveal.complete ||
+          reveal.startedMs < 0 ||
           ctx.canvasLayer.opaque ||
           ctx.startup.phase !== "ready" ||
           !props
@@ -336,20 +355,6 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           throw new Error("Reveal probe requires virtual shadows");
         const census = ctx.renderer.pipelineCensus?.();
         const creations = census?.counts.deviceCreations;
-        if (reveal.startedMs < 0) {
-          reveal.startedMs = performance.now();
-          reveal.publishedBatchesInView = 0;
-          shadowAtReveal = shadows.stats.byInvalidation;
-          pipelinesAtReveal = creations;
-          ctx.camera.updateMatrixWorld(true);
-          revealFrustum.setFromProjectionMatrix(
-            revealMatrix.multiplyMatrices(
-              ctx.camera.projectionMatrix,
-              ctx.camera.matrixWorldInverse,
-            ),
-            ctx.camera.coordinateSystem,
-          );
-        }
         reveal.samples++;
         reveal.elapsedMs = performance.now() - reveal.startedMs;
         reveal.shadowInvalidated = shadows.stats.byInvalidation - shadowAtReveal;
@@ -419,6 +424,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         );
       const loading = createLoadingScreen({
         ...ctx,
+        onReveal: initializeRevealProbe,
         keepWorldRendering: false,
         startup: {
           get progress() {

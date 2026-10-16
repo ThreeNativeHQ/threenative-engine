@@ -205,6 +205,7 @@ export const loading = {
 /* END THREENATIVE LOADING APPEARANCE */
 
 interface ILoadingHost {
+  onReveal?(): void;
   readonly assets?: { texture(path: string): Promise<Texture> };
   readonly camera: Camera;
   readonly canvasLayer: {
@@ -511,6 +512,7 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
     }
     if (done) return;
     finish();
+    host.onReveal?.();
   })();
 
   return {
