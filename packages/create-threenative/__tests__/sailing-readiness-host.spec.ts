@@ -81,7 +81,7 @@ it("the real Game keeps world callbacks progressing during a height hold with it
   async function present(index: number) {
     if (frame === undefined) throw new Error("The real Game did not schedule a frame.");
     frame(index * 16.7);
-    for (let turn = 0; turn < 6; turn++) await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
   }
   try {
     await game.start();
