@@ -73,6 +73,30 @@ describe("draw-only transform history", () => {
     expect(object.getWorldPosition(new Vector3()).x).toBe(2);
   });
 
+  it("leaves settled matrix caches untouched while restoring moving objects", () => {
+    const settled = new Object3D();
+    settled.position.set(4, 2, 1);
+    settled.updateMatrixWorld(true);
+    settled.matrixAutoUpdate = false;
+    const moving = new Object3D();
+    const interpolation = new PhysicsInterpolation();
+    interpolation.track(settled);
+    interpolation.track(moving);
+    interpolation.beginTick();
+    moving.position.x = 2;
+    interpolation.endTick();
+    interpolation.render(0.5, () => {
+      expect(moving.position.x).toBe(1);
+      expect(settled.matrixWorldNeedsUpdate).toBe(false);
+    });
+    expect(moving.position.x).toBe(2);
+    expect(settled.matrixWorldNeedsUpdate).toBe(false);
+    interpolation.render(0.5, () => {
+      settled.position.x = 99;
+    });
+    expect(settled.position.x).toBe(4);
+  });
+
   it("resets a teleport during a tick and external position edits between ticks", () => {
     const object = new Object3D();
     const interpolation = new PhysicsInterpolation();

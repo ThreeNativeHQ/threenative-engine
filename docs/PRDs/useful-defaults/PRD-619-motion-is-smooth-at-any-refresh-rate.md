@@ -1,7 +1,7 @@
 # PRD-619 — Motion is smooth at any refresh rate: interpolate between physics ticks
 
 **Status:** PARTIAL
-**Priority:** P0 — AC-1 to AC-6 are open: every game that moves a body or a camera shows stepped motion on any display that does not present at exactly the 60 Hz simulation rate (owner report on the starter template, 2026-10-15; measured below).
+**Priority:** P0 — fixes the report that every game that moves a body or a camera shows stepped motion on any display that does not present at exactly the 60 Hz simulation rate (owner report on the starter template, 2026-10-15; measured below).
 **Complexity:** 4 (MEDIUM) — 4–7 implementation files (`packages/core/src/loop.ts`, `game.ts`, a new `interpolation.ts`, `packages/physics/src/{CharacterBody3D,RigidBody3D,VehicleBody3D}.ts`) (+2); the fixed-step/render contract every game reads (+2). Risk override: none.
 **Owner:** unassigned
 **Depends on:** none. Related: PRD-615 (PR #508), where the report was made while the starter kit was repaired.
@@ -46,16 +46,16 @@ A game that moves a body or a camera in its fixed update presents motion whose p
 - [x] Loop spec drives `FixedStepLoop` with present intervals of 1/56, 1/75, 1/120 and 1/144 s and records a 2 m/s body's rendered x per frame; asserts AC-5's CV bound. Red reproduced: 4/4 failures, CV 0.242/0.496/1.000/1.179; exit 1. proof: `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts`
 
 ### Phase 2 — Engine mechanism
-- [x] `loop.ts` exposes `alpha` per presented frame (AC-1). proof: `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts packages/core/__tests__/game.spec.ts packages/physics/__tests__/interpolation.spec.ts` — 72/72 passed (exit 0), including bounded alpha, camera default and override, frozen tick state, teleport and exception restoration.
+- [x] `loop.ts` exposes `alpha` per presented frame (AC-1). proof: `pnpm exec vitest run packages/core/__tests__/loop-interpolation.spec.ts packages/core/__tests__/game.spec.ts packages/physics/__tests__/interpolation.spec.ts` — 73/73 passed (exit 0), including bounded alpha, camera default and override, frozen tick state, teleport and exception restoration.
 - [x] Previous/current tick transforms recorded for physics bodies and `ctx.camera`; interpolated before the world draw and restored after (AC-2). proof: Phase 1 green; focused core/game/physics run 299/299 passed (exit 0). Full core/physics: 258 suites passed; three suites hit concurrent rebuilds and passed isolated rerun (18 tests).
-- [x] Overrides, opt-in and `TN_PHYSICS_INTERPOLATION` report (AC-3). proof: `packages/core/__tests__/loop-interpolation.spec.ts` override cases and physics registration spec passed in the 72-test run (exit 0).
-- [x] Teleport and scene-change history reset (AC-4). proof: core history reset and physical character/rigid teleport cases passed in the 72-test run (exit 0); scene history and stale removal are covered.
+- [x] Overrides, opt-in and `TN_PHYSICS_INTERPOLATION` report (AC-3). proof: `packages/core/__tests__/loop-interpolation.spec.ts` override cases and physics registration spec passed in the 73-test run (exit 0).
+- [x] Teleport and scene-change history reset (AC-4). proof: core history reset and physical character/rigid teleport cases passed in the 73-test run (exit 0); scene history and stale removal are covered.
 
 ### Phase 3 — Proof in games
-- [ ] Starter playtest: walking scenario records the presented camera and player positions per frame and asserts AC-5's bound on a real browser clock. proof: `node packages/playtest/dist/runner/cli.js <starter>/playtests/movement.playtest.json --browser-recipe webgpu` (extend the scenario or add `smooth-motion.playtest.json`)
-- [ ] Existing template scenarios still pass (they read tick state, which must be unchanged). proof: `pnpm test:templates` and the starter suite (`pnpm test` in a scaffold, 25 scenarios plus movement)
+- [x] Starter live-clock playtest records presented camera and player positions and asserts AC-5. proof: `threenative-playtest playtests/live/smooth-motion.playtest.json --browser-recipe webgpu --headed --live-clock` in a tarball-installed scaffold — all five assertions passed on NVIDIA Turing WebGPU; 31 samples, player speed CV 0.0000409 and camera CV 0.000243 (both below 0.1), movement 4.598 m. Two BEFORE/AFTER rest runs judged NEUTRAL: framing, materials, shadows and HUD preserved. Final fresh read-only visual judge: both moving pairs and overall IMPROVEMENT (30 Hz simulation / 60 Hz display A/B with interpolation disabled/enabled); floor edges, grid lines and shadows advance every frame, no appearance regression. Other refresh rates have unit proof, not visual judgment. Raw rest captures are not bit-identical: before/after mean channel delta 0.199/255 versus 0.198/255 between the two BEFORE runs; the rest judgment establishes appearance preservation, not bit identity.
+- [ ] Existing template scenarios still pass. proof: scaffold `pnpm test` — final 25/25 passed; `pnpm test:templates` — repeated GPU device loss in action-RPG combat/fail scenarios. Baseline and global-override-off combat controls passed; repaired default-on combat passed twice in isolated real-display runs. Tone exposure control passed. Owner chose to leave the full matrix proof open; no further retries are running.
 - [ ] Native: the same scenario on the desktop host (AC-6). proof: playtest `--target desktop` run
-- [ ] Template `AGENTS.md` names the convention and its override in one sentence. proof: `pnpm sync:agents` and `pnpm check:docs`
+- [x] All 13 template `AGENTS.md` files name the convention and its overrides. proof: `pnpm sync:agents` and `pnpm check:docs` passed (3,097 links); scaffold contract run passed 68 tests, including byte-stable hashes.
 
 ## Decisions
 
@@ -64,11 +64,12 @@ A game that moves a body or a camera in its fixed update presents motion whose p
 
 ## Blocked on
 
-- Nothing.
+- Full template matrix: repeated GPU device loss; owner chose to leave this proof open. Final starter 25/25, isolated repaired combat and tone controls passed, but no complete matrix success is claimed.
+- Installed desktop host lacks `runtime.network`; the unchanged native scenario fails capability negotiation before motion assertions. Owner chose to leave native proof open rather than disable network diagnostics. A current-host build was stopped during compilation after that decision; no native pass is claimed.
 
 ## Notes
 
-- Visual judge: frames at rest must be identical (interpolation is a no-op when nothing moves); a moving capture is judged on stepping, not on look.
+- Visual evidence: [motion BEFORE](https://raw.githubusercontent.com/ThreeNativeHQ/threenative-engine/prd619-screenshots/before-motion-1.gif), [motion AFTER](https://raw.githubusercontent.com/ThreeNativeHQ/threenative-engine/prd619-screenshots/after-motion-1.gif). The orphan `prd619-screenshots` branch holds both runs per arm, labeled rest frames and moving contact sheets. Rest judgment NEUTRAL; both motion pairs and overall IMPROVEMENT. The motion A/B deliberately uses a 30 Hz simulation on the 60 Hz display; default 60 Hz behavior is covered by the live-clock scenario and the four unit rates.
 - Out of scope: render-rate game logic, variable-step physics, extrapolation.
 
-Current verification: root `pnpm typecheck`, `pnpm lint`, `pnpm check:docs` passed. `pnpm test` reached native package tests and failed on 21 assertions, including unbuilt V8/QuickJS timestamp-query and rg11b10 host test binaries; no native C++ test result is claimed. Browser motion proof is still open: overloaded captures dropped simulation time; frame timestamp instrumentation is being corrected before rerun.
+Current verification: root `pnpm typecheck`, `pnpm lint`, `pnpm check:docs` passed; the six prescribed documentation contract suites passed 248 tests. `pnpm test` reached native package tests and failed on 21 assertions, including unbuilt V8/QuickJS timestamp-query and rg11b10 host test binaries; no native C++ test result is claimed. The scaffolded starter suite passed all 25 scenarios on both the initial and final package (including movement, respawn, pause and restart). Final `pnpm test:templates` was stopped after repeated GPU device loss; no full matrix pass is claimed. Native motion proof remains open by owner request. The settled-matrix flag test reproduced a separate no-op-at-rest defect (1 failed / 12 passed); the five-line restoration guard and the complete 73-test selection passed. GPU failure attribution remains unresolved; the guard is not claimed to repair every device loss.

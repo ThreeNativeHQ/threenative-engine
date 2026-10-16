@@ -115,6 +115,11 @@ export class PhysicsInterpolation {
       return draw();
     } finally {
       for (const history of histories) {
+        if (
+          history.object.position.equals(history.savedPosition) &&
+          history.object.quaternion.equals(history.savedRotation)
+        )
+          continue;
         history.object.position.copy(history.savedPosition);
         history.object.quaternion.copy(history.savedRotation);
         history.object.updateMatrix();
