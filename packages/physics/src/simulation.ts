@@ -757,7 +757,11 @@ export function createWebPhysicsShape(
   else if (shape.kind === "trimesh") {
     if (shape.vertices === undefined || shape.indices === undefined)
       throw new Error("CollisionShape3D.trimesh is missing mesh data.");
-    descriptor = rapier.ColliderDesc.trimesh(shape.vertices, shape.indices);
+    descriptor = rapier.ColliderDesc.trimesh(
+      shape.vertices,
+      shape.indices,
+      rapier.TriMeshFlags.FIX_INTERNAL_EDGES,
+    );
   } else if (shape.kind === "convexHull") {
     if (shape.vertices === undefined)
       throw new Error("CollisionShape3D.convexHull is missing vertices.");
@@ -841,10 +845,17 @@ function characterState(
   let groundCollider: number | undefined;
   let groundBody: IPhysicsBodyHandle | undefined;
   let groundNormal: IPhysicsVector3 | undefined;
+  // Rapier flags a contact as ground at any positive up component, so a wall that leans back a
+  // degree reads as floor. When the only contacts are such walls, the character is not grounded;
+  // a snap-to-ground step records no contact, so no contacts leaves Rapier's answer alone.
+  let walkable = false;
+  let contacts = 0;
   for (let index = 0; index < controller.numComputedCollisions(); index += 1) {
     const collision = controller.computedCollision(index);
     if (collision?.collider === null || collision?.collider === undefined) continue;
+    contacts += 1;
     if ((collision.normal1.y ?? Number.NEGATIVE_INFINITY) >= 0.5) {
+      walkable = true;
       const contacted = byCollider.get(collision.collider.handle);
       if (contacted !== undefined) {
         groundCollider = contacted.id;
@@ -854,7 +865,7 @@ function characterState(
       }
     }
   }
-  const grounded = controller.computedGrounded();
+  const grounded = controller.computedGrounded() && (walkable || contacts === 0);
   if (groundCollider !== undefined) simulationBody.groundCollider = groundCollider;
   else if (!grounded) simulationBody.groundCollider = undefined;
   state.grounded = grounded;

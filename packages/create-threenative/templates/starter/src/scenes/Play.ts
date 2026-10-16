@@ -67,6 +67,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     paused: false,
     peakRise: 0,
     playerX: -2,
+    progress: 0,
     respawns: 0,
     score: 0,
     status: "playing",
@@ -230,7 +231,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     ctx.add(fixed(floorMesh));
     ctx.add(fixed(floorBase));
-    new Crate(ctx, levelX, 4, -1.5, propMaterial);
+    ctx.entities.add("crate", new Crate(ctx, levelX, 4, -1.5, propMaterial));
     const pickupBase = block(0.42, 0.14, 0.42, propMaterial);
     const pickupStem = tube(0.08, 0.08, 0.3, propMaterial);
     const pickupOrb = ball(0.16, propMaterial);
@@ -379,6 +380,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       // 1.8 m figure would report its own height as a jump.
       frameState.peakRise = Math.max(previous.peakRise, player.mesh.position.y - PLAYER_STAND_Y);
       frameState.playerX = player.mesh.position.x;
+      frameState.progress = Math.max(
+        0,
+        Math.min(
+          100,
+          ((frameState.playerX - Play.initialState.playerX) /
+            (ISLAND.x - ISLAND.width / 2 - Play.initialState.playerX)) *
+            100,
+        ),
+      );
       frameState.respawns = previous.respawns + (respawned ? 1 : 0);
       const current = frameCtx.state.getState();
       const changed =
@@ -391,6 +401,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         frameState.odometer !== current.odometer ||
         frameState.peakRise !== current.peakRise ||
         frameState.playerX !== current.playerX ||
+        frameState.progress !== current.progress ||
         frameState.respawns !== current.respawns;
       if (changed) frameCtx.state.set(frameState);
       if (respawned) frameCtx.state.flush();

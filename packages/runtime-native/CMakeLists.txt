@@ -844,6 +844,9 @@ if(MYSTRAL_USE_V8)
             elseif(UNIX)
                 # V8 on Linux needs pthread and dl
                 set(V8_SYSTEM_LIBS pthread dl)
+                if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+                    list(APPEND V8_SYSTEM_LIBS atomic)
+                endif()
             elseif(WIN32)
                 # V8 on Windows needs these
                 set(V8_SYSTEM_LIBS winmm dbghelp shlwapi)
@@ -1096,8 +1099,20 @@ else()
         endif()
     else()
         set(SKIA_PLATFORM_DIR "linux-gpu")
-        set(SKIA_LIB_SUBDIR "x64")
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+            set(SKIA_LIB_SUBDIR "arm64")
+        else()
+            set(SKIA_LIB_SUBDIR "x64")
+        endif()
     endif()
+endif()
+
+# Linux arm64 ships an arm64 Skia prebuilt (library-builder chrome/m145), so a build that asked
+# for Canvas2D and cannot find it is a missing dependency, not a host that never had Canvas2D.
+# Disabling it there made the arm64 desktop artifact quietly differ from every other platform.
+if(TN_ENABLE_CANVAS2D AND MYSTRAL_PLATFORM STREQUAL "linux"
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    set(TN_SKIA_ARM64_REQUIRED ON)
 endif()
 
 if(TN_ENABLE_CANVAS2D AND EXISTS ${SKIA_TARGET_DIR})
@@ -1131,6 +1146,13 @@ if(TN_ENABLE_CANVAS2D AND EXISTS ${SKIA_TARGET_DIR})
         message(STATUS "Found Skia: ${SKIA_LIBRARY}")
         message(STATUS "Skia includes: ${SKIA_INCLUDE_DIR}")
     else()
+        if(TN_SKIA_ARM64_REQUIRED)
+            message(FATAL_ERROR
+                "TN_SKIA_ARM64_MISSING: Canvas2D was requested on arm64 but Skia is incomplete.\n"
+                "  Library: ${SKIA_LIB_PATH}\n"
+                "  Include: ${SKIA_INCLUDE_DIR}\n"
+                "  Run 'node scripts/download-deps.mjs --only skia' on an arm64 host, or configure with -DTN_ENABLE_CANVAS2D=OFF to drop the surface deliberately.")
+        endif()
         message(WARNING "Skia library or headers not found:")
         message(WARNING "  Library: ${SKIA_LIB_PATH}")
         message(WARNING "  Include: ${SKIA_INCLUDE_DIR}")
@@ -1138,6 +1160,11 @@ if(TN_ENABLE_CANVAS2D AND EXISTS ${SKIA_TARGET_DIR})
 else()
     if(NOT TN_ENABLE_CANVAS2D)
         message(STATUS "Skia disabled because TN_ENABLE_CANVAS2D=OFF")
+    endif()
+    if(TN_SKIA_ARM64_REQUIRED)
+        message(FATAL_ERROR
+            "TN_SKIA_ARM64_MISSING: Canvas2D was requested on arm64 but no Skia was found at ${SKIA_TARGET_DIR}.\n"
+            "  Run 'node scripts/download-deps.mjs --only skia' on an arm64 host, or configure with -DTN_ENABLE_CANVAS2D=OFF to drop the surface deliberately.")
     endif()
     if(MYSTRAL_PLATFORM STREQUAL "ios")
         message(STATUS "Skia iOS not found - Canvas 2D support disabled. Run 'node scripts/download-deps.mjs --only skia-ios' to enable.")

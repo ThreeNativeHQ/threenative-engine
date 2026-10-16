@@ -72,6 +72,40 @@ import type { IStandalonePlaytestReport } from "./shared.js";
 import type { ILabeledPlaytestSample, IMovementSampleInterval, IRunnerConsoleEntry } from "./shared.js";
 // Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 
+/** Align only explicitly anchored scenarios; sample again even when already at the target. */
+export async function alignScenarioStartTick(
+  bridge: IPlaytestBridgeClient | undefined,
+  startTick: number | undefined,
+  liveClock = false,
+): Promise<void> {
+  if (startTick === undefined) return;
+  const fail = (reason: string): never => {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_START_TICK_INVALID",
+      `Scenario startTick ${startTick}: ${reason}`,
+      "Use a fixed-step bridge and an explicit safe integer anchor at or after startup readiness.",
+    ));
+  };
+  if (!Number.isSafeInteger(startTick) || startTick < 0) fail("anchor must be a nonnegative safe integer.");
+  const client = bridge ?? fail("requires an installed bridge.");
+  if (liveClock || !client.description.capabilities.includes("runtime.fixedStep")) {
+    fail("requires a counted runtime.fixedStep bridge, without --live-clock.");
+  }
+  const readTick = async (): Promise<number> => {
+    const { clock } = await client.sample({ entities: [], include: [] });
+    const tick = clock.tick;
+    if (clock.mode !== "fixed-step" || typeof tick !== "number" || !Number.isSafeInteger(tick) || tick < 0) {
+      return fail("requires an observed fixed-step clock with a nonnegative safe integer tick.");
+    }
+    return tick;
+  };
+  const tick = await readTick();
+  if (tick > startTick) fail(`startup already passed the anchor at tick ${tick}.`);
+  if (tick < startTick) await client.advance(startTick - tick);
+  const aligned = await readTick();
+  if (aligned !== startTick) fail(`clock reached tick ${aligned} instead of the exact anchor.`);
+}
+
 export function preflightDisplay(
   config: Pick<IStandalonePlaytestConfig, "headless">,
   scenario: Pick<IPlaytestScenario, "artifacts" | "assert" | "steps">,

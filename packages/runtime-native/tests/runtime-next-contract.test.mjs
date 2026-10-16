@@ -791,7 +791,9 @@ test('CLI build tools are separate units behind an unchanged dispatch surface', 
   // tool body, so the cap moves with it rather than the split being loosened. PRD-400 adds runtime
   // web-UI readiness/deadline wiring here; the direct split assertions below remain the contract.
   // The native-css renderer adds 17 lines of the same kind: choosing which overlay backend attaches.
-  assert.ok(main.split('\n').length <= 1902, 'main.cpp still contains a build-time tool body');
+  // PRD-614 adds 11 net lines: refusing the web UI when the environment asks SDL for Wayland, read from
+  // the same variables the desktop gate routes.
+  assert.ok(main.split('\n').length <= 1913, 'main.cpp still contains a build-time tool body');
   assert.doesNotMatch(main, /static int (compileBundle|bakeLightmaps)\(/u);
   assert.match(main, /dispatchBuildTool\(argc, argv\)/u);
   assert.match(dispatcher, /mystral::vfs::getExecutablePath\(\)[\s\S]*mystral-tools/u);

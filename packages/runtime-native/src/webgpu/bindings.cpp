@@ -1688,8 +1688,29 @@ static js::JSValueHandle handleGpuQueueWriteBuffer(BindingsState* state, Binding
                             size_t dataSize = 0;
                             void* dataPtr = state->engine->getArrayBufferData(args[2], &dataSize);
                             if (!dataPtr || dataSize == 0) {
-                                state->engine->throwException("writeBuffer: invalid data");
-                                return state->engine->newUndefined();
+                                // Empty backing stores may have no pointer; brand-check before accepting a no-op.
+                                js::JSValueGuard isEmptySource(*state->engine, state->engine->evalScriptWithResult(R"JS((data) => {
+                                    const typedArrays = Object.getPrototypeOf(Uint8Array.prototype);
+                                    const emptySource = (prototype, probe) => {
+                                        let empty;
+                                        try { empty = Object.getOwnPropertyDescriptor(prototype, "byteLength").get.call(data) === 0; }
+                                        catch { return false; }
+                                        if (!empty) return false;
+                                        try { probe(data); } catch { return false; }
+                                        return true;
+                                    };
+                                    // A detached ArrayBuffer or TypedArray still reports byteLength 0, so probe it:
+                                    // both probes throw on a detached receiver and run no user code.
+                                    if (emptySource(ArrayBuffer.prototype, (value) => new Uint8Array(value))) return true;
+                                    if (emptySource(typedArrays, (value) => typedArrays.values.call(value))) return true;
+                                    return emptySource(DataView.prototype, () => {});
+                                })JS", "write-buffer-empty-source.js"));
+                                js::JSValueGuard validEmpty(*state->engine, state->engine->call(
+                                    isEmptySource.get(), state->engine->newUndefined(), {args[2]}));
+                                if (!state->engine->toBoolean(validEmpty.get())) {
+                                    state->engine->throwException("writeBuffer: invalid data");
+                                    return state->engine->newUndefined();
+                                }
                             }
                             // WebGPU expresses dataOffset/size in elements for a TypedArray,
                             // but in bytes for ArrayBuffer and DataView inputs.
@@ -1716,6 +1737,7 @@ static js::JSValueHandle handleGpuQueueWriteBuffer(BindingsState* state, Binding
                                 state->engine->throwException("writeBuffer: source range exceeds the supplied buffer view");
                                 return state->engine->newUndefined();
                             }
+                            if (writeSize == 0) return state->engine->newUndefined();
                             const uint8_t* source = static_cast<uint8_t*>(dataPtr) + dataOffset;
                             if (buffer && state->queue) {
                                 const size_t alignedWriteSize = (writeSize + 3) & ~size_t(3);
