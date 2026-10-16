@@ -5977,8 +5977,16 @@ export class WorldCells extends Group implements IComputeDriven {
         ![...camera.projectionMatrix.elements, ...camera.matrixWorldInverse.elements].every(
           Number.isFinite,
         )
-      )
-        throw new Error("WorldCells readiness requires a finite camera projection and transform.");
+      ) {
+        const name = camera.projectionMatrix.elements.every(Number.isFinite)
+          ? "matrixWorldInverse"
+          : "projectionMatrix";
+        const elements = camera[name].elements;
+        const index = elements.findIndex((value) => !Number.isFinite(value));
+        throw new Error(
+          `WorldCells readiness requires a finite camera projection and transform. ${name}[${index}]=${elements[index]}; position=${camera.position.toArray()}; rotation=${camera.quaternion.toArray()}; near=${Reflect.get(camera, "near")}; far=${Reflect.get(camera, "far")}; aspect=${Reflect.get(camera, "aspect")}; view=${JSON.stringify(Reflect.get(camera, "view"))}.`,
+        );
+      }
       _cullFrustum.setFromProjectionMatrix(
         _cullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
         camera.coordinateSystem,
