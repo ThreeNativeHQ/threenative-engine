@@ -117,7 +117,7 @@ bool Endpoint::dispatch(const std::string& method, const Value* argument, Value&
         return true;
     }
     if (host_.observe && (method == "describe" || method == "ready" || method == "sample" ||
-                          method == "applySetup" || method == "drainEvents")) {
+                          method == "applySetup" || method == "drainEvents" || method == "renderOnly")) {
         if (host_.observe(method, argument, result, error)) {
             if (method == "describe" && result.isObject()) {
                 auto members = result.members();

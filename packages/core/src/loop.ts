@@ -404,7 +404,7 @@ export class FixedStepLoop {
     return frameMs;
   }
 
-  stepFrame(now: number, driven = false): number {
+  stepFrame(now: number, driven: boolean | "render-only" = false): number {
     const callbackStartedAt = this.#now();
     const budget = this.#budget;
     budget?.beginFrame(now, this.#now());
@@ -416,12 +416,12 @@ export class FixedStepLoop {
     let phases: IFramePhaseSample | undefined;
     try {
       this.#onBeginFrame?.();
-      if (driven) {
+      if (driven === true) {
         this.#onUpdate(this.step);
         this.#onAfterPhysics(this.step);
         this.#tick += 1;
         updates = 1;
-      } else updates = this.#advanceSimulation(now);
+      } else if (driven !== "render-only") updates = this.#advanceSimulation(now);
       budget?.markSimulationEnd(this.#now(), updates);
       frameMs = this.#recordFrameTiming(now);
       // onRender does the rendering itself; only its metrics return value is optional.
@@ -514,6 +514,21 @@ export class FixedStepLoop {
     if (budget !== undefined && Number.isFinite(startedAt) && Number.isFinite(finishedAt))
       budget.addSimulation(Math.max(0, finishedAt - startedAt), ticks);
     return ticks;
+  }
+
+  /**
+   * Draw the world once without stepping it, for a native deterministic screenshot: the automatic
+   * frame pump is off between ticks, so nothing presents and a desktop capture would time out.
+   * `render-only` runs the render hooks but skips the frozen startup settle, so the copy is the
+   * standing world rather than a simulation change; a live clock fails closed.
+   */
+  renderCurrentFrame(): number {
+    if (!this.#running) throw new Error("Cannot render a stopped loop.");
+    if (!this.#clockFrozen)
+      throw new Error(
+        "renderCurrentFrame requires a frozen clock; a live loop advances through its own frames.",
+      );
+    return this.stepFrame(this.#now(), "render-only");
   }
 
   #frame(time: number): void {

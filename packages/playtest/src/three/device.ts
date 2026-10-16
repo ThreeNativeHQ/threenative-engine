@@ -22,6 +22,7 @@ const BRIDGE_METHODS = new Set<keyof IPlaytestBridgeV1>([
   "drainEvents",
   "focus",
   "ready",
+  "renderOnly",
   "sample",
 ]);
 

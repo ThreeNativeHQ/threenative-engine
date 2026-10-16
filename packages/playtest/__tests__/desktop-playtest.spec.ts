@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -1193,4 +1194,172 @@ test.each([
     assertionResults: result.assertions, diagnostics: result.diagnostics,
     pass: result.assertions.every((assertion) => assertion.pass),
   })).toBe(1);
+});
+
+test.skipIf(process.platform === "win32")("desktop screenshot services render-only only after the host consumed the request", async () => {
+  // A driven native loop presents nothing between ticks, so the host's capture needs the game to
+  // draw one render-only frame. The host must have consumed the request first (the copy flag
+  // exists only then), so the driver invokes the render-only operation after it sees the request
+  // file gone — never before, and never when the bridge offered no operation.
+  const root = await makeTempDir("playtest-desktop-render-only-");
+  const executable = join(root, "native-render-only.mjs");
+  const screenshotPath = join(root, "capture.png");
+  const requestPath = join(root, "tn-playtest-screenshot-request.txt");
+  const markerPath = join(root, "render-only-requested.txt");
+  await writeFile(executable, `#!/usr/bin/env node
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const root = process.env.TN_PLAYTEST_MAILBOX_ROOT;
+const request = join(root, "tn-playtest-screenshot-request.txt");
+const marker = join(root, "render-only-requested.txt");
+const bytes = Buffer.from(${JSON.stringify(nonBlankPngBase64())}, "base64");
+let consumed = false;
+let target = "";
+let deadline = 0;
+let wrote = false;
+setInterval(() => {
+  if (!consumed && existsSync(request)) {
+    target = readFileSync(request, "utf8");
+    unlinkSync(request);
+    consumed = true;
+    deadline = Date.now() + 500;
+  }
+  if (consumed && !wrote && (existsSync(marker) || Date.now() >= deadline)) {
+    writeFileSync(join(root, "desktop-fixture-render-order.txt"), existsSync(marker) ? "after-render" : "before-render");
+    writeFileSync(target, bytes);
+    wrote = true;
+  }
+}, 5);
+`);
+  await chmod(executable, 0o755);
+  const driver = new DesktopPlaytestDriver({ executable, mailboxRoot: root, screenshotTimeoutMs: 2_000 });
+  const calls: string[] = [];
+  try {
+    await driver.prepare("unused");
+    await driver.screenshot(screenshotPath, async () => {
+      calls.push(existsSync(requestPath) ? "request-present" : "request-consumed");
+      await writeFile(markerPath, "render");
+    });
+    expect(calls).toEqual(["request-consumed"]);
+    expect(await readFile(join(root, "desktop-fixture-render-order.txt"), "utf8")).toBe("after-render");
+    assertCaptureNotBlank(await readFile(screenshotPath), screenshotPath);
+  } finally {
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test.skipIf(process.platform === "win32")("desktop counted capture draws a render-only frame through the bridge", async () => {
+  // End to end: the runner sees `runtime.renderOnly`, hands it to the driver, and the driver asks
+  // the game for one render-only frame only after the host consumed the request. The fake host is
+  // a driven native loop — it never presents on its own, so the png exists only when the bridge's
+  // render-only operation arrived. A broken chain falls back to a late png and fails the marker.
+  const projectPath = await makeTempDir("playtest-desktop-render-only-runner-");
+  const mailboxRoot = join(projectPath, "mailbox");
+  const artifactDirectory = join(projectPath, "artifacts");
+  const executable = join(projectPath, "native-render-only.mjs");
+  const scenarioPath = join(projectPath, "scenario.json");
+  await writeFile(scenarioPath, JSON.stringify({
+    artifacts: { screenshots: "after" },
+    assert: { movement: { entity: "player", minDistance: 2 } },
+    name: "desktop-render-only",
+    schemaVersion: 1,
+    steps: [{ holdFrames: 3, press: "KeyW", release: true }],
+    subject: "player",
+    target: "desktop",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  }));
+  await writeFile(executable, `#!/usr/bin/env node
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const root = process.env.TN_PLAYTEST_MAILBOX_ROOT;
+if (typeof root !== "string") process.exit(2);
+const requestPath = join(root, "tn-playtest-request.json");
+const responsePath = join(root, "tn-playtest-response.json");
+const screenshotRequestPath = join(root, "tn-playtest-screenshot-request.txt");
+const bytes = Buffer.from(${JSON.stringify(nonBlankPngBase64())}, "base64");
+let held = false;
+let x = 0;
+let tick = 0;
+let shotTarget = null;
+let shotConsumedAt = 0;
+let shotWrote = false;
+function respond(response) {
+  const temporary = responsePath + ".tmp";
+  writeFileSync(temporary, JSON.stringify(response));
+  renameSync(temporary, responsePath);
+}
+respond({ id: "ready", result: null });
+function poll() {
+  if (existsSync(screenshotRequestPath)) {
+    shotTarget = readFileSync(screenshotRequestPath, "utf8");
+    unlinkSync(screenshotRequestPath);
+    shotConsumedAt = Date.now();
+  }
+  if (shotTarget !== null && !shotWrote && Date.now() - shotConsumedAt > 1500) {
+    writeFileSync(shotTarget, bytes);
+    shotWrote = true;
+  }
+  if (!existsSync(requestPath)) return;
+  const request = JSON.parse(readFileSync(requestPath, "utf8"));
+  unlinkSync(requestPath);
+  let result = null;
+  if (request.method === "describe") {
+    result = {
+      capabilities: ["entity.observe", "runtime.diagnostics", "runtime.fixedStep", "runtime.network", "runtime.renderOnly"],
+      limits: { maxEntitiesPerSample: 100, maxEventsPerDrain: 1000, maxPayloadBytes: 1000000, operationTimeoutMs: 5000 },
+      name: "desktop-render-only-fixture",
+      protocolVersion: 1,
+    };
+  } else if (request.method === "ready") {
+    result = { ready: true };
+  } else if (request.method === "advance") {
+    tick += request.argument;
+    if (held) x += request.argument;
+    result = { clock: { mode: "fixed-step", tick }, ticks: request.argument };
+  } else if (request.method === "sample") {
+    result = {
+      clock: { mode: "fixed-step", tick },
+      diagnostics: [],
+      network: { requests: 0, entries: [] },
+      entities: [{ id: "player", transform: { position: [x, 0, 0] }, visible: true }],
+      resources: {},
+    };
+  } else if (request.method === "renderOnly") {
+    writeFileSync(join(root, "desktop-fixture-render-only.txt"), "received");
+    if (shotTarget !== null && !shotWrote) {
+      writeFileSync(shotTarget, bytes);
+      shotWrote = true;
+    }
+  } else if (request.method === "input.keyDown") {
+    held = true;
+  } else if (request.method === "input.keyUp") {
+    held = false;
+  }
+  respond({ id: request.id, result });
+}
+setInterval(poll, 5);
+`);
+  await chmod(executable, 0o755);
+  try {
+    const report = await runDesktopPlaytest({
+      artifactDirectory,
+      desktop: { executable },
+      endpoint: "http://127.0.0.1:41777/playtest",
+      headless: true,
+      projectPath,
+      scenarioPath,
+      target: "desktop",
+      timeoutMs: 2_000,
+      trace: false,
+      url: "http://127.0.0.1:5173",
+    }, { mailboxRoot });
+    expect(report.pass).toBe(true);
+    expect(await readFile(join(mailboxRoot, "desktop-fixture-render-only.txt"), "utf8")).toBe("received");
+    const after = join(artifactDirectory, "after.png");
+    assertCaptureNotBlank(await readFile(after), after);
+  } finally {
+    await rm(projectPath, { force: true, recursive: true });
+  }
 });

@@ -1112,7 +1112,14 @@ private:
 
     // A screenshot the mailbox asked for, waiting for its requested frame to be captured.
     std::string pendingScreenshotPath_;
-    int pendingScreenshotTicks_ = 0;
+    std::chrono::steady_clock::time_point pendingScreenshotStartedAt_{};
+
+    // How long the host waits for the requested present before giving up. This replaced a count of
+    // host poll iterations: in a driven frame loop the host spins so fast that 120 iterations
+    // expired in about a millisecond — before the runner could see its request was consumed and ask
+    // the game for its render-only frame. A wall-clock budget matches the ~120 frames a normal
+    // presenting loop would spend, and does not depend on how fast the loop spins.
+    static constexpr auto kScreenshotCaptureBudget = std::chrono::seconds(2);
 
     void processPlaytestScreenshotRequest() {
         const char* configuredRoot = std::getenv("TN_PLAYTEST_MAILBOX_ROOT");
@@ -1141,15 +1148,17 @@ private:
             const std::string screenshotPath = contents.str();
             if (screenshotPath.empty() || screenshotPath.size() > 4096) return;
             pendingScreenshotPath_ = screenshotPath;
-            pendingScreenshotTicks_ = 0;
+            pendingScreenshotStartedAt_ = std::chrono::steady_clock::now();
         }
 
-        // The capture lands at a present boundary after the request below; poll briefly rather
-        // than failing on the first not-yet-captured tick. Bounded so a dead surface errors once,
-        // like the single-shot failure this replaced.
+        // The capture lands at a present boundary after the request below; poll rather than failing
+        // on the first not-yet-captured tick. A driven loop presents nothing on its own, so the
+        // runner asks the game for one render-only frame once it sees this request consumed; the
+        // budget is wall-clock so that wait fits inside it whatever the loop's spin rate. Bounded
+        // so a dead surface errors once, like the single-shot failure this replaced.
         if (!webgpu_->isFrameScreenshotReady()) {
             webgpu_->requestFrameScreenshot();
-            if (++pendingScreenshotTicks_ > 120) {
+            if (std::chrono::steady_clock::now() - pendingScreenshotStartedAt_ > kScreenshotCaptureBudget) {
                 std::cerr << "[Playtest] Native screenshot request failed: " << pendingScreenshotPath_ << std::endl;
                 pendingScreenshotPath_.clear();
             }

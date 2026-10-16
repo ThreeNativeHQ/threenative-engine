@@ -93,6 +93,8 @@ export interface IPlaytestBridgeClient {
   setupApplication?: IPlaytestSetupApplication;
   /** Re-reads the bridge's readiness, including startup progress when it reports any. */
   readiness(): Promise<IPlaytestBridgeReady>;
+  /** Draws the current world once without advancing it. Requires `runtime.renderOnly`. */
+  renderOnly(): Promise<void>;
   sample(request: IPlaytestSampleRequest): Promise<IPlaytestObservationSnapshot>;
 }
 
@@ -246,6 +248,9 @@ export async function connectPlaytestBridgeTransport(
     description,
     ...(setupApplication === undefined ? {} : { setupApplication }),
     readiness: () => transport.call<IPlaytestBridgeReady>("ready"),
+    renderOnly: async () => {
+      await transport.call("renderOnly");
+    },
     sample: async (request) => {
       assertBoundedPayload(request);
       const snapshot = await transport.call<IPlaytestObservationSnapshot>("sample", request);

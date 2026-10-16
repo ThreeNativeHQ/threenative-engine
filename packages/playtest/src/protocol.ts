@@ -579,6 +579,12 @@ export interface IPlaytestBridgeV1 {
   drainEvents?(limit?: number): Promise<JsonValue[]>;
   focus?(): boolean | Promise<boolean>;
   ready(): IPlaytestBridgeReady | Promise<IPlaytestBridgeReady>;
+  /**
+   * Draw the current world once without advancing it, so a capture can see a present while a
+   * deterministic run's loop is driven and presents nothing between ticks. Present only when the
+   * bridge advertises `runtime.renderOnly`.
+   */
+  renderOnly?(): number | void | Promise<number | void>;
   sample(request: IPlaytestSampleRequest): IPlaytestObservationSnapshot | Promise<IPlaytestObservationSnapshot>;
 }
 

@@ -38,6 +38,54 @@ Native coverage qualification (Linux): the official command now passes using sep
 
 Snow CPU candidate plan: Complexity: 1 → LOW; risk override: none. The captured browser profile attributes about 54% of main-thread self-time to native attribute dispatch, boxing and read-back under Heightfield.refreshGeometry. Hypothesis: bulk writes to validated plain Float32 position/normal attributes can remove at least 10 ms of the observed 37–51 ms render phase while retaining identical heights, normals, dirty windows and bounds; custom/interleaved/normalized attributes retain their setter path. Mutable files: packages/core/src/world.ts and its existing world-heightfield.spec.ts tests. Frozen judge: existing Snow game source/assets/scenarios, 1920×1080, 4× MSAA, hardware WebGPU, fixed quality and frame windows; baseline runtime artifacts remain installed in the original consumer. Before a keep, run three baseline A/A measurements, five interleaved baseline/candidate pairs, shared-path desktop/browser behavior checks and two captures per arm judged independently for no visible regression. Private-display comparisons use render/CPU timing only, never release FPS. The candidate passes 19 Heightfield tests, including numerical dirty-window/bounds checks and interleaved, normalized and custom-setter fallback, plus core typecheck; Biome reports no errors and two complexity warnings. Three unprofiled hardware-WebGPU baseline A/A runs measured steady render P50 53.4/47.1/45.4 ms (300 samples each), establishing an 8.0 ms noise band. The original consumer artifacts stayed byte-identical. Candidate packaging, five paired A/B runs, shared-path gameplay and visual judgment remain pending; no performance win or acceptance box is claimed.
 
+2026-10-16 native deterministic screenshot final (no acceptance box ticked). Defect: after a native
+`advance(render:true)` disables automatic RAF (`#driven = true`), a desktop screenshot request finds no
+present, so `captureFrameScreenshot` never runs and the host times out. Implemented:
+`FixedStepLoop.renderCurrentFrame()` calls `stepFrame(now, "render-only")` — an explicit mode that runs
+the frame hooks and render, skips the frozen startup settle entirely, and leaves `#primePending` for the
+next ordinary frame. It is exposed through an optional `IGamePluginRuntime.renderCurrent`, the bridge's
+`renderOnly` operation and `runtime.renderOnly`; the native host endpoint forwards `renderOnly`;
+`captureDeviceScreenshot` passes it to the desktop driver only for a counted desktop run, and the driver
+invokes it once the host has consumed the request file so the copy flag exists. The host's 120-iteration
+capture wait is now a bounded monotonic ~2 s budget; the 5 s map budget and image validation stay. Browser
+behavior is unchanged (the browser capture never uses the operation).
+Verification: all three new tests reproduced RED before the fix (core `renderCurrentFrame is not a
+function`; `runtime.renderOnly` absent; driver render callback never fired) and pass after it —
+`packages/core/__tests__/loop.spec.ts`, `packages/playtest/__tests__/three-bridge.spec.ts`,
+`packages/playtest/__tests__/desktop-playtest.spec.ts` (including the end-to-end runner chain). Native:
+the legacy player fixed the old timeout 3/3; the owned engine first returned an unknown `renderOnly`, so
+the missing native-endpoint route was added, moving the native cases RED 2/4 → GREEN 4/4, and
+`protocol_methods.inc` plus its generator were refreshed and the test registered. Zero-time RED: on a
+freshly frozen loop with a pending startup settle the first attempt spent two ticks; the explicit
+`render-only` mode keeps the pending prime for the next ordinary frame, and the focused regression
+(`freezeClock(2)`, start, render-only then an ordinary frame) reproduced RED (`afterPhysics 2, tick 2,
+updates 2`) and passes GREEN, with 73 loop/bridge tests passing. The false
+`clearFrameScreenshotReady()` "drop late captures" line and comment were removed from the timeout branch.
+Focused checks: laptop core/playtest units 5243 passed, 7 skipped (GitMCP excluded from the empty Git
+lane); local 61 plugin/GitMCP passed; global `pnpm typecheck` passed and lint passed with warnings. The
+full `pnpm test` stopped on native: 140 native specs, 11 failed, 1608 passed, 64 skipped (eight missing
+test bins for V8+QuickJS, two stale SBOM receipts, one gradle-wrapper dependency-name parser); the
+preexisting baseline is UNPROVEN. No full CI qualification is claimed.
+Packaging: producer/core/playtest pack and installed artifacts are identical. All 15 frozen archives from
+the capture-fixed cohort are byte-identical on the new routed cohort; only the owned C++ player changed,
+via the existing builder override `d6953a29`; legacy `7e157d58` and Wasm `df3e` rebuilt unchanged; foreign
+deps, game, assets and original scenarios are unchanged.
+Visuals: the original native React HUD passed 3/3 on owned and legacy, with no screenshot advance
+workaround. An additional visual scenario (only `setup.startTick` 128) ran four times (two per arm), 3/3
+each, same end tick 328, on NVIDIA RTX2080/Turing at 1280×720 — 6 runs total, 18/18. Original startup
+counts varied (261/270), so the explicit common pose anchor is for the visual capture only, not a new
+default. A fresh read-only judge `/root/native_capture_routed_visual_judge` returned NEUTRAL for both
+pairs and overall: geometry, materials, lights, shadows, sky and HUD preserved; static pose only, so
+motion and flicker are not assessed. Figures: `/tmp/pr493-capture-routed-visual/compare1.png`,
+`compare2.png`; proof: `/tmp/pr493-capture-routed-native-proof`; posting on PR #493 remains for the
+parent lane.
+Browser: the original owned browser render-chain replayed twice headed on hardware (6/6 each) on the new
+core/playtest pack with the high guard; logs `/tmp/pr493-capture-fixed-browser-proof/{1,2}/report.stdout.log`.
+The scenario's `capture.target` metadata says desktop, but the actual `page.screenshot`/browserArgs prove
+it is the browser; do not mislabel it native.
+Still open without acceptance ticks: the native high-quality render-chain and paired CPU; Snow's 33 ms P95
+failure; the template matrix, coverage, CI and PGO.
+
 ## Context
 
 On 2026-10-15 the owner made the native C++ engine the default (`engine: "native"`) for v1. On the

@@ -874,3 +874,101 @@ describe("terrain draw interval retention", () => {
     expect(entries.at(-1)?.frame).toBe(1025);
   });
 });
+
+describe("render-only frames", () => {
+  it("draws the standing world without advancing the simulation after the clock is driven", () => {
+    // A native deterministic screenshot arrives after the last `advance(render:true)`, when the
+    // automatic frame pump is off: nothing presents, so the copy never happens. The render-only
+    // operation draws once and must not move the tick, an update or a physics step — a screenshot
+    // that settles the world by a frame is a false observation.
+    let updates = 0;
+    let afterPhysics = 0;
+    let renders = 0;
+    const loop = new FixedStepLoop({
+      now: () => 0,
+      onUpdate: () => {
+        updates += 1;
+      },
+      onAfterPhysics: () => {
+        afterPhysics += 1;
+      },
+      onRender: () => {
+        renders += 1;
+        return undefined;
+      },
+    });
+    loop.start(0);
+    loop.advance(3, { render: true });
+    expect({ afterPhysics, renders, tick: loop.tick(), updates }).toEqual({
+      afterPhysics: 3,
+      renders: 3,
+      tick: 3,
+      updates: 3,
+    });
+
+    loop.renderCurrentFrame();
+
+    expect({ afterPhysics, renders, tick: loop.tick(), updates }).toEqual({
+      afterPhysics: 3,
+      renders: 4,
+      tick: 3,
+      updates: 3,
+    });
+    loop.stop();
+  });
+
+  it("keeps the frozen startup settle for the next ordinary frame, not the render-only frame", () => {
+    // The freeze's settle runs on the first *live* frame; a render-only screenshot taken before
+    // that frame must not spend it, or the capture would advance physics and the settle would be
+    // gone when the world genuinely starts.
+    let updates = 0;
+    let afterPhysics = 0;
+    let renders = 0;
+    const loop = new FixedStepLoop({
+      now: () => 0,
+      onUpdate: () => {
+        updates += 1;
+      },
+      onAfterPhysics: () => {
+        afterPhysics += 1;
+      },
+      onRender: () => {
+        renders += 1;
+        return undefined;
+      },
+    });
+    try {
+      loop.freezeClock(2);
+      loop.start(0);
+
+      loop.renderCurrentFrame();
+
+      expect({ afterPhysics, renders, tick: loop.tick(), updates }).toEqual({
+        afterPhysics: 0,
+        renders: 1,
+        tick: 0,
+        updates: 0,
+      });
+
+      loop.stepFrame(0);
+
+      expect({ afterPhysics, renders, tick: loop.tick(), updates }).toEqual({
+        afterPhysics: 2,
+        renders: 2,
+        tick: 2,
+        updates: 2,
+      });
+    } finally {
+      loop.stop();
+    }
+  });
+
+  it("refuses a render-only frame while the live clock is not frozen", () => {
+    // A live loop advances through its own frames; a render-only call that silently stepped it
+    // would be a simulation change wearing a screenshot's name.
+    const loop = new FixedStepLoop({ onUpdate: () => undefined });
+    loop.start(0);
+    expect(() => loop.renderCurrentFrame()).toThrow(/frozen/iu);
+    loop.stop();
+  });
+});

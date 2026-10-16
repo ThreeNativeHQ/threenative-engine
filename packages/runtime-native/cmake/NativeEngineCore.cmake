@@ -761,7 +761,8 @@ tn_native_engine_target(tn_engine_inspect)
 target_link_libraries(tn_engine_inspect PUBLIC tn_engine_scene)
 target_include_directories(tn_engine_inspect PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 tn_native_engine_test(tn-native-engine-inspect-test tests/native-engine/inspect/inspect_test.cpp
-    native_engine_inspect_protocol=protocol native_engine_inspect_input_tick=input_tick)
+    native_engine_inspect_protocol=protocol native_engine_inspect_input_tick=input_tick
+    native_engine_inspect_render_only=render_only)
 target_link_libraries(tn-native-engine-inspect-test PRIVATE tn_engine_inspect tn_engine_world)
 target_include_directories(tn-native-engine-inspect-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/inspect)
 

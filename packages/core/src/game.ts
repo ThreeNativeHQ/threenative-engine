@@ -170,6 +170,13 @@ export interface IGamePluginRuntime {
    */
   readonly freezeClock?: () => void;
   /**
+   * Draw the current world once without advancing it, for a screenshot taken while the loop is
+   * driven by `fixedStep` and presents nothing between ticks. Optional: a runtime without a frozen
+   * render loop just never draws a standing frame. The runner asks for it only when the bridge
+   * advertises it and the capture cannot otherwise see a present.
+   */
+  readonly renderCurrent?: () => number;
+  /**
    * Hold start-scene entry until `gate` settles.
    *
    * The returned promise settles after the scene that owns the world has entered: the start scene
@@ -2027,6 +2034,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       frameCounts: () => ({ updates, renders }),
       frameBudgetWindow: () => this.#frameBudget?.window(),
       freezeClock: () => gameLoop.freezeClock(),
+      renderCurrent: () => gameLoop.renderCurrentFrame(),
       enableRuntimeDiagnostics: () => {
         this.#renderMetricsEnabled = true;
         gameLoop.setCollectMetrics(true);

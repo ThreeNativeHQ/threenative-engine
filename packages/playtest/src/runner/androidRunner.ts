@@ -91,7 +91,7 @@ export interface IDevicePlaytestDriver {
   removeFile?(path: string): Promise<void>;
   rotate?(rotation: number): Promise<void>;
   runAdb?(args: readonly string[]): Promise<string>;
-  screenshot(path: string): Promise<void>;
+  screenshot(path: string, onRequestAccepted?: () => Promise<void>): Promise<void>;
   setPointers?(pointers: readonly IAndroidPointer[]): Promise<IAndroidPointerInjection>;
   tap?(x: number, y: number): Promise<void>;
   hideKeyboard?(): Promise<boolean>;
@@ -252,6 +252,14 @@ async function runDevicePlaytestInternal(
     // Startup owns temporary operation timeouts during first-use compilation. Complete that
     // gate before the scenario's frame warmup against the ready world.
     const attached = bridge;
+    // A counted desktop run's loop presents nothing between ticks, so its screenshot needs the
+    // bridge's render-only operation. Gated on the advertised capability: a bridge that offers
+    // none keeps the previous capture path rather than being handed an operation it lacks.
+    const renderOnly = target.name === "desktop"
+      && config.liveClock !== true
+      && attached.description.capabilities.includes("runtime.renderOnly")
+      ? () => attached.renderOnly()
+      : undefined;
     const startupOutcome = scenario.awaitStartup === false
       ? undefined
       : await waitForStartupReady({
@@ -308,7 +316,7 @@ async function runDevicePlaytestInternal(
     const before = await bridge.sample(sampleRequest);
     if (completionLabel !== undefined && before.clock.mode !== "fixed-step") throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: prefix requires fixed-step clock");
     if (scenario.artifacts?.screenshots === "before-after" && config.captureArtifactScreenshots !== false) {
-      await captureDeviceScreenshot(target, join(config.artifactDirectory, "before.png"), tone, "before.png");
+      await captureDeviceScreenshot(target, join(config.artifactDirectory, "before.png"), tone, "before.png", undefined, renderOnly);
     }
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
       ? undefined
@@ -514,7 +522,7 @@ async function runDevicePlaytestInternal(
       const wantsStepTone = step.label !== undefined && scenario.assert?.tone?.some(({ atStep }) => atStep === step.label) === true;
       if (step.screenshot !== undefined || wantsStepTone) {
         const label = step.screenshot === undefined ? `tone-${index}.png` : `${safePart(step.screenshot)}.png`;
-        await captureDeviceScreenshot(target, join(config.artifactDirectory, label), tone, label, step.label);
+        await captureDeviceScreenshot(target, join(config.artifactDirectory, label), tone, label, step.label, renderOnly);
       }
       if (step.release && pressed !== undefined) {
         const released = typeof pressed === "string" ? [pressed] : [...pressed];
@@ -575,7 +583,7 @@ async function runDevicePlaytestInternal(
     metrics?.stop();
     await metrics?.sampleNow("after").catch(() => undefined);
     if (scenario.artifacts?.screenshots !== false || scenario.assert?.tone?.some(({ atStep }) => atStep === undefined) === true) {
-      await captureDeviceScreenshot(target, join(config.artifactDirectory, "after.png"), tone, "after.png");
+      await captureDeviceScreenshot(target, join(config.artifactDirectory, "after.png"), tone, "after.png", undefined, renderOnly);
     }
     if (!(await target.driver.isAlive())) {
       return failureReport(config, scenario, playtestDiagnostic(
@@ -725,8 +733,9 @@ async function captureDeviceScreenshot(
   tone: IPlaytestToneObservation[],
   label: string,
   atStep?: string,
+  renderOnly?: () => Promise<void>,
 ): Promise<void> {
-  await target.driver.screenshot(path);
+  await target.driver.screenshot(path, renderOnly);
   const png = await readFile(path);
   // The browser bright-pixel floor rejected the native desktop frame panned-culled.png (PRD-569).
   // Its content ratio is at least 0.0044, so desktop takes the content floor.

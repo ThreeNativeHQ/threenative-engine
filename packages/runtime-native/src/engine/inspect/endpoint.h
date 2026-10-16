@@ -58,8 +58,8 @@ struct Host {
 /**
  * The playtest device bridge on the native engine (PRD-529): one request frame
  * ({"id","method","argument"}) in, one response frame ({"id","result"} or {"error":{"message"},"id"})
- * out, as packages/playtest/src/three/device.ts answers them. The seven bridge methods (describe,
- * ready, sample, advance, applySetup, drainEvents, focus) and the input methods (input.keyDown,
+ * out, as packages/playtest/src/three/device.ts answers them. The bridge methods (describe,
+ * ready, sample, advance, applySetup, drainEvents, renderOnly, focus) and the input methods (input.keyDown,
  * input.keyUp, input.pointer, input.pointers) each answer with a result or an error whose message
  * starts with a named code: TN_INSPECT_MALFORMED, TN_INSPECT_PAYLOAD_TOO_LARGE,
  * TN_INSPECT_UNKNOWN_METHOD, TN_INSPECT_INVALID_ARGUMENT, or TN_INSPECT_UNSUPPORTED for a protocol

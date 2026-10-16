@@ -13,5 +13,6 @@ static const char* const kMethods[] = {
     "input.pointers",
     "input.wheel",
     "ready",
+    "renderOnly",
     "sample",
 };

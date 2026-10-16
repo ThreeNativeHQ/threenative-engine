@@ -153,7 +153,16 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
     }
   }
 
-  async screenshot(path: string): Promise<void> {
+  /**
+   * Capture the running game to `path`, returning once the file is written.
+   *
+   * A deterministic native loop presents nothing between ticks, so the host's copy never happens
+   * on its own. `onRequestAccepted` is invoked exactly once, after the host has consumed the
+   * request file and therefore set its copy flag; the runner points it at the bridge's render-only
+   * operation so the host has a present to copy. It is absent when the bridge offers none, which
+   * leaves the pre-existing behavior.
+   */
+  async screenshot(path: string, onRequestAccepted?: () => Promise<void>): Promise<void> {
     const root = this.mailboxRoot;
     if (root === undefined) throw new Error("Desktop playtest mailbox is unavailable before prepare().");
     if (!(await this.isAlive())) throw new Error("Desktop playtest executable exited before screenshot capture.");
@@ -163,8 +172,8 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
     // Two phases, because two different things bound them. The host deletes the request file the
     // moment it accepts the request (processPlaytestScreenshotRequest in runtime.cpp), so a file
     // still sitting there past the short wait means an app that never serviced the mailbox at all.
-    // Once it is gone the host is inside its own budget — up to 120 polled frames plus a 5s buffer
-    // map — which a software adapter's present outlasts (endDawnFrame p50 333ms, max 4.3s on arm64
+    // Once it is gone the host is inside its own budget — a 2s capture wait plus a 5s buffer
+    // map — which a software adapter's present can outlast (endDawnFrame p50 333ms, max 4.3s on arm64
     // llvmpipe), so only that phase gets the harness's overall screenshot budget. The sum is the
     // absolute cap, and isAlive() still fails fast inside both.
     const pickupDeadline = Date.now() + (this.options.screenshotTimeoutMs ?? nativeScreenshotTimeoutMs());
@@ -180,6 +189,7 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       }
       if (!accepted) {
         accepted = (await new LocalDeviceMailbox().read(request)) === undefined;
+        if (accepted && onRequestAccepted !== undefined) await onRequestAccepted();
         if (!accepted && Date.now() >= pickupDeadline) break;
       }
       await delay(25);

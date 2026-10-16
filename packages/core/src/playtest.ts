@@ -109,6 +109,11 @@ export function playtest<
         ...(runtime?.runtimeDiagnosticsSeries === undefined
           ? {}
           : { runtimeDiagnosticsSeries: runtime.runtimeDiagnosticsSeries }),
+        // A driven native loop presents nothing between ticks; the render-only operation lets a
+        // desktop screenshot draw the standing world without spending a simulation step.
+        ...(runtime?.renderCurrent === undefined
+          ? {}
+          : { renderCurrent: () => runtime.renderCurrent?.() }),
         ...(options.events === undefined ? {} : { events: options.events }),
         gameplay: () => gameplayObservations(ctx, contactHistory, seed, replayRuntime, watcher),
         gameplayChannels: () => gameplayChannels(ctx),

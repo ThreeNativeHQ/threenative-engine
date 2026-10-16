@@ -59,6 +59,13 @@ struct Game {
             for (const std::string& key : held)
                 seenAtTick.push_back(std::to_string(clock.tick()) + ":" + key);
         };
+        // A game runtime installs the observation bridge; renderOnly reaches it here (PRD-617),
+        // while the native fallback answers the rest.
+        host.observe = [](const std::string& method, const json::Value*, json::Value& result, std::string&) {
+            if (method != "renderOnly") return false;
+            result = json::Value::makeNumber(1);
+            return true;
+        };
         endpoint = std::make_unique<Endpoint>(host);
     }
 };
@@ -239,6 +246,7 @@ void protocol() {
         {"describe", "", true},
         {"ready", "", true},
         {"focus", "", true},
+        {"renderOnly", "", true},
         {"drainEvents", "100", true},
         {"drainEvents", "\"x\"", false},
         {"sample", "{\"entities\":[\"player\",\"ghost\"],\"label\":\"s\"}", true},
@@ -327,6 +335,31 @@ void protocol() {
 }
 
 
+// PRD-617: runtime.renderOnly is a device.ts message type and a bridge method the installed JS
+// runtime answers; the endpoint forwards it to the observer like the other observation methods and
+// never advances the simulation itself.
+void renderOnlyRoute() {
+    uint64_t observed = 0, steps = 0, ticks = 0;
+    Host host;
+    host.tick = [&] { ++ticks; return 0; };
+    host.step = [&] { ++steps; };
+    host.observe = [&](const std::string& method, const json::Value*, json::Value& result, std::string&) {
+        if (method != "renderOnly") return false; // the native fallback answers the rest
+        ++observed;
+        result = json::Value::makeNumber(7);
+        return true;
+    };
+    Endpoint endpoint(host);
+    const json::Value answer = reply(endpoint, request("r", "renderOnly", ""));
+    const json::Value* resolved = answer.find("result");
+    CHECK(observed == 1);
+    CHECK(steps == 0 && ticks == 0);
+    CHECK(resolved && resolved->number() == 7);
+    const json::Value unknown = reply(endpoint, request("u", "teleport", ""));
+    const json::Value* error = unknown.find("error");
+    CHECK(error && error->find("message")->string().rfind("TN_INSPECT_UNKNOWN_METHOD", 0) == 0);
+}
+
 void inputTick() {
     Game game;
     const auto send = [&](const std::string& method, const std::string& argument) {
@@ -346,4 +379,4 @@ void inputTick() {
 
 } // namespace
 
-TN_TEST_MAIN({"protocol", protocol}, {"input_tick", inputTick})
+TN_TEST_MAIN({"protocol", protocol}, {"input_tick", inputTick}, {"render_only", renderOnlyRoute})
