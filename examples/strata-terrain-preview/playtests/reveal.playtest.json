@@ -76,6 +76,20 @@
       {
         "entity": "props",
         "component": "reveal",
+        "path": "pipelineCensusAvailable",
+        "equals": true,
+        "allowTrivial": "The pipeline census must be complete and available throughout the measured post-reveal window."
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "pipelinesCreated",
+        "equals": 0,
+        "allowTrivial": "Held invariant: no device pipeline creations may occur throughout the measured post-reveal window."
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
         "path": "publishedBatchesInView",
         "equals": 0,
         "allowTrivial": "Held invariant: no visible prop batches may publish throughout the measured post-reveal window."
