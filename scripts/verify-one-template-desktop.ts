@@ -98,14 +98,17 @@ export async function checkArchives(
       throw new Error(`TN_PACKED_COHORT_MISSING: ${name}: ${matches.length} archives`);
     sources[name] = path.resolve(archives, matches[0] as string);
   }
-  for (const name of ["@threenative/runtime-native", "create-threenative"]) {
+  const packedFiles: Record<string, readonly string[]> = {
+    "@threenative/runtime-native": [
+      "scripts/bundle-native-engine.mjs",
+      "scripts/package-engine-desktop.mjs",
+    ],
+    "create-threenative": ["dist/index.js", "dist/threenative.js"],
+  };
+  for (const [name, required] of Object.entries(packedFiles)) {
     const extracted = path.join(root, name.replaceAll("/", "-"));
     await mkdir(extracted, { recursive: true });
     await run("tar", ["-xzf", sources[name] as string, "-C", extracted], root);
-    const required =
-      name === "create-threenative"
-        ? ["dist/index.js", "dist/threenative.js"]
-        : ["scripts/bundle-native-engine.mjs", "scripts/package-engine-desktop.mjs"];
     // Templates contain user source and intentionally unresolved scaffold placeholders.
     const packageRoot = path.join(extracted, "package");
     assertPackedImportClosure(packageRoot, required);
