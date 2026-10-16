@@ -234,7 +234,9 @@ export async function createStreamedProps(options: IStreamOptions) {
           }
           definitions[record.key] = {
             glb: `${record.key}/0.glb`,
-            ...(record.key.startsWith("spruce:") ? { impostorDistance: LOD_BANDS.far } : {}),
+            ...(record.key.startsWith("spruce:") && levels.length <= 2
+              ? { impostorDistance: LOD_BANDS.far }
+              : {}),
             bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() },
             lods: levels.slice(1).map((level, i) => ({
               glb: `${record.key}/${level}.glb`,
