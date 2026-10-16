@@ -3370,13 +3370,9 @@ function graphSnapshotCurrent(row: IBundleGraphSnapshot): boolean {
   }
   const reader = bundleGraphChildReader(node);
   if (reader !== row.childReader) return false;
-  const children = readBundleGraphChildren(node, reader);
-  return (
-    children !== undefined &&
-    row.children !== undefined &&
-    children.length === row.children.length &&
-    children.every((child, index) => child === row.children?.[index])
-  );
+  const expected = row.children;
+  if (expected === undefined) return false;
+  return readBundleGraphChildren(node, reader, expected) === expected;
 }
 
 /** Three reads non-enumerable own Node/Material slots, but never inherited TSL chain methods. */
@@ -3388,8 +3384,15 @@ function bundleGraphKeys(node: object): string[] {
 function bundleGraphChildReader(node: object): unknown {
   return Reflect.get(node, "isNode") === true ? Reflect.get(node, "getChildren") : undefined;
 }
-function readBundleGraphChildren(node: object, reader: unknown): readonly object[] | undefined {
-  if (reader === undefined) return [];
+function readBundleGraphChildren(
+  node: object,
+  reader: unknown,
+  expected?: readonly object[],
+): readonly object[] | undefined {
+  if (reader === undefined) {
+    if (expected === undefined) return [];
+    return expected.length === 0 ? expected : undefined;
+  }
   if (typeof reader !== "function") return undefined;
   try {
     const result: unknown = reader.call(node);
@@ -3399,6 +3402,22 @@ function readBundleGraphChildren(node: object, reader: unknown): readonly object
       typeof Reflect.get(result, Symbol.iterator) !== "function"
     )
       return undefined;
+    if (expected !== undefined) {
+      let index = 0;
+      let match = true;
+      for (const child of result as Iterable<unknown>) {
+        if (
+          index >= 8192 ||
+          child === null ||
+          typeof child !== "object" ||
+          Reflect.get(child, "isNode") !== true
+        )
+          return undefined;
+        if (match && child !== expected[index]) match = false;
+        index++;
+      }
+      return match && index === expected.length ? expected : undefined;
+    }
     const children: object[] = [];
     for (const child of result as Iterable<unknown>) {
       if (
@@ -3422,28 +3441,36 @@ function captureBundleGraph(
   childReader: unknown,
   children: readonly object[] | undefined,
 ): readonly unknown[] {
-  const entries = terminal
-    ? []
-    : bundleGraphKeys(node).map((key) => [key, Reflect.get(node, key)] as const);
-  capture.links += entries.length + (children?.length ?? 0);
+  const keys = terminal ? [] : bundleGraphKeys(node);
+  const count = keys.length;
+  capture.links += count + (children?.length ?? 0);
   if (children === undefined) capture.overflow = true;
   if (capture.rows.length >= 1024 || capture.links > 8192) capture.overflow = true;
-  if (!capture.overflow)
-    capture.rows.push({
-      node,
-      terminal,
-      childReader,
-      children,
-      keys: entries.map(([key]) => key),
-      links: entries.map(([, value]) =>
-        value !== null && typeof value === "object" ? value : undefined,
-      ),
-      isNode: Reflect.get(node, "isNode"),
-      beforeType: Reflect.get(node, "updateBeforeType"),
-      before: typeof Reflect.get(node, "updateBefore"),
-      version: Reflect.get(node, "version"),
-    });
-  return entries.map(([, value]) => value);
+  const values: unknown[] = new Array(count);
+  if (capture.overflow) {
+    for (let index = 0; index < count; index++)
+      values[index] = Reflect.get(node, keys[index] as string);
+    return values;
+  }
+  const links: (object | undefined)[] = new Array(count);
+  for (let index = 0; index < count; index++) {
+    const value: unknown = Reflect.get(node, keys[index] as string);
+    values[index] = value;
+    links[index] = value !== null && typeof value === "object" ? value : undefined;
+  }
+  capture.rows.push({
+    node,
+    terminal,
+    childReader,
+    children,
+    keys,
+    links,
+    isNode: Reflect.get(node, "isNode"),
+    beforeType: Reflect.get(node, "updateBeforeType"),
+    before: typeof Reflect.get(node, "updateBefore"),
+    version: Reflect.get(node, "version"),
+  });
+  return values;
 }
 
 function samplesFramebuffer(
@@ -3479,9 +3506,12 @@ function samplesFramebuffer(
   // Malformed/oversized child output retains the live source path. The stored witness is capped;
   // Three's eager getChildren implementation can still scan an authored array before yielding.
   if (children === undefined) return true;
-  for (const value of [...values, ...children]) {
+  for (const value of values) {
     if (value === null || typeof value !== "object") continue;
     if (samplesFramebuffer(value, seen, capture)) return true;
+  }
+  for (const child of children) {
+    if (samplesFramebuffer(child, seen, capture)) return true;
   }
   return false;
 }
