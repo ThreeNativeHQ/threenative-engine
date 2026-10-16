@@ -1385,6 +1385,29 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         if (!rangesFactory.As<v8::Function>()->Call(context, target, 1, &prototype).ToLocal(&installed))
             throw std::runtime_error("TN_NATIVE_UPDATE_RANGES: cannot bind attribute array");
     }
+    // three's Object3D.raycast(raycaster, intersects): push this object's own hits (no recursion) onto the
+    // caller's array. The engine answers them through Raycaster.intersectObject, which runs the object's
+    // native raycast; a Group answers none. Core's picking calls it for every object it has no tree for.
+    const char* raycastSource = R"JS((prototype) => {
+        prototype.raycast = function(raycaster, intersects) {
+            for (const hit of raycaster.intersectObject(this, false)) intersects.push(hit);
+        };
+    })JS";
+    v8::Local<v8::Value> raycastFactory;
+    if (!v8::Script::Compile(context, str(isolate_, raycastSource)).ToLocalChecked()->Run(context).ToLocal(&raycastFactory))
+        throw std::runtime_error("TN_NATIVE_RAYCAST: cannot install Object3D.raycast");
+    for (const auto& [name, binding] : registry()) {
+        if (!binding.methods.count("worldToLocal") || binding.methods.count("raycast")) continue;
+        const auto cls = classes_.find(tn_type_id(name.c_str()));
+        if (cls == classes_.end()) continue;
+        v8::Local<v8::Value> prototype;
+        if (!cls->second.Get(isolate_)->GetFunction(context).ToLocalChecked()->Get(context, str(isolate_, "prototype")).ToLocal(&prototype) ||
+            !prototype->IsObject())
+            continue;
+        v8::Local<v8::Value> installed;
+        if (!raycastFactory.As<v8::Function>()->Call(context, target, 1, &prototype).ToLocal(&installed))
+            throw std::runtime_error("TN_NATIVE_RAYCAST: cannot bind Object3D.raycast");
+    }
     // Last, so the math classes replace the native ones as globals.
     if (jsMath_) {
         if (!math_) math_ = std::make_unique<MathBridge>(isolate_, context_);

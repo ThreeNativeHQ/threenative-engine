@@ -105,6 +105,25 @@ describe("the browser-JS back end", () => {
     }
   });
 
+  it("pushes an object's own hits from raycast, without recursing (core's picking calls it)", () => {
+    const seen: unknown[][] = [];
+    const raycaster = {
+      intersectObject: (...args: unknown[]) => {
+        seen.push(args);
+        return [{ distance: 1 }, { distance: 2 }];
+      },
+    };
+    const into: unknown[] = [{ distance: 0 }];
+    const group = {};
+    (classes.Group?.prototype as { raycast(r: unknown, into: unknown[]): void }).raycast.call(
+      group,
+      raycaster,
+      into,
+    );
+    expect(into).toHaveLength(3);
+    expect(seen).toEqual([[group, false]]);
+  });
+
   it("makes each registry callback a settable accessor", () => {
     for (const [name, binding] of Object.entries(registry.classes)) {
       for (const callback of binding.callbacks) {
