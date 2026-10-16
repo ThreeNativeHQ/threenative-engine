@@ -28,6 +28,8 @@ Use the upstream three.js API only (`instancedArray`, `storage`, `Fn().compute(c
 **Status:** DONE
 - [x] `getArrayBufferAsync` returns the written bytes and atomics give exact counts (AC-3). proof: GPU ctest.
   Result 2026-10-15: `native_engine_player_compute` reads 256 floats, a padded vec3 buffer and a uint buffer back exactly, and 1000 threads count `[334,1000]` twice (a reset in its own dispatch between rounds). The same bytes come back on the Wasm page. `getArrayBufferAsync` takes no target, an ArrayBuffer target or a ReadbackBuffer, and refuses an offset or count that is not a multiple of 4. The WGSL is accepted by Dawn (desktop player) and by Chrome's Tint (Wasm page).
+Recovery verification 2026-10-15, source `687729c5a`: product desktop player rebuilt with physics and UI overlay enabled; Wasm rebuilt (3,567,874 bytes). `native_engine_player_compute`, `native_engine_player_compute_ops`, `native_engine_player_ui_overlay` and `native_engine_player_real_input_ui`: 4/4 passed. Starter/snow gameplay and visual acceptance remain unverified.
+
 #### Phase 3: templates
 **Status:** NOT STARTED
 - [ ] Starter and snow pass their playtests on native desktop and web, judged NEUTRAL or better (AC-4). proof: template playtests + judge.

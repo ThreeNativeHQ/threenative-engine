@@ -475,6 +475,8 @@ readonly points: Vector3[];
   getUtoTmapping(u: number, distance: number): number;
 
   updateArcLengths(): void;
+
+  computeFrenetFrames(segments: number, closed?: boolean): object;
 }
 
 /** Catalog partial (native-not-implemented): three/CineonToneMapping. */
