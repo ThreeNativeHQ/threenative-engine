@@ -172,7 +172,7 @@ function renderObjectsProbe(): {
   const manager = new RenderObjects(
     renderer,
     nodes,
-    {},
+    { getIndex: () => null, releaseRenderObject: vi.fn() },
     pipelines,
     bindings,
     {},
