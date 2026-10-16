@@ -14,7 +14,7 @@
         "path": "uiReady",
         "atSteps": [{ "label": "ui-ready", "equals": true }]
       },
-      { "id": "state", "path": "playerX", "changed": true }
+      { "id": "state", "path": "progress", "changed": true }
     ]
   }
 }

@@ -253,7 +253,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "7362b2a5b8314a1bb7c7df176dbc47018389d9ff824ea39d984774516c96e9e6",
   shooter: "60e3aacb4fe2e398dbcd59485fdcd6aa5108b507fd899a4efe81614596312598",
   snow: "d7ded1eea863a08e164407fe3061c865151c09cde3627de15d39571e2b5f244c",
-  starter: "204402ed9b34b907bf2e4c047e0f929f98afe6500e6ab10342dee6942937822b",
+  // Merged input heading, quaternion facing and progress import; measured through actual scaffold.
+  starter: "f542723329a5441ea1a416ad94e43ec262afd3d1ac5fb40c22beb05b4be61015",
   "tower-defense": "b387b2fa3e7c0a719a99d8ececb4f3964d881415a8b1fe036b2f7c0413318fb4",
 };
 
@@ -389,10 +390,10 @@ const STARTER_PATHS = [
   "src/ui/main.tsx",
   "src/ui/App.tsx",
   "src/state.ts",
-  // PRD-449: three, and only the three that prove a new game works. The other 21 are engine
-  // guards in `packages/create-threenative/template-playtests/starter/`, which `pnpm test:templates`
-  // copies into the scaffold; the "exactly three" assertion below is what keeps them out.
+  // Ship the starter smoke, outcome, readiness and movement scenarios. Engine guards stay in
+  // `packages/create-threenative/template-playtests/starter/`, copied by `pnpm test:templates`.
   "playtests/survives.playtest.json",
+  "playtests/movement.playtest.json",
   "playtests/play.playtest.json",
   "native-playtests/react-hud.playtest.json",
   "playtests/production-readiness.playtest.json",
@@ -945,7 +946,7 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
-      // The whole point of the cut (PRD-449): a new game proves itself with three scenarios, and
+      // The whole point of the cut (PRD-449): a new game proves itself with four scenarios, and
       // the engine's own guards live outside the template. `readdir` rather than the STARTER_PATHS
       // membership, so a file nobody added to the list still fails here.
       expect(
@@ -953,6 +954,7 @@ describe("create-threenative", () => {
           name.endsWith(".playtest.json"),
         ),
       ).toEqual([
+        "movement.playtest.json",
         "play.playtest.json",
         "production-readiness.playtest.json",
         "survives.playtest.json",

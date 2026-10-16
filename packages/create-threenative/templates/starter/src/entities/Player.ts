@@ -1,4 +1,4 @@
-import { type ICtx, SkeletalMesh3D } from "@threenative/core";
+import { BlendSpace1D, type ICtx, SkeletalMesh3D } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { type AnimationClip, Group, type Mesh, type Object3D, Quaternion, Vector3 } from "three";
 import { type IStarterConventions, preparePlayerConventions } from "../conventions.js";
@@ -8,16 +8,15 @@ import type { GameState } from "../state.js";
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 // Tune these two timers for jump feel; they forgive a late or early button press.
-// 0.12s is 7.2 ticks at the 1/60 step, which is what a jump scenario measures against: 3 ticks
-// walking off the ledge, 5 more airborne, then the jump — the jump lands about 5 ticks after the
-// player actually leaves the ground, inside the window. Change this and those two step lengths
-// move with it. Tightening the airborne hold does NOT make the scenario safer: with 2 the player
-// has not left the ledge yet, and the jump is counted as an ordinary one
-// (`jumps: 1, coyoteJumps: 0`), which is what it measured when I tried.
+// 0.12s is 7.2 ticks at 60 Hz. The coyote scenario approaches at 1.5 m/s for 130 ticks,
+// then holds 4 ticks toward the edge and 5 more before jumping. Easing adds about 8.5 ticks
+// of startup lag; the capsule leaves support near the end of the edge hold, about 5–6 ticks before
+// the jump, inside the window. Keep these distances and the airborne delay together.
 const COYOTE_TIME = 0.12;
 const JUMP_BUFFER = 0.14;
 const JUMP_SPEED = 5;
-const MOVE_SPEED = 2;
+const WALK_SPEED = 1.5;
+const RUN_SPEED = 5;
 /** Capsule for a 1.8 m figure: 0.6 m half-height plus a 0.3 m radius at each end. */
 const HALF_HEIGHT = 0.6;
 const RADIUS = 0.3;
@@ -30,7 +29,8 @@ const SPAWN = { x: -2, y: PLAYER_STAND_Y, z: 0 } as const;
 /** The clips `assets/mannequin.glb` ships, by the name this file plays them under. */
 const CLIPS = {
   idle: "Idle_Loop",
-  jog: "Jog_Fwd_Loop",
+  walk: "Walk_Loop",
+  run: "Jog_Fwd_Loop",
   jumpStart: "Jump_Start",
   jumpLoop: "Jump_Loop",
   jumpLand: "Jump_Land",
@@ -51,6 +51,8 @@ export class Player {
   #jumps = 0;
   #coyoteJumps = 0;
   #odometer = 0;
+  #speed = 0;
+  #gaits = new BlendSpace1D([WALK_SPEED, RUN_SPEED]);
   #landing = 0;
   #wasGrounded = true;
   #supportSurfaceY = 0;
@@ -99,6 +101,8 @@ export class Player {
       autostep: { maxHeight: 0.4, minWidth: 0.2 },
       object: this.mesh,
       physics: ctx.physics,
+      // Walking into dynamic props transfers the character's motion to them.
+      pushesDynamicBodies: true,
       shape: CollisionShape3D.capsule(HALF_HEIGHT, RADIUS),
     });
   }
@@ -106,6 +110,14 @@ export class Player {
   update(ctx: GameCtx, dt: number, touch?: ITouchInput): void {
     if (this.#hasPreviousPosition) {
       this.#odometer += this.mesh.position.distanceTo(this.#previousPosition);
+      // The solver applies moveAndSlide after update; measure its last completed step.
+      this.#speed =
+        dt > 0
+          ? Math.hypot(
+              this.mesh.position.x - this.#previousPosition.x,
+              this.mesh.position.z - this.#previousPosition.z,
+            ) / dt
+          : 0;
     }
     const grounded = this.body.grounded;
     this.#coyoteTime = Math.max(0, this.#coyoteTime - dt);
@@ -128,8 +140,13 @@ export class Player {
       move.y += touch.move.y;
       move.clampLength(0, 1);
     }
-    this.body.velocity.x = move.x * MOVE_SPEED;
-    this.body.velocity.z = -move.y * MOVE_SPEED;
+    // Touch walks until the stick is fully deflected; no separate run button.
+    const running = ctx.input.pressed("run") || (touch?.move.length() ?? 0) >= 1;
+    const speed = running ? RUN_SPEED : WALK_SPEED;
+    const ease = 1 - Math.exp(-dt / 0.15);
+    const moveZ = -move.y;
+    this.body.velocity.x += (move.x * speed - this.body.velocity.x) * ease;
+    this.body.velocity.z += (moveZ * speed - this.body.velocity.z) * ease;
     this.#previousPosition.copy(this.mesh.position);
     this.body.moveAndSlide(dt);
     this.#hasPreviousPosition = true;
@@ -140,7 +157,7 @@ export class Player {
     this.#conventions.groundSnap.enabled = canCorrectGrounding;
     this.#conventions.applyGrounding(this.#supportSurfaceY, dt);
     this.#captureVisualBodyOffset();
-    this.#animate(dt, move.length(), jumped);
+    this.#animate(dt, move.x, moveZ, jumped);
   }
 
   respawn(): void {
@@ -148,10 +165,15 @@ export class Player {
     this.#coyoteTime = 0;
     this.#jumpBuffer = 0;
     this.#hasPreviousPosition = false;
+    this.#speed = 0;
   }
 
   debug(): {
+    clip: string | undefined;
     coyoteJumps: number;
+    facing: number;
+    facingAxis: "+x" | "-x" | "+z" | "-z";
+    gait: "idle" | "walk" | "run" | "air";
     grounded: boolean;
     facingZ: number;
     groundClearance: number | null;
@@ -161,12 +183,34 @@ export class Player {
     normaliseFactor: number;
     odometer: number;
     position: number[];
+    speed: number;
+    strideSynced: boolean;
     visualAttached: boolean;
     visualAttachmentDrift: number;
   } {
     const visualAttachmentDrift = this.#visualAttachmentDrift();
+    const forward = new Vector3(0, 0, 1).applyQuaternion(
+      this.character.root.getWorldQuaternion(new Quaternion()),
+    );
     return {
+      clip: this.character.current,
       coyoteJumps: this.#coyoteJumps,
+      facing: Math.atan2(forward.x, forward.z),
+      facingAxis:
+        Math.abs(forward.x) > Math.abs(forward.z)
+          ? forward.x >= 0
+            ? "+x"
+            : "-x"
+          : forward.z >= 0
+            ? "+z"
+            : "-z",
+      gait: !this.body.grounded
+        ? "air"
+        : this.#speed <= 0.05
+          ? "idle"
+          : this.character.current === CLIPS.run
+            ? "run"
+            : "walk",
       grounded: this.body.grounded,
       facingZ: this.character.root.getWorldDirection(new Vector3()).z,
       groundClearance: this.#conventions.groundSnap.clearance,
@@ -176,6 +220,8 @@ export class Player {
       normaliseFactor: this.#conventions.normaliseFactor,
       odometer: this.#odometer,
       position: this.mesh.position.toArray(),
+      speed: this.#speed,
+      strideSynced: this.character.stride.synced,
       visualAttached: visualAttachmentDrift <= VISUAL_ATTACHMENT_TOLERANCE,
       visualAttachmentDrift,
     };
@@ -203,10 +249,10 @@ export class Player {
   }
 
   /** Faces the direction of travel and picks a clip from what the body is actually doing. */
-  #animate(dt: number, speed: number, jumped: boolean): void {
+  #animate(dt: number, inputX: number, inputZ: number, jumped: boolean): void {
     const figure = this.character.root;
-    if (speed > 0.05) {
-      const heading = Math.atan2(this.body.velocity.x, this.body.velocity.z);
+    if (Math.hypot(inputX, inputZ) > 0.05) {
+      const heading = Math.atan2(inputX, inputZ);
       // Matrix decomposition can represent a half-turn with x/z Euler rotations.
       this.#heading.setFromAxisAngle(this.mesh.up, heading);
       figure.quaternion.slerp(this.#heading, Math.min(1, dt * 12));
@@ -219,8 +265,15 @@ export class Player {
     else if (grounded && !this.#wasGrounded) {
       this.#landing = 0.25;
       this.character.play(CLIPS.jumpLand, { fade: 0.06, mode: "once" });
-    } else if (grounded && this.#landing <= 0)
-      this.character.play(speed > 0.05 ? CLIPS.jog : CLIPS.idle, { fade: 0.2 });
+    } else if (grounded && this.#landing <= 0) {
+      if (this.#speed > 0.05) {
+        const weights = this.#gaits.sample(this.#speed);
+        this.character.playWeighted([
+          { clip: CLIPS.walk, weight: weights[0] ?? 0 },
+          { clip: CLIPS.run, weight: weights[1] ?? 0 },
+        ]);
+      } else this.character.play(CLIPS.idle, { fade: 0.2 });
+    }
     this.#wasGrounded = grounded;
     this.character.update(dt);
   }

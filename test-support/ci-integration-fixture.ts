@@ -178,7 +178,7 @@ export function nativeEvidence(
               leg.job === "android-emulator-parity" || leg.platform === "linux-arm64"
                 ? "wgpu"
                 : "Dawn",
-            engine: leg.platform === "linux-arm64" ? "QuickJS" : "V8",
+            engine: "V8",
             artifactSha256: "c".repeat(64),
             configSha256: "d".repeat(64),
             reportSha256: "e".repeat(64),
