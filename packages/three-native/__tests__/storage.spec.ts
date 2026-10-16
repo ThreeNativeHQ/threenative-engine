@@ -18,7 +18,7 @@ import {
 } from "../src/browser-backend.js";
 import { type ITslRuntime, type TslArgValue, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
-import { readStorageBytes } from "../src/storage.js";
+import { ReadbackBuffer, readStorageBytes } from "../src/storage.js";
 
 const REPO = process.cwd();
 const catalog = loadCatalog(REPO);
@@ -143,6 +143,16 @@ describe("storage buffers on the Wasm facade", () => {
     // Any later engine call finds nothing pending: the array is not written over the GPU copy again.
     (buffer.value as unknown as { clone(): unknown }).clone();
     expect(writes).toHaveLength(1);
+    // Reading the CPU array of a storage attribute hands the game its initial contents; it is not a pending edit,
+    // so a later engine call does not write it over what a kernel put on the GPU.
+    const attribute = buffer.value as unknown as { array: Float32Array; clone(): unknown };
+    expect(attribute.array).toHaveLength(4);
+    attribute.clone();
+    expect(writes).toHaveLength(1);
+    // An edit followed by needsUpdate still reaches the engine.
+    attribute.array[0] = 9;
+    buffer.value.needsUpdate = true;
+    expect(writes).toHaveLength(2);
   });
 
   it("indexes an element of the attribute's own buffer, atomically when asked", () => {
@@ -169,6 +179,21 @@ describe("storage buffers on the Wasm facade", () => {
         "float",
       ).toAtomic(),
     ).toThrow(/toAtomic: expected int or uint/u);
+  });
+
+  it("reads toAttribute() as the element of the instance being drawn", () => {
+    const calls: ICall[] = [];
+    const tsl = tslOver(calls);
+    const buffer = (
+      tsl.instancedArray as (
+        count: number,
+        type: string,
+      ) => IStorageBuffer & { toAttribute(): object }
+    )(4, "vec3");
+    expect(buffer.toAttribute()).toBeDefined();
+    const element = calls.filter((call) => call.name === "storage:object").at(-1);
+    expect(element?.args[3]?.kind).toBe("node");
+    expect(calls.some((call) => call.name === "constant:instanceIndex")).toBe(true);
   });
 
   it("names the compute dispatch size through the shared node method", () => {
@@ -292,6 +317,17 @@ describe("getArrayBufferAsync result forms", () => {
     const buffer = { isReadbackBuffer: true, buffer: null as unknown };
     expect(await readStorageBytes(read, {}, buffer)).toBe(buffer);
     expect(new Uint8Array(buffer.buffer as ArrayBuffer)).toEqual(new Uint8Array(bytes));
+  });
+
+  it("hands the shared ReadbackBuffer its bytes and tells its release listeners", async () => {
+    const buffer = new ReadbackBuffer(8);
+    const heard: string[] = [];
+    buffer.addEventListener("release", (event) => heard.push((event as { type: string }).type));
+    expect(await readStorageBytes(read, {}, buffer)).toBe(buffer);
+    expect(new Uint8Array(buffer.buffer as ArrayBuffer)).toEqual(new Uint8Array(bytes));
+    expect(buffer.maxByteLength).toBe(8);
+    buffer.release();
+    expect(heard).toEqual(["release"]);
   });
 
   it("refuses an offset or count that is not a multiple of 4, as three does", async () => {

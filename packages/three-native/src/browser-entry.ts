@@ -27,6 +27,7 @@ import { definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { defineReflector } from "./reflector.js";
+import { ReadbackBuffer } from "./storage.js";
 import { defineTextureSources } from "./texture-sources.js";
 
 // quality-allow: the JSON import is typed by its literal values, which ICatalog does not accept.
@@ -152,6 +153,7 @@ export async function bindWebEngine(
     ...tsl?.exports,
   };
   bound.Material = Material;
+  bound.ReadbackBuffer = ReadbackBuffer;
   // three's PropertyBinding statics and console function over the engine class (shared with V8).
   if (classes.PropertyBinding !== undefined)
     Object.assign(bound, definePropertyBinding(classes.PropertyBinding as never));

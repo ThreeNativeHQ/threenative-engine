@@ -185,25 +185,8 @@ export class BlendMode {
   clone() { return new this.constructor().copy(this); }
 }
 
-// three's ReadbackBuffer (renderers/common/ReadbackBuffer.js): the caller-owned target of
-// `renderer.getArrayBufferAsync(attribute, target)`, which assigns `target.buffer` the bytes.
-export class ReadbackBuffer {
-  isReadbackBuffer = true;
-  name = "";
-  buffer = null;
-  #listeners = new Map();
-  constructor(maxByteLength) { this.maxByteLength = maxByteLength; }
-  addEventListener(type, listener) {
-    if (!this.#listeners.has(type)) this.#listeners.set(type, new Set());
-    this.#listeners.get(type).add(listener);
-  }
-  removeEventListener(type, listener) { this.#listeners.get(type)?.delete(listener); }
-  dispatchEvent(event) {
-    for (const listener of [...(this.#listeners.get(event.type) ?? [])]) listener.call(this, { ...event, target: this });
-  }
-  release() { this.dispatchEvent({ type: "release" }); }
-  dispose() { this.dispatchEvent({ type: "dispose" }); }
-}
+// three's ReadbackBuffer (shared with the Wasm back end).
+export { ReadbackBuffer } from "../../../../three-native/src/storage.ts";
 
 // Game-authored node lifecycles and fullscreen node materials have no V8 renderer binding. They stay
 // importable, so a game that defines a node class or imports them runs; one that constructs or calls

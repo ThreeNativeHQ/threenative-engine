@@ -56,8 +56,43 @@ function padded(array: StorageArray, itemSize: number): [StorageArray, number] {
   return [out, 4];
 }
 
+/**
+ * three's ReadbackBuffer (renderers/common/ReadbackBuffer.js): the caller-owned target of
+ * `renderer.getArrayBufferAsync(attribute, target)`, which assigns `target.buffer` the bytes.
+ */
+export class ReadbackBuffer {
+  isReadbackBuffer = true;
+  name = "";
+  buffer: ArrayBuffer | null = null;
+  readonly maxByteLength: number;
+  #listeners = new Map<string, Set<(event: object) => void>>();
+  constructor(maxByteLength: number) {
+    this.maxByteLength = maxByteLength;
+  }
+  addEventListener(type: string, listener: (event: object) => void): void {
+    if (!this.#listeners.has(type)) this.#listeners.set(type, new Set());
+    this.#listeners.get(type)?.add(listener);
+  }
+  removeEventListener(type: string, listener: (event: object) => void): void {
+    this.#listeners.get(type)?.delete(listener);
+  }
+  dispatchEvent(event: { type: string }): void {
+    for (const listener of [...(this.#listeners.get(event.type) ?? [])])
+      listener.call(this, { ...event, target: this });
+  }
+  release(): void {
+    this.dispatchEvent({ type: "release" });
+  }
+  dispose(): void {
+    this.dispatchEvent({ type: "dispose" });
+  }
+}
+
 export function defineStorage(
-  tsl: { storage(attribute: unknown, type: string, count: number): IStorageNode },
+  tsl: {
+    storage(attribute: unknown, type: string, count: number): IStorageNode;
+    readonly instanceIndex: unknown;
+  },
   BufferAttribute: new (
     array: ArrayBufferView,
     itemSize: number,
@@ -96,6 +131,11 @@ export function defineStorage(
     const node = tsl.storage(value, elementType, count || value.count);
     Object.defineProperty(node, "value", { value, enumerable: true });
     Object.defineProperty(node, "isStorageBufferNode", { value: true });
+    // three's StorageBufferNode.toAttribute(): the buffer as a per-instance vertex attribute. The engine reads
+    // the element of the instance being drawn, which is the same value in the vertex stage.
+    Object.defineProperty(node, "toAttribute", {
+      value: () => (node.element as (index: unknown) => unknown)(tsl.instanceIndex),
+    });
     return node;
   };
   const array =

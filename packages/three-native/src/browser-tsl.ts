@@ -540,7 +540,12 @@ export function defineTsl(
     Object.assign(
       exports,
       defineStorage(
-        { storage: makeStorage as never },
+        {
+          storage: makeStorage as never,
+          get instanceIndex() {
+            return exports.instanceIndex;
+          },
+        },
         (classes as unknown as { BufferAttribute: never }).BufferAttribute,
       ),
     );

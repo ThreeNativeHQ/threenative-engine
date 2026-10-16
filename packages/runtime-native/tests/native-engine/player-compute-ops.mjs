@@ -8,9 +8,9 @@ const executable = process.argv[2];
 assert(executable, "Usage: player-compute-ops.mjs <tn-native-engine-player-v8>");
 
 const { verdict, output } = await runComputeGame(executable, `
-import { PerspectiveCamera, Scene } from "three";
-import { Fn, If, Loop, all, and, any, float, instanceIndex, instancedArray, not, or, select, uint, vec3 } from "three/tsl";
-import { WebGPURenderer } from "three/webgpu";
+import { InstancedMesh, Matrix4, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RenderTarget, Scene, UnsignedByteType } from "three";
+import { Fn, If, Loop, all, and, any, float, instanceIndex, instancedArray, not, or, positionLocal, select, uint, vec3 } from "three/tsl";
+import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
 
 const faults = [];
 const same = (label, got, want) => {
@@ -79,6 +79,29 @@ async function run() {
     bools.element(7).assign(select(v.greaterThanEqual(vec3(1, 2, 4)).any(), 1, 0));
   })().compute(1));
   same("bools", await floats(bools), [0, 1, 1, 1, 1, 7, -2, 1]);
+
+  // toAttribute(): the buffer as a per-instance vertex attribute. Two quads a quarter wide sit where a kernel put
+  // them: the target's pixels 1-2 and 5-6 are covered.
+  const spots = instancedArray(2, "vec3");
+  renderer.compute(Fn(() => {
+    spots.element(instanceIndex).assign(vec3(float(instanceIndex).mul(1).sub(0.5), 0, 0));
+  })().compute(2));
+  const quad = new MeshBasicNodeMaterial();
+  quad.colorNode = vec3(1, 0, 0);
+  quad.positionNode = positionLocal.mul(vec3(0.25, 1, 1)).add(spots.toAttribute());
+  const field = new Scene();
+  const instances = new InstancedMesh(new PlaneGeometry(2, 2), quad, 2);
+  for (let i = 0; i < 2; i += 1) instances.setMatrixAt(i, new Matrix4());
+  field.add(instances);
+  const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+  camera.position.z = 2;
+  camera.updateMatrixWorld(true);
+  const strip = new RenderTarget(8, 2, { type: UnsignedByteType });
+  renderer.setRenderTarget(strip);
+  renderer.render(field, camera);
+  renderer.setRenderTarget(null);
+  const row = await renderer.readRenderTargetPixelsAsync(strip, 0, 0, 8, 1);
+  same("toAttribute", Array.from({ length: 8 }, (_, i) => row[i * 4]), [0, 255, 255, 0, 0, 255, 255, 0]);
 
   // A refusal names the unsupported form.
   let refusal = "";
