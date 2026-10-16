@@ -52,20 +52,20 @@ function fakeLoad(species: ISpecies): Promise<ISpecies> {
   });
 }
 
-/**
- * One attach the **count** decides, so the host turn is owed on every machine.
- *
- * `sliceSize: 1` cuts after the first object whatever the clock reads, so the timer queued here —
- * before the attach's own first yield — has run by the time the attach resolves. Nothing is
- * attached: the claim under test is the yield, and two more boxes would only change what the
- * capture shows.
- */
+/** Prove the count-owed turn with a timer yield; scheduler.yield can outrun an unrelated timer. */
 async function hostTurnOwedByCount(): Promise<boolean> {
   let hostRan = false;
-  setTimeout(() => {
-    hostRan = true;
-  }, 0);
-  await addInSlices([0, 1], () => {}, { marker: false, sliceSize: 1 });
+  await addInSlices([0, 1], () => {}, {
+    marker: false,
+    sliceSize: 1,
+    yieldFrame: () =>
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          hostRan = true;
+          resolve();
+        }, 0);
+      }),
+  });
   return hostRan;
 }
 
