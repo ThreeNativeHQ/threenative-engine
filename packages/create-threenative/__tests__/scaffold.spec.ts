@@ -269,7 +269,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "1d471f6dcfc420ff2ae593fc186b6935d6708d67355a3aa72463b9c63b4bcf57",
   shooter: "2859b02828c5ad7c2be79e1369e7d3e0ce7979e86995eb6ec81d37c445da9029",
   snow: "981cd0b3ddb518c5948d709ccf9545a3779e68fe32092e9f942a752754198964",
-  starter: "93d2a80d02108e3dc597cbc8f0c5c6b1d846da34bf76bf3c0bda020818b3ce46",
+  // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
+  starter: "a6ac2f82212d93facfbfc99917b04dabebf8dfdb3f487a3ae327c86db9696bf9",
   "tower-defense": "8a81959588b51a8632f4e0b7f80b442a4f431770beb0adde497e822af1496590",
 };
 
