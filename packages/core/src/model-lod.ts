@@ -146,7 +146,7 @@ export function conservativeViewDepth(
 export function worldSphere(
   local: Sphere,
   object: Object3D,
-  out: Sphere = local.clone(),
+  out: Sphere = new Sphere().copy(local), // the engine's Sphere binds no clone
   matrix: Matrix4 = object.matrixWorld,
 ): Sphere {
   out.center.copy(local.center).applyMatrix4(matrix);

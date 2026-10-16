@@ -6,6 +6,7 @@ import {
   type Object3D,
   PerspectiveCamera,
   Scene,
+  Sphere,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -177,6 +178,11 @@ afterEach(() => {
 
 describe("a TN_discrete_lod model on the Wasm engine's glTF loader", () => {
   it("gives the mesh its baked chain and the same switch distance as stock three", async () => {
+    // The engine's Sphere binds no `clone`, so selection may not reach for it.
+    const clone = vi.spyOn(Sphere.prototype, "clone");
+    clone.mockImplementation(() => {
+      throw new TypeError("local.clone is not a function");
+    });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { meshes, scene } = engineScene();
     await load(cookedGlb(), scene);
