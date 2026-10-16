@@ -57,10 +57,10 @@ function referenceValue(property: string, type: string, object: unknown): unknow
  * then the edited objects' lanes.
  */
 export function liveUniforms<TNode extends object>(
-  uniform: (value: unknown) => TNode,
+  uniform: (value: unknown, type?: unknown) => TNode,
   setValues: (node: TNode, lanes: readonly number[]) => void,
 ): {
-  uniform: (value: unknown) => TNode;
+  uniform: (value: unknown, type?: unknown) => TNode;
   uniformArray: (
     values: unknown[],
     type?: string,
@@ -73,8 +73,8 @@ export function liveUniforms<TNode extends object>(
   const updating = new Set<WeakRef<TNode>>();
   let frameId = 0;
   const live = {
-    uniform(value: unknown): TNode {
-      const node = uniform(value);
+    uniform(value: unknown, type?: unknown): TNode {
+      const node = type === undefined ? uniform(value) : uniform(value, type);
       const state: IUniformState = { value };
       states.set(node, state);
       Object.defineProperty(node, "value", {

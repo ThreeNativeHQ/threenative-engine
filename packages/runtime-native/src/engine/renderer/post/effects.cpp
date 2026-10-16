@@ -382,6 +382,9 @@ uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, 
     if (!captured_)
         captureUniforms();
     captured_ = false;
+    // three's deltaTime: this frame's time minus the one before (the first frame gets 1/60).
+    const float delta = lastTime_ < 0 ? 1.0f / 60.0f : std::max(0.0f, time - lastTime_);
+    lastTime_ = time;
     graph::RenderGraph graph;
     std::map<std::string, graph::ResourceId> resources;
     const graph::TextureDesc desc{width_, height_, uint32_t(WGPUTextureFormat_RGBA16Float),
@@ -423,6 +426,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder encoder, WGPUTextureView scene, 
         for (const auto& [name, value] : pass.captured)
             values[name] = value;
         values["time"] = {time};
+        values["deltaTime"] = {delta};
         values["toneMappingExposure"] = {exposure};
         values["cameraNear"] = {static_cast<float>(camera.near)};
         values["cameraFar"] = {static_cast<float>(camera.far)};

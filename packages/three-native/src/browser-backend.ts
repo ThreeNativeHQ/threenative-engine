@@ -1080,7 +1080,14 @@ export function defineBrowserClasses(
             else entry.array = fresh;
             entry.epoch = epoch;
           }
-          pending.add(this);
+          // A storage attribute's array is its initial contents: a kernel writes the GPU copy, never this array,
+          // so reading it is not an edit, and writing it back would overwrite the kernel's result.
+          const flags = this as {
+            isStorageBufferAttribute?: boolean;
+            isStorageInstancedBufferAttribute?: boolean;
+          };
+          if (!flags.isStorageBufferAttribute && !flags.isStorageInstancedBufferAttribute)
+            pending.add(this);
           return entry.array;
         },
       });

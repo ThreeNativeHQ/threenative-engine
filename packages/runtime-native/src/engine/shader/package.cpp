@@ -16,7 +16,7 @@ UpdateSchedule scheduleFor(std::string_view name) {
     for (std::string_view camera : {"viewMatrix", "projectionMatrix", "viewProjection", "cameraPosition"}) {
         if (name == camera) return UpdateSchedule::Camera;
     }
-    for (std::string_view frame : {"time", "dt", "frame"}) {
+    for (std::string_view frame : {"time", "deltaTime", "dt", "frame"}) {
         if (name == frame) return UpdateSchedule::Frame;
     }
     if (name == "resolution") return UpdateSchedule::Render;

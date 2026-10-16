@@ -303,7 +303,7 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
     auto floating = [&](size_t i) { return type(i).scalar == Type::Scalar::F32 && !type(i).isMatrix(); };
     Type result{};
     std::string error;
-    const std::string_view unary[] = {"abs", "sin", "cos", "asin", "floor", "fract", "sqrt", "exp", "exp2", "log2", "normalize", "dFdx", "dFdy", "sign", "atan", "fwidth"};
+    const std::string_view unary[] = {"abs", "sin", "cos", "asin", "floor", "fract", "sqrt", "exp", "exp2", "log2", "log", "normalize", "dFdx", "dFdy", "sign", "atan", "fwidth"};
     const std::string_view binary[] = {"min", "max", "pow", "step", "atan2", "mod"};
     bool known = false;
     for (std::string_view name : unary) {
@@ -593,6 +593,14 @@ void Program::discard(Where where) {
     emit(Stmt{StmtKind::Discard});
 }
 
+void Program::returnEarly(Where where) {
+    if (stage_ != Stage::Compute) {
+        fail("Return", "only a compute kernel ends early", where);
+        return;
+    }
+    emit(Stmt{StmtKind::Return});
+}
+
 void Program::output(std::string_view name, ExprId value, Where where) {
     if (value == kInvalid) return;
     const Type type = exprs_[value].type;
@@ -743,6 +751,7 @@ void Program::dumpBlock(uint32_t block, int depth, std::string& out, std::vector
                        describe(s.c, numbering) + "\n";
                 break;
             case StmtKind::Discard: out += indent + "discard\n"; break;
+            case StmtKind::Return: out += indent + "return\n"; break;
             case StmtKind::Output:
                 out += indent + "output " + names_[outputs_[s.a].name] + " = " + describe(s.b, numbering) + "\n";
                 break;

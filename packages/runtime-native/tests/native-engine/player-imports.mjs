@@ -409,7 +409,7 @@ globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(
   const merged = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8" });
   assert.equal(merged.status, 0, `${merged.stdout}\n${merged.stderr}`);
 }
-// BufferGeometry.setFromPoints equals three's: Vector3 and Vector2 points fill a new `position`
+// BufferGeometry.setFromPoints, Curve.computeFrenetFrames and InstancedMesh.computeBoundingSphere equal three's: Vector3 and Vector2 points fill a new `position`
 // (z reads 0), and a shorter list overwrites the front of an attribute already there.
 {
   const fromNative = createRequire(resolve(native, "package.json"));
@@ -424,14 +424,30 @@ globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(
     filled.setFromPoints([new K.Vector3(9, 9, 9)]);
     const position = filled.getAttribute("position");
     out.push([position.count === before, position.getX(0), position.getY(0), position.getZ(0)]);
+    // Curve.computeFrenetFrames, as the shooter's palm trunk sweeps its rings.
+    const spine = new K.CatmullRomCurve3([new K.Vector3(0, 0, 0), new K.Vector3(0.4, 2, 0.1), new K.Vector3(1.1, 4, -0.3)]);
+    const frames = spine.computeFrenetFrames(6, false);
+    out.push(["tangents", "normals", "binormals"].map((name) => frames[name].map((v) => [v.x, v.y, v.z].map((n) => Math.round(n * 1e9) / 1e9))));
+    // Object3D.localToWorld and worldToLocal answer the vector they were handed.
+    const frame = new K.Group();
+    frame.position.set(1, 2, 3);
+    frame.updateMatrixWorld(true);
+    const local = new K.Vector3(1, 0, 0);
+    out.push([frame.localToWorld(local) === local, local.toArray(), frame.worldToLocal(new K.Vector3(5, 5, 5)).toArray()]);
+    // InstancedMesh.computeBoundingSphere: the union of every instance's sphere, as the shooter's palms.
+    const grove = new K.InstancedMesh(new K.BoxGeometry(1, 2, 1), new K.MeshBasicMaterial(), 3);
+    [[0, 0, 0], [5, 1, -2], [-3, 0, 4]].forEach(([x, y, z], slot) => grove.setMatrixAt(slot, new K.Matrix4().makeTranslation(x, y, z)));
+    grove.computeBoundingSphere();
+    const sphere = grove.boundingSphere;
+    out.push([sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius].map((n) => Math.round(n * 1e9) / 1e9));
     return JSON.stringify(out);
   };
   await writeFile(entry, `
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
-import { BufferGeometry, BoxGeometry, Vector2, Vector3, Scene, PerspectiveCamera } from "three";
+import { BufferGeometry, BoxGeometry, CatmullRomCurve3, Group, InstancedMesh, Matrix4, MeshBasicMaterial, Vector2, Vector3, Scene, PerspectiveCamera } from "three";
 function check(value, name) { if (!value) throw Error("POINTS_CHECK: " + name); }
 const probe = ${probe.toString()};
-check(probe({ BufferGeometry, BoxGeometry, Vector2, Vector3 }) === ${JSON.stringify(probe(T))}, "setFromPoints equals three's");
+check(probe({ BufferGeometry, BoxGeometry, CatmullRomCurve3, Group, InstancedMesh, Matrix4, MeshBasicMaterial, Vector2, Vector3 }) === ${JSON.stringify(probe(T))}, "setFromPoints, computeFrenetFrames and computeBoundingSphere and localToWorld equal three's");
 globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
 `);
   await bundleNativeEngine({ entry, outfile, boot: false });

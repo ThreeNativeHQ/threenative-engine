@@ -58,9 +58,15 @@ bool ComputePass::dispatch(WGPUCommandEncoder encoder, std::span<const Handle> s
 }
 
 void ComputePass::dispatchValues(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
-                                 const std::map<std::string, std::vector<float>>& uniforms) {
+                                 const std::map<std::string, std::vector<float>>& uniforms, const FrameClock& clock) {
     std::vector<uint8_t> block(module_.uniformBlockSize);
     for (const shader::UniformField& f : module_.uniforms) {
+        // The engine's own frame clock, as the render passes get it.
+        if ((f.name == "time" || f.name == "deltaTime") && f.type == shader::Type::f32()) {
+            const uint32_t word = std::bit_cast<uint32_t>(f.name == "time" ? clock.time : clock.delta);
+            std::memcpy(&block[f.offset], &word, 4);
+            continue;
+        }
         const auto found = uniforms.find(f.name);
         if (found == uniforms.end())
             throw std::runtime_error("TN_COMPUTE_UNIFORM: " + f.name + " is the engine's own value and has no meaning in a compute kernel");
@@ -337,7 +343,7 @@ ComputePass& GraphCompute::prepare(const graph::Node& node) {
     return *passes_.emplace(id, std::move(pass)).first->second;
 }
 
-void GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch) {
+void GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock) {
     ComputePass& pass = prepare(dispatch.node);
     std::unordered_map<std::string, const BufferAttribute*> attributes;
     std::unordered_set<const graph::NodeData*> seen;
@@ -353,7 +359,7 @@ void GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dis
         storage.push_back(cache_.sync(*found->second->store,
                                       WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst));
     }
-    pass.dispatchValues(encoder, storage, static_cast<uint32_t>(dispatch.node->bits), dispatch.uniforms);
+    pass.dispatchValues(encoder, storage, static_cast<uint32_t>(dispatch.node->bits), dispatch.uniforms, clock);
 }
 
 void ComputeQueue::dispatch(const graph::Node& node) { items_.push_back({ComputeDispatch::of(node), nullptr, {}, false}); }

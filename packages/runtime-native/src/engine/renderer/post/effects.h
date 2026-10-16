@@ -73,5 +73,6 @@ class PostEffects {
     WGPUSampler linear_ = nullptr;
     uint32_t width_ = 0, height_ = 0;
     bool captured_ = false;
+    float lastTime_ = -1;  // the frame time of the render before, for deltaTime
 };
 } // namespace tn::engine

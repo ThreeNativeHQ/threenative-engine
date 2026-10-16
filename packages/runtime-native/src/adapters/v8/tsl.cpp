@@ -188,6 +188,9 @@ v8::Local<v8::Object> Tsl::wrap(g::Node node) {
     object->SetInternalField(0, v8::External::New(isolate_, this));
     object->SetInternalField(1, v8::External::New(isolate_, w));
     w->object.Reset(isolate_, object);
+    // three's ComputeNode flag, which a game (GPUParticles3D) checks before queueing the kernel.
+    if (w->node && w->node->kind == g::Kind::Compute)
+        object->Set(isolate_->GetCurrentContext(), str(isolate_, "isComputeNode"), v8::True(isolate_)).Check();
     wrappers_.insert(w);
     w->object.SetWeak(
         w,
@@ -311,6 +314,11 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(2); statement();
         return result(scoped(name.c_str(), nullptr, {abi::TslArg::of(arg(0)), abi::TslArg::of(arg(1))}));
     }
+    if (name == "Break" || name == "Continue" || name == "Return") {
+        if (name == "Return" && info.Length() > 0) throw std::runtime_error("Return(value) is not supported; Return() ends a compute kernel");
+        arity(0); statement();
+        return result(scoped(name.c_str(), nullptr, {}));
+    }
     if (name == "toVar") {
         arity(0);
         return result(scoped("toVar", &receiver, {}));
@@ -394,7 +402,7 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         statement();
         // Loop(count, ({ i }) => ...) or three's Loop({ type, start, end, name }, ({ i }) => ...).
         std::string indexType = "int", indexName = "i";
-        abi::TslArg n, start = abi::TslArg::of(0.0);
+        abi::TslArg n, start = abi::TslArg::of(0.0), step = abi::TslArg::of(1.0);
         if (info[0]->IsObject() && !wrapper(info[0])) {
             const auto params = info[0].As<v8::Object>();
             const auto field = [&](const char* key) {
@@ -402,12 +410,17 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
                 if (!params->Get(ctx, str(isolate_, key)).ToLocal(&value)) throw JsFailure{};
                 return value;
             };
-            for (const char* unsupported : {"condition", "update"})
-                if (!field(unsupported)->IsUndefined())
-                    throw std::runtime_error(std::string("Loop ") + unsupported + " is not supported; give the loop an end");
+            // The engine counts up while the index is below the end, by a whole step: condition "<" and a numeric update.
+            if (!field("condition")->IsUndefined() && text(isolate_, field("condition")) != "<")
+                throw std::runtime_error("Loop condition is not supported; the loop runs while the index is below the end (\"<\")");
+            if (!field("update")->IsUndefined()) {
+                if (!field("update")->IsNumber())
+                    throw std::runtime_error("Loop update is not supported; give a whole number step");
+                step = abi::TslArg::of(field("update").As<v8::Number>()->Value());
+            }
             if (!field("type")->IsUndefined()) indexType = text(isolate_, field("type"));
             if (!field("name")->IsUndefined()) indexName = text(isolate_, field("name"));
-            if (!field("start")->IsUndefined()) start = abi::TslArg::of(static_cast<double>(count(field("start"))));
+            if (!field("start")->IsUndefined()) start = argument(name, 0, 1, field("start"));
             n = field("end")->IsNumber() ? abi::TslArg::of(static_cast<double>(count(field("end"))))
                                          : argument(name, 0, 1, field("end"));
             if (n.kind != abi::TslArg::Kind::Number && n.kind != abi::TslArg::Kind::Node)
@@ -419,7 +432,7 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         const auto index = scoped("Loop:index", nullptr, {abi::TslArg::of(indexType)});
         const auto inputs = v8::Object::New(isolate_);
         inputs->Set(ctx, str(isolate_, indexName), wrap(index)).Check();
-        return result(scoped("Loop", nullptr, {n, abi::TslArg::of(index), abi::TslArg::of(capture(body, inputs)), start}));
+        return result(scoped("Loop", nullptr, {n, abi::TslArg::of(index), abi::TslArg::of(capture(body, inputs)), start, step}));
     }
     // TSL storage(attribute, type, count): a storage buffer over the engine BufferAttribute's data.
     if (name == "storage") {
@@ -587,7 +600,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
     nodeTemplate_.Reset(isolate_, node);
     const auto module = v8::Object::New(isolate_);
     for (const char* name : {"float",      "int",   "uint",    "vec2",      "vec3",   "vec4",     "uniform",
-                             "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",     "instancedArray", "storage",
+                             "attribute",  "uv",    "texture", "Fn",        "If",     "Loop",   "Break", "Continue", "Return", "log",     "instancedArray", "storage",
                              "add",        "sub",   "mul",     "div",       "negate", "lessThan", "greaterThan",
                              "equal",      "lessThanEqual", "greaterThanEqual", "and", "or", "not", "all", "any", "abs",   "sin",     "cos",       "floor",  "fract",    "sqrt",
                              "exp",        "exp2",  "log2",    "normalize", "length", "atan",     "min",      "max",

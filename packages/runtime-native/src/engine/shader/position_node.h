@@ -16,15 +16,19 @@ struct MaterialNodes {
     graph::Node colorNode, positionNode, normalNode, emissiveNode, roughnessNode, metalnessNode, opacityNode;
     /** NodeMaterial.vertexNode: the clip-space position itself, replacing model-view-projection. */
     graph::Node vertexNode, fragmentNode;
+    /** SpriteNodeMaterial.scaleNode (a vec2 beside the model scale) and rotationNode (radians, over the material's). */
+    graph::Node scaleNode, rotationNode;
     bool operator==(const MaterialNodes&) const = default;
     auto pointers() const {
         return std::array{colorNode.get(),    positionNode.get(),  normalNode.get(),
                           emissiveNode.get(), roughnessNode.get(), metalnessNode.get(),
-                          opacityNode.get(),  vertexNode.get(),    fragmentNode.get()};
+                          opacityNode.get(),  vertexNode.get(),    fragmentNode.get(),
+                          scaleNode.get(),    rotationNode.get()};
     }
     auto graphs() const {
         return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
-                          metalnessNode, opacityNode,  vertexNode, fragmentNode};
+                          metalnessNode, opacityNode,  vertexNode, fragmentNode,
+                          scaleNode,     rotationNode};
     }
     std::string key() const {
         std::string out;

@@ -18,7 +18,7 @@ import {
 } from "../src/browser-backend.js";
 import { type ITslRuntime, type TslArgValue, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
-import { readStorageBytes } from "../src/storage.js";
+import { ReadbackBuffer, readStorageBytes } from "../src/storage.js";
 
 const REPO = process.cwd();
 const catalog = loadCatalog(REPO);
@@ -143,6 +143,16 @@ describe("storage buffers on the Wasm facade", () => {
     // Any later engine call finds nothing pending: the array is not written over the GPU copy again.
     (buffer.value as unknown as { clone(): unknown }).clone();
     expect(writes).toHaveLength(1);
+    // Reading the CPU array of a storage attribute hands the game its initial contents; it is not a pending edit,
+    // so a later engine call does not write it over what a kernel put on the GPU.
+    const attribute = buffer.value as unknown as { array: Float32Array; clone(): unknown };
+    expect(attribute.array).toHaveLength(4);
+    attribute.clone();
+    expect(writes).toHaveLength(1);
+    // An edit followed by needsUpdate still reaches the engine.
+    attribute.array[0] = 9;
+    buffer.value.needsUpdate = true;
+    expect(writes).toHaveLength(2);
   });
 
   it("indexes an element of the attribute's own buffer, atomically when asked", () => {
@@ -171,6 +181,21 @@ describe("storage buffers on the Wasm facade", () => {
     ).toThrow(/toAtomic: expected int or uint/u);
   });
 
+  it("reads toAttribute() as the element of the instance being drawn", () => {
+    const calls: ICall[] = [];
+    const tsl = tslOver(calls);
+    const buffer = (
+      tsl.instancedArray as (
+        count: number,
+        type: string,
+      ) => IStorageBuffer & { toAttribute(): object }
+    )(4, "vec3");
+    expect(buffer.toAttribute()).toBeDefined();
+    const element = calls.filter((call) => call.name === "storage:object").at(-1);
+    expect(element?.args[3]?.kind).toBe("node");
+    expect(calls.some((call) => call.name === "constant:instanceIndex")).toBe(true);
+  });
+
   it("names the compute dispatch size through the shared node method", () => {
     const calls: ICall[] = [];
     const tsl = tslOver(calls);
@@ -179,6 +204,7 @@ describe("storage buffers on the Wasm facade", () => {
     )(() => {})();
     kernel.compute(1000, 32);
     const compute = calls.find((call) => call.name === "compute");
+    expect((kernel.compute(1, 1) as { isComputeNode?: boolean }).isComputeNode).toBe(true);
     expect(compute?.args).toEqual([
       { kind: "number", number: 1000 },
       { kind: "number", number: 32 },
@@ -244,6 +270,48 @@ describe("TSL operators SoftBody3D needs, on the Wasm facade", () => {
     expect(elseIf?.args.map((arg) => arg.kind)).toEqual(["node", "node"]);
   });
 
+  it("makes Break, Continue and Return statements, and log and deltaTime nodes", () => {
+    const calls: ICall[] = [];
+    const tsl = tslOver(calls);
+    (tsl.Fn as (f: () => void) => () => void)(() => {
+      (tsl.Loop as (n: number, f: () => void) => void)(2, () => {
+        (tsl.Continue as () => unknown)();
+        (tsl.Break as () => unknown)();
+      });
+      (tsl.Return as () => unknown)();
+    })();
+    expect(
+      calls.map((call) => call.name).filter((n) => /^(Break|Continue|Return)$/u.test(n)),
+    ).toEqual(["Continue", "Break", "Return"]);
+    const one = (tsl.float as (n: number) => Node)(1);
+    (tsl.log as (a: unknown) => unknown)(one);
+    expect(calls.some((call) => call.name === "log")).toBe(true);
+    expect(tsl.deltaTime).toBeDefined();
+    expect(() => (tsl.Break as () => unknown)()).toThrow(/outside Fn|Fn/u);
+  });
+
+  it("passes uniform(value, type) and a stepped Loop's start and step to the engine", () => {
+    const calls: ICall[] = [];
+    const tsl = tslOver(calls);
+    (tsl.uniform as (v: number, t: string) => unknown)(3, "uint");
+    const uniform = calls.find((call) => call.name === "uniform");
+    expect(uniform?.args).toEqual([
+      { kind: "number", number: 3 },
+      { kind: "string", text: "uint" },
+    ]);
+    (tsl.Fn as (f: () => void) => () => void)(() => {
+      (tsl.Loop as (p: unknown, f: () => void) => void)(
+        { type: "uint", start: 1, end: 9, update: 4 },
+        () => {},
+      );
+    })();
+    const loop = calls.find((call) => call.name === "Loop");
+    expect(loop?.args.slice(3)).toEqual([
+      { kind: "number", number: 1 },
+      { kind: "number", number: 4 },
+    ]);
+  });
+
   it("takes three's object-form Loop: type, start, end and the index name", () => {
     const calls: ICall[] = [];
     const tsl = tslOver(calls);
@@ -292,6 +360,17 @@ describe("getArrayBufferAsync result forms", () => {
     const buffer = { isReadbackBuffer: true, buffer: null as unknown };
     expect(await readStorageBytes(read, {}, buffer)).toBe(buffer);
     expect(new Uint8Array(buffer.buffer as ArrayBuffer)).toEqual(new Uint8Array(bytes));
+  });
+
+  it("hands the shared ReadbackBuffer its bytes and tells its release listeners", async () => {
+    const buffer = new ReadbackBuffer(8);
+    const heard: string[] = [];
+    buffer.addEventListener("release", (event) => heard.push((event as { type: string }).type));
+    expect(await readStorageBytes(read, {}, buffer)).toBe(buffer);
+    expect(new Uint8Array(buffer.buffer as ArrayBuffer)).toEqual(new Uint8Array(bytes));
+    expect(buffer.maxByteLength).toBe(8);
+    buffer.release();
+    expect(heard).toEqual(["release"]);
   });
 
   it("refuses an offset or count that is not a multiple of 4, as three does", async () => {

@@ -213,6 +213,8 @@ class V8Game {
         bool pointer = false;
     };
     std::deque<WindowInput> windowInput_;
+    double pointerX_ = 0, pointerY_ = 0;  // the playtest mouse's last position, for movementX/Y
+    bool pointerSeen_ = false;
     void installWindowInput();
     void deliverWindowInput(v8::Local<v8::Context> ctx);
     inspect::Endpoint* endpoint_ = nullptr;
@@ -965,11 +967,13 @@ bool V8Game::observe(const std::string& method, const json::Value* argument, jso
         }
         output = promise->Result();
     }
+    // A bridge method that answers nothing (applySetup may) reads in a page as no result: null here.
+    if (output->IsUndefined()) output = v8::Null(isolate_);
     v8::Local<v8::String> encoded;
     if (!v8::JSON::Stringify(ctx, output).ToLocal(&encoded)) return fail("observation is not JSON");
     v8::String::Utf8Value text(isolate_, encoded);
     json::Error parseError;
-    if (!json::parse(std::string_view(*text, text.length()), result, parseError)) return fail("invalid JSON observation");
+    if (!json::parse(std::string_view(*text, text.length()), result, parseError)) return fail("invalid JSON observation: " + parseError.code + " " + parseError.detail + " at byte " + std::to_string(parseError.offset) + " near `" + std::string(*text, parseError.offset > 24 ? parseError.offset - 24 : 0, 56) + "`");
     return true;
 }
 
@@ -1303,11 +1307,39 @@ void V8Game::tick(double dt) {
             // A pointer goes to the UI first, through the legacy host's hit test and gesture latch
             // (PRD-554): a press on a published UI island is the page's, any other is the game's.
             // The runner sends viewport pixels, which are the drawing buffer's; the hit test takes 0..1.
-            else if (event.type.rfind("pointer", 0) == 0 && mystral::platform::uiOverlayAttached() && renderer_ &&
-                     renderer_->width() > 0 && renderer_->height() > 0)
-                mystral::platform::uiOverlayRoutePointer(event.type.c_str(), float(event.x / renderer_->width()),
-                                                         float(event.y / renderer_->height()), int(event.buttons),
-                                                         event.pointerId);
+            else if (event.type.rfind("pointer", 0) == 0 || event.type == "wheel") {
+                const bool sized = renderer_ && renderer_->width() > 0 && renderer_->height() > 0;
+                if (sized && mystral::platform::uiOverlayAttached()) {
+                    const float nx = float(event.x / renderer_->width()), ny = float(event.y / renderer_->height());
+                    const bool page = event.type == "wheel"
+                        ? mystral::platform::uiOverlayRouteWheel(nx, ny, float(event.deltaX), float(event.deltaY))
+                        : mystral::platform::uiOverlayRoutePointer(event.type.c_str(), nx, ny, int(event.buttons),
+                                                                   event.pointerId);
+                    if (page) continue;
+                }
+                // Not the page's: the game gets it as a window's pointer does, so a scenario's click, aim
+                // and look reach its canvas listeners. `button` follows the legacy host's synthetic press.
+                if (event.type == "wheel") {
+                    windowInput_.push_back({.type = "wheel", .x = event.x, .y = event.y,
+                                            .deltaX = event.deltaX, .deltaY = event.deltaY});
+                    continue;
+                }
+                const bool mouse = event.pointerType == "mouse";
+                const double moveX = mouse && pointerSeen_ ? event.x - pointerX_ : 0;
+                const double moveY = mouse && pointerSeen_ ? event.y - pointerY_ : 0;
+                if (mouse && event.type != "pointerup" && event.type != "pointercancel") {
+                    pointerX_ = event.x;
+                    pointerY_ = event.y;
+                    pointerSeen_ = true;
+                }
+                const int button = event.buttons == 0 ? 0 : int(event.buttons) - 1;
+                if (event.type == "pointermove" && mouse)
+                    windowInput_.push_back({.type = "mousemove", .x = event.x, .y = event.y, .movementX = moveX,
+                                            .movementY = moveY, .button = button, .buttons = int(event.buttons)});
+                windowInput_.push_back({.type = event.type, .pointerType = event.pointerType, .x = event.x,
+                                        .y = event.y, .movementX = moveX, .movementY = moveY, .button = button,
+                                        .buttons = int(event.buttons), .pointerId = event.pointerId, .pointer = true});
+            }
         }
     }
     deliverWindowInput(ctx);

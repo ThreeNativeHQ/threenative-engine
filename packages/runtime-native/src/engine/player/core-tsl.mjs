@@ -22,7 +22,7 @@ export const syncUniforms = live.sync;
 export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
 export const {
-  atomicAdd, atomicStore, atomicLoad, lightShadowMatrix, attribute, uv, texture, renderOutput, Fn, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
+  atomicAdd, atomicStore, atomicLoad, Break, Continue, Return, log, lightShadowMatrix, attribute, uv, texture, renderOutput, Fn, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
   add, sub, mul, div, negate, lessThan, greaterThan, equal, lessThanEqual, greaterThanEqual, and, or, not, all, any, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,
@@ -35,7 +35,7 @@ export const {
 export const {
   oneMinus, screenCoordinate, normalGeometry, tangentGeometry, positionViewDirection, dFdx, dFdy, lengthSq,
   normalLocal, tangentLocal, positionPrevious,
-  atan, mod, fwidth, saturation, mat2, hash, time, transformDirection, normalWorldGeometry,
+  atan, mod, fwidth, saturation, mat2, hash, time, deltaTime, transformDirection, normalWorldGeometry,
   getViewPosition, frameGroup, renderGroup, objectGroup, transformNormalToView, property,
 } = globalThis.tsl;
 

@@ -1255,6 +1255,7 @@
     "CatmullRomCurve3": {
       "constructor": true,
       "methods": [
+        "computeFrenetFrames",
         "getLength",
         "getLengths",
         "getPoint",

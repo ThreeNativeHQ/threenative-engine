@@ -528,7 +528,21 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         return node;
     }
     if (name == "uniform") {
-        arity(1);
+        // uniform(value) or three's uniform(value, type): a whole number takes "uint" or "int", anything else its own type.
+        if (args.size() == 2 && args[0].kind == TslArg::Kind::Number) {
+            const Type wanted = type(text(args[1]));
+            if (wanted.isScalar() && wanted.scalar != Type::Scalar::F32 && wanted.scalar != Type::Scalar::Bool) {
+                if (args[0].number != std::floor(args[0].number)) throw std::runtime_error("a " + wanted.name() + " uniform holds a whole number");
+                return g::uniform("nodeUniform" + std::to_string(++serial), wanted, {static_cast<float>(args[0].number)});
+            }
+        }
+        if (args.size() == 2) {
+            const Type wanted = type(text(args[1]));
+            if (wanted != arg(0)->type && !(wanted == Type::f32() && arg(0)->type == Type::f32()))
+                throw std::runtime_error("uniform type " + wanted.name() + " does not match its value");
+        } else {
+            arity(1);
+        }
         const auto value = arg(0);
         if (value->type == Type{})
             throw std::runtime_error("uniform value needs a concrete type");
@@ -854,7 +868,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         return g::symbol(lhs());                                                                                       \
     }
             UNARY(negate) UNARY(abs) UNARY(sin) UNARY(cos) UNARY(floor) UNARY(fract) UNARY(sqrt) UNARY(exp) UNARY(exp2)
-                UNARY(log2) UNARY(normalize) UNARY(length) UNARY(dFdx) UNARY(dFdy) UNARY(sign) UNARY(fwidth) UNARY(all) UNARY(any)
+                UNARY(log2) UNARY(log) UNARY(normalize) UNARY(length) UNARY(dFdx) UNARY(dFdy) UNARY(sign) UNARY(fwidth) UNARY(all) UNARY(any)
 #undef UNARY
     // r185's cbrt (MathNode.js): sign(a) * pow(abs(a), 1 / 3).
     if (name == "cbrt") {
@@ -1019,7 +1033,9 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"materialMetalness", g::uniform("metalness", Type::f32())},
             {"materialRoughness", g::uniform("roughness", Type::f32())},
             // three's time (utils/Timer.js): the frame's elapsed seconds, a uniform the renderer fills.
-            {"time", g::uniform("time", Type::f32())}};
+            {"time", g::uniform("time", Type::f32())},
+            // three's deltaTime: seconds since the frame before, filled the same way.
+            {"deltaTime", g::uniform("deltaTime", Type::f32())}};
     // The node constants tslCall also answers by name; neither takes a serial.
     uint64_t serial = 0;
     for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "cameraNear", "cameraFar", "screenSize", "depth",
@@ -1134,6 +1150,17 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         out = target;
         return true;
     }
+    // r185's Break(), Continue() and Return(): a loop or kernel ends early. `Return(value)` belongs to a Fn that
+    // returns one, which the live graph does not build yet, so it refuses by name.
+    if (name == "Break" || name == "Continue" || name == "Return") {
+        if (name == "Return" && !args.empty()) throw std::runtime_error("Return(value) is not supported; Return() ends a compute kernel");
+        arity(0);
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = name == "Break" ? g::Kind::Break : name == "Continue" ? g::Kind::Continue : g::Kind::Return;
+        open().back().statements.push_back(node);
+        out = node;
+        return true;
+    }
     if (name == "If") {
         arity(2);
         auto& current = open().back();
@@ -1191,39 +1218,43 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         return true;
     }
     if (name == "Loop") {
-        if (args.size() != 3 && args.size() != 4) throw std::runtime_error("expected 3 or 4 arguments");
+        // Loop(end, index, body [, start [, step]]): the index runs start, start + step, ... while below `end`.
+        // `end` and `start` are whole numbers or integer nodes, `step` a positive whole number.
+        if (args.size() < 3 || args.size() > 5) throw std::runtime_error("expected 3 to 5 arguments");
         auto& statements = open().back().statements;
-        // `end` is a whole number or an integer node; `start` a whole number below it. The engine loops from 0 to
-        // end - start and adds start to the index.
-        const double start = args.size() == 4 && args[3].kind == TslArg::Kind::Number ? args[3].number : 0;
-        if (args.size() == 4 && args[3].kind != TslArg::Kind::Number) throw std::runtime_error("Loop start must be a whole number");
-        if (start < 0 || start > std::numeric_limits<int32_t>::max() || start != std::floor(start))
-            throw std::runtime_error("expected a nonnegative i32 start");
-        g::Node count;
-        if (args[0].kind == TslArg::Kind::Number) {
-            const double n = args[0].number - start;
-            if (n < 0 || args[0].number > std::numeric_limits<int32_t>::max() || args[0].number != std::floor(args[0].number))
-                throw std::runtime_error("expected a nonnegative i32 count");
-            count = g::int_(static_cast<int32_t>(n));
-        } else if (args[0].kind == TslArg::Kind::Node && args[0].node) {
-            count = args[0].node;
-            if (count->type != Type::i32()) {
-                auto convert = std::make_shared<g::NodeData>();
-                convert->kind = g::Kind::Convert;
-                convert->type = Type::i32();
-                convert->args = {count};
-                count = convert;
+        const auto whole = [](double n) { return n >= 0 && n <= std::numeric_limits<int32_t>::max() && n == std::floor(n); };
+        const auto integer = [&](const TslArg& a, const char* what) -> g::Node {
+            if (a.kind == TslArg::Kind::Number) {
+                if (!whole(a.number)) throw std::runtime_error(std::string("expected a nonnegative i32 ") + what);
+                return g::int_(static_cast<int32_t>(a.number));
             }
-            if (start != 0) count = g::sub(count, g::int_(static_cast<int32_t>(start)));
-        } else {
-            throw std::runtime_error("expected a nonnegative i32 count");
-        }
+            if (a.kind != TslArg::Kind::Node || !a.node) throw std::runtime_error(std::string("expected a nonnegative i32 ") + what);
+            if (a.node->type == Type::i32()) return a.node;
+            auto convert = std::make_shared<g::NodeData>();
+            convert->kind = g::Kind::Convert;
+            convert->type = Type::i32();
+            convert->args = {a.node};
+            return convert;
+        };
+        const g::Node end = integer(args[0], "count");
+        const g::Node start = args.size() > 3 ? integer(args[3], "start") : g::int_(0);
+        const double step = args.size() > 4 && args[4].kind == TslArg::Kind::Number ? args[4].number : 1;
+        if (args.size() > 4 && args[4].kind != TslArg::Kind::Number) throw std::runtime_error("Loop step must be a whole number");
+        if (step < 1 || !whole(step)) throw std::runtime_error("Loop step must be a positive whole number");
+        const auto constant = [](const g::Node& n) { return n->kind == g::Kind::Constant; };
+        g::Node count = end;
+        const bool startZero = constant(start) && start->bits == 0;
+        if (!startZero) count = g::sub(end, start);
+        if (step > 1) count = g::div(g::add(count, g::int_(static_cast<int32_t>(step) - 1)), g::int_(static_cast<int32_t>(step)));
         if (args[1].kind != TslArg::Kind::Node || !args[1].node || args[1].node->kind != g::Kind::LoopIndex)
             throw std::runtime_error("Loop needs the index Loop:index made");
         auto node = std::make_shared<g::NodeData>();
         node->kind = g::Kind::Loop;
         node->args = {count, args[1].node};
-        if (start != 0) node->args.push_back(g::int_(static_cast<int32_t>(start)));
+        if (!startZero || step > 1) {
+            node->args.push_back(start);
+            node->args.push_back(g::int_(static_cast<int32_t>(step)));
+        }
         node->body = body(2, "Loop");
         statements.push_back(node);
         out = node;
