@@ -756,7 +756,10 @@ function cleanupFailure(errors: readonly unknown[]): Error {
     const error = errors[0];
     return error instanceof Error ? error : new Error(String(error));
   }
-  return new AggregateError(errors, "Device playtest cleanup failed.");
+  if (errors.length === 0) return new AggregateError(errors, "Device playtest cleanup failed.");
+  const primary = errors[0];
+  const detail = primary instanceof Error ? primary.message : String(primary);
+  return new AggregateError(errors, `Device playtest cleanup failed. ${detail}`);
 }
 
 function createDeviceTransport(

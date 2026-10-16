@@ -518,6 +518,23 @@ test("desktop playtest surfaces a driver cleanup failure", async () => {
     .rejects.toThrow("desktop stop failed");
 });
 
+test("desktop playtest keeps the primary screenshot failure visible when cleanup also fails", async () => {
+  // The legacy desktop capture throws before cleanup; the driver's stop then fails too. Both errors
+  // must survive, and the primary native-screenshot message must not be hidden by the constant
+  // cleanup message (a reader that sees only "cleanup failed" is sent to the wrong layer).
+  const screenshotError = new Error(
+    "TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE: request timed out; request file consumed",
+  );
+  const stopError = new Error("desktop stop failed");
+  const thrown = await runDesktopScenario(2, { screenshotError, stopError }).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(thrown).toBeInstanceOf(AggregateError);
+  expect((thrown as Error).message).toContain(screenshotError.message);
+  expect((thrown as AggregateError).errors).toEqual([screenshotError, stopError]);
+});
+
 test.skipIf(process.platform === "win32")("desktop runner surfaces mailbox cleanup failures", async () => {
   await expect(runDesktopScenario(2, { mailboxFile: true })).rejects.toThrow(/ENOTDIR|not a directory/u);
 });
