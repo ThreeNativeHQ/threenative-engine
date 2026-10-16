@@ -19,9 +19,17 @@ StandardPrograms buildSprite(const VertexVariant& variant) {
     const Node projection = uniform("projectionMatrix", Type::mat(4, 4));
     const Node mv = view.mul(model).mul(vec4({centre, 1}));
     Node scale = vec2({length(model.mul(vec4({1, 0, 0, 0})).xyz()), length(model.mul(vec4({0, 1, 0, 0})).xyz())});
+    // SpriteNodeMaterial.scaleNode multiplies the model scale; a float scales both axes.
+    if (variant.nodes.scaleNode) {
+        Node authored = graph::lower(variant.nodes.scaleNode, v, {});
+        if (v.expr(authored.id).type == Type::f32()) authored = vec2({authored, authored});
+        scale = scale.mul(authored);
+    }
     scale = scale.mul(select(uniform("spriteNoAttenuation", Type::f32()).greaterThan(0), mv.z().negate(), float_(1)));
     const Node aligned = geometry.xy().sub(uniform("spriteCenter", Type::vec(2)).sub(0.5)).mul(scale);
-    const Node rotation = uniform("spriteRotation", Type::f32());
+    // rotationNode replaces the material's rotation.
+    Node rotation = uniform("spriteRotation", Type::f32());
+    if (variant.nodes.rotationNode) rotation = graph::lower(variant.nodes.rotationNode, v, {});
     const Node c = cos(rotation), s = sin(rotation);
     const Node rotated = vec2({c.mul(aligned.x()).sub(s.mul(aligned.y())), s.mul(aligned.x()).add(c.mul(aligned.y()))});
     output("position", projection.mul(vec4({mv.xy().add(rotated), mv.swizzle("zw")})));

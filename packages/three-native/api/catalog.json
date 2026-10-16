@@ -3746,6 +3746,30 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "computeFrenetFrames",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "segments",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "closed",
+                  "type": "boolean",
+                  "optional": true
+                }
+              ],
+              "returns": "object"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },

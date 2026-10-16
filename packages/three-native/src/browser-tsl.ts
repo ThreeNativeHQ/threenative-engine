@@ -345,7 +345,10 @@ export function defineTsl(
 
   for (const name of METHODS)
     prototype[name] = function (this: ITslNode, ...args: unknown[]) {
-      return wrap(call(name, this[TSL_NODE], args));
+      const made = wrap(call(name, this[TSL_NODE], args));
+      // three's ComputeNode flag, which a game (GPUParticles3D) checks before queueing the kernel.
+      if (name === "compute") Object.defineProperty(made, "isComputeNode", { value: true });
+      return made;
     };
   for (const [alias, lanes] of Object.entries(SWIZZLES))
     Object.defineProperty(prototype, alias, {
@@ -486,13 +489,19 @@ export function defineTsl(
     const extra: TslArgValue[] = [];
     if (typeof count === "object" && count !== null && !isTslNode(count)) {
       const params = count as Record<string, unknown>;
-      for (const key of ["condition", "update"])
-        if (params[key] !== undefined)
-          throw new TypeError(`TN_TSL Loop: ${key} is not supported; give the loop an end`);
+      // The engine counts up while the index is below the end, by a whole step: condition "<" and a numeric update.
+      if (params.condition !== undefined && params.condition !== "<")
+        throw new TypeError(
+          'TN_TSL Loop: condition is not supported; the loop runs while the index is below the end ("<")',
+        );
+      if (params.update !== undefined && typeof params.update !== "number")
+        throw new TypeError("TN_TSL Loop: update is not supported; give a whole number step");
       end = params.end;
       if (params.type !== undefined) type = String(params.type);
       if (params.name !== undefined) name = String(params.name);
-      if (params.start !== undefined) extra.push({ kind: "number", number: Number(params.start) });
+      if (params.start !== undefined || params.update !== undefined)
+        extra.push(argument("Loop", 3, params.start ?? 0));
+      if (params.update !== undefined) extra.push({ kind: "number", number: params.update });
     }
     const index = wrap(runtime.call("Loop:index", null, [{ kind: "string", text: type }]));
     const body = capture("Loop", callback, { [name]: index });
@@ -577,8 +586,9 @@ export function defineTsl(
       },
     });
   }
-  const live = liveUniforms(exports.uniform as (value: unknown) => ITslNode, (node, lanes) =>
-    runtime.setUniform(node[TSL_NODE], lanes),
+  const live = liveUniforms(
+    exports.uniform as (value: unknown, type?: unknown) => ITslNode,
+    (node, lanes) => runtime.setUniform(node[TSL_NODE], lanes),
   );
   exports.uniform = live.uniform;
   exports.uniformArray = live.uniformArray;

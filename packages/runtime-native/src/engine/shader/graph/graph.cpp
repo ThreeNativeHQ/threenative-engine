@@ -296,11 +296,18 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Math: {
             std::vector<ExprId> ids;
             for (const Node& arg : d.args) ids.push_back(expression(arg));
-            if (d.bits == 1 && ids.size() == 2 && (d.name == "min" || d.name == "max" || d.name == "pow" || d.name == "step")) {
+            const bool pairwise = d.name == "min" || d.name == "max" || d.name == "pow" || d.name == "step" || d.name == "mod";
+            if (ids.size() == 2 && pairwise) {
                 if (ids[0] == kInvalid || ids[1] == kInvalid) return kInvalid;
                 const auto a = program_.expr(ids[0]).type, b = program_.expr(ids[1]).type;
-                const auto target = a.rows >= b.rows ? a : b;
-                for (auto& id : ids) if (program_.expr(id).type != target) id = program_.construct(target, {id});
+                // A serialized graph converts any mismatch; an authored one only widens a float scalar to the other
+                // operand's lanes (TSL's mod(vec2, float)), so a real type error still reports.
+                const bool widen = a.scalar == Type::Scalar::F32 && b.scalar == Type::Scalar::F32 && !a.isMatrix() && !b.isMatrix() &&
+                                   (a.isScalar() || b.isScalar());
+                if (d.bits == 1 || widen) {
+                    const auto target = a.rows >= b.rows ? a : b;
+                    for (auto& id : ids) if (program_.expr(id).type != target) id = program_.construct(target, {id});
+                }
             }
             return program_.call(d.name, ids);
         }
@@ -481,7 +488,10 @@ void Lowerer::statement(Node node) {
             const auto previousAggregates = aggregates_;
             const Node indexNode = s.args[1];
             program_.Loop(count, [this, &s, &indexNode](ExprId index) {
-                ExprId value = s.args.size() > 2 ? program_.add(index, expression(s.args[2])) : index;
+                // start + index * step, in i32 (the count above already divided the range by the step).
+                ExprId value = index;
+                if (s.args.size() > 3) value = program_.mul(value, expression(s.args[3]));
+                if (s.args.size() > 2) value = program_.add(value, expression(s.args[2]));
                 if (indexNode->type != Type::i32()) value = convert(value, indexNode->type);  // Loop({ type: "uint" })
                 loopIndex_[indexNode.get()] = value;
                 statements(s.body);

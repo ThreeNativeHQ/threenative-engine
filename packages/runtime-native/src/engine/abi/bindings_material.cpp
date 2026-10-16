@@ -609,6 +609,17 @@ void registerMaterialBindings(Registry& classes) {
             material->fog = false;
             return value;
         };
+        if (node)
+            for (const auto& [slot, field] : std::initializer_list<std::pair<const char*, shader::graph::Node shader::MaterialNodes::*>>{
+                     {"scaleNode", &shader::MaterialNodes::scaleNode}, {"rotationNode", &shader::MaterialNodes::rotationNode}}) {
+                b.getters[slot] = [field](void* self) { return Value::shaderNode(as<Material>(self)->nodes.*field); };
+                b.setters[slot] = [field, slot](void* self, const Value& v) {
+                    if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node))
+                        throw Unsupported{std::string(slot) + " must be a shader node or null"};
+                    as<Material>(self)->nodes.*field = v.node;
+                    as<Material>(self)->needsUpdate();
+                };
+            }
         b.getters["rotation"] = [](void* self) { return Value::of(as<Material>(self)->rotation); };
         b.setters["rotation"] = [](void* self, const Value& v) { as<Material>(self)->rotation = number(v); };
         b.getters["sizeAttenuation"] = [](void* self) { return Value::of(as<Material>(self)->sizeAttenuation); };

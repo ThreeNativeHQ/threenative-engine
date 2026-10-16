@@ -8,9 +8,9 @@ const executable = process.argv[2];
 assert(executable, "Usage: player-compute-ops.mjs <tn-native-engine-player-v8>");
 
 const { verdict, output } = await runComputeGame(executable, `
-import { InstancedMesh, Matrix4, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RenderTarget, Scene, UnsignedByteType } from "three";
-import { Break, Continue, Fn, If, Loop, Return, all, and, any, deltaTime, float, instanceIndex, instancedArray, log, not, or, positionLocal, select, time, uint, vec3 } from "three/tsl";
-import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
+import { InstancedMesh, Matrix4, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RenderTarget, Scene, Sprite, UnsignedByteType } from "three";
+import { Break, Continue, Fn, If, Loop, Return, all, and, any, deltaTime, float, instanceIndex, instancedArray, log, mod, not, or, positionLocal, select, time, uint, uniform, vec2, vec3 } from "three/tsl";
+import { MeshBasicNodeMaterial, SpriteNodeMaterial, WebGPURenderer } from "three/webgpu";
 
 const faults = [];
 const same = (label, got, want) => {
@@ -63,6 +63,31 @@ async function run() {
   })().compute(1));
   same("loops", await words(sums), [(14 + 3) * 1000 + 6, 9]);
 
+  // A stepped loop that starts at a node, as GPUParticles3D's bounds reduction does: thread t sums t, t + 4, ... below 10.
+  const strided = instancedArray(4, "uint");
+  renderer.compute(Fn(() => {
+    const sum = uint(0).toVar();
+    Loop({ start: instanceIndex, end: 10, type: "uint", update: 4 }, ({ i }) => { sum.addAssign(i); });
+    strided.element(instanceIndex).assign(sum);
+  })().compute(4));
+  same("stepped loop", await words(strided), [12, 15, 8, 10]);
+
+  // A typed uniform: uniform(3, "uint") adds to a uint index, and a later edit reaches the next dispatch.
+  const ring = uniform(3, "uint");
+  const wrapped = instancedArray(8, "uint");
+  renderer.compute(Fn(() => { wrapped.element(ring.add(instanceIndex).mod(uint(8))).assign(instanceIndex.add(1)); })().compute(8));
+  same("typed uniform", await words(wrapped), [6, 7, 8, 1, 2, 3, 4, 5]);
+
+  // mod(vec2, float) widens the scalar, and a negative lane wraps up (GLSL mod, not WGSL's remainder).
+  const folded = instancedArray(2, "float");
+  renderer.compute(Fn(() => {
+    const m = mod(vec2(5.5, -1.5), float(4));
+    folded.element(0).assign(m.x);
+    folded.element(1).assign(m.y);
+  })().compute(1));
+  const [m0, m1] = await floats(folded);
+  if (Math.abs(m0 - 1.5) > 1e-5 || Math.abs(m1 - 2.5) > 1e-5) faults.push("mod(vec2, float) was [" + m0 + "," + m1 + "]");
+
   // Bool vectors and logic, and the conversions: vec3(1, 2, 3) <= (1, 5, 2) is (true, true, false).
   const bools = instancedArray(8, "float");
   renderer.compute(Fn(() => {
@@ -102,6 +127,30 @@ async function run() {
   renderer.setRenderTarget(null);
   const row = await renderer.readRenderTargetPixelsAsync(strip, 0, 0, 8, 1);
   same("toAttribute", Array.from({ length: 8 }, (_, i) => row[i * 4]), [0, 255, 255, 0, 0, 255, 255, 0]);
+
+  // A sprite per element: positionNode is the centre, scaleNode multiplies the model scale (0.5 x 2 here), and
+  // rotationNode turns it (a quarter turn of a 2 x 0.5 sprite lands on the same footprint).
+  for (const [name, scale, rotation] of [["scaleNode", vec2(0.5, 2), undefined], ["rotationNode", vec2(2, 0.5), float(Math.PI / 2)]]) {
+    const flake = new SpriteNodeMaterial();
+    flake.colorNode = vec3(1, 0, 0);
+    flake.positionNode = spots.toAttribute();
+    flake.scaleNode = scale;
+    if (rotation) flake.rotationNode = rotation;
+    const cloud = new Sprite(flake);
+    cloud.count = 2;
+    cloud.frustumCulled = false;
+    const sky = new Scene();
+    sky.add(cloud);
+    const wide = new RenderTarget(8, 2, { type: UnsignedByteType });
+    renderer.setRenderTarget(wide);
+    renderer.render(sky, camera);
+    renderer.setRenderTarget(null);
+    const line = await renderer.readRenderTargetPixelsAsync(wide, 0, 0, 8, 1);
+    same("sprite " + name, Array.from({ length: 8 }, (_, i) => line[i * 4]), [0, 255, 255, 0, 0, 255, 255, 0]);
+  }
+
+  // The kernel node carries three's isComputeNode flag, which GPUParticles3D checks.
+  if (Fn(() => {})().compute(1).isComputeNode !== true) faults.push("compute node lacks isComputeNode");
 
   // Return() ends one invocation, Break() and Continue() steer a loop: 0 + 2 + 4 + 6 = 12 (odd skipped, stop past 6).
   const early = instancedArray(6, "uint");

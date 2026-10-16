@@ -204,6 +204,7 @@ describe("storage buffers on the Wasm facade", () => {
     )(() => {})();
     kernel.compute(1000, 32);
     const compute = calls.find((call) => call.name === "compute");
+    expect((kernel.compute(1, 1) as { isComputeNode?: boolean }).isComputeNode).toBe(true);
     expect(compute?.args).toEqual([
       { kind: "number", number: 1000 },
       { kind: "number", number: 32 },
@@ -287,6 +288,28 @@ describe("TSL operators SoftBody3D needs, on the Wasm facade", () => {
     expect(calls.some((call) => call.name === "log")).toBe(true);
     expect(tsl.deltaTime).toBeDefined();
     expect(() => (tsl.Break as () => unknown)()).toThrow(/outside Fn|Fn/u);
+  });
+
+  it("passes uniform(value, type) and a stepped Loop's start and step to the engine", () => {
+    const calls: ICall[] = [];
+    const tsl = tslOver(calls);
+    (tsl.uniform as (v: number, t: string) => unknown)(3, "uint");
+    const uniform = calls.find((call) => call.name === "uniform");
+    expect(uniform?.args).toEqual([
+      { kind: "number", number: 3 },
+      { kind: "string", text: "uint" },
+    ]);
+    (tsl.Fn as (f: () => void) => () => void)(() => {
+      (tsl.Loop as (p: unknown, f: () => void) => void)(
+        { type: "uint", start: 1, end: 9, update: 4 },
+        () => {},
+      );
+    })();
+    const loop = calls.find((call) => call.name === "Loop");
+    expect(loop?.args.slice(3)).toEqual([
+      { kind: "number", number: 1 },
+      { kind: "number", number: 4 },
+    ]);
   });
 
   it("takes three's object-form Loop: type, start, end and the index name", () => {
