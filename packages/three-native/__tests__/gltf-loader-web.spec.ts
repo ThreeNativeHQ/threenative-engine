@@ -79,4 +79,12 @@ describe("the web GLTFLoader's image files", () => {
     await new GLTFLoader().parseAsync(glb({ asset: { version: "2.0" } }), "");
     expect(loadGltf).toHaveBeenCalledWith(expect.any(Uint8Array), new Map());
   });
+
+  it("refuses a plugin it does not host by name, rather than skipping it", async () => {
+    const loader = new GLTFLoader().register(() => ({ name: "KHR_other" }));
+    await expect(loader.parseAsync(glb({ asset: { version: "2.0" } }), "")).rejects.toThrow(
+      "TN_NATIVE_GLTF_PLUGIN_UNSUPPORTED",
+    );
+    expect(loadGltf).not.toHaveBeenCalled();
+  });
 });
