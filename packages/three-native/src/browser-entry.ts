@@ -200,8 +200,8 @@ export async function bindWebEngine(
   // A GLB through the engine's own glTF loader, for the web GLTFLoader (addons/gltf-loader-web.ts).
   const { loadGltf } = runtime;
   if (loadGltf !== undefined)
-    bound.__tnLoadGltf = (bytes: Uint8Array) => {
-      const loaded = loadGltf.call(runtime, bytes);
+    bound.__tnLoadGltf = (bytes: Uint8Array, files?: ReadonlyMap<string, Uint8Array>) => {
+      const loaded = loadGltf.call(runtime, bytes, files);
       return { scene: wrap(loaded.scene), animations: loaded.animations.map(wrap) };
     };
   if (tsl !== undefined && runtime.tsl !== undefined) {

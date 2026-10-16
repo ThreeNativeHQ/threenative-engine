@@ -1869,6 +1869,56 @@ void authored_output() {
     CHECK(refused);
 }
 
+// three wraps a fragmentNode in vec4(): rain's world quad hands the pass a vec3 (PRD-617).
+void fragment_node_vec3_is_opaque() {
+    namespace g = tn::engine::shader::graph;
+    namespace s = tn::engine::shader;
+    s::VertexVariant variant;
+    variant.nodes.fragmentNode = g::vec3({g::float_(0.25f), g::float_(0.5f), g::float_(1.0f)});
+    const auto programs = s::buildBasic(variant);
+    CHECK(programs.diagnostics.empty() && programs.fragment.ok());
+    CHECK(s::WgslEmitter::emit(programs.fragment, 1).ok());
+}
+
+// A quad pass whose fragment reads `depth` (rain's post shader) needs a vertex positionView to interpolate.
+void rtt_quad_depth_has_a_vertex_output() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto depth = tn::abi::tslCall("depth", nullptr, {}, serial);
+    const auto shown = g::vec4({depth, depth, depth, g::float_(1.0f)});
+    const auto rtt = tn::abi::tslCall("rtt", nullptr,
+        {TslArg::of(shown), TslArg::of(64.0), TslArg::of(32.0), TslArg::of(1003.0), TslArg::of(1003.0)}, serial);
+    CHECK(rtt != nullptr);
+    if (!rtt) return;
+    const auto target = tn::engine::RenderTarget::make(64, 32, 1016);
+    const auto quad = std::make_shared<tn::engine::Mesh>();
+    quad->material = std::make_shared<tn::engine::Material>(tn::engine::MaterialType::Basic, true);
+    quad->material->nodes.fragmentNode = shown;
+    quad->material->nodes.vertexNode = g::vec4(
+        {g::attribute("position", tn::engine::shader::Type::vec(2)), g::float_(0), g::float_(1)});
+    const auto self = TslArg::of(rtt);
+    tn::abi::tslCall("__rtt", &self, {TslArg::objectOf("RenderTarget", target), TslArg::objectOf("Mesh", quad)}, serial);
+    const auto passes = g::postPasses(rtt);
+    CHECK(passes.size() == 1);
+    for (const auto& error : passes[0].package.errors) std::fprintf(stderr, "pass error: %s\n", error.c_str());
+    CHECK(passes[0].package.errors.empty());
+    const auto& vertex = passes[0].package.variants.at(0).stages[0];
+    CHECK(vertex.wgsl.ok() && vertex.wgsl.code.find("positionView") != std::string::npos);
+}
+
+void post_output_depth_has_a_vertex_output() {
+    namespace g = tn::engine::shader::graph;
+    namespace s = tn::engine::shader;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto depth = tn::abi::tslCall("depth", nullptr, {}, serial);
+    const auto post = g::serializedPost(g::vec4({depth, depth, depth, g::float_(1.0f)}));
+    const auto programs = s::buildOutput(std::nullopt, false, &post);
+    CHECK(programs.vertex.hasOutput("positionView"));
+    CHECK(s::WgslEmitter::emit(programs.vertex, 1).ok() && s::WgslEmitter::emit(programs.fragment, 1).ok());
+}
+
 void starter_post_bindings() {
     namespace g = tn::engine::shader::graph;
     using tn::abi::TslArg;
@@ -2083,7 +2133,7 @@ void starter_post_bindings() {
 
 }
 
-TN_TEST_MAIN({"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},

@@ -12,7 +12,7 @@ import {
   pairObservations,
   readCaptureProvenance,
 } from "./observationSampling.js";
-import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart, SCREENSHOT_TIMEOUT_MS } from "./shared.js";
+import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart, SCREENSHOT_TIMEOUT_MS, withPageCause } from "./shared.js";
 import {
   failedDiagnosticsAssertion,
   ManagedServerError,
@@ -902,7 +902,7 @@ async function runStandalonePlaytestInternal(
       } catch { /* Preserve the primary failure if diagnostic logging also fails. */ }
     }
     if (error instanceof PlaytestBridgeError || error instanceof ManagedServerError) {
-      return addPreflightDiagnostic(failureReport(activeConfig, scenario, error.diagnostic), preflight);
+      return addPreflightDiagnostic(failureReport(activeConfig, scenario, withPageCause(error.diagnostic, consoleEntries)), preflight);
     }
     const lifecycleDiagnostic = pageLifecycleDiagnostic(error, pageLifecycle, activeConfig.url);
     if (lifecycleDiagnostic !== undefined) {

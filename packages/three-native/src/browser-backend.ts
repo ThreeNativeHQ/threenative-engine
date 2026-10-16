@@ -92,7 +92,10 @@ export interface IBrowserRuntime {
   /** TSL by name (PRD-540), when the module carries `tn_tsl_call`. */
   readonly tsl?: ITslRuntime;
   /** A GLB through the engine's own glTF loader (PRD-540), when the module carries the web host. */
-  loadGltf?(bytes: Uint8Array): { readonly scene: IEngineRef; readonly animations: IEngineRef[] };
+  loadGltf?(
+    bytes: Uint8Array,
+    files?: ReadonlyMap<string, Uint8Array>,
+  ): { readonly scene: IEngineRef; readonly animations: IEngineRef[] };
 }
 
 /** The engine node id a TSL wrapper (`browser-tsl.ts`) carries. */
@@ -1040,7 +1043,19 @@ export function defineBrowserClasses(
     // A dotted path whose head is no member of its own (three's plain `morphAttributes` object) is
     // a holder made per read, as the V8 adapter makes it: each tail reads and writes the full path.
     const holders = new Map<string, string[]>();
-    for (const path of binding.setters) {
+    // A getter-only head (three's `drawRange`) is a holder too, when every path under it is one level deep.
+    const flatGetters = binding.getters.filter(
+      (path) =>
+        path.indexOf(".") === path.lastIndexOf(".") &&
+        !binding.getters
+          .concat(binding.members)
+          .some(
+            (other) =>
+              other.startsWith(`${path.slice(0, path.indexOf("."))}.`) &&
+              other.split(".").length > 2,
+          ),
+    );
+    for (const path of new Set([...binding.setters, ...flatGetters])) {
       const dot = path.indexOf(".");
       if (dot < 0) continue;
       const head = path.slice(0, dot);
@@ -1422,30 +1437,59 @@ function gltfOf(
   context: number,
   h: Pick<IAbiHelpers, "scoped" | "alloc"> & { keyOf(pointer: number): IEngineRef },
 ): Pick<IBrowserRuntime, "loadGltf"> {
-  // quality-allow: the Emscripten module is read through the two exports this call site names, not its full surface.
+  // quality-allow: the Emscripten module is read through the exports this call site names, not its full surface.
   const host = abi as unknown as Partial<
-    Record<"_tnw_web_load_gltf" | "_tnw_web_load_error", (...args: number[]) => number>
+    Record<
+      | "_tnw_web_load_gltf"
+      | "_tnw_web_load_error"
+      | "_tnw_web_gltf_file"
+      | "_tnw_web_gltf_files_clear",
+      (...args: number[]) => number
+    >
   >;
-  const { _tnw_web_load_gltf: load, _tnw_web_load_error: error } = host;
+  const {
+    _tnw_web_load_gltf: load,
+    _tnw_web_load_error: error,
+    _tnw_web_gltf_file: file,
+    _tnw_web_gltf_files_clear: clearFiles,
+  } = host;
   if (load === undefined || error === undefined) return {};
   return {
-    loadGltf: (bytes) =>
+    loadGltf: (bytes, files) =>
       h.scoped(() => {
-        const data = h.alloc(Math.max(1, bytes.byteLength));
-        abi.HEAPU8.set(bytes, data);
-        const count = h.alloc(4);
-        // Retried once with the exact size when the model has more clips than the first guess.
-        for (let capacity = 64; ; ) {
-          const out = h.alloc(HANDLE * capacity);
-          const status = load(context, data, bytes.byteLength, out, capacity, count);
-          const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
-          if (status === 0) {
-            const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));
-            return { scene: refs[0] as IEngineRef, animations: refs.slice(1) };
+        // Files the model names by relative uri (shared images), read by the engine loader.
+        if (files !== undefined && files.size > 0) {
+          if (file === undefined || clearFiles === undefined)
+            throw new Error(
+              "TN_WASM_GLTF_FILES_UNAVAILABLE: this web engine cannot read a model's image files",
+            );
+          for (const [uri, content] of files) {
+            const name = h.alloc(abi.lengthBytesUTF8(uri) + 1);
+            abi.stringToUTF8(uri, name, abi.lengthBytesUTF8(uri) + 1);
+            const copy = h.alloc(Math.max(1, content.byteLength));
+            abi.HEAPU8.set(content, copy);
+            file(name, copy, content.byteLength);
           }
-          const reason = abi.UTF8ToString(error());
-          if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);
-          capacity = needed;
+        }
+        try {
+          const data = h.alloc(Math.max(1, bytes.byteLength));
+          abi.HEAPU8.set(bytes, data);
+          const count = h.alloc(4);
+          // Retried once with the exact size when the model has more clips than the first guess.
+          for (let capacity = 64; ; ) {
+            const out = h.alloc(HANDLE * capacity);
+            const status = load(context, data, bytes.byteLength, out, capacity, count);
+            const needed = new DataView(abi.HEAPU8.buffer).getUint32(count, true);
+            if (status === 0) {
+              const refs = Array.from({ length: needed }, (_, i) => h.keyOf(out + i * HANDLE));
+              return { scene: refs[0] as IEngineRef, animations: refs.slice(1) };
+            }
+            const reason = abi.UTF8ToString(error());
+            if (reason !== "TN_WASM_GLTF_CAPACITY" || needed <= capacity) throw new Error(reason);
+            capacity = needed;
+          }
+        } finally {
+          clearFiles?.();
         }
       }),
   };

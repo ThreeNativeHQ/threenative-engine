@@ -67,6 +67,7 @@ const FUNCTIONS = [
   "lessThan",
   "greaterThan",
   "equal",
+  "notEqual",
   "lessThanEqual",
   "greaterThanEqual",
   "and",
@@ -139,10 +140,15 @@ const FUNCTIONS = [
   "pmremTexture",
   "reflector",
   "transformDirection",
+  "transformNormalToView",
+  "property",
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
   "viewportLinearDepth",
+  "frameGroup",
+  "renderGroup",
+  "objectGroup",
   "cameraPosition",
   "cameraNear",
   "cameraFar",
@@ -183,6 +189,7 @@ const METHODS = [
   "lessThan",
   "greaterThan",
   "equal",
+  "notEqual",
   "lessThanEqual",
   "greaterThanEqual",
   "and",
@@ -385,6 +392,9 @@ export function defineTsl(
     if (depth === 0) throw new TypeError(`TN_TSL ${form}: statement outside Fn`);
   };
   prototype.toVar = function (this: ITslNode) {
+    // Outside a function body there is no stack to declare a variable in (rain's fragment node names its
+    // terms this way); the expression itself is the value, read where it is used.
+    if (depth === 0) return this;
     return wrap(runtime.call("toVar", this[TSL_NODE], []));
   };
   prototype.assign = function (this: ITslNode, value: unknown) {
@@ -398,6 +408,11 @@ export function defineTsl(
       return this;
     };
   }
+  // `setGroup` answers the node it was called on, so the uniform keeps the live `.value` it was built with.
+  prototype.setGroup = function (this: ITslNode, group: unknown) {
+    runtime.release(call("setGroup", this[TSL_NODE], [group]));
+    return this;
+  };
   prototype.Else = function (this: ITslNode, callback: unknown) {
     statement("Else");
     const body = capture("Else", callback);
@@ -480,23 +495,31 @@ export function defineTsl(
     const body = capture("If", callback);
     return wrap(consume(body, runtime.call("If", null, [test, node(body)])));
   };
-  // Loop(count, ({ i }) => ...) or three's Loop({ type, start, end, name }, ({ i }) => ...).
-  exports.Loop = (count: unknown, callback: unknown) => {
-    statement("Loop");
+  // Loop(count, ({ i }) => ...) or three's Loop({ type, start, end, name }, ({ i }) => ...); several
+  // parameters nest one loop in the next, named i, j, k... unless a parameter names its own.
+  const loop = (
+    count: unknown,
+    defaultName: string,
+    callback: (indices: Record<string, unknown>) => unknown,
+  ) => {
     let end = count;
     let type = "int";
-    let name = "i";
+    let name = defaultName;
     const extra: TslArgValue[] = [];
     if (typeof count === "object" && count !== null && !isTslNode(count)) {
       const params = count as Record<string, unknown>;
-      // The engine counts up while the index is below the end, by a whole step: condition "<" and a numeric update.
-      if (params.condition !== undefined && params.condition !== "<")
+      // The engine counts up while the index is below the end, by a whole step: "<=" is "<" one further.
+      if (params.condition !== undefined && params.condition !== "<" && params.condition !== "<=")
         throw new TypeError(
-          'TN_TSL Loop: condition is not supported; the loop runs while the index is below the end ("<")',
+          'TN_TSL Loop: condition is not supported; the loop runs while the index is below ("<") or at most ("<=") the end',
         );
       if (params.update !== undefined && typeof params.update !== "number")
         throw new TypeError("TN_TSL Loop: update is not supported; give a whole number step");
       end = params.end;
+      if (params.condition === "<=")
+        end = isTslNode(end)
+          ? (end as unknown as { add(n: number): unknown }).add(1)
+          : Number(end) + 1;
       if (params.type !== undefined) type = String(params.type);
       if (params.name !== undefined) name = String(params.name);
       if (params.start !== undefined || params.update !== undefined)
@@ -516,6 +539,22 @@ export function defineTsl(
         ]),
       ),
     );
+  };
+  exports.Loop = (...parameters: unknown[]) => {
+    statement("Loop");
+    const callback = parameters.pop();
+    if (typeof callback !== "function" || parameters.length === 0)
+      throw new TypeError("TN_TSL Loop: expected a callback");
+    const level = (at: number, outer: Record<string, unknown>): unknown =>
+      loop(parameters[at], "ijklmnopqrstuvwxyz"[at] ?? "i", (own) => {
+        const indices = { ...outer, ...own };
+        if (at + 1 < parameters.length) {
+          level(at + 1, indices);
+          return undefined;
+        }
+        return callback(indices);
+      });
+    return level(0, {});
   };
   // three's storage(attribute, type, count) over an engine BufferAttribute (storage.ts): setName names the
   // binding, element(index) reads or assigns one element of the attribute's own GPU buffer.

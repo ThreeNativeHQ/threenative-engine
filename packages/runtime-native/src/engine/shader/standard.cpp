@@ -1296,7 +1296,11 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     Program& f = out.fragment;
     if (variant.nodes.fragmentNode) {
         tsl::Build scope(f);
-        f.output("color", graph::lower(variant.nodes.fragmentNode, f));
+        // three wraps a fragmentNode in vec4(): a vec3 gains an opaque alpha (rain's world quad is a vec3).
+        ExprId color = graph::lower(variant.nodes.fragmentNode, f);
+        if (color != kInvalid && f.expr(color).type == Type::vec(3))
+            color = f.construct(Type::vec(4), {color, f.constant(1.0f)});
+        f.output("color", color);
         linkNodeVaryings(out, variant, local.position, local.normal);
         return out;
     }

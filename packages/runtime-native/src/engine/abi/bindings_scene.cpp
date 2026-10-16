@@ -366,12 +366,14 @@ void registerObject3D(ClassBinding& b) {
     b.methods["getObjectById"] = [](void* self, const Args& a, Store& store) {
         // An id is a safe non-negative integer; anything else names no object (`undefined` in three).
         const double id = number(a.at(0));
-        if (!(id >= 0 && id <= 9007199254740991.0) || id != std::floor(id)) return Value{};
-        return foundObject(store, as<Object3D>(self)->getObjectById(static_cast<uint64_t>(id)));
+        if (!(id >= 0 && id <= 9007199254740991.0) || id != std::floor(id)) return Value::undefined();
+        Object3D* found = as<Object3D>(self)->getObjectById(static_cast<uint64_t>(id));
+        return found ? foundObject(store, found) : Value::undefined();
     };
     b.methods["getObjectByName"] = [](void* self, const Args& a, Store& store) {
         if (a.at(0).kind != Value::Kind::String) throw Unsupported{"getObjectByName needs a name"};
-        return foundObject(store, as<Object3D>(self)->getObjectByName(a.at(0).text));
+        Object3D* found = as<Object3D>(self)->getObjectByName(a.at(0).text);
+        return found ? foundObject(store, found) : Value::undefined();
     };
     b.ctor = [](const Args&, Store&) { return makeNode(); };
 
@@ -884,6 +886,12 @@ void registerScene(ClassBinding& b) {
     for (const auto& [prefix, field] : {std::pair{"backgroundRotation", &Scene::backgroundRotation},
                                       std::pair{"environmentRotation", &Scene::environmentRotation}}) {
         b.members[prefix] = memberAliasMethod(field, "Euler");
+        // three's `scene.backgroundRotation = new Euler(...)`: a plain property upstream, so the game may assign it.
+        b.setters[prefix] = [field, name = std::string(prefix)](void* self, const Value& v, Store& store) {
+            Object* euler = store.find(v);
+            if (!euler || euler->cls != "Euler") throw Unsupported{name + " must be an Euler"};
+            as<Scene>(self)->*field = *static_cast<Euler*>(euler->ptr.get());
+        };
         for (int i = 0; i < 3; ++i) {
             const std::string path = std::string(prefix) + "." + "xyz"[i];
             b.getters[path] = [field, i](void* self) { auto& e = as<Scene>(self)->*field; return Value::of(i == 0 ? e.x : i == 1 ? e.y : e.z); };

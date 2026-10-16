@@ -88,6 +88,20 @@ describe("the browser-JS back end", () => {
           .filter((key) => key.includes("."))
           .map((key) => key.slice(0, key.indexOf(".")))
           .filter((head) => !binding.members.includes(head) && !binding.getters.includes(head)),
+        // A getter-only head whose paths are all one level deep (`drawRange.count`) is a holder as well.
+        ...binding.getters
+          .filter(
+            (key) =>
+              key.indexOf(".") === key.lastIndexOf(".") &&
+              key.includes(".") &&
+              ![...binding.getters, ...binding.members].some(
+                (other) =>
+                  other.startsWith(`${key.slice(0, key.indexOf("."))}.`) &&
+                  other.split(".").length > 2,
+              ),
+          )
+          .map((key) => key.slice(0, key.indexOf(".")))
+          .filter((head) => !binding.members.includes(head) && !binding.getters.includes(head)),
       ]);
       expect(exposed.sort(), name).toEqual([...expected].sort());
       for (const key of exposed) {

@@ -44,6 +44,10 @@ inline PostPass renderTexturePass(Node node, std::optional<ToneMapping> toneMapp
         // An authored geometry UV is bottom-up; ScreenNode.uv remains WebGPU top-down.
         if (!material)
             vertex.output("uv", vertex.add(vertex.mul(position, vertex.constant(0.5f)), vertex.constant(0.5f)));
+        // `depth` and linearDepth() read positionView, which the quad's identity camera makes its own local
+        // position (PRD-617: rain's post shader names depth for a gl_FragCoord.z it never reads).
+        for (const auto& [name, type] : programs.fragment.varyings())
+            if (name == "positionView" && !vertex.hasOutput(name)) vertex.output(name, local);
     }
     for (const Program* p : {&programs.vertex, &programs.fragment})
         for (const auto& d : p->diagnostics()) pass.package.errors.push_back(d.code + ": " + d.node + ": " + d.reason);

@@ -1116,7 +1116,15 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // The discrete chain the asset pipeline baked in. Registered only when the file declares it,
         // so a game with no auto LOD never pays for the plugin. Levels are built after the quantized
         // positions are widened, so the derived geometries share the widened attributes.
-        const discreteLod = extensions.has(TN_DISCRETE_LOD) ? new DiscreteLodPlugin() : undefined;
+        // The Wasm engine's loader hosts no plugin (its `hostsPlugins` is false): the chain cannot be
+        // read there, so the model keeps the full detail LOD0 holds, and says so by name.
+        const hostsPlugins = (loader as { hostsPlugins?: boolean }).hostsPlugins !== false;
+        if (!hostsPlugins && extensions.has(TN_DISCRETE_LOD))
+          console.warn(
+            `TN_DISCRETE_LOD_UNAVAILABLE ${path}: the engine glTF loader hosts no plugins, so the model keeps full detail.`,
+          );
+        const discreteLod =
+          hostsPlugins && extensions.has(TN_DISCRETE_LOD) ? new DiscreteLodPlugin() : undefined;
         if (discreteLod !== undefined) {
           const plugin = discreteLod;
           loader.register((parser) => {

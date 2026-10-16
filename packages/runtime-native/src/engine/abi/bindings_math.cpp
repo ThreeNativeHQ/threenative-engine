@@ -797,7 +797,13 @@ void registerMatrix4(ClassBinding& b) {
     chainRef<Matrix4, Matrix4>(b, "extractRotation", "Matrix4", &Matrix4::extractRotation);
     chainRef<Matrix4, Matrix3>(b, "setFromMatrix3", "Matrix3", &Matrix4::setFromMatrix3);
     chainRef<Matrix4, Vector3>(b, "scale", "Vector3", &Matrix4::scale);
-    chainRef<Matrix4, Vector3>(b, "setPosition", "Vector3", &Matrix4::setPosition);
+    // three's setPosition(x, y, z) or setPosition(Vector3).
+    b.methods["setPosition"] = [](void* self, const Args& a, Store& d) {
+        Vector3 scratch;
+        if (a.size() >= 3) scratch.set(number(a.at(0)), number(a.at(1)), number(a.at(2)));
+        as<Matrix4>(self)->setPosition(a.size() >= 3 ? scratch : d.in<Vector3>(a.at(0), "Vector3", scratch));
+        return chain();
+    };
     chainThree<Matrix4>(b, "makeTranslation", &Matrix4::makeTranslation);
     chainThree<Matrix4>(b, "makeScale", &Matrix4::makeScale);
     chainRefOne<Matrix4, Vector3>(b, "makeRotationAxis", "Vector3", &Matrix4::makeRotationAxis);

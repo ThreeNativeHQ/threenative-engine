@@ -220,12 +220,13 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(1);
         return arg(0);
     }
-    // r185's uniform(...).setGroup(group): how often three uploads the uniform. The engine reads every
-    // graph uniform each frame, so the node is unchanged; frameGroup, renderGroup and objectGroup are
-    // the markers it takes.
+    // r185's uniform(...).setGroup(group) and texture(...).setGroup(group): how often three uploads the
+    // node. The engine reads every graph uniform and texture each frame, so the node is unchanged;
+    // frameGroup, renderGroup and objectGroup are the markers it takes.
     if (method && name == "setGroup") {
         arity(1);
-        if (!receiver->node || receiver->node->kind != g::Kind::Uniform) throw std::runtime_error("setGroup requires a uniform");
+        if (!receiver->node || (receiver->node->kind != g::Kind::Uniform && receiver->node->kind != g::Kind::Texture))
+            throw std::runtime_error("setGroup requires a uniform or a texture");
         return receiver->node;
     }
     // r185's property(type, name): a declared variable with no value of its own, which WGSL starts at
@@ -564,7 +565,9 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         return g::attribute(text(args[0]), type(text(args[1])));
     }
     if (name == "texture") {
-        arity(2);
+        // three's texture(value, uvNode = uv()): the uv is optional.
+        if (args.size() != 1) arity(2);
+        const auto uvInput = [&] { return args.size() == 1 ? g::uv() : arg(1); };
         // An engine Texture with texels, or a render target's texture, samples itself under a binding
         // named by its cache identity. ponytail: another imageless one keeps naming a map, as before;
         // a texture whose texels arrive after the graph is built is not followed.
@@ -573,15 +576,15 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
                 throw std::runtime_error("texture needs an engine Texture");
             const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
             if (source->sampleable())
-                return g::objectTexture(args[0].object, "nodeMap" + std::to_string(source->ident.value()), arg(1));
+                return g::objectTexture(args[0].object, "nodeMap" + std::to_string(source->ident.value()), uvInput());
             if (source->name.empty()) throw std::runtime_error("texture needs a name");
-            return g::texture(source->name, arg(1));
+            return g::texture(source->name, uvInput());
         }
         if (args[0].kind != TslArg::Kind::Named)
             throw std::runtime_error("expected a texture with a name");
         if (args[0].text.empty())
             throw std::runtime_error("texture needs a name");
-        return g::texture(args[0].text, arg(1));
+        return g::texture(args[0].text, uvInput());
     }
     // r185's texture3D(value, uvw, level) (accessors/Texture3DNode.js): a Data3DTexture sampled at a vec3,
     // vec3(0.5) by default; `level` is an explicit mip.
@@ -848,6 +851,11 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         BINARY(step) BINARY(dot) BINARY(distance) BINARY(cross) BINARY(mod)
         BINARY(lessThanEqual) BINARY(greaterThanEqual)
 #undef BINARY
+    // r185's notEqual: the graph has no inequality operator, so it is the negated equality.
+    if (name == "notEqual") {
+        arity(method ? 1 : 2);
+        return g::logicalNot(g::equal(lhs(), rhs()));
+    }
     // `and` / `or` / `not` are C++ operator names, so the graph calls them logical*.
     if (name == "and" || name == "or") {
         arity(method ? 1 : 2);
@@ -1138,6 +1146,16 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         arity(1);
         auto& statements = open().back().statements;
         const auto target = self();
+        // three's `v.y.assign(x)` / `v.xz.assign(w)`: the swizzle of a variable. A read of the variable is the
+        // swizzle's argument here; lowering takes the variable itself and keeps the other lanes.
+        if (target->kind == g::Kind::Swizzle && target->args.size() == 1 && target->args[0]->kind == g::Kind::VarRead &&
+            target->args[0]->args[0]->kind == g::Kind::Var) {
+            g::Block block;
+            block.assign(g::swizzle(target->args[0]->args[0], target->lanes), input(args[0]));
+            statements.push_back(block.node()->body[0]);
+            out = target;
+            return true;
+        }
         if (target->kind != g::Kind::Var && target->kind != g::Kind::StorageElement)
             throw std::runtime_error(target->kind == g::Kind::Attribute || target->kind == g::Kind::Varying
                 ? name + " requires a variable or storage element: " + target->name +

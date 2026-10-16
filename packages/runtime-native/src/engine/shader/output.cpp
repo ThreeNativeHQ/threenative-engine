@@ -37,6 +37,10 @@ OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, co
     const uint32_t texture = f.texture2d("scene");
     const ExprId uv = f.varying("uv", Type::vec(2));
     const ExprId scene = post ? post->build(f, texture, uv) : f.sample(texture, uv);
+    // `depth` and linearDepth() in a post graph read positionView; this pass draws a screen quad, so its own
+    // position is the view position (PRD-617: rain's post shader names depth for a gl_FragCoord.z it never reads).
+    for (const auto& [name, type] : f.varyings())
+        if (name == "positionView" && !v.hasOutput(name)) v.output(name, v.construct(Type::vec(3), {position, v.constant(0.0f)}));
     if (!outputTransform || (post && !post->outputTransform)) { f.output("color", scene); return out; }
     f.output("color", renderOutput(f, scene, toneMapping, srgb));
     return out;

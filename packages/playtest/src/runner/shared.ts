@@ -128,6 +128,21 @@ export function failedDiagnosticsAssertion(policy: IPlaytestDiagnosticsPolicy): 
   };
 }
 
+/**
+ * A page that throws while booting never installs its bridge, so the run ends on a bare
+ * bridge-missing or a 30 s operation timeout. The throw is already collected: name it there.
+ */
+export function withPageCause<T extends { readonly code: string; readonly message: string }>(
+  diagnostic: T,
+  entries: readonly IRunnerConsoleEntry[],
+): T {
+  if (diagnostic.code !== "TN_PLAYTEST_BRIDGE_MISSING" && diagnostic.code !== "TN_PLAYTEST_OPERATION_TIMEOUT")
+    return diagnostic;
+  const cause = entries.find(({ type }) => type === "pageerror") ?? entries.find(({ type }) => type === "error");
+  if (cause === undefined) return diagnostic;
+  return { ...diagnostic, message: `${diagnostic.message} The page reported: ${cause.text.split("\n")[0]}` };
+}
+
 export function failureReport(
   config: IStandalonePlaytestConfig,
   scenario: IPlaytestScenario,

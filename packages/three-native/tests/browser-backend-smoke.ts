@@ -72,6 +72,13 @@ check(v.x === 7, "a setter reaches the engine");
 
 const material = new MeshStandardMaterial();
 const mesh = new Mesh(new BoxGeometry(1, 1, 1), material);
+// A dotted getter with no setter is still a holder (rain's lightning reads geometry.drawRange.count).
+const ranged = new BoxGeometry(1, 1, 1);
+ranged.setDrawRange(0, 0);
+check(
+  ranged.drawRange?.count === 0,
+  `geometry.drawRange.count reads the engine: ${ranged.drawRange?.count}`,
+);
 // The registry's `[offset, 0]` fields are byte flags read in place, not doubles.
 check(
   mesh.castShadow === false && mesh.visible === true,
@@ -337,6 +344,42 @@ engine.collect();
   );
   lit.onBeforeCompile = () => {};
   check(lit.onBeforeCompile !== base.onBeforeCompile, "a game's onBeforeCompile is its own");
+}
+// three answers a lookup that finds nothing with undefined, not null: sailing's `getObjectByName("rudder")`
+// is checked `!== undefined` and read as an object the moment it is not (PRD-617).
+{
+  const { Group: EngineGroup, Object3D: EngineObject3D } =
+    engine.classes as unknown as typeof THREE;
+  const group = new EngineGroup();
+  group.add(new EngineObject3D());
+  check(group.getObjectByName("rudder") === undefined, "getObjectByName finds nothing: undefined");
+  check(group.getObjectById(123456) === undefined, "getObjectById finds nothing: undefined");
+}
+// three's Scene.backgroundRotation is a plain property: sailing's sky assigns it a new Euler (PRD-617).
+{
+  const { Euler: EngineEuler, Scene: EngineScene } = engine.classes as unknown as typeof THREE;
+  const world = new EngineScene();
+  world.backgroundRotation = new EngineEuler(0, 1.5, 0);
+  world.environmentRotation = new EngineEuler(0.25, 0, 0);
+  check(
+    world.backgroundRotation.y === 1.5 && world.environmentRotation.x === 0.25,
+    `Scene rotation assignment: ${world.backgroundRotation.y}, ${world.environmentRotation.x}`,
+  );
+}
+// three's Matrix4.setPosition takes (x, y, z) as well as a Vector3; the runner template calls it with
+// numbers at module scope, where a refusal blanks the page before any bridge installs (PRD-617).
+{
+  const { Matrix4: EngineMatrix4 } = engine.classes as unknown as typeof THREE;
+  const byNumbers = new EngineMatrix4().setPosition(1, 2, 3);
+  const byVector = new EngineMatrix4().setPosition(new Vector3(4, 5, 6));
+  check(
+    byNumbers.elements[12] === 1 && byNumbers.elements[13] === 2 && byNumbers.elements[14] === 3,
+    `Matrix4.setPosition(x, y, z): ${byNumbers.elements.slice(12, 15).join(",")}`,
+  );
+  check(
+    byVector.elements[12] === 4 && byVector.elements[14] === 6,
+    "Matrix4.setPosition(Vector3) still works",
+  );
 }
 // A Matrix4's copy and equals between engine matrices run over the engine's memory (PRD-573 web cut 2): no
 // engine call once both addresses are known, and still right after the Wasm memory grows (the heap view
@@ -1120,6 +1163,42 @@ if (runtime.tsl !== undefined) {
   sea.name = "sea";
   const sample = tsl.texture(sea, tsl.uv());
   check(typeof sample[TSL_NODE] === "number", "texture(Texture, uv()) creates a valid TSL node");
+  // three's texture(value) samples at uv() by default; rain's bloom pass builds it this way at module scope.
+  const defaultUv = tsl.texture(sea);
+  check(typeof defaultUv[TSL_NODE] === "number", "texture(Texture) defaults its uv, as three does");
+  const differs = tsl.float(1).notEqual(tsl.float(2));
+  check(typeof differs[TSL_NODE] === "number", "node.notEqual(node) creates a valid TSL node");
+  check(
+    typeof tsl.notEqual(1, 2)[TSL_NODE] === "number",
+    "notEqual(a, b) creates a valid TSL node",
+  );
+  // rain's fragment node names its terms with toVar outside any Fn: the expression is the value.
+  const outside = tsl.float(2).mul(3);
+  check(outside.toVar() === outside, "toVar outside a function body answers the expression itself");
+  // sailing's swell slope and rain's declared variables (PRD-617): both exist in the shared table.
+  const viewNormal = tsl.transformNormalToView(tsl.vec3(0, 1, 0));
+  check(
+    typeof viewNormal[TSL_NODE] === "number",
+    "transformNormalToView(vec3) creates a valid TSL node",
+  );
+  check(
+    typeof tsl.property("float")[TSL_NODE] === "number",
+    "property('float') creates a valid TSL node",
+  );
+  // rain groups its uniforms and textures by upload rate: uniform(...).setGroup(frameGroup).
+  const lanesValue = new Vector3();
+  (lanesValue as { isVector3?: boolean }).isVector3 = true;
+  const grouping = tsl.uniform(lanesValue, "vec3");
+  const grouped = grouping.setGroup(tsl.frameGroup);
+  check(typeof grouped[TSL_NODE] === "number", "uniform(...).setGroup(frameGroup) keeps its node");
+  check(grouped === grouping, "setGroup answers the uniform it was called on, as three does");
+  grouped.value.set(1, 2, 3);
+  check(grouped.value.z === 3, "a grouped uniform keeps its live value");
+  const groupedTexture = tsl.texture(sea).setGroup(tsl.renderGroup);
+  check(
+    typeof groupedTexture[TSL_NODE] === "number",
+    "texture(...).setGroup(renderGroup) keeps its node",
+  );
   const namedSample = tsl.texture({ name: "scene" }, tsl.uv());
   check(
     typeof namedSample[TSL_NODE] === "number",
@@ -1195,12 +1274,61 @@ if (runtime.tsl !== undefined) {
   }
   check(arrayThrew2, "uniformArray.element refuses out-of-bounds index");
 
+  // rain writes lanes of a variable (`rd.y.assign(abs(rd.y))`); the other lanes keep their value (PRD-617).
+  const lanes = tsl.Fn(() => {
+    const direction = tsl.vec3(1, -2, 3).toVar();
+    direction.y.assign(direction.y.abs());
+    direction.xz.assign(tsl.vec2(0, 1));
+    return direction;
+  })();
+  check(typeof lanes[TSL_NODE] === "number", "assign to a swizzle of a variable builds a graph");
+
   // 6. answers every swizzle: xyzw, rgba and stpq, one to four lanes
   const v = tsl.vec3(1, 2, 3);
   for (const alias of ["xz", "zxy", "st", "bgr", "xxxx"]) {
     check(v[alias] !== undefined && typeof v[alias][TSL_NODE] === "number", `swizzle ${alias}`);
   }
   check(v.xyzwx === undefined, "invalid swizzle length is undefined");
+
+  // post-shader's blur runs Loop({ start: int(-3), end: int(3), condition: "<=" }) (PRD-617).
+  const inclusive = tsl.Fn(() => {
+    const total = tsl.float(0).toVar();
+    tsl.Loop({ start: tsl.int(-3), end: tsl.int(3), condition: "<=" }, ({ i }: { i: unknown }) => {
+      total.addAssign(tsl.float(i));
+    });
+    return total;
+  })();
+  check(typeof inclusive[TSL_NODE] === "number", 'Loop with condition "<=" builds a graph');
+  // world-shader's cell search nests two: Loop(first, second, ({ i, j }) => ...).
+  let seenNames = "";
+  const nested = tsl.Fn(() => {
+    const total = tsl.float(0).toVar();
+    tsl.Loop(
+      { start: tsl.int(-1), end: tsl.int(1), condition: "<=" },
+      { start: tsl.int(-1), end: tsl.int(1), condition: "<=" },
+      (indices: Record<string, unknown>) => {
+        seenNames = Object.keys(indices).join();
+        total.addAssign(tsl.float(indices.i).add(tsl.float(indices.j)));
+      },
+    );
+    return total;
+  })();
+  check(
+    typeof nested[TSL_NODE] === "number" && seenNames === "i,j",
+    `nested Loop names ${seenNames}`,
+  );
+  let badCondition = "";
+  try {
+    tsl.Fn(() => {
+      tsl.Loop({ start: 0, end: 3, condition: ">" }, () => undefined);
+    })();
+  } catch (error) {
+    badCondition = String(error);
+  }
+  check(
+    badCondition.includes("TN_TSL Loop: condition"),
+    `Loop refuses an unsupported condition: ${badCondition}`,
+  );
 
   // 7. runs Fn, If, Else and Loop callbacks inside engine scopes
   const shade = tsl.Fn(() => {

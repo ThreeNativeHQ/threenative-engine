@@ -432,7 +432,20 @@ extern "C" int tnw_web_set_post(tn_context_t* context, const uint64_t* node) {
 
 namespace {
 std::string loadFailure;  // why the last tnw_web_load_gltf refused; never fails the host itself
+// The files a model names by relative uri (shared images the cook writes beside it), put there by the
+// page before the load, since the host reads no files of its own.
+std::map<std::string, std::vector<uint8_t>> modelFiles;
 }
+
+/** Keeps one file for the next tnw_web_load_gltf calls, by the uri the model names it with. */
+extern "C" int tnw_web_gltf_file(const char* uri, const uint8_t* bytes, uint32_t size) {
+    if (!uri || (!bytes && size)) return 1;
+    modelFiles[uri].assign(bytes, bytes + size);
+    return 0;
+}
+
+/** Drops every file tnw_web_gltf_file kept. */
+extern "C" void tnw_web_gltf_files_clear() { modelFiles.clear(); }
 
 /** Why the last tnw_web_load_gltf call refused, or empty. */
 extern "C" const char* tnw_web_load_error() { return loadFailure.c_str(); }
@@ -449,7 +462,12 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
     loadFailure.clear();
 #if TN_WEB_GLTF
     if (!context || !bytes || !size || !count) return loadFailure = "TN_WASM_GLTF: invalid arguments", 1;
-    auto loaded = gltf::load(std::span<const uint8_t>(bytes, size));
+    gltf::LoadOptions options;
+    options.readUri = [](const std::string& uri) -> std::span<const uint8_t> {
+        const auto found = modelFiles.find(uri);
+        return found == modelFiles.end() ? std::span<const uint8_t>{} : std::span<const uint8_t>(found->second);
+    };
+    auto loaded = gltf::load(std::span<const uint8_t>(bytes, size), options);
     if (!loaded.error.empty()) return loadFailure = loaded.error, 1;
     if (!loaded.scene) return loadFailure = "TN_WASM_GLTF: the file has no scene", 1;
     bool undecoded = false;

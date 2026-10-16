@@ -208,6 +208,16 @@ test("true positive: a missing bridge fails the run rather than skipping the ass
   expect(report.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_BRIDGE_MISSING");
 }, 60_000);
 
+test("a page that throws while booting names the throw beside the missing bridge", async () => {
+  // A throw at module scope stops the game before it installs its bridge. The run used to end on a
+  // bare bridge-missing (or a 30 s `describe` timeout) while the cause sat in the collected page errors.
+  const report = await run("no-bridge-error", MOVES);
+
+  const missing = report.diagnostics.find(({ code }) => code === "TN_PLAYTEST_BRIDGE_MISSING");
+  expect(report.pass).toBe(false);
+  expect(missing?.message).toContain("transport-only-boom");
+}, 60_000);
+
 test("managed server mode rejects an already occupied URL", async () => {
   const report = await run("good", MOVES, {
     command: `${JSON.stringify(process.execPath)} -e "process.exit(9)"`,
