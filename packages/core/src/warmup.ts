@@ -663,25 +663,30 @@ interface IReflectorNodeLike {
  * Whether a TSL node graph contains a reflector.
  *
  * Three's `reflector()` hangs a `_reflectorBaseNode` off a `ReflectorNode` that a material's
- * `colorNode` (or a node composed around it) references. The walk is bounded and only descends
- * real nodes, so a material with no reflector costs one shallow pass.
+ * `colorNode` (or a node composed around it) references. Shared nodes are revisited only at a
+ * shallower depth, preserving the depth bound without expanding every path through the graph.
  */
-function nodeHasReflector(root: unknown, depth: number): boolean {
+function nodeHasReflector(root: unknown, depth: number, seen: WeakMap<object, number>): boolean {
   if (depth > 64 || typeof root !== "object" || root === null) return false;
   const node = root as IReflectorNodeLike;
   if (node._reflectorBaseNode !== undefined) return true;
   if (node.isNode !== true || typeof node.getChildren !== "function") return false;
+  const prior = seen.get(root);
+  if (prior !== undefined && prior <= depth) return false;
+  seen.set(root, depth);
   try {
     for (const child of node.getChildren()) {
-      if (nodeHasReflector(child, depth + 1)) return true;
+      if (nodeHasReflector(child, depth + 1, seen)) return true;
     }
   } catch {
+    seen.delete(root);
     return false;
   }
   return false;
 }
 
 function hasReflector(scene: Object3D): boolean {
+  const seen = new WeakMap<object, number>();
   const stack: Object3D[] = [scene];
   while (stack.length > 0) {
     const object = stack.pop() as Object3D & { material?: unknown };
@@ -692,7 +697,7 @@ function hasReflector(scene: Object3D): boolean {
       (material as { isNodeMaterial?: boolean }).isNodeMaterial === true
     ) {
       for (const value of Object.values(material as Record<string, unknown>)) {
-        if (nodeHasReflector(value, 0)) return true;
+        if (nodeHasReflector(value, 0, seen)) return true;
       }
     }
     const children = object.children ?? [];

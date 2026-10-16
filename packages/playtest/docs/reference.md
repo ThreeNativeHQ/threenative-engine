@@ -17,7 +17,7 @@ browser and Android, which is the only thing that says which build the run exerc
 project; there is no root `pnpm dev`. `--browser-recipe webgpu` supplies the current Chromium WebGPU
 flags including `--enable-features=Vulkan`, without which Chromium silently serves WebGPU from
 SwiftShader and reports healthy-looking limits from a CPU rasteriser; `--browser-arg` is the escape
-hatch, and a run that does not name its adapter is not evidence. **On Linux the runner provisions a
+hatch, and a run that does not name its adapter is not evidence. `--cpu-prof` starts before page navigation so the profile includes startup plus steps, and profiling perturbs the measurement so it is diagnose-only, never a timing verdict. **On Linux the runner provisions a
 private Xvfb for every pixel-producing run, whether or not a display exists** (stripping Wayland env
 itself), so a scenario never opens windows over whatever the operator is doing — a sweep that
 borrows `:0` makes the machine unusable for as long as it runs. Set `TN_PLAYTEST_HOST_DISPLAY=1` to
