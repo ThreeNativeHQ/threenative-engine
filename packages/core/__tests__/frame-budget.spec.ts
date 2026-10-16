@@ -698,3 +698,34 @@ describe("the display's own present counter", () => {
     expect(Number.isFinite(last?.presentedFps ?? 0)).toBe(true);
   });
 });
+
+it("retains measured hitch phases in loop diagnostics without counting a hitch in frame windows", () => {
+  const lines: string[] = [];
+  const budget = new FrameBudget({ report: (line) => lines.push(line), reportEvery: 100 });
+  let clock = 0;
+  const loop = new FixedStepLoop({
+    budget,
+    collectMetrics: true,
+    now: () => clock,
+    onRender: () => {
+      clock += 4;
+      budget.addRender(4);
+      return { drawCalls: 1 };
+    },
+    onUpdate: () => undefined,
+  });
+  loop.start(0);
+  loop.freezeClock(0);
+  clock = 16;
+  loop.stepFrame(clock);
+  clock = 8016;
+  loop.stepFrame(clock);
+  const sample = loop.runtimeDiagnosticsSeries().at(-1);
+  expect(sample?.frameMs).toBe(8000);
+  expect(sample?.phases?.render).toBe(4);
+  expect(sample?.phases?.hostGap).toBeGreaterThan(7900);
+  expect(lines.filter((line) => line.startsWith(FRAME_HITCH_MARKER))).toHaveLength(1);
+  expect(budget.window().hitches).toBe(1);
+  expect(budget.window().phases.render.samples).toBe(1);
+  expect(budget.lastRenderMs).toBeUndefined();
+});

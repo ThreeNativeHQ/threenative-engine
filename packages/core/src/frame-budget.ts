@@ -995,21 +995,6 @@ export class FrameBudget {
 
     this.#countPresents();
 
-    const isHitch = this.#presentedDelta >= this.hitchMs;
-    if (isHitch) {
-      this.#passesThisFrame.length = 0;
-      this.#hitchesInWindow += 1;
-      this.#report(
-        `${FRAME_HITCH_MARKER}:${JSON.stringify({
-          gapMs: round(this.#presentedDelta),
-          uptimeMs: round(nowMs),
-          wallClock: this.#wallClock(),
-        })}`,
-      );
-      this.#maybeReport();
-      return undefined;
-    }
-
     const update = Math.max(0, simulationEnd - this.#frameStart);
     const tail = Math.max(0, nowMs - simulationEnd);
     const residual = Math.max(0, tail - this.#renderMs - this.#overlayMs - this.#uiMs);
@@ -1023,6 +1008,23 @@ export class FrameBudget {
           update: round(update),
         }
       : undefined;
+
+    const isHitch = this.#presentedDelta >= this.hitchMs;
+    if (isHitch) {
+      this.#passesThisFrame.length = 0;
+      this.#hitchesInWindow += 1;
+      this.#report(
+        `${FRAME_HITCH_MARKER}:${JSON.stringify({
+          gapMs: round(this.#presentedDelta),
+          uptimeMs: round(nowMs),
+          wallClock: this.#wallClock(),
+        })}`,
+      );
+      this.#maybeReport();
+      // Exclude the present gap from windows; diagnostics still need the measured callback phases.
+      return sample;
+    }
+
     this.#frame.push(frameMs);
     this.#substeps.push(this.#substepCount);
     // The first frame has no predecessor, so it has neither an interval nor a host gap; pushing a
