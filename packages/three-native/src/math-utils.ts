@@ -9,8 +9,10 @@ const lerp = (x: number, y: number, t: number): number => (1 - t) * x + t * y;
 const euclideanModulo = (n: number, m: number): number => ((n % m) + m) % m;
 
 export const mathUtilsExtras = {
+  // quality-allow: three's MathUtils constant names.
   // biome-ignore lint/style/useNamingConvention: three's constant names.
   DEG2RAD: Math.PI / 180,
+  // quality-allow: three's MathUtils constant names.
   // biome-ignore lint/style/useNamingConvention: three's constant names.
   RAD2DEG: 180 / Math.PI,
   mapLinear: (x: number, a1: number, a2: number, b1: number, b2: number): number =>

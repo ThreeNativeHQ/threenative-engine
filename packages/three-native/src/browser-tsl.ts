@@ -269,6 +269,13 @@ function takesEngineObject(name: string, index: number): boolean {
   );
 }
 
+/** The engine class `storage()` builds attributes from. */
+interface IBufferAttributeClass {
+  // quality-allow: three's class name, so a back end passes its class map.
+  // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
+  readonly BufferAttribute: never;
+}
+
 /**
  * Defines the TSL exports over `runtime`. `sync` pushes edited Color/VectorN uniform values; the
  * renderer calls it before each frame. With `classes`, constants answer r185's ConstNode.value.
@@ -417,7 +424,9 @@ export function defineTsl(
     exports.rtt as Parameters<typeof defineRtt>[0],
     classes && "Mesh" in classes
       ? ({
+          // quality-allow: the back end's class map is untyped; rtt narrows it to the classes it names.
           ...(classes as unknown as IRttClasses),
+          // quality-allow: three's class name, so a back end passes its class map.
           // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
           QuadMesh: defineQuadMesh(classes as never),
         } as IRttClasses)
@@ -540,8 +549,8 @@ export function defineTsl(
       exports,
       defineStorage(
         { storage: makeStorage as never },
-        // biome-ignore lint/style/useNamingConvention: three's class name, so a back end passes its class map.
-        (classes as unknown as { BufferAttribute: never }).BufferAttribute,
+        // quality-allow: the engine's BufferAttribute class arrives untyped from the back end's class map.
+        (classes as unknown as IBufferAttributeClass).BufferAttribute,
       ),
     );
   for (const name of CONSTANTS) {
