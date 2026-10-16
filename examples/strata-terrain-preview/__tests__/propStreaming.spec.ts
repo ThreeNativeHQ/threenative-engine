@@ -7,29 +7,28 @@ describe("streamed spruce terminal gates", () => {
     const placements = [
       { asset: "spruce", variant: 0, scale: 0.5 },
       { asset: "spruce", variant: 1, scale: 1.5 },
-    ];
+    ] as const;
     const scales = placements.map(({ scale }) => scale);
     const minimumByVariant = new Map([
-      [0, scales[0] as number],
-      [1, scales[1] as number],
+      [0, placements[0].scale],
+      [1, placements[1].scale],
     ]);
-    const gates = [...minimumByVariant.values()].map((minimum) =>
-      impostorDistanceForScale(minimum, LOD_BANDS.mid),
-    );
+    expect(minimumByVariant.size).toBe(placements.length);
+    const smallGate = impostorDistanceForScale(placements[0].scale, LOD_BANDS.mid);
+    const largeGate = impostorDistanceForScale(placements[1].scale, LOD_BANDS.mid);
 
-    expect(gates[0] * (scales[0] as number)).toBeGreaterThanOrEqual(LOD_BANDS.far);
-    expect(gates[1] * (scales[1] as number)).toBeGreaterThanOrEqual(LOD_BANDS.far);
-    expect(gates[0]).toBeGreaterThan(LOD_BANDS.mid);
-    expect(gates[1]).toBeGreaterThan(LOD_BANDS.mid);
+    expect(smallGate * placements[0].scale).toBeGreaterThanOrEqual(LOD_BANDS.far);
+    expect(largeGate * placements[1].scale).toBeGreaterThanOrEqual(LOD_BANDS.far);
+    expect(smallGate).toBeGreaterThan(LOD_BANDS.mid);
+    expect(largeGate).toBeGreaterThan(LOD_BANDS.mid);
     expect(placements).toHaveLength(2);
     expect(placements.map(({ scale }) => scale)).toEqual(scales);
 
-    const multiLevelGates = [0.5, 2].map((minimum) =>
-      impostorDistanceForScale(minimum, LOD_BANDS.far),
-    );
-    expect(multiLevelGates[0]).toBe(300);
-    expect(multiLevelGates[0] * 0.5).toBe(LOD_BANDS.far);
-    expect(multiLevelGates[1]).toBeGreaterThan(LOD_BANDS.far);
-    expect(multiLevelGates[1] * 2).toBeGreaterThan(LOD_BANDS.far);
+    const halfScaleGate = impostorDistanceForScale(0.5, LOD_BANDS.far);
+    const doubleScaleGate = impostorDistanceForScale(2, LOD_BANDS.far);
+    expect(halfScaleGate).toBe(300);
+    expect(halfScaleGate * 0.5).toBe(LOD_BANDS.far);
+    expect(doubleScaleGate).toBeGreaterThan(LOD_BANDS.far);
+    expect(doubleScaleGate * 2).toBeGreaterThan(LOD_BANDS.far);
   });
 });

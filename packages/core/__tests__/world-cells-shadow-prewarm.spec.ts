@@ -397,6 +397,7 @@ describe("a streamed world's caster prewarm", () => {
 
     const prewarmed = new Set<string>();
     const camera = cameraAt(follow.position.x, follow.position.z);
+    const mainDrawGroup = new Group();
     let clock = 0;
     let settled = false;
     let settledAt = Number.POSITIVE_INFINITY;
@@ -431,7 +432,7 @@ describe("a streamed world's caster prewarm", () => {
             camera,
             terminalMain.geometry,
             terminalMain.material as MeshBasicMaterial,
-            terminalMain,
+            mainDrawGroup,
           );
         }
       }

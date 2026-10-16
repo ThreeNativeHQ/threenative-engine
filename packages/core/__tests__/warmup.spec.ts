@@ -72,7 +72,7 @@ describe("scene warm-up", () => {
         });
       },
     };
-    const resultPromise = warmUpSceneWithCompletion(renderer, sceneOf(1), {} as never, {
+    const resultPromise = warmUpSceneWithCompletion(renderer, sceneOf(1) as never, {} as never, {
       budgetMs: 10,
       compileTimeoutMs: 5,
       granularity: "scene",
@@ -118,7 +118,7 @@ describe("scene warm-up", () => {
           });
         },
       },
-      sceneOf(1),
+      sceneOf(1) as never,
       {} as never,
       {
         budgetMs: 10,
