@@ -781,8 +781,9 @@ export function worldLodMaterial(
   const noise = fract(sin(dot(floor(screenCoordinate.xy), vec2(12.9898, 78.233))).mul(43758.5453));
   // CPU-admitted batches publish the levels their instance currently has beside its matrix. During
   // a queued refilter, an old level outside that set remains whole until the replacement is swapped.
+  // LOD indices are categorical; interpolating 2 below 2 can clip an otherwise whole tree.
   const published = publishedRanges
-    ? (attribute("tnPublishedLodRange", "vec2") as Node<"vec2">)
+    ? varying(attribute("tnPublishedLodRange", "vec2") as Node<"vec2">).setInterpolation("flat")
     : undefined;
   let mask = float(1).greaterThan(0);
   for (let gate = 1; gate < distances.length; gate++) {

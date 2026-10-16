@@ -21,7 +21,6 @@ import {
   Texture,
   Vector3,
 } from "three";
-// @ts-expect-error Three does not publish the private NodeFrame module's declarations.
 import ThreeNodeFrame from "three/src/nodes/core/NodeFrame.js";
 // @ts-expect-error Three's private chain map has no public declarations.
 import ChainMap from "three/src/renderers/common/ChainMap.js";

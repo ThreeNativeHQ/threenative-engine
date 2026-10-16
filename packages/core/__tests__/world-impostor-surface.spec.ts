@@ -432,6 +432,23 @@ it("opts CPU LOD masks into published per-instance ranges", () => {
   );
   expect(material.userData.tnPublishedLodRange).toBe(true);
   expect(material.maskNode).toBeDefined();
+  const publishedRangeInterpolations: unknown[] = [];
+  material.maskNode?.traverse((node) => {
+    if (Reflect.get(node, "isVaryingNode") !== true) return;
+    const varyingSource = Reflect.get(node, "node");
+    if (varyingSource === null || typeof varyingSource !== "object") return;
+    const attributeSource = Reflect.get(varyingSource, "node");
+    if (attributeSource === null || typeof attributeSource !== "object") return;
+    const getAttributeName = Reflect.get(attributeSource, "getAttributeName");
+    if (
+      typeof getAttributeName === "function" &&
+      getAttributeName.call(attributeSource) === "tnPublishedLodRange"
+    ) {
+      publishedRangeInterpolations.push(Reflect.get(node, "interpolationType"));
+    }
+  });
+  expect(publishedRangeInterpolations).toEqual(["flat"]);
+  expect(material.maskShadowNode).toBe(material.maskNode);
   material.dispose();
   source.dispose();
 });
