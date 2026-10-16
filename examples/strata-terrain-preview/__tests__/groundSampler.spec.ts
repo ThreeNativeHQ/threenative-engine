@@ -90,6 +90,35 @@ describe("exact ground sampler", () => {
     }
   });
 
+  it("matches Float32 vertices, diagonals, and the far bound on a non-binary grid", () => {
+    const rows = 17;
+    const columns = 17;
+    const heights: number[] = [];
+    for (let row = 0; row < rows; row += 1)
+      for (let column = 0; column < columns; column += 1) heights.push(sobel(column, row));
+    const { mesh, sampler, ray } = sampleCase(heights, 10.3, rows, columns);
+    const position = mesh.geometry.getAttribute("position");
+    const points: [number, number][] = [];
+    for (let row = 0; row < rows; row += 1) {
+      for (let column = 0; column < columns; column += 1) {
+        const vertex = row * columns + column;
+        points.push([position.getX(vertex), position.getZ(vertex)]);
+        if (row === rows - 1 || column === columns - 1) continue;
+        const lowerRight = vertex + columns + 1;
+        points.push([
+          (position.getX(vertex) + position.getX(lowerRight)) / 2,
+          (position.getZ(vertex) + position.getZ(lowerRight)) / 2,
+        ]);
+      }
+    }
+    for (const [x, z] of points) {
+      const expected = ray(x, z);
+      expect(expected).not.toBeNull();
+      expect(sampler(x, z)).not.toBeNull();
+      expect(sampler(x, z) as number).toBeCloseTo(expected as number, 6);
+    }
+  });
+
   it("follows a translated mesh and matches the raycaster there", () => {
     const { field, mesh } = sampleCase([0, 1, 1, 0], 2, 2, 2);
     mesh.position.set(12, 3, -7);
