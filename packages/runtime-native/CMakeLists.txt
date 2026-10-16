@@ -2888,7 +2888,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # Use --copy-dt-needed-entries to pull in dependencies from shared libraries.
     # Also allow multiple definitions because wgpu-native and swc both contain Rust runtime symbols.
     if(UNIX AND NOT APPLE)
-        target_link_options(mystral PRIVATE
+        target_link_options(mystral-runtime INTERFACE
             "LINKER:--copy-dt-needed-entries"
             "LINKER:--allow-multiple-definition"
         )
