@@ -46,6 +46,9 @@ const sanitizerGeneratedStart = "<!-- native-sanitizer-generated:start -->";
 const sanitizerGeneratedEnd = "<!-- native-sanitizer-generated:end -->";
 const sourceExtensions = new Set([".c", ".cc", ".cpp", ".cxx", ".m", ".mm"]);
 const engineCoverageLabel = "native-engine";
+// A test that only reads an executable artifact never launches it, so it can produce no execution
+// profile. This label routes it to the correctness run instead of the profiled run.
+const coverageInspectionLabel = "coverage-inspection";
 const engineTestAggregate = "tn-native-engine-tests";
 const engineSourcePrefix = "src/engine/";
 const configurationBlockers = new Map([
@@ -272,16 +275,26 @@ export function engineTestExecutable(command, buildDirectory, isExecutable = isE
   );
 }
 
-// Non-binary reference checks still run for correctness without profiles.
+// CTest emits a LABELS property either as a token array or as a `;`-separated string. Match exact
+// tokens, so `native-engine-extended` is not mistaken for the `native-engine` label.
+function testLabels(properties) {
+  const value = (properties ?? []).find((property) => property.name === "LABELS")?.value ?? [];
+  return Array.isArray(value) ? value : String(value).split(";").filter(Boolean);
+}
+
+// Non-binary reference checks still run for correctness without profiles. An inspection test reads
+// an executable artifact through an argument but never launches it, so its label is honoured before
+// any command token is classified as a profiled executable.
 export function selectEngineCoverageTests(inventory, buildDirectory, isExecutable = isExecutableFile) {
   const selected = [];
   const unprofiled = [];
   for (const { command = [], name, properties } of inventory) {
-    const labels = (properties ?? []).find((property) => property.name === "LABELS")?.value ?? [];
-    const labelled = Array.isArray(labels)
-      ? labels.includes(engineCoverageLabel)
-      : String(labels).includes(engineCoverageLabel);
-    if (!labelled) continue;
+    const labels = testLabels(properties);
+    if (!labels.includes(engineCoverageLabel)) continue;
+    if (labels.includes(coverageInspectionLabel)) {
+      unprofiled.push(name);
+      continue;
+    }
     const executable = engineTestExecutable(command, buildDirectory, isExecutable);
     if (executable === undefined) unprofiled.push(name);
     else selected.push({ executable, name });

@@ -17,6 +17,10 @@ import {
 } from "../scripts/measure-native-coverage.mjs";
 
 const cmake = readFileSync(join(import.meta.dirname, "..", "CMakeLists.txt"), "utf8");
+const nativeEngineCore = readFileSync(
+  join(import.meta.dirname, "..", "cmake", "NativeEngineCore.cmake"),
+  "utf8",
+);
 
 describe("native coverage reporting", () => {
   it("reports zero-hit files instead of omitting them", () => {
@@ -312,6 +316,58 @@ describe("native coverage reporting", () => {
       "native_engine_model_lod_reference_current",
     ]);
     expect(engineTestExecutable(["sh", "-c", "run", "--", pacing], build, isExecutable)).toBe(pacing);
+  });
+
+  it("routes a labelled inspection test that only reads a binary to unprofiled correctness", () => {
+    const build = join(import.meta.dirname, "..", "build", "tn-linux-coverage-engine");
+    const inspected = join(build, "tn-native-engine-world-cells-test");
+    const renderDriver = join(build, "tn-native-engine-render-driver");
+    const executables = new Set([inspected, renderDriver]);
+    const isExecutable = (path) => executables.has(path);
+    const nativeEngine = { name: "LABELS", value: ["native-engine"] };
+    const inventory = [
+      {
+        // Reads the executable artifact through --binary but never launches it: no profile exists.
+        command: [
+          "/usr/bin/node",
+          join(import.meta.dirname, "..", "scripts", "inspect-js-free.mjs"),
+          "--binary",
+          inspected,
+          "--native-world",
+        ],
+        name: "native_engine_strict_artifact_inspect",
+        properties: [{ name: "LABELS", value: ["native-engine", "coverage-inspection"] }],
+      },
+      {
+        // The same built executable behind a wrapper's --driver is launched, so it stays measurable.
+        command: ["/usr/local/bin/pnpm", "exec", "tsx", "run-native.ts", "--driver", renderDriver],
+        name: "native_engine_render_lit",
+        properties: [nativeEngine],
+      },
+      {
+        command: ["/usr/bin/cmake", "-P", "CheckNativeEngineGraph.cmake"],
+        name: "native_engine_target_graph",
+        properties: [nativeEngine],
+      },
+    ];
+
+    const { selected, unprofiled } = selectEngineCoverageTests(inventory, build, isExecutable);
+
+    expect(selected).toEqual([{ executable: renderDriver, name: "native_engine_render_lit" }]);
+    expect(unprofiled).toEqual([
+      "native_engine_strict_artifact_inspect",
+      "native_engine_target_graph",
+    ]);
+    // The guard for a launched executable is untouched: its missing profile still fails.
+    expect(() => requireInvocationProfiles(["native_engine_render_lit-0-"], [])).toThrow(
+      /invocation profiles are missing/u,
+    );
+  });
+
+  it("labels the world artifact inspector for coverage in CMake", () => {
+    expect(nativeEngineCore).toMatch(
+      /native_engine_strict_artifact_inspect PROPERTIES\s+LABELS "native-engine;coverage-inspection"/u,
+    );
   });
 
   it("collects the CTest inventory after building the engine aggregate on a fresh tree", () => {

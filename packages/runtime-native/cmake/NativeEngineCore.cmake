@@ -432,11 +432,14 @@ if(NOT EMSCRIPTEN)
         target_link_options(tn-native-engine-world-cells-test PRIVATE "/MAP:$<TARGET_FILE_DIR:tn-native-engine-world-cells-test>/tn-native-engine-world-cells-test.map")
     endif()
     # Inspect the real CPU world fixture and its static native closure: no JS engine, no web view.
+    # The inspector reads the binary's bytes and symbols through --binary; it never launches it, so
+    # the coverage lane runs it for correctness without expecting an execution profile.
     if(TN_WORLD_NODE_EXECUTABLE)
         add_test(NAME native_engine_strict_artifact_inspect
             COMMAND ${TN_WORLD_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/inspect-js-free.mjs
                 --binary $<TARGET_FILE:tn-native-engine-world-cells-test> --native-world)
-        set_tests_properties(native_engine_strict_artifact_inspect PROPERTIES LABELS "native-engine")
+        set_tests_properties(native_engine_strict_artifact_inspect PROPERTIES
+            LABELS "native-engine;coverage-inspection")
     endif()
 endif()
 # PRD-521 phase 1: the ported world.json validator and cellPlacements against world-package.ts.
