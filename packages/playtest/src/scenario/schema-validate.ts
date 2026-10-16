@@ -19,6 +19,7 @@ export const PLAYTEST_ROOT_KEYS = [
   "reducedMotion",
   "schemaVersion",
   "setup",
+  "startTick",
   "steps",
   "subject",
   "target",
@@ -43,6 +44,9 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   }
   if (value.awaitStartup !== undefined && typeof value.awaitStartup !== "boolean") {
     throw invalidScenario(scenarioPath, "Scenario awaitStartup must be a boolean when present.");
+  }
+  if (value.startTick !== undefined && (!Number.isSafeInteger(value.startTick) || (value.startTick as number) < 0)) {
+    throw invalidScenario(scenarioPath, "Scenario startTick must be a nonnegative safe integer when present.");
   }
   if (value.bootFailure !== undefined && value.bootFailure !== "renderer-no-adapter") {
     throw invalidScenario(scenarioPath, "Scenario bootFailure must be 'renderer-no-adapter' when present.");
@@ -102,6 +106,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
       ? {}
       : { setup: validateSetup(requireRecord(value.setup, scenarioPath, "setup"), scenarioPath, subject) }),
     ...(absolutePath === undefined ? {} : { sourcePath: absolutePath }),
+    ...(value.startTick === undefined ? {} : { startTick: value.startTick as number }),
     steps,
     ...(subject === undefined ? {} : { subject }),
     target,

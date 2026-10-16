@@ -40,9 +40,17 @@ export function collectReceipts(thirdPartyRoot = THIRD_PARTY, expectedLockHash) 
   if (!existsSync(thirdPartyRoot)) return receipts;
   for (const entry of readdirSync(thirdPartyRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    const receiptPath = join(thirdPartyRoot, entry.name, RECEIPT_DIRNAME, 'receipt.json');
+    // The arm64 V8 producer hashes its entire tree, so acquisition metadata lives outside it.
+    const v8Sidecar = join(thirdPartyRoot, RECEIPT_DIRNAME, 'v8-linux-arm64.json');
+    const nestedReceipt = join(thirdPartyRoot, entry.name, RECEIPT_DIRNAME, 'receipt.json');
+    const externalV8 = entry.name === 'v8' && !existsSync(nestedReceipt) && existsSync(v8Sidecar);
+    const receiptPath = externalV8 ? v8Sidecar : nestedReceipt;
     if (!existsSync(receiptPath)) continue;
     const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+    if (externalV8 && (receipt.dependency !== 'v8' || !Array.isArray(receipt.payloads) ||
+      receipt.payloads.length !== 1 || receipt.payloads[0] !== 'v8-linux-arm64')) {
+      fail('TN_NATIVE_SBOM_RECEIPT_MALFORMED', 'arm64 V8 sidecar must name v8 and its selected payload');
+    }
     receipts.push({ dir: entry.name, ...receipt });
   }
   if (expectedLockHash !== undefined) {

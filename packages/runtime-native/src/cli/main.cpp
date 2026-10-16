@@ -1124,7 +1124,18 @@ static std::unique_ptr<mystral::Runtime> createConfiguredRuntime(const CLIOption
     // Only the web overlay needs this. The CSS UI backend attaches to no window system at all — it
     // hands the compositor pixels — so it must not cost a Wayland session its native video driver.
     if (!opts.uiRoot.empty() && !opts.cssUiRenderer) {
-        // The web overlay attaches to an X11 surface, also on Wayland via XWayland.
+        // The web overlay attaches to an X11 surface, also on Wayland via XWayland. SDL_HINT_OVERRIDE
+        // below replaces any explicit driver, so a Wayland request with this overlay would run on X11
+        // without saying so. Refuse it instead and name the two ways forward.
+        const char* sdl3Driver = std::getenv("SDL_VIDEO_DRIVER");
+        const char* legacyDriver = std::getenv("SDL_VIDEODRIVER");
+        const char* requestedDriver = (sdl3Driver != nullptr && *sdl3Driver != '\0') ? sdl3Driver : legacyDriver;
+        if (requestedDriver != nullptr && std::string(requestedDriver) == "wayland") {
+            std::cerr << "[Mystral] The web UI overlay needs X11, but SDL_VIDEO_DRIVER/SDL_VIDEODRIVER "
+                         "asks for Wayland. Set ui.renderer: \"native-css\", or unset the variable."
+                      << std::endl;
+            std::exit(1);
+        }
         // Select both backends before SDL/GTK initialization and worker creation; a desktop
         // session's GDK_BACKEND=wayland must not leave the game's requested HUD unattached.
         SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "x11", SDL_HINT_OVERRIDE);

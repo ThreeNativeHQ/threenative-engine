@@ -837,3 +837,30 @@ describe("warm-up absolute budget", () => {
     },
   );
 });
+
+describe("compute warm-up dispatch", () => {
+  test.each([false, true])(
+    "WebGPU warm-up uses zero kernel invocations (raw wrapper: %s)",
+    async (wrapped) => {
+      const node = {};
+      const computeAsync = vi.fn(async () => undefined);
+      const receiver = { backend: { isWebGPUBackend: true }, computeAsync };
+      const report = await warmUpComputeNodes(wrapped ? { raw: receiver } : receiver, [node]);
+      expect(report.compiled).toBe(1);
+      expect(computeAsync).toHaveBeenCalledExactlyOnceWith(node, 0);
+      expect(computeAsync.mock.contexts[0]).toBe(receiver);
+    },
+  );
+
+  test.each([undefined, { isWebGLBackend: true }])(
+    "other compute seams retain their existing call (%j)",
+    async (backend) => {
+      const node = {};
+      const computeAsync = vi.fn(async () => undefined);
+      const receiver = { backend, computeAsync };
+      const report = await warmUpComputeNodes(receiver, [node]);
+      expect(report.compiled).toBe(1);
+      expect(computeAsync).toHaveBeenCalledExactlyOnceWith(node);
+    },
+  );
+});

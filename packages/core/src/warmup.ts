@@ -326,12 +326,17 @@ export interface IComputeWarmUpReport {
 }
 
 function computeAsyncOf(renderer: IWarmUpRenderer): ((node: unknown) => Promise<void>) | undefined {
-  if (typeof renderer.computeAsync === "function") return renderer.computeAsync.bind(renderer);
-  const raw = renderer.raw;
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const computeAsync = (raw as { computeAsync?: unknown }).computeAsync;
+  const receiver = typeof renderer.computeAsync === "function" ? renderer : renderer.raw;
+  if (typeof receiver !== "object" || receiver === null) return undefined;
+  const { backend, computeAsync } = receiver as {
+    backend?: { isWebGPUBackend?: boolean };
+    computeAsync?: (node: unknown, dispatchSize?: number) => Promise<void>;
+  };
   if (typeof computeAsync !== "function") return undefined;
-  return computeAsync.bind(raw) as (node: unknown) => Promise<void>;
+  // WebGPU compiles zero workgroups without running a solver against its live storage buffers.
+  return backend?.isWebGPUBackend === true
+    ? (node) => computeAsync.call(receiver, node, 0)
+    : computeAsync.bind(receiver);
 }
 
 /**

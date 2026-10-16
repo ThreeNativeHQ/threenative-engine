@@ -690,6 +690,7 @@ export function requiredPlaytestCapabilities(
   target?: string,
 ): PlaytestCapability[] {
   const required = new Set<PlaytestCapability>();
+  if (scenario.startTick !== undefined) required.add("runtime.fixedStep");
   if (scenario.steps.some((step) => step.waitForResource !== undefined)) {
     required.add("runtime.resources");
   }
