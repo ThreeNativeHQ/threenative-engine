@@ -453,6 +453,13 @@ void registerBufferGeometry(ClassBinding& b) {
     b.members["boundingSphere"] = [](void* self, const Args&, Store& store) {
         return store.share("Sphere", as<BufferGeometry>(self)->boundingSphere);
     };
+    // three lets a game assign (or clear) either bound: a particle cloud sets the box it measured.
+    b.setters["boundingBox"] = [](void* self, const Value& value, Store& store) {
+        as<BufferGeometry>(self)->boundingBox = value.kind == Value::Kind::Null ? nullptr : store.shared<Box3>(value, "Box3");
+    };
+    b.setters["boundingSphere"] = [](void* self, const Value& value, Store& store) {
+        as<BufferGeometry>(self)->boundingSphere = value.kind == Value::Kind::Null ? nullptr : store.shared<Sphere>(value, "Sphere");
+    };
 
     b.methods["setIndex"] = [](void* self, const Args& a, Store& store) {
         BufferGeometry* geometry = as<BufferGeometry>(self);
