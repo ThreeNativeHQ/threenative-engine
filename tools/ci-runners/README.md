@@ -7,14 +7,23 @@ the same with or without it. The design and its measurements are in
 
 ## How routing works
 
-Every movable Linux job picks its runner from one expression:
+Every movable Linux job picks its runner from one expression, gated on a canonical instance id:
 
 ```yaml
-runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:typecheck')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
 ```
 
-- `TN_RUNNER` (repository variable) set to `tn-local` → the job runs on this pool. Unset → hosted.
-- A pull request from a fork always runs hosted, so outside code never reaches the machine.
+- `TN_RUNNER` (repository variable) set to `tn-local` → the job can run on this pool. Unset → hosted.
+- `TN_RUNNER_SLOTS` (repository variable) is the number of heavy runners the balancer saw idle. The
+  `scope` job admits at most that many eligible heavy instances and publishes the one admitted array
+  (`runner_admission`). A job runs on the pool only when its own id (`ci:typecheck`, `integration:csg`,
+  `native:starter-linux:linux-x64`, …) is in the array; anything else stays hosted.
+- The array is one shared budget for `ci.yml`, `integration.yml` and `native-platforms.yml` together,
+  never one budget per workflow. A missing count, an unset runner or a fork PR leaves the array empty,
+  so every heavy lane is hosted.
+- A pull request from a fork always runs hosted, so outside code never reaches the machine. The fork
+  and missing-runner guards stay in every heavy selector, even if a supplied plan is malformed.
+- A malformed nonempty count or plan fails the `scope` job closed instead of routing a partial board.
 - Small join jobs (`scope`, `ci-required`, summaries) use `TN_RUNNER_LIGHT` the same way, so they never
   queue behind a 20-minute build.
 - macOS, Windows, iOS and linux-arm64 have no local counterpart and always run hosted.
@@ -27,12 +36,17 @@ runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'u
 **The pool is extra capacity, not a replacement.** This repository is public, so hosted runners are free
 and run about 20 jobs at once, against 3 heavy plus 3 light pool slots. A balancer (`ci-runners.sh balance`, started by `up`) advertises each
 label only after 2 consecutive polls (~40 s) see an idle runner, and withdraws it immediately when
-none is idle. Variable snapshots are best-effort, not atomic reservation: a job that reads the
-variable just before withdrawal still queues on the pool, and snapshot fallback is best-effort so
-queued jobs may remain local. Fork pull requests and macOS, Windows, iOS, linux-arm64, `supply-chain`,
-emulator, and V8 publisher jobs always run hosted. Routing every Linux job here funnelled the
-team's CI into 5 slots and made boards slower. `down` stops the balancer and clears both variables, so a
-pool that is down never strands a job.
+none is idle. It publishes `TN_RUNNER_SLOTS` before the label turns on and removes it after the label
+turns off, so a consumer never reads the label without its integer capacity.
+
+The count and the variable snapshot are best-effort, not an atomic reservation. A pool slot can be
+taken by another run between the snapshot and the job's start, and a stale or cross-run plan can name a
+slot that is no longer free; the overflow then waits on the pool rather than failing over to hosted at
+once. There is no per-job failover and no queued-job reassignment. Fork pull requests and macOS,
+Windows, iOS, linux-arm64, `supply-chain`, emulator, and V8 publisher jobs always run hosted. Routing
+every Linux job here without a budget funnelled the team's CI into 5 slots and made boards slower.
+`down` stops the balancer and clears `TN_RUNNER`, `TN_RUNNER_SLOTS` and `TN_RUNNER_LIGHT`, so a pool
+that is down never strands a job.
 
 ## Set it up (once, on the runner machine)
 
@@ -74,7 +88,7 @@ reviewed script is on `develop`; a restart cancels active jobs.
 |---|---|
 | What is running, what is routed | `pnpm ci:runners status` (balancer log: `~/.local/state/threenative/ci-runners/balance.log`) |
 | Pick up a runner image or script change from `develop` | `systemctl --user restart threenative-ci-runners` (when no job is running; a restart kills in-flight jobs) |
-| Send every job to hosted runners now (kill switch) | `gh variable delete TN_RUNNER && gh variable delete TN_RUNNER_LIGHT` |
+| Send every job to hosted runners now (kill switch) | `gh variable delete TN_RUNNER && gh variable delete TN_RUNNER_SLOTS && gh variable delete TN_RUNNER_LIGHT` |
 | Stop the pool | `systemctl --user stop threenative-ci-runners` |
 | Remove everything | `pnpm ci:runners uninstall` |
 | Run without the service (any OS with Docker) | `pnpm ci:runners up [N]` / `pnpm ci:runners down` |

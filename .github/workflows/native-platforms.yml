@@ -34,6 +34,11 @@ on:
         description: Immutable source commit captured once by CI scope.
         type: string
         default: ""
+      # PRD-620: the parent's single admitted slice of eligible HEAVY instances. Empty (or a direct
+      # dispatch) means every heavy lane stays hosted.
+      runner_admission:
+        type: string
+        default: ""
       ios_only:
         required: false
         type: boolean
@@ -78,6 +83,9 @@ jobs:
       # request into main; `reduced` for an ordinary pull request, which runs the Linux rows only.
       native_tier: ${{ steps.classify.outputs.native_tier }}
       starter_rows: ${{ steps.rows.outputs.starter_rows }}
+      # PRD-620: the caller's admitted heavy slice, validated and re-emitted as safe JSON. Absent
+      # or empty input stays hosted; a malformed plan throws and fails this scope job closed.
+      runner_admission: ${{ steps.admission.outputs.runner_admission }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -95,6 +103,13 @@ jobs:
           fi
           grep -Fx "candidate_sha=$candidate" "$RUNNER_TEMP/ci-scope.outputs"
           cat "$RUNNER_TEMP/ci-scope.outputs" >> "$GITHUB_OUTPUT"
+      # PRD-620: validate the caller's single admitted slice; an absent or empty plan stays hosted
+      # and a malformed nonempty plan fails this scope job closed.
+      - id: admission
+        name: Validate the caller's admitted heavy instances
+        env:
+          TN_RUNNER_ADMISSION: ${{ inputs.runner_admission }}
+        run: node scripts/ci-runner-admission.mjs --validate-admission
       # A job's `if` cannot read `matrix` (GitHub's context table lists github, needs, vars and
       # inputs there), so a row an ordinary pull request does not owe is dropped by shaping the
       # matrix instead. x64 and arm64 run the identical release-container proof; the arm64 leg is
@@ -111,7 +126,7 @@ jobs:
           set -euo pipefail
           node -e '
             const rows = [
-              { platform: "linux-x64", runner: "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}" },
+              { platform: "linux-x64", runner: "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(steps.admission.outputs.runner_admission || '[]'), 'native:starter-linux:linux-x64')) && 'ubuntu-24.04' || vars.TN_RUNNER }}" },
               { platform: "linux-arm64", runner: "ubuntu-24.04-arm" },
             ];
             // Reduced only when the tier says so: an unreadable tier keeps every row.
@@ -135,7 +150,7 @@ jobs:
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only == false
     # Keep this platform prerequisite out of the local queue during CI/Integration bursts.
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'native:web-reference')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -183,7 +198,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
     # Keep this platform prerequisite out of the local queue during CI/Integration bursts.
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'native:android-v8-source')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
     timeout-minutes: 210
     outputs:
@@ -1082,7 +1097,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'native:desktop-parity')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}

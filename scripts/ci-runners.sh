@@ -27,6 +27,7 @@ IMAGE=tn-ci-runner
 LABEL=tn-local
 LIGHT_LABEL=tn-local-light
 VARIABLE=TN_RUNNER
+SLOTS_VARIABLE=TN_RUNNER_SLOTS
 LIGHT_VARIABLE=TN_RUNNER_LIGHT
 ENV_FILE="${TN_RUNNERS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/threenative/runners.env}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/threenative/ci-runners"
@@ -218,6 +219,7 @@ up() {
     if [ "$online" -ge "$slots" ] && [ "$light_online" -ge "$LIGHT_SLOTS" ]; then break; fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
       gh variable delete "$VARIABLE" --repo "$repo" 2>/dev/null || true
+      gh variable delete "$SLOTS_VARIABLE" --repo "$repo" 2>/dev/null || true
       gh variable delete "$LIGHT_VARIABLE" --repo "$repo" 2>/dev/null || true
       stop_slots
       fail 1 "$online of $slots $LABEL and $light_online $LIGHT_LABEL runner(s) came online within ${ONLINE_TIMEOUT_SECONDS}s"
@@ -239,28 +241,40 @@ up() {
 # advertised while it has an idle runner and withdrawn the moment it has none.
 balance() {
   need gh
-  local repo want_heavy want_light have_heavy have_light idle present token
+  local repo want_heavy want_light have_heavy have_light have_slots slots_value heavy_slots idle present token
   local seen_heavy=0 seen_light=0
   repo="$(repo_name)"
   while [ ! -e "$STATE_DIR/stop" ]; do
+    # One runners read answers both routing questions: which idle lanes exist, and how many heavy
+    # runners are idle. gh rejects --slurp together with --jq, so the filter runs per page and the
+    # heavy total is a line count across every page, not an aggregate jq expression. Each idle
+    # runner contributes its one matching label, so a line count is a runner count.
     idle="$(gh api "repos/$repo/actions/runners" --paginate --jq \
-      '[.runners[] | select(.status == "online" and .busy == false) | .labels[].name] | join(" ")' \
+      ".runners[] | select(.status == \"online\" and .busy == false) | ([.labels[].name | select(. == \"$LABEL\" or . == \"$LIGHT_LABEL\")] | unique)[]" \
       2>/dev/null)" || { seen_heavy=0; seen_light=0; sleep 20; continue; }
+    heavy_slots=0
+    while IFS= read -r token; do
+      if [ "$token" = "$LABEL" ]; then heavy_slots=$((heavy_slots + 1)); fi
+    done <<< "$idle"
+    # Space-separated names let the case patterns below match a whole label token, not a substring.
+    idle="${idle//$'\n'/ }"
     # Read the variables, not a cache: a cached value misses a change made outside this loop. Report
     # the name alone for the exact expected label and NAME:invalid otherwise, so a wrong label is
-    # still visible without ever printing a value into a token.
+    # still visible without ever printing a value into a token. The slots integer is emitted as
+    # NAME=value, because its value is what tells the loop whether the count changed.
     present="$(gh api "repos/$repo/actions/variables" --paginate --jq \
-      ".variables[] | select(.name == \"$VARIABLE\" or .name == \"$LIGHT_VARIABLE\") | if (.name == \"$VARIABLE\" and .value == \"$LABEL\") or (.name == \"$LIGHT_VARIABLE\" and .value == \"$LIGHT_LABEL\") then .name else .name + \":invalid\" end" \
+      ".variables[] | select(.name == \"$VARIABLE\" or .name == \"$LIGHT_VARIABLE\" or .name == \"$SLOTS_VARIABLE\") | if (.name == \"$VARIABLE\") then (if .value == \"$LABEL\" then .name else .name + \":invalid\" end) elif (.name == \"$LIGHT_VARIABLE\") then (if .value == \"$LIGHT_LABEL\" then .name else .name + \":invalid\" end) else .name + \"=\" + .value end" \
       2>/dev/null)" || { seen_heavy=0; seen_light=0; sleep 20; continue; }
     # A teardown that began during the reads must never be followed by an advertise.
     if [ -e "$STATE_DIR/stop" ]; then break; fi
-    have_heavy=off; have_light=off
+    have_heavy=off; have_light=off; have_slots=off; slots_value=""
     while IFS= read -r token; do
       case "$token" in
         "$VARIABLE") have_heavy=on ;;
         "$VARIABLE:invalid") have_heavy=invalid ;;
         "$LIGHT_VARIABLE") have_light=on ;;
         "$LIGHT_VARIABLE:invalid") have_light=invalid ;;
+        "$SLOTS_VARIABLE="*) have_slots=on; slots_value="${token#*=}" ;;
       esac
     done <<< "$present"
     # Off at once when no runner is idle; on only after two polls in a row (~40 s) found one. A runner
@@ -271,10 +285,28 @@ balance() {
     want_heavy=off; want_light=off
     [ "$seen_heavy" -ge 2 ] && want_heavy=on
     [ "$seen_light" -ge 2 ] && want_light=on
-    if [ "$want_heavy" != "$have_heavy" ]; then
-      if [ "$want_heavy" = on ]; then gh variable set "$VARIABLE" --body "$LABEL" --repo "$repo"
-      else gh variable delete "$VARIABLE" --repo "$repo" 2>/dev/null || true; fi
-      printf '%s %s=%s\n' "$(date -u +%H:%M:%S)" "$VARIABLE" "$want_heavy"
+    # Fail-closed publication order: while TN_RUNNER is on, TN_RUNNER_SLOTS is already set, so a
+    # consumer never reads the label without its integer capacity. Enable slots then label; disable
+    # label then slots. The count is refreshed even when the label stays on.
+    if [ "$want_heavy" = on ]; then
+      if [ "$have_slots" != on ] || [ "$slots_value" != "$heavy_slots" ]; then
+        gh variable set "$SLOTS_VARIABLE" --body "$heavy_slots" --repo "$repo"
+        printf '%s %s=%s\n' "$(date -u +%H:%M:%S)" "$SLOTS_VARIABLE" "$heavy_slots"
+        have_slots=on; slots_value="$heavy_slots"
+      fi
+      if [ "$have_heavy" != on ]; then
+        gh variable set "$VARIABLE" --body "$LABEL" --repo "$repo"
+        printf '%s %s=%s\n' "$(date -u +%H:%M:%S)" "$VARIABLE" on
+      fi
+    else
+      if [ "$have_heavy" != off ]; then
+        gh variable delete "$VARIABLE" --repo "$repo" 2>/dev/null || true
+        printf '%s %s=%s\n' "$(date -u +%H:%M:%S)" "$VARIABLE" off
+      fi
+      if [ "$have_slots" = on ]; then
+        gh variable delete "$SLOTS_VARIABLE" --repo "$repo" 2>/dev/null || true
+        printf '%s %s=%s\n' "$(date -u +%H:%M:%S)" "$SLOTS_VARIABLE" off
+      fi
     fi
     if [ "$want_light" != "$have_light" ]; then
       if [ "$want_light" = on ]; then gh variable set "$LIGHT_VARIABLE" --body "$LIGHT_LABEL" --repo "$repo"
@@ -293,7 +325,7 @@ down() {
   if [ -f "$STATE_DIR/balance.pid" ]; then kill "$(cat "$STATE_DIR/balance.pid")" 2>/dev/null || true; fi
   # Then the variables, so no job is ever routed to a pool that is on its way out.
   local variable
-  for variable in "$VARIABLE" "$LIGHT_VARIABLE"; do
+  for variable in "$VARIABLE" "$SLOTS_VARIABLE" "$LIGHT_VARIABLE"; do
     gh variable delete "$variable" --repo "$repo" 2>/dev/null \
       || printf 'TN_CI_RUNNERS: %s was already unset\n' "$variable" >&2
   done

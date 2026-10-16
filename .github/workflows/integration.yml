@@ -11,6 +11,11 @@ on:
       candidate_sha:
         type: string
         required: true
+      # PRD-620: the parent's single admitted slice of eligible HEAVY instances. Empty (or a direct
+      # dispatch) means every heavy lane stays hosted.
+      runner_admission:
+        type: string
+        default: ""
       base_sha:
         type: string
         default: ""
@@ -65,6 +70,9 @@ jobs:
       vegetation: ${{ steps.filter.outputs.vegetation }}
       velocity: ${{ steps.filter.outputs.velocity }}
       world-capture: ${{ steps.filter.outputs.world-capture }}
+      # PRD-620: the caller's admitted heavy slice, validated and re-emitted as safe JSON. Absent
+      # or empty input stays hosted; a malformed plan throws and fails this scope job closed.
+      runner_admission: ${{ steps.filter.outputs.runner_admission }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -75,6 +83,7 @@ jobs:
         env:
           TN_BASE_SHA: ${{ inputs.base_sha }}
           TN_HEAD_SHA: ${{ inputs.candidate_sha }}
+          TN_RUNNER_ADMISSION: ${{ inputs.runner_admission }}
           # Exact source filters; workflow-only changes compare each job and filter separately.
           TN_LANE_FILTERS: |
             animation ^packages/core/src/animation\.ts$|^packages/core/__tests__/animation[^/]*\.spec\.ts$|^examples/abyss-framework/src/render/animation-reversal[^/]*\.ts$|^examples/abyss-framework/src/animation-reversal-main\.ts$|^examples/abyss-framework/animation-reversal\.html$|^examples/abyss-framework/playtests/animation-reversal\.playtest\.json$|^scripts/verify-animation-reversal\.ts$|^packages/core/__tests__/vq-locomotion-blend-spaces\.spec\.ts$|^examples/abyss-framework/src/render/locomotion-[^/]*\.ts$|^examples/abyss-framework/src/render/vq-locomotion-[^/]*\.ts$|^examples/abyss-framework/src/vq-locomotion-main\.ts$|^examples/abyss-framework/playtests/vq-locomotion-blend-spaces\.playtest\.json$|^examples/abyss-framework/assets/mannequin\.glb$|^scripts/verify-vq-locomotion\.ts$
@@ -92,14 +101,16 @@ jobs:
             tone ^scripts/xvfb\.sh$|^packages/playtest/.*$|^examples/abyss-framework/src/render/toneCalibration\.ts$|^examples/abyss-framework/src/tone-main\.ts$|^examples/abyss-framework/tone\.html$|^examples/abyss-framework/tone\.vite\.config\.ts$|^examples/abyss-framework/playtests/tone\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-tone-exposure\.ts$|^scripts/tone-capture-proof\.ts$|^scripts/__tests__/tone-capture-proof\.spec\.ts$|^scripts/non-visual-scenarios\.mjs$|^package\.json$|^pnpm-lock\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|exposureSettings|worldEnvironment)\.ts$
             vegetation ^examples/integrations/vegetation/.*$
             world-capture ^packages/core/src/world[^/]*\.ts$|^packages/core/__tests__/world-capture-fixture\.spec\.ts$|^packages/playtest/.*$|^packages/assets/.*$|^examples/abyss-framework/src/scenes/WorldProbe\.ts$|^examples/abyss-framework/src/world-main\.ts$|^examples/abyss-framework/src/style\.css$|^examples/abyss-framework/assets/world/.*$|^examples/abyss-framework/index\.html$|^examples/abyss-framework/vite\.config\.ts$|^examples/abyss-framework/threenative\.config\.ts$|^examples/abyss-framework/playtests/phase477-world-capture\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-world-capture\.ts$|^scripts/world-capture-manifest\.ts$|^scripts/world-visual-gate\.ts$|^scripts/capture-guard\.ts$|^scripts/__tests__/verify-world-capture\.spec\.ts$|^scripts/__tests__/world-capture-manifest\.spec\.ts$|^scripts/__tests__/world-visual-gate\.spec\.ts$|^package\.json$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$
-        run: node scripts/ci-integration-scope.mjs
+        run: |
+          node scripts/ci-integration-scope.mjs
+          node scripts/ci-runner-admission.mjs --validate-admission
 
   csg:
     name: csg
     if: ${{ needs.paths.outputs.csg == 'true' && !github.event.pull_request.draft }}
     needs: paths
     # PRD-620: generic lanes route to idle tn-local with hosted fallback; forks fall through to hosted.
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:csg')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     defaults:
       run:
@@ -135,7 +146,7 @@ jobs:
     name: ik
     if: ${{ needs.paths.outputs.ik == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:ik')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     defaults:
       run:
@@ -167,7 +178,7 @@ jobs:
     name: vegetation
     if: ${{ needs.paths.outputs.vegetation == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:vegetation')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     defaults:
       run:
@@ -199,7 +210,7 @@ jobs:
     name: decals
     if: ${{ needs.paths.outputs.decals == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:decals')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -315,7 +326,7 @@ jobs:
     name: exposure
     if: ${{ needs.paths.outputs.tone == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:tone')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -359,7 +370,7 @@ jobs:
     name: temporal
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.temporal == 'true' }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:temporal')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -406,7 +417,7 @@ jobs:
     name: velocity
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.velocity == 'true' }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:velocity')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -455,7 +466,7 @@ jobs:
     name: animation
     if: ${{ needs.paths.outputs.animation == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:animation')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -579,7 +590,7 @@ jobs:
     name: fog capture
     if: ${{ needs.paths.outputs.fog == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:fog')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -713,7 +724,7 @@ jobs:
     name: capture
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.world-capture == 'true' }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:capture')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -763,7 +774,7 @@ jobs:
     name: fluid collision
     if: ${{ needs.paths.outputs.fluid-particles == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:fluid-collision')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -968,7 +979,7 @@ jobs:
     name: auto-exposure
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.exposure == 'true' }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:exposure')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -1013,7 +1024,7 @@ jobs:
     name: auto-exposure cold boot
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.cold-boot == 'true' }}
     needs: paths
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:cold-boot')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
