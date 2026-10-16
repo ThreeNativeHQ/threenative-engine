@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createAssetLoader } from "@threenative/core";
 import { WorldCells } from "@threenative/core/world";
 import type { IPlacement } from "@threenative/terrain";
@@ -18,7 +19,13 @@ import {
   createStreamedProps,
   invalidatePropShadows,
 } from "../src/render/propStreaming.js";
-import { DRAW_REACH, LOD_BANDS, preparePose, variantFor } from "../src/render/props.js";
+import {
+  DRAW_REACH,
+  LOD_BANDS,
+  buildPropVariants,
+  preparePose,
+  variantFor,
+} from "../src/render/props.js";
 
 it("reports an outstanding world load before the factory returns or attaches it", async () => {
   const placement = {
@@ -774,6 +781,137 @@ it("settles an editor stream without caster layers when no shadow renderer exist
   } finally {
     streamed.dispose();
     geometry.dispose();
+    material.dispose();
+  }
+});
+
+// Captured from the pre-LOD fallback producer, including every seeded variant and attribute.
+function fallbackDigest(parts: ReturnType<typeof buildPropVariants>, species: string, level = 0) {
+  const hash = createHash("sha256");
+  for (const [key, entries] of parts) {
+    if (!key.startsWith(`${species}:`)) continue;
+    hash.update(key);
+    for (const part of entries.filter((entry) => (entry.level ?? 0) === level)) {
+      hash.update(part.role);
+      for (const name of Object.keys(part.geometry.attributes).sort()) {
+        hash.update(name);
+        hash.update(Buffer.from(part.geometry.getAttribute(name).array.buffer));
+      }
+      if (part.geometry.index) hash.update(Buffer.from(part.geometry.index.array.buffer));
+    }
+  }
+  return hash.digest("hex");
+}
+
+it("keeps all original fallback near buffers and seeded variant sequence", () => {
+  const parts = buildPropVariants();
+  expect(fallbackDigest(parts, "spruce")).toBe(
+    "3f82f5b822c63e279fda87b1a375ec62d8bf370c443fe5202e39a7de996ced87",
+  );
+  expect(fallbackDigest(parts, "sapling")).toBe(
+    "e80064530b5b247433945b04337c621fbc6d9e415478a3b2b64566328801697c",
+  );
+});
+
+it("provides deterministic reduced fallback crowns with unchanged trunks and scaled sapling levels", () => {
+  const parts = buildPropVariants();
+  const scaled = buildPropVariants(undefined, 2);
+  for (const [key, entries] of parts) {
+    if (!/^(spruce|sapling):/.test(key)) continue;
+    for (const role of ["bark", "crown"]) {
+      const near = entries.find((part) => (part.level ?? 0) === 0 && part.role === role);
+      const far = entries.find((part) => part.level === 1 && part.role === role);
+      assert(near);
+      expect(far, `${key} ${role} needs authored far level`).toBeDefined();
+      assert(far);
+      expect(far.geometry.index?.count).toBe(
+        (near.geometry.index?.count ?? 0) * (role === "crown" ? 2 / 3 : 1),
+      );
+      expect(Object.keys(far.geometry.attributes).sort()).toEqual(
+        Object.keys(near.geometry.attributes).sort(),
+      );
+      expect(far.geometry).not.toBe(near.geometry);
+      for (const name of Object.keys(near.geometry.attributes)) {
+        expect(far.geometry.getAttribute(name)).not.toBe(near.geometry.getAttribute(name));
+        expect(far.geometry.getAttribute(name).array).toEqual(
+          near.geometry.getAttribute(name).array,
+        );
+      }
+      if (role === "bark")
+        expect(far.geometry.getAttribute("position").array).toEqual(
+          near.geometry.getAttribute("position").array,
+        );
+      if (key.startsWith("sapling:")) {
+        const resized = scaled.get(key)?.find((part) => part.level === 1 && part.role === role);
+        assert(resized);
+        const nearHeight = Math.max(
+          ...entries
+            .filter((part) => (part.level ?? 0) === 0)
+            .map((part) => {
+              part.geometry.computeBoundingBox();
+              return part.geometry.boundingBox?.max.y ?? 0;
+            }),
+        );
+        const positions = far.geometry.getAttribute("position");
+        const actual = resized.geometry.getAttribute("position");
+        expect(actual.count).toBe(positions.count);
+        for (let index = 0; index < positions.array.length; index++)
+          expect(actual.array[index]).toBeCloseTo(
+            ((positions.array[index] ?? 0) * 2) / nearHeight,
+            5,
+          );
+      }
+    }
+  }
+  const repeated = buildPropVariants();
+  for (const species of ["spruce", "sapling"])
+    expect(fallbackDigest(repeated, species, 1)).toBe(fallbackDigest(parts, species, 1));
+});
+
+it("switches real fallback spruce and sapling batches into authored far levels at the existing gate", async () => {
+  const parts = buildPropVariants();
+  const material = new MeshBasicMaterial();
+  const placements = ["spruce", "sapling"].map((asset) => ({
+    id: `${asset}:fallback-lod`,
+    asset,
+    position: [0, 0, 0],
+    rotation: 0,
+    scale: 1,
+    normal: [0, 1, 0],
+    alignToNormal: false,
+  })) as IPlacement[];
+  const follow = { position: new Vector3() };
+  const streamed = await createStreamedProps({
+    placements,
+    parts,
+    materials: { bark: material, crown: material } as never,
+    groundAt: () => ({ height: 0, offset: 0 }),
+    follow,
+    size: 512,
+    whileCurrent: () => true,
+  });
+  assert(streamed);
+  try {
+    for (const [distance, level] of [
+      [0, 0],
+      [LOD_BANDS.mid + 5, 1],
+      [LOD_BANDS.mid * 0.7, 0],
+    ]) {
+      follow.position.x = distance ?? 0;
+      for (let frame = 0; frame < 100; frame++) {
+        for (const world of streamed.worlds) world.update();
+        await Promise.resolve();
+      }
+      const meshes = streamed.meshes.filter((mesh) => mesh.count > 0);
+      expect(meshes.length).toBe(4);
+      expect(
+        meshes.every((mesh) => new RegExp(`:${level}:[0-9]+$`).test(mesh.name)),
+        `distance ${distance}: ${meshes.map((mesh) => mesh.name).join(", ")}`,
+      ).toBe(true);
+      expect(meshes.every((mesh) => mesh.material === material)).toBe(true);
+    }
+  } finally {
+    streamed.dispose();
     material.dispose();
   }
 });

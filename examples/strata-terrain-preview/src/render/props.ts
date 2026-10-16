@@ -21,7 +21,7 @@ import {
   Vector3,
 } from "three";
 import { boulder, fernClump, grassClump, poppyCluster } from "./cover.js";
-import { ATLAS_CELLS, spruceVariants } from "./spruce.js";
+import { ATLAS_CELLS, spruceFarCrown, spruceVariants } from "./spruce.js";
 
 /** Which cell of the needle atlas the poppy petals sample. */
 const POPPY_PETAL = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };
@@ -173,6 +173,8 @@ export function buildPropVariants(
       // Each variant leans on a different needle card, so three spruce silhouettes are three
       // textures rather than one texture at three sizes.
       { geometry: spruce.crown, role: "crown", variant: index },
+      { geometry: spruce.trunk.clone(), role: "bark", variant: index, level: 1 },
+      { geometry: spruceFarCrown(spruce.crown), role: "crown", variant: index, level: 1 },
     ]);
   }
   for (let i = 0; i < PROP_COUNTS.boulder; i += 1) {
@@ -223,6 +225,8 @@ export function buildPropVariants(
     variants.set(`sapling:${i}`, [
       { geometry: young.trunk, role: "bark", variant: i },
       { geometry: young.crown, role: "crown", variant: i },
+      { geometry: young.trunk.clone(), role: "bark", variant: i, level: 1 },
+      { geometry: spruceFarCrown(young.crown), role: "crown", variant: i, level: 1 },
     ]);
   }
   for (let i = 0; i < PROP_COUNTS.bush; i += 1) {
