@@ -653,11 +653,11 @@ void registerObject3D(ClassBinding& b) {
     };
     b.methods["localToWorld"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->localToWorld(store.ref<Vector3>(a.at(0), "Vector3"));
-        return chain();
+        return a.at(0);  // three answers the vector it converted, not the object
     };
     b.methods["worldToLocal"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->worldToLocal(store.ref<Vector3>(a.at(0), "Vector3"));
-        return chain();
+        return a.at(0);  // three answers the vector it converted, not the object
     };
     b.methods["lookAt"] = [](void* self, const Args& a, Store& store) {
         if (a.at(0).kind == Value::Kind::Ref) {

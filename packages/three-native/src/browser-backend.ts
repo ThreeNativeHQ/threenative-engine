@@ -14,6 +14,7 @@
 
 import { defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
+import { withUpdateRanges } from "./update-ranges.js";
 
 export interface IRegistryClass {
   readonly constructor: boolean;
@@ -1043,6 +1044,10 @@ export function defineBrowserClasses(
     classes[name] = cls;
     byType.set(runtime.typeId(name), { prototype: accessors });
     typeNames.set(runtime.typeId(name), name);
+  }
+  for (const name of ATTRIBUTE_CLASSES) {
+    const cls = classes[name];
+    if (cls !== undefined) withUpdateRanges(cls.prototype);
   }
   if (attributeArray !== undefined && attributeWrite !== undefined) {
     for (const name of ATTRIBUTE_CLASSES) {

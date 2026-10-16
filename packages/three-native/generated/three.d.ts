@@ -1081,6 +1081,7 @@ forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -1486,6 +1487,7 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 fragmentNode: Node | null;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -1631,6 +1633,7 @@ polygonOffsetUnits: number;
 bumpMap: Texture | null;
 fragmentNode: Node | null;
 flatShading: boolean;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -1740,6 +1743,7 @@ readonly type: string;
 vertexColors: boolean;
 vertexNode: Node | null;
 visible: boolean;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -2558,6 +2562,7 @@ forceSinglePass: boolean;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -2600,6 +2605,7 @@ vertexNode: Node | null;
 polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -3274,6 +3280,7 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 flatShading: boolean;
+colorWrite: boolean;
 
   clone(): this;
 
@@ -3312,6 +3319,7 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 flatShading: boolean;
+colorWrite: boolean;
 
   clone(): this;
 
