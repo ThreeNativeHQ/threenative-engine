@@ -342,9 +342,14 @@ function identityMat4(): Node<"mat4"> {
   ) as Node<"mat4">;
 }
 
-/** A node twin of a source material: its class and every value it authored, by reference. */
+/** A node twin retaining the source material's authored values and shader nodes. */
 function cloneLitMaterial(source: Material): NodeMaterial {
-  if (Reflect.get(source, "isNodeMaterial") === true) return (source as NodeMaterial).clone();
+  if (Reflect.get(source, "isNodeMaterial") === true) {
+    const twin = (source as NodeMaterial).clone();
+    // NodeMaterial.copy skips the inherited alphaTest accessor and its private backing value.
+    twin.alphaTest = source.alphaTest;
+    return twin;
+  }
   const nodeClass = NODE_CLASSES.get(source.type);
   if (nodeClass === undefined)
     throw new Error(`WorldImpostorSurface cannot convert material type '${source.type}'.`);

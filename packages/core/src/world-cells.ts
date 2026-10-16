@@ -434,9 +434,12 @@ export interface IWorldCellsLoadOptions {
    */
   readonly placementReach?: Float32Array;
   /** Complementary view/shadow dither band as a fraction of each distance gap, in [0, 1). Requires gpuScene:false.
-   * Impostors require preserveAuthoredParts:true here; omission keeps direct level selection. */
+   * Positive values opt into per-LOD material wrappers preserving authored nodes and copied scalar values.
+   * Impostors require preserveAuthoredParts:true here; omission keeps direct level selection and raw materials. */
   readonly lodHysteresis?: number;
-  /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Terminal impostors are supported with gpuScene:false; omission keeps source levels.
+  /** Preserve supplied parts and exact authored LOD membership, including shadow batches.
+   * Materials retain source identity unless positive lodHysteresis opts into dither wrappers;
+   * wrappers share authored nodes but do not share all later scalar mutations. Terminal impostors are supported with gpuScene:false; omission keeps source levels.
    * Default content sharing and missing-alpha-part coverage remain enabled when omitted. */
   readonly preserveAuthoredParts?: boolean;
   /** Already decoded immutable world-v1 data; URL still supplies the base for model paths. */
