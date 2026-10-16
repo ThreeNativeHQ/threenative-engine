@@ -764,11 +764,14 @@ jobs:
             timeout: 60_000,
           });
           await page.keyboard.down("ArrowRight");
-          await page.waitForTimeout(3_000);
+          const moved = await page.waitForFunction(() => {
+            const position = Number(document.body.innerText.match(/POSITION\n(-?\d+)/)?.[1]);
+            return Number.isFinite(position) && Math.abs(position) >= 1;
+          }, undefined, { timeout: 60_000 }).then(() => true, () => false);
           await page.keyboard.up("ArrowRight");
           const text = await page.locator("body").innerText();
           const position = Number(text.match(/POSITION\n(-?\d+)/)?.[1]);
-          if (!Number.isFinite(position) || Math.abs(position) < 1 || errors.length > 0) {
+          if (!moved || !Number.isFinite(position) || Math.abs(position) < 1 || errors.length > 0) {
             throw new Error(`Scaffold smoke failed: ${JSON.stringify({ text, errors })}`);
           }
           await browser.close();
