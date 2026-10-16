@@ -574,13 +574,6 @@ export class Heightfield extends Group implements IComputeDriven {
         this.#gridNormal(source, target, normalArray ?? normalAttribute, vertex);
       }
     }
-    // Retain pending coverage, including full refreshes, until the renderer drains the ranges.
-    const scalarStart = (row.start * this.columns + column.start) * 3;
-    const scalarCount = ((row.count - 1) * this.columns + column.count) * 3;
-    if (positionArray !== undefined)
-      (position as BufferAttribute).addUpdateRange(scalarStart, scalarCount);
-    if (normalAttribute !== undefined && normalArray !== undefined)
-      (normalAttribute as BufferAttribute).addUpdateRange(scalarStart, scalarCount);
     position.needsUpdate = true;
     if (normalAttribute !== undefined) normalAttribute.needsUpdate = true;
     // Only heights move, so a windowed refresh grows the existing bounds by the window's own
