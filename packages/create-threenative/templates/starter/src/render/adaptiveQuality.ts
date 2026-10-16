@@ -11,6 +11,8 @@ export interface IQualityWindow {
   readonly frame: { readonly p95: number };
   readonly gpuMs?: number;
   readonly gpuAgeFrames?: number;
+  /** A completed window's own GPU work, read when the fresh sample is unavailable or stale. */
+  readonly gpu?: { readonly samples: number; readonly p50: number };
   readonly surface?: { readonly compiling?: boolean };
 }
 
@@ -18,7 +20,7 @@ export interface IQualityDecision {
   readonly tier: QualityTier;
   readonly source: "auto" | "pinned";
   readonly changed: boolean;
-  readonly meter: "gpu" | "presented";
+  readonly meter: "gpu" | "presented" | "work";
   readonly fallback?: "gpu-unavailable" | "gpu-invalid" | "gpu-age-unavailable" | "gpu-stale";
   readonly reason: string;
   readonly budgetMs: number;
@@ -119,7 +121,23 @@ export function createAdaptiveQuality(
               : age > policy.maxGpuAgeFrames
                 ? "gpu-stale"
                 : undefined;
-      const costMs = fallback === undefined ? (gpu as number) : window.presented.p95;
+      const series = window.gpu;
+      // Completed GPU work keeps stale resolve timing from mistaking host gaps for load.
+      const workP50 =
+        fallback !== undefined &&
+        series !== undefined &&
+        Number.isInteger(series.samples) &&
+        series.samples >= 4 &&
+        Number.isFinite(series.p50) &&
+        series.p50 > 0
+          ? series.p50
+          : undefined;
+      const costMs =
+        fallback === undefined
+          ? (gpu as number)
+          : workP50 !== undefined
+            ? Math.max(window.frame.p95, workP50)
+            : window.presented.p95;
       // Presented intervals include vsync jitter, so fallback overload gets a small tolerance.
       const overloadBudgetMs =
         fallback === undefined ? budgetMs : budgetMs * (1 + policy.presentationTolerance);
@@ -136,7 +154,7 @@ export function createAdaptiveQuality(
         reason,
         budgetMs,
         overloadBudgetMs,
-        meter: fallback === undefined ? "gpu" : "presented",
+        meter: fallback === undefined ? "gpu" : workP50 !== undefined ? "work" : "presented",
         ...reportFields,
       });
       let skip: string | undefined;
