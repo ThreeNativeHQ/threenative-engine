@@ -25,11 +25,12 @@ runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'u
 - Every other Linux job routes to idle tn-local first (PRD-620), with hosted fallback.
 
 **The pool is extra capacity, not a replacement.** This repository is public, so hosted runners are free
-and run about 20 jobs at once. A balancer (`ci-runners.sh balance`, started by `up`) advertises each
+and run about 20 jobs at once, against 3 heavy plus 3 light pool slots. A balancer (`ci-runners.sh balance`, started by `up`) advertises each
 label only after 2 consecutive polls (~40 s) see an idle runner, and withdraws it immediately when
 none is idle. Variable snapshots are best-effort, not atomic reservation: a job that reads the
-variable just before withdrawal still queues on the pool, and a busy pool otherwise overflows new
-jobs to hosted runners instead of queueing them. Routing every Linux job here funnelled the
+variable just before withdrawal still queues on the pool, and snapshot fallback is best-effort so
+queued jobs may remain local. Fork pull requests and macOS, Windows, iOS, linux-arm64, `supply-chain`,
+emulator, and V8 publisher jobs always run hosted. Routing every Linux job here funnelled the
 team's CI into 5 slots and made boards slower. `down` stops the balancer and clears both variables, so a
 pool that is down never strands a job.
 

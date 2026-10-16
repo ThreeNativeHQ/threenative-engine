@@ -1107,8 +1107,8 @@ describe("CI pipeline structure", () => {
         "utf8",
       );
       const section = requiredJob(native, job);
-      // PRD-620: these producers ride the same idle-pool switch with hosted fallback; a busy
-      // pool overflows them to hosted rather than queueing them.
+      // PRD-620: these producers ride the same idle-pool switch with hosted fallback; the
+      // snapshot fallback is best-effort and queued jobs may remain local.
       expect(section.match(/^ {4}runs-on: (.+)$/mu)?.[1]).toBe(routing);
       expect(declaredNeeds(section)).toEqual(["scope"]);
       expect(section).toContain("TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}");
@@ -1911,10 +1911,10 @@ describe("CI pipeline structure", () => {
     expect(lane).toContain('for scenario in "${scenarios[@]}"');
     expect(lane).toContain('test "${#scenarios[@]}" -gt 0');
     expect(lane).not.toContain("SHARD");
-    // GitHub's shared hosted quota owns capacity; the workflow must not hold selected kits back.
+    // Both pools own capacity; the workflow must not hold selected kits back.
     expect(lane).not.toMatch(/^\s+max-parallel:/mu);
     expect(lane).toContain("fail-fast: false");
-    expect(lane).toContain("runs-on: ubuntu-24.04");
+    expect(lane).toContain(`runs-on: ${routing}`);
   });
 
   it("preserves platformer's unique production artifact in its installed scenario job", async () => {

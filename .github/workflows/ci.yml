@@ -665,9 +665,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).goldenMatrix }}
-    # Hosted on purpose: selected template legs share GitHub's hosted capacity while builds and
-    # tests hold the local pool. On 5 local slots these legs waited 17-25 min for a runner (run
-    # 37070815769); sharing the board across both pools is what shortens wall time.
+    # Routes through the idle-pool switch with hosted fallback: forks fall through to hosted and
+    # snapshot fallback is best-effort, so queued legs may remain local. Sharing the board across
+    # both pools is what shortens wall time (on 5 local slots these legs waited 17-25 min, run 37070815769).
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     # The scenario arithmetic this number came from moved out to `template-nonvisual`, which now
     # owns the non-visual sweep for every selected kit. What is left is `verify:golden-path` —
@@ -797,12 +797,12 @@ jobs:
     needs: [scope, build-artifacts]
     if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
     # One scaffold/install/typecheck/cook per selected kit; every nonvisual scenario still executes.
-    # GitHub's shared hosted quota schedules these independent VMs without a second workflow cap.
+    # Each leg routes to idle tn-local first with hosted fallback; no second workflow cap holds kits back.
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
-    # Hosted on purpose: template legs use hosted while the balancer routes builds and tests
-    # to the local pool, avoiding one routing variable sending the whole burst to a single pool.
+    # Routes through the idle-pool switch with hosted fallback: forks fall through to hosted and
+    # snapshot fallback is best-effort, so queued legs may remain local.
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:

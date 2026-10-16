@@ -98,7 +98,7 @@ jobs:
     name: csg
     if: ${{ needs.paths.outputs.csg == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    # PRD-550: generic lanes run hosted so the local build/test capacity stays free for the heavy jobs.
+    # PRD-620: generic lanes route to idle tn-local with hosted fallback; forks fall through to hosted.
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     defaults:
