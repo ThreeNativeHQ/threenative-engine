@@ -1,3 +1,4 @@
+import { ok } from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +21,14 @@ import {
   Texture,
   Vector3,
 } from "three";
+// @ts-expect-error Three does not publish the private NodeFrame module's declarations.
+import ThreeNodeFrame from "three/src/nodes/core/NodeFrame.js";
+// @ts-expect-error Three's private chain map has no public declarations.
+import ChainMap from "three/src/renderers/common/ChainMap.js";
+// @ts-expect-error Three's node manager has no public declarations.
+import NodeManager from "three/src/renderers/common/nodes/NodeManager.js";
 import { getCurrentStack, setCurrentStack, stack } from "three/tsl";
+import { renderGroup } from "three/tsl";
 import {
   BufferAttributeNode,
   EventNode,
@@ -28,6 +36,7 @@ import {
   NodeBuilder,
   type NodeMaterial,
   NodeUpdateType,
+  WGSLNodeBuilder,
 } from "three/webgpu";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -47,6 +56,7 @@ vi.mock("../src/assets.js", async (importOriginal) => {
 });
 
 import { type IAssetLoader, createAssetLoader } from "../src/assets.js";
+import { setLodBias } from "../src/model-lod.js";
 import { RenderCameraCull } from "../src/render-camera-cull.js";
 import {
   IMPOSTOR_FAR_CULL_ATTRIBUTE,
@@ -524,6 +534,167 @@ afterEach(() => {
 });
 
 describe("WorldCells automatic impostors", () => {
+  it("uploads the emitted LOD eye and bias for settled batches while keeping object uniforms static", async () => {
+    const pkg = pineOnly();
+    stubManifestFetch(pkg);
+    const follow = { position: { x: -84, z: -64 } };
+    let clock = 0;
+    let holdAdmission = false;
+    const world = await loadPine(treeLoader(), {
+      adaptiveLod: true,
+      admissionBudgetMs: 2,
+      admissionNow: () => (holdAdmission ? ++clock : clock),
+      gpuScene: false,
+      lodHysteresis: 0.2,
+      mainGpuShare: 0.1,
+      preserveAuthoredParts: true,
+      follow,
+    });
+    try {
+      await flushed(world);
+      for (let pass = 0; pass < 100; pass += 1) {
+        world.update();
+        await flush();
+      }
+      const mesh = partsOf(world, "pine", 0, 0).find((candidate) => candidate.count > 0);
+      ok(mesh, "the settled pine LOD batch was emitted");
+      const material = mesh.material as NodeMaterial;
+      const maskNode = material.maskNode;
+      ok(maskNode, "the emitted WorldCells LOD material has a mask node");
+
+      const emittedUniforms: Node[] = [];
+      maskNode.traverse((node) => {
+        if (Reflect.get(node, "isUniformNode") === true) emittedUniforms.push(node);
+      });
+      const eye = emittedUniforms.find((node) => Reflect.get(node, "value") instanceof Vector3);
+      const bias = emittedUniforms.find(
+        (node) =>
+          Reflect.get(node, "value") === 1 && typeof Reflect.get(node, "value") === "number",
+      );
+      ok(eye, "the emitted WorldCells mask has an eye uniform");
+      ok(bias, "the emitted WorldCells mask has a bias uniform");
+
+      const system = {
+        backend: {
+          isWebGPUBackend: true,
+          utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+        },
+        hasCompatibility: () => true,
+        hasFeature: () => false,
+        library: { fromMaterial: () => null },
+        reversedDepthBuffer: false,
+        shadowMap: { enabled: true, type: 1 },
+      };
+      const builder = new WGSLNodeBuilder(mesh, system as never) as unknown as {
+        setShaderStage(stage: "fragment"): void;
+        setActiveStack(stack: Node): void;
+        removeActiveStack(stack: Node): void;
+        flowStagesNode(node: Node, output: "bool"): { code: string };
+        buildUpdateNodes(): void;
+        updateNodes: Node[];
+        getBindings(): Array<{ bindings: Array<Record<string, unknown>> }>;
+      };
+      builder.setShaderStage("fragment");
+      const baseStack = Reflect.get(builder, "stack") as Node;
+      builder.setActiveStack(baseStack);
+      try {
+        builder.flowStagesNode(maskNode, "bool");
+      } finally {
+        builder.removeActiveStack(baseStack);
+      }
+      builder.buildUpdateNodes();
+      const groups = builder.getBindings().flatMap((group) => group.bindings);
+      const eyeGroup = Reflect.get(eye, "groupNode");
+      const lodBinding = groups.find(
+        (binding) =>
+          Reflect.get(binding, "isNodeUniformsGroup") === true &&
+          Reflect.get(binding, "groupNode") === eyeGroup,
+      ) as
+        | {
+            readonly groupNode: object;
+            readonly buffer: Float32Array;
+            update(): boolean;
+          }
+        | undefined;
+      ok(lodBinding, "the compiled shader bound the actual LOD uniforms");
+
+      const nodeManager = Object.create(NodeManager.prototype) as {
+        groupsData: InstanceType<typeof ChainMap>;
+        updateGroup(binding: unknown, settled: boolean): boolean;
+      };
+      nodeManager.groupsData = new ChainMap();
+      expect(
+        nodeManager.updateGroup(lodBinding, false),
+        "seed the initial uploaded eye and bias",
+      ).toBe(true);
+      lodBinding.update();
+      const oldEye = (Reflect.get(eye, "value") as Vector3).clone();
+      const oldBias = Reflect.get(bias, "value") as number;
+
+      follow.position.x += 3;
+      follow.position.z += 4;
+      // Drive the same shared bias input the adaptive controller writes, while keeping its clock
+      // inside the step interval so this CPU-only test does not need to fake a GPU prewarm draw.
+      setLodBias(1.25);
+      clock = 1;
+      holdAdmission = true;
+      world.update();
+      expect(
+        mesh?.parent,
+        "the old batch remains resident while replacement admission is held",
+      ).not.toBeNull();
+      const newEye = Reflect.get(eye, "value") as Vector3;
+      const newBias = Reflect.get(bias, "value") as number;
+      expect(newEye.equals(oldEye)).toBe(false);
+      expect(newBias).toBeGreaterThan(oldBias);
+
+      // Three's real NodeFrame updates the renderGroup registered by the material builder, which
+      // bumps that group's version exactly as it does before a render.
+      const groupUpdate = builder.updateNodes.find((node) => node === renderGroup);
+      ok(groupUpdate, "the emitted shader registers renderGroup as an update node");
+      expect(groupUpdate.getUpdateType()).toBe(NodeUpdateType.RENDER);
+      const nodeFrame = new ThreeNodeFrame() as unknown as {
+        renderId: number;
+        updateNode(node: Node): void;
+      };
+      const previousGroupVersion = renderGroup.version;
+      nodeFrame.renderId += 1;
+      nodeFrame.updateNode(groupUpdate);
+      expect(renderGroup.version).toBeGreaterThan(previousGroupVersion);
+
+      // The settled static draw still refreshes this changed binding; a normal object-group
+      // control remains skipped.
+      const shouldRefresh = nodeManager.updateGroup(lodBinding, true);
+      expect(
+        shouldRefresh,
+        "the settled LOD binding must observe moved eye and adaptive bias",
+      ).toBe(true);
+      if (shouldRefresh) lodBinding.update();
+      expect(Array.from(lodBinding.buffer)).toContain(newEye.x);
+      expect(Array.from(lodBinding.buffer)).toContain(newEye.z);
+      expect(Array.from(lodBinding.buffer).some((value) => Math.abs(value - newBias) < 1e-5)).toBe(
+        true,
+      );
+
+      const objectBinding = groups.find(
+        (binding) =>
+          Reflect.get(binding, "isNodeUniformsGroup") === true &&
+          Reflect.get(binding, "groupNode") !== eyeGroup,
+      );
+      expect(
+        objectBinding,
+        "the emitted material retains ordinary per-object uniforms",
+      ).toBeDefined();
+      expect(
+        nodeManager.updateGroup(objectBinding, true),
+        "settled per-object control stays skipped",
+      ).toBe(false);
+    } finally {
+      setLodBias(1);
+      world.dispose();
+    }
+  });
+
   it("keeps CPU LOD batches visible until a refilter publishes their replacement ranges", async () => {
     const pkg = pineOnly();
     stubManifestFetch(pkg);

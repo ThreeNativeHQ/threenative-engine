@@ -17,7 +17,7 @@ import {
   Sphere,
   Vector3,
 } from "three";
-import { uniform } from "three/tsl";
+import { renderGroup, uniform } from "three/tsl";
 import { BundleGroup } from "three/webgpu";
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
@@ -4376,8 +4376,8 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #terrain: TerrainTiles | undefined;
   readonly #hasColliders: boolean;
   readonly #lodHysteresis: number;
-  readonly #lodEye = uniform(new Vector3());
-  readonly #lodDistanceBias = uniform(1);
+  readonly #lodEye = uniform(new Vector3()).setGroup(renderGroup);
+  readonly #lodDistanceBias = uniform(1).setGroup(renderGroup);
   readonly #lodMaterials = new Map<string, Material>();
   readonly #placementReach: Float32Array | undefined;
   readonly #readinessVisible = new Map<IWorldCell, boolean>();
