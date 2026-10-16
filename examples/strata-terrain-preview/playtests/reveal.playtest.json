@@ -1,7 +1,6 @@
 {
   "schemaVersion": 1,
   "name": "strata-terrain-reveal",
-  "subject": "Post-reveal pop-in: cells, shadows and impostor bakes after the cover lifts",
   "viewport": {
     "width": 1280,
     "height": 720
