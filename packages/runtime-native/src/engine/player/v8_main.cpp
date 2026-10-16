@@ -215,6 +215,7 @@ class V8Game {
     std::deque<WindowInput> windowInput_;
     double pointerX_ = 0, pointerY_ = 0;  // the playtest mouse's last position, for movementX/Y
     bool pointerSeen_ = false;
+    int pointerButtons_ = 0;
     void installWindowInput();
     void deliverWindowInput(v8::Local<v8::Context> ctx);
     inspect::Endpoint* endpoint_ = nullptr;
@@ -1311,6 +1312,20 @@ void V8Game::tick(double dt) {
             // (PRD-554): a press on a published UI island is the page's, any other is the game's.
             // The runner sends viewport pixels, which are the drawing buffer's; the hit test takes 0..1.
             else if (event.type.rfind("pointer", 0) == 0 || event.type == "wheel") {
+                const bool mouse = event.pointerType == "mouse";
+                int button = 0;
+                if (mouse && event.type != "wheel") {
+                    // A DOM button names the changed bit, including the bit removed on release.
+                    switch (pointerButtons_ ^ int(event.buttons)) {
+                        case 1: button = 0; break;
+                        case 2: button = 2; break;
+                        case 4: button = 1; break;
+                        case 8: button = 3; break;
+                        case 16: button = 4; break;
+                        default: button = -1; break;
+                    }
+                    pointerButtons_ = int(event.buttons);
+                }
                 const bool sized = renderer_ && renderer_->width() > 0 && renderer_->height() > 0;
                 if (sized && mystral::platform::uiOverlayAttached()) {
                     const float nx = float(event.x / renderer_->width()), ny = float(event.y / renderer_->height());
@@ -1321,13 +1336,12 @@ void V8Game::tick(double dt) {
                     if (page) continue;
                 }
                 // Not the page's: the game gets it as a window's pointer does, so a scenario's click, aim
-                // and look reach its canvas listeners. `button` follows the legacy host's synthetic press.
+                // and look reach its canvas listeners.
                 if (event.type == "wheel") {
                     windowInput_.push_back({.type = "wheel", .x = event.x, .y = event.y,
                                             .deltaX = event.deltaX, .deltaY = event.deltaY});
                     continue;
                 }
-                const bool mouse = event.pointerType == "mouse";
                 const double moveX = mouse && pointerSeen_ ? event.x - pointerX_ : 0;
                 const double moveY = mouse && pointerSeen_ ? event.y - pointerY_ : 0;
                 if (mouse && event.type != "pointerup" && event.type != "pointercancel") {
@@ -1335,10 +1349,9 @@ void V8Game::tick(double dt) {
                     pointerY_ = event.y;
                     pointerSeen_ = true;
                 }
-                const int button = event.buttons == 0 ? 0 : int(event.buttons) - 1;
                 if (event.type == "pointermove" && mouse)
                     windowInput_.push_back({.type = "mousemove", .x = event.x, .y = event.y, .movementX = moveX,
-                                            .movementY = moveY, .button = button, .buttons = int(event.buttons)});
+                                            .movementY = moveY, .buttons = int(event.buttons)});
                 windowInput_.push_back({.type = event.type, .pointerType = event.pointerType, .x = event.x,
                                         .y = event.y, .movementX = moveX, .movementY = moveY, .button = button,
                                         .buttons = int(event.buttons), .pointerId = event.pointerId, .pointer = true});

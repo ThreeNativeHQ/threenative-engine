@@ -23,9 +23,9 @@ await writeFile(
 import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { Scene, PerspectiveCamera } from "three";
 // What the game's canvas listeners see: a press the page did not take, and the mouse's look and wheel.
-for (const type of ["pointerdown", "pointermove", "mousemove", "wheel"])
+for (const type of ["pointerdown", "pointermove", "pointerup", "mousemove", "wheel"])
   globalThis.canvas.addEventListener(type, (event) =>
-    globalThis.tn.log("GAME_POINTER " + type + " x=" + event.clientX + " buttons=" + event.buttons + " mx=" + event.movementX + " dy=" + event.deltaY));
+    globalThis.tn.log("GAME_POINTER " + type + " x=" + event.clientX + " buttons=" + event.buttons + " mx=" + event.movementX + " dy=" + event.deltaY + " button=" + event.button + " pointerType=" + event.pointerType));
 globalThis.tn.scene = new Scene();
 globalThis.tn.camera = new PerspectiveCamera();
 globalThis.__tnUiGameReceive = (frame) => globalThis.tn.log("UI_RECEIVED " + frame);
@@ -115,6 +115,27 @@ try {
   await call("input.wheel", { x: 1000, y: 360, deltaX: 0, deltaY: 120 });
   await call("advance", 2);
   assert.match(output, /GAME_POINTER wheel x=1000 buttons=0 mx=0 dy=120/u, `no wheel:\n${output.slice(-1500)}`);
+  // Check the actual canvas callbacks, including a secondary button changing during a chord.
+  const pointerStart = output.length;
+  for (const [type, buttons] of [["down", 2], ["up", 0], ["down", 4], ["up", 0],
+    ["down", 1], ["move", 3], ["move", 7], ["move", 5], ["move", 1], ["move", 1], ["up", 0],
+    ["down", 3], ["up", 0]]) {
+    await call("input.pointer", { type, x: 1000, y: 360, buttons });
+    await call("advance", 2);
+  }
+  const buttonEvents = [...output.slice(pointerStart).matchAll(/GAME_POINTER (pointer\w+) x=1000 buttons=(\d+)[^\n]* button=(-?\d+) pointerType=mouse/gu)]
+    .map((match) => `${match[1]}:${match[2]}:${match[3]}`);
+  assert.deepEqual(buttonEvents, ["pointerdown:2:2", "pointerup:0:2", "pointerdown:4:1", "pointerup:0:1",
+    "pointerdown:1:0", "pointermove:3:2", "pointermove:7:1", "pointermove:5:2", "pointermove:1:1", "pointermove:1:-1", "pointerup:0:0",
+    "pointerdown:3:-1", "pointerup:0:-1"]);
+  const touchStart = output.length;
+  await call("input.pointers", { pointers: [{ id: 8, x: 1000, y: 360 }, { id: 9, x: 1100, y: 360 }] });
+  await call("advance", 2);
+  await call("input.pointers", { pointers: [] });
+  await call("advance", 2);
+  const touchEvents = [...output.slice(touchStart).matchAll(/GAME_POINTER (pointer\w+) x=\d+ buttons=(\d+)[^\n]* button=(-?\d+) pointerType=touch/gu)]
+    .map((match) => `${match[1]}:${match[2]}:${match[3]}`);
+  assert.deepEqual(touchEvents, ["pointerdown:1:0", "pointerdown:1:0", "pointerup:0:0", "pointerup:0:0"]);
   await call("input.keyDown", { key: "KeyW" });
   await call("advance", 2);
   assert.match(output, /HELD [^\n]*KeyW/u, `a held W never reached the game by code:\n${output.slice(-2000)}`);

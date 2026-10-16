@@ -8,6 +8,23 @@
 
 Recovery snapshots integrated into PR #493; publish-state tests: 46 passed. Runtime matrix and visual proof remain pending; no acceptance criteria are newly verified.
 
+2026-10-15 reviewer input defect: the V8 player's playtest mailbox treated DOM `buttons` as
+`button + 1`, misidentifying right/middle presses and every release. The pending fix tracks the
+previous mouse mask and maps its changed bit to DOM `button`, preserving chord transitions and
+touch contacts. `player-ui-input.mjs` now asserts actual canvas callbacks for right/middle
+presses/releases, chords, unchanged/ambiguous masks and two touch contacts. Script syntax and
+diff checks pass; Biome excludes this fixture. Runtime red reproduced against the existing
+UI-enabled player SHA256 `43c490665a420539274469b9c050ae5ca1a51d4499f5c054fcbe362aa8a63d1f`:
+right press reported button 1 instead of 2, middle press 3 instead of 1, releases 0 instead of
+the released button (`/tmp/pr493-pointer-red.log`, exit 1). The shipped capture lock was held
+and released. The same mailbox callback regression passed on rebuilt player SHA256
+`ab5cbcc17223906fcacd70b4e9dd5b20e5331c2e0f31ab22ec7cf982ae881bdd`
+(`/tmp/pr493-pointer-compute-green.log`); separate CTest results were real-input UI and compute
+passed, compute-ops failed on duplicate sprite storage declarations. The UI-overlay presentation
+test failed once at blue share 0 despite receiving its click intent, then passed unchanged on a
+diagnostic rerun; its asynchronous presentation race remains under investigation.
+No AC is ticked by this note.
+
 ## Context
 
 On 2026-10-15 the owner made the native C++ engine the default (`engine: "native"`) for v1. On the

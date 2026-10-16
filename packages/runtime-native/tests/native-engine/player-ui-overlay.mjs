@@ -8,7 +8,7 @@
 //   node packages/runtime-native/tests/native-engine/player-ui-overlay.mjs <tn-native-engine-player-v8>
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -21,7 +21,10 @@ const executable = process.argv[2];
 assert(executable, "Usage: player-ui-overlay.mjs <tn-native-engine-player-v8>");
 const { PNG } = createRequire(resolve(repo, "packages/assets/package.json"))("pngjs");
 const work = await mkdtemp(resolve(native, "build/player-ui-overlay-"));
-process.once("exit", () => rmSync(work, { recursive: true, force: true }));
+process.once("exit", (code) => {
+  if (code === 0) rmSync(work, { recursive: true, force: true });
+  else console.error(`UI failure artifacts retained: ${work}`);
+});
 
 // A gradient strip along the bottom keeps the capture clear of the runner's blank-frame check.
 // The block: x 10..30 %, y 10..30 % of the window. The button: x 40..60 %, y 70..90 %.
@@ -66,6 +69,8 @@ const artifacts = resolve(work, "artifacts");
 const run = spawnSync(process.execPath, [resolve(repo, "packages/playtest/dist/runner/cli.js"), scenario,
   "--target", "desktop", "--executable", resolve(executable), "--host-arg", outfile, "--artifacts", artifacts],
 { encoding: "utf8", maxBuffer: 1 << 28, env: { ...process.env, SDL_AUDIO_DRIVER: "dummy" } });
+writeFileSync(resolve(work, "runner.stdout.json"), run.stdout);
+writeFileSync(resolve(work, "runner.stderr.log"), run.stderr);
 let report = {};
 try { report = JSON.parse(run.stdout); } catch { /* reported below */ }
 const logged = (report.observations?.console ?? []).map((entry) => entry.text).join("\n");
