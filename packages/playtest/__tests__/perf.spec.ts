@@ -1132,6 +1132,30 @@ describe("per-frame CPU from the kernel's thread accounting", () => {
     expect(cpu.windows[0]?.threads.map((thread) => thread.name)).toEqual(["main", "renderer"]);
   });
 
+  it("names the busiest single thread when the game loop is not the process leader", async () => {
+    const dir = await makeTempDir("tn-perf-cpu-busiest-");
+    const pid = 2000;
+    // A host whose leader idles while a same-named worker thread runs the game loop.
+    await fakeProcTree(dir, pid, {
+      2000: { name: "engine", cpuNs: 0 },
+      2001: { name: "engine", cpuNs: 0 },
+      2002: { name: "audio", cpuNs: 0 },
+    });
+    const before = readLinuxCpuSnapshot(pid, dir);
+    await fakeProcTree(dir, pid, {
+      2000: { name: "engine", cpuNs: 600_000 },
+      2001: { name: "engine", cpuNs: 6_000_000 },
+      2002: { name: "audio", cpuNs: 3_000_000 },
+    });
+    const after = readLinuxCpuSnapshot(pid, dir);
+
+    const cpu = computeLinuxCpu([{ window: 0, frames: 60 }, { window: 1, frames: 60 }], [before, after], pid);
+
+    expect(cpu.summary.mainThread).toEqual({ name: "engine", cpuMsPerFrameMedian: 0.01 });
+    // One thread, not the 0.11 ms/frame both "engine" threads sum to.
+    expect(cpu.summary.busiestThread).toEqual({ name: "engine", cpuMsPerFrameMedian: 0.1 });
+  });
+
   it("skips and counts a thread that started inside the window", async () => {
     const dir = await makeTempDir("tn-perf-cpu-");
     const pid = 2000;
@@ -1178,6 +1202,7 @@ describe("per-frame CPU from the kernel's thread accounting", () => {
       cpu: {
         method: "linux-schedstat",
         summary: {
+          busiestThread: { cpuMsPerFrameMedian: 0.12, name: "renderer" },
           mainThread: { cpuMsPerFrameMedian: 0.1, name: "main" },
           processCpuMsPerFrameMedian: 0.2,
         },
@@ -1195,6 +1220,7 @@ describe("per-frame CPU from the kernel's thread accounting", () => {
       },
     });
     expect(text).toContain("cpu: 0.200 ms/frame process median (linux-schedstat), main thread main 0.100");
+    expect(text).toContain("busiest thread renderer 0.120 ms/frame");
     expect(text).toContain("renderer");
     expect(text).toContain("skipped, not counted as zero");
 

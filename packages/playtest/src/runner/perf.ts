@@ -272,6 +272,8 @@ export interface IPerfCpuWindow {
 export interface IPerfCpu {
   readonly method: "linux-schedstat";
   readonly summary: {
+    /** The single thread with the most on-CPU time per window; a host may run its game loop off the leader. */
+    readonly busiestThread: { readonly cpuMsPerFrameMedian: number; readonly name: string };
     readonly mainThread: { readonly cpuMsPerFrameMedian: number; readonly name: string };
     readonly processCpuMsPerFrameMedian: number;
   };
@@ -322,6 +324,8 @@ export function computeLinuxCpu(
   const cpuWindows: IPerfCpuWindow[] = [];
   const mainSamples: number[] = [];
   let mainName: string | undefined;
+  const busiestSamples: number[] = [];
+  let busiestName = "";
   for (let index = 1; index < snapshots.length; index += 1) {
     const window = windows[index];
     const frames = window?.frames;
@@ -336,6 +340,7 @@ export function computeLinuxCpu(
     const byName = new Map<string, number>();
     let processNs = 0;
     let skippedThreads = 0;
+    let busiestNs = -1;
     for (const [tid, thread] of after.threads) {
       const previous = before.threads.get(tid);
       if (previous === undefined) {
@@ -347,6 +352,10 @@ export function computeLinuxCpu(
         throw new Error(`TN_PERF_CPU_REGRESSED: thread ${tid} (${thread.name}) on-CPU time went backwards`);
       }
       processNs += delta;
+      if (delta > busiestNs) {
+        busiestNs = delta;
+        busiestName = thread.name;
+      }
       byName.set(thread.name, (byName.get(thread.name) ?? 0) + delta);
     }
     for (const tid of before.threads.keys()) if (!after.threads.has(tid)) skippedThreads += 1;
@@ -356,6 +365,7 @@ export function computeLinuxCpu(
       mainName = afterMain.name;
       mainSamples.push((afterMain.cpuNs - beforeMain.cpuNs) / 1e6 / frames);
     }
+    if (busiestNs >= 0) busiestSamples.push(busiestNs / 1e6 / frames);
     cpuWindows.push({
       frames,
       processCpuMsPerFrame: processNs / 1e6 / frames,
@@ -374,6 +384,7 @@ export function computeLinuxCpu(
   return {
     method: "linux-schedstat",
     summary: {
+      busiestThread: { cpuMsPerFrameMedian: median(busiestSamples), name: busiestName },
       mainThread: { cpuMsPerFrameMedian: median(mainSamples), name: mainName },
       processCpuMsPerFrameMedian: median(cpuWindows.map((window) => window.processCpuMsPerFrame)),
     },
@@ -1468,7 +1479,8 @@ function formatCpu(report: IPerfReport): string[] {
   }
   const lines = [
     `cpu: ${cpu.summary.processCpuMsPerFrameMedian.toFixed(3)} ms/frame process median (${cpu.method}), ` +
-      `main thread ${cpu.summary.mainThread.name} ${cpu.summary.mainThread.cpuMsPerFrameMedian.toFixed(3)} ms/frame`,
+      `main thread ${cpu.summary.mainThread.name} ${cpu.summary.mainThread.cpuMsPerFrameMedian.toFixed(3)} ms/frame, ` +
+      `busiest thread ${cpu.summary.busiestThread.name} ${cpu.summary.busiestThread.cpuMsPerFrameMedian.toFixed(3)} ms/frame`,
   ];
   const byName = new Map<string, number[]>();
   let skipped = 0;
