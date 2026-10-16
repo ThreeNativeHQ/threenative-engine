@@ -1529,9 +1529,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
         if (state.phase === MOTION_MOVER) this.#settle(mesh, state);
         continue;
       }
-      // A caster that casts nothing, is not drawn, or is not a layer-0 object is no business of
-      // this scan: the world's own batches reach the levels through `invalidateRegion` instead.
-      if (!mesh.castShadow || !mesh.visible || (mesh.layers.mask & 1) === 0) continue;
+      // WorldCells keeps wide aggregates on layer 0 for the main pass, but their reserved wide bit
+      // marks streamed instances whose shadow changes the world reports through `invalidateRegion`.
+      if (
+        !mesh.castShadow ||
+        !mesh.visible ||
+        (mesh.layers.mask & 1) === 0 ||
+        mesh.layers.isEnabled(VIRTUAL_SHADOW_WIDE_CASTER_LAYER)
+      )
+        continue;
       // `trackCaster` — or the game — put it on the mover layer itself, which pins it as a mover.
       if (state.phase === MOTION_STATIC && mesh.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER))
         continue;
