@@ -8643,7 +8643,7 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Drain the current atlas while covered; otherwise capture one view per render update.
+   * Drain the entry queue while covered; otherwise capture one view per render update.
    *
    * The renderer is asked for its raw seam and the bake waits for one that can run it: a world that
    * has no renderer yet — or a backend whose raw seam is not the layered-target API — simply does
@@ -8662,76 +8662,85 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#dropUnsupportedImpostors();
       return;
     }
-    if (this.#impostorBaking === undefined) {
-      while (this.#impostorQueue.length > 0) {
-        const asset = this.#impostorQueue.shift() as IAssetState;
-        this.#impostorQueued.delete(asset.id);
-        if (this.#assets.get(asset.id) !== asset || asset.disposed || asset.impostor !== undefined)
-          continue;
-        const parts = asset.levels[0];
-        if (parts === undefined || this.#impostorSource(parts) === undefined) continue;
-        // Re-check the completed cache when DEQUEUED, not only when queued: two entries whose bake
-        // was queued before either finished share one atlas instead of baking it twice.
-        const key = this.#impostorKey(asset);
-        const cached = this.#impostorRecords.get(key);
-        if (cached !== undefined) {
-          this.#touchImpostor(key, cached);
-          this.#finishImpostor(asset, cached);
-          continue;
+    const jobs = this.#covered
+      ? this.#impostorQueue.length + (this.#impostorBaking === undefined ? 0 : 1)
+      : 1;
+    for (let remainingJobs = jobs; remainingJobs > 0; remainingJobs -= 1) {
+      if (this.#impostorBaking === undefined) {
+        while (this.#impostorQueue.length > 0) {
+          const asset = this.#impostorQueue.shift() as IAssetState;
+          this.#impostorQueued.delete(asset.id);
+          if (
+            this.#assets.get(asset.id) !== asset ||
+            asset.disposed ||
+            asset.impostor !== undefined
+          )
+            continue;
+          const parts = asset.levels[0];
+          if (parts === undefined || this.#impostorSource(parts) === undefined) continue;
+          // Re-check the completed cache when DEQUEUED, not only when queued: two entries whose bake
+          // was queued before either finished share one atlas instead of baking it twice.
+          const key = this.#impostorKey(asset);
+          const cached = this.#impostorRecords.get(key);
+          if (cached !== undefined) {
+            this.#touchImpostor(key, cached);
+            this.#finishImpostor(asset, cached);
+            continue;
+          }
+          // Enforce the declared colour+mip budget BEFORE the atlas is allocated, and never at the
+          // cost of an atlas a live asset draws from: inactive LRU records make room first.
+          if (
+            this.#impostorRecordBytes + this.#impostorReservedBytes + IMPOSTOR_ATLAS_BYTES >
+            this.#impostorBudgetBytes
+          )
+            this.#evictImpostors(IMPOSTOR_ATLAS_BYTES);
+          if (this.#impostorRecordBytes + IMPOSTOR_ATLAS_BYTES > this.#impostorBudgetBytes) {
+            // Out of room: keep the source LODs and say why, rather than overrun the budget with one
+            // more atlas or evict one still in use.
+            this.#reportImpostor(asset, "budget");
+            // A far-only species fetched for the far half alone has no near run to fall back on, and
+            // nothing here retries an atlas-budget refusal, so keeping its source GLB alive buys
+            // nothing. Release it; the near path re-acquires it normally if the follow point reaches it.
+            if (this.#farTemp.has(asset.id)) this.#releaseFarTemp(asset.id);
+            continue;
+          }
+          const staged: IImpostorPart[] = impostorParts(parts);
+          try {
+            this.#baker.begin(asset.id, staged, { pixels: IMPOSTOR_FRAME_PIXELS });
+          } catch {
+            this.#failures += 1;
+            this.#reportImpostor(asset, "begin-failed");
+            continue;
+          }
+          this.#impostorReservedBytes = IMPOSTOR_ATLAS_BYTES;
+          this.#impostorBaking = asset;
+          break;
         }
-        // Enforce the declared colour+mip budget BEFORE the atlas is allocated, and never at the
-        // cost of an atlas a live asset draws from: inactive LRU records make room first.
-        if (
-          this.#impostorRecordBytes + this.#impostorReservedBytes + IMPOSTOR_ATLAS_BYTES >
-          this.#impostorBudgetBytes
-        )
-          this.#evictImpostors(IMPOSTOR_ATLAS_BYTES);
-        if (this.#impostorRecordBytes + IMPOSTOR_ATLAS_BYTES > this.#impostorBudgetBytes) {
-          // Out of room: keep the source LODs and say why, rather than overrun the budget with one
-          // more atlas or evict one still in use.
-          this.#reportImpostor(asset, "budget");
-          // A far-only species fetched for the far half alone has no near run to fall back on, and
-          // nothing here retries an atlas-budget refusal, so keeping its source GLB alive buys
-          // nothing. Release it; the near path re-acquires it normally if the follow point reaches it.
-          if (this.#farTemp.has(asset.id)) this.#releaseFarTemp(asset.id);
-          continue;
-        }
-        const staged: IImpostorPart[] = impostorParts(parts);
-        try {
-          this.#baker.begin(asset.id, staged, { pixels: IMPOSTOR_FRAME_PIXELS });
-        } catch {
-          this.#failures += 1;
-          this.#reportImpostor(asset, "begin-failed");
-          continue;
-        }
-        this.#impostorReservedBytes = IMPOSTOR_ATLAS_BYTES;
-        this.#impostorBaking = asset;
-        break;
       }
-    }
-    const baking = this.#impostorBaking;
-    if (baking === undefined) return;
-    const raw = impostorRawRenderer(renderer);
-    if (raw === undefined) return;
-    let atlas: WorldImpostorAtlas | undefined;
-    try {
-      const views = this.#covered ? IMPOSTOR_VIEWS - (this.#baker.pending?.view ?? 0) : 1;
-      for (let remaining = views; remaining > 0; remaining -= 1) {
-        const view = this.#baker.pending?.view;
-        atlas = this.#baker.step(raw);
-        // A deferred capture must yield to the next update, never spin waiting for compilation.
-        if (atlas !== undefined || this.#baker.pending?.view === view) break;
+      const baking = this.#impostorBaking;
+      if (baking === undefined) return;
+      const raw = impostorRawRenderer(renderer);
+      if (raw === undefined) return;
+      let atlas: WorldImpostorAtlas | undefined;
+      try {
+        const views = this.#covered ? IMPOSTOR_VIEWS - (this.#baker.pending?.view ?? 0) : 1;
+        for (let remaining = views; remaining > 0; remaining -= 1) {
+          const view = this.#baker.pending?.view;
+          atlas = this.#baker.step(raw);
+          // A deferred capture must yield to the next update, never spin waiting for compilation.
+          if (atlas !== undefined || this.#baker.pending?.view === view) break;
+        }
+      } catch {
+        this.#failures += 1;
+        this.#impostorBaking = undefined;
+        this.#impostorReservedBytes = 0;
+        this.#reportImpostor(baking, "bake-failed");
+        return;
       }
-    } catch {
-      this.#failures += 1;
+      if (atlas === undefined) return;
       this.#impostorBaking = undefined;
-      this.#impostorReservedBytes = 0;
-      this.#reportImpostor(baking, "bake-failed");
-      return;
+      this.#adoptImpostorAtlas(baking, atlas);
     }
-    if (atlas === undefined) return;
-    this.#impostorBaking = undefined;
-    this.#adoptImpostorAtlas(baking, atlas);
   }
 
   /**

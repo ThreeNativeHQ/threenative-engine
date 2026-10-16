@@ -567,24 +567,29 @@ describe("WorldCells automatic impostors", () => {
     }
   });
 
-  it("drains the covered atlas in one update but keeps uncovered bakes at one view", async () => {
-    stubManifestFetch(pineOnly());
-    const world = await loadPine(treeLoader());
-    try {
-      await flushed(world);
-      const renderer = rendererStub();
-      const capture = vi.spyOn(renderer.raw as IImpostorRawRenderer, "render");
-      world.process(renderer, undefined, false);
-      expect(capture).toHaveBeenCalledTimes(1);
-      expect(world.stats().impostor.pending).toBeGreaterThan(0);
-      world.process(renderer, undefined, true);
-      expect(capture).toHaveBeenCalledTimes(16);
-      expect(world.stats().impostor.assets).toBe(1);
-      expect(world.stats().impostor.pending).toBe(0);
-    } finally {
-      world.dispose();
-    }
-  });
+  it.each([false, true])(
+    "drains distinct queued atlases in one covered update (in-flight: %s)",
+    async (inFlight) => {
+      stubManifestFetch(manyAlphaAssets(2));
+      const world = await loadPine(treeLoader());
+      try {
+        await flushed(world);
+        const renderer = rendererStub();
+        const capture = vi.spyOn(renderer.raw as IImpostorRawRenderer, "render");
+        if (inFlight) {
+          world.process(renderer, undefined, false);
+          expect(capture).toHaveBeenCalledTimes(1);
+        }
+        expect(world.stats().impostor.pending).toBe(2);
+        world.process(renderer, undefined, true);
+        expect(capture).toHaveBeenCalledTimes(32);
+        expect(world.stats().impostor.assets).toBe(2);
+        expect(world.stats().impostor.pending).toBe(0);
+      } finally {
+        world.dispose();
+      }
+    },
+  );
 
   it("yields a covered bake when a view makes no progress", async () => {
     stubManifestFetch(pineOnly());
