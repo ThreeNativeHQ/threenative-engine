@@ -248,6 +248,9 @@ ExprId Lowerer::emit(Node node) {
             }
             return program_.varying(d.name, d.type);
         case Kind::Builtin:
+            // IndexNode carries vertex-only indices to fragments through a flat varying.
+            if (program_.stage() == Stage::Fragment && (d.name == "instanceIndex" || d.name == "vertexIndex"))
+                return program_.varying(d.name, Type::u32());
             return d.name == "instanceIndex" ? tsl::instanceIndex().id : program_.builtin(d.name);
         case Kind::PositionLocal: return tsl::positionLocal().id;
         case Kind::Unary: return d.unary == UnOp::Negate ? program_.neg(expression(d.args[0])) : kInvalid;

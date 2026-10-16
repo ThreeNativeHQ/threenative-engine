@@ -181,20 +181,26 @@ describe("storage buffers on the Wasm facade", () => {
     ).toThrow(/toAtomic: expected int or uint/u);
   });
 
-  it("reads toAttribute() as the element of the instance being drawn", () => {
-    const calls: ICall[] = [];
-    const tsl = tslOver(calls);
-    const buffer = (
-      tsl.instancedArray as (
-        count: number,
-        type: string,
-      ) => IStorageBuffer & { toAttribute(): object }
-    )(4, "vec3");
-    expect(buffer.toAttribute()).toBeDefined();
-    const element = calls.filter((call) => call.name === "storage:object").at(-1);
-    expect(element?.args[3]?.kind).toBe("node");
-    expect(calls.some((call) => call.name === "constant:instanceIndex")).toBe(true);
-  });
+  it.each(["instancedArray", "attributeArray"])(
+    "carries %s storage from its vertex-stage index",
+    (name) => {
+      const calls: ICall[] = [];
+      const tsl = tslOver(calls);
+      const buffer = (
+        tsl[name] as (count: number, type: string) => IStorageBuffer & { toAttribute(): object }
+      )(4, "vec3");
+      expect(buffer.toAttribute()).toBeDefined();
+      const element = calls.filter((call) => call.name === "storage:object").at(-1);
+      expect(element?.args[3]?.kind).toBe("node");
+      expect(
+        calls.some(
+          (call) =>
+            call.name === `constant:${name === "instancedArray" ? "instanceIndex" : "vertexIndex"}`,
+        ),
+      ).toBe(true);
+      expect(calls.at(-1)?.name).toBe("varying");
+    },
+  );
 
   it("names the compute dispatch size through the shared node method", () => {
     const calls: ICall[] = [];

@@ -10,6 +10,7 @@
 #include "engine/shader/graph/post_effects.h"
 #include "engine/shader/graph/serialized.h"
 #include "engine/shader/output.h"
+#include "engine/shader/sprite.h"
 #include "engine/shader/package.h"
 #include "engine/animation/mixer.h"
 #include "engine/animation/skinning/skeleton.h"
@@ -763,6 +764,8 @@ void property_bind() {
 
 // PRD-540: TSL by name through the C ABI, the table the V8 back end shares. Midway's first call is
 // a class field `uniform(0)`; its graph then reaches a node material and compiles.
+tn_value_t bytes(const char* type, const void* data, uint64_t count);
+
 void tsl_call() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
@@ -795,8 +798,50 @@ void tsl_call() {
         direct.output("color", tn::engine::shader::graph::lower(tn::abi::shaderNode(material, "colorNode"), direct));
     }
 
-    // A native struct selects typed members into the material graph; no JS shader builder.
+    const auto handleArg = [](tn_handle_t h) {
+        tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_HANDLE;
+        std::memcpy(&a.reserved, &h, 4); std::memcpy(&a.node, reinterpret_cast<const char*>(&h) + 4, 8);
+        return a;
+    };
     const auto stringArg = [](const char* s) { tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_STRING; a.text = s; return a; };
+
+    // Snow reads instanceIndex in a fragment's opacity; the index must arrive from the vertex stage.
+    for (const char* name : {"instanceIndex", "vertexIndex"}) {
+        uint64_t index = 0, scalar = 0, indexedColor = 0;
+        const std::string constant = std::string("constant:") + name;
+        CHECK(tn_tsl_call(ctx, constant.c_str(), nullptr, nullptr, 0, &index, &d.value) == TN_OK);
+        const auto value = nodeArg(index);
+        CHECK(tn_tsl_call(ctx, "float", nullptr, &value, 1, &scalar, &d.value) == TN_OK);
+        const tn_tsl_arg_t rgba[] = {nodeArg(scalar), number(0), number(0), number(1)};
+        CHECK(tn_tsl_call(ctx, "vec4", nullptr, rgba, 4, &indexedColor, &d.value) == TN_OK);
+        const float position[4] = {1, 2, 3, 1};
+        const tn_value_t attributeArgs[] = {bytes("Float32Array", position, 4), num(4)};
+        tn_handle_t attribute{};
+        CHECK(tn_construct(ctx, "BufferAttribute", attributeArgs, 2, &attribute, &d.value) == TN_OK);
+        const tn_tsl_arg_t storageArgs[] = {handleArg(attribute), stringArg("vec4"), stringArg("points"), nodeArg(index)};
+        uint64_t element = 0, carried = 0, combined = 0;
+        CHECK(tn_tsl_call(ctx, "storage:object", nullptr, storageArgs, 4, &element, &d.value) == TN_OK);
+        const auto elementArg = nodeArg(element);
+        CHECK(tn_tsl_call(ctx, "varying", nullptr, &elementArg, 1, &carried, &d.value) == TN_OK);
+        const auto carriedArg = nodeArg(carried);
+        CHECK(tn_tsl_call(ctx, "add", &indexedColor, &carriedArg, 1, &combined, &d.value) == TN_OK);
+        CHECK(tn_tsl_set(ctx, material, "colorNode", combined, &d.value) == TN_OK);
+        CHECK(tn_tsl_compile(material, nullptr, &d.value) == TN_OK);
+        tn_diagnostic_release(&d.value);
+        tn::engine::shader::VertexVariant variant;
+        variant.nodes.colorNode = tn::abi::shaderNode(material, "colorNode");
+        const auto programs = tn::engine::shader::buildSprite(variant);
+        const auto vertex = tn::engine::shader::buildStage(programs.vertex);
+        const auto fragment = tn::engine::shader::buildStage(programs.fragment);
+        CHECK(vertex.wgsl.ok() && fragment.wgsl.ok());
+        CHECK(vertex.wgsl.code.find("var<storage") != std::string::npos);
+        CHECK(fragment.wgsl.code.find("var<storage") == std::string::npos);
+        CHECK(vertex.wgsl.code.find(std::string("@builtin(") + (std::string(name) == "instanceIndex" ? "instance_index" : "vertex_index")) != std::string::npos);
+        CHECK(fragment.wgsl.code.find("@interpolate(flat)") != std::string::npos);
+    }
+    CHECK(tn_tsl_set(ctx, material, "colorNode", color, &d.value) == TN_OK);
+
+    // A native struct selects typed members into the material graph; no JS shader builder.
     const tn_tsl_arg_t layout[] = {stringArg("Sample"), stringArg("colour"), stringArg("vec4"), stringArg("weight"), stringArg("float")};
     uint64_t schema = 0, sample = 0, member = 0;
     CHECK(tn_tsl_call(ctx, "struct", nullptr, layout, 5, &schema, &d.value) == TN_OK);
@@ -821,11 +866,6 @@ void tsl_call() {
     for (const auto id : {schema, sample, member}) CHECK(tn_tsl_release(ctx, id, &d.value) == TN_OK);
 
     // pmremTexture takes the texture object itself as a handle argument.
-    const auto handleArg = [](tn_handle_t h) {
-        tn_tsl_arg_t a{}; a.kind = TN_TSL_ARG_HANDLE;
-        std::memcpy(&a.reserved, &h, 4); std::memcpy(&a.node, reinterpret_cast<const char*>(&h) + 4, 8);
-        return a;
-    };
     tn_handle_t sky{};
     CHECK(tn_construct(ctx, "DataTexture", nullptr, 0, &sky, &d.value) == TN_OK);
     uint64_t direction = 0, pmrem = 0, lit = 0;

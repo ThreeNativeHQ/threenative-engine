@@ -571,6 +571,10 @@ export function defineTsl(
           get instanceIndex() {
             return exports.instanceIndex;
           },
+          get vertexIndex() {
+            return exports.vertexIndex;
+          },
+          varying: (value) => (exports.varying as (value: unknown) => unknown)(value),
         },
         // quality-allow: the engine's BufferAttribute class arrives untyped from the back end's class map.
         (classes as unknown as IBufferAttributeClass).BufferAttribute,

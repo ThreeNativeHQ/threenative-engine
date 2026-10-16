@@ -327,7 +327,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
             // @invariant only when asked (Program::setInvariantPosition): see there.
             if (name == "position") out += std::string("  ") + (program.invariantPosition_ ? "@invariant " : "") + "@builtin(position) position: vec4<f32>,\n";
             else if (name == "color") out += "  @location(0) color: vec4<f32>,\n";
-            else out += "  @location(" + std::to_string(location++) + ") o_" + name + ": " + e.type(slot.type) + ",\n";
+            else out += "  " + std::string(slot.type.scalar == Type::Scalar::I32 || slot.type.scalar == Type::Scalar::U32 ? "@interpolate(flat) " : "") + "@location(" + std::to_string(location++) + ") o_" + name + ": " + e.type(slot.type) + ",\n";
         }
         if (program.outputs_.empty()) {
             module.errors.push_back("TN_SHADER_PACKAGE_INVALID: a render stage writes no output");
@@ -368,7 +368,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     // ponytail: varyings take locations in first-use order, which matches a vertex stage that
     // outputs them in the same order; a package-level link step replaces this when stages differ.
     for (ExprId id : varyings) {
-        out += std::string(first ? "" : ", ") + "@location(" + std::to_string(location++) + ") i_" +
+        out += std::string(first ? "" : ", ") + (program.exprs_[id].type.scalar == Type::Scalar::I32 || program.exprs_[id].type.scalar == Type::Scalar::U32 ? "@interpolate(flat) " : "") + "@location(" + std::to_string(location++) + ") i_" +
                program.names_[program.exprs_[id].immediate] + ": " + e.type(program.exprs_[id].type);
         first = false;
     }

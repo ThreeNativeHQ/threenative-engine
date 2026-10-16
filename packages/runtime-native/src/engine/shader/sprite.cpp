@@ -34,13 +34,8 @@ StandardPrograms buildSprite(const VertexVariant& variant) {
     const Node rotated = vec2({c.mul(aligned.x()).sub(s.mul(aligned.y())), s.mul(aligned.x()).add(c.mul(aligned.y()))});
     output("position", projection.mul(vec4({mv.xy().add(rotated), mv.swizzle("zw")})));
     if (variant.fog) output("positionView", mv.xyz());
-    // The basic fragment graph can read the same UV/position varyings as a sprite material.
-    for (const auto& varying : out.fragment.varyings()) {
-        if (varying.first == "uv") output("uv", uv());
-        else if (varying.first == "positionLocal") output("positionLocal", centre);
-        else throw std::runtime_error("TN_SPRITE_VARYING_UNSUPPORTED: " + varying.first);
-    }
-    v.linkVaryings(out.fragment);
+    if (variant.map) output("uv", uv());
+    linkNodeVaryings(out, variant, vec4({centre, 1}).id);
     return out;
 }
 } // namespace tn::engine::shader

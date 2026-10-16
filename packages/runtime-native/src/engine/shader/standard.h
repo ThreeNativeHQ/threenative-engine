@@ -237,6 +237,9 @@ StandardPrograms buildPhong(const VertexVariant& variant = {}, const LightLayout
  */
 StandardPrograms buildBasic(const VertexVariant& variant = {});
 
+/** Link authored and engine varyings from the local vertex, shared by mesh and sprite builders. */
+void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprId position, ExprId normal = kInvalid);
+
 /**
  * NodeMaterial.setupDiffuseColor's alpha tail, shared by every material program: discard when
  * alphaTest > 0 and alpha <= alphaTest, then alpha 1 for an opaque material (builder.isOpaque()).

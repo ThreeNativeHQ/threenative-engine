@@ -8,8 +8,8 @@ const executable = process.argv[2];
 assert(executable, "Usage: player-compute-ops.mjs <tn-native-engine-player-v8>");
 
 const { verdict, output } = await runComputeGame(executable, `
-import { InstancedMesh, Matrix4, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RenderTarget, Scene, Sprite, UnsignedByteType } from "three";
-import { Break, Continue, Fn, If, Loop, Return, all, and, any, deltaTime, float, instanceIndex, instancedArray, log, mod, not, or, positionLocal, select, time, uint, uniform, vec2, vec3 } from "three/tsl";
+import { BufferAttribute, InstancedMesh, Matrix4, Mesh, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RenderTarget, Scene, Sprite, UnsignedByteType } from "three";
+import { Break, Continue, Fn, If, Loop, Return, all, and, any, deltaTime, float, instanceIndex, instancedArray, log, mod, not, or, positionLocal, select, storage, time, uint, uniform, vec2, vec3 } from "three/tsl";
 import { MeshBasicNodeMaterial, SpriteNodeMaterial, WebGPURenderer } from "three/webgpu";
 
 const faults = [];
@@ -128,11 +128,27 @@ async function run() {
   const row = await renderer.readRenderTargetPixelsAsync(strip, 0, 0, 8, 1);
   same("toAttribute", Array.from({ length: 8 }, (_, i) => row[i * 4]), [0, 255, 255, 0, 0, 255, 255, 0]);
 
+  // A regular storage attribute advances per vertex: selecting instanceIndex would collapse this quad.
+  const corners = storage(new BufferAttribute(new Float32Array([
+    -1, 1, 0, 1, 1, 1, 0, 1, -1, -1, 0, 1, 1, -1, 0, 1,
+  ]), 4), "vec4");
+  const surface = new MeshBasicNodeMaterial();
+  surface.positionNode = corners.toAttribute().xyz;
+  surface.colorNode = vec3(1, 0, 0);
+  const solid = new Scene();
+  solid.add(new Mesh(new PlaneGeometry(2, 2), surface));
+  renderer.setRenderTarget(strip);
+  renderer.render(solid, camera);
+  renderer.setRenderTarget(null);
+  const filled = await renderer.readRenderTargetPixelsAsync(strip, 0, 0, 8, 1);
+  same("regular storage toAttribute", Array.from({ length: 8 }, (_, i) => filled[i * 4]), Array(8).fill(255));
+
   // A sprite per element: positionNode is the centre, scaleNode multiplies the model scale (0.5 x 2 here), and
   // rotationNode turns it (a quarter turn of a 2 x 0.5 sprite lands on the same footprint).
   for (const [name, scale, rotation] of [["scaleNode", vec2(0.5, 2), undefined], ["rotationNode", vec2(2, 0.5), float(Math.PI / 2)]]) {
     const flake = new SpriteNodeMaterial();
-    flake.colorNode = vec3(1, 0, 0);
+    // Snow consumes both the storage attribute and instanceIndex in its fragment color.
+    flake.colorNode = vec3(1, spots.toAttribute().x.add(0.5), float(instanceIndex));
     flake.positionNode = spots.toAttribute();
     flake.scaleNode = scale;
     if (rotation) flake.rotationNode = rotation;
@@ -147,6 +163,8 @@ async function run() {
     renderer.setRenderTarget(null);
     const line = await renderer.readRenderTargetPixelsAsync(wide, 0, 0, 8, 1);
     same("sprite " + name, Array.from({ length: 8 }, (_, i) => line[i * 4]), [0, 255, 255, 0, 0, 255, 255, 0]);
+    for (const channel of [1, 2])
+      same("sprite fragment " + name + " channel " + channel, Array.from({ length: 8 }, (_, i) => line[i * 4 + channel]), [0, 0, 0, 0, 0, 255, 255, 0]);
   }
 
   // The kernel node carries three's isComputeNode flag, which GPUParticles3D checks.

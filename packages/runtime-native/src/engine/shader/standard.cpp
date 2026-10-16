@@ -618,7 +618,7 @@ static ExprId diffuseAlpha(Program& f, const VertexVariant& variant, ExprId diff
 }
 
 // Graph attributes can be first used in any slot. Link the two stages by name, in fragment order.
-static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const LocalVertex& local) {
+void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprId position, ExprId normal) {
     bool hasNodes = false;
     for (const auto& node : variant.nodes.graphs()) hasNodes |= bool(node);
     // Every builder ends here: the fragment's read order, not declaration order, fixes the locations.
@@ -644,23 +644,24 @@ static void linkNodes(StandardPrograms& out, const VertexVariant& variant, const
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
             tsl::Build build(v);
-            value = graph::lower(found->second->args[0], v, {{"positionLocal", v.swizzle(local.position, "xyz")}});
+            value = graph::lower(found->second->args[0], v, {{"positionLocal", v.swizzle(position, "xyz")}});
         } else if (name == "positionWorld")
-            value = v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position), "xyz");
-        else if (name == "positionLocal") value = v.swizzle(local.position, "xyz");
+            value = v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), position), "xyz");
+        else if (name == "positionLocal") value = v.swizzle(position, "xyz");
         // positionView for a program that does not light (linearDepth() of the fragment): view * model * position.
         else if (name == "positionView")
             value = v.swizzle(v.mul(v.uniform("viewMatrix", Type::mat(4, 4)),
-                                    v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position)), "xyz");
+                                    v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), position)), "xyz");
         // r185's positionViewDirection: positionView.negate() carried to the fragment, normalized there.
         else if (name == "positionViewDirection")
             value = v.neg(v.swizzle(v.mul(v.uniform("viewMatrix", Type::mat(4, 4)),
-                                          v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position)), "xyz"));
+                                          v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), position)), "xyz"));
         // r185's normalWorldGeometry: normalViewGeometry (transformNormalToView(normalLocal)) back through
         // the view matrix, which is modelNormalMatrix * normalLocal, the inverse transpose, so a
         // non-uniform scale keeps it perpendicular. Neither a normalNode nor a normal map reaches it.
-        else if (name == "normalWorldGeometry" && local.normal != kInvalid)
-            value = v.mul(v.uniform("modelNormalMatrix", Type::mat(3, 3)), local.normal);
+        else if (name == "normalWorldGeometry" && normal != kInvalid)
+            value = v.mul(v.uniform("modelNormalMatrix", Type::mat(3, 3)), normal);
+        else if (name == "instanceIndex" || name == "vertexIndex") value = v.builtin(name);
         else if (name == "positionGeometry") value = v.attribute("position", type);
         else value = v.attribute(name, type);
         v.output(name, value);
@@ -1108,7 +1109,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha)));
-    linkNodes(out, variant, local);
+    linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
             out.diagnostics.push_back(d.code + " " + d.node + ": " + d.reason + " (" + d.file + ":" + std::to_string(d.line) + ")");
@@ -1238,7 +1239,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha)));
-    linkNodes(out, variant, local);
+    linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
             out.diagnostics.push_back(d.code + " " + d.node + ": " + d.reason + " (" + d.file + ":" + std::to_string(d.line) + ")");
@@ -1296,7 +1297,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     if (variant.nodes.fragmentNode) {
         tsl::Build scope(f);
         f.output("color", graph::lower(variant.nodes.fragmentNode, f));
-        linkNodes(out, variant, local);
+        linkNodeVaryings(out, variant, local.position, local.normal);
         return out;
     }
 
@@ -1318,7 +1319,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, nodeValue(f, variant.nodes.emissiveNode, Type::vec(3), kInvalid, normalView)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
     f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha)));
-    linkNodes(out, variant, local);
+    linkNodeVaryings(out, variant, local.position, local.normal);
     return out;
 }
 

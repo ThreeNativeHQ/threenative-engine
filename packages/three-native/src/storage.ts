@@ -93,6 +93,8 @@ export function defineStorage(
   tsl: {
     storage(attribute: unknown, type: string, count: number): IStorageNode;
     readonly instanceIndex: unknown;
+    readonly vertexIndex: unknown;
+    varying(value: unknown): unknown;
   },
   BufferAttribute: new (
     array: ArrayBufferView,
@@ -122,7 +124,16 @@ export function defineStorage(
   const StorageBufferAttribute = make("isStorageBufferAttribute");
   const StorageInstancedBufferAttribute = make("isStorageInstancedBufferAttribute");
 
-  const storage = (value: { count: number; itemSize: number }, type: unknown = null, count = 0) => {
+  const storage = (
+    value: {
+      count: number;
+      itemSize: number;
+      isStorageInstancedBufferAttribute?: boolean;
+      isInstancedBufferAttribute?: boolean;
+    },
+    type: unknown = null,
+    count = 0,
+  ) => {
     if (type !== null && typeof type !== "string")
       throw new TypeError(
         "TN_TSL storage: a struct element type is not supported on the native engine",
@@ -132,10 +143,16 @@ export function defineStorage(
     const node = tsl.storage(value, elementType, count || value.count);
     Object.defineProperty(node, "value", { value, enumerable: true });
     Object.defineProperty(node, "isStorageBufferNode", { value: true });
-    // three's StorageBufferNode.toAttribute(): the buffer as a per-instance vertex attribute. The engine reads
-    // the element of the instance being drawn, which is the same value in the vertex stage.
+    // A vertex attribute is interpolated to fragments; only instanced storage uses the instance index.
     Object.defineProperty(node, "toAttribute", {
-      value: () => (node.element as (index: unknown) => unknown)(tsl.instanceIndex),
+      value: () =>
+        tsl.varying(
+          (node.element as (index: unknown) => unknown)(
+            value.isStorageInstancedBufferAttribute || value.isInstancedBufferAttribute
+              ? tsl.instanceIndex
+              : tsl.vertexIndex,
+          ),
+        ),
     });
     return node;
   };
