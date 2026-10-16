@@ -22,8 +22,8 @@ assert(executable, "Usage: player-ui-overlay.mjs <tn-native-engine-player-v8>");
 const { PNG } = createRequire(resolve(repo, "packages/assets/package.json"))("pngjs");
 const work = await mkdtemp(resolve(native, "build/player-ui-overlay-"));
 process.once("exit", (code) => {
-  if (code === 0) rmSync(work, { recursive: true, force: true });
-  else console.error(`UI failure artifacts retained: ${work}`);
+  if (code === 0 && !process.env.TN_UI_SNAPSHOT_TRACE) rmSync(work, { recursive: true, force: true });
+  else console.error(`UI diagnostic artifacts retained: ${work}`);
 });
 
 // A gradient strip along the bottom keeps the capture clear of the runner's blank-frame check.
