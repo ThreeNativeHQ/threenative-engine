@@ -1118,6 +1118,11 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
         } else if (b.kind == shader::BindingKind::Storage && externalStorage_.count(b.name.substr(2))) {
             const auto& [buffer, bytes] = externalStorage_.at(b.name.substr(2)); // a positionNode's buffer
             e.buffer = (buffer.context == kGeometryHandles ? geometry_->gpu : gpu_).buffer(buffer);
+            // A disposed attribute dropped its GPU copy: the handle here is dead until the frame's
+            // storage pass re-syncs it from the live store. A drawn material is re-synced before this
+            // point, so this only skips a program whose providing scene is gone. Never build a bind
+            // group around a destroyed buffer, which downstream fails as `resource: undefined`.
+            if (e.buffer == nullptr) return nullptr;
             e.size = bytes;
         } else if (b.kind == shader::BindingKind::Storage && storages_.count(b.name.substr(2))) {
             const FrameStorage& storage = storages_.at(b.name.substr(2)); // "s_<name>"
@@ -3126,11 +3131,20 @@ void Renderer::encodeFrame(FrameJob& job) {
             TN_ENCODE(SetVertexBuffer, a.location, geometry_->gpu.buffer(resolved.buffer), offset, resolved.bytes - offset);
             if (a.location < std::size(boundVertex)) boundVertex[a.location] = &store;
         }
-        TN_ENCODE(SetBindGroup, 0, p.vertexGroup ? p.vertexGroup : p.program->groups[0], 1, &p.vertexOffset);
+        // A required group that resolved to null means the draw's storage source is gone. A cached
+        // program whose providing scene was torn down may keep a null group, but an active draw must
+        // never bind it: fail closed rather than send null or silently skip the draw. A stage with no
+        // bindings has a valid empty layout, so its group is not required.
+        const WGPUBindGroup vertexGroup = p.vertexGroup ? p.vertexGroup : p.program->groups[0];
+        if (vertexGroup == nullptr && !p.program->vertex.bindings.empty())
+            throw std::runtime_error("TN_NATIVE_BINDING_NULL: active draw has no vertex bind group");
+        TN_ENCODE(SetBindGroup, 0, vertexGroup, 1, &p.vertexOffset);
         // The depth program's fragment group is empty: no uniform block, no dynamic offset.
         const bool fragmentBlock = p.program->fragment.uniformBlockSize != 0;
-        TN_ENCODE(SetBindGroup, 1, p.mapGroup ? p.mapGroup : p.program->groups[1],
-                  fragmentBlock ? 1 : 0, &p.fragmentOffset);
+        const WGPUBindGroup fragmentGroup = p.mapGroup ? p.mapGroup : p.program->groups[1];
+        if (fragmentGroup == nullptr && !p.program->fragment.bindings.empty())
+            throw std::runtime_error("TN_NATIVE_BINDING_NULL: active draw has no fragment bind group");
+        TN_ENCODE(SetBindGroup, 1, fragmentGroup, fragmentBlock ? 1 : 0, &p.fragmentOffset);
         if (item.indices) {
             const auto indices = geometry_->cache.resolved(*item.indices);
             const bool wide = indices.scalar == Scalar::U32;

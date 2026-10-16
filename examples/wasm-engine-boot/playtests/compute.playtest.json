@@ -72,6 +72,20 @@
       {
         "entity": "wasm-compute",
         "component": "probe",
+        "path": "disposeReuse",
+        "equals": "32,128,223,255",
+        "allowTrivial": "The same cached material draws a disposed-then-reseeded storage attribute."
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "disposeRender",
+        "equals": "128,64,32,255",
+        "allowTrivial": "The rebuilt scene draws after teardown disposed a storage attribute a cached program still binds."
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
         "path": "vertexRead",
         "equals": "255,255,255,255,0,0,0,0"
       }

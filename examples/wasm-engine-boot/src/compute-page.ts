@@ -42,6 +42,8 @@ const probe = {
   atomics: "",
   uniform: "",
   renderRead: "",
+  disposeReuse: "",
+  disposeRender: "",
   vertexRead: "",
 };
 const started = performance.now();
@@ -218,6 +220,41 @@ try {
   new QuadMesh(material).render(renderer);
   renderer.setRenderTarget(null);
   probe.renderRead = Array.from(
+    await renderer.readRenderTargetPixelsAsync(target, 0, 0, 1, 1),
+  ).join(",");
+
+  // The starter's scene transition (PRD-620 phase 3): the old scene's storage is disposed on
+  // teardown, and the rebuilt scene draws its own storage. The disposed attribute's GPU copy is
+  // dropped; the old program that reads it stays cached and is rebound for the rebuilt frame, so
+  // its binding must resolve a live buffer, never the destroyed one.
+  colour.value.dispose();
+  // Reusing the SAME cached material and storage attribute after dispose: a kernel reseeds the
+  // disposed attribute, then the original material draws it again. Its cached program must resolve
+  // the live reseeded buffer, never the destroyed one; the reseed value is distinct from before.
+  renderer.compute(
+    Fn(() => {
+      colour.element(0).assign(vec4(0.125, 0.5, 0.875, 1));
+    })().compute(1),
+  );
+  renderer.setRenderTarget(target);
+  new QuadMesh(material).render(renderer);
+  renderer.setRenderTarget(null);
+  probe.disposeReuse = Array.from(
+    await renderer.readRenderTargetPixelsAsync(target, 0, 0, 1, 1),
+  ).join(",");
+  colour.value.dispose();
+  const replacement = instancedArray(new Float32Array([0, 0, 0, 0]), "vec4");
+  const replacementMaterial = new MeshBasicNodeMaterial();
+  replacementMaterial.colorNode = replacement.element(0);
+  renderer.compute(
+    Fn(() => {
+      replacement.element(0).assign(vec4(0.5, 0.25, 0.125, 1));
+    })().compute(1),
+  );
+  renderer.setRenderTarget(target);
+  new QuadMesh(replacementMaterial).render(renderer);
+  renderer.setRenderTarget(null);
+  probe.disposeRender = Array.from(
     await renderer.readRenderTargetPixelsAsync(target, 0, 0, 1, 1),
   ).join(",");
 
