@@ -172,6 +172,7 @@ const initialState = {
   view: "player",
   windowDrawCalls: 0,
   windowFrameMs: 0,
+  currentViewWindows: 0,
   viewFrameP50s: [] as { view: string; p50: number; presentedP95: number; windows: number }[],
   maxViewFrameP50: 0,
   maxViewPresentedP95: 0,
@@ -1092,6 +1093,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           tasksAvailable: budget.tasksAvailable,
           longestLoadTaskMs: budget.longestTaskMs,
           afterFirstFrameTaskMs: budget.afterFirstFrameTaskMs,
+          currentViewWindows: viewBudgets.get(currentView)?.p50s.length ?? 0,
           viewFrameP50s,
           maxViewFrameP50: Math.max(0, ...viewFrameP50s.map((group) => group.p50)),
           maxViewPresentedP95: Math.max(0, ...viewFrameP50s.map((group) => group.presentedP95)),
@@ -1259,7 +1261,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             passes: [],
             surfaces: [],
           });
-        ctx.state.set({ view: next });
+        ctx.state.set({
+          view: next,
+          currentViewWindows: viewBudgets.get(currentView)?.p50s.length ?? 0,
+        });
       }
       this.#ocean?.advance(this.#elapsed);
       this.#river?.advance(this.#elapsed);
@@ -1364,11 +1369,8 @@ const game = defineGame<TerrainState, IPhysicsContext>({
         );
       }
     },
-    // Small because this counts PRESENTED frames, not simulated ones. The native host presents at
-    // roughly fifteen a second under Xvfb, so a 1459-frame run presents only a couple of hundred
-    // times: the default 300-present window never closes at all, and every framing would report zero
-    // samples. Ten presents is a second of steady state here, enough that each benchmark view that
-    // the scenario holds on screen accumulates several windows to take a median over.
+    // Windows close every ten presents, not simulation ticks or seconds. The first window after
+    // a view change is discarded; the scenario waits for three kept windows before leaving a view.
     reportEvery: 10,
   },
   plugins: [rapier({ deterministicRestart: true }), playtest()],

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, expect, it, vi } from "vitest";
 import { medianOfGrowingSamples } from "../src/viewStatistics.js";
 
@@ -29,4 +30,26 @@ it("preserves the upper-middle result and treats replacement arrays independentl
   expect(medianOfGrowingSamples([10, 30, 20])).toBe(20);
   expect(medianOfGrowingSamples([60, 50, 40])).toBe(50);
   expect(medianOfGrowingSamples([0, 0, 8, 1])).toBe(1);
+});
+
+it("keeps an unmeasured view below the positive measurement floor", () => {
+  expect(medianOfGrowingSamples([])).toBeLessThan(0.01);
+  expect(medianOfGrowingSamples([30, 10, 20])).toBe(20);
+});
+
+it("waits for three kept windows at every measured view instead of fixed ticks", () => {
+  const scenario = JSON.parse(
+    readFileSync(new URL("../playtests/terrain.playtest.json", import.meta.url), "utf8"),
+  );
+  const measuredHolds = scenario.steps.filter(
+    (step: { kind?: string; label: string; waitForResource?: { path: string } }) =>
+      (step.kind === "wait" || step.waitForResource?.path === "currentViewWindows") &&
+      step.label !== "ocean",
+  );
+  expect(measuredHolds.length).toBe(21);
+  for (const step of measuredHolds) {
+    expect(step.waitForResource).toEqual({ id: "GameState", path: "currentViewWindows", gte: 3 });
+    expect(step.timeoutMs).toBe(120000);
+    expect(step.waitTicks).toBeUndefined();
+  }
 });
