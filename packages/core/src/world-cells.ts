@@ -3,6 +3,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   type Camera,
+  DynamicDrawUsage,
   Frustum,
   Group,
   InstancedBufferAttribute,
@@ -110,6 +111,8 @@ import {
 } from "./world-tiles.js";
 
 const PLACEMENT_RECORD_BYTES = 32;
+const LOD_RANGE_RECORD_BYTES = 8;
+const LOD_RANGE_ATTRIBUTE = "tnPublishedLodRange";
 const PLACEMENT_RECORD_FLOATS = 8;
 const DEFAULT_TILE_RESOLUTION = 129;
 const CHUNK_NAME = "world-chunk";
@@ -961,6 +964,8 @@ interface ICellBatch {
    */
   readonly run: IWorldRun;
   readonly batch: InstancedBatch;
+  /** The admitted level interval beside each matrix, absent for non-dithered assets. */
+  readonly lodRanges: Float32Array | undefined;
   readonly level: number;
   readonly part: number;
   /** How far the follow point has to move before this batch is refiltered, `undefined` never. */
@@ -1102,11 +1107,17 @@ type ISquareSizes = Map<string, number>;
  * drawing at a time.
  */
 let regroupScratch = new Float32Array(0);
+let lodRangeScratch = new Float32Array(0);
 
 /** A scratch with room for `floats`, kept between regroups so a walk allocates it once. */
 function scratchFor(floats: number): Float32Array {
   if (regroupScratch.length < floats) regroupScratch = new Float32Array(floats * 2);
   return regroupScratch;
+}
+
+function lodScratchFor(floats: number): Float32Array {
+  if (lodRangeScratch.length < floats) lodRangeScratch = new Float32Array(floats * 2);
+  return lodRangeScratch;
 }
 
 /** The two scratch objects a cull builds its frustum in, and whether two square sets are the same. */
@@ -1130,6 +1141,9 @@ function sameSquares(next: Set<string>, was: Set<string> | undefined): boolean {
 
 class SharedBatch {
   mesh: ICasterScaleMesh;
+  #sourceGeometry: BufferGeometry;
+  readonly #rangeLevel: number;
+  #rangeAware: boolean;
   /** The pass this batch draws in; see `#dressMesh`. Only `main` is clustered. */
   readonly role: "cluster" | "key" | "main" | "wide";
   /**
@@ -1269,13 +1283,17 @@ class SharedBatch {
     name: string,
     bounds: Box3,
     role: "cluster" | "key" | "main" | "wide",
+    rangeLevel = 0,
   ) {
     this.role = role;
+    this.#sourceGeometry = geometry;
+    this.#rangeLevel = rangeLevel;
+    this.#rangeAware = material.userData.tnPublishedLodRange === true;
     this.#clustered = role === "main";
     this.#segmentSize = Math.max(1, segmentSize);
     this.#bounds = bounds;
     this.mesh = SharedBatch.#meshFor(
-      geometry,
+      this.#geometryFor(this.#segmentSize * segments),
       material,
       this.#segmentSize * segments,
       name,
@@ -1292,6 +1310,33 @@ class SharedBatch {
   /** The package extent, the conservative fallback when a part's own box cannot be read. */
   readonly #bounds: Box3;
 
+  #geometryFor(capacity: number): BufferGeometry {
+    return this.#rangeAware ? lodRangeView(this.#sourceGeometry, capacity) : this.#sourceGeometry;
+  }
+
+  #setGeometry(geometry: BufferGeometry): void {
+    const previous = this.mesh.geometry;
+    this.mesh.geometry = geometry;
+    ownLodRangeView(this.mesh, geometry);
+    // A replaced published-range view is owned by this mesh (see ownLodRangeView) and nothing
+    // else holds it; release it now so resize/rebind do not leak one per shared batch capacity.
+    if (
+      previous !== undefined &&
+      previous !== geometry &&
+      previous.userData?.tnPublishedLodRangeView === true
+    ) {
+      (this.mesh.userData.tnPublishedLodRangeViews as Set<BufferGeometry> | undefined)?.delete(
+        previous,
+      );
+      previous.dispose();
+    }
+  }
+
+  #lodRangeAttribute(): InstancedBufferAttribute | undefined {
+    const attribute = this.mesh.geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
+    return attribute instanceof InstancedBufferAttribute ? attribute : undefined;
+  }
+
   /**
    * Takes a pooled mesh with room for `capacity`, so a shared batch that outgrows its buffer keeps
    * the uuid — and the node three built for it — instead of getting a new one. Every field a pooled
@@ -1306,6 +1351,7 @@ class SharedBatch {
     bounds: Box3,
   ): ICasterScaleMesh {
     const mesh = pooledMesh(geometry, material, capacity) as ICasterScaleMesh;
+    ownLodRangeView(mesh, geometry);
     mesh.name = name;
     mesh.boundingBox = bounds.clone();
     mesh.boundingSphere = bounds.getBoundingSphere(mesh.boundingSphere ?? new Sphere());
@@ -1331,8 +1377,10 @@ class SharedBatch {
 
   /** Point an empty batch at the parts a reload brought; see {@link rebind}. */
   rebind(geometry: BufferGeometry, material: Material): this {
-    this.mesh.geometry = geometry;
+    this.#sourceGeometry = geometry;
     this.mesh.material = material;
+    this.#rangeAware = material.userData.tnPublishedLodRange === true;
+    this.#setGeometry(this.#geometryFor(this.mesh.instanceMatrix.count));
     this.#localGeometry = undefined;
     // A new surface is the one thing a rebind can bring that a mesh swap cannot, so what can be
     // recorded has to be asked again: the answer cached for the old material is not this one's.
@@ -1375,6 +1423,7 @@ class SharedBatch {
    */
   #resize(capacity: number): void {
     const mesh = this.mesh;
+    this.#setGeometry(this.#geometryFor(capacity));
     mesh.instanceMatrix = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
     this.#ceiling = capacity;
     this.#publish(0);
@@ -1514,13 +1563,22 @@ class SharedBatch {
       return undefined;
     }
     const mesh = SharedBatch.#meshFor(
-      old.geometry,
+      this.#geometryFor(old.instanceMatrix.count * 2),
       old.material as Material,
       old.instanceMatrix.count * 2,
       old.name,
       this.#bounds,
     );
     (mesh.instanceMatrix.array as Float32Array).set(old.instanceMatrix.array as Float32Array);
+    const oldRanges = old.geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
+    const nextRanges = mesh.geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
+    if (
+      oldRanges instanceof InstancedBufferAttribute &&
+      nextRanges instanceof InstancedBufferAttribute
+    ) {
+      (nextRanges.array as Float32Array).set(oldRanges.array as Float32Array);
+      nextRanges.needsUpdate = true;
+    }
     mesh.castShadow = old.castShadow;
     mesh.receiveShadow = old.receiveShadow;
     this.mesh = mesh;
@@ -1557,7 +1615,7 @@ class SharedBatch {
     return old;
   }
 
-  write(segment: number, batch: InstancedBatch): void {
+  write(segment: number, batch: InstancedBatch, lodRanges?: Float32Array): void {
     const start = this.#start.get(segment);
     const reserved = this.#size.get(segment);
     if (start === undefined || reserved === undefined) return;
@@ -1573,6 +1631,18 @@ class SharedBatch {
     }
     const array = this.mesh.instanceMatrix.array as Float32Array;
     const written = batch.writeMatrices(array, start);
+    const ranges = this.#lodRangeAttribute();
+    if (ranges !== undefined) {
+      const values = ranges.array as Float32Array;
+      if (lodRanges !== undefined) values.set(lodRanges.subarray(0, written * 2), start * 2);
+      else
+        for (let index = 0; index < written; index += 1) {
+          values[(start + index) * 2] = this.#rangeLevel;
+          values[(start + index) * 2 + 1] = this.#rangeLevel;
+        }
+      values.fill(0, (start + written) * 2, (start + reserved) * 2);
+      ranges.needsUpdate = true;
+    }
     array.fill(0, (start + written) * 16, (start + reserved) * 16);
     if (written < reserved) this.#hole(start + written, start + reserved);
     this.#size.set(segment, written);
@@ -1614,6 +1684,11 @@ class SharedBatch {
       return;
     }
     (this.mesh.instanceMatrix.array as Float32Array).fill(0, start * 16, (start + size) * 16);
+    const ranges = this.#lodRangeAttribute();
+    if (ranges !== undefined) {
+      (ranges.array as Float32Array).fill(0, start * 2, (start + size) * 2);
+      ranges.needsUpdate = true;
+    }
     this.#hole(start, start + size);
     this.#settle();
     // The drawn range, not nothing. `#compact` closed the hole by moving the topmost block down
@@ -1682,6 +1757,7 @@ class SharedBatch {
       const size = this.#size.get(top) ?? 0;
       if (size <= holeEnd - holeStart) {
         array.copyWithin(holeStart * 16, topFrom * 16, drawn * 16);
+        this.#lodRangeAttribute()?.array.copyWithin(holeStart * 2, topFrom * 2, drawn * 2);
         this.#start.set(top, holeStart);
         if (holeEnd - holeStart > size) this.#free[0] = [holeStart + size, holeEnd];
         else this.#free.shift();
@@ -1691,6 +1767,7 @@ class SharedBatch {
       } else {
         const shift = holeEnd - holeStart;
         array.copyWithin(holeStart * 16, holeEnd * 16, drawn * 16);
+        this.#lodRangeAttribute()?.array.copyWithin(holeStart * 2, holeEnd * 2, drawn * 2);
         this.#free.shift();
         for (const [handle, start] of this.#start) {
           if (start >= holeEnd) this.#start.set(handle, start - shift);
@@ -1760,10 +1837,13 @@ class SharedBatch {
    */
   #regroup(visible = this.#visible): void {
     const array = this.mesh.instanceMatrix.array as Float32Array;
+    const rangeAttribute = this.#lodRangeAttribute();
+    const rangeArray = rangeAttribute?.array as Float32Array | undefined;
     const squares = this.#squares();
     let total = 0;
     for (const square of squares) total += sizeOf(square);
     const scratch = scratchFor(total * 16);
+    const rangeScratch = rangeArray === undefined ? undefined : lodScratchFor(total * 2);
     // The visible squares first. `filter` is stable, so both halves keep the order the buffer had
     // them in and a residency change lays out exactly what the last one did.
     const front = squares.filter((one) => visible?.has(one.cluster) ?? true);
@@ -1779,6 +1859,8 @@ class SharedBatch {
       const union = new Box3();
       for (const [handle, start, count] of square.blocks) {
         scratch.set(array.subarray(start * 16, (start + count) * 16), written * 16);
+        if (rangeScratch !== undefined && rangeArray !== undefined)
+          rangeScratch.set(rangeArray.subarray(start * 2, (start + count) * 2), written * 2);
         // Read before it is overwritten: a block written back to its own offset is a record the GPU
         // already holds, and is the whole difference between a repack that costs nothing and one
         // that re-uploads the key.
@@ -1796,6 +1878,10 @@ class SharedBatch {
       this.#squareSizes.set(square.cluster, sizeOf(square));
     }
     array.set(scratch.subarray(0, written * 16));
+    if (rangeArray !== undefined && rangeScratch !== undefined && rangeAttribute !== undefined) {
+      rangeArray.set(rangeScratch.subarray(0, written * 2));
+      rangeAttribute.needsUpdate = true;
+    }
     this.#drawn = written;
     const capacity = this.mesh.instanceMatrix.count;
     this.#free = written < capacity ? [[written, capacity]] : [];
@@ -1947,6 +2033,7 @@ class SharedBatch {
     // nothing to put back in charge of culling: the dispatch decided what it drew.
     if (this.gpu !== undefined) return;
     const matrix = this.mesh.instanceMatrix;
+    const ranges = this.#lodRangeAttribute();
     // A record is 16 array elements, and that is the unit `updateRanges` is in: three reads them
     // as element offsets into `array`, not as bytes.
     const drawn = this.#drawn * 16;
@@ -1975,6 +2062,11 @@ class SharedBatch {
     matrix.clearUpdateRanges();
     if (high > low) matrix.addUpdateRange(low, high - low);
     matrix.needsUpdate = true;
+    if (ranges !== undefined) {
+      ranges.clearUpdateRanges();
+      if (high > low) ranges.addUpdateRange((low / 16) * 2, ((high - low) / 16) * 2);
+      ranges.needsUpdate = true;
+    }
     this.#publish(this.#drawn);
     // Records are real, so the bounds are the ones `#rebound` just wrote and the mesh goes back to
     // being culled.
@@ -2209,6 +2301,8 @@ interface IBuildJob {
   /** Next placement to filter; the filter is complete when it reaches `run.count`. */
   next: number;
   batches: InstancedBatch[][] | undefined;
+  /** Two bounds per `(level, part)` instance, kept in the same append order as its matrices. */
+  lodRanges: number[][][] | undefined;
   /**
    * One root-matrix batch per level the filter reached, filled only when the asset can become a
    * whole-asset impostor: the placement transform with no part offset, which is what its far quad
@@ -3485,6 +3579,13 @@ function publishCount(batches: readonly InstancedBatch[][]): number {
   return total;
 }
 
+function sameLodRanges(a: Float32Array | undefined, b: Float32Array | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) return false;
+  return true;
+}
+
 /**
  * One empty bounds box per `(level, part)`, beside the batches `#addPlacements` measures. Written
  * as a loop because this file is held to a rule that the array method's name is a material's
@@ -3630,6 +3731,41 @@ function indirectView(
   view.boundingSphere = source.boundingSphere;
   view.setIndirect(args, offset);
   return view;
+}
+
+/** Per-mesh instanced metadata over shared source buffers; never mutates the asset geometry. */
+function lodRangeView(source: BufferGeometry, capacity: number): BufferGeometry {
+  const view = new BufferGeometry();
+  for (const [name, attribute] of Object.entries(source.attributes))
+    view.setAttribute(name, attribute);
+  view.setIndex(source.index);
+  view.morphAttributes = source.morphAttributes;
+  view.morphTargetsRelative = source.morphTargetsRelative;
+  for (const group of source.groups) view.addGroup(group.start, group.count, group.materialIndex);
+  view.boundingBox = source.boundingBox;
+  view.boundingSphere = source.boundingSphere;
+  view.setDrawRange(source.drawRange.start, source.drawRange.count);
+  view.userData.tnPublishedLodRangeView = true;
+  const ranges = new InstancedBufferAttribute(new Float32Array(capacity * 2), 2);
+  ranges.setUsage(DynamicDrawUsage);
+  view.setAttribute(LOD_RANGE_ATTRIBUTE, ranges);
+  return view;
+}
+
+function ownLodRangeView(mesh: InstancedMesh, geometry: BufferGeometry): void {
+  if (geometry.userData.tnPublishedLodRangeView !== true) return;
+  let owned = mesh.userData.tnPublishedLodRangeViews as Set<BufferGeometry> | undefined;
+  if (owned === undefined) {
+    owned = new Set();
+    mesh.userData.tnPublishedLodRangeViews = owned;
+    const views = owned;
+    mesh.addEventListener("dispose", () => {
+      for (const view of views) view.dispose();
+      views.clear();
+    });
+  }
+  if (owned.has(geometry)) return;
+  owned.add(geometry);
 }
 
 /** The materials `redressMaterial` gave a mesh, disposed when the mesh is or when it is re-dressed. */
@@ -5464,6 +5600,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#releaseImpossibleBorrows();
     if (this.#prewarmQueue.length > 0 || this.#prewarmPending <= 0) return;
     if (this.#prewarmWait < PREWARM_WARM_UPDATES) return;
+    // A bake can append the terminal level after the source batches drained. Keep the loading gate
+    // open until that active bake either appends its shared prewarm keys or fails cleanly.
+    if (this.#impostorBaking !== undefined) return;
     // A caster still owed a draw is a build the walk would otherwise pay inside a shadow pass, so the
     // gate holds for it until its borrow is handed back, which is the bound.
     if (waitingOnCasters) return;
@@ -5510,6 +5649,7 @@ export class WorldCells extends Group implements IComputeDriven {
       entry.key,
       this.#extentBounds,
       entry.role,
+      entry.level,
     );
     shared.smallCaster = this.#smallCaster(entry.asset);
     this.#dressMesh(shared, entry.role === "main" && this.#receiveShadow);
@@ -5636,8 +5776,15 @@ export class WorldCells extends Group implements IComputeDriven {
       for (const [part, entry] of parts.entries()) {
         const key = `${asset.id}:${String(level)}:${String(part)}`;
         for (const role of ["main", "cluster", "wide"] as const) {
-          // Only a level that casts has a caster half at all; see `#casts`.
-          if (role !== "main" && !this.#casts(level)) continue;
+          // Only a level that casts has a caster half at all; the terminal impostor is the one
+          // exception because its whole-map far mesh casts whenever any level casts.
+          const terminalFarCaster =
+            role === "wide" &&
+            asset.impostor !== undefined &&
+            level === asset.levels.length - 1 &&
+            (!this.#preserveAuthoredParts || asset.definition.impostorDistance !== undefined) &&
+            this.#castShadowLevels > 0;
+          if (role !== "main" && !this.#casts(level) && !terminalFarCaster) continue;
           // One whole-asset representation covers the far shadow; see `#wideOwed`.
           if (role === "wide" && !this.#wideOwed(asset.id, part)) continue;
           // A baked impostor's far half is one mesh per asset, not one per level; prewarm the mesh the
@@ -6213,7 +6360,14 @@ export class WorldCells extends Group implements IComputeDriven {
       const key = cellKey(candidate.cell.x, candidate.cell.z);
       if (this.#resident.has(key)) continue;
       const instances = candidate.cell.runs.reduce((total, run) => total + run.count, 0);
-      const bytes = instances * PLACEMENT_RECORD_BYTES;
+      // CPU dither stores two published LOD bounds per admitted root only when the CPU path actually
+      // publishes them (gpuScene off); otherwise the material keeps direct level selection and no
+      // range buffer exists.
+      const rangeRoots = this.#lodHysteresis > 0 && !this.#gpuScene.on ? instances : 0;
+      // Reserve the root's two-level worst case: 8 bytes for its one-level interval, plus 8 when
+      // an adjacent pair is published. Per-part draw-buffer copies follow the existing instance
+      // buffer accounting; the placement budget has always counted source records, not mesh capacity.
+      const bytes = instances * PLACEMENT_RECORD_BYTES + rangeRoots * LOD_RANGE_RECORD_BYTES * 2;
       // After a jump, a cell the one-ring hysteresis above kept is not wanted, so it yields its share
       // of the budgets to one that is. Without this the budgets stayed full of the ring the camera
       // jumped from and the cells around it were refused until it moved again.
@@ -6393,6 +6547,7 @@ export class WorldCells extends Group implements IComputeDriven {
       asset,
       batches: undefined,
       boxes: undefined,
+      lodRanges: undefined,
       cell,
       force,
       gpuByLevel: undefined,
@@ -6490,6 +6645,8 @@ export class WorldCells extends Group implements IComputeDriven {
     }
     if (job.next < job.run.count) {
       job.batches ??= newBatches(job.asset);
+      if (this.#lodHysteresis > 0 && job.asset.distances.length > 1)
+        job.lodRanges ??= job.batches.map((levels) => levels.map(() => []));
       // One box per `(level, part)` beside the batches it measures, so the swap that hands the
       // records to the renderer can name where they are; see `#addPlacements`.
       job.boxes ??= newBoxes(job.batches);
@@ -6528,7 +6685,10 @@ export class WorldCells extends Group implements IComputeDriven {
       const fresh = job.fresh[index] as ICellBatch;
       const at = job.replaced.findIndex(
         (old) =>
-          old.level === fresh.level && old.part === fresh.part && old.batch.equals(fresh.batch),
+          old.level === fresh.level &&
+          old.part === fresh.part &&
+          old.batch.equals(fresh.batch) &&
+          sameLodRanges(old.lodRanges, fresh.lodRanges),
       );
       if (at < 0) continue;
       const same = job.replaced.splice(at, 1)[0] as ICellBatch;
@@ -6584,13 +6744,15 @@ export class WorldCells extends Group implements IComputeDriven {
     }
     for (const entry of job.fresh) {
       cell.batches.push(entry);
-      if (entry.shared !== undefined) entry.shared.write(entry.segment, entry.batch);
+      if (entry.shared !== undefined)
+        entry.shared.write(entry.segment, entry.batch, entry.lodRanges);
       if (this.#gpuScene.on) entry.gpu = this.#placeSources(job, entry);
-      if (entry.caster !== undefined) entry.caster.write(entry.casterSegment, entry.batch);
+      if (entry.caster !== undefined)
+        entry.caster.write(entry.casterSegment, entry.batch, entry.lodRanges);
       // The wide half draws the whole-asset impostor at the placement root when this entry kept one,
       // and the source part shape otherwise; see `ICellBatch.wideRoot`.
       if (entry.wide !== undefined)
-        entry.wide.write(entry.wideSegment, entry.wideRoot ?? entry.batch);
+        entry.wide.write(entry.wideSegment, entry.wideRoot ?? entry.batch, entry.lodRanges);
     }
     // The source meshes and records are now published together. Until this point a queued impostor
     // replacement may have already changed the GPU slot table while the old mesh still draws.
@@ -7012,6 +7174,8 @@ export class WorldCells extends Group implements IComputeDriven {
           if (d >= near - slack && d <= far + slack) selected.push(adjacent);
         }
       }
+      const minPublished = Math.min(...selected);
+      const maxPublished = Math.max(...selected);
       for (level of selected) {
         if (wantRoots) {
           job.roots ??= [];
@@ -7073,6 +7237,8 @@ export class WorldCells extends Group implements IComputeDriven {
         for (const [part, entry] of parts.entries()) {
           this.#instance.multiplyMatrices(this.#matrix, entry.local);
           (levelBatches[part] as InstancedBatch).add(this.#instance);
+          const range = job.lodRanges?.[level]?.[part];
+          if (range !== undefined) range.push(minPublished, maxPublished);
           const box = levelBoxes?.[part];
           if (box === undefined) continue;
           box.union(this.#recordBounds);
@@ -7122,6 +7288,9 @@ export class WorldCells extends Group implements IComputeDriven {
         lastFilterX: job.filterX,
         lastFilterZ: job.filterZ,
         level,
+        lodRanges: job.lodRanges?.[level]?.[part]?.length
+          ? Float32Array.from(job.lodRanges[level]?.[part] ?? [])
+          : undefined,
         part,
         run: job.run,
         segment: -1,
@@ -7428,7 +7597,8 @@ export class WorldCells extends Group implements IComputeDriven {
     const asset = this.#assets.get(assetId);
     const part = asset?.levels[level]?.[partIndex];
     if (this.#lodHysteresis <= 0 || !asset || !part || asset.distances.length < 2) return source;
-    const key = `${assetId}:${level}:${partIndex}:${asset.distances.length}`;
+    const publishedRanges = !this.#gpuScene.on;
+    const key = `${assetId}:${level}:${partIndex}:${asset.distances.length}:${publishedRanges ? 1 : 0}`;
     let material = this.#lodMaterials.get(key);
     if (!material) {
       material = worldLodMaterial(
@@ -7440,6 +7610,7 @@ export class WorldCells extends Group implements IComputeDriven {
         this.#lodEye,
         this.#lodDistanceBias,
         this.#placementReach !== undefined,
+        publishedRanges,
       );
       this.#lodMaterials.set(key, material);
     }
@@ -7474,7 +7645,13 @@ export class WorldCells extends Group implements IComputeDriven {
     const shape = { ...this.#shapeFor(entry, role, level) };
     shape.material = this.#lodSurface(assetId, level, entry.part, shape.material);
     if (existing !== undefined) {
-      existing.mesh.material = shape.material;
+      if (
+        shape.material.userData.tnPublishedLodRange === true &&
+        existing.mesh.geometry.getAttribute(LOD_RANGE_ATTRIBUTE) === undefined &&
+        existing.mesh.count === 0
+      )
+        existing.rebind(shape.geometry, shape.material);
+      else existing.mesh.material = shape.material;
       return existing;
     }
     const smallCaster = this.#smallCaster(assetId);
@@ -7511,6 +7688,7 @@ export class WorldCells extends Group implements IComputeDriven {
       key,
       this.#extentBounds,
       role,
+      level,
     );
     shared.smallCaster = smallCaster;
     this.#dressMesh(shared, receiveShadow);
@@ -8874,6 +9052,9 @@ export class WorldCells extends Group implements IComputeDriven {
     asset.threshold = asset.gates.length === 0 ? undefined : Math.min(...asset.gates);
     asset.impostor = { part, record, surface };
     this.#ditherGates(asset);
+    // The atlas appends a real terminal level after the asset's original prewarm was queued. Queue
+    // that level's main and caster halves now so the shared first-draw hooks pay for the far handoff.
+    this.#queuePrewarm(asset);
     for (const shared of this.#shared.values()) {
       if (!shared.mesh.name.startsWith(`${asset.id}:`)) continue;
       const fields = shared.mesh.name.slice(asset.id.length + 1).split(":");
@@ -8885,9 +9066,12 @@ export class WorldCells extends Group implements IComputeDriven {
     }
     record.users += 1;
     // The whole-map far aggregate for this atlas key, before the rebuild loop below: its segments
-    // exist when the swaps land, and any run already near-ready is handed over immediately. A budget
-    // refusal keeps only the far cohort's metadata and surface in `#farRetry`; see `#buildFar`.
-    if (!this.#preserveAuthoredParts) this.#buildFar(asset, record);
+    // exist when the swaps land, and any run already near-ready is handed over immediately. Preserved
+    // authored parts use this fallback only with their explicit terminal distance; their resident
+    // wide casters stay authored because root records and caster retargeting remain guarded below.
+    // A budget refusal keeps only the far cohort's metadata and surface in `#farRetry`.
+    if (!this.#preserveAuthoredParts || asset.definition.impostorDistance !== undefined)
+      this.#buildFar(asset, record);
     this.#reportImpostor(asset, "ready");
     // A far-only asset has no near batches or casters to hand over; once its aggregate is up its
     // temporary source has done its job and goes, while the atlas the aggregate borrows stays. A

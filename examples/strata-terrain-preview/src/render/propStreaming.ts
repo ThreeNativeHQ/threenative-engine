@@ -319,6 +319,14 @@ export async function createStreamedProps(options: IStreamOptions) {
           heightMax: maxY,
         },
       };
+      const farInstances = list.reduce(
+        (total, record) =>
+          total + (definitions[record.key]?.impostorDistance === undefined ? 0 : 1),
+        0,
+      );
+      // Two CPU-admitted levels need at most 16 bytes of published-range bounds per root.
+      const rangeRoots = LOD_BANDS.hysteresis > 0 ? list.length : 0;
+
       const ring = Number.isFinite(maxReach)
         ? Math.ceil(maxReach / CELL_SIZE) + 1
         : Math.ceil(
@@ -347,8 +355,11 @@ export async function createStreamedProps(options: IStreamOptions) {
         admissionBudgetMs: 2 / Math.max(1, buckets.size),
         budgets: {
           residentCells: Math.max(1, cells.length),
-          instances: Math.max(1, list.length),
-          bytes: Math.max(32, placements.byteLength),
+          instances: Math.max(1, list.length + farInstances),
+          bytes: Math.max(
+            32,
+            placements.byteLength + rangeRoots * 16 + farInstances * (16 * 4 + 4),
+          ),
         },
         shadows: {
           cast: bucket.endsWith(":true"),

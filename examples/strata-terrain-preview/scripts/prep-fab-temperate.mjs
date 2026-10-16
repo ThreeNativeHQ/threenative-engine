@@ -364,7 +364,7 @@ await compileAssets({
   source: ".",
   output: cooked,
   cwd: STAGE,
-  config: { models: { textures: { maxSize: 2048 }, virtual: "none" }, textures: { maxSize: 2048 } },
+  config: { models: { textures: { maxSize: 1024 }, virtual: "none" }, textures: { maxSize: 1024 } },
 });
 const manifest = JSON.parse(readFileSync(join(cooked, "assets.manifest.json"), "utf8"));
 if (incremental) cpSync(cooked, OUT, { recursive: true });

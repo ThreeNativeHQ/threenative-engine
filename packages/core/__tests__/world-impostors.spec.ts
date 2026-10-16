@@ -524,6 +524,76 @@ afterEach(() => {
 });
 
 describe("WorldCells automatic impostors", () => {
+  it("keeps CPU LOD batches visible until a refilter publishes their replacement ranges", async () => {
+    const pkg = pineOnly();
+    stubManifestFetch(pkg);
+    const follow = { position: { x: -84, z: -64 } };
+    let holdAdmission = false;
+    let clock = 0;
+    const world = await loadPine(treeLoader(), {
+      admissionBudgetMs: 2,
+      admissionNow: () => (holdAdmission ? ++clock : 0),
+      gpuScene: false,
+      lodHysteresis: 0.2,
+      follow,
+    });
+    const range = (level: number, instance = 0): number[] => {
+      const mesh = partsOf(world, "pine", level, 0).find((candidate) => candidate.count > 0);
+      const attribute = mesh?.geometry.getAttribute("tnPublishedLodRange");
+      expect(attribute).toBeDefined();
+      return Array.from((attribute?.array as Float32Array).slice(instance * 2, instance * 2 + 2));
+    };
+    const rootAt = (level: number, instance: number): Vector3 => {
+      const mesh = partsOf(world, "pine", level, 0).find((candidate) => candidate.count > 0);
+      const matrix = new Matrix4();
+      mesh?.getMatrixAt(instance, matrix);
+      return new Vector3().setFromMatrixPosition(matrix);
+    };
+    try {
+      await flushed(world);
+      for (let pass = 0; pass < 100; pass += 1) {
+        world.update();
+        await flush();
+      }
+      const nearMesh = partsOf(world, "pine", 0, 0).find((candidate) => candidate.count > 0);
+      expect(nearMesh).toBeDefined();
+      expect((nearMesh?.material as Material).userData.tnPublishedLodRange).toBe(true);
+      const published = nearMesh?.geometry.getAttribute("tnPublishedLodRange")?.array as
+        | Float32Array
+        | undefined;
+      expect(
+        Array.from({ length: nearMesh?.count ?? 0 }, (_, index) => [
+          published?.[index * 2],
+          published?.[index * 2 + 1],
+        ]).some(([min, max]) => min === 0 && max === 1),
+      ).toBe(true);
+      const nearIndex = Array.from({ length: nearMesh?.count ?? 0 }, (_, index) => index).find(
+        (index) => range(0, index)[0] === 0 && range(0, index)[1] === 0,
+      );
+      expect(nearIndex).toBeDefined();
+      const root = rootAt(0, nearIndex ?? 0);
+
+      follow.position.x = -150;
+      holdAdmission = true;
+      world.update();
+      expect(range(0, nearIndex ?? 0)).toEqual([0, 0]);
+      holdAdmission = false;
+      for (let pass = 0; pass < 100; pass += 1) {
+        world.update();
+        await flush();
+      }
+      const farMesh = partsOf(world, "pine", 1, 0).find((candidate) => candidate.count > 0);
+      expect(farMesh).toBeDefined();
+      const farIndex = Array.from({ length: farMesh?.count ?? 0 }, (_, index) => index).find(
+        (index) => rootAt(1, index).distanceTo(root) < 0.01,
+      );
+      expect(farIndex).toBeDefined();
+      expect(range(1, farIndex ?? 0)).toEqual([1, 1]);
+    } finally {
+      world.dispose();
+    }
+  });
+
   it("keeps authored parts and draws a terminal impostor beyond the game far boundary", async () => {
     const pkg = pineOnly();
     const definition = pkg.assets.pine as IWorldAsset;
@@ -1369,12 +1439,12 @@ describe("WorldCells automatic impostors", () => {
  */
 describe("WorldCells far impostor residency", () => {
   /** The committed package with every cell's pine run, so the near ring is a strict subset. */
-  function pineEverywhere(): IWorldPackage {
+  function pineEverywhere(impostorDistance?: number): IWorldPackage {
     const pine = manifest.assets.pine;
     if (pine === undefined) throw new Error("the committed package has no pine asset.");
     return {
       ...manifest,
-      assets: { pine },
+      assets: { pine: impostorDistance === undefined ? pine : { ...pine, impostorDistance } },
       cells: manifest.cells.map((cell) => ({
         ...cell,
         chunks: [],
@@ -1449,11 +1519,38 @@ describe("WorldCells far impostor residency", () => {
     return live;
   }
 
-  async function loadPineEverywhere(follow: {
-    position: { x: number; z: number };
-  }): Promise<WorldCells> {
-    stubManifestFetch(pineEverywhere());
-    const world = await loadPine(treeLoader(), { follow });
+  /** Unique original roots in authored part-0 meshes, deduplicating overlapping authored LODs. */
+  function nearPineRoots(world: WorldCells): number {
+    return instanceRootKeys(world, (name) => /^pine:\d+:0$/u.test(name), false).size;
+  }
+
+  function instanceRootKeys(
+    world: WorldCells,
+    accepts: (name: string) => boolean,
+    far: boolean,
+  ): Set<string> {
+    const roots = new Set<string>();
+    world.traverse((object: Object3D) => {
+      if (!(object instanceof InstancedMesh) || !accepts(object.name)) return;
+      const array = object.instanceMatrix.array as Float32Array;
+      for (let index = 0; index < object.count; index += 1) {
+        const base = index * 16;
+        if (far ? !farRecordLive(array, index) : array[base + 15] === 0) continue;
+        roots.add(`${array[base + 12]},${array[base + 13]},${array[base + 14]}`);
+      }
+    });
+    return roots;
+  }
+
+  async function loadPineEverywhere(
+    follow: {
+      position: { x: number; z: number };
+    },
+    options: Partial<Parameters<typeof WorldCells.load>[0]> = {},
+    pkg = pineEverywhere(),
+  ): Promise<WorldCells> {
+    stubManifestFetch(pkg);
+    const world = await loadPine(treeLoader(), { follow, ...options });
     await flushed(world);
     runBake(world, rendererStub());
     await flushed(world);
@@ -1501,6 +1598,75 @@ describe("WorldCells far impostor residency", () => {
     expect(stats.far.bytes).toBe(799 * 68);
     expect(stats.far.uploads).toBeGreaterThan(0);
     world.dispose();
+  });
+
+  it("hands preserved authored parts to and from the whole-map far aggregate without a gap or double draw", async () => {
+    const follow = { position: { x: -32, z: -32 } };
+    const world = await loadPineEverywhere(
+      follow,
+      {
+        adaptiveLod: false,
+        gpuScene: false,
+        impostors: true,
+        lodHysteresis: 0.2,
+        preserveAuthoredParts: true,
+        shadows: { cast: true, castLevels: 3 },
+        terrain: false,
+      },
+      pineEverywhere(150),
+    );
+    try {
+      expect(world.stats().impostor.assets).toBe(1);
+      expect(world.stats().impostor.pending).toBe(0);
+      expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
+      expect(partsOf(world, "pine", 0, 1).length).toBeGreaterThan(0);
+
+      const resident = farMeshes(world)[0];
+      expect(resident).toBeDefined();
+      const residentFar = resident as InstancedMesh;
+      expect(residentFar.castShadow).toBe(true);
+      expect(residentFar.layers.isEnabled(27)).toBe(true);
+      const residentFarRoots = instanceRootKeys(world, (name) => name === "tn-far:pine", true);
+      const residentNearRoots = instanceRootKeys(
+        world,
+        (name) => /^pine:\d+:0@\*$/u.test(name),
+        false,
+      );
+      expect(residentFarRoots.size).toBe(263);
+      expect(residentNearRoots.size).toBe(536);
+      expect([...residentFarRoots].filter((root) => residentNearRoots.has(root))).toHaveLength(0);
+      expect(nearPineRoots(world)).toBe(536);
+      expect(residentFarRoots.size + residentNearRoots.size).toBe(799);
+
+      follow.position.x = 100_000;
+      follow.position.z = 100_000;
+      world.update();
+      await flushed(world);
+      for (let pass = 0; pass < 32; pass += 1) world.update();
+      const away = farMeshes(world)[0] as InstancedMesh;
+      expect(nearPineRoots(world)).toBe(0);
+      expect(farLive(away)).toBe(799);
+      expect(instanceRootKeys(world, (name) => /^pine:\d+:0@\*$/u.test(name), false).size).toBe(0);
+
+      follow.position.x = -32;
+      follow.position.z = -32;
+      world.update();
+      await flushed(world);
+      for (let pass = 0; pass < 32; pass += 1) world.update();
+      const restored = farMeshes(world)[0] as InstancedMesh;
+      const restoredFarRoots = instanceRootKeys(world, (name) => name === "tn-far:pine", true);
+      const restoredNearRoots = instanceRootKeys(
+        world,
+        (name) => /^pine:\d+:0@\*$/u.test(name),
+        false,
+      );
+      expect(restoredNearRoots.size).toBe(536);
+      expect([...restoredFarRoots].filter((root) => restoredNearRoots.has(root))).toHaveLength(0);
+      expect(farLive(restored)).toBe(263);
+      expect(restoredFarRoots.size + restoredNearRoots.size).toBe(799);
+    } finally {
+      world.dispose();
+    }
   });
 
   it("hands each run between the near ring and the far mesh with no double and no hole", async () => {
@@ -1946,6 +2112,84 @@ describe("WorldCells far impostor residency", () => {
     // Its temporary source is released the moment the retried aggregate lands.
     expect(world.stats().impostor.atlasBytes).toBe(2 * 2_796_160);
     world.dispose();
+  });
+
+  it("budgets the retained whole-map far buffer alongside the resident placement allowance", async () => {
+    const pkg = pineEverywhere(150);
+    const placements = pkg.cells.reduce(
+      (total, cell) => total + cell.runs.reduce((count, run) => count + run.count, 0),
+      0,
+    );
+    const follow = { position: { x: -32, z: -32 } };
+
+    stubManifestFetch(pkg);
+    const undersized = await loadPine(treeLoader(), {
+      follow,
+      gpuScene: false,
+      impostors: true,
+      preserveAuthoredParts: true,
+      budgets: { bytes: placements * 32, instances: placements, residentCells: 25 },
+    });
+    try {
+      await flushed(undersized);
+      runBake(undersized, rendererStub());
+      await flushed(undersized);
+      expect(undersized.stats().impostor.far.aggregates).toBe(0);
+    } finally {
+      undersized.dispose();
+    }
+
+    stubManifestFetch(pkg);
+    const priorRange = await loadPine(treeLoader(), {
+      follow: { position: { ...follow.position } },
+      gpuScene: false,
+      impostors: true,
+      preserveAuthoredParts: true,
+      lodHysteresis: 0.2,
+      budgets: {
+        bytes: placements * (32 + 16 * 4 + 4),
+        instances: placements * 2,
+        residentCells: 25,
+      },
+    });
+    try {
+      await flushed(priorRange);
+      runBake(priorRange, rendererStub());
+      await flushed(priorRange);
+      expect(priorRange.stats().impostor.far.aggregates).toBe(0);
+    } finally {
+      priorRange.dispose();
+    }
+
+    stubManifestFetch(pkg);
+    const world = await loadPine(treeLoader(), {
+      follow: { position: { ...follow.position } },
+      gpuScene: false,
+      impostors: true,
+      preserveAuthoredParts: true,
+      lodHysteresis: 0.2,
+      budgets: {
+        bytes: placements * (32 + 16 + 16 * 4 + 4),
+        instances: placements * 2,
+        residentCells: 25,
+      },
+    });
+    try {
+      await flushed(world);
+      runBake(world, rendererStub());
+      await flushed(world);
+
+      const stats = world.stats();
+      expect(stats.instances).toBeGreaterThan(0);
+      expect(stats.impostor.far.instances).toBe(placements);
+      expect(stats.impostor.far.live).toBeGreaterThan(0);
+      expect(stats.impostor.far.nearOwned).toBeGreaterThan(0);
+      expect(stats.impostor.far.live + stats.impostor.far.nearOwned).toBe(placements);
+      expect(stats.pressure.instances).toBe(0);
+      expect(stats.pressure.bytes).toBe(0);
+    } finally {
+      world.dispose();
+    }
   });
 
   it("lets the far half receive shadows when the world is configured to receive them", async () => {

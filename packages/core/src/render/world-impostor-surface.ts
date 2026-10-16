@@ -762,6 +762,7 @@ export function worldLodMaterial(
   eye: Node<"vec3">,
   distanceBias: Node<"float">,
   spatial: boolean,
+  publishedRanges = false,
 ): NodeMaterial {
   const material = cloneLitMaterial(source);
   const inverse = uniform(local.clone().invert());
@@ -778,6 +779,11 @@ export function worldLodMaterial(
   );
   const random = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))).mul(43758.5453));
   const noise = fract(sin(dot(floor(screenCoordinate.xy), vec2(12.9898, 78.233))).mul(43758.5453));
+  // CPU-admitted batches publish the levels their instance currently has beside its matrix. During
+  // a queued refilter, an old level outside that set remains whole until the replacement is swapped.
+  const published = publishedRanges
+    ? (attribute("tnPublishedLodRange", "vec2") as Node<"vec2">)
+    : undefined;
   let mask = float(1).greaterThan(0);
   for (let gate = 1; gate < distances.length; gate++) {
     const at = distances[gate] as number;
@@ -787,12 +793,28 @@ export function worldLodMaterial(
       ((distances[gate + 1] ?? Number.POSITIVE_INFINITY) - at) * width,
     );
     const mix = distance.sub(at).div(span).add(0.5).add(random.sub(0.5).mul(0.5)).clamp(0, 1);
-    if (gate === level) mask = mask.and(noise.lessThan(mix));
-    if (gate === level + 1) mask = mask.and(noise.greaterThanEqual(mix));
+    if (published === undefined) {
+      if (gate === level) mask = mask.and(noise.lessThan(mix));
+      if (gate === level + 1) mask = mask.and(noise.greaterThanEqual(mix));
+    } else {
+      if (gate === level)
+        mask = mask.and(
+          select(published.x.lessThan(level), noise.lessThan(mix), float(1).greaterThan(0)),
+        );
+      if (gate === level + 1)
+        mask = mask.and(
+          select(
+            published.y.greaterThan(level),
+            noise.greaterThanEqual(mix),
+            float(1).greaterThan(0),
+          ),
+        );
+    }
   }
   material.maskNode = material.maskNode ? (material.maskNode as Node<"bool">).and(mask) : mask;
   material.maskShadowNode = material.maskShadowNode
     ? (material.maskShadowNode as Node<"bool">).and(mask)
     : mask;
+  if (publishedRanges) material.userData.tnPublishedLodRange = true;
   return material;
 }
