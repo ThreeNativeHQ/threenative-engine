@@ -135,7 +135,7 @@ jobs:
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only == false
     # Keep this platform prerequisite out of the local queue during CI/Integration bursts.
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -183,7 +183,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
     # Keep this platform prerequisite out of the local queue during CI/Integration bursts.
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
     timeout-minutes: 210
     outputs:

@@ -1079,17 +1079,7 @@ describe("CI pipeline structure", () => {
   // publish itself — `permissions: contents: write` and a `gh release upload` — and PRD-480 keeps
   // release writes on GitHub's own machines.
   const hosted = new Map<string, ReadonlySet<string>>([
-    // golden-path-template runs hosted: its dev server twice failed to answer on a local slot (run 37089715252).
-    [
-      ".github/workflows/ci.yml",
-      new Set([
-        "golden-path-template",
-        "lint",
-        "performance-contracts",
-        "supply-chain",
-        "template-nonvisual",
-      ]),
-    ],
+    [".github/workflows/ci.yml", new Set(["supply-chain"])],
     [
       ".github/workflows/native-platforms.yml",
       // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
@@ -1098,44 +1088,28 @@ describe("CI pipeline structure", () => {
         "android-emulator-parity",
         "publish-android-v8",
         "publish-linux-arm64-v8",
-        "web-reference",
-        "android-v8-source",
       ]),
     ],
     [
       ".github/workflows/integration.yml",
-      // PRD-550: these generic lanes run hosted so they do not queue behind the local build/test pool.
-      new Set([
-        "animation",
-        "capture",
-        "cold-boot",
-        "csg",
-        "decals",
-        "exposure",
-        "fluid-collision",
-        "fog",
-        "ik",
-        "temporal",
-        "tone",
-        "vegetation",
-        "velocity",
-      ]),
+      // PRD-620: every generic Linux lane routes to idle tn-local with hosted fallback.
+      new Set([]),
     ],
   ]);
   it.each([
     ["web-reference", "native-web-reference-${{ needs.scope.outputs.candidate_sha }}"],
     ["android-v8-source", "android-v8-${{ needs.scope.outputs.candidate_sha }}"],
   ])(
-    "keeps native platform prerequisite %s hosted with exact candidate artifacts",
+    "routes native platform prerequisite %s to idle tn-local with exact candidate artifacts",
     async (job, artifact) => {
       const native = await readFile(
         path.join(repo, ".github/workflows/native-platforms.yml"),
         "utf8",
       );
       const section = requiredJob(native, job);
-      // An idle-pool variable is not a reservation. These producers must remain hosted even
-      // when both CI and Integration select the same advertised local capacity in a burst.
-      expect(section.match(/^ {4}runs-on: (.+)$/mu)?.[1]).toBe("ubuntu-24.04");
+      // PRD-620: these producers ride the same idle-pool switch with hosted fallback; a busy
+      // pool overflows them to hosted rather than queueing them.
+      expect(section.match(/^ {4}runs-on: (.+)$/mu)?.[1]).toBe(routing);
       expect(declaredNeeds(section)).toEqual(["scope"]);
       expect(section).toContain("TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}");
       expect(section).toContain("ref: ${{ needs.scope.outputs.candidate_sha }}");
@@ -1341,8 +1315,8 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  // PRD-550: pin the generic lanes hosted to split the pool; the light switch and native ARM labels stay.
-  it("pins generic Integration lanes to hosted while the light and native legs keep their routing", async () => {
+  // PRD-620: the generic lanes route to idle tn-local with hosted fallback; the light switch and native ARM labels stay.
+  it("routes generic Integration lanes to idle tn-local while the light and native legs keep their routing", async () => {
     const source = await readFile(path.join(repo, ".github/workflows/integration.yml"), "utf8");
     const runsOn = (job: string) => requiredJob(source, job).match(/^ {4}runs-on: (.+)$/mu)?.[1];
     for (const job of [
@@ -1360,9 +1334,7 @@ describe("CI pipeline structure", () => {
       "vegetation",
       "velocity",
     ] as const) {
-      expect(runsOn(job), `integration ${job} must not share the local build/test pool`).toBe(
-        "ubuntu-24.04",
-      );
+      expect(runsOn(job), `integration ${job} routes to idle tn-local first`).toBe(routing);
     }
     for (const job of ["paths", "completion"] as const) {
       expect(runsOn(job), `integration ${job} keeps the light routing switch`).toBe(lightRouting);

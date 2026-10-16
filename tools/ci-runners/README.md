@@ -17,12 +17,19 @@ runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'u
 - A pull request from a fork always runs hosted, so outside code never reaches the machine.
 - Small join jobs (`scope`, `ci-required`, summaries) use `TN_RUNNER_LIGHT` the same way, so they never
   queue behind a 20-minute build.
-- macOS, Windows, iOS, linux-arm64, `supply-chain` and the Android emulator lane always run hosted.
+- macOS, Windows, iOS and linux-arm64 have no local counterpart and always run hosted.
+- `supply-chain` always runs hosted: it drives Docker, which would need the host socket.
+- The Android emulator lane always runs hosted (measured slower on a local slot).
+- V8 payload publishers (`publish-android-v8`, `publish-linux-arm64-v8`) always run hosted:
+  they hold `contents: write`, which pool containers never receive.
+- Every other Linux job routes to idle tn-local first (PRD-620), with hosted fallback.
 
 **The pool is extra capacity, not a replacement.** This repository is public, so hosted runners are free
-and run about 20 jobs at once. A balancer (`ci-runners.sh balance`, started by `up`) sets each variable
-only while that pool has an idle runner, and deletes it the moment none is idle. A busy pool therefore
-overflows new jobs to hosted runners instead of queueing them. Routing every Linux job here funnelled the
+and run about 20 jobs at once. A balancer (`ci-runners.sh balance`, started by `up`) advertises each
+label only after 2 consecutive polls (~40 s) see an idle runner, and withdraws it immediately when
+none is idle. Variable snapshots are best-effort, not atomic reservation: a job that reads the
+variable just before withdrawal still queues on the pool, and a busy pool otherwise overflows new
+jobs to hosted runners instead of queueing them. Routing every Linux job here funnelled the
 team's CI into 5 slots and made boards slower. `down` stops the balancer and clears both variables, so a
 pool that is down never strands a job.
 

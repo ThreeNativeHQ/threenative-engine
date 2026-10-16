@@ -133,7 +133,7 @@ jobs:
     # tree skips it too — every gate it would run here already passed in the run that tested this
     # exact tree, and `!= 'prose'` would otherwise have bought a second full lint.
     if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -668,7 +668,7 @@ jobs:
     # Hosted on purpose: selected template legs share GitHub's hosted capacity while builds and
     # tests hold the local pool. On 5 local slots these legs waited 17-25 min for a runner (run
     # 37070815769); sharing the board across both pools is what shortens wall time.
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     # The scenario arithmetic this number came from moved out to `template-nonvisual`, which now
     # owns the non-visual sweep for every selected kit. What is left is `verify:golden-path` —
     # pack, scaffold, install, dev, test, build, assert, once per matrix leg — which measured 309s
@@ -803,7 +803,7 @@ jobs:
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
     # Hosted on purpose: template legs use hosted while the balancer routes builds and tests
     # to the local pool, avoiding one routing variable sending the whole burst to a single pool.
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1040,7 +1040,7 @@ jobs:
   performance-contracts:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' && !cancelled() }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 2
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
