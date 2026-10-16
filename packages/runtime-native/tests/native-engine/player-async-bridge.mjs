@@ -47,6 +47,9 @@ globalThis.__THREENATIVE_PLAYTEST_BRIDGE__ = {
     const sound = await decoded;
     return { name: "async-bridge", frames, samples: sound.length, capabilities: [] };
   },
+  // A bridge that applies a setup and answers nothing (the protocol allows it): a page's evaluate()
+  // reads that as no result, and the player must answer null, not refuse the call.
+  applySetup: () => undefined,
 };
 `);
 await bundleNativeEngine({ entry, outfile, boot: false });
@@ -89,8 +92,13 @@ try {
   assert.equal(described.result?.name, "async-bridge");
   assert(described.result.frames >= 10, `describe answered before the scene: ${JSON.stringify(described.result)}`);
   assert.equal(described.result.samples, 8, `the decode settled with the wrong data: ${JSON.stringify(described.result)}`);
+  writeFileSync(request, JSON.stringify({ id: "2", method: "applySetup", argument: { entities: [] } }));
+  const applied = await answer("2", 30_000);
+  assert(applied, `applySetup was never answered:\n${output.slice(-2000)}`);
+  assert.equal(applied.error, undefined, `applySetup failed: ${JSON.stringify(applied.error)}`);
+  assert.equal(applied.result, null, `an undefined answer must reach the runner as null: ${JSON.stringify(applied)}`);
 } finally {
   child.kill();
   await exited;
 }
-console.log("PASS a pending bridge answer settles on a later frame and is answered then");
+console.log("PASS a pending bridge answer settles on a later frame and is answered then; an undefined answer is null");

@@ -965,11 +965,13 @@ bool V8Game::observe(const std::string& method, const json::Value* argument, jso
         }
         output = promise->Result();
     }
+    // A bridge method that answers nothing (applySetup may) reads in a page as no result: null here.
+    if (output->IsUndefined()) output = v8::Null(isolate_);
     v8::Local<v8::String> encoded;
     if (!v8::JSON::Stringify(ctx, output).ToLocal(&encoded)) return fail("observation is not JSON");
     v8::String::Utf8Value text(isolate_, encoded);
     json::Error parseError;
-    if (!json::parse(std::string_view(*text, text.length()), result, parseError)) return fail("invalid JSON observation");
+    if (!json::parse(std::string_view(*text, text.length()), result, parseError)) return fail("invalid JSON observation: " + parseError.code + " " + parseError.detail + " at byte " + std::to_string(parseError.offset) + " near `" + std::string(*text, parseError.offset > 24 ? parseError.offset - 24 : 0, 56) + "`");
     return true;
 }
 
