@@ -262,8 +262,8 @@ describe("PRD-380 an ordinary pull request owes only the Linux native rows", () 
       .filter(([name, section]) => name !== "scope" && /^ {4}if: .*native_tier/mu.test(section))
       .map(([name]) => name)
       .sort();
-    // Only the macOS, Windows and iOS legs are not Linux rows.
-    expect(gated).toEqual(["desktop", "ios-simulator"]);
+    // Platform legs and the opt-in cache producer skip reduced runs.
+    expect(gated).toEqual(["desktop", "ios-simulator", "linux-arm64-v8-source"]);
     expect(executable.get("desktop")).toContain("needs.scope.outputs.native_tier == 'full'");
     expect(executable.get("ios-simulator")).toContain("needs.scope.outputs.native_tier == 'full'");
     // A job's `if` cannot read `matrix`, so the arm64 row drops through the matrix itself, shaped

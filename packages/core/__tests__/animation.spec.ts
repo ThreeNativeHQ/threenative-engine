@@ -963,6 +963,20 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     expect(speedUnder(true)).toBeCloseTo(fresh, 6);
   });
 
+  it("preserves the root's exact Euler while measuring a foot-plant stride", () => {
+    const root = new Object3D();
+    const foot = new Object3D();
+    foot.name = "Foot";
+    root.add(foot);
+    root.rotation.set(0, Math.PI, 0);
+    const player = new AnimationPlayer({ root, clips: [plantedWalk()] });
+    player.play("walk");
+    player.update(1 / 60);
+
+    expect(player.stride.clipGroundSpeed).toBeGreaterThan(0);
+    expect(root.rotation.toArray()).toEqual([0, Math.PI, 0, "XYZ"]);
+  });
+
   it("matches an in-place walk cycle from the ground its planted foot sweeps", () => {
     const { body, player } = character({ clips: [plantedWalk()] });
     player.play("walk");

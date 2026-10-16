@@ -35,6 +35,7 @@ import {
   PlaytestBridgeError,
   type IPlaytestBridgeClient,
 } from "./bridgeClient.js";
+import { alignScenarioStartTick } from "./runner-support.js";
 import { waitForStartupReady } from "./startupReady.js";
 import { waitForResource } from "./wait-for-resource.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
@@ -270,6 +271,7 @@ async function runDevicePlaytestInternal(
     }
     await throwIfAborted(target);
 
+    await alignScenarioStartTick(bridge, scenario.startTick, config.liveClock === true);
     const entityIds = observedEntityIds(scenario);
     const sampleRequest = {
       ...(entityIds === undefined ? {} : { entities: entityIds }),

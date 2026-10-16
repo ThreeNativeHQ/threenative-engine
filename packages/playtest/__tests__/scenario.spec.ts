@@ -1001,3 +1001,20 @@ test("should evaluate all registered families through the public entry", async (
     expect(mapped || entry.kind === "camera", `RED observed: registered family has no evaluator for '${entry.kind}'`).toBe(true);
   }
 });
+
+
+test("startTick alone requires fixed-step capability and preserves safe integer anchors", async () => {
+  const directory = await makeTempDir("playtest-start-tick-");
+  for (const startTick of [0, 600, Number.MAX_SAFE_INTEGER]) {
+    await writeFile(join(directory, "scenario.json"), JSON.stringify({ name: "anchor", schemaVersion: 1, startTick, steps: [{ waitFrames: 1 }] }));
+    const parsed = await loadPlaytestScenario(directory, "scenario.json");
+    expect(parsed.startTick).toBe(startTick);
+    expect(requiredPlaytestCapabilities(parsed)).toContain("runtime.fixedStep");
+  }
+});
+
+test.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1, "600", null, true])("startTick rejects invalid anchor %s", async (startTick) => {
+  const directory = await makeTempDir("playtest-start-tick-invalid-");
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({ name: "anchor", schemaVersion: 1, startTick, steps: [{ waitFrames: 1 }] }));
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toThrow("startTick");
+});

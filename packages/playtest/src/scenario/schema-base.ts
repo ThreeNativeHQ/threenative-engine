@@ -769,6 +769,8 @@ export interface IPlaytestScenario {
   schemaVersion: 1;
   setup?: IPlaytestScenarioSetup;
   sourcePath?: string;
+  /** Absolute fixed-step tick reached after startup and warmup, before baseline and input. */
+  startTick?: number;
   steps: IPlaytestStep[];
   subject?: string;
   target: PlaytestTarget;
