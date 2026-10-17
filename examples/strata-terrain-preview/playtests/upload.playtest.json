@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-upload-smoke",
+  "subject": "The strata preview loads its forest world and renders on WebGPU with the generated Three.js patch, which has no private texture upload lane",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "forest-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 120000,
+      "release": true,
+      "screenshot": "upload-smoke-forest"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    }
+  }
+}
