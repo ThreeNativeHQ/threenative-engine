@@ -266,7 +266,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "d3713ceb22da1d7de88577f7e1eabac7d149d274fae7285f9ca5e268ffd2c787",
   shooter: "08245bce4fac7527880a882ee060ae536a99aaae46b047fd8af9fefcffa239d8",
   snow: "e2c71fa135994940d247990997fd1ffa5fc324d193e7795abe3b6d2b3dd7a0c9",
-  starter: "74eab942d4b0417c654bc18a964842beeb8cf445fc7cfd331b85fa19f3c72bdc",
+  starter: "b19c0b68568a9ef6228a2169cdf6bb00f412365792979b90aad41dc8d06ac816",
   "tower-defense": "cb3f87416281a4a9cfbdd0ff40fcffcbf0fc004eb174e7e8ca1661affee959b1",
 };
 
@@ -407,6 +407,7 @@ const STARTER_PATHS = [
   "playtests/survives.playtest.json",
   "playtests/movement.playtest.json",
   "playtests/live/smooth-motion.playtest.json",
+  "native-playtests/smooth-motion.playtest.json",
   "playtests/play.playtest.json",
   "native-playtests/react-hud.playtest.json",
   "playtests/production-readiness.playtest.json",
