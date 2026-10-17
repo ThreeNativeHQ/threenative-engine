@@ -21101,6 +21101,229 @@
           ]
         }
       }
+    },
+    {
+      "id": 34,
+      "at": "2026-10-17T18:35:09.924Z",
+      "commit": "b611829fa",
+      "label": "routed after-run on the final candidate, quiet window: full-board workflow_dispatch run 38975472149 at b611829fa (PRD-620; 6 tn-local HEAVY + 40 hosted overflow, full green incl. ci-required; wall 36.82 min and eligible queue p50 4s PASS)",
+      "notes": "Routed after-run, chart-excluded. Full-board workflow_dispatch run 38975472149 at candidate b611829fa0702ee52c48f027c1db76b4040dddb3 (PR #513, run attempt 1, conclusion success), started in a quiet repository window: no other repository run overlapped 2026-10-16T22:23:36Z to 2026-10-16T23:00:25Z (iteration 33's run ended 22:18:05Z; develop push 38968480858 ended 22:12:23Z). Routing: 6 of 46 canonical HEAVY ran tn-local (test 117223874109, test-native 117224272682, test-unit (4/4) 117224272732, test-unit (3/4) 117224272744, test-unit (2/4) 117224272814, test-unit (1/4) 117224273055), 40 ran hosted ubuntu-24.04 overflow; the 12 LIGHT joins ran tn-local-light. ci-required job 117234269821 succeeded; all 46 HEAVY green (72 rows, 69 success + 3 skipped). Wall: full board 2209s from run_started_at to max completed_at 2026-10-16T23:00:25Z <= 60 min PASSES; job envelope 2205s. Eligible HEAVY queue over all 46 incl. hosted overflow p50 4s / p90 258s / max 324s / 14 >120s; p50 <= 120s PASSES. Comparability vs control iteration 31 (same candidate/event/workload): Android V8 recipe 1a2463b539e99c9fd7d87bd4bdd3ef86f2b61e42969a587f134e35f23d343607 unchanged and warm (published step 1628ms); test-native native-third-party primary HIT and native-ccache restore-key prefix HIT from run 38970276044, the control's shape. Iteration 33 on this same candidate failed the queue target in a contended window, so this is the first quiet-window sample of the predeclared pair, not a pair. Generic merge-queue metrics null, prs empty.",
+      "decision": "invalid",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-15",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": null,
+        "lastPushToMergeP90Min": null,
+        "firstAttemptSuccessPct": null,
+        "boardWallMedianMin": null,
+        "queueWaitP90Min": null
+      },
+      "prs": [],
+      "firstFailingJobs": [],
+      "extra": {
+        "prCount": null,
+        "mergeGroupRuns": null,
+        "mergeGroupRunSuccessPct": null,
+        "enqueueToMergeMedianMin": null,
+        "queueWaitJobs": null,
+        "prd620": {
+          "run_id": 38975472149,
+          "candidate_sha": "b611829fa0702ee52c48f027c1db76b4040dddb3",
+          "run_attempt": 1,
+          "run_url": "https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/38975472149",
+          "api_url": "https://api.github.com/repos/ThreeNativeHQ/threenative-engine/actions/runs/38975472149",
+          "event": "workflow_dispatch",
+          "head_branch": "ci/prd620-local-first",
+          "conclusion": "success",
+          "status": "completed",
+          "classification": "valid full-green routed after-run in a quiet window: 6 tn-local HEAVY + 12 tn-local-light LIGHT joins + 40 hosted HEAVY overflow; passes both AC-1 targets; sample 1 of the predeclared quiet-window pair",
+          "decision": "passes-ac1-sample-1-of-2",
+          "decision_reason": "wall 2209s <= 3600s and eligible HEAVY queue p50 4s <= 120s on all 46 instances; one sample only, so no two-sample acceptance is claimed",
+          "chart_excluded": true,
+          "all_jobs_hosted": false,
+          "routed_local": true,
+          "api_event_timestamps": {
+            "created_at": "2026-10-16T22:23:36Z",
+            "run_started_at": "2026-10-16T22:23:36Z",
+            "updated_at": "2026-10-16T23:00:25Z"
+          },
+          "wall": {
+            "started_at_min": "2026-10-16T22:23:40Z",
+            "completed_at_max": "2026-10-16T23:00:25Z",
+            "wall_seconds": 2205,
+            "wall_minutes": 36.75,
+            "full_board_including_initial_queue_seconds": 2209,
+            "full_board_started_at": "2026-10-16T22:23:36Z",
+            "full_board_completed_at": "2026-10-16T23:00:25Z",
+            "full_board_minutes": 36.82,
+            "definition": "Full board uses run_started_at to the latest job completed_at, NOT the run updated_at; job envelope retained separately. AC-1 wall on this run: 2209s <= 60 min, PASSES."
+          },
+          "full_qualification_control": {
+            "total_jobs_observed": 72,
+            "expected_full_board": 72,
+            "heavy_eligible": 46,
+            "ci_required_job_id": 117234269821,
+            "ci_required_conclusion": "success",
+            "ci_required_runner": "tn-1bc989cca0f3",
+            "ci_required_labels": ["tn-local-light"],
+            "selection": "full",
+            "qualification": true,
+            "skipped_jobs": [
+              {
+                "id": 117223989170,
+                "name": "native-platforms / Publish the Linux arm64 V8 payload"
+              },
+              {
+                "id": 117223989319,
+                "name": "native-platforms / Linux arm64 V8 source payload"
+              },
+              {
+                "id": 117224262075,
+                "name": "native-platforms / Publish the Android V8 payload"
+              }
+            ],
+            "evidence": "ci-required job 117234269821 succeeded with all 46 canonical HEAVY jobs green (69 success + 3 skipped = 72 rows). Required-job/receipt/candidate/attempt checks preserved."
+          },
+          "source_workflows": [
+            ".github/workflows/ci.yml",
+            "ThreeNativeHQ/threenative-engine/.github/workflows/native-platforms.yml@b611829fa0702ee52c48f027c1db76b4040dddb3",
+            "ThreeNativeHQ/threenative-engine/.github/workflows/integration.yml@b611829fa0702ee52c48f027c1db76b4040dddb3"
+          ],
+          "recipe_inputs": [
+            {
+              "file": "packages/runtime-native/scripts/build-android-v8.mjs",
+              "baseline_blob": "016c50436737b3901896bce3008cb0701434f269",
+              "candidate_blob": "016c50436737b3901896bce3008cb0701434f269",
+              "match": true
+            },
+            {
+              "file": "packages/runtime-native/scripts/check-android-16kb-alignment.mjs",
+              "baseline_blob": "7d2ec52cbbf6b12d37d376e8b06aff2b91e7c6d4",
+              "candidate_blob": "7d2ec52cbbf6b12d37d376e8b06aff2b91e7c6d4",
+              "match": true
+            },
+            {
+              "file": "packages/runtime-native/scripts/download-deps.mjs",
+              "baseline_blob": "a6cc308a8377e4c7255fe51d4e83e01abf22e31d",
+              "candidate_blob": "6a89eeb40a2c6c6b24ae10f0d6f536649beb622a",
+              "match": false
+            },
+            {
+              "file": "packages/runtime-native/android/gradle.properties",
+              "baseline_blob": "22480c85796bb467d119a5635ff3f68436e3448b",
+              "candidate_blob": "22480c85796bb467d119a5635ff3f68436e3448b",
+              "match": true
+            }
+          ],
+          "recipe_unchanged_vs_prior_run": {
+            "prior_run_id": 38961509705,
+            "inputs_match": true,
+            "note": "Same candidate b611829fa as control iteration 31, so the Android V8 recipe input blobs are identical by construction."
+          },
+          "no_publisher_mutation": true,
+          "build_cache_comparability_unknowns": {
+            "native_ccache": "primary per-run key MISS, restore-key prefix HIT from run 38970276044 on test-native job 117224272682",
+            "native_third_party": "HIT on the primary key native-third-party-Linux-X64-ae97fc397e73f4da51efc825e639c2bf540e2d29e649cad27978f95ad771636b on test-native job 117224272682",
+            "v8_payload": "warm published hit on the unchanged recipe 1a2463b539e99c9fd7d87bd4bdd3ef86f2b61e42969a587f134e35f23d343607 (published 1628ms, build 429ms, verify 176ms)",
+            "note": "Read from job logs with `gh api .../actions/jobs/<id>/logs --allow-escape-sequences`. Matches the control iteration 31 shape."
+          },
+          "routing": {
+            "eligible_heavy_instances": 46,
+            "local": 6,
+            "hosted": 40,
+            "unknown": 0,
+            "started_local": 6,
+            "started_hosted": 40,
+            "never_started_local": 0,
+            "never_started_hosted": 0,
+            "local_jobs": [
+              {
+                "id": 117223874109,
+                "name": "test"
+              },
+              {
+                "id": 117224272682,
+                "name": "test-native"
+              },
+              {
+                "id": 117224272732,
+                "name": "test-unit (4/4)"
+              },
+              {
+                "id": 117224272744,
+                "name": "test-unit (3/4)"
+              },
+              {
+                "id": 117224272814,
+                "name": "test-unit (2/4)"
+              },
+              {
+                "id": 117224273055,
+                "name": "test-unit (1/4)"
+              }
+            ],
+            "note": "6 canonical HEAVY ran tn-local, 40 hosted overflow, 12 LIGHT joins on tn-local-light."
+          },
+          "eligible_population": {
+            "definition": "Canonical HEAVY matcher (ci-structure.spec.ts:1072-1073, contract :1260-1312): 30 keys / 46 instances on a full-scope run. Exact same canonical set and per-row names as iteration 29 (copied from it).",
+            "canonical_keys": 30,
+            "canonical_instances": 46,
+            "breakdown": {
+              "ci.yml": {
+                "keys": 13,
+                "legs": 29
+              },
+              "integration.yml": {
+                "keys": 13,
+                "legs": 13
+              },
+              "native-platforms.yml": {
+                "keys": 4,
+                "legs": 4
+              }
+            },
+            "hosted_overflow_included": true,
+            "note": "All 46 instances are classified regardless of runner; on this routed run 6 were tn-local and 40 hosted."
+          },
+          "eligible_queue_s": {
+            "n": 46,
+            "population_size": 46,
+            "p50_s": 4,
+            "p90_s": 258,
+            "max_s": 324,
+            "gt120": 14,
+            "population": "all 46 canonical HEAVY instances incl. tn-local and hosted overflow",
+            "note": "AC-1 queue target PASSES on this run: p50 4s <= 120s. Sample 1 of the quiet-window pair."
+          },
+          "job_counts": {
+            "total_observed": 72,
+            "expected_full_board": 72,
+            "heavy_eligible": 46,
+            "light": 12,
+            "hosted_or_skipped": 14,
+            "note": "46 HEAVY + 12 LIGHT + 14 HOSTED/skipped = 72 rows; 69 success + 3 skipped."
+          },
+          "v8_published_warm_hit": {
+            "job_id": 117223986934,
+            "job_url": "https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/38975472149/job/117223986934",
+            "conclusion": "success",
+            "recipe": "1a2463b539e99c9fd7d87bd4bdd3ef86f2b61e42969a587f134e35f23d343607",
+            "published_step_ms": 1628,
+            "build_verify_ms": 429,
+            "verify_ms": 176,
+            "evidence": "RECIPE_HASH and v8.published/build/verify durations read from job 117223986934 log."
+          },
+          "hosted_contention": {
+            "local_heavy_queue_p50_s": 3,
+            "quiet_window": true,
+            "note": "No other repository run overlapped this run, unlike iteration 33."
+          },
+          "jobs_file": "docs/ci-speed/runs/38975472149.jobs.json"
+        }
+      }
     }
   ]
 }
