@@ -41,7 +41,7 @@ import {
   runProductionProfile,
   runCommand,
   safeReport,
-  pinLegacyDesktopHost,
+  pinThreejsDesktopHost,
   setNativeProfileEntry,
   webFrameInstrumentation,
   webRateDisplayFault,
@@ -1212,17 +1212,17 @@ test('the desktop profile names the legacy host for a config that sets no engine
   const authored = makeTempDirSync('tn-profile-engine-');
   temporary.push(unset, authored);
   writeFileSync(join(unset, 'threenative.config.ts'), 'const config: IThreeNativeConfig = {\n  app: {},\n};\nexport default config;\n');
-  writeFileSync(join(authored, 'threenative.config.ts'), 'export default {\n  engine: "native",\n};\n');
+  writeFileSync(join(authored, 'threenative.config.ts'), 'export default {\n  engine: "threenative",\n};\n');
 
-  await pinLegacyDesktopHost(unset);
-  await pinLegacyDesktopHost(unset);
-  await pinLegacyDesktopHost(authored);
+  await pinThreejsDesktopHost(unset);
+  await pinThreejsDesktopHost(unset);
+  await pinThreejsDesktopHost(authored);
 
   assert.equal(
     readFileSync(join(unset, 'threenative.config.ts'), 'utf8'),
-    'const config: IThreeNativeConfig = {\n  engine: "legacy",\n  app: {},\n};\nexport default config;\n',
+    'const config: IThreeNativeConfig = {\n  engine: "threejs",\n  app: {},\n};\nexport default config;\n',
   );
-  assert.equal(readFileSync(join(authored, 'threenative.config.ts'), 'utf8'), 'export default {\n  engine: "native",\n};\n');
+  assert.equal(readFileSync(join(authored, 'threenative.config.ts'), 'utf8'), 'export default {\n  engine: "threenative",\n};\n');
 });
 
 test('native profile reads the generated app identity when no config override is supplied', () => {

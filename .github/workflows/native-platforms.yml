@@ -1477,10 +1477,10 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-starter-native
           template: starter
-          # This job verifies the legacy host's packaged executable: the overlay markers, the
+          # This job verifies the Three.js host's packaged executable: the overlay markers, the
           # release container, the installer and the signing proof. A config with no `engine`
-          # builds the V8 engine player directory instead, so the legacy override is named here.
-          engine: legacy
+          # builds the V8 engine player directory instead, so the `threejs` override is named here.
+          engine: threejs
       - name: Build and verify the starter's WebView HUD
         shell: bash
         run: |
@@ -2199,8 +2199,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-starter-native
           template: starter
-          # The legacy host's `test:native` proof below; the default engine has its own step.
-          engine: legacy
+          # The Three.js host's `test:native` proof below; the default engine has its own step.
+          engine: threejs
       - name: Build and verify the scaffolded starter
         run: |
           target="$RUNNER_TEMP/threenative-starter-native"
@@ -2218,7 +2218,7 @@ jobs:
       # installed runtime-native fetches that player from the release at install time, and this job
       # installs with --ignore-scripts, so it builds the player and names it the way a checkout
       # build does (`THREENATIVE_ENGINE_PLAYER`). No release ships a linux-arm64 player, so the
-      # arm64 row keeps to the legacy host proof above.
+      # arm64 row keeps to the `threejs` host proof above.
       - name: Scaffold the starter on the default engine
         if: matrix.platform == 'linux-x64'
         uses: ./.github/actions/scaffold-from-tarballs
