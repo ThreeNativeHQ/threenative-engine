@@ -573,6 +573,13 @@ function rendererDrawCallCount(raw: unknown): number | undefined {
   return typeof calls === "number" && Number.isFinite(calls) && calls >= 0 ? calls : undefined;
 }
 
+/** Cumulative render() calls the renderer declined to draw (the Wasm web engine's frame gate), when it counts them. */
+function rendererFrameGateSkips(raw: unknown): number | undefined {
+  const info = (raw as { info?: { engine?: { frameGateSkips?: unknown } } } | null)?.info;
+  const skips = info?.engine?.frameGateSkips;
+  return typeof skips === "number" && Number.isFinite(skips) ? skips : undefined;
+}
+
 function rendererPerformanceMetrics(raw: unknown): {
   drawCalls?: number;
   triangles?: number;
@@ -1649,6 +1656,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     let postedVerdict: string | undefined;
     let updates = 0;
     let renders = 0;
+    let lastGateSkips = 0;
     const gameLoop: FixedStepLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
@@ -1845,6 +1853,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           this.#matrixWorld?.apply(renderRoot);
           renderer.render(renderRoot, camera);
           renders += 1;
+          // A frame the renderer declined costs nothing in the render phase; the budget counts it so a
+          // window mean is never read as the cost of a drawn frame.
+          const gateSkips = rendererFrameGateSkips(renderer.raw);
+          if (gateSkips !== undefined) {
+            if (gateSkips > lastGateSkips) frameBudget?.addRenderSkip();
+            lastGateSkips = gateSkips;
+          }
           // *After* the render, because that is where the draw happened. The matrices read here are
           // the ones drawn: the walk above refreshed them and `render()` did not touch them. The
           // frozen roots are passed because the draw root is the projection's mirror when the

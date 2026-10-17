@@ -260,3 +260,32 @@ describe("the Wasm engine's WebGPURenderer backpressure", () => {
     expect(drawnFrames).toEqual([0, 1]);
   });
 });
+
+describe("the Wasm engine's frame gate", () => {
+  it("counts each render() it declines, so a meter can tell a drawn frame from a skipped one", async () => {
+    let onGpu = 0;
+    const drawnFrames: number[] = [];
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => (field === 11 ? onGpu : 0),
+      (...args) => {
+        drawnFrames.push(args[args.length - 1] ?? 0);
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      info: { engine: { frameGateSkips?: number } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    expect(renderer.info.engine.frameGateSkips).toBe(0);
+    renderer.render(scene, camera);
+    onGpu = 1;
+    renderer.render(scene, camera);
+    renderer.render(scene, camera);
+    onGpu = 0;
+    renderer.render(scene, camera);
+    expect(drawnFrames).toHaveLength(2);
+    expect(renderer.info.engine.frameGateSkips).toBe(2);
+  });
+});

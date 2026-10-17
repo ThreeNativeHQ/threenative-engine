@@ -115,7 +115,15 @@ export function defineWebRenderer(
       memory: { geometries: 0, textures: 0 },
       // Not three's: the setup work the engine has done so far. A steady frame adds none of it, so a
       // playtest holds each count still across frames (examples/wasm-engine-boot renderer scenario).
-      engine: { compiles: 0, textLookups: 0, bindGroups: 0, graphKeys: 0, programs: 0 },
+      // `frameGateSkips` is the exception: render() calls the frame gate declined, which only grows.
+      engine: {
+        compiles: 0,
+        textLookups: 0,
+        bindGroups: 0,
+        graphKeys: 0,
+        programs: 0,
+        frameGateSkips: 0,
+      },
       reset(): void {},
     };
     /** three's WebGPURenderer: `antialias` is 4x MSAA, `samples` 0 or 1 is none; the engine draws 1 or 4. */
@@ -267,7 +275,12 @@ export function defineWebRenderer(
       // Chromium queues a submitted frame without bound. When rAF outruns the GPU (an unthrottled
       // loop, a heavy scene) the page blocks until the GPU drains and the GPU process is killed.
       // The host says 1 while two drawn frames are still on the GPU: draw nothing this call.
-      if (module._tnw_web_frame(11) === 1) return;
+      if (module._tnw_web_frame(11) === 1) {
+        // Counted, never hidden: the loop's render phase for this frame is near zero, and a meter that
+        // averages it with drawn frames reads cheaper than the work that was done (core's `renderSkips`).
+        this.info.engine.frameGateSkips += 1;
+        return;
+      }
       beforeRender({ camera, scene });
       drawSecondaryPasses(
         () => ({ width: this.#drawWidth(), height: this.#drawHeight() }),
