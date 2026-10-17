@@ -32,8 +32,8 @@ struct AtlasPage {
 class PageAtlas {
 public:
     static std::optional<PageAtlas> create(const AtlasOptions& options, std::string& error);
-    // One clip level per frame, finest first, as VirtualShadowNode. A cut reseeds that level
-    // immediately; deferred levels keep their own sampling matrices and protected pages.
+    // One clip level per frame, retaining deferred maps as VirtualShadowNode does. Cuts start
+    // finest first; subsequent grants rotate so continuously dirty levels cannot starve.
     std::vector<AtlasPage> update(const Vector3& eye, const Vector3& direction, bool cameraCut = false);
     void invalidate(const Box3& bounds);
     void invalidateAll();
@@ -61,7 +61,7 @@ private:
     std::vector<float> table_;
     Vector3 direction_, previousEye_;
     bool started_ = false;
-    int slotsPerAxis_ = 0;
+    int slotsPerAxis_ = 0, nextLevel_ = 0;
     double frame_ = 0;
 };
 

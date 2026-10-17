@@ -85,6 +85,33 @@ void atlas() {
     CHECK(!PageAtlas::create(options, error));
 }
 
+void continuousInvalidation() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24, 72}; options.mapSize = 256; options.pageTexels = 64;
+    options.refreshStep = {0}; options.lightDistance = 20; options.depthRange = 40;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value());
+    if (!atlas) return;
+    const int count = int(options.clipExtents.size());
+    for (int frame = 0; frame < 2 * count; ++frame) {
+        const auto held = atlas->table();
+        atlas->invalidateAll();
+        const auto pages = atlas->update(Vector3(0, 0, 0), Vector3(0, 1, 1));
+        CHECK(pages.size() == 16);
+        if (pages.empty()) return;
+        CHECK(pages.front().level == frame % count);
+        for (const auto& page : pages) CHECK(page.level == pages.front().level);
+        // One level per frame, as in the browser: all levels must be resident after count frames.
+        for (int level = 0; level < count; ++level) {
+            CHECK(atlas->table()[level * 36 + 35] == (frame >= level ? 1 : 0));
+            if (!held.empty() && level != pages.front().level)
+                CHECK(std::equal(held.begin() + level * 36, held.begin() + (level + 1) * 36,
+                                 atlas->table().begin() + level * 36));
+        }
+    }
+}
+
 void sampling() {
     using namespace shader;
     const auto standard = buildStandard({}, {}, {"2"});
@@ -99,4 +126,4 @@ void sampling() {
     }
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"sampling", sampling})
+TN_TEST_MAIN({"atlas", atlas}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling})

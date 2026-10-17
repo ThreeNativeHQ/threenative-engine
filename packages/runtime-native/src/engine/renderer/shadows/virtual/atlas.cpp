@@ -83,6 +83,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         for (auto& level : levels_) level = Level{};
     }
     if (cameraCut) invalidateAll();
+    if (changed || cameraCut) nextLevel_ = 0;
     direction_ = direction;
     previousEye_ = eye;
     started_ = true;
@@ -99,7 +100,10 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
     // The shipped TS node requests an entire granted clip window (its prototype's sparse
     // receiver-feedback path is not used by virtual-shadow.ts). Tile that same request into
     // physical pages; cached levels are neither cleared nor rendered.
-    for (int l = 0; l < int(levels_.size()); ++l) {
+    // Native deformed casters invalidate every frame instead of using the browser's mover maps.
+    // Rotate the single-level grant so those invalidations cannot starve coarse coverage.
+    for (int offset = 0; offset < int(levels_.size()); ++offset) {
+        const int l = (nextLevel_ + offset) % int(levels_.size());
         auto& level = levels_[l];
         const auto& window = windows[l];
         if (level.mapped && !level.dirty && level.window.minX == window.minX && level.window.minY == window.minY) continue;
@@ -142,6 +146,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         }
         level.mapped = true;
         level.dirty = false;
+        nextLevel_ = (l + 1) % int(levels_.size());
         break;
     }
     writeTable();

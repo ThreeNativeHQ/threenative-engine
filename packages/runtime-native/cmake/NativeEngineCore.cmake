@@ -469,6 +469,7 @@ target_link_libraries(tn-native-engine-vsm-test PRIVATE tn_engine_vsm)
 target_include_directories(tn-native-engine-vsm-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/vsm)
 tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vsm_atlas_test.cpp
     native_engine_vsm_atlas=atlas
+    native_engine_vsm_continuous_invalidation=continuous_invalidation
     native_engine_vsm_sampling=sampling)
 target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_vsm tn_engine_shader)
 
