@@ -1,8 +1,14 @@
 import { createReplayDriver } from "@threenative/core";
-import type { IGame, IGamePluginRuntime, Recording } from "@threenative/core";
+import type { ICtx, IGame, IGamePluginRuntime, Recording } from "@threenative/core";
 import type { AbyssState } from "./scenes/Abyss.js";
 
 type ReplayPlugin = { readonly recording: Recording | undefined };
+type StartupProofArm = "before" | "after";
+type StartupProofController = {
+  holdCurrentCallback(): void;
+  paint(callback: () => void): void;
+};
+type StartupPipelineCensus = ReturnType<NonNullable<IGamePluginRuntime["pipelineCensus"]>>;
 
 type ReplayProofStep = {
   readonly holdTicks?: number;
@@ -12,6 +18,148 @@ type ReplayProofStep = {
 };
 
 type ReplayTrace = { position: [number, number, number]; score: number }[];
+
+function parseStartupProof(value: string | null): StartupProofArm | undefined {
+  return value === "before" || value === "after" ? value : undefined;
+}
+
+function isPositiveFinite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function publishFirstWorldCpu(
+  proofHost: Record<string, unknown>,
+  startupProof: StartupProofArm,
+  runtime: IGamePluginRuntime,
+  previousPhases: unknown,
+  firstWorldReady: boolean,
+  firstWorldTick: number,
+  censusBeforeDraw: StartupPipelineCensus | undefined,
+): void {
+  const phases = runtime.runtimeDiagnosticsSeries?.().at(-1)?.phases;
+  const renderMs = phases?.render;
+  const census = runtime.pipelineCensus?.();
+  const beforeCensusError =
+    censusBeforeDraw === undefined
+      ? "TN_STARTUP_FIRST_WORLD_CPU_CENSUS_BEFORE_DRAW_MISSING"
+      : censusBeforeDraw.warmUpSettled === undefined
+        ? "TN_STARTUP_FIRST_WORLD_CPU_WARM_BOUNDARY_MISSING"
+        : undefined;
+  const afterCensusError =
+    census === undefined
+      ? "TN_STARTUP_FIRST_WORLD_CPU_CENSUS_AFTER_DRAW_MISSING"
+      : census.warmUpSettled === undefined
+        ? "TN_STARTUP_FIRST_WORLD_CPU_WARM_BOUNDARY_AFTER_DRAW_MISSING"
+        : undefined;
+  const errors = [
+    runtime.enableRuntimeDiagnostics === undefined
+      ? "TN_STARTUP_FIRST_WORLD_CPU_DIAGNOSTICS_ENABLE_MISSING"
+      : undefined,
+    runtime.runtimeDiagnosticsSeries === undefined
+      ? "TN_STARTUP_FIRST_WORLD_CPU_DIAGNOSTICS_SERIES_MISSING"
+      : undefined,
+    phases === undefined || phases === previousPhases
+      ? "TN_STARTUP_FIRST_WORLD_CPU_PHASE_STALE"
+      : undefined,
+    isPositiveFinite(renderMs)
+      ? undefined
+      : `TN_STARTUP_FIRST_WORLD_CPU_RENDER_INVALID:${String(renderMs)}`,
+    beforeCensusError,
+    afterCensusError,
+  ].filter((error): error is string => error !== undefined);
+  const record = {
+    arm: startupProof,
+    census,
+    ready: firstWorldReady,
+    tick: firstWorldTick,
+    ...(isPositiveFinite(renderMs) ? { renderMs } : {}),
+    ...(errors.length === 0 ? {} : { error: errors.join(";") }),
+  };
+  Object.assign(proofHost, { __TN_STARTUP_FIRST_WORLD_CPU__: record });
+  const marker =
+    errors.length === 0 ? "TN_STARTUP_FIRST_WORLD_CPU" : "TN_STARTUP_FIRST_WORLD_CPU_ERROR";
+  console.log(`${marker}:${JSON.stringify(record)}`);
+}
+
+export function installStartupProof(
+  ctx: Pick<ICtx<AbyssState>, "beforeRender">,
+  runtime: IGamePluginRuntime | undefined,
+): (() => void) | undefined {
+  const startupProof = parseStartupProof(
+    new URLSearchParams(globalThis.location.search).get("startupProof"),
+  );
+  if (startupProof === undefined || runtime === undefined) return undefined;
+  const label = document.createElement("div");
+  label.dataset.tnStartupProof = startupProof;
+  label.style.cssText =
+    "position:fixed;z-index:2147483647;left:0;bottom:0;padding:8px 16px;background:#000;color:#fff;font:700 32px monospace;line-height:1;pointer-events:none";
+  document.body.append(label);
+  runtime.enableRuntimeDiagnostics?.();
+  let firstWorldDrawObserved = false;
+  let visibleWorldFrame = 0;
+  const unregister = ctx.beforeRender(() => {
+    const proofHost = globalThis as Record<string, unknown>;
+    const census = runtime.pipelineCensus?.();
+
+    if (!firstWorldDrawObserved && census?.warmUpSettled !== undefined) {
+      firstWorldDrawObserved = true;
+      const previousFrameBudget = runtime.runtimeDiagnosticsSeries?.().at(-1);
+      const previousPhases = previousFrameBudget?.phases;
+      const firstWorldReady = proofHost.__TN_STARTUP_READY__ === true;
+      const firstWorldTick = runtime.tick();
+      const censusBeforeDraw = census;
+      queueMicrotask(() =>
+        publishFirstWorldCpu(
+          proofHost,
+          startupProof,
+          runtime,
+          previousPhases,
+          firstWorldReady,
+          firstWorldTick,
+          censusBeforeDraw,
+        ),
+      );
+    }
+
+    if (proofHost.__TN_STARTUP_READY__ !== true || visibleWorldFrame >= 5) return;
+    const controller = proofHost.__TN_STARTUP_PROOF_CONTROLLER__ as
+      | StartupProofController
+      | undefined;
+    if (controller === undefined) throw new Error("TN_STARTUP_PROOF_CONTROLLER_MISSING");
+    const previousFrameBudget = runtime.runtimeDiagnosticsSeries?.().at(-1);
+    const previousPhases = previousFrameBudget?.phases;
+    visibleWorldFrame += 1;
+    controller.holdCurrentCallback();
+    label.textContent = `${startupProof.toUpperCase()} FIRST-VISIBLE-WORLD FRAME ${String(visibleWorldFrame)}`;
+    const frame = visibleWorldFrame;
+    queueMicrotask(() => {
+      const series = runtime.runtimeDiagnosticsSeries?.() ?? [];
+      const frameBudget = series.at(-1);
+      const census = runtime.pipelineCensus?.();
+      if (frameBudget === undefined)
+        throw new Error(`TN_STARTUP_PROOF_FRAME_BUDGET_MISSING:${String(frame)}`);
+      if (frameBudget.phases === undefined || frameBudget.phases === previousPhases)
+        throw new Error(`TN_STARTUP_PROOF_FRAME_BUDGET_STALE:${String(frame)}`);
+      if (census === undefined) throw new Error(`TN_STARTUP_PROOF_CENSUS_MISSING:${String(frame)}`);
+      const record = {
+        arm: startupProof,
+        census,
+        frame,
+        frameBudget,
+        readyMs: runtime.startupTimeline?.().readyMs,
+        tick: runtime.tick(),
+      };
+      controller.paint(() => {
+        Object.assign(proofHost, { __TN_STARTUP_PROOF_RECORD__: { ...record, painted: true } });
+        console.log(`TN_STARTUP_VISIBLE_WORLD:${JSON.stringify({ ...record, painted: true })}`);
+      });
+    });
+  });
+  return () => {
+    unregister();
+    label.remove();
+  };
+}
 
 function dispatchKey(target: EventTarget, type: "keydown" | "keyup", code: string): void {
   target.dispatchEvent(Object.assign(new Event(type), { code }));
@@ -74,6 +222,7 @@ export function installReplayProof(
         return driver(runtime);
       },
       recordAndReplay: async (steps: readonly ReplayProofStep[]) => {
+        await game.start();
         game.stop();
         await game.start();
         const runtime = getRuntime();

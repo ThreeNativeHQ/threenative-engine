@@ -169,6 +169,11 @@ describe("threenative build", () => {
       { install: false, target: "game", template: "starter" },
       root,
     );
+    // Keep pickup.wav to exercise the audio worker pool without basis-heavy fixtures.
+    for (const name of await readdir(path.join(target, "assets"))) {
+      if (name !== "pickup.wav")
+        await rm(path.join(target, "assets", name), { force: true, recursive: true });
+    }
     await installDeterministicVite(target);
     const cli = path.resolve("packages/create-threenative/dist/threenative.js");
 
@@ -213,6 +218,7 @@ describe("threenative build", () => {
       code: 0,
       timedOut: false,
     });
+    expect(result.output).toContain("cost pass audio: ran on 1 input");
   }, 90_000);
 
   it("resolves every declared brand input through the live packaging-config caller", async () => {

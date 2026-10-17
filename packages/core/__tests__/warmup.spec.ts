@@ -245,6 +245,21 @@ describe("scene warm-up", () => {
     });
   });
 
+  test("should use the covered output pass when stock compile cannot match its render depth", async () => {
+    const compileAsync = vi.fn(async () => undefined);
+    const warmUpWorldPass = vi.fn();
+    const report = await warmUpScene(
+      { compileAsync, warmUpWorldPass },
+      sceneOf(1) as never,
+      {} as never,
+      { yieldFrame: () => Promise.resolve() },
+    );
+
+    expect(compileAsync).not.toHaveBeenCalled();
+    expect(warmUpWorldPass).toHaveBeenCalledOnce();
+    expect(report).toMatchObject({ attempted: 0, compiled: 1, passes: ["main"] });
+  });
+
   test("should not call abandoned work complete when the census itself is complete", async () => {
     const snapshot = {
       version: 1 as const,
@@ -497,6 +512,16 @@ describe("scene warm-up", () => {
   });
 
   test("should stop waiting for the GPU when the budget runs out", async () => {
+    const storage = new Map<string, string>();
+    const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
     const renderer = {
       compileAsync: () => Promise.resolve(),
       render: () => undefined,
@@ -511,11 +536,20 @@ describe("scene warm-up", () => {
       mesh("ground"),
       { children: [], isLight: true, castShadow: true, name: "sun" },
     ]);
-    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
-      budgetMs: 60,
-      yieldFrame: () => Promise.resolve(),
-    });
-    expect(report.passes).toEqual(["main", "shadow"]);
+    try {
+      const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+        budgetMs: 60,
+        cache: { key: "stalled-gpu" },
+        yieldFrame: () => Promise.resolve(),
+      });
+      expect(report.passes).toEqual(["main", "shadow"]);
+      expect(report).toMatchObject({ compiled: 1, abandoned: 0, timedOut: true });
+      expect(report.cache).not.toBe("stored");
+      expect(storage.size).toBe(0);
+    } finally {
+      if (previousStorage === undefined) Reflect.deleteProperty(globalThis, "localStorage");
+      else Object.defineProperty(globalThis, "localStorage", previousStorage);
+    }
   }, 10_000);
 
   test("should name a reflection pass when a material carries a reflector node", async () => {
@@ -582,6 +616,52 @@ describe("scene warm-up", () => {
     expect(report.passes).toEqual([]);
     expect(report.passPipelines).toBe(0);
   });
+
+  test("should keep the covered output world pass when renderPasses is false", async () => {
+    const warmUpWorldPass = vi.fn();
+    const renderer = {
+      compileAsync: vi.fn(async () => undefined),
+      warmUpWorldPass,
+    };
+    const report = await warmUpScene(renderer as never, sceneOf(1) as never, {} as never, {
+      renderPasses: false,
+      yieldFrame: () => Promise.resolve(),
+    });
+
+    expect(renderer.compileAsync).not.toHaveBeenCalled();
+    expect(warmUpWorldPass).toHaveBeenCalledOnce();
+    expect(report.passes).toEqual(["main"]);
+  });
+
+  test.each(["throw", "overrun"] as const)(
+    "should not publish a covered world warm render as settled when it %s",
+    async (failure) => {
+      let clock = 0;
+      const clockSpy = vi.spyOn(globalThis.performance, "now").mockImplementation(() => clock);
+      const warmUpWorldPass = vi.fn(() => {
+        if (failure === "throw") throw new Error("covered warm render failed");
+        clock = 20;
+      });
+      try {
+        const report = await warmUpScene(
+          { compileAsync: vi.fn(async () => undefined), warmUpWorldPass },
+          sceneOf(1) as never,
+          {} as never,
+          { budgetMs: 10, yieldFrame: () => Promise.resolve() },
+        );
+
+        expect(warmUpWorldPass).toHaveBeenCalledOnce();
+        expect(report).toMatchObject({
+          compiled: 0,
+          abandoned: 1,
+          timedOut: failure === "overrun",
+        });
+        expect(report.cache).not.toBe("stored");
+      } finally {
+        clockSpy.mockRestore();
+      }
+    },
+  );
 
   test("should submit an off-screen caster by turning frustum culling off for the warm render", async () => {
     // Frustum culling is on by default, so a mesh outside the startup camera's view is never

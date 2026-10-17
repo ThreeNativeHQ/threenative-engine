@@ -826,13 +826,11 @@ export class WorldCells extends Group implements IComputeDriven {
         reportCellFailure: (stage, key, paths, error) =>
           this.#reportCellFailure(stage, key, paths, error),
         parent: () => this.parent,
-        prepareCompile: (root, camera, renderer) => {
+        targetScene: () => {
           let scene: Object3D = this;
           while (scene.parent !== null) scene = scene.parent;
-          if (Reflect.get(scene, "isScene") !== true) return;
-          return () => renderer.compileAsync(root, camera, scene);
+          return Reflect.get(scene, "isScene") === true ? scene : undefined;
         },
-        compileChunk: (renderer, chunk, camera) => renderer.compileAsync(chunk, camera, this),
         addChunk: (cell, object) => this.#render.addChunk(cell, object),
         publishChunkBounds: (cell, box, proxies) =>
           this.#render.publishChunkBounds(cell, box, proxies),

@@ -241,21 +241,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
   // the merged tree, including its latest template changes.
   // Recomputed after integrating develop 5f7143895 (PRD-609 particle bursts).
-  "action-rpg": "b6aecbc65d7a87a19a2f2cbca65c611a0e78d78fa9eb540714f61c6b49579c9d",
-  minimal: "927005ce50373794e0a59084bac5c5cceec70826d32e6cffd6440ccbea33428c",
-  platformer: "c05b9fd1a2544f53fd4a65dfd5977586f4a8e5618b90b3d47efa47454060d732",
-  puzzle: "e720807ac1787067ccb21b2b7adaab039c2a2ba70c3c22010bcad4c4f27d9b9c",
-  racing: "11c80833c613f4fab7b4761cf6a021d47a9662fe71315b5c49aecb98011d389c",
-  rain: "c95078148f342b29c9ab4d49b8c04df4f57b3123e294799cd1b7efbd658acec9",
-  rts: "f1c8ddc4fc8ad6aa7c235e17cbb6ff87832f27a70e2513b4f07abc949c49b7d2",
-  runner: "3649044ab94688fb8c5cb807ff558d710898337ebf1637f3799802a3fa365729",
+  // Recomputed on the merge of develop 32f5072a0 (PRD-616, PRD-619) into the strata epic.
+  // PRD-619: all kits name interpolation; starter adds the live-clock motion proof.
+  "action-rpg": "861c1b3596b9b021d2f46de2156430d73c03baca4e70bcd5fb075954a5c5127b",
+  minimal: "7007f7b2191a6c9eed0c11b70c0bb62bdb2f7c5f1610222547bf5d8df00d1474",
+  platformer: "673eb7603933b4e95fbcb026ebf51d474ce25add89af0a5f3c40875fddd22d0c",
+  puzzle: "b059a8767360ac8531d1dc6bab3f51e359402a70b7954f451203316ef9302f2c",
+  racing: "fcd294a1fc69d7bd4837cabee3928dff018234f8c357db39f93aa9cb7c4ce49e",
+  rain: "c09876f8b56fd80d7470a301e92f6a8e93f948caee72a4a03fe7127fa1317df9",
+  rts: "568366b917a30a2ecb9bb106eb38535b807292a6f81d9aaceea2feac66ba71ef",
+  runner: "50869795cd7bf24cc92df7d0d167326b1a33d54995452bfe0fd0b6eb0b649083",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "7362b2a5b8314a1bb7c7df176dbc47018389d9ff824ea39d984774516c96e9e6",
-  shooter: "60e3aacb4fe2e398dbcd59485fdcd6aa5108b507fd899a4efe81614596312598",
-  snow: "d7ded1eea863a08e164407fe3061c865151c09cde3627de15d39571e2b5f244c",
+  sailing: "4a24ab1ade9c7c2b8331e6c2d3335530ca8142759454b976b8c1111c446ba244",
+  shooter: "84f89c6c26f4ed3de7cecb5de9dbb13e149421f7a2ff3d9cc8f40bb721cb3eed",
+  snow: "161fc563f32cd83721304438510d8ee91528da43c94da310a699b90edf1f77c7",
   // Merged input heading, quaternion facing and progress import; measured through actual scaffold.
-  starter: "f542723329a5441ea1a416ad94e43ec262afd3d1ac5fb40c22beb05b4be61015",
-  "tower-defense": "b387b2fa3e7c0a719a99d8ececb4f3964d881415a8b1fe036b2f7c0413318fb4",
+  starter: "49ef7dccb5c2239a7e9cd43a9667fb06b3a02f21924b54fff14f416deed1baf3",
+  "tower-defense": "59fa1ebcda11d8f63aea1b0a5928a5b9b11eb9476964420bf436bfcd8a454d26",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -394,6 +396,8 @@ const STARTER_PATHS = [
   // `packages/create-threenative/template-playtests/starter/`, copied by `pnpm test:templates`.
   "playtests/survives.playtest.json",
   "playtests/movement.playtest.json",
+  "playtests/live/smooth-motion.playtest.json",
+  "native-playtests/smooth-motion.playtest.json",
   "playtests/play.playtest.json",
   "native-playtests/react-hud.playtest.json",
   "playtests/production-readiness.playtest.json",

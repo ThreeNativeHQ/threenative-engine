@@ -804,11 +804,14 @@ jobs:
             timeout: 60_000,
           });
           await page.keyboard.down("ArrowRight");
-          await page.waitForTimeout(3_000);
+          const moved = await page.waitForFunction(() => {
+            const position = Number(document.body.innerText.match(/POSITION\n(-?\d+)/)?.[1]);
+            return Number.isFinite(position) && Math.abs(position) >= 1;
+          }, undefined, { timeout: 60_000 }).then(() => true, () => false);
           await page.keyboard.up("ArrowRight");
           const text = await page.locator("body").innerText();
           const position = Number(text.match(/POSITION\n(-?\d+)/)?.[1]);
-          if (!Number.isFinite(position) || Math.abs(position) < 1 || errors.length > 0) {
+          if (!moved || !Number.isFinite(position) || Math.abs(position) < 1 || errors.length > 0) {
             throw new Error(`Scaffold smoke failed: ${JSON.stringify({ text, errors })}`);
           }
           await browser.close();
@@ -844,7 +847,11 @@ jobs:
     # Hosted on purpose: template legs use hosted while the balancer routes builds and tests
     # to the local pool, avoiding one routing variable sending the whole burst to a single pool.
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # rain relaunches the page for each of its five GPU-free scenarios. On the hosted SwiftShader
+    # adapter each launch now takes about 7 minutes, against about 1 minute on develop (runs
+    # 38818830914 and 38824021621), so five launches exceed the 30-minute cap. Only rain gets the
+    # larger cap until that software launch cost is reduced; every other leg keeps 30 minutes.
+    timeout-minutes: ${{ matrix.template == 'rain' && 60 || 30 }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       TN_PLAYTEST_ALLOW_SOFTWARE: "1"

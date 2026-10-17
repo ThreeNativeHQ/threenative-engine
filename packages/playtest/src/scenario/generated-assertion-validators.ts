@@ -236,6 +236,13 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "maxCompileSettledMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxReadyMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
   }),
+  "pipelineCensus": Object.freeze({
+    "maxNodeBuildsAfterWarmUpSettled": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "maxRenderPipelineCreationsAfterWarmUpSettled": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "warmUpScope": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "maxNodeBuildsAfterWarmUpScope": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "maxRenderPipelineCreationsAfterWarmUpScope": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+  }),
   "renderChain": Object.freeze({
     "tier": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "stages": (value: unknown) => isRecord(value),

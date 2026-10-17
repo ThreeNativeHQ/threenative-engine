@@ -1,6 +1,6 @@
 {
-  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.13.0 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. `inputSchemas` and `descriptions` come from that same response, so the documentation cannot name an argument the server does not accept. The published 0.13.0 serves all 53 tools, including the humanoid rig and Unreal import tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. It includes the Fab loop: `fab_search_assets` finds a listing, `fab_list_owned` confirms it is in the library, and `fab_import_asset` (or `asset_import_unreal` for a local pack) converts the Unreal source to textured GLBs. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
-  "version": "0.13.0",
+  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.14.0 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. `inputSchemas` and `descriptions` come from that same response, so the documentation cannot name an argument the server does not accept. The published 0.14.0 serves all 53 tools, including the humanoid rig and Unreal import tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. It includes the Fab loop: `fab_search_assets` finds a listing, `fab_list_owned` confirms it is in the library, and `fab_import_asset` (or `asset_import_unreal` for a local pack) converts the Unreal source to textured GLBs. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
+  "version": "0.14.0",
   "profile": null,
   "recommended": [
     "ambientcg_list_files",
@@ -1540,7 +1540,7 @@
         "semantic": {
           "default": "off",
           "type": "string",
-          "enum": ["off", "clap"]
+          "enum": ["off", "clap", "earshot"]
         }
       },
       "required": ["path", "loop"],
@@ -1727,7 +1727,7 @@
             "semantic": {
               "default": "off",
               "type": "string",
-              "enum": ["off", "clap"]
+              "enum": ["off", "clap", "earshot"]
             }
           },
           "additionalProperties": false
