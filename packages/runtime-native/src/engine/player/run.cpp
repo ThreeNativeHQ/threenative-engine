@@ -496,8 +496,7 @@ json::Value frameTiming(double gameMs, double renderMs, double cpuMs, double fra
  * present worker, the render thread, shader compiles, V8 workers, the HUD overlay and its WebKit
  * processes) runs on the remaining CPUs. On Xvfb the NVIDIA present waits in a busy loop, and sharing
  * cores with it cost the game thread 15 to 30% of its IPC on Midway.
- * TN_PLAYER_MAIN_CORE unset or off leaves placement to the OS; auto picks a core; a CPU number names the core to start from.
- * Auto starts from the core the firmware ranks last (ACPI CPPC) among the fastest by max frequency:
+ * Placement starts from the core the firmware ranks last (ACPI CPPC) among the fastest by max frequency:
  * the scheduler packs other busy work onto top-ranked cores first, and a game thread pinned there
  * competed with it.
  */
@@ -532,29 +531,18 @@ struct ThreadPlacement {
         return set;
     }
     void start() {
-        const char* setting = std::getenv("TN_PLAYER_MAIN_CORE");
-        // Opt-in until a policy passes the PRD-610 keep rule (campaign prd610-placement-20261015).
-        if (!setting || !*setting || std::strcmp(setting, "off") == 0) return;
         cpu_set_t allowed;
         if (sched_getaffinity(0, sizeof allowed, &allowed) != 0 || CPU_COUNT(&allowed) < 4) return;
         int chosen = -1;
-        if (setting && *setting && std::strcmp(setting, "auto") != 0) {
-            chosen = std::atoi(setting);
-            if (chosen < 0 || chosen >= CPU_SETSIZE || !CPU_ISSET(chosen, &allowed)) {
-                std::fprintf(stderr, "TN_PLAYER_MAIN_CORE=%s is not an allowed CPU; placement is off.\n", setting);
-                return;
-            }
-        } else {
-            // The fastest cores by max frequency first (P-cores on a hybrid CPU), then the last CPPC rank among them.
-            const auto cpuFile = [](int c, const char* name) { return "/sys/devices/system/cpu/cpu" + std::to_string(c) + name; };
-            long fastest = -1, lowest = LONG_MAX;
-            for (int c = 0; c < CPU_SETSIZE; ++c)
-                if (CPU_ISSET(c, &allowed)) fastest = std::max(fastest, readNumber(cpuFile(c, "/cpufreq/cpuinfo_max_freq")));
-            for (int c = 0; c < CPU_SETSIZE; ++c) {
-                if (!CPU_ISSET(c, &allowed) || readNumber(cpuFile(c, "/cpufreq/cpuinfo_max_freq")) != fastest) continue;
-                const long rank = std::max(0L, readNumber(cpuFile(c, "/acpi_cppc/highest_perf")));
-                if (rank <= lowest) lowest = rank, chosen = c;
-            }
+        // The fastest cores by max frequency first (P-cores on a hybrid CPU), then the last CPPC rank among them.
+        const auto cpuFile = [](int c, const char* name) { return "/sys/devices/system/cpu/cpu" + std::to_string(c) + name; };
+        long fastest = -1, lowest = LONG_MAX;
+        for (int c = 0; c < CPU_SETSIZE; ++c)
+            if (CPU_ISSET(c, &allowed)) fastest = std::max(fastest, readNumber(cpuFile(c, "/cpufreq/cpuinfo_max_freq")));
+        for (int c = 0; c < CPU_SETSIZE; ++c) {
+            if (!CPU_ISSET(c, &allowed) || readNumber(cpuFile(c, "/cpufreq/cpuinfo_max_freq")) != fastest) continue;
+            const long rank = std::max(0L, readNumber(cpuFile(c, "/acpi_cppc/highest_perf")));
+            if (rank <= lowest) lowest = rank, chosen = c;
         }
         // Several L3 domains (a Ryzen CCD): the game thread takes the chosen core's domain and the helpers the
         // others, so neither shares a core or an L3 with the other. One shared L3: the game thread takes the core.

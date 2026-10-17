@@ -53,7 +53,7 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 - Artifact: `~/.cache/tmp-tn/screens/q-place-{auto,off}-1/`; campaign experiment E1.
 
 ### 2026-10-15 — Game thread pinned to the CPPC last-ranked core pair — INCONCLUSIVE
-- Where: PRD-610 AC-20, commit `61c7c1d06`; ships opt-in (`TN_PLAYER_MAIN_CORE=auto`, commit `72b606bb2`).
+- Where: PRD-610 AC-20, commit `61c7c1d06`; placement is always on and needs no setting (commit `72b606bb2`).
 - Ceiling: the external-pinning diagnostic moved main-thread CPU 7.22 / 9.41 / 9.77 → 6.11 / 6.64 / 7.74 ms at identical instructions.
 - Result: series 1, 3 pairs: median -21 / -33 / -32%, 8 of 9 pose-pairs faster, but one baseline at load 10.7 set margins of 130 / 105 / 35%. Series 2 (load-gated): 2 valid pairs, both faster at every pose (-24 / -5 / -11% and -38 / -34 / -11%), instructions identical, all pass; the third candidate run ended at load 32.7 and then 11.7, and baseline spread set margins of 14 / 29 / 33%.
 - Cause: the direction is consistent, but other lanes on this shared host move the baseline by 10-30%, more than the gain at two poses.
