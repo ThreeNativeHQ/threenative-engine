@@ -518,7 +518,8 @@ export function defineTsl(
       end = params.end;
       if (params.condition === "<=")
         end = isTslNode(end)
-          ? (end as unknown as { add(n: number): unknown }).add(1)
+          ? // quality-allow: isTslNode proved a TSL node, whose operator methods its value type does not declare.
+            (end as unknown as { add(n: number): unknown }).add(1)
           : Number(end) + 1;
       if (params.type !== undefined) type = String(params.type);
       if (params.name !== undefined) name = String(params.name);

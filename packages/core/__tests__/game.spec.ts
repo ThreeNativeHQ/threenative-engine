@@ -120,7 +120,11 @@ describe("IGame", () => {
         start: "test",
       });
       try {
-        await expect(game.start()).rejects.toBe(boom);
+        // Boot names the failure (TN_NO_RENDERER) and keeps the renderer's own error as its cause.
+        await expect(game.start()).rejects.toMatchObject({
+          cause: boom,
+          message: expect.stringContaining("TN_NO_RENDERER"),
+        });
         if (host) {
           expect((globalThis as Record<string, unknown>).__tnUiGameReceive).toBeUndefined();
         } else {
