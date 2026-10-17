@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { availableParallelism, constants as osConstants, loadavg } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { decideDisplayStrategy } from "./captureEnvironment.js";
+import { type IProvidedDisplay, provideDisplay } from "./captureEnvironment.js";
 
 import { discoverAdb } from "./android.js";
 import { formatPipelineCacheObservations, parsePipelineCacheObservations, type IPipelineCacheObservation } from "./pipeline-cache-observations.js";
@@ -1019,11 +1019,22 @@ export interface IPerfRun {
 
 /** Spawn the host, collect its output, and stop once enough windows — or soak frames — have passed. */
 async function runExecutable(args: IPerfArgs, executable: string): Promise<number> {
+  // The same display every other lane gets: the host display only when the operator asked for it,
+  // otherwise a private Xvfb with every Wayland variable stripped. Deciding the strategy without
+  // providing it left the host on the session's compositor while the report said "virtual".
+  const display = await provideDisplay();
+  try {
+    return await runExecutableOn(args, executable, display);
+  } finally {
+    await display.release();
+  }
+}
+
+async function runExecutableOn(args: IPerfArgs, executable: string, display: IProvidedDisplay): Promise<number> {
   const source = `executable: ${[executable, ...args.hostArgs].join(" ")}`;
-  // The same decision every other lane makes: the operator asked for the host display or this run
-  // paints on a private one. A run that owns its Xvfb cannot report a frame rate from it.
-  const strategy = decideDisplayStrategy({ env: process.env, platform: process.platform });
-  const child = spawn(executable, args.hostArgs, { stdio: ["ignore", "pipe", "pipe"] });
+  // A run that owns its Xvfb cannot report a frame rate from it.
+  const strategy = display.strategy;
+  const child = spawn(executable, args.hostArgs, { env: display.env, stdio: ["ignore", "pipe", "pipe"] });
   let collected = "";
   let stopped = false;
   let spawnFailed = false;

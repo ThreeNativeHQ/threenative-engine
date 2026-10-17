@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -381,6 +381,31 @@ describe("perfCommand", () => {
     errSpy.mockRestore();
     expect(code).toBe(2);
     expect(errors.join("")).toContain("TN_PERF_MARKER_MALFORMED");
+  });
+
+  it.runIf(process.platform === "linux")("launches the host on the run's private display, never the session's", async () => {
+    // The host prints the display it was given. A private Xvfb run must hand it the Xvfb's DISPLAY
+    // and no Wayland variable, or a native player opens a window on the operator's desktop.
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+    const envFile = join(await makeTempDir("tn-perf-display-"), "host-env.json");
+    const script = `require("node:fs").writeFileSync(${JSON.stringify(envFile)}, JSON.stringify({ d: process.env.DISPLAY ?? null, w: process.env.WAYLAND_DISPLAY ?? null })); process.stdout.write(${JSON.stringify(`${output}\n`)}); setInterval(() => {}, 1000);`;
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const errSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.stubGlobal("process", {
+      ...process,
+      env: { ...process.env, DISPLAY: ":0", TN_PLAYTEST_HOST_DISPLAY: undefined, WAYLAND_DISPLAY: "wayland-0" },
+    });
+    try {
+      await perfCommand(["--executable", process.execPath, "--host-arg", "-e", "--host-arg", script, "--allow-virtual-display", "--text"]);
+    } finally {
+      vi.unstubAllGlobals();
+      spy.mockRestore();
+      errSpy.mockRestore();
+    }
+    const env = JSON.parse(await readFile(envFile, "utf8")) as { d: string | null; w: string | null };
+    expect(env.w).toBeNull();
+    expect(env.d).toMatch(/^:\d+$/u);
+    expect(env.d).not.toBe(":0");
   });
 
   it("fails a host that exits non-zero after enough windows, even though its markers pass", async () => {
