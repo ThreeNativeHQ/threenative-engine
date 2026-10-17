@@ -1,5 +1,5 @@
 /**
- * three's GLTFLoader under `engine: "native"` on the web (PRD-540): the bytes go to the engine's own
+ * three's GLTFLoader under `engine: "threenative"` on the web (PRD-540): the bytes go to the engine's own
  * glTF loader in Wasm (`tnw_web_load_gltf`), the same C++ the V8 player's loadAsset runs, and the
  * result comes back in GLTFLoader's shape. Upstream GLTFLoader over engine classes never settles,
  * so it is never bundled. The web build cooks models decoder-free for the native engine, so a codec

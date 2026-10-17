@@ -192,6 +192,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-10-15 for the native engine default (PRD-573): every template AGENTS.md/CLAUDE.md pair gains
 // an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-10-17 for the engine rename ("native" -> "threenative", "legacy" -> "threejs"):
+  // every template's AGENTS/CLAUDE engine section and the pinned configs. Measured by this test.
   // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
@@ -259,23 +261,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-15 through createProject after recovery: all kits now share the decoder-aware asset watch.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "b7ed7d42d302b9b6387b3071a69d27db349ff4132a6fcc15ae3e6bf4fcbce29e",
-  minimal: "1e713e749ad7dbfbf57f0ec8dc3f2838f66e472b9fd5ea4307b313e3b0ba6460",
-  platformer: "4ba41b98be364abca521c6ceb3cec443f3388f3e116d8a0ffcf5d380a166a5e5",
-  puzzle: "33c1425da91663c2232b863efe8f3575a50abff61ce4109925ab53fb916bfeeb",
-  racing: "799520392a864e04093b6e31b76f1dd14aaa9b1896237711aef966c1f4c2eae2",
-  rain: "005dfd923543708c7805365becb3d71c4fa378c61bba75ec4eb4a6647769f4f0",
-  rts: "752c4b3881d8e998379dead571cbfdb6eb7314fba83a58df99ea1b978436fd89",
-  runner: "75d899fc6b4e3901691ed1c1da59cfd743cfe425a78a6b7f0df73e4fb64a4768",
+  "action-rpg": "a4371f8b226277550bd9f38f8b39a946a41369f94d630e0499a6bb3091426978",
+  minimal: "150739cb7dd941528dddd0c1f88f92d29476b6de2edf171505b1ca12989fa01f",
+  platformer: "4d1e02fdec237ac98de469b8636f9d9f021f87212103fb7b81479fb9be8f4615",
+  puzzle: "6bc58670d7cb83a39a48cff172cd486b44a83a02596921d88986141cb0a3ca37",
+  racing: "bccc38d43ba4c2afe253f822797a4be4ef39bb287b3729be88d9e99a28ac4546",
+  rain: "28359abd931075edda716c5e3d611058d0df4ad61e2d8ff1e5598b1452287b02",
+  rts: "331abb1167b45b9e9cffb951f4bb7fe92e8b2d1b6b8c578c5607b644ae488caf",
+  runner: "faec0fe70824e46531d80ce70a670f4446bdabe4e1cc5999d57408b9234b53f5",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "1d471f6dcfc420ff2ae593fc186b6935d6708d67355a3aa72463b9c63b4bcf57",
-  shooter: "2859b02828c5ad7c2be79e1369e7d3e0ce7979e86995eb6ec81d37c445da9029",
-  snow: "981cd0b3ddb518c5948d709ccf9545a3779e68fe32092e9f942a752754198964",
+  sailing: "b9eae5186eb06c4efdac43ce4072a91773f3f5a057b3950d4df6a9d177c57b80",
+  shooter: "003d7e405432a801dbd00d42a6269f5a87f9b6003a34a6f3500300e35959168a",
+  snow: "87d6517d948436ff9aa74bd2e6bb54719b8c968353c61256f7b467bd50bacc0d",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "a815d66121d12aa205f8acb7574377882e2bbe13a319d3acd507945b2f94cf74",
-  "tower-defense": "8a81959588b51a8632f4e0b7f80b442a4f431770beb0adde497e822af1496590",
+  starter: "dfa9d0d17802823810d9b82db5b5dc00b30234064d22aacdd6ce32d9ece6e414",
+  "tower-defense": "8f23078da208ad0dfc04ef5f53a0c32871c56337a48222b664573dfe89095a58",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -1100,7 +1102,7 @@ describe("create-threenative", () => {
         configPath,
         (await readFile(configPath, "utf8")).replace(
           "const config: IThreeNativeConfig = {",
-          'const config: IThreeNativeConfig = {\n  engine: "legacy",',
+          'const config: IThreeNativeConfig = {\n  engine: "threejs",',
         ),
       );
       const scope = path.join(result.target, "node_modules", "@threenative");

@@ -894,7 +894,7 @@ if(EMSCRIPTEN)
         set_tests_properties(native_engine_wasm_browser_gc PROPERTIES LABELS "native-engine"
             PASS_REGULAR_EXPRESSION "TN_BROWSER_GC_OK")
     endif()
-    # PRD-573 slice 7: the browser host a web game gets under `engine: "native"`, an ES module beside
+    # PRD-573 slice 7: the browser host a web game gets under `engine: "threenative"`, an ES module beside
     # its .wasm in build/web/. Outside the default set: build it with `--target tn-native-engine-web`.
     add_executable(tn-native-engine-web EXCLUDE_FROM_ALL src/engine/wasm/web_host.cpp)
     target_link_libraries(tn-native-engine-web PRIVATE tn_engine_abi tn_engine_renderer)

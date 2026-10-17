@@ -25,13 +25,13 @@ describe("packed default-engine consumer", () => {
     writeFileSync(path.join(root, "src/missing.mjs"), 'import fs from "node:fs";');
     expect(() => assertPackedImportClosure(root, ["scripts/bundle.mjs"])).not.toThrow();
   });
-  it("rejects a legacy or native engine pin while ignoring comments", () => {
-    for (const engine of ["legacy", "native"])
+  it("rejects a threejs or threenative engine pin while ignoring comments", () => {
+    for (const engine of ["threejs", "threenative"])
       expect(() => assertUnpinnedEngine(`export default { engine: "${engine}" };`)).toThrow(
         "TN_PACKED_ENGINE_PINNED",
       );
     expect(() =>
-      assertUnpinnedEngine('// engine: "legacy"\nexport default { app: {} };'),
+      assertUnpinnedEngine('// engine: "threejs"\nexport default { app: {} };'),
     ).not.toThrow();
   });
 });

@@ -1,6 +1,6 @@
 /**
  * What a web game's `three`, `three/webgpu` and `three/tsl` imports become under
- * `engine: "native"` (PRD-540): every upstream export name, bound to the Wasm engine or refused.
+ * `engine: "threenative"` (PRD-540): every upstream export name, bound to the Wasm engine or refused.
  *
  * Registry classes come from the browser-JS back end and catalog constants keep their values. Every
  * other name is a stub that throws its catalog diagnostic the moment it is called, constructed or

@@ -223,7 +223,7 @@ describe("threenative build", () => {
 
   it("resolves every declared brand input through the live packaging-config caller", async () => {
     const config = {
-      engine: "legacy" as const,
+      engine: "threejs" as const,
       app: {
         build: 4,
         icon: "public/icon.png",
@@ -383,7 +383,7 @@ describe("threenative build", () => {
     );
     await writeFile(
       path.join(root, "threenative.config.ts"),
-      'export default { engine: "native" };\n',
+      'export default { engine: "threenative" };\n',
     );
     await writeFile(
       path.join(root, "src/main.ts"),
@@ -537,7 +537,7 @@ process.exit(1);
     );
     await writeFile(
       path.join(root, "threenative.config.ts"),
-      'export default { engine: "legacy", assets: { concurrency: 1, output: "cooked" } };\n',
+      'export default { engine: "threejs", assets: { concurrency: 1, output: "cooked" } };\n',
     );
     await writeFile(
       path.join(root, "index.html"),

@@ -8,7 +8,7 @@ const config: IThreeNativeConfig = {
     version: "1.0.0",
     build: 1,
   },
-  engine: "native",
+  engine: "threenative",
   window: { title: "wasm-engine-boot", width: 640, height: 360 },
   nativeEntry: "src/game.ts",
   renderer: { preferWebGPU: true, resolutionScale: 1 },

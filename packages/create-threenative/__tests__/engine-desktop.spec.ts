@@ -177,7 +177,7 @@ describe("engine: native on desktop", () => {
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "engine-game" }));
     await writeFile(
       path.join(root, "threenative.config.ts"),
-      'export default { engine: "native" };\n',
+      'export default { engine: "threenative" };\n',
     );
     await expect(build({ cwd: root, target: "desktop" })).rejects.toThrow(
       /TN_ENGINE_BUNDLER_MISSING/u,

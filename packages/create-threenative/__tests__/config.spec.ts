@@ -55,14 +55,25 @@ it("should carry asset exclusions from the real config loader into the compiler"
   expect(manifest.entries["keep.txt"]).toBeDefined();
   expect(manifest.entries["library.glb"]).toBeUndefined();
 });
-it.each([undefined, "legacy", "native"])(
-  "resolves engine %j with native as the default",
+it.each([undefined, "threejs", "threenative"])(
+  "resolves engine %j with threenative as the default",
   async (engine) => {
     const root = await project();
     await config(root, `export default ${JSON.stringify({ engine })};`);
-    expect((await loadConfig(root)).engine).toBe(engine ?? "native");
+    expect((await loadConfig(root)).engine).toBe(engine ?? "threenative");
   },
 );
+
+it.each([
+  ["native", "threenative"],
+  ["legacy", "threejs"],
+])("names the new value for the renamed engine %j", async (engine, renamed) => {
+  const root = await project();
+  await config(root, `export default ${JSON.stringify({ engine })};`);
+  const error = await loadConfig(root).catch((caught: unknown) => caught);
+  expect(String(error)).toContain("TN_CONFIG_ENGINE_RENAMED");
+  expect(String(error)).toContain(`engine "${engine}" was renamed: use "${renamed}".`);
+});
 
 it.each(["unknown", null, 1, false, {}])(
   "rejects invalid engine %j with a named error",
@@ -296,7 +307,7 @@ describe("threenative.config.ts", () => {
     );
 
     await expect(loadConfig(root)).resolves.toEqual({
-      engine: "native",
+      engine: "threenative",
       app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
       display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, maxFps: 120 },
       window: {
@@ -1315,10 +1326,10 @@ it("rejects a lightmap atlas size that is not a multiple of four on both sides o
 });
 
 // Templates whose imports the native engine does not bind yet (PRD-573 slice 8). Each pins
-// `engine: "legacy"` with a comment, and leaves this list when the pin goes.
+// `engine: "threejs"` with a comment, and leaves this list when the pin goes.
 const LEGACY_PINNED_TEMPLATES = ["action-rpg", "runner", "sailing", "snow"];
 
-it("gives every freshly scaffolded template the native engine unless it names its legacy pin", async () => {
+it("gives every freshly scaffolded template the threenative engine unless it names its threejs pin", async () => {
   const root = await makeTempDir("threenative-scaffold-engine-");
   roots.push(root);
   const templates = discoverTemplateNames(path.resolve("packages/create-threenative/templates"));
@@ -1329,7 +1340,7 @@ it("gives every freshly scaffolded template the native engine unless it names it
     const { target } = await createProject({ install: false, target: template, template }, root);
     const pinned = LEGACY_PINNED_TEMPLATES.includes(template);
     expect(await loadConfig(target), template).toMatchObject({
-      engine: pinned ? "legacy" : "native",
+      engine: pinned ? "threejs" : "threenative",
     });
     const source = await readFile(path.join(target, "threenative.config.ts"), "utf8");
     expect(source.includes("PRD-573 slice 8"), `${template} names its pin`).toBe(pinned);

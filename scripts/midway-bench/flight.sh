@@ -9,7 +9,7 @@
 # on the packaged player (MIDWAY_PLAYER_DIR, the output of package-engine-desktop.mjs) and grades it the same way.
 #
 # Env: MIDWAY_PLAYER_DIR   desktop arm only: the packaged engine player directory
-#      MIDWAY_LEGACY_DIR, MIDWAY_NATIVE_DIR  game copies (same game commit; engine "legacy" and "native")
+#      MIDWAY_LEGACY_DIR, MIDWAY_NATIVE_DIR  game copies (same game commit; engine "threejs" and "native")
 #      MIDWAY_RUNS         where runs are written (default ${XDG_CACHE_HOME:-~/.cache}/midway-runs)
 #      MIDWAY_PARITY_REFS  visual-only legacy run dirs, required for a native run
 #      MIDWAY_BROWSER_CLOCK  wall-clock (default timing) or fixed-step (visual references)

@@ -55,7 +55,7 @@ afterEach(() => {
   compiled.splice(0);
 });
 
-async function writeProject(root: string, engine = "legacy"): Promise<void> {
+async function writeProject(root: string, engine = "threejs"): Promise<void> {
   await mkdir(path.join(root, "src"), { recursive: true });
   await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "asset-order" }));
   await writeFile(path.join(root, "src/game.ts"), "export default { start: async () => {} };\n");
@@ -95,7 +95,7 @@ describe("threenative build asset compilation", () => {
 
   it("should cook decoder-free models and textures for the web native engine", async () => {
     const root = await makeTempDir("threenative-build-assets-web-native-");
-    await writeProject(root, "native");
+    await writeProject(root, "threenative");
 
     await build({ cwd: root, target: "web" });
 

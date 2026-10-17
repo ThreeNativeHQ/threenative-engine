@@ -5,16 +5,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 /**
  * The asset decoders the web engine ships: its glTF loader decodes neither KTX2 nor Meshopt (addons/gltf-loader-web.ts), so a
- * native-engine game's models are cooked without it. `undefined` (the cooker's default) for `engine: "legacy"`.
+ * native-engine game's models are cooked without it. `undefined` (the cooker's default) for `engine: "threejs"`.
  * `threenative build` and each template's dev-server asset watch both read it, so the two cook the same bytes.
  */
 export function webRuntimeDecoders(config: {
-  readonly engine?: "legacy" | "native";
+  readonly engine?: "threejs" | "threenative";
 }): { readonly ktx2: boolean; readonly meshopt: boolean } | undefined {
-  return config.engine === "legacy" ? undefined : { ktx2: false, meshopt: false };
+  return config.engine === "threejs" ? undefined : { ktx2: false, meshopt: false };
 }
 
-/** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "native"`. */
+/** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "threenative"`. */
 export const WEB_ENGINE_ID = "\0threenative:web-engine";
 const UPSTREAM = ["three", "three/webgpu", "three/tsl"] as const;
 const POST_EFFECT_ADDONS: readonly string[] = [
@@ -70,7 +70,7 @@ function wasmModule(root: string, explicit: string | undefined): string {
   if (explicit !== undefined) {
     if (!existsSync(explicit))
       throw new Error(
-        `TN_WASM_ENGINE_MISSING: engine "native" needs the Wasm engine at ${explicit}.`,
+        `TN_WASM_ENGINE_MISSING: engine "threenative" needs the Wasm engine at ${explicit}.`,
       );
     return explicit;
   }
@@ -83,12 +83,12 @@ function wasmModule(root: string, explicit: string | undefined): string {
     );
   } catch {
     throw new Error(
-      `TN_WASM_ENGINE_MISSING: engine "native" needs @threenative/runtime-native installed in ${root}. Set engine: "legacy" in threenative.config.ts to keep upstream three.`,
+      `TN_WASM_ENGINE_MISSING: engine "threenative" needs @threenative/runtime-native installed in ${root}. Set engine: "threejs" in threenative.config.ts to keep upstream three.`,
     );
   }
   if (!existsSync(entry))
     throw new Error(
-      `TN_WASM_ENGINE_MISSING: engine "native" needs the Wasm engine at ${entry}; build it with \`cmake --build build/wasm --target tn-native-engine-web\` in packages/runtime-native, or set engine: "legacy" in threenative.config.ts to keep upstream three.`,
+      `TN_WASM_ENGINE_MISSING: engine "threenative" needs the Wasm engine at ${entry}; build it with \`cmake --build build/wasm --target tn-native-engine-web\` in packages/runtime-native, or set engine: "threejs" in threenative.config.ts to keep upstream three.`,
     );
   return entry;
 }
@@ -107,20 +107,20 @@ async function upstreamNames(root: string): Promise<string[]> {
 export interface IWebEngineOptions {
   /** The project root; Vite's own root when omitted. */
   readonly root?: string;
-  /** `threenative.config.ts`'s `engine`: anything but `"native"` leaves upstream three alone. */
-  readonly engine?: "legacy" | "native";
+  /** `threenative.config.ts`'s `engine`: anything but `"threenative"` leaves upstream three alone. */
+  readonly engine?: "threejs" | "threenative";
   /** The Wasm engine's ES module, for a workspace build that does not install runtime-native. */
   readonly wasm?: string;
 }
 
 /**
  * Routes a web build's upstream three imports to the Wasm engine (PRD-540) when `engine` is
- * `"native"`. Deep imports into three's own source would bundle the upstream engine beside it, so
+ * `"threenative"`. Deep imports into three's own source would bundle the upstream engine beside it, so
  * they fail the build. The scaffold's web branding plugin applies the config switch for Vite.
  */
 export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEnginePlugin {
   let root = options.root;
-  const native = options.engine === "native";
+  const native = options.engine === "threenative";
   const projectRoot = (): string => {
     if (root === undefined)
       throw new Error("TN_WEB_ENGINE_ROOT: Vite has not resolved its config yet.");
@@ -170,7 +170,7 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
         return browserModule("web-engine-post-effects.js", "addons/post-effects-web.ts");
       if (/^three\/(?:src|build)\//u.test(source))
         throw new Error(
-          `TN_NATIVE_UPSTREAM_IMPORT: ${source} would bundle upstream three under engine "native"; import from three, three/webgpu or three/tsl.`,
+          `TN_NATIVE_UPSTREAM_IMPORT: ${source} would bundle upstream three under engine "threenative"; import from three, three/webgpu or three/tsl.`,
         );
       return null;
     },

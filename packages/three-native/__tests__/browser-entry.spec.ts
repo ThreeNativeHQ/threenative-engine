@@ -1,5 +1,5 @@
 /**
- * PRD-540 phase 1: under `engine: "native"` every upstream `three*` export name is bound to an
+ * PRD-540 phase 1: under `engine: "threenative"` every upstream `three*` export name is bound to an
  * engine class or a catalog constant, or throws its catalog diagnostic on first use. None resolves
  * to upstream three.
  */

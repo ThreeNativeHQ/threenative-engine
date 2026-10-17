@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
  * On the native engine, `reflector()` returns a pass the engine draws itself: three never runs its
  * `updateBefore` (`updateBeforeType` is `"none"`), and reading the hook throws so a wrapper cannot
  * silently run nothing. The bundle guard is a three-renderer workaround, so a surface with explicit
- * layers must build over such a pass (Midway's ocean on `engine: "native"`).
+ * layers must build over such a pass (Midway's ocean on `engine: "threenative"`).
  */
 const engine = vi.hoisted(() => ({ layers: [] as number[] }));
 vi.mock("three/tsl", async (original) => {

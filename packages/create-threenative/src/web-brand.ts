@@ -118,7 +118,7 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
       const loaded = await loadConfig(path.resolve(vite.root ?? process.cwd()));
       // The dep optimizer does not run resolveId, so a pre-bundled dependency (core) would inline the
       // upstream packages the engine replaces; three-mesh-bvh builds a refused Line3 at module scope.
-      if (loaded.engine === "native")
+      if (loaded.engine === "threenative")
         return {
           optimizeDeps: { exclude: ["three", "three/webgpu", "three/tsl", "three-mesh-bvh"] },
         };
@@ -133,7 +133,7 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
     async configResolved(resolved) {
       root = resolved.root;
       config = await loadConfig(root);
-      if (config.engine === "native")
+      if (config.engine === "threenative")
         engine = createWebEnginePlugin({ root, engine: config.engine });
     },
     transformIndexHtml(html) {

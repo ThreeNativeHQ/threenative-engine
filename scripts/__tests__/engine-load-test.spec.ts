@@ -4610,7 +4610,9 @@ describe("the tn-engine-web arm (PRD-573 slice 7)", () => {
     expect(cli).toMatch(/arm === "tn-engine-web"\) return runTnEngineWeb/u);
     expect(cli).toMatch(/never mixes a web arm and a desktop arm/u);
     expect(cli).toMatch(/a web pair runs production builds only/u);
-    expect(config).toMatch(/createWebEnginePlugin\(\{ engine: "native", wasm: WASM_ENGINE \}\)/u);
+    expect(config).toMatch(
+      /createWebEnginePlugin\(\{ engine: "threenative", wasm: WASM_ENGINE \}\)/u,
+    );
     expect(config).toMatch(
       /__TN_WEB_ARM__: JSON\.stringify\(webEngine \? "tn-engine-web" : "tn-web"\)/u,
     );

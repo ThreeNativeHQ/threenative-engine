@@ -1,5 +1,5 @@
 /**
- * PRD-540 phase 2: three alone on the Wasm engine. Under `engine: "native"` these imports are the
+ * PRD-540 phase 2: three alone on the Wasm engine. Under `engine: "threenative"` these imports are the
  * engine's classes and `WebGPURenderer` is its facade; the scenario reads what the engine drew.
  */
 import {

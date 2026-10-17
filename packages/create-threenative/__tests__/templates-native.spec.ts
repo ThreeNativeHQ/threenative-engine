@@ -71,7 +71,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 async function stubRuntime(
   project: string,
   packager: string,
-  config = 'export default { engine: "legacy", ui: { renderer: "native" } };\n',
+  config = 'export default { engine: "threejs", ui: { renderer: "native" } };\n',
 ): Promise<void> {
   const runtime = path.join(project, "node_modules/@threenative/runtime-native");
   await mkdir(path.join(runtime, "scripts"), { recursive: true });
@@ -109,7 +109,7 @@ await writeFile(output, "a complete package");
 function budgetedProject(severity: "error" | "warn", limit = 17): string {
   return [
     "export default {",
-    '  engine: "legacy",',
+    '  engine: "threejs",',
     `  buildProfiles: { defaults: { desktop: "capped" }, profiles: { capped: { artifactBudget: { artifactBytes: { limit: ${limit}, severity: "${severity}" } } } } },`,
     '  ui: { renderer: "native" },',
     "};",
@@ -395,7 +395,7 @@ export default { start: async () => console.info(marker) };
       path.join(project, "threenative.config.ts"),
       [
         "export default {",
-        '  engine: "legacy",',
+        '  engine: "threejs",',
         '  assets: { output: "cooked" },',
         '  display: { orientation: "portrait" },',
         '  ui: { renderer: "native" },',
@@ -455,7 +455,7 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
     const project = await projectRoot("threenative-native-no-config-");
     await writeFile(
       path.join(project, "threenative.config.ts"),
-      'export default { engine: "legacy" };\n',
+      'export default { engine: "threejs" };\n',
     );
     await mkdir(path.join(project, "src/ui"), { recursive: true });
     await writeFile(

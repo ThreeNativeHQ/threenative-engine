@@ -6,7 +6,7 @@ one C++ engine (renderer plus internal shader IR) behind the Three.js API, **opt
 the legacy host stays the default until the engine proves itself.
 
 **Amended 2026-10-15 (owner):** the engine is now the default for web and desktop. A game that sets
-nothing runs on it, and `engine: "legacy"` in `threenative.config.ts` is the named override. Android
+nothing runs on it, and `engine: "threejs"` in `threenative.config.ts` is the named override. Android
 and iOS still run the legacy host. The legacy engine stays until one clean release has passed (item
 10). The earlier "switch at 2x" rule is superseded. PRD-610 ships PARTIAL: its open boxes stay open.
 
@@ -102,7 +102,7 @@ best"), 2026-10-04:
     Promotion to default (PRD-533, N20) needs the owner's call on measured evidence. The legacy
     engine is deleted (PRD-535, N21) only one release after that promotion. **Amended 2026-10-15:**
     the owner promoted the engine to the default for web and desktop on this date, ahead of the 2x
-    bar, and `engine: "legacy"` is the override.
+    bar, and `engine: "threejs"` is the override.
 
 Fixed by the proposal: C++20 for the engine, Dawn and wgpu-native retained, no upstream Three.js
 bundle inside the native engine.

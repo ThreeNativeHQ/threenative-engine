@@ -14,8 +14,8 @@ with the engine arm graded against the three.js arm before any timing counts.
 
 ## Setup
 
-Two copies of the same game commit outside every repo: one with `engine: "legacy"` and one with
-`engine: "native"`. Never edit the game's gameplay source. Configure the builds as described below,
+Two copies of the same game commit outside every repo: one with `engine: "threejs"` and one with
+`engine: "threenative"`. Never edit the game's gameplay source. Configure the builds as described below,
 then rebuild and install:
 
 ```sh

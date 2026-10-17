@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Desktop package for a game with `engine: "native"`: the V8 engine player, the game bundled on the
+// Desktop package for a game with `engine: "threenative"`: the V8 engine player, the game bundled on the
 // engine's own three, its cooked assets and its built UI, in one directory with a launcher. The
 // player reads `native/assets.tnpk` and `ui/index.html` beside the bundle, so the layout is the contract.
 import { createHash } from "node:crypto";
@@ -34,8 +34,7 @@ export async function packageEngineDesktop(
 ) {
   if (!player || !existsSync(player)) {
     throw new Error(
-      `TN_ENGINE_PLAYER_MISSING: engine "native" on desktop needs the engine player (${PLAYER}) at ${player ?? "(not set)"}. ` +
-        "Build it (cmake --preset tn-linux -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON) and set THREENATIVE_ENGINE_PLAYER, or set engine: \"legacy\" in threenative.config.ts to package with the legacy host.",
+      `TN_ENGINE_PLAYER_MISSING: engine "threenative" on desktop needs the engine player (${PLAYER}) at ${player ?? "(not set)"}.Build it (cmake --preset tn-linux -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON) and set THREENATIVE_ENGINE_PLAYER, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
     );
   }
   rmSync(output, { force: true, recursive: true });

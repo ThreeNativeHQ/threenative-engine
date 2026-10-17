@@ -103,7 +103,7 @@ export default defineConfig({
     ? []
     : [
         servedFox(),
-        ...(webEngine ? [createWebEnginePlugin({ engine: "native", wasm: WASM_ENGINE })] : []),
+        ...(webEngine ? [createWebEnginePlugin({ engine: "threenative", wasm: WASM_ENGINE })] : []),
       ],
   build: native
     ? {

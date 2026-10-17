@@ -97,7 +97,7 @@ thesis: each spends the training-data advantage to buy a surface the model then 
 | Not building | Why |
 |---|---|
 | An authored IR, a compiler of game code, a serialized scene format | Your game is TypeScript. The compiler was 25,898 LOC and bought nothing a model can't do with a `.ts` file. The opt-in native engine's shader IR is internal: no game or author writes it. |
-| A second *renderer* | 32% of v1's commits went to a runtime no benchmark ever measured. §7's host runs Three.js, it does not replace it. **One exception (owner, 2026-10-12):** ThreeNative owns one C++ engine, renderer plus internal shader IR, behind the Three.js API. The engine is the default for web and desktop since 2026-10-15 (owner), and a game sets `engine: "legacy"` to keep the legacy host ([`NATIVE-ENGINE-DECISION.md`](NATIVE-ENGINE-DECISION.md)). Any renderer beyond that one engine has become v1. |
+| A second *renderer* | 32% of v1's commits went to a runtime no benchmark ever measured. §7's host runs Three.js, it does not replace it. **One exception (owner, 2026-10-12):** ThreeNative owns one C++ engine, renderer plus internal shader IR, behind the Three.js API. The engine is the default for web and desktop since 2026-10-15 (owner), and a game sets `engine: "threejs"` to keep the legacy host ([`NATIVE-ENGINE-DECISION.md`](NATIVE-ENGINE-DECISION.md)). Any renderer beyond that one engine has become v1. |
 | A JSON/structured-source ECS | Measured at **14x vanilla Three.js** on greenfield work, and scored lower on playability and visuals. |
 | An editor | Not in v1. The paid editor is a separate product in a separate repository. |
 | A bespoke CLI vocabulary | 178 command forms, a 2,477-word root help. Models are worst at discovering novel API surfaces. |
@@ -465,7 +465,7 @@ downloaded into an untracked `third_party/`.
 replace the JavaScript `GLTFLoader`. Three.js compatibility must equal the workspace catalog. The
 opt-in native engine of [`NATIVE-ENGINE-DECISION.md`](NATIVE-ENGINE-DECISION.md) is the one
 exception: it implements the Three.js API in C++ and is the default engine for web and desktop since
-2026-10-15. A game that sets `engine: "legacy"` runs on the host exactly as before.
+2026-10-15. A game that sets `engine: "threejs"` runs on the host exactly as before.
 
 Native physics is compiled into the runtime and exposed through a coarse, host-neutral typed-array
 ABI, with bulk `step`/`readVisibleTransforms` crossings rather than per-object frame calls. The

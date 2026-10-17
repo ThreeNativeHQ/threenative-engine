@@ -1,5 +1,5 @@
 /**
- * PRD-540 phase 1: `engine: "native"` routes a web build's `three`, `three/webgpu` and `three/tsl`
+ * PRD-540 phase 1: `engine: "threenative"` routes a web build's `three`, `three/webgpu` and `three/tsl`
  * imports to the Wasm engine; the legacy build is unchanged.
  */
 import { existsSync } from "node:fs";
@@ -86,7 +86,7 @@ async function bundle(
         : configured
           ? [brand]
           : native
-            ? [createWebEnginePlugin({ root, engine: "native" })]
+            ? [createWebEnginePlugin({ root, engine: "threenative" })]
             : [],
   });
   const assets = path.join(root, "dist/assets");
@@ -103,7 +103,7 @@ describe("createWebEnginePlugin", () => {
     await writeFile(path.join(root, "src/game.ts"), "export default {};\n");
     await writeFile(
       path.join(root, "threenative.config.ts"),
-      'export default { engine: "native" };\n',
+      'export default { engine: "threenative" };\n',
     );
     const output = await bundle(root, false, true);
     expect(output).toContain("is not available on the Wasm engine");
@@ -146,7 +146,7 @@ describe("createWebEnginePlugin", () => {
     const baseline = await snapshot();
     await writeFile(
       path.join(root, "threenative.config.ts"),
-      'export default { engine: "legacy" };\n',
+      'export default { engine: "threejs" };\n',
     );
     await bundle(root, false, true);
     expect(await snapshot()).toEqual(baseline);
@@ -186,14 +186,14 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("does nothing for a legacy project, so the same dev config serves both engines", () => {
-    for (const plugin of [createWebEnginePlugin(), createWebEnginePlugin({ engine: "legacy" })])
+    for (const plugin of [createWebEnginePlugin(), createWebEnginePlugin({ engine: "threejs" })])
       for (const id of ["three", "three/webgpu", "three/tsl", "three-mesh-bvh"])
         expect(plugin.resolveId(id)).toBeNull();
   });
 
   it("takes its root from Vite when the dev config names none", async () => {
     const root = await project(true);
-    const plugin = createWebEnginePlugin({ engine: "native" });
+    const plugin = createWebEnginePlugin({ engine: "threenative" });
     plugin.configResolved({ root });
     expect(await plugin.load(WEB_ENGINE_ID)).toContain(WASM_ENGINE_ENTRY);
   });
@@ -203,19 +203,19 @@ describe("createWebEnginePlugin", () => {
     const wasm = path.join(root, "engine/tn-native-engine-web.mjs");
     await mkdir(path.dirname(wasm), { recursive: true });
     await writeFile(wasm, "export default async function createModule() { return {}; }\n");
-    const loaded = await createWebEnginePlugin({ root, engine: "native", wasm }).load(
+    const loaded = await createWebEnginePlugin({ root, engine: "threenative", wasm }).load(
       WEB_ENGINE_ID,
     );
     expect(loaded).toContain(JSON.stringify(wasm));
     await expect(
-      createWebEnginePlugin({ root, engine: "native", wasm: `${wasm}.missing` }).load(
+      createWebEnginePlugin({ root, engine: "threenative", wasm: `${wasm}.missing` }).load(
         WEB_ENGINE_ID,
       ),
     ).rejects.toThrow("TN_WASM_ENGINE_MISSING");
   });
 
   it("resolves the three entry points to the engine and refuses deep upstream imports", () => {
-    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "threenative" });
     for (const id of ["three", "three/webgpu", "three/tsl"])
       expect(plugin.resolveId(id)).toBe(WEB_ENGINE_ID);
     expect(plugin.resolveId("three/addons/controls/OrbitControls.js")).toBeNull();
@@ -223,7 +223,7 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("resolves three-mesh-bvh to the engine's own MeshBVH, never the upstream package", () => {
-    const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "threenative" }).resolveId(
       "three-mesh-bvh",
     );
     expect(resolved).toMatch(
@@ -232,7 +232,7 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("resolves three-mesh-bvh/webgpu to an engine module that loads and refuses each export at use", async () => {
-    const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "threenative" }).resolveId(
       "three-mesh-bvh/webgpu",
     );
     expect(resolved).toMatch(
@@ -245,7 +245,7 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("resolves BufferGeometryUtils to the engine's mergeGeometries, never the upstream addon", () => {
-    const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "threenative" }).resolveId(
       "three/addons/utils/BufferGeometryUtils.js",
     );
     expect(resolved).toMatch(
@@ -254,7 +254,7 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("resolves DecalGeometry to the engine port, never the upstream addon", () => {
-    const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "threenative" }).resolveId(
       "three/addons/geometries/DecalGeometry.js",
     );
     expect(resolved).toMatch(
@@ -263,7 +263,7 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("resolves three's RoundedBoxGeometry addon to the engine's own class, never upstream", async () => {
-    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "threenative" });
     const resolved = plugin.resolveId("three/addons/geometries/RoundedBoxGeometry.js");
     expect(resolved).toBe("\0threenative:web-engine-addon:RoundedBoxGeometry");
     expect(await plugin.load(resolved as string)).toBe(
@@ -277,7 +277,7 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("resolves three's SkeletonUtils addon to the engine's SkeletonUtils namespace", async () => {
-    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "threenative" });
     const resolved = plugin.resolveId("three/addons/utils/SkeletonUtils.js");
     expect(resolved).toBe("\0threenative:web-engine-skeleton-utils");
     expect(await plugin.load(resolved as string)).toBe(
@@ -289,14 +289,14 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("resolves an addon under three's older examples/jsm path as under addons", () => {
-    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "threenative" });
     expect(plugin.resolveId("three/examples/jsm/utils/SkeletonUtils.js")).toBe(
       "\0threenative:web-engine-skeleton-utils",
     );
   });
 
   it("resolves three's HDRLoader addon to the engine's own loader, never upstream", () => {
-    const resolved = createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+    const resolved = createWebEnginePlugin({ root: "/game", engine: "threenative" }).resolveId(
       "three/addons/loaders/HDRLoader.js",
     );
     expect(resolved).toMatch(
@@ -306,7 +306,7 @@ describe("createWebEnginePlugin", () => {
 
   it("resolves three's LUTCubeLoader to the shared engine loader", () => {
     expect(
-      createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+      createWebEnginePlugin({ root: "/game", engine: "threenative" }).resolveId(
         "three/addons/loaders/LUTCubeLoader.js",
       ),
     ).toMatch(
@@ -315,7 +315,7 @@ describe("createWebEnginePlugin", () => {
   });
 
   it("resolves three's GTAO, Denoise, SMAA and Bloom addons to the engine's live effects", () => {
-    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "threenative" });
     for (const node of [
       "GTAONode",
       "DenoiseNode",
@@ -332,7 +332,7 @@ describe("createWebEnginePlugin", () => {
 
   it("resolves the display addons the engine refuses to the same module, never upstream", () => {
     // Upstream's SSRNode runs `Fn(...).setLayout(...)` at import, which the engine's Fn does not carry.
-    const plugin = createWebEnginePlugin({ root: "/game", engine: "native" });
+    const plugin = createWebEnginePlugin({ root: "/game", engine: "threenative" });
     for (const node of ["FXAANode", "GodraysNode", "SSGINode", "SSRNode", "SharpenNode"])
       expect(plugin.resolveId(`three/addons/tsl/display/${node}.js`)).toMatch(
         /(?:three-native\/src\/addons\/post-effects-web\.ts|web-engine-post-effects\.js)$/u,
@@ -341,7 +341,7 @@ describe("createWebEnginePlugin", () => {
 
   it("resolves three's GLTFLoader to the engine glTF loader, never upstream", () => {
     expect(
-      createWebEnginePlugin({ root: "/game", engine: "native" }).resolveId(
+      createWebEnginePlugin({ root: "/game", engine: "threenative" }).resolveId(
         "three/addons/loaders/GLTFLoader.js",
       ),
     ).toMatch(/(?:three-native\/src\/addons\/gltf-loader-web\.ts|web-engine-gltf-loader\.js)$/u);
@@ -350,7 +350,7 @@ describe("createWebEnginePlugin", () => {
   it("fails the build when the Wasm engine is not installed", async () => {
     const root = await project(false);
     await expect(
-      createWebEnginePlugin({ root, engine: "native" }).load(WEB_ENGINE_ID),
+      createWebEnginePlugin({ root, engine: "threenative" }).load(WEB_ENGINE_ID),
     ).rejects.toThrow("TN_WASM_ENGINE_MISSING");
   });
 
@@ -371,8 +371,8 @@ describe("createWebEnginePlugin", () => {
 describe("the web engine's asset decoders", () => {
   it("cooks without KTX2 or Meshopt unless the game pins the legacy engine", () => {
     expect(webRuntimeDecoders({})).toEqual({ ktx2: false, meshopt: false });
-    expect(webRuntimeDecoders({ engine: "native" })).toEqual({ ktx2: false, meshopt: false });
-    expect(webRuntimeDecoders({ engine: "legacy" })).toBeUndefined();
+    expect(webRuntimeDecoders({ engine: "threenative" })).toEqual({ ktx2: false, meshopt: false });
+    expect(webRuntimeDecoders({ engine: "threejs" })).toBeUndefined();
   });
 
   it("is what every template's dev-server asset watch cooks with, as its build does", async () => {

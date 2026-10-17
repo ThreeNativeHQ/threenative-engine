@@ -36,7 +36,7 @@ export type {
 } from "@threenative/core";
 
 export interface IResolvedThreeNativeConfig {
-  readonly engine: "legacy" | "native";
+  readonly engine: "threejs" | "threenative";
   readonly app: {
     readonly id: string;
     readonly name: string;
@@ -926,10 +926,15 @@ async function validateBootSplash(
   };
 }
 
-function validateEngine(raw: unknown): "legacy" | "native" {
-  if (raw === undefined) return "native";
-  if (raw === "legacy" || raw === "native") return raw;
-  return fail("TN_CONFIG_ENGINE_INVALID", 'engine must be "legacy" or "native".');
+function validateEngine(raw: unknown): "threejs" | "threenative" {
+  if (raw === undefined) return "threenative";
+  if (raw === "threejs" || raw === "threenative") return raw;
+  if (raw === "native" || raw === "legacy")
+    return fail(
+      "TN_CONFIG_ENGINE_RENAMED",
+      `engine "${raw}" was renamed: use "${raw === "native" ? "threenative" : "threejs"}".`,
+    );
+  return fail("TN_CONFIG_ENGINE_INVALID", 'engine must be "threenative" or "threejs".');
 }
 
 /** Which renderer draws `src/ui/`. @see IThreeNativeConfig.ui */

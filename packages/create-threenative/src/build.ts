@@ -1109,7 +1109,7 @@ export async function buildWeb(
     cwd,
     platform: "web",
     runtimeDecoders: webRuntimeDecoders(config),
-    ...(config.engine !== "legacy" && { runtimeIdentity: "web:native-engine" }),
+    ...(config.engine !== "threejs" && { runtimeIdentity: "web:native-engine" }),
   });
   const assets = assetRoot(cwd, config);
   // Vite empties and rewrites its outDir in place, so a build that dies half-way through leaves a
@@ -1124,7 +1124,7 @@ export async function buildWeb(
   try {
     await mkdir(path.dirname(staging), { recursive: true });
     await mkdir(path.dirname(driver), { recursive: true });
-    const native = config.engine === "native";
+    const native = config.engine === "threenative";
     const configIndex = viteArgs.findIndex(
       (arg) => arg === "--config" || arg.startsWith("--config="),
     );
@@ -1575,7 +1575,7 @@ async function assertArtifactBudget(
   }
 }
 
-/** Where a desktop `engine: "native"` build finds the engine player, absent an explicit path. */
+/** Where a desktop `engine: "threenative"` build finds the engine player, absent an explicit path. */
 export function engineDesktopPlayer(
   runtimeRoot: string,
   env: NodeJS.ProcessEnv = process.env,
@@ -1590,7 +1590,7 @@ export function engineDesktopPlayer(
     : path.join(runtimeRoot, "prebuilt", `${process.platform}-${process.arch}`, filename);
 }
 
-/** The desktop package of a game with `engine: "native"`: the engine player, the game on its own three, cooked assets and UI. */
+/** The desktop package of a game with `engine: "threenative"`: the engine player, the game on its own three, cooked assets and UI. */
 async function buildEngineDesktop(
   cwd: string,
   config: IResolvedThreeNativeConfig,
@@ -1598,7 +1598,7 @@ async function buildEngineDesktop(
 ): Promise<void> {
   if (config.ui.renderer === "native-css") {
     throw new Error(
-      'TN_ENGINE_NATIVE_UI_UNSUPPORTED: engine "native" on desktop draws a "web" UI through the engine player\'s overlay; set ui.renderer to "web" or "native", or set engine: "legacy" to keep the native-css host.',
+      'TN_ENGINE_NATIVE_UI_UNSUPPORTED: engine "threenative" on desktop draws a "web" UI through the engine player\'s overlay; set ui.renderer to "web" or "native", or set engine: "threejs" to keep the native-css host.',
     );
   }
   const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
@@ -1606,7 +1606,7 @@ async function buildEngineDesktop(
   const bundler = path.join(runtimeRoot, "scripts", "bundle-native-engine.mjs");
   if (!existsSync(packager) || !existsSync(bundler)) {
     throw new Error(
-      `TN_ENGINE_BUNDLER_MISSING: engine "native" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout, or set engine: "legacy" in threenative.config.ts to package with the legacy host.`,
+      `TN_ENGINE_BUNDLER_MISSING: engine "threenative" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
     );
   }
   const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
@@ -1643,9 +1643,9 @@ async function buildNative(
   announceProfile(config);
   assertNativeUiRendererCompatible(target, config.ui.renderer);
   const entry = await nativeEntry(cwd, config);
-  // `engine: "native"` opts a desktop game into the C++ engine player, as it opts a web build into the Wasm
+  // `engine: "threenative"` opts a desktop game into the C++ engine player, as it opts a web build into the Wasm
   // engine: its own bundler, decoder-free cook and packager, never the legacy host's prebuilt.
-  if (target === "desktop" && config.engine === "native") {
+  if (target === "desktop" && config.engine === "threenative") {
     await buildEngineDesktop(cwd, config, entry);
     return;
   }

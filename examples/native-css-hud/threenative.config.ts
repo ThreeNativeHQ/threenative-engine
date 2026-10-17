@@ -2,7 +2,7 @@ import type { IThreeNativeConfig } from "@threenative/core";
 
 const config: IThreeNativeConfig = {
   // The native CSS engine paints through the legacy desktop host; the engine player draws a "web" or "native" UI.
-  engine: "legacy",
+  engine: "threejs",
   app: {
     id: "com.threenative.nativecsshud",
     name: "native-css-hud",

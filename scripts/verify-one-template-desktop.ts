@@ -133,7 +133,7 @@ export async function verifyInstalledConsumer(project: string): Promise<void> {
   await brand.configResolved({ root: project });
   if (brand.resolveId("three") !== "\0threenative:web-engine")
     throw new Error("TN_PACKED_ENGINE_NOT_NATIVE: installed scaffold resolved to legacy");
-  console.info("installed scaffold resolved engine=native (no engine pin)");
+  console.info("installed scaffold resolved engine=threenative (no engine pin)");
   await run("pnpm", ["build:desktop"], project);
   const manifest = JSON.parse(readFileSync(path.join(project, "package.json"), "utf8"));
   const name = manifest.name.replace(/^@[^/]+\//u, "");
