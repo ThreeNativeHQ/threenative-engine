@@ -16,6 +16,7 @@ function fixture(cpu = 0.2, springLower = 2.8) {
       uniquePipelines: 2,
       recordedEvents: 2,
       droppedEvents: 0,
+      nodeBuilds: 0,
       deviceCreations: 2,
       directCreations: 0,
     },

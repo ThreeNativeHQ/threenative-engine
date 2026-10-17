@@ -1,7 +1,11 @@
 import { defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import "./style.css";
-import { WorldProbe, type WorldState } from "./scenes/WorldProbe.js";
+import { WorldProbe, type WorldState, WorldWarmUpProbe } from "./scenes/WorldProbe.js";
+
+const worldScene = new URLSearchParams(globalThis.location.search).has("warmup")
+  ? WorldWarmUpProbe
+  : WorldProbe;
 
 const game = defineGame<WorldState>({
   camera: { far: 1_000, fov: 60, near: 0.1, projection: "perspective" },
@@ -23,7 +27,7 @@ const game = defineGame<WorldState>({
   },
   plugins: [playtest<WorldState>()],
   renderer: { preferWebGPU: true },
-  scenes: { world: WorldProbe },
+  scenes: { world: worldScene },
   seed: 20260925,
   start: "world",
 });

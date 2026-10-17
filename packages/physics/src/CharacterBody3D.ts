@@ -81,6 +81,20 @@ export class CharacterBody3D {
   #beforeY = 0;
   #desiredY = 0;
   #disposed = false;
+  #interpolate = true;
+
+  /** Draw between solved ticks; false presents this body at its true tick pose. */
+  get interpolate(): boolean {
+    return this.#interpolate;
+  }
+  set interpolate(enabled: boolean) {
+    if (this.#disposed)
+      throw new Error("CharacterBody3D.interpolate cannot be used after dispose.");
+    if (typeof enabled !== "boolean") throw new Error("interpolate must be a boolean.");
+    if (enabled === this.#interpolate) return;
+    this.#interpolate = enabled;
+    this.#physics?.updateInterpolation?.(this);
+  }
 
   constructor(options: ICharacterBody3DOptions) {
     this.#simulation = requirePhysicsSimulation(options.physics, options.world);
@@ -200,6 +214,7 @@ export class CharacterBody3D {
     if (this.#disposed) throw new Error("CharacterBody3D.teleport cannot be used after dispose.");
     this.#simulation.setBodyTransform(this.body.id, position);
     this.object.position.set(position.x, position.y, position.z);
+    this.#physics?.resetInterpolation?.(this.object);
     this.velocity.set(0, 0, 0);
     this.#desired.x = 0;
     this.#desired.y = 0;

@@ -173,6 +173,14 @@ export interface ICtx<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
 > {
+  /** Fraction of the next simulation tick accumulated for the presented frame, in [0, 1). */
+  readonly alpha: number;
+  /** The current frame callback timestamp in milliseconds, shared by web and native. */
+  readonly frameTime: number;
+  /** Opt a transform into draw-only fixed-step interpolation; returns scene-owned removal. */
+  readonly interpolate: (object: Object3D) => () => void;
+  /** Reset history after a game-driven teleport. */
+  readonly resetInterpolation: (object: Object3D) => void;
   readonly fps: number;
   readonly renderer: IRendererLike;
   readonly viewport: Viewport;
