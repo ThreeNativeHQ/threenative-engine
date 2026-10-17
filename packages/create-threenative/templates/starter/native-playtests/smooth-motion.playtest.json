@@ -18,18 +18,14 @@
     {
       "kind": "input",
       "label": "clear-crate",
-      "press": [
-        "KeyS"
-      ],
+      "press": ["KeyS"],
       "holdTicks": 35,
       "release": true
     },
     {
       "kind": "input",
       "label": "steady-walk",
-      "press": [
-        "KeyD"
-      ],
+      "press": ["KeyD"],
       "holdTicks": 180,
       "release": true
     }
