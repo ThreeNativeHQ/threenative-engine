@@ -5,8 +5,10 @@
 #include "engine/shader/cube_uv.h"
 #include "engine/shader/output.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <unordered_map>
 #include <utility>
@@ -85,6 +87,14 @@ private:
     std::unordered_map<const NodeData*, std::vector<ExprId>> aggregates_;
     std::unordered_map<const NodeData*, VarId> vars_;
     std::unordered_map<const NodeData*, ExprId> loopIndex_;
+    // A Fn result that ran statements is one Body node read at every use. Its statements lower once per
+    // lexical scope: `scopes_` is the open If/Loop blocks, `bodyScope_` where each Body already lowered.
+    std::vector<uint32_t> scopes_{0};
+    uint32_t scopeCount_ = 0;
+    std::unordered_map<const NodeData*, uint32_t> bodyScope_;
+    std::function<void()> inScope(std::function<void()> body) {
+        return [this, body = std::move(body)] { scopes_.push_back(++scopeCount_); body(); scopes_.pop_back(); };
+    }
     static constexpr VarId noVar = UINT32_MAX;
     VarId returnVar_ = noVar, doneVar_ = noVar;
     Type returnType_;
@@ -197,15 +207,19 @@ ExprId Lowerer::emit(Node node) {
             return renderOutput(program_, expression(d.args[0]), tone, d.name.empty() ? srgb_ : d.name == "srgb");
         }
         case Kind::Body: {
-            statements(d.body);
+            const auto lowered = bodyScope_.find(node.get());
+            if (lowered == bodyScope_.end() || std::find(scopes_.begin(), scopes_.end(), lowered->second) == scopes_.end()) {
+                statements(d.body);
+                bodyScope_[node.get()] = scopes_.back();
+            }
             exprs_.clear();
             if (d.args.empty()) return kInvalid;
             if (returnVar_ == noVar) return expression(d.args[0]);
-            program_.If(program_.equal(program_.load(doneVar_), program_.constant(false)), [this, &d] {
+            program_.If(program_.equal(program_.load(doneVar_), program_.constant(false)), inScope([this, &d] {
                 exprs_.clear(); const ExprId result = expression(d.args[0]);
                 program_.assign(returnVar_, result == kInvalid || returnType_.scalar == Type::Scalar::Void || program_.expr(result).type == returnType_
                     ? result : convert(result, returnType_));
-            });
+            }));
             return program_.load(returnVar_);
         }
         case Kind::Call: {
@@ -475,10 +489,10 @@ void Lowerer::statement(Node node) {
             const ExprId condition = expression(s.args[0]);
             const auto previousAggregates = aggregates_;
             if (s.otherwise.empty()) {
-                program_.If(condition, [this, &s] { statements(s.body); });
+                program_.If(condition, inScope([this, &s] { statements(s.body); }));
             } else {
-                program_.If(condition, [this, &s] { statements(s.body); },
-                            [this, &s, &previousAggregates] { aggregates_ = previousAggregates; statements(s.otherwise); });
+                program_.If(condition, inScope([this, &s] { statements(s.body); }),
+                            inScope([this, &s, &previousAggregates] { aggregates_ = previousAggregates; statements(s.otherwise); }));
             }
             aggregates_ = previousAggregates;
             return;
@@ -488,6 +502,7 @@ void Lowerer::statement(Node node) {
             const auto previousAggregates = aggregates_;
             const Node indexNode = s.args[1];
             program_.Loop(count, [this, &s, &indexNode](ExprId index) {
+                scopes_.push_back(++scopeCount_);
                 // start + index * step, in i32 (the count above already divided the range by the step).
                 ExprId value = index;
                 if (s.args.size() > 3) value = program_.mul(value, expression(s.args[3]));
@@ -495,6 +510,7 @@ void Lowerer::statement(Node node) {
                 if (indexNode->type != Type::i32()) value = convert(value, indexNode->type);  // Loop({ type: "uint" })
                 loopIndex_[indexNode.get()] = value;
                 statements(s.body);
+                scopes_.pop_back();
             });
             aggregates_ = previousAggregates;
             return;
@@ -507,7 +523,7 @@ void Lowerer::statements(const std::vector<Node>& list) {
     for (const Node& node : list) {
         exprs_.clear(); // ordered loads must observe assignments and stay in their lexical block
         if (doneVar_ == noVar) statement(node);
-        else program_.If(program_.equal(program_.load(doneVar_), program_.constant(false)), [this, &node] { statement(node); });
+        else program_.If(program_.equal(program_.load(doneVar_), program_.constant(false)), inScope([this, &node] { statement(node); }));
     }
 }
 

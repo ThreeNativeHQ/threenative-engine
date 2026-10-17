@@ -1777,6 +1777,64 @@ void gpu_bind_escape() {
 }
 
 
+// PRD-617: a Fn result that ran statements (rain's baseColor: toVar, an If chain, `return res`) is one
+// Body node. Lowering it at every use re-ran its assignments after the first read, so a later consumer
+// (surfaceLight's lamp loop) saw a different value than the first and the conifers came out red. Its
+// statements lower once per scope; every use reads the variable.
+void body_result_lowers_once() {
+    namespace g = tn::engine::shader::graph;
+    using namespace tn::engine::shader;
+    g::Block fnBlock;
+    const auto result = fnBlock.var(g::float_(0.1f));
+    fnBlock.assign(result.declaration, g::float_(0.7391f));
+    auto called = std::make_shared<g::NodeData>(*fnBlock.node());
+    called->args = {result.read()};
+    g::Block consumer;
+    const auto first = consumer.var(g::mul(called, g::float_(2)));
+    const auto second = consumer.var(g::mul(called, g::float_(3)));
+    consumer.Loop(2, [&](g::Node) { consumer.assign(second.declaration, g::add(second.read(), called)); });
+    auto root = std::make_shared<g::NodeData>(*consumer.node());
+    root->args = {g::vec4({first.read(), second.read(), first.read(), g::float_(1)})};
+    Program program(Stage::Fragment);
+    tn::engine::shader::tsl::Build scope(program);
+    program.output("color", g::lower(root, program));
+    const auto shader = buildStage(program);
+    CHECK(shader.wgsl.ok());
+    size_t assignments = 0;
+    for (size_t at = shader.wgsl.code.find("0.7391"); at != std::string::npos; at = shader.wgsl.code.find("0.7391", at + 1))
+        ++assignments;
+    CHECK(assignments == 1);
+}
+
+// The first use sits inside an If and a second after it. The If may not run, so the later use lowers the
+// statements again in the scope that dominates it: two emissions, one per scope, each use after its own.
+void body_result_in_a_branch() {
+    namespace g = tn::engine::shader::graph;
+    using namespace tn::engine::shader;
+    g::Block fnBlock;
+    const auto result = fnBlock.var(g::float_(0.1f));
+    fnBlock.assign(result.declaration, g::float_(0.7391f));
+    auto called = std::make_shared<g::NodeData>(*fnBlock.node());
+    called->args = {result.read()};
+    g::Block consumer;
+    const auto inside = consumer.var(g::float_(0));
+    consumer.If(g::greaterThan(g::uniform("gate", Type::f32(), {1}), g::float_(0)),
+                [&] { consumer.assign(inside.declaration, g::mul(called, g::float_(2))); });
+    const auto after = consumer.var(g::mul(called, g::float_(3)));
+    const auto again = consumer.var(g::add(called, g::float_(1)));
+    auto root = std::make_shared<g::NodeData>(*consumer.node());
+    root->args = {g::vec4({inside.read(), after.read(), again.read(), g::float_(1)})};
+    Program program(Stage::Fragment);
+    tn::engine::shader::tsl::Build scope(program);
+    program.output("color", g::lower(root, program));
+    const auto shader = buildStage(program);
+    CHECK(shader.wgsl.ok());
+    size_t assignments = 0;
+    for (size_t at = shader.wgsl.code.find("0.7391"); at != std::string::npos; at = shader.wgsl.code.find("0.7391", at + 1))
+        ++assignments;
+    CHECK(assignments == 2);
+}
+
 void struct_function_return() {
     namespace g = tn::engine::shader::graph;
     using tn::abi::TslArg;
@@ -2160,7 +2218,7 @@ void starter_post_bindings() {
 
 }
 
-TN_TEST_MAIN({"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
