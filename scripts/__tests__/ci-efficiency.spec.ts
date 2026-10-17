@@ -542,7 +542,11 @@ describe("PRD-373 fail-closed required verdict", () => {
 
   it("classifies the generated speed-loop record as prose, not a full board", () => {
     // Only scripts/ci-speed-loop.mjs reads these files, and no CI job runs that script.
-    for (const file of ["docs/ci-speed/ledger.json", "docs/ci-speed/index.html"]) {
+    for (const file of [
+      "docs/ci-speed/ledger.json",
+      "docs/ci-speed/index.html",
+      "docs/ci-speed/runs/39070176677.jobs.json",
+    ]) {
       expect(prosePlan(file).selection).toBe("prose");
     }
   });

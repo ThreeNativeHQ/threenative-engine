@@ -813,7 +813,8 @@ function pathFamily(file, selective) {
   if (file.endsWith(".md")) return "prose";
   // The speed-loop record is generated data. Only scripts/ci-speed-loop.mjs reads it, and that
   // script matches the scripts/ci-* CI rule, so a change to it still runs the CI lanes.
-  if (/^docs\/ci-speed\/(?:ledger\.json|index\.html)$/u.test(file)) return "prose";
+  if (/^docs\/ci-speed\/(?:ledger\.json|index\.html|runs\/\d+\.jobs\.json)$/u.test(file))
+    return "prose";
   if (changedTemplates([file]).length > 0) return "template";
   return "a non-Markdown path";
 }
