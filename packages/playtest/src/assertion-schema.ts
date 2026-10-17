@@ -612,6 +612,25 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "The timeline is stamped by the runtime as milestones happen; a missing milestone fails the ceiling rather than passing it.",
   },
   {
+    description: "Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; a named streamed scope must also prove its target-bound first visible world frame, and missing, incomplete, or malformed census evidence fails closed.",
+    example: { pipelineCensus: { maxNodeBuildsAfterWarmUpSettled: 0, maxRenderPipelineCreationsAfterWarmUpSettled: 0 } },
+    fields: [
+      { description: "Ceiling on distinct node-builder states first observed after warm-up settled.", name: "maxNodeBuildsAfterWarmUpSettled", type: "non-negative integer" },
+      { description: "Ceiling on render-pipeline creations observed after warm-up settled.", name: "maxRenderPipelineCreationsAfterWarmUpSettled", type: "non-negative integer" },
+      { description: "Label of a repeatable streamed warm-up scope.", name: "warmUpScope", type: "string" },
+      { description: "Ceiling on node-builder state builds after the named warm-up scope.", name: "maxNodeBuildsAfterWarmUpScope", type: "non-negative integer" },
+      { description: "Ceiling on render-pipeline creations after the named warm-up scope.", name: "maxRenderPipelineCreationsAfterWarmUpScope", type: "non-negative integer" },
+    ],
+    cardinality: "object",
+    kind: "pipelineCensus",
+    observationPath: "pipelineCensus",
+    requiredCapabilities: ["runtime.pipelineCensus"],
+    resultIdPrefix: "pipelineCensus.",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+    trivialityRationale: "The runtime stamps a separate warm-up boundary and counts later observations; an initial scene value cannot satisfy a post-boundary ceiling.",
+  },
+  {
     description: "Proves the render chain reports its quality tier, authored stage ids/order, graph-output changes for named stages, and, when asserted, a bounded temporal-history rejection fraction.",
     example: { renderChain: { tier: "high", stages: { includes: ["outline", "kuwahara", "watercolor"], order: ["outline", "kuwahara", "watercolor"] }, contributions: { graphOutputChanged: ["outline", "kuwahara", "watercolor"] } } },
     fields: [
@@ -671,6 +690,7 @@ export function requiredPlaytestCapabilities(
   target?: string,
 ): PlaytestCapability[] {
   const required = new Set<PlaytestCapability>();
+  if (scenario.startTick !== undefined) required.add("runtime.fixedStep");
   if (scenario.steps.some((step) => step.waitForResource !== undefined)) {
     required.add("runtime.resources");
   }

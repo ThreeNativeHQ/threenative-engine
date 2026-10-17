@@ -4,6 +4,7 @@ import { BoxGeometry, Group, Mesh, Vector3 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
 import "../src/index.js";
 import { FixedStepLoop } from "../../core/src/loop.js";
+import { roundedBox } from "../../create-threenative/templates/starter/src/render/shapes.js";
 import { CharacterBody3D } from "../src/CharacterBody3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
@@ -44,6 +45,65 @@ afterEach(() => {
 });
 
 describe("CharacterBody3D", () => {
+  it("falls beside a trimesh box while moving into its vertical face", async () => {
+    const { ctx, plugin } = await setup();
+    const wall = new Mesh(new BoxGeometry(3, 10, 2.6));
+    wall.position.set(1.5, -5, 0);
+    const body = new RigidBody3D({
+      object: wall,
+      physics: ctx.physics,
+      shape: CollisionShape3D.fromMesh(wall, "trimesh"),
+      type: "fixed",
+    });
+    const mesh = new Group();
+    mesh.position.set(-0.32, -1, 0);
+    const character = new CharacterBody3D({
+      autostep: { maxHeight: 0.4, minWidth: 0.2 },
+      object: mesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.6, 0.3),
+    });
+    for (let tick = 0; tick < 60; tick += 1) {
+      character.velocity.x = 2;
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+      expect(character.grounded, `tick ${tick}`).toBe(false);
+    }
+    expect(mesh.position.y).toBeLessThan(-2);
+    character.dispose();
+    body.dispose();
+  });
+
+  it("falls beside the starter's rounded island wall instead of reading it as ground", async () => {
+    const { ctx, plugin } = await setup();
+    // The template's `roundedBox` bevels with a 3x3 face grid. Pressed into its side, a capsule
+    // used to report `grounded` and sink at 0.16 m/s along a wall, never reaching the kill plane.
+    const wall = new Mesh(roundedBox(3, 5.4, 2.6, 0.1).clone().translate(7.9, -3.3, 0));
+    const body = new RigidBody3D({
+      object: wall,
+      physics: ctx.physics,
+      shape: CollisionShape3D.fromMesh(wall, "trimesh"),
+      type: "fixed",
+    });
+    const mesh = new Group();
+    mesh.position.set(6, -0.2, 0);
+    const character = new CharacterBody3D({
+      autostep: { maxHeight: 0.4, minWidth: 0.2 },
+      object: mesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.6, 0.3),
+    });
+    for (let tick = 0; tick < 90; tick += 1) {
+      character.velocity.x = 1.5;
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+    expect(character.grounded).toBe(false);
+    expect(mesh.position.y).toBeLessThan(-3);
+    character.dispose();
+    body.dispose();
+  });
+
   it("should accumulate gravity into velocity when airborne", async () => {
     const { ctx, plugin } = await setup();
     const mesh = new Mesh(new BoxGeometry(0.6, 1, 0.6));

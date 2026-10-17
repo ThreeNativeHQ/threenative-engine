@@ -1,4 +1,5 @@
 import type { ICtx, IGameObservationSampleRequest, IGamePluginHooks } from "@threenative/core";
+import type { Object3D } from "three";
 import type { Area3D } from "./Area3D.js";
 import type { Buoyancy3D } from "./Buoyancy3D.js";
 import { CharacterBody3D } from "./CharacterBody3D.js";
@@ -45,6 +46,9 @@ export interface IPhysicsContext {
   readonly simulation: IPhysicsSimulation;
   readonly directSpaceState: PhysicsDirectSpaceState3D;
   navigation?: INavigationContext;
+  /** Engine-owned draw history; optional for standalone physics contexts. */
+  resetInterpolation?(object: Object3D): void;
+  updateInterpolation?(body: PhysicsBody3D): void;
   add(body: PhysicsBody3D): void;
   numBodies(): number;
   kinematicMotion?(
@@ -136,11 +140,22 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   // phase therefore reads this to say whether the simulation moved, which no device counter and no
   // game-authored state can answer. Monotone for the plugin's lifetime, scene restarts included.
   let completedSteps = 0;
+  let gameContext: ICtx<Record<string, unknown>, IPhysicsContext> | undefined;
+  const interpolationRemovals = new Map<PhysicsBody3D, () => void>();
+  function updateInterpolation(body: PhysicsBody3D): void {
+    interpolationRemovals.get(body)?.();
+    interpolationRemovals.delete(body);
+    if (body.interpolate && body.object !== undefined && gameContext?.interpolate !== undefined)
+      interpolationRemovals.set(body, gameContext.interpolate(body.object));
+  }
   let unregisterObservations: (() => void) | undefined;
 
   function buildContext(selected: IPhysicsRuntimeSimulation): IPhysicsContext {
     return {
+      resetInterpolation: (object) => gameContext?.resetInterpolation?.(object),
+      updateInterpolation,
       add: (body) => {
+        updateInterpolation(body);
         bodies.add(body);
         bodiesById.set(body.body.id, body);
       },
@@ -156,6 +171,8 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       kinematicMotion: (colliderHandle) => kinematicMotions.get(colliderHandle),
       numBodies: () => bodies.size,
       remove: (body) => {
+        interpolationRemovals.get(body)?.();
+        interpolationRemovals.delete(body);
         bodies.delete(body);
         bodiesById.delete(body.body.id);
         removeContactsFor(body.body.id);
@@ -174,6 +191,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
 
   return {
     setup: async (ctx: ICtx<Record<string, unknown>, IPhysicsContext>, runtime) => {
+      gameContext = ctx;
       await backend.initialize();
       const selected = backend.createSimulation(options);
       simulation = selected;

@@ -18,12 +18,14 @@ import { Registry } from "../../core/src/entities.js";
 import { createRandom } from "../../core/src/random.js";
 import { rapier } from "../../physics/src/index.js";
 import type { IPhysicsContext } from "../../physics/src/plugin.js";
+import type { Player } from "../templates/starter/src/entities/Player.js";
 import { templatedRig } from "./templated-rig.js";
 
 /** The clips the packaged `mannequin.glb` ships, by the name `Player.ts` plays them under. */
 const MANNEQUIN_CLIPS = [
   "Idle_Loop",
   "Jog_Fwd_Loop",
+  "Walk_Loop",
   "Jump_Start",
   "Jump_Loop",
   "Jump_Land",
@@ -598,6 +600,7 @@ describe("generated template ordinary-frame runtime cost", () => {
     vi.stubGlobal("Worker", IdleWorker);
     try {
       const context = sceneContext(starterPhysics.physics, starter.Play.initialState);
+      expect(context.state.getState().progress).toBe(0);
       const play = new starter.Play();
       await play.load(context as never);
       const update = play.enter(context as never) as (ctx: unknown, dt: number) => void;
@@ -617,6 +620,19 @@ describe("generated template ordinary-frame runtime cost", () => {
       expect(context.patchIdentities.size, "starter Play state-patch high-water sentinel").toBe(
         patchWarmHighWater,
       );
+      const player = context.entities.get("player") as Player;
+      for (const [x, progress] of [
+        [-4, 0],
+        [-2, 0],
+        [0, (100 * 2) / 8.4],
+        [2, (100 * 4) / 8.4],
+        [6.4, 100],
+        [8, 100],
+      ] as const) {
+        player.body.teleport({ x, y: 0.9, z: 0 });
+        update(context, DT);
+        expect(context.state.getState().progress, `progress at x=${x}`).toBeCloseTo(progress);
+      }
     } finally {
       vi.unstubAllGlobals();
       starterPhysics.dispose();

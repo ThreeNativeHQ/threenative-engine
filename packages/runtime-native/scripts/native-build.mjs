@@ -89,11 +89,8 @@ if (process.env.TN_ENABLE_CSS_UI === '1') {
     `-DTHREENATIVE_CSS_UI_LIBRARY=${cssUiLibraryPath(root)}`,
   );
 }
-// Linux arm64 has no V8 or Dawn prebuilt (kuoruan/libv8 ships Linux x64 only; Dawn's
-// `ubuntu-latest` asset is x64) and a source V8 build is not allowed in CI. Build the arm64
-// desktop host with the QuickJS engine over the wgpu-native backend — the combination that does
-// have an arm64 path (`wgpu-linux-aarch64`). Command-line cache entries override the tn-linux
-// preset's V8+Dawn defaults, so the binary directory the CI lane reads stays `build/tn-linux`.
+// Linux arm64 selects cached V8 over wgpu-native. Cache entries override the tn-linux
+// preset's Dawn default while preserving the build/tn-linux directory consumed by CI.
 configureArgs.push(...Object.entries(desktopBuildOverrides()).map(([key, value]) => `-D${key}=${value}`));
 
 const vcpkgRoot = process.env.VCPKG_ROOT ?? process.env.VCPKG_INSTALLATION_ROOT;

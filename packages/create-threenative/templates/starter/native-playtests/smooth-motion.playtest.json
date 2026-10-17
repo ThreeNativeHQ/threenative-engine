@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "name": "smooth-motion",
+  "target": "desktop",
+  "subject": "player",
+  "viewport": {
+    "width": 320,
+    "height": 180
+  },
+  "warmupFrames": 60,
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "clear-crate",
+      "press": ["KeyS"],
+      "holdTicks": 35,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "steady-walk",
+      "press": ["KeyD"],
+      "holdTicks": 180,
+      "release": true
+    }
+  ],
+  "assert": {
+    "movement": {
+      "entity": "player",
+      "minDistance": 3
+    },
+    "components": [
+      {
+        "entity": "smooth-motion",
+        "component": "samples",
+        "gte": 21
+      },
+      {
+        "entity": "smooth-motion",
+        "component": "playerCv",
+        "gte": 0,
+        "lte": 0.1
+      },
+      {
+        "entity": "smooth-motion",
+        "component": "cameraCv",
+        "gte": 0,
+        "lte": 0.1
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": false,
+      "runtimeReady": true,
+      "networkErrorsOptOutReason": "The starter loads no network resources, and the native host exposes no runtime.network observation."
+    }
+  }
+}

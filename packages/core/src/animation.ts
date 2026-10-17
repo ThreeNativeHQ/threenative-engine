@@ -139,6 +139,11 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
     quaternion: object.quaternion.clone(),
     scale: object.scale.clone(),
   }));
+  // The root belongs to the game, which turns it with `rotation.y +=`. `quaternion.copy` rewrites
+  // `rotation` as the equivalent Euler, so a yaw of PI comes back as (PI, 0, PI) and the next
+  // increment turns the figure the mirrored way. Bones keep the exact quaternion: a round trip
+  // through Euler would lose precision on every joint.
+  const rootRotation = root.rotation.clone();
 
   const mixer = new AnimationMixer(root);
   const action = mixer.clipAction(clip);
@@ -166,6 +171,7 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
       entry.object.quaternion.copy(entry.quaternion);
       entry.object.scale.copy(entry.scale);
     }
+    root.rotation.copy(rootRotation);
     root.updateMatrixWorld(true);
   }
 
@@ -234,6 +240,7 @@ export class AnimationPlayer {
   #mode: AnimationMode = "loop";
   #advancedFrames = 0;
   #finished = false;
+  #posed = false;
   #fadeOut: { action: AnimationAction; from: number }[] = [];
   #fadeElapsed = 0;
   #fadeDuration = 0;
@@ -563,6 +570,31 @@ export class AnimationPlayer {
   }
 
   play(name: string, options: IAnimationPlayOptions = {}): void {
+    this.#start(name, options);
+    this.#poseAtStart();
+  }
+
+  /**
+   * Whether a clip has posed the skeleton. False until the first `play` or `playWeighted`, so a
+   * rig that never plays a clip stays observably in its bind pose.
+   */
+  get posed(): boolean {
+    return this.#posed;
+  }
+
+  /**
+   * Pose the skeleton from the clip that just started, before any `update`. `play` only schedules
+   * an action, and three applies a pose only inside `mixer.update`, so a character added to the
+   * scene on the frame it starts would otherwise render once in its bind pose (a T-pose) and snap
+   * to its clip on the next tick. A zero step applies the pose and advances nothing.
+   */
+  #poseAtStart(): void {
+    if (this.#posed) return;
+    this.mixer.update(0);
+    this.#posed = true;
+  }
+
+  #start(name: string, options: IAnimationPlayOptions): void {
     const next = this.#actions.get(name);
     if (next === undefined) throw new Error(`Unknown animation clip '${name}'.`);
     // One owner at a time. A single-clip request takes the rig back from a weighted blend, exactly
@@ -658,6 +690,7 @@ export class AnimationPlayer {
     // A zero transition is the caller's request for these weights right now, not on the next
     // frame; a positive one leaves them where the previous request left them and ramps from there.
     this.#advanceBlend(0);
+    this.#poseAtStart();
   }
 
   /**

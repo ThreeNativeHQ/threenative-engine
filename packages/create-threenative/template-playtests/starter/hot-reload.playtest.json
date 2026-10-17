@@ -24,7 +24,7 @@
       "kind": "input",
       "label": "collect",
       "press": "ArrowRight",
-      "holdTicks": 100,
+      "holdTicks": 142,
       "release": true
     },
     {

@@ -1042,6 +1042,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
 
 #if defined(__linux__) && !defined(__ANDROID__)
     WGPUSurfaceDescriptorFromXlibWindow_Compat xlibDesc = {};
+    WGPUSurfaceDescriptorFromWaylandSurface_Compat waylandDesc = {};
 
     if (platformType == PLATFORM_XLIB) {
         xlibDesc.chain.sType = WGPUSType_SurfaceDescriptorFromXlibWindow_Compat;
@@ -1049,8 +1050,14 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         xlibDesc.window = reinterpret_cast<uint64_t>(window);
         surfaceDesc.nextInChain = (WGPUChainedStruct*)&xlibDesc;
         std::cout << "[WebGPU] Creating X11 surface with display: " << display << " window: " << window << std::endl;
+    } else if (platformType == PLATFORM_WAYLAND) {
+        waylandDesc.chain.sType = WGPUSType_SurfaceDescriptorFromWaylandSurface_Compat;
+        waylandDesc.display = display;  // wl_display*
+        waylandDesc.surface = window;    // wl_surface*
+        surfaceDesc.nextInChain = (WGPUChainedStruct*)&waylandDesc;
+        std::cout << "[WebGPU] Creating Wayland surface with display: " << display << " surface: " << window << std::endl;
     } else {
-        std::cerr << "[WebGPU] createSurfaceWithDisplay only supports PLATFORM_XLIB on Linux" << std::endl;
+        std::cerr << "[WebGPU] createSurfaceWithDisplay only supports PLATFORM_XLIB or PLATFORM_WAYLAND on Linux" << std::endl;
         return false;
     }
 #else

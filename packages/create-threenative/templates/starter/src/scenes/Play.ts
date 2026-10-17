@@ -48,6 +48,7 @@ const FLOOR_BOUNDS = { maxX: 5, minX: -5, maxZ: 2, minZ: -2 } as const;
 const FLOOR_SIZE = { depth: 4.2, width: 10 } as const;
 
 export class Play extends Scene<GameState, IPhysicsContext> {
+  #observeMotion: (() => void) | undefined;
   #assetProof: Mesh | undefined;
   #playerModel: IPlayerModel | undefined;
   #sky: Texture | undefined;
@@ -67,6 +68,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     paused: false,
     peakRise: 0,
     playerX: -2,
+    progress: 0,
     respawns: 0,
     score: 0,
     status: "playing",
@@ -148,6 +150,45 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         z: 0,
       }),
     );
+    // Observation is armed by playtest's first sample; ordinary games retain no frame series.
+    let observeMotion = false;
+    let wasMovingRight = false;
+    const presented: Array<[number, number, number]> = [];
+    this.#observeMotion = () => {
+      if (!observeMotion) return;
+      const movingRight = ctx.input.vector("move").x > 0;
+      if (movingRight && !wasMovingRight) presented.length = 0;
+      wasMovingRight = movingRight;
+      if (!movingRight) return;
+      presented.push([ctx.frameTime, player.body.object.position.x, ctx.camera.position.x]);
+      if (presented.length > 31) presented.shift();
+    };
+    ctx.entities.add("smooth-motion", {
+      debug: () => {
+        observeMotion = true;
+        const speeds = (axis: 1 | 2): number[] =>
+          presented.slice(1).map((frame, index) => {
+            const previous = presented[index];
+            if (previous === undefined) throw new Error("Missing presented motion sample.");
+            return (frame[axis] - previous[axis]) / ((frame[0] - previous[0]) / 1000);
+          });
+        const cv = (values: number[]): number | null => {
+          if (values.length < 20) return null;
+          const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+          if (mean <= 0) return null;
+          return (
+            Math.sqrt(values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length) /
+            mean
+          );
+        };
+        return {
+          samples: presented.length,
+          playerCv: cv(speeds(1)),
+          cameraCv: cv(speeds(2)),
+          presented,
+        };
+      },
+    });
     const audio = ctx.entities.add("audio", new AudioBus({ camera: ctx.camera }));
     const pickupAudio = ctx.assets.audio("pickup.wav");
     void pickupAudio.catch(() => undefined);
@@ -230,7 +271,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     ctx.add(fixed(floorMesh));
     ctx.add(fixed(floorBase));
-    new Crate(ctx, levelX, 4, -1.5, propMaterial);
+    ctx.entities.add("crate", new Crate(ctx, levelX, 4, -1.5, propMaterial));
     const pickupBase = block(0.42, 0.14, 0.42, propMaterial);
     const pickupStem = tube(0.08, 0.08, 0.3, propMaterial);
     const pickupOrb = ball(0.16, propMaterial);
@@ -357,6 +398,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         lives -= 1;
         player.respawn();
         springArm.snap(player.mesh.position);
+        frameCtx.resetInterpolation(frameCtx.camera);
         respawned = true;
       }
       springArm.dolly(frameCtx.input.axis("zoom"), dt);
@@ -379,6 +421,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       // 1.8 m figure would report its own height as a jump.
       frameState.peakRise = Math.max(previous.peakRise, player.mesh.position.y - PLAYER_STAND_Y);
       frameState.playerX = player.mesh.position.x;
+      frameState.progress = Math.max(
+        0,
+        Math.min(
+          100,
+          ((frameState.playerX - Play.initialState.playerX) /
+            (ISLAND.x - ISLAND.width / 2 - Play.initialState.playerX)) *
+            100,
+        ),
+      );
       frameState.respawns = previous.respawns + (respawned ? 1 : 0);
       const current = frameCtx.state.getState();
       const changed =
@@ -391,6 +442,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         frameState.odometer !== current.odometer ||
         frameState.peakRise !== current.peakRise ||
         frameState.playerX !== current.playerX ||
+        frameState.progress !== current.progress ||
         frameState.respawns !== current.respawns;
       if (changed) frameCtx.state.set(frameState);
       if (respawned) frameCtx.state.flush();
@@ -400,7 +452,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #post: ReturnType<typeof setupPost> | undefined;
   #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
 
+  override render(): void {
+    this.#observeMotion?.();
+  }
+
   override exit(ctx: GameCtx): void {
+    this.#observeMotion = undefined;
     this.#materialLighting?.dispose();
     this.#materialLighting = undefined;
     // Also releases the medium `setupPost` built, with the graph it composed into.

@@ -20,8 +20,10 @@ export const NATIVE_JOBS = Object.freeze({
   "starter-linux": "Scaffolded starter desktop artifact (${{ matrix.platform }})",
 });
 const EXEMPT = {
+  "linux-arm64-v8-source": "Linux arm64 V8 source payload",
   "ios-simulator": "iOS simulator runtime and no-Xcode consumer handoff",
   "publish-android-v8": "Publish the Android V8 payload",
+  "publish-linux-arm64-v8": "Publish the Linux arm64 V8 payload",
   completion: "Native required coverage receipt",
 };
 const full = "needs.scope.outputs.selection == 'full' && inputs.ios_only != true";
@@ -29,6 +31,8 @@ const GATES = {
   scope: "",
   "web-reference": "needs.scope.outputs.selection == 'full' && inputs.ios_only == false",
   "android-v8-source": full,
+  "linux-arm64-v8-source":
+    "github.event_name == 'workflow_dispatch' && inputs.build_linux_arm64_v8 == true && needs.scope.outputs.selection == 'full' && needs.scope.outputs.native_tier != 'reduced' && inputs.ios_only != true",
   "android-emulator-parity": `${full} && needs.android-v8-source.result == 'success'`,
   "desktop-parity": full,
   "release-reports": "needs.scope.outputs.selection != 'prose' && inputs.ios_only == false",
@@ -40,6 +44,8 @@ const GATES = {
     "needs.scope.outputs.selection == 'full' && needs.scope.outputs.native_tier == 'full'",
   "publish-android-v8":
     "needs.android-v8-source.outputs.published == 'false' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')",
+  "publish-linux-arm64-v8":
+    "needs.linux-arm64-v8-source.outputs.published == 'false' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')",
   completion: "${{ always() && inputs.ios_only != true }}",
 };
 const RUNTIME = new Set(["android-emulator-parity", "desktop-parity", "desktop", "starter-linux"]);
@@ -94,7 +100,13 @@ export function validateNativeWorkflow(source) {
     !jobs.get("starter-linux").includes("matrix: ${{ fromJSON(needs.scope.outputs.starter_rows) }}")
   )
     fail("WORKFLOW_POLICY", "starter expansion differs from supported policy");
-  const expectedNeeds = [...Object.keys(NATIVE_JOBS), "ios-simulator", "publish-android-v8"].sort();
+  const expectedNeeds = [
+    ...Object.keys(NATIVE_JOBS),
+    "ios-simulator",
+    "publish-android-v8",
+    "linux-arm64-v8-source",
+    "publish-linux-arm64-v8",
+  ].sort();
   const needs = /^ {4}needs: \[([^\]]+)\]$/mu
     .exec(jobs.get("completion"))?.[1]
     .split(",")

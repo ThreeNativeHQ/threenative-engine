@@ -1083,7 +1083,7 @@ test("buttonless pointer movement drives anonymous movement through the browser 
   }
 }, 60_000);
 
-test("browser runner samples only after the advertised startup phase is ready", async () => {
+test.each([undefined, 10])("browser runner samples after startup and optional startTick %s", async (startTick) => {
   const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
   const server = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -1098,6 +1098,7 @@ test("browser runner samples only after the advertised startup phase is ready", 
     JSON.stringify({
       artifacts: { screenshots: false },
       assert: { movement: { entity: "player", minDistance: 0.2 } },
+      ...(startTick === undefined ? {} : { startTick }),
       name: "runner-startup",
       schemaVersion: 1,
       steps: [{ holdFrames: 10, press: "KeyW", release: true }],
@@ -1116,10 +1117,15 @@ test("browser runner samples only after the advertised startup phase is ready", 
       scenarioPath: "scenario.json",
       timeoutMs: 15_000,
       trace: false,
-      url: `http://127.0.0.1:${address.port}/?mode=startup-delayed`,
+      url: `http://127.0.0.1:${address.port}/?mode=startup-delayed${startTick === undefined ? "" : "&clock=fixed-step"}`,
     });
 
-    expect(report.pass).toBe(true);
+    expect(report.pass, JSON.stringify(report.diagnostics)).toBe(true);
+    if (startTick !== undefined) {
+      expect(report.before?.tick).toBe(startTick);
+      expect(report.after?.tick).toBe(startTick + 10);
+    }
+    expect(report.frames).toBe(10);
     expect(report.startup).toMatchObject({ phase: "ready", rule: "sustained-frames" });
     expect(report.observations?.resources.startup).toEqual({
       before: { sampledBeforeReady: false },

@@ -8,6 +8,7 @@
 #include "mystral/js/engine.h"
 #include "mystral/cold_start.h"
 #include "mystral/js/module_system.h"
+#include <cstdio>
 #include <iostream>
 #include <unordered_map>
 #include <unordered_set>
@@ -1216,36 +1217,41 @@ private:
         return oss.str();
     }
 
+    static JSValue writeConsoleLine(JSContext* ctx, FILE* stream, const std::string& line) {
+        const size_t written = std::fwrite(line.data(), 1, line.size(), stream);
+        const int flushed = std::fflush(stream);
+        if (written != line.size() || flushed != 0)
+            return JS_ThrowInternalError(ctx, "Console write failed");
+        return JS_UNDEFINED;
+    }
+
     static JSValue js_console_log(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
         std::string msg = buildConsoleMessage(ctx, argc, argv);
-        std::cout << "[log] " << msg << std::endl;
+        const std::string full = "[log] " + msg;
 #ifdef __ANDROID__
         // __android_log_write, not LOGI/__android_log_print: the print formatter caps at
         // LOG_BUF_SIZE 1024 (1023 bytes), which truncated TN_FRAME_BUDGET windows.
-        const std::string full = "[log] " + msg;
         __android_log_write(ANDROID_LOG_INFO, ANDROID_LOG_TAG, full.c_str());
 #endif
-        return JS_UNDEFINED;
+        return writeConsoleLine(ctx, stdout, full + '\n');
     }
 
     static JSValue js_console_warn(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
         std::string msg = buildConsoleMessage(ctx, argc, argv);
-        std::cout << "[warn] " << msg << std::endl;
-#ifdef __ANDROID__
         const std::string full = "[warn] " + msg;
+#ifdef __ANDROID__
         __android_log_write(ANDROID_LOG_WARN, ANDROID_LOG_TAG, full.c_str());
 #endif
-        return JS_UNDEFINED;
+        return writeConsoleLine(ctx, stdout, full + '\n');
     }
 
     static JSValue js_console_error(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
         std::string msg = buildConsoleMessage(ctx, argc, argv);
-        std::cerr << "[error] " << msg << std::endl;
-#ifdef __ANDROID__
         const std::string full = "[error] " + msg;
+#ifdef __ANDROID__
         __android_log_write(ANDROID_LOG_ERROR, ANDROID_LOG_TAG, full.c_str());
 #endif
-        return JS_UNDEFINED;
+        return writeConsoleLine(ctx, stderr, full + '\n');
     }
 
     static JSValue js_performance_now(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {

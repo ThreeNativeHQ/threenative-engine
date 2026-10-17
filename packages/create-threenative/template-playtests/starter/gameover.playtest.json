@@ -19,7 +19,7 @@
       "kind": "input",
       "label": "walk-off-three-times",
       "press": "ArrowDown",
-      "holdTicks": 420,
+      "holdTicks": 540,
       "release": true
     },
     {

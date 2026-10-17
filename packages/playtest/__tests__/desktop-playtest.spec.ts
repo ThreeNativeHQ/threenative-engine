@@ -654,7 +654,28 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout can be rai
   }
 });
 
+test("desktop startTick-only alignment follows readiness and warmup, before baseline and input", async () => {
+  const events: string[] = [];
+  const { report } = await runDesktopScenario(2, { startTick: 10, startupReadyAtTick: 2, events });
+  expect(report.pass).toBe(true);
+  expect(report.before?.tick).toBe(10);
+  expect(report.after?.tick).toBe(13);
+  expect(report.frames).toBe(3);
+  const ready = events.indexOf("ready:2");
+  const aligned = events.indexOf("advance:2:8");
+  const baseline = events.indexOf("baseline:10");
+  const input = events.indexOf("keydown:10");
+  expect(ready).toBeGreaterThan(-1);
+  expect(aligned).toBeGreaterThan(ready);
+  expect(events.slice(ready + 1, aligned)).toEqual(["sample:2", "sample:2", "sample:2"]);
+  expect(baseline).toBeGreaterThan(aligned);
+  expect(input).toBeGreaterThan(baseline);
+});
+
 interface IDesktopScenarioOptions {
+  startTick?: number;
+  startupReadyAtTick?: number;
+  events?: string[];
   network?: JsonValue;
   assertNetwork?: boolean;
   console?: { text: string; type: string }[];
@@ -685,6 +706,7 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
   await writeFile(scenarioPath, JSON.stringify({
     artifacts: { screenshots: options.screenshots ?? false },
     assert: { movement: { entity: "player", minDistance }, ...(options.assertNetwork ? { diagnostics: { noNetworkErrors: true } } : {}) },
+    ...(options.startTick === undefined ? {} : { startTick: options.startTick }),
     name: "desktop-cross-target-scenario",
     schemaVersion: 1,
     steps: [{
@@ -696,12 +718,30 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
     subject: "player",
     target: "desktop",
     viewport: { height: 360, width: 640 },
-    warmupFrames: 0,
+    warmupFrames: options.startTick === undefined ? 0 : 2,
   }));
   const endpoint = `http://127.0.0.1:${await availablePort()}/playtest`;
   const moving = movingBridge();
+  const startupReadyAtTick = options.startupReadyAtTick;
+  if (startupReadyAtTick !== undefined) {
+    const describeStartup = moving.bridge.describe;
+    moving.bridge.describe = async () => ({ ...await describeStartup(), capabilities: [...(await describeStartup()).capabilities, "runtime.startup"] });
+    moving.bridge.ready = () => {
+      options.events?.push(`ready:${moving.tick()}`);
+      return { ready: true, startup: { phase: moving.tick() >= startupReadyAtTick ? "ready" : "collapsing", progress: 1 } };
+    };
+  }
+  const advance = moving.bridge.advance;
+  if (advance === undefined) throw new Error("Desktop fixture requires its fixed-step advance provider.");
+  moving.bridge.advance = async (ticks) => {
+    options.events?.push(`advance:${moving.tick()}:${ticks}`);
+    return advance(ticks);
+  };
   const sample = moving.bridge.sample;
-  moving.bridge.sample = async (request) => ({ ...await sample(request), network: (options.network === undefined ? { requests: 0, entries: [] } : options.network) as IPlaytestObservationSnapshot["network"] });
+  moving.bridge.sample = async (request) => {
+    options.events?.push(`${request.include?.length === 0 ? "sample" : "baseline"}:${moving.tick()}`);
+    return { ...await sample(request), network: (options.network === undefined ? { requests: 0, entries: [] } : options.network) as IPlaytestObservationSnapshot["network"] };
+  };
   const describe = moving.bridge.describe;
   moving.bridge.describe = async () => ({ ...await describe(), capabilities: [...(await describe()).capabilities, "runtime.network"] });
   const driver = new FakeDesktopDriver(
@@ -720,7 +760,7 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
   const previous = host.__THREENATIVE_NATIVE__;
   host.__THREENATIVE_NATIVE__ = {
     playtestInput: {
-      keyboard: (type) => moving.setHeld(type === "keydown"),
+      keyboard: (type) => { options.events?.push(`${type}:${moving.tick()}`); moving.setHeld(type === "keydown"); },
       pointer: () => undefined,
     },
   };
