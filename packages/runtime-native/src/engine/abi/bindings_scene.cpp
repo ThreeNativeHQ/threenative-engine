@@ -874,6 +874,7 @@ void registerScene(ClassBinding& b) {
         } else throw Unsupported{"background must be a Color, Texture or null"};
     };
     // three's `scene.fogNode`: vec4(color, factor), a TSL node set through the TSL runtime (no ABI value carries it).
+    b.getters["fogNode"] = [](void* self) { return Value::shaderNode(as<Scene>(self)->fogNode); };
     b.setters["fogNode"] = [](void* self, const Value& v) {
         if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node))
             throw Unsupported{"fogNode must be a shader node or null"};

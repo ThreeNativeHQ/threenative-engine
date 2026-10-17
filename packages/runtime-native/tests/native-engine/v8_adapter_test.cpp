@@ -870,6 +870,32 @@ void tslApi() {
 
 }
 
+void fogNode() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        const scene = new Scene();
+        const node = tsl.vec4(tsl.uniform(new Color(0.1, 0.2, 0.3)), tsl.float(0.5));
+        try { scene.fogNode = node; } catch (e) { throw new Error('fog assignment: ' + e.message); }
+        if (scene.fogNode !== node) throw new Error('fog getter');
+        let refused = false;
+        try { scene.fogNode = new Color(); } catch (e) { refused = e instanceof TypeError; }
+        if (!refused || scene.fogNode !== node) throw new Error('fog validation');
+        scene.fogNode = null;
+        if (scene.fogNode !== null) throw new Error('fog clear');
+        scene.fogNode = node;
+        scene
+    )JS", [&](v8::Local<v8::Value> result) {
+        tn_handle_t handle{};
+        CHECK(adapter.unwrap(result, handle));
+        const auto* object = tn::abi::objectOf(handle);
+        CHECK(object && static_cast<tn::engine::Scene*>(object->ptr.get())->fogNode);
+    });
+    std::printf("fog_node: %s\n", got.c_str());
+    CHECK(got == "[object Object]");
+}
+
 // PRD-531 slice 3: the real V8 material setter owns a graph after its JS wrapper is gone.
 void nodeMaterials() {
     Runtime& rt = runtime();
@@ -2096,7 +2122,7 @@ void templateRanges() {
 }  // namespace
 
 TN_TEST_MAIN({"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
-             {"runtime_churn", runtimeChurn},
+             {"runtime_churn", runtimeChurn}, {"fog_node", fogNode},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD}, {"object_raycast", objectRaycast},
              {"catalog_coverage", catalogCoverage},

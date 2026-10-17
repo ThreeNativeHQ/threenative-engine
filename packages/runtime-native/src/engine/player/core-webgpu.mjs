@@ -27,15 +27,6 @@ class NativeBackend {
   pipelineCompiles = () => globalThis.tn.renderInfo().pipelineCompiles;
 }
 
-// `scene.fogNode` (three's per-material fog composition, e.g. a height-fog term) has no native
-// lowering: the engine applies `scene.fog` and nothing else. Said once, by name, never silently.
-let fogNodeWarned = false;
-function warnFogNode(scene) {
-  if (fogNodeWarned || scene?.fogNode == null) return;
-  fogNodeWarned = true;
-  console.warn("TN_NATIVE_FOG_NODE_IGNORED: scene.fogNode is not applied by the native engine; scene.fog is.");
-}
-
 function drawTarget(renderer, target, root, camera, deferred) {
   syncUniforms();
   globalThis.tn.setRendererState(renderer);  // the target clears to the renderer's current clear colour
@@ -98,7 +89,6 @@ export class WebGPURenderer {
   }
   render(scene, camera) {
     drawSecondaryPasses(this);
-    warnFogNode(scene);
     globalThis.__tnGameSpan?.(GAME_SPANS.transport, 0);
     try { syncUniforms(); } finally { globalThis.__tnGameSpan?.(GAME_SPANS.transport, 1); }
     globalThis.__tnGameSpan?.(GAME_SPANS.publish, 0);

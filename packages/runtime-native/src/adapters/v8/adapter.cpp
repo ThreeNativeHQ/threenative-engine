@@ -1039,7 +1039,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         std::vector<v8::Local<v8::ObjectTemplate>> slotTemplates{proto};
         if (name.ends_with("Material")) slotTemplates.push_back(ctor->InstanceTemplate());
         for (const auto& [path, settable, fixed] : properties) {
-            if ((name == "MeshBasicNodeMaterial" || name == "MeshStandardNodeMaterial" || name == "SpriteNodeMaterial") && path.ends_with("Node")) {
+            if (((name == "MeshBasicNodeMaterial" || name == "MeshStandardNodeMaterial" || name == "SpriteNodeMaterial") && path.ends_with("Node")) ||
+                (name == "Scene" && path == "fogNode")) {
                 auto* data = keep(new MethodData{this, path, {}});
                 proto->SetAccessorProperty(str(isolate_, path),
                     v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
