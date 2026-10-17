@@ -95,3 +95,17 @@ describe("Wasm TSL normal target", () => {
     ).not.toThrow();
   });
 });
+
+describe("Wasm TSL fog", () => {
+  // r185's fog(color, factor) is what `scene.fogNode` holds. The engine applies one graph node, so fog() is a
+  // real node, vec4(color, factor): a frozen description had no engine node to set and the fog was dropped.
+  it("answers an engine node that joins the colour and the factor", () => {
+    const { tsl, runtime } = setup();
+    const fog = (tsl as unknown as { fog(color: unknown, factor: unknown): INode & { isFogNode?: boolean } }).fog;
+    const haze = tsl.vec2(0.25, 0.75);
+    const node = fog(haze, 0);
+    expect(typeof node[TSL_NODE]).toBe("number");
+    expect(node.isFogNode).toBe(true);
+    expect(runtime.call).toHaveBeenCalledWith("vec4", null, expect.any(Array));
+  });
+});

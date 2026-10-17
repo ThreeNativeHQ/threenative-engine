@@ -1457,6 +1457,9 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     for (DrawItem& item : items) {
         const Material& source = *static_cast<const Material*>(item.materialKey);
         item.fog = world && source.fog ? world->fog.get() : nullptr;
+        // three's scene.fogNode replaces scene.fog: the draw's program mixes the node's colour and factor instead.
+        item.nodes.fogNode = nullptr;
+        if (world && source.fog && world->fogNode) { item.nodes.fogNode = world->fogNode; item.fog = nullptr; }
         // three's materialEnvRotation: the scene's environmentRotation when the scene has an
         // environment and the material no envMap, else the material's envMapRotation (identity here).
         const GraphSources& sources = graphSources(source);

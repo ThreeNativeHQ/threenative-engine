@@ -71,6 +71,7 @@ Scene& Scene::copy(const Scene& source) {
     backgroundTexture = source.backgroundTexture;
     environment = source.environment;
     fog = source.fog;
+    fogNode = source.fogNode;
     overrideMaterial = source.overrideMaterial;
     backgroundBlurriness = source.backgroundBlurriness;
     backgroundIntensity = source.backgroundIntensity;

@@ -6522,6 +6522,7 @@
         "environmentRotation.y",
         "environmentRotation.z",
         "fog",
+        "fogNode",
         "frustumCulled",
         "layers.mask",
         "matrixAutoUpdate",

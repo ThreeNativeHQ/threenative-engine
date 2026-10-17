@@ -873,6 +873,12 @@ void registerScene(ClassBinding& b) {
             scene->backgroundTexture = std::static_pointer_cast<Texture>(color->ptr); scene->background.reset();
         } else throw Unsupported{"background must be a Color, Texture or null"};
     };
+    // three's `scene.fogNode`: vec4(color, factor), a TSL node set through the TSL runtime (no ABI value carries it).
+    b.setters["fogNode"] = [](void* self, const Value& v) {
+        if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node))
+            throw Unsupported{"fogNode must be a shader node or null"};
+        as<Scene>(self)->fogNode = v.node;
+    };
     b.members["fog"] = [](void* self, const Args&, Store& store) -> Value {
         auto fog = as<Scene>(self)->fog;
         return fog ? store.share(fog->exponential() ? "FogExp2" : "Fog", fog) : Value{};

@@ -7,6 +7,7 @@ interface IExtrasTsl {
   readonly clamp: (value: unknown, low: number, high: number) => unknown;
   readonly float: (value: number) => IFogNode;
   readonly linearDepth: () => IFogNode;
+  readonly vec4: (color: unknown, factor: unknown) => IFogNode;
 }
 
 interface IFogNode {
@@ -34,10 +35,14 @@ export function defineTslExtras(tsl: IExtrasTsl) {
       const d = typeof density === "number" ? tsl.float(density) : density;
       return d.mul(d).mul(viewZ).mul(viewZ).negate().exp().oneMinus();
     },
-    // r185's fog(color, factor) composes the finished fragment (`output.rgb`), which a native material
-    // graph cannot read. It returns the description `scene.fogNode` holds; the renderer reports once that
-    // the engine does not apply it (TN_NATIVE_FOG_NODE_IGNORED), and `scene.fog` still does.
-    fog: (color: unknown, factor: unknown) => Object.freeze({ isFogNode: true, color, factor }),
+    // r185's fog(color, factor) composes the finished fragment (`output.rgb`), which a native material graph
+    // cannot read. The engine mixes it in itself: fog() is the engine node vec4(color, factor) that
+    // `scene.fogNode` holds, and the engine's setupFog mixes the colour by the factor in place of `scene.fog`.
+    fog: (color: unknown, factor: unknown) => {
+      const node = tsl.vec4(color, typeof factor === "number" ? tsl.float(factor) : factor);
+      Object.defineProperty(node, "isFogNode", { value: true });
+      return node;
+    },
     // context() and velocity: the context that carries the previous-frame velocity, and that accessor.
     // The native engine has neither, so they refuse at use, by name.
     context: unsupportedExport("context"),

@@ -434,17 +434,24 @@ static void outputMapUv(Program& v, const LocalVertex& local) {
 // and order: `c <= 0.04045 ? c * 0.0773993808 : pow(c * 0.9478672986 + 0.0521327014, 2.4)`.
 // NodeMaterial.setupFog: after lighting/emissive, before tone mapping; alpha is unchanged.
 ExprId fogColor(Program& f, const VertexVariant& variant, ExprId outgoing);
+static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId fallback,
+                        ExprId normalView = kInvalid, ExprId geometryNormal = kInvalid);
 
 // NodeMaterial.setup: `vec4(outgoingLight, diffuseColor.a).max(0)`, which forces unsigned output,
 // then setupOutput mixes the fog into the clamped colour.
 ExprId materialOutput(Program& f, const VertexVariant& variant, ExprId outgoing, ExprId alpha) {
     const ExprId clamped = f.call("max", {f.construct(Type::vec(4), {outgoing, alpha}),
                                           f.construct(Type::vec(4), {f.constant(0.0f)})});
-    if (!variant.fog) return clamped;  // no fog to mix: one clamp expression, not one per lane
+    if (!variant.fog && !variant.nodes.fogNode) return clamped;  // no fog to mix: one clamp expression, not one per lane
     return f.construct(Type::vec(4), {fogColor(f, variant, f.swizzle(clamped, "xyz")), f.swizzle(clamped, "w")});
 }
 
 ExprId fogColor(Program& f, const VertexVariant& variant, ExprId outgoing) {
+    if (variant.nodes.fogNode) {
+        // scene.fogNode is vec4(color, factor): FogNode.setup mixes the fragment's colour toward the node's colour.
+        const ExprId fog = nodeValue(f, variant.nodes.fogNode, Type::vec(4), kInvalid);
+        return f.call("mix", {outgoing, f.swizzle(fog, "xyz"), f.swizzle(fog, "w")});
+    }
     if (!variant.fog) return outgoing;
     const ExprId viewZ = f.neg(f.swizzle(f.varying("positionView", Type::vec(3)), "z"));
     const ExprId factor = fogFactor(f, variant.fog, viewZ,
@@ -591,7 +598,7 @@ static ExprId facedNormal(Program& f, const VertexVariant& variant, ExprId norma
 // flipped on a DoubleSide back face, then the normalNode or the normal map; inside normalNode itself it
 // is the flipped geometry normal. Without one the graph reads the interpolated varying.
 static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId fallback,
-                        ExprId normalView = kInvalid, ExprId geometryNormal = kInvalid) {
+                        ExprId normalView, ExprId geometryNormal) {
     if (!node) return fallback;
     tsl::Build build(f);
     std::unordered_map<std::string, ExprId> inputs;

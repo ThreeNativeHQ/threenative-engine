@@ -14,6 +14,7 @@
 #include "engine/foundation/math/Matrix.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/object3d.h"
+#include "engine/shader/graph/graph.h"
 
 namespace tn::engine {
 
@@ -47,6 +48,8 @@ class Scene : public Object3D {
     std::shared_ptr<Texture> environment;
     std::shared_ptr<Texture> backgroundTexture;
     std::shared_ptr<Fog> fog;
+    /** three's `scene.fogNode`: vec4(color, factor), applied to every fogged material in place of `fog`. */
+    shader::graph::Node fogNode;
     void* overrideMaterial = nullptr;
 
     double backgroundBlurriness = 0;

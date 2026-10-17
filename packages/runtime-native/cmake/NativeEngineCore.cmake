@@ -298,6 +298,7 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds
     native_engine_fog_math=fog
+    native_engine_fog_node_mixes_color=fog_node_mixes_color
     native_engine_material_node_key=node_key
     native_engine_material_bloom_passes=bloom_passes
     native_engine_material_slots_share_one_lowering=slots_share_one_lowering)

@@ -92,6 +92,22 @@ void fog() {
     CHECK(code.code.substr(output, code.code.find('\n', output) - output).ends_with(", 1f), vec4<f32>(0f));"));
 }
 
+// scene.fogNode (a vec4(color, factor) on the draw item's nodes) is mixed into the finished colour of every
+// mesh material, in place of the built-in scene.fog uniforms: NodeMaterial.setupFog before tone mapping.
+void fogNodeMixesColor() {
+    for (int material = 0; material < 5; ++material) {
+        VertexVariant variant;
+        variant.nodes.fogNode = graph::vec4({graph::uniform("hazeColor", Type::vec(3), {0.1, 0.2, 0.3}), graph::float_(0.3125)});
+        const auto p = material == 0 ? buildBasic(variant) : material == 1 ? buildLambert(variant) :
+            material == 2 ? buildPhong(variant) : material == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+        CHECK(p.vertex.ok() && p.fragment.ok());
+        const auto code = WgslEmitter::emit(p.fragment);
+        CHECK(code.ok());
+        CHECK(code.code.find("0.3125f") != std::string::npos);
+        CHECK(code.code.find("fogColor") == std::string::npos);
+    }
+}
+
 // NodeMaterial.depthNode becomes @builtin(frag_depth) in every mesh material's fragment stage.
 void depthNodeWritesFragDepth() {
     for (int material = 0; material < 5; ++material) {
@@ -395,4 +411,4 @@ void bloomPasses() {
 
 }  // namespace
 
-TN_TEST_MAIN({"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

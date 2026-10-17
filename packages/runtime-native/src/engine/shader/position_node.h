@@ -20,7 +20,10 @@ struct MaterialNodes {
     graph::Node depthNode;
     /** SpriteNodeMaterial.scaleNode (a vec2 beside the model scale) and rotationNode (radians, over the material's). */
     graph::Node scaleNode, rotationNode;
+    /** The scene's `fogNode`, a vec4(color, factor) mixed into the finished colour; set on draw items, never on a material. */
+    graph::Node fogNode;
     bool operator==(const MaterialNodes&) const = default;
+    /** The material's own slots: the draw item's `fogNode` is the scene's, so no material owns it. */
     auto pointers() const {
         return std::array{colorNode.get(),    positionNode.get(),  normalNode.get(),
                           emissiveNode.get(), roughnessNode.get(), metalnessNode.get(),
@@ -30,7 +33,8 @@ struct MaterialNodes {
     auto graphs() const {
         return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
                           metalnessNode, opacityNode,  vertexNode, fragmentNode,
-                          scaleNode,     rotationNode, depthNode};
+                          scaleNode,     rotationNode, depthNode,
+                          fogNode};
     }
     std::string key() const {
         std::string out;
