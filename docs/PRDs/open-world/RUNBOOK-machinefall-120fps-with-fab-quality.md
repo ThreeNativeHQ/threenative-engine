@@ -4,7 +4,7 @@
 Created 2026-10-03, after #390 merged.
 
 **Goal.** Two outcomes:
-- (A) Machinefall `?scene=map-walk` **walks** at CPU and GPU p95 ≤ 8.3 ms on the RTX 2080 WebGPU adapter, with no visual loss. These are [PRD-478](PRD-478-open-world-frame-architecture.md)'s AC-1, AC-2 and AC-3.
+- (A) Machinefall `?scene=map-walk` **walks** at CPU and GPU p95 ≤ 8.3 ms on the RTX 2080 WebGPU adapter, with no visual loss. These are [PRD-478](../done/open-world/PRD-478-open-world-frame-architecture.md)'s AC-1, AC-2 and AC-3.
 - (B) A cold agent's Fab or Megascans game ships its assets at full quality through the default cook, with no hand-set knobs, and stays inside that frame budget.
 
 **Stop condition.** Every row below is ticked, or sits under an owner gate that is recorded as asked.

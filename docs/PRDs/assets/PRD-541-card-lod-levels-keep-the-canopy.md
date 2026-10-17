@@ -4,7 +4,7 @@
 **Priority:** P1 — Open: PRD-478's walking GPU p95 on Machinefall needs these trees to have a chain, and today a chain thins their needles visibly.
 **Complexity:** 5 (MEDIUM) — one cook stage (`packages/assets/src/lod/`), the model pass's self-check, a Machinefall re-cook with timing and blind raters
 **Owner:** João
-**Depends on:** none. [PRD-478](../open-world/PRD-478-open-world-frame-architecture.md)'s AC-2 and AC-3 depend on this PRD.
+**Depends on:** none. [PRD-478](../done/open-world/PRD-478-open-world-frame-architecture.md)'s AC-2 and AC-3 depend on this PRD.
 
 ## Context
 
