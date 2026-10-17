@@ -75,6 +75,9 @@ export function defineWebRenderer(
   parameters?: Record<string, unknown>,
 ) => object {
   let claimed = false;
+  // The engine starts once per page: one device, and one surface bound to the first renderer's canvas.
+  // A renderer built after that one was disposed (a hot update re-runs the game) adopts both.
+  let started: HTMLCanvasElement | undefined;
   const string = (text: string): number => {
     const bytes = module.lengthBytesUTF8(text) + 1;
     const pointer = module._malloc(bytes) >>> 0;
@@ -152,14 +155,19 @@ export function defineWebRenderer(
     #last: [unknown, unknown] | undefined;
     #state: string | undefined;
     #gpuSamples = 0;
+    #holdsSlot = true;
     #timestampFrames: number[] = [];
 
     constructor(parameters: Record<string, unknown> = {}) {
       if (claimed)
         throw new Error("TN_WASM_RENDERER_SINGLE: the Wasm engine drives one renderer per page.");
       claimed = true;
+      // The surface cannot move to another canvas, so the engine's own canvas stays the one core mounts
+      // (it mounts `renderer.domElement`, not the canvas it asked for).
       this.domElement =
-        (parameters.canvas as HTMLCanvasElement | undefined) ?? document.createElement("canvas");
+        started ??
+        (parameters.canvas as HTMLCanvasElement | undefined) ??
+        document.createElement("canvas");
       // three's WebGPURenderer marks its canvas `three.js r<rev> webgpu`; tools read the backend there.
       this.domElement.setAttribute("data-engine", "threenative wasm webgpu");
       const samples = parameters.samples ?? (parameters.antialias ? 4 : 1);
@@ -184,13 +192,19 @@ export function defineWebRenderer(
 
     init(): Promise<this> {
       this.#initialized ??= (async () => {
-        module.specialHTMLTargets[CANVAS_TARGET] = this.domElement;
-        handles = module._malloc(36) >>> 0;
-        const selector = string(CANVAS_TARGET);
-        try {
-          check(module._tnw_web_init(selector, this.#drawWidth(), this.#drawHeight()));
-        } finally {
-          module._free(selector);
+        if (started === undefined) {
+          started = this.domElement;
+          module.specialHTMLTargets[CANVAS_TARGET] = this.domElement;
+          handles = module._malloc(36) >>> 0;
+          const selector = string(CANVAS_TARGET);
+          try {
+            check(module._tnw_web_init(selector, this.#drawWidth(), this.#drawHeight()));
+          } finally {
+            module._free(selector);
+          }
+        } else {
+          // The disposed renderer's post graph must not outlive its game.
+          tsl?.setPost(null);
         }
         for (;;) {
           const state = module._tnw_web_poll();
@@ -450,7 +464,12 @@ export function defineWebRenderer(
       return unsupported("setAnimationLoop");
     }
 
-    dispose(): void {}
+    /** Releases the page's one renderer slot; the engine and its canvas stay for the next renderer. */
+    dispose(): void {
+      if (!this.#holdsSlot) return;
+      this.#holdsSlot = false;
+      claimed = false;
+    }
   };
   const read = async (target: unknown, x: number, y: number, width: number, height: number) => {
     writeHandle(24, target, "render target");

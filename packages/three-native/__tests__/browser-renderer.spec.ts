@@ -39,6 +39,7 @@ function host(
   };
   const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
   const state = vi.fn((..._args: number[]) => 0);
+  const initCalls = vi.fn((..._args: unknown[]) => 0);
   let next = 16;
   const module = {
     HEAPU8: new Uint8Array(256),
@@ -51,7 +52,7 @@ function host(
       return next;
     },
     _free: () => undefined,
-    _tnw_web_init: () => 0,
+    _tnw_web_init: initCalls,
     _tnw_web_poll: () => 1,
     _tnw_web_adapter: () => 0,
     _tnw_web_error: () => 0,
@@ -71,7 +72,7 @@ function host(
   const canvas = { width: 300, height: 150, style: {}, setAttribute: () => undefined };
   const scene = new (classes.Scene as new () => object)();
   const camera = new (classes.PerspectiveCamera as new () => object)();
-  return { Renderer, canvas, scene, camera, state, classes };
+  return { Renderer, canvas, scene, camera, state, classes, initCalls };
 }
 
 async function drawn(parameters: Record<string, unknown>) {
@@ -287,5 +288,35 @@ describe("the Wasm engine's frame gate", () => {
     renderer.render(scene, camera);
     expect(drawnFrames).toHaveLength(2);
     expect(renderer.info.engine.frameGateSkips).toBe(2);
+  });
+});
+
+describe("the Wasm engine's WebGPURenderer across a hot update", () => {
+  it("lets a renderer replace a disposed one on the engine's own canvas, and refuses a second live one", async () => {
+    const { Renderer, canvas, scene, camera, state } = host();
+    type Wasm = { domElement: object; init(): Promise<unknown>; dispose(): void; render(a: unknown, b: unknown): void };
+    const first = new Renderer({ canvas }) as Wasm;
+    await first.init();
+    expect(() => new Renderer({ canvas })).toThrow(/TN_WASM_RENDERER_SINGLE/u);
+    first.dispose();
+    first.dispose();
+    const nextCanvas = { ...canvas };
+    const second = new Renderer({ canvas: nextCanvas }) as Wasm;
+    await second.init();
+    expect(second.domElement).toBe(canvas);
+    second.render(scene, camera);
+    expect(state).toHaveBeenCalled();
+    first.dispose();
+    expect(() => new Renderer({ canvas })).toThrow(/TN_WASM_RENDERER_SINGLE/u);
+  });
+
+  it("starts the engine once however many renderers the page builds", async () => {
+    const { Renderer, canvas, initCalls } = host();
+    for (let index = 0; index < 3; index += 1) {
+      const renderer = new Renderer({ canvas }) as { init(): Promise<unknown>; dispose(): void };
+      await renderer.init();
+      renderer.dispose();
+    }
+    expect(initCalls).toHaveBeenCalledTimes(1);
   });
 });
