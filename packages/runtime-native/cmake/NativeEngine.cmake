@@ -366,19 +366,15 @@ if(TN_NODE_EXECUTABLE AND TN_TEMPLATE_TINT)
         COMMAND ${TN_NODE_EXECUTABLE} --import tsx tests/native-engine/template-post-packages.ts
             $<TARGET_FILE:tn-native-engine-template-post-packages> ${TN_TEMPLATE_TINT} ${CMAKE_CURRENT_BINARY_DIR}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-    # develop's starter chain gained `grade` (a LUT that is still pending in this CPU harness) and a
-    # `grain` stage after F forked; the native lowering has neither, so the sweep drops them and the
-    # harness refuses the chain. The other templates are judged here, and the starter is its own test
-    # under the `tn-known-red` label, so it stays visible and runnable until the lowering lands.
-    set_tests_properties(native_engine_template_post_packages PROPERTIES LABELS "native-engine" TIMEOUT 180
-        ENVIRONMENT "TN_POST_EXCEPT=starter")
+    # The starter's `grade` (a .cube LUT) and `grain` lower like every other stage: the sweep covers all templates.
+    set_tests_properties(native_engine_template_post_packages PROPERTIES LABELS "native-engine" TIMEOUT 180)
     add_test(NAME native_engine_template_post_starter
         COMMAND ${TN_NODE_EXECUTABLE} --import tsx tests/native-engine/template-post-packages.ts
             $<TARGET_FILE:tn-native-engine-template-post-packages> ${TN_TEMPLATE_TINT} ${CMAKE_CURRENT_BINARY_DIR}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-    set_tests_properties(native_engine_template_post_starter PROPERTIES LABELS "tn-known-red" TIMEOUT 180
+    set_tests_properties(native_engine_template_post_starter PROPERTIES LABELS "native-engine" TIMEOUT 180
         ENVIRONMENT "TN_POST_ONLY=starter")
-    foreach(effect GTAONode DenoiseNode SMAANode FnNode RTTNode BloomNode SharpenNode)
+    foreach(effect GTAONode DenoiseNode SMAANode FnNode RTTNode BloomNode SharpenNode Lut3DNode)
         add_test(NAME native_engine_post_${effect}
             COMMAND ${CMAKE_COMMAND} -E env TN_POST_LOWERING=${effect}
                 ${TN_NODE_EXECUTABLE} --import tsx tests/native-engine/template-post-packages.ts

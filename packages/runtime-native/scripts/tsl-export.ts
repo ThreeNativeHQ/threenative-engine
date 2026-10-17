@@ -244,6 +244,18 @@ export function exportTslGraph(root: unknown): ISerializedTslGraph {
           visit(sharpenGraph(node as unknown as Parameters<typeof sharpenGraph>[0], builder)),
         ];
         return id;
+      case "RenderOutputNode":
+        // Tone mapping and output colour space are the node's own, or absent to inherit the pipeline's.
+        if (typeof node._toneMapping === "number") record.value = node._toneMapping;
+        if (typeof node.outputColorSpace === "string") record.name = node.outputColorSpace;
+        record.args = [child("colorNode")];
+        return id;
+      case "FilmNode":
+      case "Lut3DNode":
+        // r185's own setup(): the node is a TempNode whose graph is its setup, as BloomNode's is.
+        record.kind = "ShaderCall";
+        record.args = [visit((node.setup as (builder: unknown) => unknown)(builder))];
+        return id;
       case "RTTNode": {
         record.name = `rtt${id}`;
         if (node.autoUpdate === false) record.operation = "static";
@@ -355,9 +367,12 @@ export function exportTslGraph(root: unknown): ISerializedTslGraph {
       case "ScreenNode":
         record.operation = String(node.scope);
         break;
+      case "Texture3DNode":
       case "TextureNode":
       case "PassTextureNode":
       case "PassMultipleTextureNode": {
+        // A volume is a TextureNode sampled at a vec3; the graph picks texture_3d from that type.
+        if (kind === "Texture3DNode") record.kind = "TextureNode";
         if (node.referenceNode != null) record.dependencies.push(child("referenceNode"));
         const owner = node.passNode;
         // Scene passes are external shader inputs. Effect-owned textures are not: their owner

@@ -148,6 +148,7 @@ public:
             else if (operation == "-") result = sub(args[0], args[1]);
             else if (operation == "*") result = mul(args[0], args[1]);
             else if (operation == "/") result = div(args[0], args[1]);
+            else if (operation == "%") result = mod(args[0], args[1]);  // r185 builds the floored mod_float
             else if (operation == "<") result = lessThan(args[0], args[1]);
             else if (operation == ">") result = greaterThan(args[0], args[1]);
             else if (operation == "==") result = equal(args[0], args[1]);
@@ -172,6 +173,22 @@ public:
             auto n = std::make_shared<NodeData>(); n->kind = kind == "JoinNode" ? Kind::Join : Kind::Convert;
             n->type = type(field(record, "type").string()); n->args = args; result = n;
         } else if (((kind == "VarNode" && (operation == "intent" || operation == "readOnly")) || (kind == "ContextNode" && operation.empty()) || kind == "SubBuildNode") && arity(1)) result = args[0];
+        else if (kind == "RenderOutputNode" && arity(1)) {
+            // `value` is three's ToneMapping constant when authored, absent to inherit the pipeline's;
+            // `name` is the output colour space. Both mirror `renderOutput` in tsl_call.cpp.
+            auto n = std::make_shared<NodeData>(); n->kind = Kind::RenderOutput; n->args = args;
+            const Value& tone = field(record, "value");
+            if (tone.isNumber()) {
+                const double t = tone.number();
+                if (t != 0 && t != 1 && t != 2 && t != 3 && t != 4 && t != 6 && t != 7)
+                    return fail("TN_TSL_UNSUPPORTED: RenderOutputNode toneMapping " + std::to_string(t));
+                n->bits = static_cast<uint64_t>(t) + 1;
+            }
+            n->name = field(record, "name").string();
+            if (!n->name.empty() && n->name != "srgb" && n->name != "srgb-linear")
+                return fail("TN_TSL_UNSUPPORTED: RenderOutputNode outputColorSpace " + n->name);
+            result = n;
+        }
         else if (kind == "AttributeNode" && args.empty()) {
             const auto name = field(record, "name").string();
             const auto t = type(field(record, "type").string());

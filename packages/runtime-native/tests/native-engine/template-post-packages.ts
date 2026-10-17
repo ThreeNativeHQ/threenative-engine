@@ -5,11 +5,22 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } fro
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
-import { ACESFilmicToneMapping, PerspectiveCamera, REVISION, Scene, Texture } from "three";
+import {
+  ACESFilmicToneMapping,
+  Data3DTexture,
+  FileLoader,
+  FloatType,
+  PerspectiveCamera,
+  REVISION,
+  RGBAFormat,
+  Scene,
+  Texture,
+} from "three";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { lut3D } from "three/addons/tsl/display/Lut3DNode.js";
 import { smaa } from "three/addons/tsl/display/SMAANode.js";
-import { texture, vec2 } from "three/tsl";
+import { float, texture, texture3D, vec2 } from "three/tsl";
 import { TempNode } from "three/webgpu";
 import { type IRenderChainOptions, RenderChain } from "../../../core/src/render/chain.js";
 import { exportTslGraph } from "../../scripts/tsl-export.js";
@@ -135,6 +146,12 @@ async function compile(name: string, output: unknown): Promise<boolean> {
       if (!shader.includes(operation)) throw new Error(`FnNode: missing ${operation}`);
   }
   checkPostModules(name, modules);
+  // A colour grade samples a 3D table at `0.5/size + rgb * (1 - 1/size)`; a 2D bind would not compile.
+  if (
+    name === "Lut3DNode" &&
+    !modules.some((m) => /texture_3d<f32>/u.test(readFileSync(m, "utf8")))
+  )
+    throw new Error("Lut3DNode: no texture_3d binding in the native package");
   for (const module of modules) {
     const validated = await run(tint as string, [
       module,
@@ -200,6 +217,12 @@ if (lowering) {
     GTAONode: () => ao(texture(depth), null, camera).getTextureNode(),
     DenoiseNode: () => seeded(() => denoise(input, texture(depth), null, camera)),
     SMAANode: () => smaa(input),
+    Lut3DNode: () => {
+      const table = new Data3DTexture(new Float32Array(2 * 2 * 2 * 4), 2, 2, 2);
+      table.type = FloatType;
+      table.format = RGBAFormat;
+      return lut3D(input, texture3D(table), 2, float(0.5));
+    },
   };
   if (!(lowering in nodes)) throw new Error(`Unknown lowering ${lowering}`);
   const output = nodes[lowering as keyof typeof nodes]();
@@ -228,6 +251,7 @@ for (const name of names) {
   for (const tier of ["high", "medium", "low"] as const) {
     const label = `${name}-${tier}`;
     let output: unknown;
+    let pendingTable = false;
     const renderer = {
       kind: "webgpu" as const,
       raw: { toneMapping: 0, toneMappingExposure: 1 },
@@ -247,20 +271,35 @@ for (const name of names) {
       },
       createRenderChain(options: Omit<IRenderChainOptions, "renderer">) {
         const chain = new RenderChain(renderer, options);
-        if (chain.applied.dropped.length > 0) {
+        // A template's `.cube` table is a file that lands after the chain that reads it, so its
+        // `lut:pending` is the transient first build. A tier that sets a stage's intensity to zero
+        // turned it off by design. Any other drop, or a pending table that never lands, is a stage
+        // the native lowering refused.
+        const dropped = chain.applied.dropped.filter(
+          (stage) => stage.reason !== "lut:pending" && !/Intensity:0$/u.test(stage.reason),
+        );
+        pendingTable = chain.applied.dropped.some((stage) => stage.reason === "lut:pending");
+        if (dropped.length > 0) {
           chain.dispose();
-          throw new Error(
-            chain.applied.dropped.map((stage) => `${stage.name}: ${stage.reason}`).join("; "),
-          );
+          throw new Error(dropped.map((stage) => `${stage.name}: ${stage.reason}`).join("; "));
         }
         return chain;
       },
     };
     let controller: { dispose(): void } | undefined;
+    // `FileLoader` fetches a URL relative to a page; read the template's `public/` file instead.
+    FileLoader.prototype.load = function load(url, onLoad) {
+      const text = readFileSync(path.join(templates, name, "public", url), "utf8");
+      queueMicrotask(() => onLoad?.(text));
+    };
     try {
       const camera = new PerspectiveCamera(60, 4 / 3, 0.1, 1000);
       camera.updateProjectionMatrix();
       controller = authored.setupPost(renderer, new Scene(), camera, { tier });
+      // The template's own loader reads the table; the chain is rebuilt once it lands.
+      for (let wait = 0; pendingTable && wait < 200; wait++)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      if (pendingTable) throw new Error("grade: lut:pending (the table never loaded)");
       if (name === "snow" && output === undefined) {
         // postprocessing.ts:44 calls WorldEnvironment.apply; worldEnvironment.ts:480-483
         // returns before building a pass when no stages/baseColour/auto-exposure run.
