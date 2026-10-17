@@ -60,4 +60,10 @@ runs:
         for file in build/web/tn-native-engine-web.mjs build/web/tn-native-engine-web.wasm; do
           test -s "$file" || { echo "TN_WEB_ENGINE_MISSING: $file was not built" >&2; exit 1; }
         done
-        echo "web engine ready: $(stat -c %s build/web/tn-native-engine-web.wasm) byte wasm"
+        wasm_bytes=$(stat -c %s build/web/tn-native-engine-web.wasm)
+        allowed_bytes=4194304
+        if [ "$wasm_bytes" -gt "$allowed_bytes" ]; then
+          echo "TN_WEB_ENGINE_OVER_BUDGET: measured $wasm_bytes bytes, allowed $allowed_bytes bytes" >&2
+          exit 1
+        fi
+        echo "web engine ready: $wasm_bytes byte wasm (allowed $allowed_bytes bytes)"
