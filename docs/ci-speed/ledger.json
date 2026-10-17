@@ -21567,6 +21567,144 @@
           "jobs_file": "docs/ci-speed/runs/39066107986.jobs.json"
         }
       }
+    },
+    {
+      "id": 36,
+      "at": "2026-10-17T21:36:55.063Z",
+      "commit": "4dd04c76b",
+      "label": "current window refresh (develop since 2026-10-14)",
+      "notes": "Fresh develop window measured 2026-10-17 after iterations 21-35 (PR #513 full-board samples, chart-excluded). Not an effect of PR #513, which is unmerged; it reflects develop changes since 2026-10-14.",
+      "decision": "provisional",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-14",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": 147.8,
+        "lastPushToMergeP90Min": 443,
+        "firstAttemptSuccessPct": 50,
+        "boardWallMedianMin": 46,
+        "queueWaitP90Min": 18.2
+      },
+      "extra": {
+        "prCount": 11,
+        "mergeGroupRuns": 12,
+        "mergeGroupRunSuccessPct": 62.5,
+        "enqueueToMergeMedianMin": 51,
+        "queueWaitJobs": 663
+      },
+      "prs": [
+        {
+          "number": 516,
+          "title": "A character never shows its bind pose (PRD-623)",
+          "lastPushToMergeMin": 443,
+          "enqueueToMergeMin": 53.4,
+          "attempts": 1,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 515,
+          "title": "chore(deps): pin threenative-asset-mcp 0.14.0 (earshot prompt-fit backend)",
+          "lastPushToMergeMin": 2.4,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 514,
+          "title": "Reduce temporary allocations in render bundle safety checks",
+          "lastPushToMergeMin": 60.4,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 512,
+          "title": "Smooth physics and camera motion between fixed ticks (PRD-619)",
+          "lastPushToMergeMin": 678.6,
+          "enqueueToMergeMin": 45.7,
+          "attempts": 1,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 511,
+          "title": "chore(assets): pin threenative-asset-mcp 0.13.0 (Unity Asset Store import)",
+          "lastPushToMergeMin": 0.4,
+          "enqueueToMergeMin": null,
+          "attempts": 0,
+          "firstAttempt": null,
+          "firstFailingJob": null
+        },
+        {
+          "number": 509,
+          "title": "fix(core): PRD-616 - warm the output pass before startup and streamed draws",
+          "lastPushToMergeMin": 147.8,
+          "enqueueToMergeMin": 205,
+          "attempts": 3,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / Windows desktop core"
+        },
+        {
+          "number": 508,
+          "title": "Use cached V8 by default on Linux ARM64",
+          "lastPushToMergeMin": 228.4,
+          "enqueueToMergeMin": 162.2,
+          "attempts": 2,
+          "firstAttempt": "cancelled",
+          "firstFailingJob": null
+        },
+        {
+          "number": 507,
+          "title": "fix(native): complete v0.1.6 qualification and verifier cleanup",
+          "lastPushToMergeMin": 94.7,
+          "enqueueToMergeMin": 48.5,
+          "attempts": 1,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 505,
+          "title": "feat(PRD-473): enable automatic world impostors and finish GPU-world acceptance",
+          "lastPushToMergeMin": 149.9,
+          "enqueueToMergeMin": 81.8,
+          "attempts": 2,
+          "firstAttempt": "failure",
+          "firstFailingJob": "native-platforms / Desktop web/native parity"
+        },
+        {
+          "number": 488,
+          "title": "feat(assets): PRD-568 cook mobile textures to GPU-ready ASTC",
+          "lastPushToMergeMin": 91.3,
+          "enqueueToMergeMin": 45.9,
+          "attempts": 1,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        },
+        {
+          "number": 486,
+          "title": "Use transient MSAA depth for renderer output passes",
+          "lastPushToMergeMin": 193.2,
+          "enqueueToMergeMin": 39.2,
+          "attempts": 1,
+          "firstAttempt": "success",
+          "firstFailingJob": null
+        }
+      ],
+      "firstFailingJobs": [
+        {
+          "job": "native-platforms / Desktop web/native parity",
+          "count": 2
+        },
+        {
+          "job": "native-platforms / Windows desktop core",
+          "count": 1
+        }
+      ]
     }
   ]
 }
