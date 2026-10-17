@@ -2004,6 +2004,30 @@ void skinned_bounds_before_the_first_frame() {
     CHECK(near(box.max.x, 1) && near(box.max.y, 2) && near(box.max.z, 3));
 }
 
+// PRD-617: three's mat2(a, b, c, d) with four plain numbers builds a Matrix2, whose constructor is row-major, while the
+// same call with any node argument emits the WGSL constructor, which is column-major. The rain template's fbm octave
+// rotation reads it, so a transposed matrix moved its terrain and every tree on it.
+void tsl_mat2_scalar_order() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto dumped = [&](std::vector<TslArg> args) {
+        const auto matrix = tn::abi::tslCall("mat2", nullptr, args, serial);
+        CHECK(matrix != nullptr);
+        tn::engine::shader::Program p(tn::engine::shader::Stage::Fragment);
+        tn::engine::shader::tsl::Build build(p);
+        p.output("color", g::lower(g::vec4({g::mul(matrix, g::vec2({g::float_(1), g::float_(0)})), g::float_(0), g::float_(1)}), p));
+        return p.dump(true);
+    };
+    const auto node = [](double n) { return TslArg::of(g::float_(n)); };
+    // Constants: the arguments read row by row, so the columns are (a, c) and (b, d).
+    CHECK(dumped({TslArg::of(1.0), TslArg::of(2.0), TslArg::of(3.0), TslArg::of(4.0)}) ==
+          dumped({node(1), node(3), node(2), node(4)}));
+    // Any node argument: column by column, untouched.
+    CHECK(dumped({node(1), node(2), node(3), node(4)}) != dumped({node(1), node(3), node(2), node(4)}));
+    CHECK(dumped({TslArg::of(1.0), node(2), TslArg::of(3.0), TslArg::of(4.0)}) == dumped({node(1), node(2), node(3), node(4)}));
+}
+
 void starter_post_bindings() {
     namespace g = tn::engine::shader::graph;
     using tn::abi::TslArg;
@@ -2218,7 +2242,7 @@ void starter_post_bindings() {
 
 }
 
-TN_TEST_MAIN({"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},

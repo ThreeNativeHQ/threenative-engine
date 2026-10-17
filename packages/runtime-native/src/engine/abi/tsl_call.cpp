@@ -806,11 +806,14 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         node->args = {arg(0)};
         return node;
     }
-    // r185's mat2 (ConvertType): two column vectors, or four scalars in column-major order.
+    // r185's mat2 (ConvertType): two column vectors; four plain numbers build a Matrix2, whose constructor is
+    // row-major, so the columns are (a, c) and (b, d); four scalars with any node in them are WGSL's
+    // column-major constructor.
     if (name == "mat2") {
         if (args.size() != 2 && args.size() != 4) throw std::runtime_error("mat2 takes two columns or four scalars");
         if (args.size() == 2) return g::mat2({arg(0), arg(1)});
-        return g::mat2({arg(0), arg(1), arg(2), arg(3)});
+        const bool constants = std::all_of(args.begin(), args.end(), [](const TslArg& a) { return a.kind == TslArg::Kind::Number; });
+        return constants ? g::mat2({arg(0), arg(2), arg(1), arg(3)}) : g::mat2({arg(0), arg(1), arg(2), arg(3)});
     }
     if (name == "vec2" || name == "vec3" || name == "vec4") {
         const size_t lanes = static_cast<size_t>(name.back() - '0');

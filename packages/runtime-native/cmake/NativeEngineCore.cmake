@@ -332,6 +332,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_authored_output=authored_output
     native_engine_starter_post_bindings=starter_post_bindings
     native_engine_abi_tsl_call=tsl_call
+    native_engine_abi_tsl_mat2_scalar_order=tsl_mat2_scalar_order
     native_engine_abi_tsl_uniform_value=tsl_uniform_value
     native_engine_abi_tsl_statements=tsl_statements
     native_engine_abi_tsl_effect_parameter=tsl_effect_parameter
