@@ -444,7 +444,6 @@ struct Renderer::FrameJob {
     std::vector<ShadowPass> shadowPasses;
     WGPURenderPassColorAttachment color{};
     WGPURenderPassDepthStencilAttachment depth{};
-    WGPURenderPassTimestampWrites_Compat sceneTimes{};
     WGPUCommandEncoder encoder = nullptr;
     WGPURenderPipeline pageClear = nullptr;
     CameraState camera;
@@ -502,13 +501,7 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     nearest.addressModeU = nearest.addressModeV = nearest.addressModeW = WGPUAddressMode_ClampToEdge;
     nearest.maxAnisotropy = 1;
     outputSampler_ = wgpuDeviceCreateSampler(device, &nearest);
-    if (wgpuDeviceHasFeature(device, WGPUFeatureName_TimestampQuery)) {
-        WGPUQuerySetDescriptor queries = {};
-        queries.type = WGPUQueryType_Timestamp;
-        queries.count = 6;
-        timestamps_ = wgpuDeviceCreateQuerySet(device, &queries);
-        timestampResolve_ = gpu_.createBuffer(48, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc);
-    }
+    passTimer_ = std::make_shared<FrameGpuTimer>(device);
     setOutput(OutputState{});
     setSize(1, 1);
 }
@@ -527,7 +520,11 @@ WGPUSampler Renderer::linearClampSampler() {
 }
 
 Renderer& Renderer::probeCaptureRenderer() {
-    if (!probeCapture_) probeCapture_ = std::make_unique<Renderer>(instance_, device_, queue_, events_);
+    if (!probeCapture_) {
+        probeCapture_ = std::make_unique<Renderer>(instance_, device_, queue_, events_);
+        probeCapture_->passTimer_ = passTimer_;
+        probeCapture_->ownsPassTimer_ = false;
+    }
     return *probeCapture_;
 }
 
@@ -763,7 +760,6 @@ Renderer::~Renderer() {
     if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
     if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
     mainBundle_ = viewportBundle_ = nullptr;
-    if (timestamps_) wgpuQuerySetRelease(timestamps_);
     for (auto& [key, program] : programs_) {
         if (!program) continue;  // a refused program
         for (int g = 0; g < 2; ++g) {
@@ -1033,7 +1029,7 @@ void Renderer::resolveDepth(WGPUCommandEncoder encoder) {
     depth.depthClearValue = 1.0f;
     WGPURenderPassDescriptor passDesc = {};
     passDesc.depthStencilAttachment = &depth;
-    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+    WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc);
     wgpuRenderPassEncoderSetPipeline(pass, depthResolve_);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
@@ -1228,6 +1224,7 @@ void Renderer::copyDepthToTexture(const Texture& texture) {
 }
 
 void Renderer::initTexture(const Texture& texture) {
+    FrameGpuTimer::Scope timerScope(passTimer_.get());
     materialTexture(texture);
     flushMipmaps();
 }
@@ -1432,7 +1429,7 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
         color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
         WGPURenderPassDescriptor passDesc{}; passDesc.colorAttachmentCount = 1; passDesc.colorAttachments = &color;
-        const auto pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+        const auto pass = beginTimedRenderPass(encoder, &passDesc);
         wgpuRenderPassEncoderSetPipeline(pass, pipeline); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
         wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass);
         wgpuRenderPassEncoderRelease(pass); wgpuTextureViewRelease(destination); wgpuBindGroupRelease(group);
@@ -1791,7 +1788,7 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
         WGPURenderPassDescriptor passDesc = {};
         passDesc.colorAttachmentCount = 1;
         passDesc.colorAttachments = &color;
-        WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+        WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc);
         wgpuRenderPassEncoderSetViewport(pass, passes[p].x, passes[p].y, passes[p].w, passes[p].h, 0.0f, 1.0f);
         wgpuRenderPassEncoderSetScissorRect(pass, uint32_t(passes[p].x), uint32_t(passes[p].y), uint32_t(passes[p].w),
                                             uint32_t(passes[p].h));
@@ -2054,6 +2051,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                   const LightState& lights, std::array<double, 4> clear,
                                   std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
                                   WGPUTextureFormat outputFormat, bool defer) {
+    FrameGpuTimer::Scope timerScope(compilation ? nullptr : passTimer_.get());
     // One frame in flight per renderer: the game thread may not plan while the encode half is pending or running.
     if (!compilation && (pendingEncode_ || encoding_))
         throw std::logic_error("TN_RENDER_THREAD_BATON: a frame was planned before the previous one was encoded");
@@ -2139,19 +2137,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     depth.depthLoadOp = WGPULoadOp_Clear;
     depth.depthStoreOp = WGPUStoreOp_Store;
     depth.depthClearValue = 1.0f;
-    WGPURenderPassDescriptor passDesc = {};
-    passDesc.colorAttachmentCount = 1;
-    passDesc.colorAttachments = &color;
-    passDesc.depthStencilAttachment = &depth;
-    const bool timed = timestamps_ && gpuTimer_ && !timing_->pending;
-    WGPURenderPassTimestampWrites_Compat sceneTimes = {};
-    if (timed) {
-        sceneTimes.querySet = timestamps_;
-        // Both indices on both passes: a browser rejects the "undefined" index sentinel.
-        sceneTimes.beginningOfPassWriteIndex = 0;
-        sceneTimes.endOfPassWriteIndex = 1;
-        passDesc.timestampWrites = &sceneTimes;
-    }
+    const bool timed = ownsPassTimer_ && passTimer_->active();
 
     const auto opaque = sortDraws(items, camera);
 
@@ -3133,7 +3119,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.encoder = encoder;
     job.color = color;
     job.depth = depth;
-    job.sceneTimes = sceneTimes;
     job.timed = timed;
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
@@ -3149,6 +3134,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 }
 
 void Renderer::encodeFrame(FrameJob& job) {
+    FrameGpuTimer::Scope timerScope(passTimer_.get());
     // The encode half (PRD-613): records and submits what renderPrepared planned. It reads the job,
     // the renderer's own GPU state and the geometry cache's resolved handles, and nothing the game writes.
     // A bind group released after the plan chose it would be recorded as a recycled handle: refuse the frame.
@@ -3172,7 +3158,6 @@ void Renderer::encodeFrame(FrameJob& job) {
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
     passDesc.depthStencilAttachment = &depth;
-    if (timed) passDesc.timestampWrites = &job.sceneTimes;
     // Encode: state changes only where they change; per draw, its dynamic offsets and the draw. The
     // shadow passes first, so the main pass samples this frame's maps.
     WGPURenderPipeline bound = nullptr;
@@ -3268,11 +3253,9 @@ void Renderer::encodeFrame(FrameJob& job) {
         graph.pass("vsm-receivers", graph::PassKind::Render, reads, {});
         if (!graph.compile().ok()) throw std::runtime_error("TN_GRAPH_INVALID: virtual shadows");
     }
-    // The frame's GPU time starts at its first shadow pass, which runs before the scene pass.
+    // Keep the shadow diagnostic while timing each shadow pass separately.
     const bool shadowTimed = timed && !shadowPasses.empty();
     if (timed) timerBeganAtShadow_ = shadowTimed;
-    WGPURenderPassTimestampWrites_Compat shadowTimes = {};
-    bool shadowTimesTaken = false;
     for (const ShadowPass& shadowPlan : shadowPasses) {
         WGPURenderPassDepthStencilAttachment shadowDepth = {};
         shadowDepth.view = shadowPlan.target;
@@ -3281,14 +3264,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         shadowDepth.depthClearValue = 1.0f;
         WGPURenderPassDescriptor shadowDesc = {};
         shadowDesc.depthStencilAttachment = &shadowDepth;
-        if (shadowTimed && !shadowTimesTaken) {
-            shadowTimes.querySet = timestamps_;
-            shadowTimes.beginningOfPassWriteIndex = 4;
-            shadowTimes.endOfPassWriteIndex = 5;
-            shadowDesc.timestampWrites = &shadowTimes;
-            shadowTimesTaken = true;
-        }
-        WGPURenderPassEncoder shadowPass = wgpuCommandEncoderBeginRenderPass(encoder, &shadowDesc);
+        WGPURenderPassEncoder shadowPass = beginTimedRenderPass(encoder, &shadowDesc, ownsPassTimer_ ? 0 : 2);
         if (shadowPlan.size) {
             wgpuRenderPassEncoderSetViewport(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size, 0, 1);
             wgpuRenderPassEncoderSetScissorRect(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size);
@@ -3302,7 +3278,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         wgpuRenderPassEncoderRelease(shadowPass);
     }
     if (traa_) traa_->seedHistory(encoder, sceneColor_);
-    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+    WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 1 : 2);
     bound = nullptr;
     boundIndex = nullptr;
     // three's viewport textures copy the frame at the first draw that reads one: the main pass splits
@@ -3367,7 +3343,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         viewportDesc.colorAttachmentCount = 1;
         viewportDesc.colorAttachments = &loadColor;
         viewportDesc.depthStencilAttachment = &loadDepth;
-        WGPURenderPassEncoder rest = wgpuCommandEncoderBeginRenderPass(encoder, &viewportDesc);
+        WGPURenderPassEncoder rest = beginTimedRenderPass(encoder, &viewportDesc);
         wgpuRenderPassEncoderExecuteBundles(rest, 1, &viewportBundle_);
         wgpuRenderPassEncoderEnd(rest);
         wgpuRenderPassEncoderRelease(rest);
@@ -3385,7 +3361,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         WGPURenderPassDescriptor normalDesc{};
         normalDesc.colorAttachmentCount = 1; normalDesc.colorAttachments = &normals;
         normalDesc.depthStencilAttachment = &normalDepth;
-        auto normalEncoder = wgpuCommandEncoderBeginRenderPass(encoder, &normalDesc);
+        auto normalEncoder = beginTimedRenderPass(encoder, &normalDesc);
         bound = nullptr; boundIndex = nullptr;
         for (const Planned& p : normalPlan) encode(normalEncoder, p, Tally::Extra);
         wgpuRenderPassEncoderEnd(normalEncoder); wgpuRenderPassEncoderRelease(normalEncoder);
@@ -3401,7 +3377,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         WGPURenderPassDescriptor motionDesc{};
         motionDesc.colorAttachmentCount = 1; motionDesc.colorAttachments = &motion;
         motionDesc.depthStencilAttachment = &motionDepth;
-        auto velocityPass = wgpuCommandEncoderBeginRenderPass(encoder, &motionDesc);
+        auto velocityPass = beginTimedRenderPass(encoder, &motionDesc);
         bound = nullptr; boundIndex = nullptr;
         for (const Planned& p : velocityPlan) encode(velocityPass, p, Tally::Extra);
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
@@ -3431,29 +3407,44 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.triangles += effectPasses;
     }
     encoder = recordSampledTargets(encoder);
-    outputPass(encoder, timed, presentTarget, presentFormat);
-    if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 6, gpu_.buffer(timestampResolve_), 0);
+    outputPass(encoder, presentTarget, presentFormat);
+    const auto segments = passTimer_->segments;
+    const bool resolveTiming = timed && !passTimer_->failed && !segments.empty();
+    if (resolveTiming) {
+        if (!timestampResolve_.type)
+            timestampResolve_ = gpu_.createBuffer(FrameGpuTimer::maxPasses * 16, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc);
+        wgpuCommandEncoderResolveQuerySet(encoder, passTimer_->queries, 0, uint32_t(segments.size()) * 2, gpu_.buffer(timestampResolve_), 0);
+    }
     WGPUCommandBufferDescriptor commandDesc = {};
     submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
-    if (timed) {
-        timing_->pending = true;
+    if (resolveTiming) {
+        passTimer_->pending = true;
         std::weak_ptr<Timing> timing = timing_;
-        gpu_.readBuffer(timestampResolve_, 0, 48, [timing, shadowTimed, source](GpuStatus status, std::vector<uint8_t> bytes) {
-            const std::shared_ptr<Timing> t = timing.lock();
-            if (!t) return;  // the renderer is gone
-            t->pending = false;
-            uint64_t ns[6];
-            if (status != GpuStatus::Ok || bytes.size() != sizeof ns) return;
-            std::memcpy(ns, bytes.data(), sizeof ns);
-            const uint64_t begin = shadowTimed ? ns[4] : ns[0];
-            if (ns[3] <= begin) return;  // a reset clock reads as no sample
-            t->lastMs = double(ns[3] - begin) / 1e6;
-            const auto span = [](uint64_t from, uint64_t to) { return to > from ? double(to - from) / 1e6 : 0.0; };
-            t->segments = {shadowTimed ? span(ns[4], ns[0]) : 0.0, span(ns[0], ns[1]), span(ns[1], ns[2]), span(ns[2], ns[3])};
-            t->source = source;  // the submitted frame id, set before `samples` so a reader sees both
+        const auto timer = passTimer_;
+        gpu_.readBuffer(timestampResolve_, 0, segments.size() * 16, [timing, timer, segments, source](GpuStatus status, std::vector<uint8_t> bytes) {
+            timer->pending = false;
+            const auto t = timing.lock();
+            if (!t || status != GpuStatus::Ok || bytes.size() != segments.size() * 16) return;
+            std::array<double, 4> sums{};
+            for (size_t i = 0; i < segments.size(); ++i) {
+                uint64_t ns[2];
+                std::memcpy(ns, bytes.data() + i * 16, sizeof ns);
+                if (!ns[0] || ns[1] < ns[0]) return;  // Missing/reset timestamps invalidate the whole frame.
+                sums[segments[i]] += double(ns[1] - ns[0]) / 1e6;
+            }
+            const double total = sums[0] + sums[1] + sums[2] + sums[3];
+            if (total <= 0) return;
+            t->lastMs = total;
+            t->segments = sums;
+            t->passes = uint32_t(segments.size());
+            t->source = source;
             ++t->samples;
         });
+    }
+    if (ownsPassTimer_) {
+        passTimer_->segments.clear();
+        passTimer_->failed = false;
     }
     {
         std::lock_guard lock(frameMailMutex_);
@@ -3461,7 +3452,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
 }
 
-void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureView present, WGPUTextureFormat presentFormat) {
+void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat) {
     PipelineTarget outputTarget{present ? presentFormat : WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None};
     outputTarget.layout = outputPipelineLayout_;
     WGPURenderPipeline pipeline = pipelines_.get(outputVertex_, &outputFragment_, outputTarget);
@@ -3493,14 +3484,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureVie
     WGPURenderPassDescriptor passDesc = {};
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
-    WGPURenderPassTimestampWrites_Compat outputTimes = {};
-    if (timed) {
-        outputTimes.querySet = timestamps_;
-        outputTimes.beginningOfPassWriteIndex = 2;
-        outputTimes.endOfPassWriteIndex = 3;
-        passDesc.timestampWrites = &outputTimes;
-    }
-    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+    WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 3 : 2);
     wgpuRenderPassEncoderSetPipeline(pass, pipeline);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderSetVertexBuffer(pass, outputVertex_.attributes.at(0).location, gpu_.buffer(outputTriangle_), 0, 24);
@@ -3617,7 +3601,7 @@ void Renderer::generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, ui
         WGPURenderPassDescriptor passDesc = {};
         passDesc.colorAttachmentCount = 1;
         passDesc.colorAttachments = &color;
-        WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+        WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc);
         wgpuRenderPassEncoderSetPipeline(pass, pipeline);
         wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
         wgpuRenderPassEncoderSetVertexBuffer(pass, blitVertex_.attributes.at(0).location, gpu_.buffer(outputTriangle_), 0, 24);
@@ -3651,6 +3635,7 @@ GraphCompute& Renderer::graphCompute() {
 void Renderer::prepareCompute(const shader::graph::Node& node) { (void)graphCompute().prepare(node); }
 
 void Renderer::dispatchCompute(const ComputeDispatch& dispatch) {
+    FrameGpuTimer::Scope timerScope(passTimer_.get());
     WGPUCommandEncoderDescriptor desc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &desc);
     try {
@@ -3738,7 +3723,7 @@ WGPUCommandBuffer Renderer::encodeBlit(BlitPlan& plan, WGPUTextureView target) {
     WGPURenderPassDescriptor passDesc = {};
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
-    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+    WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc);
     wgpuRenderPassEncoderSetPipeline(pass, plan.pipeline);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, plan.group, 0, nullptr);
     wgpuRenderPassEncoderSetVertexBuffer(pass, plan.location, plan.triangle, 0, 24);

@@ -56,7 +56,7 @@ const source = readFileSync(new URL("../../src/engine/renderer/post/traa.cpp", i
 const rendererSource = readFileSync(new URL("../../src/engine/renderer/renderer.cpp", import.meta.url), "utf8");
 const render = rendererSource.slice(rendererSource.indexOf("uint64_t Renderer::render("));
 assert.ok(render.indexOf("traa_->seedHistory(encoder, sceneColor_)") >= 0);
-assert.ok(render.indexOf("traa_->seedHistory(encoder, sceneColor_)") < render.indexOf("WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc)"),
+assert.ok(render.indexOf("traa_->seedHistory(encoder, sceneColor_)") < render.indexOf("WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc"),
   "reset must copy previous beauty before the scene overwrites it");
 const seed = source.slice(source.indexOf("void TraaPass::seedHistory("), source.indexOf("void TraaPass::resolve("));
 assert.match(seed, /if \(!needsSeed\(\)\) return;/);

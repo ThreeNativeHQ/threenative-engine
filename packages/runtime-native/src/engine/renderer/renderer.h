@@ -23,6 +23,7 @@
 #include "engine/renderer/geometry_cache.h"
 #include "engine/renderer/gpu_resources.h"
 #include "engine/renderer/compute.h"
+#include "engine/renderer/frame_gpu_timer.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/probes/volume.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
@@ -334,6 +335,8 @@ public:
     std::unique_ptr<Renderer> sibling() {
         auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_);
         child->textures_ = textures_;
+        child->passTimer_ = passTimer_;
+        child->ownsPassTimer_ = false;
         child->gpu_.shareSubmissions(gpu_);
         child->geometry_ = geometry_;
         return child;
@@ -507,15 +510,15 @@ public:
         publishes_ = true;
     }
     /**
-     * GPU time of the most recent frame whose timestamps came back, first shadow pass (else scene
-     * pass) start to output pass end, in milliseconds; negative until one has, and always on a device without timestamp-query.
+     * GPU time of the most recent frame whose timestamps came back, summed over every render
+     * and compute pass, including offscreen targets, in milliseconds; negative until one has, and always on a device without timestamp-query.
      */
     double lastGpuMs() const { return timing_->lastMs; }
     /**
      * Whether frames are timed on the GPU: off by default, since a timed frame resolves its query
      * set and reads it back, a cost every frame pays and only a caller of lastGpuMs wants.
      */
-    void setGpuTimer(bool on) { gpuTimer_ = on; }
+    void setGpuTimer(bool on) { passTimer_->enabled = on; }
     /**
      * The caller's frame id for the next timed render, reported with its sample once the readback
      * lands. The caller owns the id: the engine's own render ids are not one per present.
@@ -523,15 +526,17 @@ public:
     void setGpuTimerSourceFrame(uint64_t frame) { sourceFrame_ = frame; }
     /**
      * The last timed frame's GPU time by segment, in ms: shadow passes (0 when the frame drew none),
-     * scene pass, everything between the scene and output passes (post, TRAA), output pass.
+     * scene pass, other passes (offscreen, compute, post, TRAA), output pass.
      */
     std::array<double, 4> lastGpuSegments() const { return timing_->segments; }
     /** How many GPU times have come back, so a caller samples each one once. */
     uint64_t gpuSamples() const { return timing_->samples; }
+    /** Timestamp pairs in the most recently resolved complete frame. */
+    uint32_t gpuTimestampPasses() const { return timing_->passes; }
     /** The caller's frame id of the most recent resolved GPU time: the frame it was submitted with, not the one that read it back. */
     uint64_t gpuSourceFrame() const { return timing_->source; }
     /** Whether frames are actually timed: the device negotiated timestamp-query and the timer is on. */
-    bool gpuTimerEnabled() const { return timestamps_ != nullptr && gpuTimer_; }
+    bool gpuTimerEnabled() const { return passTimer_->queries != nullptr && passTimer_->enabled; }
     /** Whether the last timed frame's GPU time began at its first shadow pass (else at the scene pass). */
     bool gpuTimerBeganAtShadow() const { return timerBeganAtShadow_; }
 
@@ -675,7 +680,7 @@ private:
     void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
     GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done);
     void releaseOutputGroup();
-    void outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureView present, WGPUTextureFormat presentFormat);
+    void outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat);
 
     WGPUInstance instance_;
     std::unique_ptr<Renderer> probeCapture_;
@@ -840,16 +845,16 @@ private:
     std::vector<uint64_t> mainBundleKey_;
     FrameStats mainBundleStats_;
     bool timerBeganAtShadow_ = false;
-    bool gpuTimer_ = false;
+    std::shared_ptr<FrameGpuTimer> passTimer_;
+    bool ownsPassTimer_ = true;
     uint64_t sourceFrame_ = 0;  // the caller frame id the next timed frame is submitted with
-    WGPUQuerySet timestamps_ = nullptr;  // scene pass begin/end [0, 1], output pass begin/end [2, 3], first shadow pass begin [4, 5]
     Handle timestampResolve_;
     // Shared with the readback callback by weak reference: a backend may deliver it after this
     // renderer is gone (wgpu does at teardown), and it must then find nothing to write into.
     struct Timing {
-        std::atomic<bool> pending{false};  // a resolve is being read back; the next frames are not timed
         double lastMs = -1;
-        std::array<double, 4> segments{};  // shadow passes, scene pass, post (between), output pass, in ms
+        std::array<double, 4> segments{};  // shadow passes, scene pass, other passes, output pass, in ms
+        uint32_t passes = 0;
         uint64_t samples = 0;
         uint64_t source = 0;  // the caller frame id the successful sample was submitted with
     };

@@ -8,6 +8,26 @@
 
 Recovery snapshots integrated into PR #493; publish-state tests: 46 passed. Runtime matrix and visual proof remain pending; no acceptance criteria are newly verified.
 
+2026-10-16 GPU timer correction (engine layer; Complexity: 1 → LOW; risk override: none).
+Tempest's reported 39.7 ms excluded offscreen work from the 44.3 ms per-pass sum, including a
+1152×648 cloud pass of about 4.3 ms. Bounded plan: share timestamp collection with secondary,
+render-target and probe renderers; instrument every scene, shadow, post, TRAA, mip and compute
+pass; resolve and sum complete timestamp pairs once at the owning frame boundary. Keep timing
+opt-in, asynchronous, source-tagged and fail-closed. Integration is unchanged: web frame selector 7
+and the V8 player still consume Renderer::lastGpuMs().
+The new native_engine_gpu_timer_covers_offscreen case reproduced RED on the original timer:
+immediate and deferred targets both failed the resolved-pair assertion. GREEN: the same case now
+resolves four render-pass pairs (offscreen scene/output and main scene/output), checks nonzero
+offscreen attribution and the total, and separately checks a compute encoder plus main frame
+resolves three pairs. All three focused GPU timer CTests pass headlessly on NVIDIA RTX 2080/Vulkan.
+The explicit native tests/render-driver/V8-player targets and Wasm preset build successfully.
+The requested native-engine suite completed: 407/409 passed. Its TRAA source-order assertion
+searched for the old raw pass-begin spelling; updated to the timed wrapper, it now passes alongside
+all three timer cases (4/4 focused). The remaining registry snapshot failure is pre-existing:
+HEAD bindings expose Scene.fogNode's getter while HEAD's native-registry.json omits it; that is the
+only generated-dump difference. The unrelated snapshot is unchanged. No release or visual
+acceptance box is ticked by this instrumentation fix.
+
 2026-10-15 reviewer input defect: the V8 player's playtest mailbox treated DOM `buttons` as
 `button + 1`, misidentifying right/middle presses and every release. The pending fix tracks the
 previous mouse mask and maps its changed bit to DOM `button`, preserving chord transitions and

@@ -1,3 +1,4 @@
+#include "engine/renderer/frame_gpu_timer.h"
 #include "effects.h"
 #include "engine/scene/material.h"
 #include "engine/scene/render_target.h"
@@ -521,7 +522,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
         WGPURenderPassDescriptor passDesc{};
         passDesc.colorAttachmentCount = 1;
         passDesc.colorAttachments = &color;
-        const auto render = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+        const auto render = beginTimedRenderPass(encoder, &passDesc);
         if (pass.source.visible) {
             wgpuRenderPassEncoderSetPipeline(render, pass.pipeline);
             wgpuRenderPassEncoderSetBindGroup(render, 0, group, 0, nullptr);

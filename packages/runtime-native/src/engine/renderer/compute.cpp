@@ -1,3 +1,4 @@
+#include "engine/renderer/frame_gpu_timer.h"
 #include "compute.h"
 #include "engine/renderer/pipeline_cache.h"
 
@@ -116,7 +117,7 @@ bool ComputePass::encode(WGPUCommandEncoder encoder, std::span<const Handle> sto
     WGPUBindGroup group = createBindGroup(device_, &groupDesc);
     wgpuBindGroupLayoutRelease(layout);
     WGPUComputePassDescriptor passDesc = {};
-    WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &passDesc);
+    WGPUComputePassEncoder pass = beginTimedComputePass(encoder, &passDesc);
     wgpuComputePassEncoderSetPipeline(pass, pipeline_);
     wgpuComputePassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     // One row of at most 65535 workgroups; a longer dispatch stacks rows, which instanceIndex folds back.

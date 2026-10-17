@@ -1,3 +1,4 @@
+#include "engine/renderer/frame_gpu_timer.h"
 #include "traa.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/foundation/math/Matrix.h"
@@ -302,7 +303,7 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
     WGPURenderPassDescriptor desc{}; desc.colorAttachmentCount = 1; desc.colorAttachments = &color;
-    auto pass = wgpuCommandEncoderBeginRenderPass(encoder, &desc);
+    auto pass = beginTimedRenderPass(encoder, &desc);
     wgpuRenderPassEncoderSetPipeline(pass, pipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
     wgpuBindGroupRelease(group); wgpuBindGroupLayoutRelease(layout);
