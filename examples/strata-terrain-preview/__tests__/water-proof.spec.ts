@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DataUtils, HalfFloatType, RGBAFormat } from "three";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 import { readWaterProofMode } from "../src/render/waterProof.js";
@@ -11,7 +12,8 @@ import {
   sampleActiveWaterProof,
 } from "../src/render/waterProof.js";
 
-const repoRoot = process.cwd();
+// The package script runs vitest from the package directory with `--root ../..`, so cwd is not the repo root.
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const verifyOcean = resolve(repoRoot, "examples/strata-terrain-preview/scripts/verify-ocean.mjs");
 const ROI = { x: 0, y: 0, width: 280, height: 100 };
 const half = (value: number): number => DataUtils.toHalfFloat(value);
