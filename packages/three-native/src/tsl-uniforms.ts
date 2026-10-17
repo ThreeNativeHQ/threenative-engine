@@ -6,10 +6,17 @@
  * lanes do not fit the uniform's type. Either way the engine keeps the program.
  */
 
+/** three's update `frame`: the rendering camera and scene, with the frame counter. */
+export interface IUpdateFrame {
+  frameId: number;
+  camera?: unknown;
+  scene?: unknown;
+}
+
 interface IUniformState {
   value: unknown;
   /** three's `node.update`, set by onRenderUpdate/onFrameUpdate; its result becomes `.value`. */
-  update?: (frame: { frameId: number }) => unknown;
+  update?: (frame: IUpdateFrame) => unknown;
 }
 
 /** One float per lane: a number, a Color's r, g, b, or a VectorN's x, y, z, w. */
@@ -66,7 +73,7 @@ export function liveUniforms<TNode extends object>(
     type?: string,
   ) => { array: unknown[]; element(index: unknown): TNode };
   reference(property: string, type: string, object?: unknown): TNode;
-  sync(): void;
+  sync(frame?: { camera?: unknown; scene?: unknown }): void;
 } {
   const states = new WeakMap<object, IUniformState>();
   const objects = new Set<WeakRef<TNode>>();
@@ -167,8 +174,8 @@ export function liveUniforms<TNode extends object>(
         },
       };
     },
-    sync() {
-      const frame = { frameId: ++frameId };
+    sync(extra?: { camera?: unknown; scene?: unknown }) {
+      const frame: IUpdateFrame = { ...extra, frameId: ++frameId };
       for (const node of updating) {
         const next = states.get(node)?.update?.(frame);
         if (next !== undefined) (node as { value: unknown }).value = next;

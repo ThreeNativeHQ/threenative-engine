@@ -295,7 +295,7 @@ export function defineTsl(
   classes?: ConstClasses,
 ): {
   exports: Record<string, unknown>;
-  sync(): void;
+  sync(frame?: { camera?: unknown; scene?: unknown }): void;
 } {
   const released = new FinalizationRegistry<number>((node) => runtime.release(node));
   const prototype: Record<string, unknown> = {};

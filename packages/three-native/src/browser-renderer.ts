@@ -64,7 +64,7 @@ function unsupported(name: string): never {
 export function defineWebRenderer(
   module: WebEngineModule,
   Color: new (...args: unknown[]) => IColorLike,
-  beforeRender: () => void = () => {},
+  beforeRender: (frame?: { camera?: unknown; scene?: unknown }) => void = () => {},
   tsl?: ITslRuntime,
   /** Draws the offscreen PassNodes into their targets (pass-node.ts); given the drawing buffer and the target draw. */
   drawSecondaryPasses: (
@@ -268,7 +268,7 @@ export function defineWebRenderer(
       // loop, a heavy scene) the page blocks until the GPU drains and the GPU process is killed.
       // The host says 1 while two drawn frames are still on the GPU: draw nothing this call.
       if (module._tnw_web_frame(11) === 1) return;
-      beforeRender();
+      beforeRender({ camera, scene });
       drawSecondaryPasses(
         () => ({ width: this.#drawWidth(), height: this.#drawHeight() }),
         (target, root, view) => this[DRAW_TARGET](target, root, view, true),
@@ -333,7 +333,7 @@ export function defineWebRenderer(
     [DRAW_TARGET](target: unknown, root: unknown, camera: unknown, deferred = false): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
-      beforeRender();
+      beforeRender({ camera, scene: root });
       this.#applyState();
       writeHandle(0, root, "scene");
       writeHandle(12, camera, "camera");

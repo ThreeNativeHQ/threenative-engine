@@ -189,9 +189,9 @@ export async function bindWebEngine(
     bound.WebGPURenderer = defineWebRenderer(
       module,
       classes.Color as never,
-      () => {
+      (frame) => {
         collect();
-        tsl?.sync();
+        tsl?.sync(frame);
         audio.updateAudio();
       },
       runtime.tsl,

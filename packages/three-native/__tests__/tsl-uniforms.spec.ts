@@ -40,4 +40,15 @@ describe("uniform update hooks", () => {
     live.sync();
     expect(pushed.at(-1)).toEqual([0]);
   });
+
+  // The racing template's fog reads the camera's height in `onRenderUpdate(({ camera }) => ...)`, as three
+  // passes it. Without a camera the callback fell back to height 0 and the distant ground fogged wrongly.
+  it("hands the rendering camera to an update hook, as three's frame does", () => {
+    const { live, pushed } = setup();
+    const camera = { name: "chase" };
+    live.uniform(0).onRenderUpdate?.(((frame: { camera?: unknown }) =>
+      frame.camera === camera ? 7 : -1) as never);
+    live.sync({ camera });
+    expect(pushed.at(-1)).toEqual([7]);
+  });
 });
