@@ -110,6 +110,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_shader_emit_position_invariant=position_invariant
         native_engine_shader_emit_shared_once=shared_once)
     target_link_libraries(tn-native-engine-shader-emit-test PRIVATE tn_engine_shader tn_host_services)
+    tn_native_engine_test(tn-native-engine-frame-gpu-timer-test tests/native-engine/frame_gpu_timer_test.cpp
+        native_engine_frame_gpu_timer_full_stream=full_stream
+        native_engine_frame_gpu_timer_owner_frame_restores=owner_frame_restores)
+    target_link_libraries(tn-native-engine-frame-gpu-timer-test PRIVATE tn_engine_renderer)
     tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
         native_engine_renderer_resize_readback=resize_readback
         native_engine_renderer_output_ramp=output_ramp

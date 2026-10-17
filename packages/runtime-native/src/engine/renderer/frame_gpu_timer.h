@@ -4,7 +4,6 @@
 #include "mystral/webgpu_compat.h"
 #include <atomic>
 #include <cstdint>
-#include <stdexcept>
 #include <vector>
 
 namespace tn::engine {
@@ -17,6 +16,7 @@ struct FrameGpuTimer {
     std::atomic<bool> pending{false};
     std::vector<uint8_t> segments;
 
+    FrameGpuTimer() = default;  // No device, no queries: the stream's bookkeeping alone (its test).
     explicit FrameGpuTimer(WGPUDevice device) {
         if (!wgpuDeviceHasFeature(device, WGPUFeatureName_TimestampQuery)) return;
         WGPUQuerySetDescriptor desc{};
@@ -33,15 +33,19 @@ struct FrameGpuTimer {
         return !pending && !failed;
     }
 
-    template<class Writes> void attach(Writes& writes, uint8_t segment) {
-        if (segments.size() == maxPasses) {
+    // False when the stream is full: the pass runs untimed and the sample is refused, never a thrown
+    // frame. Passes outside a frame (texture mips, compute dispatches) fill segments until the next
+    // owner frame clears them, so a burst larger than maxPasses must not poison every later render.
+    template<class Writes> bool attach(Writes& writes, uint8_t segment) {
+        if (segments.size() >= maxPasses) {
             failed = true;  // Refuse the entire sample rather than silently dropping a pass.
-            throw std::runtime_error("TN_GPU_TIMER_CAPACITY: too many passes in one frame");
+            return false;
         }
         writes.querySet = queries;
         writes.beginningOfPassWriteIndex = uint32_t(segments.size()) * 2;
         writes.endOfPassWriteIndex = writes.beginningOfPassWriteIndex + 1;
         segments.push_back(segment);
+        return true;
     }
 
     // Encoder scopes are thread-local: planning and encoding may run on different threads.
@@ -58,8 +62,7 @@ inline WGPURenderPassEncoder beginTimedRenderPass(WGPUCommandEncoder encoder,
     auto desc = *descriptor;
     WGPURenderPassTimestampWrites_Compat writes{};
     if (auto* timer = FrameGpuTimer::current; timer && timer->measurePass()) {
-        timer->attach(writes, segment);
-        desc.timestampWrites = &writes;
+        if (timer->attach(writes, segment)) desc.timestampWrites = &writes;
     }
     return wgpuCommandEncoderBeginRenderPass(encoder, &desc);
 }
@@ -69,8 +72,7 @@ inline WGPUComputePassEncoder beginTimedComputePass(WGPUCommandEncoder encoder,
     auto desc = *descriptor;
     WGPUComputePassTimestampWrites_Compat writes{};
     if (auto* timer = FrameGpuTimer::current; timer && timer->measurePass()) {
-        timer->attach(writes, 2);
-        desc.timestampWrites = &writes;
+        if (timer->attach(writes, 2)) desc.timestampWrites = &writes;
     }
     return wgpuCommandEncoderBeginComputePass(encoder, &desc);
 }

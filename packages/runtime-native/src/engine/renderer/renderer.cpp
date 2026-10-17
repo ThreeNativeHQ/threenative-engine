@@ -1224,7 +1224,9 @@ void Renderer::copyDepthToTexture(const Texture& texture) {
 }
 
 void Renderer::initTexture(const Texture& texture) {
-    FrameGpuTimer::Scope timerScope(passTimer_.get());
+    // Mip passes run between frames (a Midway load showed 1199 render passes in one gap). Timed, they wait
+    // in the stream, are summed into the next frame's GPU ms, and a few bursts fill it before a frame clears it.
+    FrameGpuTimer::Scope timerScope(nullptr);
     materialTexture(texture);
     flushMipmaps();
 }
