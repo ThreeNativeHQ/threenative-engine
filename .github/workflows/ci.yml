@@ -212,6 +212,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The examples build on the default engine, which loads the web Wasm engine.
+      - uses: ./.github/actions/native-engine-wasm
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:ci
 
@@ -1252,8 +1254,12 @@ jobs:
         run: |
           set -euo pipefail
           ccache --zero-stats
+          # The core reads the web engine's pinned sources too (stb decodes SMAANode's tables).
+          for dependency in stb cgltf webp-source; do
+            node scripts/download-deps.mjs --only "$dependency"
+          done
           cmake -S . -B build/native-engine -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTN_ENGINE_CORE_ONLY=ON
-          cmake --build build/native-engine --parallel "$(nproc)"
+          cmake --build build/native-engine --target all tn-native-engine-core-tests --parallel "$(nproc)"
           ctest --test-dir build/native-engine -L native-engine --no-tests=error --output-on-failure
           ccache --show-stats
       - name: Build and test the engine core as Wasm under node
@@ -1264,7 +1270,7 @@ jobs:
           set -euo pipefail
           source "$GITHUB_WORKSPACE/.cache/emsdk/emsdk_env.sh"
           emcmake cmake -S . -B build/native-engine-wasm -G Ninja -DCMAKE_BUILD_TYPE=Release -DTN_ENGINE_CORE_ONLY=ON
-          cmake --build build/native-engine-wasm --parallel "$(nproc)"
+          cmake --build build/native-engine-wasm --target all tn-native-engine-core-tests --parallel "$(nproc)"
           ctest --test-dir build/native-engine-wasm -L native-engine --no-tests=error --output-on-failure
 
   integration:

@@ -468,6 +468,8 @@ jobs:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The fixtures build on the default engine, which loads the web Wasm engine.
+      - uses: ./.github/actions/native-engine-wasm
       - uses: ./.github/actions/workspace-dist
         with:
           pack-archives: 'false'
