@@ -896,6 +896,33 @@ void fogNode() {
     CHECK(got == "[object Object]");
 }
 
+void nodeMaterialFragment() {
+    Runtime& rt = runtime();
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    Adapter adapter(rt.isolate, rt.context);
+    const std::string got = run(rt, adapter, R"JS(
+        (() => {
+            for (const C of [NodeMaterial, MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial]) {
+                const material = new C();
+                const node = tsl.vec4(1, 0, 0, 1);
+                try { material.fragmentNode = node; }
+                catch (e) { throw new Error(C.name + ' fragment assignment: ' + e.message); }
+                if (material.fragmentNode !== node) throw new Error(C.name + ' fragment getter');
+                let refused = false;
+                try { material.fragmentNode = new Color(); } catch (e) { refused = e instanceof TypeError; }
+                if (!refused || material.fragmentNode !== node) throw new Error(C.name + ' fragment validation');
+                const mesh = new Mesh(new PlaneGeometry(), material);
+                if (mesh.material !== material) throw new Error(C.name + ' mesh material');
+                material.fragmentNode = null;
+                if (material.fragmentNode !== null) throw new Error(C.name + ' fragment clear');
+            }
+            return 'ok';
+        })()
+    )JS");
+    std::printf("node_material_fragment: %s\n", got.c_str());
+    CHECK(got == "ok");
+}
+
 // PRD-531 slice 3: the real V8 material setter owns a graph after its JS wrapper is gone.
 void nodeMaterials() {
     Runtime& rt = runtime();
@@ -2122,7 +2149,7 @@ void templateRanges() {
 }  // namespace
 
 TN_TEST_MAIN({"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
-             {"runtime_churn", runtimeChurn}, {"fog_node", fogNode},
+             {"runtime_churn", runtimeChurn}, {"fog_node", fogNode}, {"node_material_fragment", nodeMaterialFragment},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD}, {"object_raycast", objectRaycast},
              {"catalog_coverage", catalogCoverage},

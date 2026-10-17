@@ -55,7 +55,7 @@ add_executable(tn-native-engine-v8-test EXCLUDE_FROM_ALL tests/native-engine/v8_
 target_link_libraries(tn-native-engine-v8-test PRIVATE tn_adapter_v8)
 target_include_directories(tn-native-engine-v8-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine)
 tn_adapter_v8_executable(tn-native-engine-v8-test)
-foreach(case template_material template_bounds template_ranges handles fast_paths structure_stamp crossing_histogram collect_visits native_matrix_world native_projection_report unsupported gc_release runtime_churn crossing_bench scene raycaster_lod object_raycast catalog_coverage callback_cycle wrapper_lifetime tsl_api uniform_value fog_node node_materials skeletal attribute_arrays geometry_lifecycle material_slots js_math js_math_views js_math_members)
+foreach(case template_material template_bounds template_ranges handles fast_paths structure_stamp crossing_histogram collect_visits native_matrix_world native_projection_report unsupported gc_release runtime_churn crossing_bench scene raycaster_lod object_raycast catalog_coverage callback_cycle wrapper_lifetime tsl_api uniform_value fog_node node_material_fragment node_materials skeletal attribute_arrays geometry_lifecycle material_slots js_math js_math_views js_math_members)
     add_test(NAME native_engine_v8_${case} COMMAND tn-native-engine-v8-test ${case})
     set_tests_properties(native_engine_v8_${case} PROPERTIES LABELS "native-engine")
 endforeach()

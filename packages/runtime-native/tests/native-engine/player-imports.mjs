@@ -564,7 +564,7 @@ import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
 import { createAssetLoader } from ${JSON.stringify(resolve(native, "src/engine/player/core-assets.mjs"))};
 import { Scene, PerspectiveCamera, Mesh, BoxGeometry, MeshBasicMaterial, Color } from "three";
 import { WebGPURenderer, RenderPipeline } from "three/webgpu";
-import { rtt, vec4, convertToTexture, screenUV, pass, mrt, output, normalView, metalness, roughness, uniform } from "three/tsl";
+import { rtt, vec4, convertToTexture, screenUV, pass, mrt, output, normalView, metalness, roughness, uniform, texture } from "three/tsl";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";

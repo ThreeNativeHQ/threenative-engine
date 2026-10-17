@@ -87,7 +87,7 @@ inline bool isMaterialClass(std::string_view cls) {
     return cls == "SpriteMaterial" || cls == "SpriteNodeMaterial" || cls == "LineBasicMaterial" || cls == "Material" ||
            cls == "MeshBasicMaterial" || cls == "MeshLambertMaterial" ||
            cls == "MeshPhongMaterial" || cls == "MeshStandardMaterial" || cls == "MeshPhysicalMaterial" ||
-           cls == "MeshBasicNodeMaterial" || cls == "MeshStandardNodeMaterial";
+           cls == "NodeMaterial" || cls == "MeshBasicNodeMaterial" || cls == "MeshStandardNodeMaterial";
 }
 
 /** The engine's scene-graph classes: an Object3D argument (add, a render root) may be any of them. */
