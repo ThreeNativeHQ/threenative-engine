@@ -20765,3 +20765,102 @@ index bc495cb324ed9923008fa5685aede53aee44b6d8..d2939c02fb6a36cbf0fa299b04a5f1c7
  
  		}
  
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 001a464cd0721ce402967e2cd6ebd51a75317822..f041cf141992c403ac995f24f605f7f293265964 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -33192,7 +33192,27 @@ class Bindings extends DataMap {
+ 			// every uniforms group is a uniform buffer. So if no update is required,
+ 			// we move one with the next binding. Otherwise the next if block will update the group.
+ 
+-			if ( updatedGroup === false ) continue;
++			if ( updatedGroup === false ) {
++
++				// a settled object skips its node updates, so the texture it samples is the one it already
++				// holds; only the GPU texture behind it can have changed (a re-sized render target)
++
++				if ( settled === true && binding.isSampledTexture === true && binding.texture !== undefined ) {
++
++					const generation = this.textures.get( binding.texture ).generation;
++
++					if ( binding.generation !== generation ) {
++
++						binding.generation = generation;
++						needsBindingsUpdate = true;
++
++					}
++
++				}
++
++				continue;
++
++			}
+ 
+ 			//
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 7eb6c45e3bfa62b45c4dce0d941cfbf87bc5010d..b344d27b52f8be09a0e6c7fef999c87b16377c9c 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -33147,7 +33147,27 @@ class Bindings extends DataMap {
+ 			// every uniforms group is a uniform buffer. So if no update is required,
+ 			// we move one with the next binding. Otherwise the next if block will update the group.
+ 
+-			if ( updatedGroup === false ) continue;
++			if ( updatedGroup === false ) {
++
++				// a settled object skips its node updates, so the texture it samples is the one it already
++				// holds; only the GPU texture behind it can have changed (a re-sized render target)
++
++				if ( settled === true && binding.isSampledTexture === true && binding.texture !== undefined ) {
++
++					const generation = this.textures.get( binding.texture ).generation;
++
++					if ( binding.generation !== generation ) {
++
++						binding.generation = generation;
++						needsBindingsUpdate = true;
++
++					}
++
++				}
++
++				continue;
++
++			}
+ 
+ 			//
+ 
+diff --git a/src/renderers/common/Bindings.js b/src/renderers/common/Bindings.js
+index a3cec4ed844ab88f870b46714c56c941e0cc7a8e..a9da6dbb8e15c87a8b434ad019a318b9e7e70335 100644
+--- a/src/renderers/common/Bindings.js
++++ b/src/renderers/common/Bindings.js
+@@ -348,7 +348,27 @@ class Bindings extends DataMap {
+ 			// every uniforms group is a uniform buffer. So if no update is required,
+ 			// we move one with the next binding. Otherwise the next if block will update the group.
+ 
+-			if ( updatedGroup === false ) continue;
++			if ( updatedGroup === false ) {
++
++				// a settled object skips its node updates, so the texture it samples is the one it already
++				// holds; only the GPU texture behind it can have changed (a re-sized render target)
++
++				if ( settled === true && binding.isSampledTexture === true && binding.texture !== undefined ) {
++
++					const generation = this.textures.get( binding.texture ).generation;
++
++					if ( binding.generation !== generation ) {
++
++						binding.generation = generation;
++						needsBindingsUpdate = true;
++
++					}
++
++				}
++
++				continue;
++
++			}
+ 
+ 			//
+ 
