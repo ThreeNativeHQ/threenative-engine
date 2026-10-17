@@ -36,6 +36,13 @@ export interface IRegistryDump {
   readonly classes: Readonly<Record<string, IRegistryClass>>;
 }
 
+/** A ref with its handle words kept (see `createWasmRuntime`): type | context << 16, index, generation. */
+interface IPackedRef extends IEngineRef {
+  w0: number;
+  w1: number;
+  w2: number;
+}
+
 /** An engine object as the back end sees it: an opaque key and its catalog type id. */
 export interface IEngineRef {
   readonly key: string;
@@ -1754,26 +1761,48 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     abi._tn_diagnostic_release(diag);
     throw new Error(`TN_ABI_${status}: ${what}${text ? `: ${text}` : ""}`);
   };
+  // A handle is three words in memory: type and context as two halves of the first, then index and
+  // generation. A ref made here keeps those words, so writing one back is three stores, no parse.
+  let words = new Uint32Array(abi.HEAPU8.buffer);
+  const wordView = () => {
+    if (words.buffer !== abi.HEAPU8.buffer) words = new Uint32Array(abi.HEAPU8.buffer);
+    return words;
+  };
   const keyOf = (pointer: number): IEngineRef => {
     const v = view();
     const type = v.getUint16(pointer, true);
-    const key = `${type}:${v.getUint16(pointer + 2, true)}:${v.getUint32(pointer + 4, true)}:${v.getUint32(pointer + 8, true)}`;
-    return { key, type };
+    const context = v.getUint16(pointer + 2, true);
+    const index = v.getUint32(pointer + 4, true);
+    const generation = v.getUint32(pointer + 8, true);
+    const ref: IPackedRef = {
+      key: `${type}:${context}:${index}:${generation}`,
+      type,
+      w0: (type | (context << 16)) >>> 0,
+      w1: index,
+      w2: generation,
+    };
+    return ref;
   };
-  // A ref's handle fields, parsed from its key once.
-  const handles = new WeakMap<IEngineRef, readonly [number, number, number, number]>();
   const writeHandle = (pointer: number, ref: IEngineRef) => {
-    let fields = handles.get(ref);
-    if (fields === undefined) {
-      fields = ref.key.split(":").map(Number) as [number, number, number, number];
-      handles.set(ref, fields);
+    let packed = ref as Partial<IPackedRef>;
+    if (packed.w0 === undefined) {
+      // A ref some other source made: parse its key once and keep the words on it.
+      const [type = 0, context = 0, index = 0, generation = 0] = ref.key.split(":").map(Number);
+      packed = Object.isExtensible(ref) ? (ref as IPackedRef) : { ...ref };
+      Object.assign(packed, { w0: (type | (context << 16)) >>> 0, w1: index, w2: generation });
     }
-    const [type, context, index, generation] = fields;
+    if ((pointer & 3) === 0) {
+      const at = pointer >>> 2;
+      const w = wordView();
+      w[at] = packed.w0 as number;
+      w[at + 1] = packed.w1 as number;
+      w[at + 2] = packed.w2 as number;
+      return;
+    }
     const v = view();
-    v.setUint16(pointer, type, true);
-    v.setUint16(pointer + 2, context, true);
-    v.setUint32(pointer + 4, index, true);
-    v.setUint32(pointer + 8, generation, true);
+    v.setUint32(pointer, packed.w0 as number, true);
+    v.setUint32(pointer + 4, packed.w1 as number, true);
+    v.setUint32(pointer + 8, packed.w2 as number, true);
   };
   const handleOf = (ref: IEngineRef): number => {
     const pointer = alloc(HANDLE);
