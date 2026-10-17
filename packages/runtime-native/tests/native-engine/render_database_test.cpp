@@ -1323,6 +1323,49 @@ void renderTarget() {
     CHECK(renderer.diagnostics().empty());
 }
 
+// PRD-617: rain's lightning crashed the web host when the post graph's render target was resized. The post graph's
+// textures were read after the draws chose their bind groups, so the moved view dropped the groups the frame was about
+// to record (a released handle that the host may reuse). A mapped draw plus a resized post texture must still render.
+void postTextureResizeKeepsDrawGroups() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    const auto mappedTarget = RenderTarget::make(32, 32, kTextureHalfFloatType);
+    const auto sampled = RenderTarget::make(32, 32, kTextureHalfFloatType);
+    Scene scene;
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    auto mapped = std::make_shared<Material>(MaterialType::Basic);
+    mapped->maps["map"] = mappedTarget->texture;
+    Mesh plane(makePlaneGeometry(2, 2), mapped);
+    scene.add(plane);
+    scene.updateMatrixWorld(true);
+    renderer.setPostGraph(g::add(g::objectTexture(sampled->texture, "resizedSide", g::uv()),
+                                 g::mul(g::texture("scene", g::uv()), g::float_(1))));
+    RenderDatabase database;
+    const auto frame = [&] {
+        try {
+            database.render(renderer, scene, camera, {0, 0, 0, 1});
+            return std::string();
+        } catch (const std::exception& error) {
+            return std::string(error.what());
+        }
+    };
+    CHECK(frame().empty());
+    sampled->setSize(16, 16);
+    const std::string refused = frame();
+    CHECK(refused.empty());
+    if (!refused.empty()) std::fprintf(stderr, "resized post texture: %s\n", refused.c_str());
+    sampled->setSize(48, 48);
+    CHECK(frame().empty());
+    CHECK(renderer.diagnostics().empty());
+}
+
 // PRD-617: an offscreen PassNode's target is planned in the JS frame and recorded by the renderer. A target the post
 // graph samples is drawn after the post render-to-texture passes of the same frame, so what its scene samples from an
 // RTT is this frame's value; planned immediately it would show the previous frame's. The sampled target keeps working
@@ -3695,7 +3738,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},

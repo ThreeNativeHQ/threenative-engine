@@ -439,6 +439,7 @@ struct Renderer::FrameJob {
     WGPURenderPipeline pageClear = nullptr;
     CameraState camera;
     LightState lights;
+    uint64_t groupEpoch = 0;  // the group epoch the plan's bind groups were chosen under
     WGPUTextureView presentTarget = nullptr;
     WGPUTextureFormat presentFormat = WGPUTextureFormat_Undefined;
     bool timed = false, normalPass = false;
@@ -2896,8 +2897,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
         return key;
     };
-    for (ShadowPass& pass : shadowPasses)
-        for (Planned& draw : pass.draws) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
 
     // A draw's fragment group depends on its program, its textures (identity and version, which the
     // descriptor derives from) and the group epoch (a rebuilt uniform buffer or dropped groups). Equal
@@ -2969,6 +2968,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const BackgroundCube* cube = p.item->background ? &backgroundCube(*p.item->map) : nullptr;
         const EnvironmentGpu* env = p.item->envMap ? &environment(*p.item->envMap) : nullptr;
         const EnvironmentGpu* pmrem = p.item->pmremMap ? &environment(*p.item->pmremMap) : nullptr;
+    // The post graph's textures are read after the plan; a render target's view that moves there would drop
+    // the groups chosen below, so it moves here. A shadow draw's vertex group follows for the same reason.
+    for (const auto& texture : postTextures_) materialTexture(*texture.second);
+    for (ShadowPass& pass : shadowPasses)
+        for (Planned& draw : pass.draws) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
         const WGPUTextureView mapView = cube ? cube->view : map ? map->view : nullptr, envView = env ? env->view : nullptr;
         const WGPUSampler mapSampler = cube ? cube->sampler : map ? map->sampler : nullptr, envSampler = env ? env->sampler : nullptr;
         const std::string key = std::to_string(reinterpret_cast<uintptr_t>(p.program)) + "|" +
@@ -3026,6 +3030,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         for (BufferStore* store : {item.positions, item.normals, item.uvs, item.indices, item.skinIndices, item.skinWeights})
             if (store) geometry_->cache.sync(*store, store == item.indices ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex);
     };
+    const uint64_t groupsChosenAt = groupEpoch_;
     const auto syncNamed = [&](const Planned& p) {
         const DrawItem& item = *p.item;
         if (!item.colors && !item.instanceMatrices && !item.instanceColors && item.attributes.empty()) return;
@@ -3129,6 +3134,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     WGPURenderPassDescriptor passDesc = {};
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
+    job.groupEpoch = groupsChosenAt;
     passDesc.depthStencilAttachment = &depth;
     if (timed) passDesc.timestampWrites = &job.sceneTimes;
     // Encode: state changes only where they change; per draw, its dynamic offsets and the draw. The
@@ -3143,6 +3149,9 @@ void Renderer::encodeFrame(FrameJob& job) {
     auto encode = [&](auto pass, const Planned& p, Tally tally) {
         const bool counted = tally == Tally::Main;
         // The same commands record a direct pass or a cached bundle.
+    // A bind group released after the plan chose it would be recorded as a recycled handle: refuse the frame.
+    if (job.groupEpoch != groupEpoch_)
+        throw std::logic_error("TN_NATIVE_GROUPS_STALE: bind groups were dropped after this frame's draws chose them");
 #define TN_ENCODE(name, ...) \
         if constexpr (std::is_same_v<decltype(pass), WGPURenderBundleEncoder>) \
             wgpuRenderBundleEncoder##name(pass, __VA_ARGS__); \
