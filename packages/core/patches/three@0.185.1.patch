@@ -25,7 +25,7 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf299f2fbc6 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..4a13d35d0ce4a4b043219a791427de33104c2bb1 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -1066,10 +1066,10 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  
 -		// finish render pass
 +		renderComplete = true;
-+
-+		} finally {
  
 -		this.backend.finishRender( renderContext );
++		} finally {
++
 +		try {
 +
 +			if ( renderComplete ) this.backend.finishRender( renderContext );
@@ -1156,10 +1156,10 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
 -		const needsRefresh = this._nodes.needsRefresh( renderObject );
 -
 -		if ( needsRefresh ) {
+-
+-			this._nodes.updateBefore( renderObject );
 +		this._nodes.needsRefresh( renderObject );
  
--			this._nodes.updateBefore( renderObject );
--
 -			this._geometries.updateForRender( renderObject );
 -
 -			this._nodes.updateForRender( renderObject );
@@ -1276,13 +1276,13 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
 -		}
 -
 -		//
--
--		const depthTextureGPU = backend.get( depthTexture ).texture;
 +		let cache = this._depthBuffers.get( depthTexture );
  
--		let format, type;
+-		const depthTextureGPU = backend.get( depthTexture ).texture;
 +		if ( cache !== undefined && ( cache.width !== width || cache.height !== height || cache.format !== format || cache.type !== type ) ) {
  
+-		let format, type;
+-
 -		if ( stencil ) {
 +			this.destroyTexture( depthTexture );
 +			cache = undefined;
@@ -1305,14 +1305,14 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  		}
  
 -		if ( depthTextureGPU !== undefined ) {
+-
+-			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
+-
+-				return depthTextureGPU;
 +		// Output and direct overlay passes alternate effective samples 4 and 1.
 +		// Retain at most those two buffers for this canvas size and depth format.
 +		let buffer = cache.textures.get( sampleCount );
  
--			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
--
--				return depthTextureGPU;
--
 -			}
 +		if ( buffer === undefined ) {
  
@@ -1510,13 +1510,13 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
 -		const data = backend.get( this._getBufferAttribute( attribute ) );
 +		const bufferAttribute = this._getBufferAttribute( attribute );
 +		const data = backend.get( bufferAttribute );
-+
+ 
+-		data.buffer.destroy();
 +		// An interleaved attribute's GPU buffer lives on its InterleavedBuffer, and several attributes
 +		// share it: destroy it once and forget it there too, as the WebGL backend does, or the next
 +		// createAttribute() finds the destroyed buffer and submits it (threenative patch).
 +		if ( data.buffer !== undefined ) data.buffer.destroy();
- 
--		data.buffer.destroy();
++
 +		if ( bufferAttribute !== attribute ) backend.delete( bufferAttribute );
  
  		backend.delete( attribute );
@@ -1532,10 +1532,10 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  		if ( bindingsData.layout ) {
  
 -			return bindingsData.layout.layoutGPU;
--
--		}
 +			if ( bindingsData.layoutKey === bindGroupLayoutKey ) return bindingsData.layout.layoutGPU;
  
+-		}
+-
 -		// if not, assing one
 +			this.deleteBindGroupData( bindGroup );
  
@@ -1993,17 +1993,13 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  
  			}
  
-@@ -85628,6 +86344,19 @@ class WebGPUBackend extends Backend {
+@@ -85628,6 +86344,15 @@ class WebGPUBackend extends Backend {
  		// vertex buffers
  
  		const vertexBuffers = renderObject.getVertexBuffers();
 +		if ( renderContextData._tnDepth?.active ) {
 +
-+			if ( this._validateTransientDepth( renderObject, drawParams, vertexBuffers ) ) {
-+
-+				// _draw records the constant only after the actual GPU draw is encoded.
-+
-+			} else {
++			if ( this._validateTransientDepth( renderObject, drawParams, vertexBuffers ) ) ; else {
 +
 +				this._restoreTransientDepth( context );
 +
@@ -2013,7 +2009,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  
  		if ( renderObject.camera.isArrayCamera && renderObject.camera.cameras.length > 0 ) {
  
-@@ -85766,6 +86495,7 @@ class WebGPUBackend extends Backend {
+@@ -85766,6 +86491,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -2021,7 +2017,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -85787,7 +86517,8 @@ class WebGPUBackend extends Backend {
+@@ -85787,7 +86513,8 @@ class WebGPUBackend extends Backend {
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -2031,7 +2027,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -85807,6 +86538,7 @@ class WebGPUBackend extends Backend {
+@@ -85807,6 +86534,7 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -2039,7 +2035,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  
  			needsUpdate = true;
  
-@@ -85828,6 +86560,7 @@ class WebGPUBackend extends Backend {
+@@ -85828,6 +86556,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -2047,7 +2043,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,9 +86579,10 @@ class WebGPUBackend extends Backend {
+@@ -85846,9 +86575,10 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -2059,7 +2055,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  			renderObject.clippingContextCacheKey
  		].join();
  
-@@ -86017,6 +86751,8 @@ class WebGPUBackend extends Backend {
+@@ -86017,6 +86747,8 @@ class WebGPUBackend extends Backend {
  		_shaderModuleDescriptor.label = program.stage + ( program.name !== '' ? `_${ program.name }` : '' );
  		_shaderModuleDescriptor.code = program.code;
  
@@ -2068,7 +2064,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  		programGPU.module = {
  			module: this.device.createShaderModule( _shaderModuleDescriptor ),
  			entryPoint: 'main'
-@@ -86164,6 +86900,7 @@ class WebGPUBackend extends Backend {
+@@ -86164,6 +86896,7 @@ class WebGPUBackend extends Backend {
  			_bufferDescriptor.reset();
  
  			uniformBufferData.buffer = bufferGPU;
@@ -2076,7 +2072,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  
  		}
  
-@@ -86430,6 +87167,7 @@ class WebGPUBackend extends Backend {
+@@ -86430,6 +87163,7 @@ class WebGPUBackend extends Backend {
  
  		submit( this.device, encoder.finish() );
  
@@ -2084,7 +2080,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
  
  			this.textureUtils.generateMipmaps( dstTexture );
-@@ -86447,6 +87185,8 @@ class WebGPUBackend extends Backend {
+@@ -86447,6 +87181,8 @@ class WebGPUBackend extends Backend {
  	 */
  	copyFramebufferToTexture( texture, renderContext, rectangle ) {
  
@@ -2093,7 +2089,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  		const renderContextData = this.get( renderContext );
  
  		let sourceGPU = null;
-@@ -87073,7 +87813,20 @@ class RenderPipeline {
+@@ -87073,7 +87809,20 @@ class RenderPipeline {
  		const currentXR = renderer.xr.enabled;
  		renderer.xr.enabled = false;
  
@@ -2116,7 +2112,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..ab93e431586812819669512a8f8e9bf2
  		renderer.xr.enabled = currentXR;
  
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf74c71c456 100644
+index f707acc24f5711fdae065ce920b08435b0869c1b..bd208f40c220878e7ddc457c6063b7a8761370ec 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -3157,10 +3153,10 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  
 -		// finish render pass
 +		renderComplete = true;
-+
-+		} finally {
  
 -		this.backend.finishRender( renderContext );
++		} finally {
++
 +		try {
 +
 +			if ( renderComplete ) this.backend.finishRender( renderContext );
@@ -3247,10 +3243,10 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
 -		const needsRefresh = this._nodes.needsRefresh( renderObject );
 -
 -		if ( needsRefresh ) {
+-
+-			this._nodes.updateBefore( renderObject );
 +		this._nodes.needsRefresh( renderObject );
  
--			this._nodes.updateBefore( renderObject );
--
 -			this._geometries.updateForRender( renderObject );
 -
 -			this._nodes.updateForRender( renderObject );
@@ -3367,13 +3363,13 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
 -		}
 -
 -		//
--
--		const depthTextureGPU = backend.get( depthTexture ).texture;
 +		let cache = this._depthBuffers.get( depthTexture );
  
--		let format, type;
+-		const depthTextureGPU = backend.get( depthTexture ).texture;
 +		if ( cache !== undefined && ( cache.width !== width || cache.height !== height || cache.format !== format || cache.type !== type ) ) {
  
+-		let format, type;
+-
 -		if ( stencil ) {
 +			this.destroyTexture( depthTexture );
 +			cache = undefined;
@@ -3396,14 +3392,14 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  		}
  
 -		if ( depthTextureGPU !== undefined ) {
+-
+-			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
+-
+-				return depthTextureGPU;
 +		// Output and direct overlay passes alternate effective samples 4 and 1.
 +		// Retain at most those two buffers for this canvas size and depth format.
 +		let buffer = cache.textures.get( sampleCount );
  
--			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
--
--				return depthTextureGPU;
--
 -			}
 +		if ( buffer === undefined ) {
  
@@ -3601,13 +3597,13 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
 -		const data = backend.get( this._getBufferAttribute( attribute ) );
 +		const bufferAttribute = this._getBufferAttribute( attribute );
 +		const data = backend.get( bufferAttribute );
-+
+ 
+-		data.buffer.destroy();
 +		// An interleaved attribute's GPU buffer lives on its InterleavedBuffer, and several attributes
 +		// share it: destroy it once and forget it there too, as the WebGL backend does, or the next
 +		// createAttribute() finds the destroyed buffer and submits it (threenative patch).
 +		if ( data.buffer !== undefined ) data.buffer.destroy();
- 
--		data.buffer.destroy();
++
 +		if ( bufferAttribute !== attribute ) backend.delete( bufferAttribute );
  
  		backend.delete( attribute );
@@ -3623,10 +3619,10 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  		if ( bindingsData.layout ) {
  
 -			return bindingsData.layout.layoutGPU;
--
--		}
 +			if ( bindingsData.layoutKey === bindGroupLayoutKey ) return bindingsData.layout.layoutGPU;
  
+-		}
+-
 -		// if not, assing one
 +			this.deleteBindGroupData( bindGroup );
  
@@ -4084,17 +4080,13 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  
  			}
  
-@@ -85628,6 +86344,19 @@ class WebGPUBackend extends Backend {
+@@ -85628,6 +86344,15 @@ class WebGPUBackend extends Backend {
  		// vertex buffers
  
  		const vertexBuffers = renderObject.getVertexBuffers();
 +		if ( renderContextData._tnDepth?.active ) {
 +
-+			if ( this._validateTransientDepth( renderObject, drawParams, vertexBuffers ) ) {
-+
-+				// _draw records the constant only after the actual GPU draw is encoded.
-+
-+			} else {
++			if ( this._validateTransientDepth( renderObject, drawParams, vertexBuffers ) ) ; else {
 +
 +				this._restoreTransientDepth( context );
 +
@@ -4104,7 +4096,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  
  		if ( renderObject.camera.isArrayCamera && renderObject.camera.cameras.length > 0 ) {
  
-@@ -85766,6 +86495,7 @@ class WebGPUBackend extends Backend {
+@@ -85766,6 +86491,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -4112,7 +4104,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -85787,7 +86517,8 @@ class WebGPUBackend extends Backend {
+@@ -85787,7 +86513,8 @@ class WebGPUBackend extends Backend {
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -4122,7 +4114,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -85807,6 +86538,7 @@ class WebGPUBackend extends Backend {
+@@ -85807,6 +86534,7 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -4130,7 +4122,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  
  			needsUpdate = true;
  
-@@ -85828,6 +86560,7 @@ class WebGPUBackend extends Backend {
+@@ -85828,6 +86556,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -4138,7 +4130,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,9 +86579,10 @@ class WebGPUBackend extends Backend {
+@@ -85846,9 +86575,10 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -4150,7 +4142,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  			renderObject.clippingContextCacheKey
  		].join();
  
-@@ -86017,6 +86751,8 @@ class WebGPUBackend extends Backend {
+@@ -86017,6 +86747,8 @@ class WebGPUBackend extends Backend {
  		_shaderModuleDescriptor.label = program.stage + ( program.name !== '' ? `_${ program.name }` : '' );
  		_shaderModuleDescriptor.code = program.code;
  
@@ -4159,7 +4151,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  		programGPU.module = {
  			module: this.device.createShaderModule( _shaderModuleDescriptor ),
  			entryPoint: 'main'
-@@ -86164,6 +86900,7 @@ class WebGPUBackend extends Backend {
+@@ -86164,6 +86896,7 @@ class WebGPUBackend extends Backend {
  			_bufferDescriptor.reset();
  
  			uniformBufferData.buffer = bufferGPU;
@@ -4167,7 +4159,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  
  		}
  
-@@ -86430,6 +87167,7 @@ class WebGPUBackend extends Backend {
+@@ -86430,6 +87163,7 @@ class WebGPUBackend extends Backend {
  
  		submit( this.device, encoder.finish() );
  
@@ -4175,7 +4167,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
  
  			this.textureUtils.generateMipmaps( dstTexture );
-@@ -86447,6 +87185,8 @@ class WebGPUBackend extends Backend {
+@@ -86447,6 +87181,8 @@ class WebGPUBackend extends Backend {
  	 */
  	copyFramebufferToTexture( texture, renderContext, rectangle ) {
  
@@ -4184,7 +4176,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..e3efde006043ae4dec27f823cf223bf7
  		const renderContextData = this.get( renderContext );
  
  		let sourceGPU = null;
-@@ -87020,7 +87760,20 @@ class RenderPipeline {
+@@ -87020,7 +87756,20 @@ class RenderPipeline {
  		const currentXR = renderer.xr.enabled;
  		renderer.xr.enabled = false;
  

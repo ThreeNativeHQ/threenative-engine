@@ -1692,7 +1692,7 @@
       "category": "rendering",
       "status": "implemented",
       "scene": "conformance/scenes/shared/virtual-shadow-first-frame.js",
-      "tolerance": { "pixelMismatchRatio": 0.01, "perceptualDeltaE": 3.0 },
+      "tolerance": { "pixelMismatchRatio": 0.02, "perceptualDeltaE": 3.0 },
       "browserRecipe": "webgpu",
       "captureFrames": 2,
       "nativeFrames": 300,

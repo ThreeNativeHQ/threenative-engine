@@ -63,11 +63,11 @@
               "mask": {
                 "type": "noise",
                 "scale": 78,
-                "threshold": 0.52,
+                "threshold": 0.42,
                 "seed": 73,
                 "fade": 0.32
               },
-              "strength": 0.5
+              "strength": 0.9
             },
             {
               "material": "rock",
@@ -77,6 +77,17 @@
                 "max": 90,
                 "fade": 9
               }
+            },
+            {
+              "material": "moss",
+              "mask": {
+                "type": "noise",
+                "scale": 32,
+                "threshold": 0.6,
+                "seed": 89,
+                "fade": 0.22
+              },
+              "strength": 0.85
             }
           ]
         }

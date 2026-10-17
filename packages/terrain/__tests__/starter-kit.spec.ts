@@ -17,7 +17,7 @@ const GOLDEN_HASHES: Record<string, Record<string, string>> = {
     "world.glb": "6dcea272a52043890bccac27cab875a8aeaaffbdb5e3750429258451216d2222",
     "heightmap.u16": "33b3fc66f63ca4df76531a44a2bd84e1aff6f642eb9ab0c6622ebe87d1057c2f",
     "placements.bin": "36ab2fd57e76b4b0bd998c5398f983e5f030968b83d5326c0cb98df1b67e4019",
-    "splat.rgba": "f5e45e3740eea9e751e94570abe785854670d060fda6fe4b5518ccd4a562c7ec",
+    "splat.rgba": "5d1442087debc8ef17fdbd3e6ee1bbc5a2ff9255509a6b32b9d860752fd2f591",
     "world.json": "33430aa497ecaed19e27c9bae39dd3cbc6a9e3e0e88d2f3d6d7e7595078f11b5",
   },
   alpine: {
@@ -151,7 +151,7 @@ describe("forest starter kit", () => {
       "36ab2fd57e76b4b0bd998c5398f983e5f030968b83d5326c0cb98df1b67e4019",
     );
     expect(files.get("splat.rgba")).toBe(
-      "f5e45e3740eea9e751e94570abe785854670d060fda6fe4b5518ccd4a562c7ec",
+      "5d1442087debc8ef17fdbd3e6ee1bbc5a2ff9255509a6b32b9d860752fd2f591",
     );
     expect(files.get("world.json")).toBe(
       "33430aa497ecaed19e27c9bae39dd3cbc6a9e3e0e88d2f3d6d7e7595078f11b5",
