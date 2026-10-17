@@ -1,4 +1,0 @@
-interface:
-  display_name: "Tempest Performance Loop"
-  short_description: "Make the Tempest sample faster than stock three with engine-wide KPIs"
-  default_prompt: "Use $tempest-performance-loop to make the Tempest (rain) sample render faster than stock three.js on the Wasm engine with an identical image, keeping only levers that move engine-wide KPIs."
