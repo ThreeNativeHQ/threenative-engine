@@ -256,6 +256,23 @@ using Graph = Node;
 ExprId lower(const Graph& graph, Program& program,
              const std::unordered_map<std::string, ExprId>& inputs = {},
              std::optional<ToneMapping> toneMapping = std::nullopt, bool srgb = false);
+/**
+ * One lowering for all of a program's node slots: a node two slots read (the colour and the depth of
+ * one raymarch) lowers once, as three builds a material once. `lower` above is a lowering of one slot.
+ */
+class Lowering {
+public:
+    explicit Lowering(Program& program, std::unordered_map<std::string, ExprId> inputs = {},
+                      std::optional<ToneMapping> toneMapping = std::nullopt, bool srgb = false);
+    ~Lowering();
+    Lowering(const Lowering&) = delete;
+    Lowering& operator=(const Lowering&) = delete;
+    ExprId lower(const Graph& graph);
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 /** Canonical DAG serialization, independent of addresses; includes sharing and every operation. */
 std::string key(const Graph& graph);
 /** How many times key() has serialized a graph in this process; a steady frame serializes none. */

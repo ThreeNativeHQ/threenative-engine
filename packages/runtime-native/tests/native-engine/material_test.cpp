@@ -109,6 +109,38 @@ void depthNodeWritesFragDepth() {
     }
 }
 
+// A node two slots read lowers once, as three builds a material once: the rain coast quad's one
+// 148-step raymarch feeds both its colour and its depth, and a lowering per slot compiled it twice and
+// ran it twice on every pixel. Every mesh program's slots (colour, depth, emissive) share one lowering.
+void slotsShareOneLowering() {
+    graph::Block block;
+    const auto sum = block.var(graph::float_(0));
+    block.Loop(4, [&](graph::Node index) { block.assign(sum, graph::add(sum.read(), graph::float_(index))); });
+    auto march = std::make_shared<graph::NodeData>(*block.node());
+    march->args = {sum.read()};
+    const graph::Node shared = march;
+    const auto loops = [](const std::string& code) {
+        std::size_t count = 0;
+        for (auto at = code.find("for ("); at != std::string::npos; at = code.find("for (", at + 1)) ++count;
+        return count;
+    };
+    // The fragmentNode path (Basic only) and the colorNode path (all five programs).
+    for (int material = -1; material < 5; ++material) {
+        VertexVariant variant;
+        if (material < 0) variant.nodes.fragmentNode = graph::vec3({shared, shared, shared});
+        else variant.nodes.colorNode = graph::vec4({shared, shared, shared, graph::float_(1)});
+        variant.nodes.depthNode = shared;
+        const int kind = material < 0 ? 0 : material;
+        const auto p = kind == 0 ? buildBasic(variant) : kind == 1 ? buildLambert(variant) :
+            kind == 2 ? buildPhong(variant) : kind == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+        const auto fs = buildStage(p.fragment, 1);
+        CHECK(fs.wgsl.ok());
+        const std::size_t n = loops(fs.wgsl.code);
+        if (n != 1) std::fprintf(stderr, "material %d (%s): shared march lowered %zu times\n", kind, material < 0 ? "fragmentNode" : "colorNode", n);
+        CHECK(n == 1);
+    }
+}
+
 void unsupported() {
     // Defaults are the pinned MeshStandardMaterial constructor's.
     const StandardMaterial defaults;
@@ -363,4 +395,4 @@ void bloomPasses() {
 
 }  // namespace
 
-TN_TEST_MAIN({"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses})
+TN_TEST_MAIN({"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

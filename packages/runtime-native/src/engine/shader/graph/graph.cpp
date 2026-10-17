@@ -844,6 +844,19 @@ ExprId lower(const Graph& graph, Program& program, const std::unordered_map<std:
     return lowerer.expression(graph);
 }
 
+struct Lowering::Impl {
+    std::unordered_map<std::string, ExprId> inputs;
+    Lowerer lowerer;
+    Impl(Program& program, std::unordered_map<std::string, ExprId> in, std::optional<ToneMapping> tone, bool srgb)
+        : inputs(std::move(in)), lowerer(program, inputs, tone, srgb) {}
+};
+
+Lowering::Lowering(Program& program, std::unordered_map<std::string, ExprId> inputs,
+                   std::optional<ToneMapping> toneMapping, bool srgb)
+    : impl_(std::make_unique<Impl>(program, std::move(inputs), toneMapping, srgb)) {}
+Lowering::~Lowering() = default;
+ExprId Lowering::lower(const Graph& graph) { return graph ? impl_->lowerer.expression(graph) : kInvalid; }
+
 namespace {
 uint64_t keySerializations = 0;
 }
