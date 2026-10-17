@@ -1147,10 +1147,10 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..001a464cd0721ce402967e2cd6ebd51a
  
 -		// groups that are updated per object always require an update so no further checks are needed
 +		// groups that are updated per object always require an update so no further checks are needed.
-+		// A settled static object keeps the values it uploaded the last time it was refreshed.
++		// A settled static object keeps the values it uploaded, but a texture or sampler follows the GPU texture three re-creates on a resize.
  
 -		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return true;
-+		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return settled !== true;
++		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return settled !== true || nodeUniformsGroup.isSampledTexture === true || nodeUniformsGroup.isSampler === true;
  
  		// check for update
  
@@ -3429,10 +3429,10 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..7eb6c45e3bfa62b45c4dce0d941cfbf8
  
 -		// groups that are updated per object always require an update so no further checks are needed
 +		// groups that are updated per object always require an update so no further checks are needed.
-+		// A settled static object keeps the values it uploaded the last time it was refreshed.
++		// A settled static object keeps the values it uploaded, but a texture or sampler follows the GPU texture three re-creates on a resize.
  
 -		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return true;
-+		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return settled !== true;
++		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return settled !== true || nodeUniformsGroup.isSampledTexture === true || nodeUniformsGroup.isSampler === true;
  
  		// check for update
  
@@ -6031,10 +6031,10 @@ index f6d4f0b54e848b172c2c7e138a26e42b98c01978..033128c396c2cad5c5d1d362f2d261e9
  
 -		// groups that are updated per object always require an update so no further checks are needed
 +		// groups that are updated per object always require an update so no further checks are needed.
-+		// A settled static object keeps the values it uploaded the last time it was refreshed.
++		// A settled static object keeps the values it uploaded, but a texture or sampler follows the GPU texture three re-creates on a resize.
  
 -		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return true;
-+		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return settled !== true;
++		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return settled !== true || nodeUniformsGroup.isSampledTexture === true || nodeUniformsGroup.isSampler === true;
  
  		// check for update
  
