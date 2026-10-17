@@ -47,6 +47,7 @@ private:
     mutable std::vector<std::string> errors_;
     std::vector<uint32_t> uses_;              // parents (and statements) reaching each expression
     mutable std::vector<bool> bound_;         // a `let e<id>` is in scope
+    std::vector<bool> let_;                   // per variable: written once, so `let v<id>` at its definition
     mutable std::vector<ExprId> boundStack_;  // the lets in scope, innermost last
     mutable std::string* out_ = nullptr;      // where a shared value's `let` goes: before the statement
     mutable int depth_ = 0;

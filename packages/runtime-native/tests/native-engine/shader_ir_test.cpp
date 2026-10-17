@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/shader/ir.h"
+#include "engine/shader/wgsl.h"
 
 #include <cstdio>
 #include <string>
@@ -33,7 +34,10 @@ void order() {
         p.If(p.less(i, p.constant(2)), [&] { p.store(out, i, p.load(v)); });
     });
     p.store(out, p.constant(1), p.load(v));
-    CHECK(p.load(v) != p.load(v));                       // ordered reads are never merged
+    CHECK(p.load(v) == p.load(v));                       // no write between two reads: one read
+    const ExprId stale = p.load(v);
+    p.assign(v, p.constant(0.0f));
+    CHECK(p.load(v) != stale);                           // a write makes the next read fresh
 
     const std::string want =
         "v0 = 0f\n"
@@ -56,12 +60,128 @@ void order() {
         "}\n"
         "%5 = load v0\n"
         "store out[1i] = %5\n"
-        "%6 = load v0\n"
-        "%7 = load v0\n";
+        "v0 = 0f\n"
+        "%6 = load v0\n";
     const std::string got = p.dump();
     CHECK(got == want);
     if (got != want) std::fprintf(stderr, "--- dump ---\n%s", got.c_str());
     CHECK(p.ok());
+}
+
+// PRD-617: the shape of the WGSL the emitter writes for variables.
+std::size_t count(const std::string& code, const std::string& needle) {
+    std::size_t n = 0;
+    for (std::size_t at = code.find(needle); at != std::string::npos; at = code.find(needle, at + 1)) ++n;
+    return n;
+}
+
+std::string wgsl(const Program& p) {
+    const WgslModule module = WgslEmitter::emit(p);
+    CHECK(module.ok());
+    return module.code;
+}
+
+#define CHECK_SHAPE(code, condition) \
+    do { CHECK(condition); if (!(condition)) std::fprintf(stderr, "--- WGSL ---\n%s", (code).c_str()); } while (0)
+
+// A variable written once is a `let` at its definition, and reading it twice reloads nothing.
+void singleAssignIsLet() {
+    Program p(Stage::Fragment);
+    const ExprId x = p.uniform("x", Type::f32());
+    const VarId v = p.var(Type::f32(), p.mul(x, x));
+    const ExprId a = p.load(v);
+    p.output("color", p.construct(Type::vec(4), {a, p.load(v), p.add(p.load(v), a), p.constant(1.0f)}));
+    const std::string code = wgsl(p);
+    CHECK_SHAPE(code, count(code, "var v0") == 0);
+    CHECK_SHAPE(code, count(code, "let v0 = ") == 1);
+    CHECK_SHAPE(code, count(code, "= v0;") == 0);  // no `let lN = v0;` reload
+}
+
+// Two reads with no write between are one read; a write in between makes the next read fresh.
+void loadsSurviveUntilWritten() {
+    Program p(Stage::Fragment);
+    const ExprId x = p.uniform("x", Type::f32());
+    const VarId v = p.var(Type::f32(), x);
+    p.assign(v, p.add(p.load(v), p.constant(1.0f)));  // v is written twice: it stays a var
+    const ExprId first = p.load(v);
+    CHECK(p.load(v) == first);                         // nothing wrote v since
+    CHECK(p.add(first, p.constant(2.0f)) == p.add(p.load(v), p.constant(2.0f)));
+    p.assign(v, p.mul(first, first));
+    const ExprId after = p.load(v);
+    CHECK(after != first);                             // the write made the old read stale
+    p.output("color", p.construct(Type::vec(4), {first, after, p.load(v), p.constant(1.0f)}));
+    const std::string code = wgsl(p);
+    CHECK_SHAPE(code, count(code, "var v0: f32;") == 1);
+    // reads: one for the first assign's operand, one before the second write, one after it
+    CHECK_SHAPE(code, count(code, "= v0;") == 3);
+}
+
+// A variable a loop writes stays a var, and a read from before the loop is not reused inside it.
+void loopCarriedStaysVar() {
+    Program p(Stage::Fragment);
+    const ExprId x = p.uniform("x", Type::f32());
+    const VarId v = p.var(Type::f32(), x);
+    const ExprId before = p.load(v);
+    ExprId inside = kInvalid;
+    p.Loop(p.constant(4), [&](ExprId) {
+        inside = p.load(v);
+        p.assign(v, p.add(inside, p.constant(1.0f)));
+    });
+    CHECK(inside != before);                           // the body sees the previous iteration's write
+    const ExprId after = p.load(v);
+    CHECK(after != before && after != inside);         // the loop wrote v
+    p.output("color", p.construct(Type::vec(4), {before, after, p.constant(0.0f), p.constant(1.0f)}));
+    const std::string code = wgsl(p);
+    CHECK_SHAPE(code, count(code, "var v0: f32;") == 1);
+    CHECK_SHAPE(code, count(code, "let v0 = ") == 0);
+    CHECK_SHAPE(code, count(code, "v0 = ") == 2);      // the initial value and the body
+    const std::size_t loop = code.find("for (");
+    const std::size_t reload = code.find("= v0;", loop);
+    CHECK_SHAPE(code, loop != std::string::npos && reload != std::string::npos && reload < code.find('}', loop));
+}
+
+// A variable a branch writes stays a var, and the join reads it again.
+void branchWriteStaysVar() {
+    Program p(Stage::Fragment);
+    const ExprId x = p.uniform("x", Type::f32());
+    const VarId v = p.var(Type::f32(), p.constant(0.0f));
+    const ExprId before = p.load(v);
+    p.If(p.less(x, p.constant(1.0f)), [&] { p.assign(v, x); });
+    const ExprId after = p.load(v);
+    CHECK(after != before);
+    p.output("color", p.construct(Type::vec(4), {before, after, p.constant(0.0f), p.constant(1.0f)}));
+    const std::string code = wgsl(p);
+    CHECK_SHAPE(code, count(code, "var v0: f32;") == 1);
+    CHECK_SHAPE(code, count(code, "= v0;") == 2);
+}
+
+// A variable first written inside a branch and read outside it has no `let` scope to live in: it stays a var.
+void branchLocalReadOutsideStaysVar() {
+    Program p(Stage::Fragment);
+    const ExprId x = p.uniform("x", Type::f32());
+    VarId v = 0;
+    p.If(p.less(x, p.constant(1.0f)), [&] { v = p.var(Type::f32(), x); });
+    p.output("color", p.construct(Type::vec(4), {p.load(v), p.constant(0.0f), p.constant(0.0f), p.constant(1.0f)}));
+    const std::string code = wgsl(p);
+    CHECK_SHAPE(code, count(code, "var v0: f32;") == 1);
+}
+
+// A read made in a branch is out of scope at the join, and a read before it is still good there.
+void readsKeepTheirScope() {
+    Program p(Stage::Fragment);
+    const ExprId x = p.uniform("x", Type::f32());
+    const VarId v = p.var(Type::f32(), x);
+    p.assign(v, p.add(p.load(v), x));  // two writes: a var
+    const ExprId outer = p.load(v);
+    ExprId inner = kInvalid;
+    p.If(p.less(x, p.constant(1.0f)), [&] {
+        CHECK(p.load(v) == outer);     // reused: no write since, and `outer` is in scope
+    });
+    p.If(p.less(x, p.constant(2.0f)), [&] { p.assign(v, x); inner = p.load(v); });
+    const ExprId join = p.load(v);
+    CHECK(join != inner && join != outer);
+    p.output("color", p.construct(Type::vec(4), {outer, join, p.constant(0.0f), p.constant(1.0f)}));
+    CHECK(!wgsl(p).empty());
 }
 
 // Each case must raise TN_TSL_TYPE at the line that authored it.
@@ -185,4 +305,7 @@ void unsupported() {
 
 }  // namespace
 
-TN_TEST_MAIN({"order", order}, {"types", types}, {"unsupported", unsupported})
+TN_TEST_MAIN({"order", order}, {"types", types}, {"unsupported", unsupported},
+            {"single_assign_is_let", singleAssignIsLet}, {"loads_survive_until_written", loadsSurviveUntilWritten},
+            {"loop_carried_stays_var", loopCarriedStaysVar}, {"branch_write_stays_var", branchWriteStaysVar},
+            {"branch_local_read_outside_stays_var", branchLocalReadOutsideStaysVar}, {"reads_keep_their_scope", readsKeepTheirScope})

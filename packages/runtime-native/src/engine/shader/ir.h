@@ -223,7 +223,8 @@ private:
     ExprId ordered(Expr expr);
     ExprId arithmetic(Op op, std::string_view node, ExprId a, ExprId b, const Where& where);
     uint64_t intern(std::string_view name);
-    uint32_t openBlock();
+    uint32_t openBlock(uint32_t parent);
+    bool inScope(uint32_t block) const;
     void emit(Stmt stmt) { blocks_[current_].push_back(stmt); }
     void dumpBlock(uint32_t block, int depth, std::string& out, std::vector<int>& numbering, int& next) const;
     std::string describe(ExprId id, std::vector<int>& numbering) const;
@@ -249,6 +250,14 @@ private:
     bool invariantPosition_ = false;
     uint32_t workgroupSize_ = 64, computeRowStride_ = 0;
     std::vector<std::vector<Stmt>> blocks_;
+    std::vector<uint32_t> blockParent_{0};  // per block: the block that opened it
+    // The newest read of each variable that is still good: no write since, and its block encloses
+    // the current one. A second read of it is the same value, so it is that read.
+    struct Loaded {
+        ExprId read = kInvalid;
+        uint32_t block = 0;
+    };
+    std::vector<Loaded> loaded_;
     uint32_t current_ = 0;
     std::vector<Diagnostic> diagnostics_;
 };

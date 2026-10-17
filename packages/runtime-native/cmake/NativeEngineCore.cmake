@@ -290,7 +290,13 @@ endif()
 tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
     native_engine_tsl_ir_order=order
     native_engine_tsl_ir_types=types
-    native_engine_tsl_unsupported=unsupported)
+    native_engine_tsl_unsupported=unsupported
+    native_engine_wgsl_single_assign_is_let=single_assign_is_let
+    native_engine_wgsl_loads_survive_until_written=loads_survive_until_written
+    native_engine_wgsl_loop_carried_stays_var=loop_carried_stays_var
+    native_engine_wgsl_branch_write_stays_var=branch_write_stays_var
+    native_engine_wgsl_branch_local_read_outside_stays_var=branch_local_read_outside_stays_var
+    native_engine_wgsl_reads_keep_their_scope=reads_keep_their_scope)
 target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
 
 tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp

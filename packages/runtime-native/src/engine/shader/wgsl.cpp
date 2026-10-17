@@ -65,7 +65,7 @@ std::string WgslEmitter::type(const Type& t) const {
 }
 
 WgslEmitter::WgslEmitter(const Program& program)
-    : p_(program), uses_(program.exprs_.size()), bound_(program.exprs_.size()) {
+    : p_(program), uses_(program.exprs_.size()), bound_(program.exprs_.size()), let_(program.vars_.size()) {
     // Counted from the statements down, so an expression a dead branch alone shares stays inline.
     std::vector<bool> seen(program.exprs_.size());
     const auto visit = [&](auto& self, ExprId id) -> void {
@@ -81,6 +81,33 @@ WgslEmitter::WgslEmitter(const Program& program)
             if (s.kind == Kind::Eval || s.kind == Kind::Assign || s.kind == Kind::Output) visit(visit, s.b);
             else if (s.kind == Kind::Store) visit(visit, s.b), visit(visit, s.c);
             else if (s.kind == Kind::If || s.kind == Kind::Loop) visit(visit, s.a);
+        }
+    }
+
+    // A variable written once, at its definition, and read only from that block or one inside it, is
+    // an immutable `let` there: nothing to reload. Anything written again (a loop-carried value, a
+    // branch's result) stays a `var`, as does one read outside the block that defines it.
+    constexpr uint32_t kNone = UINT32_MAX;
+    std::vector<uint32_t> writes(program.vars_.size()), definedIn(program.vars_.size(), kNone);
+    for (uint32_t b = 0; b < program.blocks_.size(); ++b) {
+        for (const auto& s : program.blocks_[b]) {
+            if (s.kind != Kind::Assign) continue;
+            ++writes[s.a];
+            definedIn[s.a] = b;
+        }
+    }
+    const auto within = [&](uint32_t block, uint32_t outer) {
+        for (;; block = program.blockParent_[block]) {
+            if (block == outer) return true;
+            if (block == 0) return false;
+        }
+    };
+    for (VarId v = 0; v < program.vars_.size(); ++v) let_[v] = writes[v] == 1;
+    for (uint32_t b = 0; b < program.blocks_.size(); ++b) {
+        for (const auto& s : program.blocks_[b]) {
+            if (s.kind != Kind::Eval) continue;
+            const Expr& e = program.exprs_[s.b];
+            if (e.op == Op::LoadVar && let_[e.immediate] && !within(b, definedIn[e.immediate])) let_[e.immediate] = false;
         }
     }
 }
@@ -120,7 +147,7 @@ std::string WgslEmitter::inlined(ExprId id) const {
         case Op::Attribute: return "a_" + p_.names_[e.immediate];
         case Op::Builtin: return "b_" + p_.names_[e.immediate];
         case Op::Varying: return "i_" + p_.names_[e.immediate];
-        case Op::LoadVar:
+        case Op::LoadVar: return let_[e.immediate] ? "v" + std::to_string(e.immediate) : "l" + std::to_string(id);
         case Op::LoadStorage:
         case Op::AtomicAdd: return "l" + std::to_string(id);
         case Op::TextureSize:
@@ -202,6 +229,7 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
             case Kind::Eval: {
                 const Expr& e = p_.exprs_[s.b];
                 if (e.op == Op::LoadVar) {
+                    if (let_[e.immediate]) break;  // read by name
                     out += indent + "let l" + std::to_string(s.b) + " = v" + std::to_string(e.immediate) + ";\n";
                 } else if (e.op == Op::LoadStorage) {
                     const auto& storage = p_.storage_[e.immediate];
@@ -215,7 +243,7 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
                 break;
             }
             case Kind::Assign:
-                out += indent + "v" + std::to_string(s.a) + " = " + expr(s.b) + ";\n";
+                out += indent + (let_[s.a] ? "let v" : "v") + std::to_string(s.a) + " = " + expr(s.b) + ";\n";
                 break;
             case Kind::Store:
                 if (p_.storage_[s.a].atomic)
@@ -390,7 +418,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
         }
     }
     for (uint32_t v = 0; v < program.vars_.size(); ++v) {
-        if (!loopVars.count(v)) out += "  var v" + std::to_string(v) + ": " + e.type(program.vars_[v].type) + ";\n";
+        if (!loopVars.count(v) && !e.let_[v]) out += "  var v" + std::to_string(v) + ": " + e.type(program.vars_[v].type) + ";\n";
     }
     e.block(0, 1, out);
     if (hasOutputs) out += "  return out;\n";

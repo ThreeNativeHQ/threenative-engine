@@ -407,7 +407,11 @@ VarId Program::var(Type type, ExprId initial, Where where) {
 
 ExprId Program::load(VarId var, Where where) {
     if (var >= vars_.size()) return fail("load", "no such variable", where);
-    return ordered(Expr{Op::LoadVar, vars_[var].type, {}, 0, var});
+    if (loaded_.size() < vars_.size()) loaded_.resize(vars_.size());
+    Loaded& last = loaded_[var];
+    if (last.read != kInvalid && inScope(last.block)) return last.read;
+    last = Loaded{ordered(Expr{Op::LoadVar, vars_[var].type, {}, 0, var}), current_};
+    return last.read;
 }
 
 void Program::assign(VarId var, ExprId value, Where where) {
@@ -420,6 +424,7 @@ void Program::assign(VarId var, ExprId value, Where where) {
         fail("assign", "a " + exprs_[value].type.name() + " into a " + vars_[var].type.name() + " variable", where);
         return;
     }
+    if (var < loaded_.size()) loaded_[var].read = kInvalid;  // reads from before this are stale
     emit(Stmt{StmtKind::Assign, var, value});
 }
 
@@ -641,9 +646,17 @@ void Program::output(std::string_view name, ExprId value, Where where) {
     emit(Stmt{StmtKind::Output, slot, value});
 }
 
-uint32_t Program::openBlock() {
+uint32_t Program::openBlock(uint32_t parent) {
     blocks_.emplace_back();
+    blockParent_.push_back(parent);
     return static_cast<uint32_t>(blocks_.size() - 1);
+}
+
+bool Program::inScope(uint32_t block) const {
+    for (uint32_t b = current_;; b = blockParent_[b]) {
+        if (b == block) return true;
+        if (b == 0) return false;
+    }
 }
 
 void Program::If(ExprId condition, const std::function<void()>& then, const std::function<void()>& otherwise,
@@ -653,12 +666,12 @@ void Program::If(ExprId condition, const std::function<void()>& then, const std:
         condition = kInvalid;
     }
     const uint32_t parent = current_;
-    const uint32_t body = openBlock();
+    const uint32_t body = openBlock(parent);
     current_ = body;
     then();
     uint32_t elseBlock = 0;
     if (otherwise) {
-        elseBlock = openBlock();
+        elseBlock = openBlock(parent);
         current_ = elseBlock;
         otherwise();
     }
@@ -674,8 +687,9 @@ void Program::Loop(ExprId count, const std::function<void(ExprId)>& body, Where 
     const uint32_t parent = current_;
     const VarId index = static_cast<VarId>(vars_.size());
     vars_.push_back(Var{Type::i32()});
-    const uint32_t block = openBlock();
+    const uint32_t block = openBlock(parent);
     current_ = block;
+    loaded_.clear();  // an iteration reads what the one before wrote, so no read from outside carries in
     ++loopDepth_;
     body(ordered(Expr{Op::LoadVar, Type::i32(), {}, 0, index}));
     --loopDepth_;
