@@ -1495,6 +1495,39 @@ void deferredTargetSamplesPostRttNode() {
     CHECK(renderer.diagnostics().empty());
 }
 
+// PRD-617: rain's streaks are projected by hand in the vertex stage from `screenSize`, which the renderer wrote only
+// into the fragment uniform block. The vertex stage read zero, every quad collapsed, and no drop was drawn.
+void screenSizeReachesTheVertexStage() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    Scene scene;
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    auto material = std::make_shared<Material>(MaterialType::Basic, true);
+    material->rawNodeMaterial = true;
+    // The plane's corners are +-1: scaled by 64 / screenSize they cover the 64 pixel frame exactly.
+    const auto screen = g::uniform("screenSize", shader::Type::vec(2));
+    const auto scale = g::div(g::splat(g::float_(64), 2), screen);
+    material->nodes.vertexNode =
+        g::vec4({g::mul(g::swizzle(g::positionLocal(), "xy"), scale), g::float_(0), g::float_(1)});
+    material->nodes.fragmentNode = g::vec4({g::float_(1), g::float_(0), g::float_(0), g::float_(1)});
+    Mesh plane(makePlaneGeometry(2, 2), material);
+    scene.add(plane);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.render(renderer, scene, camera, {0, 0, 0, 1});
+    const auto bytes = read(renderer, events);
+    CHECK(bytes.size() == 64 * 64 * 4);
+    CHECK(bytes.size() == 64 * 64 * 4 && bytes[(32 * 64 + 32) * 4] == 255);
+    CHECK(renderer.diagnostics().empty());
+}
+
 // three draws the normal target in the scene pass it counts once, so a post graph that reads `normal`
 // adds no draws and no triangles to the frame's counters (the engine's extra normal pass used to land
 // in the shadow tally, which put the web platformer at 873 draws against three's 431).
@@ -3788,7 +3821,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},

@@ -2552,6 +2552,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, base, slots[kCameraWorldMatrix], camera.matrixWorld);
             put(frameUniforms_, base, slots[kCameraNear], std::array<double, 1>{camera.near});
             put(frameUniforms_, base, slots[kCameraFar], std::array<double, 1>{camera.far});
+            put(frameUniforms_, base, slots[kScreenSize], std::array<double, 2>{double(width_), double(height_)});  // a vertex stage projects by hand
         }
         put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
         // NodeMaterial forces alpha to 1 only on an opaque NormalBlending material.
@@ -2594,7 +2595,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, f, fs[kEnvMapTexelHeight], std::array<double, 1>{env.texelHeight});
             put(frameUniforms_, f, fs[kEnvMapMaxMip], std::array<double, 1>{env.maxMip});
         }
-        put(frameUniforms_, f, fs[kScreenSize], std::array<double, 2>{double(width_), double(height_)});
         if (item.pmremMap) {
             const EnvironmentGpu& pmrem = environment(*item.pmremMap);
             put(frameUniforms_, f, fs[kPmremRotation], item.pmremRotation);
