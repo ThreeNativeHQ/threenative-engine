@@ -409,6 +409,53 @@ describe("perfCommand", () => {
     expect(env.d).not.toBe(":4242");
   });
 
+  it.runIf(process.platform === "linux")("leaves no process of the host's behind when the run ends", async () => {
+    // A host whose helper child ignores SIGTERM (WebKit's web process is one) must not outlive the
+    // run: the stop reaches the host's whole process group and escalates to SIGKILL.
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+    const pidFile = join(await makeTempDir("tn-perf-group-"), "helper.pid");
+    const helper = `process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);`;
+    const script = `const h = require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(helper)}], { stdio: "ignore" }); require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(h.pid)); setTimeout(() => process.stdout.write(${JSON.stringify(`${output}\n`)}), 300); setInterval(() => {}, 1000);`;
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const errSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await perfCommand(["--executable", process.execPath, "--host-arg", "-e", "--host-arg", script, "--allow-virtual-display", "--timeout", "30"]);
+    } finally {
+      spy.mockRestore();
+      errSpy.mockRestore();
+    }
+    const helperPid = Number(await readFile(pidFile, "utf8"));
+    let alive = true;
+    try {
+      process.kill(helperPid, 0);
+    } catch {
+      alive = false;
+    }
+    if (alive) process.kill(helperPid, "SIGKILL");
+    expect(alive, "the host's helper child outlived the run").toBe(false);
+  }, 30_000);
+
+  it.runIf(process.platform === "linux")("ends the run and fails it when the host ignores SIGTERM", async () => {
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+    const script = `process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); process.stdout.write(${JSON.stringify(`${output}\n`)});`;
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const errSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    let code: number;
+    try {
+      code = await perfCommand(["--executable", process.execPath, "--host-arg", "-e", "--host-arg", script, "--allow-virtual-display", "--timeout", "30"]);
+    } finally {
+      spy.mockRestore();
+      errSpy.mockRestore();
+    }
+    expect(code).toBe(1);
+    const report = JSON.parse(written.join("")) as { violations: Array<{ code: string; observed?: number }> };
+    expect(report.violations).toContainEqual(expect.objectContaining({ code: "TN_PERF_HOST_EXIT", observed: 137 }));
+  }, 30_000);
+
   it("fails a host that exits non-zero after enough windows, even though its markers pass", async () => {
     // Three windows cover the default two steady windows. The runner then stops the host, and the
     // host answers that SIGTERM by exiting 139. A plain signal kill would read as the runner's own stop.

@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { availableParallelism, constants as osConstants, loadavg } from "node:os";
@@ -1034,7 +1034,13 @@ async function runExecutableOn(args: IPerfArgs, executable: string, display: IPr
   const source = `executable: ${[executable, ...args.hostArgs].join(" ")}`;
   // A run that owns its Xvfb cannot report a frame rate from it.
   const strategy = display.strategy;
-  const child = spawn(executable, args.hostArgs, { env: display.env, stdio: ["ignore", "pipe", "pipe"] });
+  // Its own process group, so the stop reaches every helper the host started (WebKit's web process).
+  const child = spawn(executable, args.hostArgs, {
+    detached: process.platform !== "win32",
+    env: display.env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
   let collected = "";
   let stopped = false;
   let spawnFailed = false;
@@ -1073,7 +1079,9 @@ async function runExecutableOn(args: IPerfArgs, executable: string, display: IPr
     if (!stopped) {
       stopped = true;
       memory = readMemory();
-      child.kill("SIGTERM");
+      signalGroup(child, "SIGTERM");
+      // A host that ignores SIGTERM would hold the run open forever and outlive it as an orphan.
+      killTimer = setTimeout(() => signalGroup(child, "SIGKILL"), HOST_STOP_GRACE_MS);
     }
   };
   child.stdout.on("data", (chunk: Buffer) => {
@@ -1126,6 +1134,9 @@ async function runExecutableOn(args: IPerfArgs, executable: string, display: IPr
     // Wait for 'close', not 'exit'. Close fires after the pipes end, so every marker is read.
     child.on("close", (code, signal) => {
       clearTimeout(timeout);
+      clearTimeout(killTimer);
+      // The host is gone; a helper it left in its group is this run's, never anyone else's.
+      signalGroup(child, "SIGKILL");
       if (spawnFailed) return;
       let cpu: IPerfCpu | undefined;
       if (cpuUnavailable === undefined) {
@@ -1247,6 +1258,27 @@ function logcatPid(line: string): string | undefined {
  * ponytail: a host that dies from the default SIGTERM action reads as our stop. A host that catches
  * SIGTERM and exits non-zero is judged on its status.
  */
+/** How long a stopped host has to exit on SIGTERM before its process group is killed. */
+const HOST_STOP_GRACE_MS = 3_000;
+
+/** Signal the host's whole process group, falling back to the host alone where groups do not exist. */
+function signalGroup(child: ChildProcess, signal: "SIGKILL" | "SIGTERM"): void {
+  if (child.pid === undefined) return;
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // The group is already gone, or was never made; the host itself is the only target left.
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+    // Already exited.
+  }
+}
+
 function hostFailureStatus(code: number | null, signal: NodeJS.Signals | null, stoppedByUs: boolean): number | undefined {
   if (code === 0 || (code === null && signal === "SIGTERM" && stoppedByUs)) return undefined;
   if (code !== null) return code;
