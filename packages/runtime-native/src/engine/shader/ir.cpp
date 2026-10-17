@@ -621,6 +621,10 @@ void Program::output(std::string_view name, ExprId value, Where where) {
         fail("output color", "a fragment stage writes color as vec4<f32>", where);
         return;
     }
+    if (name == "fragDepth" && (stage_ != Stage::Fragment || type != Type::f32())) {
+        fail("output fragDepth", "a fragment stage writes fragDepth as f32", where);
+        return;
+    }
     if (stage_ == Stage::Compute) {
         fail("output " + std::string(name), "compute stages write storage, not outputs", where);
         return;

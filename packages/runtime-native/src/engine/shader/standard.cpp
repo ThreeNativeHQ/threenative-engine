@@ -1301,6 +1301,8 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
         if (color != kInvalid && f.expr(color).type == Type::vec(3))
             color = f.construct(Type::vec(4), {color, f.constant(1.0f)});
         f.output("color", color);
+        // NodeMaterial.depthNode: the fragment's own depth (rain's coast quad writes the coast's, so drops hide behind it).
+        if (variant.nodes.depthNode) f.output("fragDepth", nodeType(f, graph::lower(variant.nodes.depthNode, f), Type::f32()));
         linkNodeVaryings(out, variant, local.position, local.normal);
         return out;
     }

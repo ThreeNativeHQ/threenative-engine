@@ -11855,6 +11855,15 @@
           }
         },
         {
+          "name": "depthNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "polygonOffset",
           "type": "boolean",
           "mutable": true,
@@ -13165,6 +13174,15 @@
           }
         },
         {
+          "name": "depthNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "bumpScale",
           "type": "number",
           "mutable": true,
@@ -13778,6 +13796,15 @@
         },
         {
           "name": "vertexNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "depthNode",
           "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
@@ -20606,6 +20633,15 @@
         },
         {
           "name": "vertexNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "depthNode",
           "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",

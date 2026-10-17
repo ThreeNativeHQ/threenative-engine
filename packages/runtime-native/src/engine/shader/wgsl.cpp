@@ -229,7 +229,7 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
             case Kind::Continue: out += indent + "continue;\n"; break;
             case Kind::Output: {
                 const std::string& name = p_.names_[p_.outputs_[s.a].name];
-                out += indent + "out." + (name == "position" || name == "color" ? name : "o_" + name) + " = " +
+                out += indent + "out." + (name == "position" || name == "color" ? name : name == "fragDepth" ? "depth" : "o_" + name) + " = " +
                        expr(s.b) + ";\n";
                 break;
             }
@@ -327,6 +327,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
             // @invariant only when asked (Program::setInvariantPosition): see there.
             if (name == "position") out += std::string("  ") + (program.invariantPosition_ ? "@invariant " : "") + "@builtin(position) position: vec4<f32>,\n";
             else if (name == "color") out += "  @location(0) color: vec4<f32>,\n";
+            else if (name == "fragDepth") out += "  @builtin(frag_depth) depth: f32,\n";
             else out += "  " + std::string(slot.type.scalar == Type::Scalar::I32 || slot.type.scalar == Type::Scalar::U32 ? "@interpolate(flat) " : "") + "@location(" + std::to_string(location++) + ") o_" + name + ": " + e.type(slot.type) + ",\n";
         }
         if (program.outputs_.empty()) {
