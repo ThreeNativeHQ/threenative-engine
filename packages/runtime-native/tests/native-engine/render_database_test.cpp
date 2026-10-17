@@ -3185,6 +3185,11 @@ void shadowCasterFrustumCulling() {
     std::printf("shadow caster frustum culling: %zu main, %zu shadow-only of %zu items\n", main, shadowOnly, items.size());
     CHECK(main == 0);
     CHECK(shadowOnly == 2);
+    // VSM owns wider camera-centred windows; the source light's narrow camera cannot reject casters.
+    const auto& virtualItems = database.prepare(scene, camera, lights, nullptr, true);
+    CHECK(virtualItems.size() == 3);
+    for (const auto& item : virtualItems) CHECK(item.castShadow && !item.mainPass);
+    CHECK(database.prepare(scene, camera, lights).size() == 2);
     (void)inside; (void)farOutside; (void)unculledOutside;
 }
 

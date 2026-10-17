@@ -569,7 +569,8 @@ bool RenderDatabase::boundingSphereOf(Object3D& object, std::string_view type, S
 // `sphere` is the object's world bounding sphere, null when it has none (it then always casts).
 bool RenderDatabase::inShadowFrustum(const Object3D& object, const Sphere* sphere) {
     // ponytail: point light shadow culling across 6 faces omitted; keep casters unculled when a point shadow is present
-    if (shadowPointLightActive_) return true;
+    // Virtual windows replace the source shadow camera; the atlas culls casters per page.
+    if (shadowPointLightActive_ || virtualShadows_) return true;
     if (shadowFrustums_.empty()) return false;
     if (!sphere) return true;
     const uint32_t mask = Layers::bits(object.layers().mask);
@@ -1285,7 +1286,8 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
     }
 }
 
-const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& camera, LightState& lights, Object3D* targetScene) {
+const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& camera, LightState& lights, Object3D* targetScene, bool virtualShadows) {
+    virtualShadows_ = virtualShadows;
     if (!gpuPreparing_ && gpuJoints_) { gpuJoints_->revoke(); gpuJoints_.reset(); }
     using Clock = std::chrono::steady_clock;
     const auto start = profiling ? Clock::now() : Clock::time_point{};
@@ -1408,7 +1410,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         } else {
             gpuJoints_->revoke(); gpuJoints_.reset();
             scene.updateMatrixWorld(true);
-            return prepare(scene, camera, lights, targetScene);
+            return prepare(scene, camera, lights, targetScene, virtualShadows);
         }
     }
     for (const PendingCallback& p : callbacks_) {
@@ -1545,7 +1547,7 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
     gpuJoints_ = renderer.currentGpuJoints();
     gpuPreparing_ = true;
     compiling_ = true;
-    try { prepare(root, camera, lights, targetScene); } catch (...) { gpuPreparing_ = compiling_ = false; throw; }
+    try { prepare(root, camera, lights, targetScene, renderer.hasVirtualShadows()); } catch (...) { gpuPreparing_ = compiling_ = false; throw; }
     gpuPreparing_ = compiling_ = false;
     const auto& items = items_;
     if (!diagnostics_.empty()) throw std::runtime_error(diagnostics_.front());
@@ -1569,7 +1571,7 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     if (drawUse && !reflecting_ && gpuJoints_) gpuJoints_->drawUse.assign(gpuJoints_->rigs.size(), 0);
     if (previousJoints && previousJoints != gpuJoints_) scene.updateMatrixWorld(true);
     gpuPreparing_ = true;
-    try { prepare(scene, camera, lights_); } catch (...) { gpuPreparing_ = false; throw; }
+    try { prepare(scene, camera, lights_, nullptr, renderer.hasVirtualShadows()); } catch (...) { gpuPreparing_ = false; throw; }
     gpuPreparing_ = false;
     const auto preparedScene = profiling ? Clock::now() : Clock::time_point{};
     if (!reflecting_) renderReflections(renderer, scene, camera, items_, clear);

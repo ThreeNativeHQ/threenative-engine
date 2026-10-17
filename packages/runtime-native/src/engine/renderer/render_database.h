@@ -46,7 +46,7 @@ class RenderDatabase {
         Camera& camera, Object3D* targetScene = nullptr, WGPUTextureFormat outputFormat = WGPUTextureFormat_RGBA8Unorm);
 
     /** CPU preparation used by render; returned pointers remain valid until the next prepare. */
-    const std::vector<DrawItem>& prepare(Object3D& scene, Camera& camera, LightState& lights, Object3D* targetScene = nullptr);
+    const std::vector<DrawItem>& prepare(Object3D& scene, Camera& camera, LightState& lights, Object3D* targetScene = nullptr, bool virtualShadows = false);
 
     /** Float32 copies of quantized attributes held for live sources (dead ones are swept). */
     [[nodiscard]] std::size_t convertedCount() const { return converted_.size(); }
@@ -187,6 +187,7 @@ class RenderDatabase {
     std::vector<ShadowFrustum> shadowFrustums_;
     std::unordered_map<const Light*, DirectLight::Shadow> shadowByLight_;
     bool shadowPointLightActive_ = false;
+    bool virtualShadows_ = false;
     // Directional, spot and point lights under `shadowLightsRoot_` in walk order, visible or not;
     // rebuilt when any add/remove/attach/destructor moves Object3D::hierarchyVersion().
     std::vector<Object3D*> shadowLights_;

@@ -177,14 +177,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
                     --out ${CMAKE_CURRENT_BINARY_DIR}/${render_name}.json)
             set_tests_properties(native_engine_${render_name} PROPERTIES LABELS "native-engine")
         endforeach()
-        # vsm-basic and vsm-deformation: the browser capture on this branch reproduces the committed
-        # golden byte for byte, and the native frame is 1.07% and 2.18% off it (limit 1%). F recorded
-        # these goldens as "unverified". They stay runnable under tn-known-red, not hidden.
         add_test(NAME native_engine_render_vsm_open
             COMMAND ${TN_PNPM_EXECUTABLE} --filter @threenative/three-native exec tsx tests/compatibility/run-native.ts
                 --driver $<TARGET_FILE:tn-native-engine-render-driver> --renders --only "vsm-basic,vsm-deformation"
                 --out ${CMAKE_CURRENT_BINARY_DIR}/render_vsm_open.json)
-        set_tests_properties(native_engine_render_vsm_open PROPERTIES LABELS "tn-known-red")
+        set_tests_properties(native_engine_render_vsm_open PROPERTIES LABELS "native-engine")
     endif()
 
     # PRD-526: a GTAO post pass over a box on a plane. The renderer draws the "normal" target it
