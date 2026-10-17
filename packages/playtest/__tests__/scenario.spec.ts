@@ -605,6 +605,10 @@ const FAMILY_SCENARIO_ASSERTS = {
   reachability: { artifact: "artifacts/envelope.json", entities: ["platform.a", "platform.b"] },
   resources: [{ changed: true, gte: 1, id: "GameState", path: "coins" }],
   renderChain: { tier: "high", velocity: { maxRejectionFraction: 0.2 } },
+  pipelineCensus: {
+    maxNodeBuildsAfterWarmUpSettled: 0,
+    maxRenderPipelineCreationsAfterWarmUpSettled: 0,
+  },
   scene: { cameraClearsScene: true, fogClearsScene: true, litMaterialsAreLit: true, minVisibleLights: 1 },
   sceneNodes: [{ select: { nameContains: "crate" }, visible: true }],
   causedBy: [
@@ -654,6 +658,8 @@ const FAMILY_PASS_IDS = [
   "states.player",
   "renderChain.tier",
   "renderChain.velocity.rejectionFraction",
+  "pipelineCensus.maxNodeBuildsAfterWarmUpSettled",
+  "pipelineCensus.maxRenderPipelineCreationsAfterWarmUpSettled",
   "scene.minVisibleLights",
   "scene.litMaterialsAreLit",
   "scene.fogClearsScene",
@@ -775,6 +781,46 @@ function familyReportObservations(fulfilled: boolean) {
         source: null,
         rejectionFraction: 0.1,
       },
+    },
+    pipelineCensus: {
+      version: 1,
+      complete: true,
+      overflowed: false,
+      backend: { kind: "webgpu", identity: "fixture-backend" },
+      clock: { source: "performance", originMs: 0 },
+      build: { identity: "fixture-build" },
+      adapter: { identity: "fixture-adapter", thermal: "unavailable" },
+      firstPresent: { boundaryMs: 2, eventsSettled: 1 },
+      warmUpSettled: { boundaryMs: 1, eventsSettled: 1, nodeBuilds: 1, renderPipelineCreations: 1 },
+      counts: {
+        lookups: 1,
+        creations: 1,
+        failures: 0,
+        pending: 0,
+        uniquePrograms: 1,
+        uniquePipelines: 1,
+        recordedEvents: 1,
+        droppedEvents: 0,
+        nodeBuilds: 1,
+      },
+      events: [{
+        sequence: 1,
+        programIdentity: "fixture-program",
+        pipelineIdentity: "fixture-pipeline",
+        kind: "render",
+        pass: "main",
+        mode: "sync",
+        status: "created",
+        vertex: { bytes: 1, hash: "fixture-vertex" },
+        provenance: { material: { name: "fixture" }, unknown: false },
+        reasons: ["fixture"],
+        startedMs: 0,
+        settledMs: 1,
+        nodeBuilds: 1,
+        beforeFirstPresent: true,
+        beforeWarmUpSettled: true,
+      }],
+      incompleteReasons: [],
     },
     resources: { GameState: { after: { coins: 2 }, before: { coins: 0 } } },
     sceneNodes: [
@@ -898,6 +944,8 @@ test("should preserve every assertion family's result contract", async () => {
     "states.player",
     "renderChain.tier",
     "renderChain.velocity.rejectionFraction",
+    "pipelineCensus.maxNodeBuildsAfterWarmUpSettled",
+    "pipelineCensus.maxRenderPipelineCreationsAfterWarmUpSettled",
     // One result, not four: with no scene observed at all there is nothing to bound, and the
     // family says so once rather than failing each bound against nothing.
     "scene.observed",
@@ -942,6 +990,8 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_STATE_ASSERTION_FAILED",
     "TN_PLAYTEST_RENDER_CHAIN_UNOBSERVABLE",
     "TN_PLAYTEST_RENDER_CHAIN_UNOBSERVABLE",
+    "TN_PLAYTEST_PIPELINE_CENSUS_UNOBSERVABLE",
+    "TN_PLAYTEST_PIPELINE_CENSUS_UNOBSERVABLE",
     "TN_PLAYTEST_SCENE_UNOBSERVED",
     "TN_PLAYTEST_SCENE_NODES_UNOBSERVED",
     "TN_PLAYTEST_TRANSITIONS_UNOBSERVED",
@@ -1000,4 +1050,21 @@ test("should evaluate all registered families through the public entry", async (
     const mapped = evaluated.assertions.some(({ id }) => id.startsWith(entry.resultIdPrefix));
     expect(mapped || entry.kind === "camera", `RED observed: registered family has no evaluator for '${entry.kind}'`).toBe(true);
   }
+});
+
+
+test("startTick alone requires fixed-step capability and preserves safe integer anchors", async () => {
+  const directory = await makeTempDir("playtest-start-tick-");
+  for (const startTick of [0, 600, Number.MAX_SAFE_INTEGER]) {
+    await writeFile(join(directory, "scenario.json"), JSON.stringify({ name: "anchor", schemaVersion: 1, startTick, steps: [{ waitFrames: 1 }] }));
+    const parsed = await loadPlaytestScenario(directory, "scenario.json");
+    expect(parsed.startTick).toBe(startTick);
+    expect(requiredPlaytestCapabilities(parsed)).toContain("runtime.fixedStep");
+  }
+});
+
+test.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1, "600", null, true])("startTick rejects invalid anchor %s", async (startTick) => {
+  const directory = await makeTempDir("playtest-start-tick-invalid-");
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({ name: "anchor", schemaVersion: 1, startTick, steps: [{ waitFrames: 1 }] }));
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toThrow("startTick");
 });

@@ -724,6 +724,34 @@ impl Cadence {
     }
 }
 
+// Share libc's stdout FILE lock with the C++ diagnostics; Rust stdout has a separate lock.
+fn write_snapshot_line(line: &str) -> std::io::Result<()> {
+    unsafe extern "C" {
+        static stdout: *mut std::ffi::c_void;
+        fn puts(line: *const std::ffi::c_char) -> std::ffi::c_int;
+        fn fflush(stream: *mut std::ffi::c_void) -> std::ffi::c_int;
+    }
+    let line = std::ffi::CString::new(line)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+    // puts writes the entire string and its newline while holding the FILE lock.
+    unsafe {
+        if puts(line.as_ptr()) < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        if fflush(stdout) != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}
+
+fn emit_snapshot_line(line: &str) {
+    if let Err(error) = write_snapshot_line(line) {
+        use std::io::Write;
+        let _ = writeln!(std::io::stderr().lock(), "UI snapshot diagnostic write failed: {error}");
+    }
+}
+
 /// One line per snapshot asked for and answered, only when `TN_UI_SNAPSHOT_TRACE` is set.
 ///
 /// `TN_UI_SNAPSHOT` aggregates a second, and a second cannot separate the two reasons a gap appears
@@ -737,7 +765,7 @@ fn trace_snapshot(event: &str, request: u64, detail: &str) {
     if !*ENABLED {
         return;
     }
-    println!("TN_UI_SNAPSHOT_TRACE:{{\"event\":\"{event}\",\"n\":{request}{detail}}}");
+    emit_snapshot_line(&format!("TN_UI_SNAPSHOT_TRACE:{{\"event\":\"{event}\",\"n\":{request}{detail}}}"));
 }
 
 /// The web thread's state machine: drain the game's requests, then take a snapshot if one is due.
@@ -817,7 +845,7 @@ impl Driver {
         self.last_report = Instant::now();
         let now = self.last_report;
         let waiting = in_flight_since.map(|at| at.elapsed().as_millis()).unwrap_or(0);
-        println!(
+        emit_snapshot_line(&format!(
             "TN_UI_SNAPSHOT:{{\"requests\":{},\"inFlight\":{},\"waitingMs\":{},\"lastRoundTripMs\":{},\"intervalMs\":{},\"quietMs\":{},\"counter\":{}}}",
             self.requests,
             in_flight_since.is_some(),
@@ -826,7 +854,7 @@ impl Driver {
             self.cadence.wait(now).as_millis(),
             self.cadence.quiet(now).as_millis(),
             self.shared.frames.published()
-        );
+        ));
     }
 
     fn loaded(&mut self) {
@@ -1174,6 +1202,54 @@ fn serde_frame(frame: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn snapshot_writer_rejects_embedded_nul() {
+        let error = super::write_snapshot_line("TN_UI_SNAPSHOT:before\0after").unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn snapshot_writer_waits_for_the_c_stdout_lock() {
+        unsafe extern "C" {
+            static stdout: *mut std::ffi::c_void;
+            fn flockfile(stream: *mut std::ffi::c_void);
+            fn funlockfile(stream: *mut std::ffi::c_void);
+        }
+        struct TraceEnv(Option<std::ffi::OsString>);
+        impl Drop for TraceEnv {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(value) => std::env::set_var("TN_UI_SNAPSHOT_TRACE", value),
+                    None => std::env::remove_var("TN_UI_SNAPSHOT_TRACE"),
+                }
+            }
+        }
+        struct StdoutLock;
+        impl Drop for StdoutLock {
+            fn drop(&mut self) {
+                unsafe { funlockfile(stdout) };
+            }
+        }
+        let _trace_env = TraceEnv(std::env::var_os("TN_UI_SNAPSHOT_TRACE"));
+        std::env::set_var("TN_UI_SNAPSHOT_TRACE", "1");
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        unsafe { flockfile(stdout) };
+        let stdout_lock = StdoutLock;
+        let writer = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            super::trace_snapshot("stdio-lock-test", 0, "");
+            done_tx.send(()).unwrap();
+        });
+        started_rx.recv().unwrap();
+        let while_locked = done_rx.recv_timeout(std::time::Duration::from_millis(100));
+        drop(stdout_lock);
+        writer.join().unwrap();
+        assert!(matches!(while_locked, Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
+            "the actual snapshot writer bypassed the C stdout FILE lock");
+        done_rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+    }
+
     #[test]
     #[ignore = "requires an X11 display with WebKitGTK; run through test:ui-native"]
     fn ordinary_controls_use_native_focus_and_editing() {

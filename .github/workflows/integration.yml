@@ -619,7 +619,7 @@ jobs:
   fog-native:
     name: Linux native fog correctness
     needs: [fog]
-    # Reuse the proven native-platforms / native-assets ARM QuickJS route without changing defaults.
+    # Use the shipped ARM V8/wgpu default for native fog correctness.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     env:
@@ -810,7 +810,7 @@ jobs:
     name: Linux native fluid correctness
     if: ${{ needs.paths.outputs.fluid-native == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    # Established native-platforms ARM QuickJS/wgpu route; no default backend change.
+    # Use the shipped ARM V8/wgpu default for native fluid correctness.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     env:
@@ -888,8 +888,7 @@ jobs:
     name: packaged native asset fallback
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.native-assets == 'true' }}
     needs: paths
-    # Match native-platforms starter-linux: this architecture selects QuickJS/wgpu without
-    # changing any runtime default. Native dependencies use the repository's locked provisioner.
+    # This fallback proof explicitly selects QuickJS; the ARM desktop default is V8.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     env:
@@ -934,8 +933,12 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
           libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
-      - name: Build the same QuickJS host the normal ARM desktop lane ships
-        run: pnpm --filter @threenative/runtime-native native:build
+      - name: Build the QuickJS host required by the packaged fallback
+        run: |
+          pnpm --filter @threenative/runtime-native native:build
+          node packages/runtime-native/scripts/download-deps.mjs --only quickjs
+          cmake -S packages/runtime-native -B packages/runtime-native/build/tn-linux -DMYSTRAL_USE_V8=OFF -DMYSTRAL_USE_QUICKJS=ON
+          cmake --build packages/runtime-native/build/tn-linux --target mystral --parallel 2
       - name: Build the real fixture and capture its packaged native executable
         env:
           THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral

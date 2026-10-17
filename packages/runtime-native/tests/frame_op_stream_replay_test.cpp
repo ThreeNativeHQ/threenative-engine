@@ -4,6 +4,7 @@
 #include "../src/webgpu/bindings_state.h"
 
 #include <iostream>
+#include <fstream>
 #include <chrono>
 #include <cstdlib>
 #include <thread>
@@ -1000,7 +1001,98 @@ void runArrayLayerUploadContract() {
            "offset writeTexture lands layer 2's bytes in layer 2 and leaves layer 1 alone: " + observed);
 }
 
+void runWriteBufferContract(bool direct, const char* proofBundle) {
+    mystral::RuntimeConfig config;
+    config.width = 1;
+    config.height = 1;
+    config.noSdl = true;
+    const auto runtime = mystral::Runtime::create(config);
+    if (!runtime || !runtime->getWebGPUBindingsState()) {
+        expect(false, "writeBuffer proof requires native WebGPU bindings");
+        return;
+    }
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
+    auto* engine = state->engine;
+    state->profiling.disableFrameOpStreamForTesting = direct;
+    frameReplayBackendEntries = 0;
+    state->profiling.frameOpStreamNativeCallObserver = [](const char* operation) {
+        if (std::string(operation) == "writeBuffer") frameReplayBackendEntries += 1;
+    };
+    std::ifstream input(proofBundle);
+    std::ostringstream source;
+    source << input.rdbuf();
+    if (!input || source.str().empty()) {
+        expect(false, "writeBuffer proof bundle must exist and be nonempty");
+        return;
+    }
+    expect(engine->evalScript(source.str().c_str(), proofBundle), "shared writeBuffer proof loaded");
+    expect(engine->evalScript(R"JS((async () => {
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) throw new Error("missing native GPU adapter");
+        const device = await adapter.requestDevice();
+        await writeBufferProof.verifyQueueWriteBuffer(device);
+        if (typeof ArrayBuffer.prototype.transfer !== "function") {
+          throw new Error("ArrayBuffer.prototype.transfer is required to prove detached source rejection");
+        }
+        // Desktop-focused arm only: the portable shared proof stays transfer-free because Android V8
+        // cannot detach a buffer, so the detached-source contract is proved here on Dawn + V8.
+        const detachedBuffer = device.createBuffer({size: 16, usage: GPUBufferUsage.COPY_DST});
+        try {
+          const detached = [
+            ["ArrayBuffer", new ArrayBuffer(4)],
+            ["Uint8Array", new Uint8Array(4)],
+            ["DataView", new DataView(new ArrayBuffer(4))],
+          ];
+          for (const [, detachedSource] of detached) {
+            if (detachedSource.buffer) detachedSource.buffer.transfer();
+            else detachedSource.transfer();
+          }
+          const accepted = [];
+          for (const [name, detachedSource] of detached) {
+            try {
+              device.queue.writeBuffer(detachedBuffer, 0, detachedSource);
+              accepted.push(name);
+            } catch {}
+          }
+          if (accepted.length) throw new Error(`detached sources were accepted: ${accepted.join(", ")}`);
+          globalThis.__tnDetachedRejected = detached.length;
+        } finally {
+          detachedBuffer.destroy();
+        }
+        globalThis.__tnWriteBufferPassed = true;
+      } catch (error) {
+        globalThis.__tnWriteBufferError = String(error.stack || error);
+      } finally {
+        globalThis.__tnWriteBufferDone = true;
+      }
+    })())JS", "tn-write-buffer-proof.js"), "writeBuffer proof started");
+    awaitFlag(runtime.get(), engine, "__tnWriteBufferDone");
+    expect(engine->toBoolean(engine->getGlobalProperty("__tnWriteBufferPassed")),
+           "native writeBuffer proof: " + engine->toString(engine->getGlobalProperty("__tnWriteBufferError")));
+    expect(direct ? !state->profiling.frameOpStreamDrain.ptr : !!state->profiling.frameOpStreamDrain.ptr,
+           "requested direct/stream transport was installed");
+    if (!direct) {
+        expect(state->profiling.frameOpStreamReplayCrossings > 0,
+               "writeBuffer proof crossed the native frame replay decoder");
+        expect(frameReplayBackendEntries == 7,
+               "decoder reached all five zero-byte and two nonzero production writeBuffer records: " +
+                   std::to_string(frameReplayBackendEntries));
+        std::cout << "Decoded writeBuffer records: " << frameReplayBackendEntries
+                  << " (five zero-byte, two nonzero); GPU readback checked" << std::endl;
+    }
+}
+
 int main(int argc, char** argv) {
+    if (argc > 1 && (std::string(argv[1]) == "write-buffer-direct" ||
+                     std::string(argv[1]) == "write-buffer-stream")) {
+        if (argc != 3) {
+            std::cerr << "write-buffer-direct|write-buffer-stream requires the shared IIFE proof bundle" << std::endl;
+            return 1;
+        }
+        runWriteBufferContract(std::string(argv[1]) == "write-buffer-direct", argv[2]);
+        return failures == 0 ? 0 : 1;
+    }
     const bool disableStreamControl =
         argc > 1 && std::string(argv[1]) == "disabled-stream-control";
     runContract(disableStreamControl);

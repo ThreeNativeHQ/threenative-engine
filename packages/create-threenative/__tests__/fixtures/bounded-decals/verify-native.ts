@@ -45,7 +45,7 @@ const summary: {
   sourceSha,
   pass: false,
   qualification:
-    "Packaged Linux ARM QuickJS software-adapter correctness. No mobile or hardware-performance claim.",
+    "Packaged Linux ARM V8 software-adapter correctness. No mobile or hardware-performance claim.",
   results: [],
 };
 await write(join(artifacts, "attempt.json"), {
@@ -78,8 +78,8 @@ try {
     assert.equal(process.platform, "linux");
     assert.equal(process.arch, "arm64");
     const version = execFileSync(runtime, ["--version"], { encoding: "utf8", timeout: 10_000 });
-    assert.match(version, /\+ quickjs build\b/iu, "Expected the actual ARM QuickJS host.");
-    const capabilities = { engine: "quickjs", version: version.trim() };
+    assert.match(version, /\+ v8 build\b/iu, "Expected the actual ARM V8 host.");
+    const capabilities = { engine: "v8", version: version.trim() };
     const runtimeBytes = await readFile(runtime);
     const assets = ["receiver.glb", "assets.manifest.json"];
     const assetHashes = Object.fromEntries(

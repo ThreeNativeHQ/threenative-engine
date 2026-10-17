@@ -255,22 +255,24 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // createProject on the merged tree.
   // PRD-566/569/609 merge: measured all thirteen trees; action-rpg carries emitParticle bursts and onCull instructions.
   // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
+  // 2026-10-17 merged develop (PRD-619 interpolation) into PRD-564: all thirteen trees re-measured through
+  // createProject on the merged tree.
   // Merged develop 1d056cec3 into PRD-564: AA disposal and the PR486 Three patch ship, so all thirteen
   // trees are measured through createProject on this combined worktree, not either side's value.
-  "action-rpg": "6c096ad4d318afea70a1deb38a24f93653d38fb601f98eca26dfebf9fabe3a81",
-  minimal: "10fdb8f43de4e235b8dcd915550f4f1a3e5f6cfaca245789d167e2967f3e8ec4",
-  platformer: "98a84182735a6dd2b1e00883790519e9cabf38839636cf1882ff7332370378a3",
-  puzzle: "4646480a4d65cf256a40aef65990ca97939d6f9fc6008959fb5c8d7e51edf3ab",
-  racing: "36f926e31ac2983aa49ce77c312b4db1858c685aeac0ed428a1226f87648e70d",
-  rain: "2dc28ae7ca1cac1043bcfd1158bb38e5fc673a33d0aaa93c0b74ff5dd455be23",
-  rts: "c9f009bffd1a20764e5a689d52450981e849607661a3df249fa7dbfb15640f63",
-  runner: "0563b9eee13e74f237d62d245b740974b5a487d09eae69b2934e07e4609ca46d",
+  "action-rpg": "c0d6de48044320e84ea2ac7d4ed6f1ee34d1666fd823838905d82cbd92814941",
+  minimal: "4b8c75461d05cb51e20e37eef98b2c183707c7132c622e84f27572dd32048ecc",
+  platformer: "5282196f894fd75bef78d5d6e080ff1a3107ba53256f79b866fcd0c25510faae",
+  puzzle: "232c78732cffa1669622b57b8221e4e6df30d1b54140428525548b4d91f5403b",
+  racing: "af591cad4364cdbde7652a51ca7ef07935468a66e87bb726be8dec0c8cdb01a8",
+  rain: "6c473543a655ae1eae01b78318bc84a449cffe4b811144060c22e6832a9937de",
+  rts: "b2bccad5648a665c4812fba8292c1267b4b47b5c8fff921e72b78aa8db504f2e",
+  runner: "876d1c68e80cb566be6093c0b608e1ec0c5d8c02cb6468b1b5995fd523bb1b95",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "e9dc35b8862ef287db6c8614d875dd1af183688d9f8820d160662553315c88a6",
-  shooter: "15258f5e74010cba3dd0aa915c5a3668ca6d7d804fcd30cd0467030a6594948b",
-  snow: "c5078ff66a9744f1888ed1b6cc34ca6c327f0a1e06b561dc9f245ae55fd7f0cd",
-  starter: "8ce6d4d01b480ac925df58948683494dadcc722758682b1dbecae171d3cd308a",
-  "tower-defense": "7b78fa2607655a5a4f6571d6f2f152cdab98d592d7133fd65bb16c96e474a830",
+  sailing: "9bff33bf989975f4b9b05ba468bb293bcbacad832f4ef509566754461a7d5632",
+  shooter: "8f771c884a980d620e3c79f411b8e8d3b2cfe0ab9a2871052443fff4ac55dd19",
+  snow: "dbabd0e6406e8e074063bdb985018664ffd0ee915c7237976f403dca81269afe",
+  starter: "f40897f30b8b1ebd890c5a559e965606a52c50663ac29b76fc24fdab544219e3",
+  "tower-defense": "69ee2732bfe738a454f7df7d0803715645aceb36fbbc1594fb417867e5412944",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -405,10 +407,12 @@ const STARTER_PATHS = [
   "src/ui/main.tsx",
   "src/ui/App.tsx",
   "src/state.ts",
-  // PRD-449: three, and only the three that prove a new game works. The other 21 are engine
-  // guards in `packages/create-threenative/template-playtests/starter/`, which `pnpm test:templates`
-  // copies into the scaffold; the "exactly three" assertion below is what keeps them out.
+  // Ship the starter smoke, outcome, readiness and movement scenarios. Engine guards stay in
+  // `packages/create-threenative/template-playtests/starter/`, copied by `pnpm test:templates`.
   "playtests/survives.playtest.json",
+  "playtests/movement.playtest.json",
+  "playtests/live/smooth-motion.playtest.json",
+  "native-playtests/smooth-motion.playtest.json",
   "playtests/play.playtest.json",
   "native-playtests/react-hud.playtest.json",
   "playtests/production-readiness.playtest.json",
@@ -942,7 +946,7 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
-      // The whole point of the cut (PRD-449): a new game proves itself with three scenarios, and
+      // The whole point of the cut (PRD-449): a new game proves itself with four scenarios, and
       // the engine's own guards live outside the template. `readdir` rather than the STARTER_PATHS
       // membership, so a file nobody added to the list still fails here.
       expect(
@@ -950,6 +954,7 @@ describe("create-threenative", () => {
           name.endsWith(".playtest.json"),
         ),
       ).toEqual([
+        "movement.playtest.json",
         "play.playtest.json",
         "production-readiness.playtest.json",
         "survives.playtest.json",

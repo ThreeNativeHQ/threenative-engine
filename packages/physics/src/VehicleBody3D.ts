@@ -208,6 +208,8 @@ export class VehicleBody3D extends RigidBody3D {
     requireFinite(yaw, "yaw");
     this.#simulation.resetVehicle(this.#vehicle, position, yaw);
     this.#object.position.set(position.x, position.y, position.z);
+    this.#object.rotation.set(0, yaw, 0);
+    this.physics?.resetInterpolation?.(this.#object);
   }
 
   override dispose(): void {

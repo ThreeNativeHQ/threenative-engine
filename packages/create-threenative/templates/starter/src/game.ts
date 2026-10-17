@@ -19,6 +19,7 @@ const game = defineGame<GameState, IPhysicsContext>({
       right: ["ArrowRight", "KeyD"],
       up: ["ArrowUp", "KeyW"],
     },
+    run: { keys: ["ShiftLeft", "ShiftRight"] },
     jump: { buttons: [0], keys: ["Space"] },
     flagGust: { keys: ["KeyG"] },
     restart: { keys: ["KeyR"] },

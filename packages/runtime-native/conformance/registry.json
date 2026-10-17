@@ -1327,6 +1327,19 @@
       "required": true
     },
     {
+      "id": "91-queue-write-buffer-zero",
+      "title": "zero-length queue writeBuffer preserves nonzero writes and rejects invalid sources",
+      "category": "runtime",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/queue-write-buffer-zero.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "91-frame-upload-stream",
       "title": "steady-state frame upload stream",
       "category": "runtime",

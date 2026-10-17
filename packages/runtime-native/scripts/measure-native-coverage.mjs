@@ -318,7 +318,9 @@ export function retainedCoverageFloors(previousRecord, subsystems) {
   }
   return subsystems.map(({ name, percent }) => {
     const path = `src/${name}${name.includes(".") ? "" : "/"}`;
-    return { name: path, percent: recorded.get(path) ?? percent };
+    // Match the gate's five-point margin without ever loosening an established floor.
+    const ratcheted = Number((percent - 5).toFixed(2));
+    return { name: path, percent: Math.max(recorded.get(path) ?? percent, ratcheted) };
   });
 }
 

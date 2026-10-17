@@ -27,6 +27,10 @@ export class Crate {
     });
   }
 
+  debug(): { position: number[] } {
+    return { position: this.mesh.position.toArray() };
+  }
+
   dispose(): void {
     this.body.dispose();
     this.mesh.removeFromParent();

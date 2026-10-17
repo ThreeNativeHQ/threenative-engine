@@ -240,7 +240,13 @@ test('desktop verifier preserves evidence and scopes its SDL drivers to Linux', 
     /if \(process\.platform === 'linux'\) \{\n([\s\S]*?)\n\x20{2}\}/u,
   )?.[1];
   expect(linuxBranch).toBeDefined();
-  expect(linuxBranch).toMatch(/runtimeEnv\.SDL_VIDEODRIVER = 'x11'/);
+  // The driver is the caller's, not a literal: a Wayland request has to reach the child, which is
+  // what src/cli/main.cpp reads before it refuses the web UI over Wayland. Both spellings are set,
+  // so the child resolves the driver this gate read; x11 stays the default inside
+  // requestedLinuxVideoDriver, which linux-video-driver-routing.spec.ts proves.
+  expect(linuxBranch).toMatch(/runtimeEnv\.SDL_VIDEO_DRIVER = requested\.driver/);
+  expect(linuxBranch).toMatch(/runtimeEnv\.SDL_VIDEODRIVER = requested\.driver/);
+  expect(linuxBranch).not.toMatch(/SDL_VIDEODRIVER = 'x11'/);
   // The audio driver is a *default*, not an override: this gate makes no audio assertion, and a
   // machine with a real device must keep using it. `verify-desktop-audio.mjs` owns the audio
   // contract and runs before this gate in the same command.

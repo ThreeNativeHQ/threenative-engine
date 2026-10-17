@@ -403,7 +403,11 @@ impl Simulation {
         vertices: Vec<Point3<Real>>,
         indices: Vec<[u32; 3]>,
     ) -> bool {
-        let Ok(collider) = ColliderBuilder::trimesh(vertices, indices) else {
+        let Ok(collider) = ColliderBuilder::trimesh_with_flags(
+            vertices,
+            indices,
+            TriMeshFlags::FIX_INTERNAL_EDGES,
+        ) else {
             return false;
         };
         self.insert_body(options, collider)
@@ -1092,6 +1096,11 @@ impl Simulation {
                     .collect();
                 let mut ground_collider = None;
                 let mut ground_normal = None;
+                // Rapier flags ground at any positive up component. Contacts that are all steeper
+                // than 60 degrees from up mean a wall, matching the web backend; a snap-to-ground
+                // step records no contact and keeps Rapier's answer.
+                let mut walkable = false;
+                let mut contacts = 0u32;
                 let mut collisions = Vec::new();
                 let movement = character.controller.move_shape(
                     delta_time,
@@ -1100,7 +1109,9 @@ impl Simulation {
                     body.position(),
                     desired,
                     |collision| {
+                        contacts += 1;
                         if collision.hit.normal1.y >= 0.5 {
+                            walkable = true;
                             ground_collider = collider_ids.get(&collision.handle).copied();
                             ground_normal = Some([
                                 collision.hit.normal1.x,
@@ -1134,11 +1145,12 @@ impl Simulation {
                 body.set_next_kinematic_translation(current + movement.translation);
                 body.set_next_kinematic_rotation(rotation);
                 let state = self.characters.get_mut(&id).expect("character was checked");
-                state.grounded = movement.grounded;
+                let grounded = movement.grounded && (walkable || contacts == 0);
+                state.grounded = grounded;
                 state.ground_collider = ground_collider
-                    .or_else(|| movement.grounded.then_some(state.ground_collider).flatten());
+                    .or_else(|| grounded.then_some(state.ground_collider).flatten());
                 state.ground_normal = ground_normal.unwrap_or_else(|| {
-                    if movement.grounded {
+                    if grounded {
                         state.ground_normal
                     } else {
                         [0.0, 1.0, 0.0]

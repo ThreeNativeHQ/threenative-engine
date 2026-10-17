@@ -1134,6 +1134,74 @@ describe("the main pass's draw bundles", () => {
       }
     },
   );
+  it("validates or invalidates a Node child witness on changed getChildren output through the real caller", async () => {
+    const painted = new MeshStandardNodeMaterial();
+    const first = { isNode: true };
+    const second = { isNode: true };
+    let produced: readonly object[] = [first];
+    let fail: "none" | "malformed" | "throw" = "none";
+    const holder = { isNode: true };
+    // A stable reader whose ordered output changes: identity stays, so the comparison branch is the
+    // one under test rather than the reader-identity check the override tests already exercise.
+    const reader = (): unknown =>
+      (function* () {
+        if (fail === "throw") {
+          yield first;
+          throw new Error("late reader failure");
+        }
+        if (fail === "malformed") {
+          yield {};
+          return;
+        }
+        for (const child of produced) yield child;
+      })();
+    Reflect.set(holder, "getChildren", reader);
+    Reflect.set(painted, "colorNode", holder);
+    const { renderer, world: cells } = await world({
+      bundles: true,
+      gpuScene: false,
+      chunkModel: (url) => standAtCellOf(url, chunkOf([painted])),
+    });
+    try {
+      cells.update(renderer, playerCamera());
+      await flushed(cells, renderer, playerCamera());
+      const keys = mainKeys(cells);
+      expect(keys.length).toBeGreaterThan(0);
+      expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      const settled = cells.stats().bundle.records;
+      const validations = cells.stats().bundle.eligibility.validations;
+      // Unchanged identities and order are a live witness: validated, never re-recorded.
+      cells.update(renderer, playerCamera());
+      expect(cells.stats().bundle.eligibility.validations).toBeGreaterThan(validations);
+      expect(cells.stats().bundle.records).toBe(settled);
+      // Longer, reordered and shorter output each fail the witness and re-record.
+      for (const change of [
+        (): readonly object[] => [first, second],
+        (): readonly object[] => [second, first],
+        (): readonly object[] => [],
+      ]) {
+        produced = change();
+        const before = cells.stats().bundle.records;
+        cells.update(renderer, playerCamera());
+        expect(cells.stats().bundle.records).toBeGreaterThan(before);
+        expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+      }
+      // A reader that fails after yielding, and malformed output, retain the source path.
+      for (const mode of ["throw", "malformed"] as const) {
+        fail = mode;
+        cells.update(renderer, playerCamera());
+        expect(keys.every((mesh) => mesh.userData.tnBundled === false)).toBe(true);
+        expect(keys.every((mesh) => mesh.parent === cells)).toBe(true);
+      }
+      // Repair: the same output that was last a witness bundles again.
+      fail = "none";
+      produced = [first];
+      cells.update(renderer, playerCamera());
+      expect(keys.every((mesh) => mesh.userData.tnBundled)).toBe(true);
+    } finally {
+      cells.dispose();
+    }
+  });
   it("removes CPU keys on a deep unsafe graph edit without needsUpdate and records them again after repair", async () => {
     const painted = new MeshStandardNodeMaterial();
     const branch: { child?: unknown } = {};

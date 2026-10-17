@@ -17,6 +17,7 @@
       // not a fixture bug.
       const params = new URLSearchParams(location.search);
       const mode = params.get("mode") ?? "good";
+      const fixedClock = mode === "physics" || params.get("clock") === "fixed-step";
       const canvas = document.getElementById("view");
       let startupPollsRemaining = mode === "startup-delayed" ? 3 : Infinity;
 
@@ -224,7 +225,7 @@
       }
 
       requestAnimationFrame(function frame() {
-        if (mode !== "physics") step();
+        if (!fixedClock) step();
         requestAnimationFrame(frame);
       });
 
@@ -268,7 +269,8 @@
             "entity.observe",
             "entity.setup",
             "runtime.resources",
-            ...(mode === "physics" ? ["runtime.fixedStep", "runtime.physics"] : []),
+            ...(fixedClock ? ["runtime.fixedStep"] : []),
+            ...(mode === "physics" ? ["runtime.physics"] : []),
             ...(mode === "startup-delayed" || mode === "startup-stuck" ? ["runtime.startup"] : []),
           ],
           limits: {
@@ -318,7 +320,7 @@
           const diagnostics = runtimeDiagnostics();
           const contract = bridge.describe();
           return {
-          clock: mode === "physics"
+          clock: fixedClock
             ? { mode: "fixed-step", tick }
             : { mode: "render-frame", timeMs: tick * 16 },
           // `silent-drop` answers every sample with zero entities. The runner has

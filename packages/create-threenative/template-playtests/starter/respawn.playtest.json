@@ -19,13 +19,13 @@
       "kind": "input",
       "label": "run-off-world",
       "press": "ArrowRight",
-      "holdTicks": 240,
+      "holdTicks": 329,
       "release": true
     },
     {
       "kind": "wait",
       "label": "respawn",
-      "waitTicks": 90,
+      "waitTicks": 240,
       "release": true
     }
   ],

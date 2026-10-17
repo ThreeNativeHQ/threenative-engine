@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'vitest';
 
@@ -80,4 +80,18 @@ test('should expose deterministic generation through the CLI', () => {
   assert.match(out, /Wrote SBOM/);
   assert.ok(readFileSync(join(outDir, 'native-dependencies.cdx.json'), 'utf8').includes('CycloneDX'));
   void lockHash;
+});
+
+
+test('canonical nested V8 receipt takes precedence over a stale cross-architecture sidecar', () => {
+  const root = makeTempDirSync('threenative-sbom-v8-sidecar-');
+  mkdirSync(join(root, 'v8', '.threenative-receipts'), { recursive: true });
+  mkdirSync(join(root, '.threenative-receipts'));
+  writeFileSync(join(root, '.threenative-receipts', 'v8-linux-arm64.json'),
+    JSON.stringify({ dependency: 'v8', lockHash: 'stale', payloads: ['v8-linux-arm64'] }));
+  writeFileSync(join(root, 'v8', '.threenative-receipts', 'receipt.json'),
+    JSON.stringify({ dependency: 'v8', lockHash: 'current', payloads: ['v8-linux-x64'] }));
+  const receipts = collectReceipts(root, 'current');
+  assert.equal(receipts.length, 1);
+  assert.deepEqual(receipts[0].payloads, ['v8-linux-x64']);
 });
