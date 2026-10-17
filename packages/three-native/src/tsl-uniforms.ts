@@ -70,7 +70,10 @@ export function liveUniforms<TNode extends object>(
 } {
   const states = new WeakMap<object, IUniformState>();
   const objects = new Set<WeakRef<TNode>>();
-  const updating = new Set<WeakRef<TNode>>();
+  // Strong: a hook's node is chained into a material and dropped, so the wrapper is all JS holds, and a
+  // collected wrapper silently ended its updates. ponytail: kept for the page's life; the engine release
+  // of such a node waits too. Release with the owning material if a game builds hooked uniforms in a loop.
+  const updating = new Set<TNode>();
   let frameId = 0;
   const live = {
     uniform(value: unknown, type?: unknown): TNode {
@@ -97,7 +100,7 @@ export function liveUniforms<TNode extends object>(
           throw new Error(
             `TN_TSL_UPDATE_UNSUPPORTED: a native uniform updates per frame or render, not per '${updateType}'`,
           );
-        if (state.update === undefined) updating.add(new WeakRef(node));
+        if (state.update === undefined) updating.add(node);
         state.update = (frame) => callback.call(node, frame, node);
         return node;
       };
@@ -166,12 +169,7 @@ export function liveUniforms<TNode extends object>(
     },
     sync() {
       const frame = { frameId: ++frameId };
-      for (const ref of updating) {
-        const node = ref.deref();
-        if (node === undefined) {
-          updating.delete(ref);
-          continue;
-        }
+      for (const node of updating) {
         const next = states.get(node)?.update?.(frame);
         if (next !== undefined) (node as { value: unknown }).value = next;
       }
