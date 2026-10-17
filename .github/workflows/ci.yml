@@ -891,6 +891,23 @@ jobs:
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots --server-timeout 120000 \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
+      # Engine parity guard: the same pose on engine "threejs" and on "threenative", compared by
+      # 4x4 tile means (scripts/engine-parity.ts). Both arms share this runner's adapter, so a
+      # software rasteriser still catches a wrong exposure, colour, fog or a missing object.
+      - name: Compare the two engines on one pose
+        run: >-
+          pnpm exec tsx scripts/engine-parity.ts
+          --project "$RUNNER_TEMP/threenative-${{ matrix.template }}"
+          --template ${{ matrix.template }}
+          --out artifacts/engine-parity/${{ matrix.template }}
+      - name: Retain the engine parity frames
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-parity-${{ matrix.template }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/engine-parity/${{ matrix.template }}
+          if-no-files-found: warn
+          retention-days: 7
       # The former second golden leg uniquely built platformer's production artifact. Retain that
       # proof on its already-installed scaffold, without repeating the generic install/dev journey.
       - name: Verify the platformer production artifact
