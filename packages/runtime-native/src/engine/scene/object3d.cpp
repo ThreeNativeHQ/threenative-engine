@@ -806,6 +806,9 @@ void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool f
         worldParentRevision_ = parent_ ? parent_->revision() : 0;
         force = true;
     }
+    // A SkinnedMesh bound after its last world update keeps an identity bindMatrixInverse; measuring
+    // it here (Box3, normaliseToMetres) would otherwise skip the inverse of its own world matrix.
+    afterMatrixWorld();
 
     if (updateChildren) {
         for (Object3D* child : children) child->updateWorldMatrix(false, true, force);

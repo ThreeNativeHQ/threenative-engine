@@ -1919,6 +1919,33 @@ void post_output_depth_has_a_vertex_output() {
     CHECK(s::WgslEmitter::emit(programs.vertex, 1).ok() && s::WgslEmitter::emit(programs.fragment, 1).ok());
 }
 
+// PRD-617: a glTF skin binds with an identity bind matrix, so before the first frame `bindMatrixInverse` is still the
+// identity. The shooter measures its rifle then with updateWorldMatrix; the bounds must still cancel the mesh's own
+// world matrix, else the rifle turns a quarter-turn and the muzzle and the aiming optic move.
+void skinned_bounds_before_the_first_frame() {
+    using namespace tn::engine;
+    Group root;
+    root.rotation.x = -1.5707963267948966;
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->setAttribute("position", BufferAttribute::fromDoubles(Scalar::F32, {1, 2, 3}, 3));
+    geometry->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::F32, {0, 0, 0, 0}, 4));
+    geometry->setAttribute("skinWeight", BufferAttribute::fromDoubles(Scalar::F32, {1, 0, 0, 0}, 4));
+    auto bone = std::make_shared<Bone>();
+    SkinnedMesh mesh(geometry, std::make_shared<Material>(MaterialType::Basic));
+    root.add(*bone);
+    root.add(mesh);
+    root.updateWorldMatrix(false, true);
+    Matrix4 inverse;
+    inverse.copy(bone->matrixWorld).invert();
+    const Matrix4 identity;
+    mesh.bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone}, std::vector<Matrix4>{inverse}), &identity);
+    Box3 box;
+    box.setFromObject(mesh);
+    const auto near = [](double a, double b) { return std::abs(a - b) < 1e-9; };
+    CHECK(near(box.min.x, 1) && near(box.min.y, 2) && near(box.min.z, 3));
+    CHECK(near(box.max.x, 1) && near(box.max.y, 2) && near(box.max.z, 3));
+}
+
 void starter_post_bindings() {
     namespace g = tn::engine::shader::graph;
     using tn::abi::TslArg;
@@ -2133,7 +2160,7 @@ void starter_post_bindings() {
 
 }
 
-TN_TEST_MAIN({"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
