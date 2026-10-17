@@ -21324,6 +21324,249 @@
           "jobs_file": "docs/ci-speed/runs/38975472149.jobs.json"
         }
       }
+    },
+    {
+      "id": 35,
+      "at": "2026-10-17T21:12:30.227Z",
+      "commit": "6234d68381db960de04cfb9956232e647aa30455",
+      "label": "routed after-run, quiet window, RED: run 39066107986 at 6234d6838 (develop-synced); wall 46.67 min and queue p50 5s meet the targets but the board failed, so it is not a sample",
+      "notes": "Routed after-run on the develop-synced candidate 6234d68381db960de04cfb9956232e647aa30455, chart-excluded and NOT counted. Quiet window: no other repository run overlapped 2026-10-17T20:17:52Z to 2026-10-17T21:04:32Z. 6 of 46 HEAVY ran tn-local, 40 hosted overflow. Timing would pass (full board 2800s, job envelope 2796s; eligible HEAVY queue p50 5s / p90 344s / max 428s / 15 >120s) but the board is red, so it is not an AC-1 sample. Root failures: (1) test-unit (3/4) on tn-local runner tn-f5a5d3bd4a00 (desktop pool, not the laptop): scripts/__tests__/check-capability-docs.spec.ts \"should scan subpath exports\" exceeded its 15 s hang guard (file 23406ms; the same test took 4976ms on tn-local in run 38975472149). Fix: the guard is 60 s; the assertions are unchanged. (2) native-platforms / Android emulator visual parity on hosted ubuntu-24.04 (not a PRD-620 routed job): conformance 79 pass / 0 fail / 29 blocked, but supplemental androidMultitouch exited 1 after its first proof passed (300 frames, screenshot captured) with \"FAIL: Device playtest cleanup failed.\"; the same job passed on develop runs 39056576003 and 39059885969, so this is an emulator cleanup failure outside this PRD, with no cause claimed. Native required coverage receipt and ci-required failed as consequences.",
+      "decision": "invalid",
+      "source": "measured",
+      "window": {
+        "since": "2026-10-15",
+        "base": "develop"
+      },
+      "metrics": {
+        "lastPushToMergeMedianMin": null,
+        "lastPushToMergeP90Min": null,
+        "firstAttemptSuccessPct": null,
+        "boardWallMedianMin": null,
+        "queueWaitP90Min": null
+      },
+      "prs": [],
+      "firstFailingJobs": [],
+      "extra": {
+        "prCount": null,
+        "mergeGroupRuns": null,
+        "mergeGroupRunSuccessPct": null,
+        "enqueueToMergeMedianMin": null,
+        "queueWaitJobs": null,
+        "prd620": {
+          "run_id": 39066107986,
+          "candidate_sha": "6234d68381db960de04cfb9956232e647aa30455",
+          "run_attempt": 1,
+          "run_url": "https://github.com/ThreeNativeHQ/threenative-engine/actions/runs/39066107986",
+          "api_url": "https://api.github.com/repos/ThreeNativeHQ/threenative-engine/actions/runs/39066107986",
+          "event": "workflow_dispatch",
+          "head_branch": "ci/prd620-local-first",
+          "conclusion": "failure",
+          "status": "completed",
+          "classification": "red routed after-run in a quiet window; timing meets targets but the board failed, not a sample",
+          "decision": "invalid-red-board",
+          "decision_reason": "failed jobs: test-unit (3/4) 117494555771; native-platforms / Android emulator visual parity 117495526381; native-platforms / Native required coverage receipt 117502856664; ci-required 117502971094",
+          "chart_excluded": true,
+          "all_jobs_hosted": false,
+          "routed_local": true,
+          "api_event_timestamps": {
+            "created_at": "2026-10-17T20:17:52Z",
+            "run_started_at": "2026-10-17T20:17:52Z",
+            "updated_at": "2026-10-17T21:04:32Z"
+          },
+          "wall": {
+            "started_at_min": "2026-10-17T20:17:56Z",
+            "completed_at_max": "2026-10-17T21:04:32Z",
+            "wall_seconds": 2796,
+            "wall_minutes": 46.6,
+            "full_board_including_initial_queue_seconds": 2800,
+            "full_board_started_at": "2026-10-17T20:17:52Z",
+            "full_board_completed_at": "2026-10-17T21:04:32Z",
+            "full_board_minutes": 46.67,
+            "definition": "Full board uses run_started_at to the latest job completed_at; job envelope retained separately. Not an AC-1 sample: the board is red."
+          },
+          "full_qualification_control": {
+            "total_jobs_observed": 72,
+            "expected_full_board": 72,
+            "heavy_eligible": 46,
+            "ci_required_job_id": 117234269821,
+            "ci_required_conclusion": "failure",
+            "ci_required_runner": "tn-1bc989cca0f3",
+            "ci_required_labels": ["tn-local-light"],
+            "selection": "full",
+            "qualification": true,
+            "skipped_jobs": [
+              {
+                "id": 117223989170,
+                "name": "native-platforms / Publish the Linux arm64 V8 payload"
+              },
+              {
+                "id": 117223989319,
+                "name": "native-platforms / Linux arm64 V8 source payload"
+              },
+              {
+                "id": 117224262075,
+                "name": "native-platforms / Publish the Android V8 payload"
+              }
+            ],
+            "evidence": "ci-required job 117234269821 succeeded with all 46 canonical HEAVY jobs green (69 success + 3 skipped = 72 rows). Required-job/receipt/candidate/attempt checks preserved.",
+            "failed_jobs": [
+              {
+                "id": 117494555771,
+                "name": "test-unit (3/4)",
+                "runner": "tn-f5a5d3bd4a00"
+              },
+              {
+                "id": 117495526381,
+                "name": "native-platforms / Android emulator visual parity",
+                "runner": "GitHub Actions 1000087479"
+              },
+              {
+                "id": 117502856664,
+                "name": "native-platforms / Native required coverage receipt",
+                "runner": "tn-ddbe8d6ef897"
+              },
+              {
+                "id": 117502971094,
+                "name": "ci-required",
+                "runner": "tn-4d7bf46f9625"
+              }
+            ]
+          },
+          "source_workflows": [
+            ".github/workflows/ci.yml",
+            "ThreeNativeHQ/threenative-engine/.github/workflows/native-platforms.yml@b611829fa0702ee52c48f027c1db76b4040dddb3",
+            "ThreeNativeHQ/threenative-engine/.github/workflows/integration.yml@b611829fa0702ee52c48f027c1db76b4040dddb3"
+          ],
+          "recipe_inputs": [
+            {
+              "file": "packages/runtime-native/scripts/build-android-v8.mjs",
+              "baseline_blob": "016c50436737b3901896bce3008cb0701434f269",
+              "candidate_blob": "016c50436737b3901896bce3008cb0701434f269",
+              "match": true
+            },
+            {
+              "file": "packages/runtime-native/scripts/check-android-16kb-alignment.mjs",
+              "baseline_blob": "7d2ec52cbbf6b12d37d376e8b06aff2b91e7c6d4",
+              "candidate_blob": "7d2ec52cbbf6b12d37d376e8b06aff2b91e7c6d4",
+              "match": true
+            },
+            {
+              "file": "packages/runtime-native/scripts/download-deps.mjs",
+              "baseline_blob": "a6cc308a8377e4c7255fe51d4e83e01abf22e31d",
+              "candidate_blob": "6a89eeb40a2c6c6b24ae10f0d6f536649beb622a",
+              "match": false
+            },
+            {
+              "file": "packages/runtime-native/android/gradle.properties",
+              "baseline_blob": "22480c85796bb467d119a5635ff3f68436e3448b",
+              "candidate_blob": "22480c85796bb467d119a5635ff3f68436e3448b",
+              "match": true
+            }
+          ],
+          "recipe_unchanged_vs_prior_run": {
+            "note": "Not checked: the run is red and not counted."
+          },
+          "no_publisher_mutation": true,
+          "build_cache_comparability_unknowns": {
+            "note": "Not checked: the run is red and not counted."
+          },
+          "routing": {
+            "eligible_heavy_instances": 46,
+            "local": 6,
+            "hosted": 40,
+            "unknown": 0,
+            "started_local": 6,
+            "started_hosted": 40,
+            "never_started_local": 0,
+            "never_started_hosted": 0,
+            "local_jobs": [
+              {
+                "id": 117494088594,
+                "name": "test",
+                "runner": "tn-5e1e4f98ad7b",
+                "conclusion": "success"
+              },
+              {
+                "id": 117494555747,
+                "name": "test-unit (1/4)",
+                "runner": "tn-0b33d8920cfa",
+                "conclusion": "success"
+              },
+              {
+                "id": 117494555771,
+                "name": "test-unit (3/4)",
+                "runner": "tn-f5a5d3bd4a00",
+                "conclusion": "failure"
+              },
+              {
+                "id": 117494555810,
+                "name": "test-native",
+                "runner": "tn-876c615ca750",
+                "conclusion": "success"
+              },
+              {
+                "id": 117494555826,
+                "name": "test-unit (4/4)",
+                "runner": "tn-a66dec4bb958",
+                "conclusion": "success"
+              },
+              {
+                "id": 117494555924,
+                "name": "test-unit (2/4)",
+                "runner": "tn-cc24ea5cfa7d",
+                "conclusion": "success"
+              }
+            ],
+            "note": "6 canonical HEAVY ran tn-local, 40 hosted overflow, 12 LIGHT joins on tn-local-light."
+          },
+          "eligible_population": {
+            "definition": "Canonical HEAVY matcher (ci-structure.spec.ts:1072-1073, contract :1260-1312): 30 keys / 46 instances on a full-scope run. Exact same canonical set and per-row names as iteration 29 (copied from it).",
+            "canonical_keys": 30,
+            "canonical_instances": 46,
+            "breakdown": {
+              "ci.yml": {
+                "keys": 13,
+                "legs": 29
+              },
+              "integration.yml": {
+                "keys": 13,
+                "legs": 13
+              },
+              "native-platforms.yml": {
+                "keys": 4,
+                "legs": 4
+              }
+            },
+            "hosted_overflow_included": true,
+            "note": "All 46 instances are classified regardless of runner; on this routed run 6 were tn-local and 40 hosted."
+          },
+          "eligible_queue_s": {
+            "n": 46,
+            "population_size": 46,
+            "p50_s": 5,
+            "p90_s": 344,
+            "max_s": 428,
+            "gt120": 15,
+            "population": "all 46 canonical HEAVY instances",
+            "note": "Queue target would pass, but the run is red and not counted."
+          },
+          "job_counts": {
+            "total_observed": 72,
+            "expected_full_board": 72,
+            "heavy_eligible": 46,
+            "light": 12,
+            "hosted_or_skipped": 14,
+            "note": "46 HEAVY + 12 LIGHT + 14 HOSTED/skipped = 72 rows; 69 success + 3 skipped."
+          },
+          "v8_published_warm_hit": {
+            "note": "Not checked: the run is red and not counted."
+          },
+          "hosted_contention": {
+            "quiet_window": true
+          },
+          "jobs_file": "docs/ci-speed/runs/39066107986.jobs.json"
+        }
+      }
     }
   ]
 }
