@@ -20864,3 +20864,29 @@ index a3cec4ed844ab88f870b46714c56c941e0cc7a8e..a9da6dbb8e15c87a8b434ad019a318b9
  
  			//
  
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index f041cf141992c403ac995f24f605f7f293265964..25c2364fe50e512155f1e3a584e54854bd293bd1 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -63331,7 +63331,7 @@ class Renderer {
+ 			materialDisplacementScale = overrideMaterial.displacementScale;
+ 			materialDisplacementBias = overrideMaterial.displacementBias;
+ 			materialAlphaTest = overrideMaterial.alphaTest;
+-			materialAlphaTestNode = overrideMaterial.alphaTestNode;
++			materialAlphaTestNode = ( overrideMaterial.isNodeMaterial ) ? overrideMaterial.alphaTestNode : null;
+ 
+ 			if ( material.positionNode && material.positionNode.isNode ) {
+ 
+diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
+index d2939c02fb6a36cbf0fa299b04a5f1c783d97b7e..35c82282c7e0717516a8f7f0c947467b9142e438 100644
+--- a/src/renderers/common/Renderer.js
++++ b/src/renderers/common/Renderer.js
+@@ -3613,7 +3613,7 @@ class Renderer {
+ 			materialDisplacementScale = overrideMaterial.displacementScale;
+ 			materialDisplacementBias = overrideMaterial.displacementBias;
+ 			materialAlphaTest = overrideMaterial.alphaTest;
+-			materialAlphaTestNode = overrideMaterial.alphaTestNode;
++			materialAlphaTestNode = ( overrideMaterial.isNodeMaterial ) ? overrideMaterial.alphaTestNode : null;
+ 
+ 			if ( material.positionNode && material.positionNode.isNode ) {
+ 

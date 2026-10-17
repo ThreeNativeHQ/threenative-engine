@@ -25,7 +25,7 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f041cf141992c403ac995f24f605f7f293265964 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..25c2364fe50e512155f1e3a584e54854bd293bd1 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -1347,7 +1347,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f041cf141992c403ac995f24f605f7f2
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
 +			materialAlphaTest = overrideMaterial.alphaTest;
-+			materialAlphaTestNode = overrideMaterial.alphaTestNode;
++			materialAlphaTestNode = ( overrideMaterial.isNodeMaterial ) ? overrideMaterial.alphaTestNode : null;
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
@@ -5656,7 +5656,7 @@ index ab3085cfdca456ffb3de6945d7e7f693e4ed33ae..94e54740e13088a9fa40ccfd30000232
  		renderer.xr.enabled = currentXR;
  
 diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
-index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..d2939c02fb6a36cbf0fa299b04a5f1c783d97b7e 100644
+index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..35c82282c7e0717516a8f7f0c947467b9142e438 100644
 --- a/src/renderers/common/Renderer.js
 +++ b/src/renderers/common/Renderer.js
 @@ -1738,6 +1738,7 @@ class Renderer {
@@ -5761,7 +5761,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..d2939c02fb6a36cbf0fa299b04a5f1c7
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
 +			materialAlphaTest = overrideMaterial.alphaTest;
-+			materialAlphaTestNode = overrideMaterial.alphaTestNode;
++			materialAlphaTestNode = ( overrideMaterial.isNodeMaterial ) ? overrideMaterial.alphaTestNode : null;
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  

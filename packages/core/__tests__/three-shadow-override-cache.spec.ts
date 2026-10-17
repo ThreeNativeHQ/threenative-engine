@@ -1,4 +1,12 @@
-import { BoxGeometry, type BufferGeometry, Camera, Mesh, Scene } from "three";
+import {
+  BoxGeometry,
+  type BufferGeometry,
+  Camera,
+  type Material,
+  Mesh,
+  MeshBasicMaterial,
+  Scene,
+} from "three";
 // @ts-expect-error Three's private renderer module has no public declaration; this test must exercise it directly.
 import RenderObjects from "three/src/renderers/common/RenderObjects.js";
 import { float } from "three/tsl";
@@ -59,7 +67,10 @@ type RenderObjectCall = (
   passId: unknown,
 ) => void;
 
-function shadowPass(onDraw?: (mesh: Mesh, camera: Camera) => void): {
+function shadowPass(
+  onDraw?: (mesh: Mesh, camera: Camera) => void,
+  sceneOverride?: Material,
+): {
   drawn: IDrawnMaterial[];
   draw: (mesh: Mesh, camera?: Camera) => void;
   override: NodeMaterial;
@@ -84,7 +95,7 @@ function shadowPass(onDraw?: (mesh: Mesh, camera: Camera) => void): {
   (override as NodeMaterial & { isShadowPassMaterial: boolean }).isShadowPassMaterial = true;
   override.name = "ShadowMaterial";
   const scene = new Scene();
-  scene.overrideMaterial = override;
+  scene.overrideMaterial = sceneOverride ?? override;
   const camera = new Camera();
 
   return {
@@ -297,6 +308,17 @@ describe("three shadow override material cache", () => {
     draw(caster(0.5));
 
     expect(override.alphaTest).toBe(baseline);
+  });
+
+  it("leaves a plain scene override material without an undefined alphaTestNode", () => {
+    // A plain override (the volumetric-fog black pass) is converted to a node material later; an
+    // own `alphaTestNode: undefined` then reaches TSL `float(undefined)` and the build throws.
+    const plain = new MeshBasicMaterial();
+    const { draw } = shadowPass(undefined, plain);
+
+    draw(caster(0.5));
+
+    expect(plain).not.toHaveProperty("alphaTestNode", undefined);
   });
 });
 
