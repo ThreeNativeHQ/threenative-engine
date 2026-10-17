@@ -1477,6 +1477,10 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-starter-native
           template: starter
+          # This job verifies the legacy host's packaged executable: the overlay markers, the
+          # release container, the installer and the signing proof. A config with no `engine`
+          # builds the V8 engine player directory instead, so the legacy override is named here.
+          engine: legacy
       - name: Build and verify the starter's WebView HUD
         shell: bash
         run: |
@@ -2195,6 +2199,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-starter-native
           template: starter
+          # The legacy host's `test:native` proof below; the default engine has its own step.
+          engine: legacy
       - name: Build and verify the scaffolded starter
         run: |
           target="$RUNNER_TEMP/threenative-starter-native"
@@ -2207,6 +2213,43 @@ jobs:
           TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS=30000 \
           TN_PLAYTEST_ALLOW_SOFTWARE=1 \
             pnpm --dir "$target" test:native
+      # The default engine on desktop: the scaffold sets no `engine`, so `threenative build --target
+      # desktop` packages the V8 engine player with the game bundled on the engine's own three. An
+      # installed runtime-native fetches that player from the release at install time, and this job
+      # installs with --ignore-scripts, so it builds the player and names it the way a checkout
+      # build does (`THREENATIVE_ENGINE_PLAYER`). No release ships a linux-arm64 player, so the
+      # arm64 row keeps to the legacy host proof above.
+      - name: Scaffold the starter on the default engine
+        if: matrix.platform == 'linux-x64'
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/threenative-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-starter-default
+          template: starter
+      - name: Build the engine player
+        if: matrix.platform == 'linux-x64'
+        working-directory: packages/runtime-native
+        run: |
+          set -euo pipefail
+          cmake --preset tn-linux -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON
+          cmake --build build/tn-engine-ui --target tn-native-engine-player-v8 --parallel "$(nproc)"
+      - name: Build the default-engine starter for desktop and boot its player
+        if: matrix.platform == 'linux-x64'
+        env:
+          THREENATIVE_ENGINE_PLAYER: ${{ github.workspace }}/packages/runtime-native/build/tn-engine-ui/tn-native-engine-player-v8
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-starter-default"
+          ! grep -q 'engine:' "$target/threenative.config.ts"
+          pnpm --dir "$target" install --ignore-scripts
+          pnpm --dir "$target" build:desktop
+          artifact=$(dirname "$(find "$target/dist-native" -name tn-native-engine-player-v8 -print -quit)")
+          for entry in tn-native-engine-player-v8 game.js native/assets.tnpk; do
+            test -s "$artifact/$entry" || { echo "TN_STARTER_ENGINE_ARTIFACT_MISSING: $entry"; exit 1; }
+          done
+          sh scripts/xvfb.sh "$artifact/tn-native-engine-player-v8" "$artifact/game.js" --check-game 2>&1 | tee "$RUNNER_TEMP/starter-default-boot.log"
+          grep -q 'TN_PLAYER_V8_GAME_CHECK: engine=native gameRuntime=v8 startup=passed' "$RUNNER_TEMP/starter-default-boot.log"
       - name: Compare paired starter JS frame duration on Linux ARM64
         if: matrix.platform == 'linux-arm64'
         shell: bash

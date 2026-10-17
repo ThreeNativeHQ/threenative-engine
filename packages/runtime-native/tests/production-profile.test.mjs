@@ -41,6 +41,7 @@ import {
   runProductionProfile,
   runCommand,
   safeReport,
+  pinLegacyDesktopHost,
   setNativeProfileEntry,
   webFrameInstrumentation,
   webRateDisplayFault,
@@ -1204,6 +1205,24 @@ test('native profile entry replaces a config entry without creating a package co
     /nativeEntry: "src\/profile-native-entry\.ts"/u,
   );
   assert.equal(JSON.parse(readFileSync(join(project, 'package.json'), 'utf8')).threenative, undefined);
+});
+
+test('the desktop profile names the legacy host for a config that sets no engine and keeps one that does', async () => {
+  const unset = makeTempDirSync('tn-profile-engine-');
+  const authored = makeTempDirSync('tn-profile-engine-');
+  temporary.push(unset, authored);
+  writeFileSync(join(unset, 'threenative.config.ts'), 'const config: IThreeNativeConfig = {\n  app: {},\n};\nexport default config;\n');
+  writeFileSync(join(authored, 'threenative.config.ts'), 'export default {\n  engine: "native",\n};\n');
+
+  await pinLegacyDesktopHost(unset);
+  await pinLegacyDesktopHost(unset);
+  await pinLegacyDesktopHost(authored);
+
+  assert.equal(
+    readFileSync(join(unset, 'threenative.config.ts'), 'utf8'),
+    'const config: IThreeNativeConfig = {\n  engine: "legacy",\n  app: {},\n};\nexport default config;\n',
+  );
+  assert.equal(readFileSync(join(authored, 'threenative.config.ts'), 'utf8'), 'export default {\n  engine: "native",\n};\n');
 });
 
 test('native profile reads the generated app identity when no config override is supplied', () => {
