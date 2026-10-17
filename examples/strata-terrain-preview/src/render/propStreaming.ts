@@ -13,6 +13,7 @@ import type { IPropPreparationProgress } from "./propProgress.js";
 import {
   DRAW_REACH,
   FADED_ASSETS,
+  type IPropInstance,
   type IPropMaterials,
   type IPropPart,
   LOD_BANDS,
@@ -33,6 +34,8 @@ interface IStreamOptions {
   readonly follow: IWorldCellsFollow;
   readonly size: number;
   readonly horizonDistance?: number;
+  readonly castShadows?: boolean;
+  readonly bundles?: boolean;
   readonly assets?: IAssetLoader;
   readonly whileCurrent: () => boolean;
   readonly invalidateShadows?: (region?: IShadowRegion) => void;
@@ -98,13 +101,7 @@ export async function createStreamedProps(options: IStreamOptions) {
     return !report.stopped && options.whileCurrent();
   }
   const records: IRecord[] = [];
-  const byId = new Map<
-    string,
-    ReturnType<typeof preparePose> & {
-      placement: IPlacement;
-      pose: ReturnType<typeof preparePose>["matrix"];
-    }
-  >();
+  const byId = new Map<string, IPropInstance>();
   const variantIndices = new Map<string, number>();
   const shapes = new Map<string, { parts: IPropPart[]; ratio: Vector3 }>();
   startPhase("grounding", "", options.placements.length);
@@ -143,7 +140,13 @@ export async function createStreamedProps(options: IStreamOptions) {
         reach = 28 + (reach - 28) * (1 - Math.sqrt(seed));
       }
       records.push({ key, placement, pose, reach, ratio, position, quaternion, scale: scalar });
-      byId.set(placement.id, { ...pose, pose: pose.matrix, placement });
+      byId.set(placement.id, {
+        ...pose,
+        pose: pose.matrix,
+        placement,
+        geometry: foot.geometry,
+        material: foot.material ?? options.materials[foot.role],
+      });
     },
     {
       while: options.whileCurrent,
@@ -313,6 +316,7 @@ export async function createStreamedProps(options: IStreamOptions) {
         data: { manifest, placements: placements.buffer },
         placementReach,
         gpuScene: false,
+        bundles: options.bundles,
         adaptiveLod: false,
         preserveAuthoredParts: true,
         lodHysteresis: LOD_BANDS.hysteresis,
@@ -324,7 +328,7 @@ export async function createStreamedProps(options: IStreamOptions) {
           bytes: Math.max(32, placements.byteLength),
         },
         shadows: {
-          cast: bucket.endsWith(":true"),
+          cast: bucket.endsWith(":true") && options.castShadows !== false,
           castLevels: 3,
           receive: true,
           smallCasterMetres: 0.0001,
@@ -389,28 +393,6 @@ export async function createStreamedProps(options: IStreamOptions) {
     byId,
     stats,
     compileSlices,
-    readinessAt(position: { readonly x: number; readonly z: number }, radius = 60) {
-      const regions = worlds.map((world) => world.readinessAt(position, radius));
-      const required = regions.reduce((n, r) => n + r.requiredCells, 0);
-      const loaded = regions.reduce((n, r) => n + r.loadedCells, 0);
-      return {
-        required,
-        loaded,
-        failures: regions.reduce((n, r) => n + r.failures, 0),
-        ready: warmed.size === worlds.length && regions.every((r) => r.ready),
-      };
-    },
-    get ready() {
-      const s = stats();
-      return (
-        warmed.size === worlds.length &&
-        s.loadsInFlight === 0 &&
-        s.loadsQueued === 0 &&
-        s.admissionBacklog === 0 &&
-        s.pendingPrewarm === 0 &&
-        s.failures === 0
-      );
-    },
     get meshes() {
       const meshes: InstancedMesh[] = [];
       for (const world of worlds)

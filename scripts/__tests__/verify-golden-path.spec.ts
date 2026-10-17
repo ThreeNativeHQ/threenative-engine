@@ -148,11 +148,16 @@ describe("golden path matrix", () => {
     try {
       const cli = path.join(root, "create-threenative-0.1.0.tgz");
       const core = path.join(root, "threenative-core-0.1.0.tgz");
-      const script = await writeScaffoldScript(root, "starter", cli, ["--core-package", core]);
+      const terrain = path.join(root, "threenative-terrain-0.1.0.tgz");
+      const script = await writeScaffoldScript(root, "starter", cli, ["--core-package", core], {
+        localTarballs: { "@threenative/terrain": terrain },
+      });
       expect(script).toBe(path.join(root, "scaffold.sh"));
+      expect(await readFile(path.join(root, "scaffold-pnpmfile.cjs"), "utf8")).toContain(terrain);
       expect((await stat(script)).mode & 0o111).not.toBe(0);
       const source = await readFile(script, "utf8");
       expect(source).toContain("pnpm dlx");
+      expect(source).toContain("--config.pnpmfile=");
       expect(source).toContain('"${1:-game}"');
       expect(source).toContain(cli);
       expect(source).toContain(core);
@@ -234,7 +239,7 @@ describe("golden path matrix", () => {
         }),
       );
       const fakePnpm = path.join(bin, "pnpm");
-      await writeFile(fakePnpm, '#!/bin/sh\ntest "$1" = dlx\n');
+      await writeFile(fakePnpm, '#!/bin/sh\ntest "$1" = dlx && test -f "$npm_config_pnpmfile"\n');
       await chmod(fakePnpm, 0o755);
 
       const actions = {
@@ -258,6 +263,54 @@ describe("golden path matrix", () => {
         .filter((value): value is string => value !== undefined)
         .join(path.delimiter);
       await runCommand("scaffold", command.command, command.args, command.cwd);
+    } finally {
+      if (originalPath === undefined) process.env.PATH = undefined;
+      else process.env.PATH = originalPath;
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  // The scaffold's own install carries the pnpmfile through `npm_config_pnpmfile`, but the golden
+  // path's separate `pnpm install` — and a human's corrective `pnpm install` — do not. That second
+  // install lost the mapping and asked the registry for the packed edge @threenative/assets ->
+  // @threenative/terrain, which is not published, so it 404'd after the first install had passed.
+  it("keeps the local tarball mapping on the independent install path", async () => {
+    const root = await makeTempDir("threenative-golden-path-project-pnpmfile-");
+    const originalPath = process.env.PATH;
+    try {
+      const templatesRoot = path.join(root, "templates");
+      const template = path.join(templatesRoot, "starter");
+      const project = path.join(root, "game");
+      const cli = path.join(root, "create-threenative-0.1.0.tgz");
+      const terrain = path.join(root, "threenative-terrain-0.1.0.tgz");
+      const bin = path.join(root, "bin");
+      await mkdir(template, { recursive: true });
+      await mkdir(bin, { recursive: true });
+      await writeFile(
+        path.join(template, "package.json"),
+        JSON.stringify({
+          name: "starter",
+          dependencies: { "create-threenative": "0.1.0", vite: "8.2.0" },
+        }),
+      );
+      // A scaffold creates the project directory; the fake stands in for that side effect.
+      const fakePnpm = path.join(bin, "pnpm");
+      await writeFile(fakePnpm, '#!/bin/sh\ntest "$1" = dlx && mkdir -p game\n');
+      await chmod(fakePnpm, 0o755);
+      process.env.PATH = [bin, originalPath]
+        .filter((value): value is string => value !== undefined)
+        .join(path.delimiter);
+
+      await scaffold(
+        "starter",
+        project,
+        { "@threenative/terrain": terrain, "create-threenative": cli },
+        templatesRoot,
+      );
+
+      const projectPnpmfile = path.join(project, ".pnpmfile.cjs");
+      expect(existsSync(projectPnpmfile)).toBe(true);
+      expect(await readFile(projectPnpmfile, "utf8")).toContain(terrain);
     } finally {
       if (originalPath === undefined) process.env.PATH = undefined;
       else process.env.PATH = originalPath;

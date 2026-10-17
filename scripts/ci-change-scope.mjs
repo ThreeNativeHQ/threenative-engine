@@ -118,6 +118,7 @@ const FULL_JOBS = [
   "test-native",
   "test-browser",
   "test-playtest",
+  "strata",
   "golden-path-template",
   "template-nonvisual",
   "golden-path",
@@ -142,6 +143,23 @@ const CI_JOBS = new Set(["typecheck", "test-unit", "budgets", "build-artifacts"]
 // `test-native` saves `native-build-*`, `native-third-party-*` and its ccache through the cache
 // action's own post step. A warm run verifies nothing else, so nothing else runs.
 const WARM_JOBS = ["build-artifacts", "test-native"];
+// Strata terrain jobs: runs when terrain, example or core world modules change, or full qualification.
+const STRATA_PATHS = [
+  /^packages\/terrain\//u,
+  /^examples\/strata-terrain-preview\//u,
+  /^packages\/core\/(?:src\/world(?:-|\.ts)|src\/terrain-jobs|__tests__\/world-)/u,
+];
+
+export function isStrataPath(file) {
+  return STRATA_PATHS.some((pattern) => pattern.test(file));
+}
+
+function strataSelected(files, qualification) {
+  if (qualification) return true;
+  if (files.some(isStrataPath)) return true;
+  return false;
+}
+
 // Strength, not identity: a stronger source profile may serve a weaker requirement, never the reverse.
 const TARGET_RANKS = { main: 2, develop: 1, other: 0 };
 const NATIVE_RANKS = { full: 2, reduced: 1, none: 0 };
@@ -184,6 +202,20 @@ export function selectionPlan(
     FULL_JOBS.map((name) => {
       // `ci` narrows the board to the gates that read the configuration and `warm` to the two cache
       // producers; neither widens one, so any other job is exempt exactly as it is for prose.
+      if (name === "strata") {
+        const required = full && strataSelected(files, qualification);
+        return [
+          name,
+          {
+            required,
+            reason: required
+              ? qualification
+                ? `Full dependency closure: ${reason}`
+                : `Selected dependency closure: ${reason}`
+              : exemption(`Exempt: the ${selection} dependency closure does not reach ${name}`),
+          },
+        ];
+      }
       const required =
         (full && (name !== "test-native" || native)) ||
         ((ciLane || template) && CI_JOBS.has(name)) ||

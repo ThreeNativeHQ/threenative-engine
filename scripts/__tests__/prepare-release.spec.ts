@@ -3,7 +3,13 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import type { RegistryLookup } from "../check-publish-state.js";
-import { assertOneZeroGatesClosed, nextPatch, selectReleaseVersions } from "../prepare-release.js";
+import {
+  assertOneZeroGatesClosed,
+  nextPatch,
+  selectReleaseVersions,
+  syncPeerRanges,
+  syncSourceVersions,
+} from "../prepare-release.js";
 
 describe("release preparation", () => {
   it("increments only the patch component", () => {
@@ -103,5 +109,92 @@ describe("the 1.0.0 refusal", () => {
     fs.mkdirSync(path.dirname(source), { recursive: true });
     fs.writeFileSync(source, "# PRD-446\n\nNo phase boxes remain.\n");
     expect(() => assertOneZeroGatesClosed(root, [gate])).toThrow(/TN_RELEASE_1_0_0_GATE_EMPTY/u);
+  });
+});
+
+/**
+ * PRD-589: the terrain generator literal and its peer ranges travel with the release cohort. Each
+ * fixture copies the shipped manifests into a temporary repo, so the sync never writes the checkout.
+ */
+describe("terrain release metadata", () => {
+  const repoFile = (file: string) => path.resolve(import.meta.dirname, "../..", file);
+  const terrainManifest = "packages/terrain/package.json";
+  const terrainIo = "packages/terrain/src/core/io.ts";
+  const peerFiles = [
+    "packages/core/package.json",
+    "packages/physics/package.json",
+    "packages/ui/package.json",
+    "packages/create-threenative/package.json",
+    terrainManifest,
+  ];
+  const sourceFiles = [
+    "packages/core/src/index.ts",
+    "packages/create-threenative/src/doctor.ts",
+    "packages/engine-mcp/src/index.ts",
+    "packages/engine-mcp/__tests__/server.spec.ts",
+    "packages/blender-mcp/src/index.ts",
+    "packages/core/mcp/servers.mjs",
+    "packages/create-threenative/engine-mcp-tools.json",
+    terrainIo,
+  ];
+  const cohort = new Map([
+    ["@threenative/core", "0.3.9"],
+    ["@threenative/playtest", "0.3.9"],
+    ["@threenative/assets", "0.3.9"],
+    ["threenative-engine-mcp", "0.3.9"],
+    ["threenative-blender-mcp", "0.3.9"],
+    ["@threenative/terrain", "0.1.1"],
+  ]);
+
+  async function fixture(files: readonly string[]): Promise<string> {
+    const root = await makeTempDir("threenative-terrain-release-");
+    for (const file of files) {
+      fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+      fs.copyFileSync(repoFile(file), path.join(root, file));
+    }
+    return root;
+  }
+
+  it("syncs shipped internal terrain peers and preserves external peers", async () => {
+    const root = await fixture(peerFiles);
+    const before = JSON.parse(fs.readFileSync(path.join(root, terrainManifest), "utf8"));
+    syncPeerRanges(root, new Map([...cohort, ["@threenative/physics", "0.3.9"]]));
+    expect(JSON.parse(fs.readFileSync(path.join(root, terrainManifest), "utf8"))).toEqual({
+      ...before,
+      peerDependencies: {
+        ...before.peerDependencies,
+        "@threenative/core": ">=0.3.9 <0.4.0",
+        "@threenative/physics": ">=0.3.9 <0.4.0",
+      },
+    });
+  });
+
+  it("syncs a terrain peer that names an internal cohort package", async () => {
+    const root = await fixture(peerFiles);
+    const peers = { "@threenative/core": ">=0.3.4 <0.4.0", three: ">=0.185.0 <0.186.0" };
+    fs.writeFileSync(path.join(root, terrainManifest), JSON.stringify({ peerDependencies: peers }));
+    syncPeerRanges(root, cohort);
+    const synced = JSON.parse(fs.readFileSync(path.join(root, terrainManifest), "utf8"));
+    expect(synced.peerDependencies).toEqual({
+      "@threenative/core": ">=0.3.9 <0.4.0",
+      three: ">=0.185.0 <0.186.0",
+    });
+  });
+
+  it("bumps the terrain generator literal to the terrain cohort version", async () => {
+    const root = await fixture(sourceFiles);
+    syncSourceVersions(root, cohort);
+    expect(fs.readFileSync(path.join(root, terrainIo), "utf8")).toContain(
+      'generator: "@threenative/terrain 0.1.1"',
+    );
+  });
+
+  it("fails closed when the terrain cohort version is missing", async () => {
+    const root = await fixture(sourceFiles);
+    const withoutTerrain = new Map(cohort);
+    withoutTerrain.delete("@threenative/terrain");
+    expect(() => syncSourceVersions(root, withoutTerrain)).toThrow(
+      /TN_RELEASE_COHORT_INCOMPLETE: @threenative\/terrain/u,
+    );
   });
 });

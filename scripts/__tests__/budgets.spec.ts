@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -13,6 +14,7 @@ import {
   enforceBudgets,
   measureNativeCensusAreas,
   nativeCensusDrift,
+  terrainTarballErrors,
 } from "../check-budgets";
 
 const temporaryRoots: string[] = [];
@@ -747,4 +749,24 @@ describe("budget gate", () => {
     const report = await collectBudgets(process.cwd());
     expect(budgetErrors(report)).toEqual([]);
   });
+});
+
+it("caps the compressed terrain tarball at 2 MB and requires a build", async () => {
+  const root = await fixtureRoot();
+  const terrain = path.join(root, "packages/terrain");
+  await mkdir(terrain, { recursive: true });
+  await writeFile(
+    path.join(terrain, "package.json"),
+    JSON.stringify({ name: "@threenative/terrain", version: "0.1.0", files: ["dist"] }),
+  );
+  expect(await terrainTarballErrors(root)).toEqual([
+    "terrain tarball budget: build @threenative/terrain first",
+  ]);
+  await mkdir(path.join(terrain, "dist"));
+  await writeFile(path.join(terrain, "dist/kit.js"), "export {};\n");
+  expect(await terrainTarballErrors(root)).toEqual([]);
+  await writeFile(path.join(terrain, "dist/large.bin"), randomBytes(2_000_000));
+  expect(await terrainTarballErrors(root)).toEqual([
+    expect.stringMatching(/terrain packed tarball .* must be < 2000000 B/u),
+  ]);
 });

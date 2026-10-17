@@ -422,10 +422,12 @@ export interface IFrameBudgetWindow {
 export interface IFrameBudgetSimulation {
   readonly tick: () => number;
   readonly step: number;
+  /** False selects presented-frame windows; frozen or unspecified clocks use simulation ticks. */
+  readonly clockFrozen?: boolean;
 }
 
 export interface IFrameBudgetOptions {
-  /** Simulation ticks per report window when a clock is supplied, otherwise presented frames. Default 300. */
+  /** Simulation ticks per window unless the clock is live or absent, then presented frames. Default 300. */
   readonly reportEvery?: number;
   /** Minimum measured rendered frames per report window. Default 1. */
   readonly minFrames?: number;
@@ -993,21 +995,6 @@ export class FrameBudget {
 
     this.#countPresents();
 
-    const isHitch = this.#presentedDelta >= this.hitchMs;
-    if (isHitch) {
-      this.#passesThisFrame.length = 0;
-      this.#hitchesInWindow += 1;
-      this.#report(
-        `${FRAME_HITCH_MARKER}:${JSON.stringify({
-          gapMs: round(this.#presentedDelta),
-          uptimeMs: round(nowMs),
-          wallClock: this.#wallClock(),
-        })}`,
-      );
-      this.#maybeReport();
-      return undefined;
-    }
-
     const update = Math.max(0, simulationEnd - this.#frameStart);
     const tail = Math.max(0, nowMs - simulationEnd);
     const residual = Math.max(0, tail - this.#renderMs - this.#overlayMs - this.#uiMs);
@@ -1021,6 +1008,23 @@ export class FrameBudget {
           update: round(update),
         }
       : undefined;
+
+    const isHitch = this.#presentedDelta >= this.hitchMs;
+    if (isHitch) {
+      this.#passesThisFrame.length = 0;
+      this.#hitchesInWindow += 1;
+      this.#report(
+        `${FRAME_HITCH_MARKER}:${JSON.stringify({
+          gapMs: round(this.#presentedDelta),
+          uptimeMs: round(nowMs),
+          wallClock: this.#wallClock(),
+        })}`,
+      );
+      this.#maybeReport();
+      // Exclude the present gap from windows; diagnostics still need the measured callback phases.
+      return sample;
+    }
+
     this.#frame.push(frameMs);
     this.#substeps.push(this.#substepCount);
     // The first frame has no predecessor, so it has neither an interval nor a host gap; pushing a
@@ -1299,9 +1303,9 @@ export class FrameBudget {
   }
 
   #maybeReport(): void {
-    // Callers without a loop clock retain presented-frame window boundaries.
+    // Live clocks must keep reporting even while simulation is held or has not advanced.
     const elapsed =
-      this.#simulation === undefined
+      this.#simulation === undefined || this.#simulation.clockFrozen === false
         ? this.#framesInWindow
         : this.#simulation.tick() - (this.#windowStartTick ?? this.#simulation.tick());
     if (elapsed < this.reportEvery || this.#framesInWindow < this.minFrames) return;

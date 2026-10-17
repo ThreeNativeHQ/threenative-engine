@@ -43,8 +43,7 @@ export type GameCtx = ICtx<GameState, IPhysicsContext>;
 const KILL_PLANE = -4;
 const STARTING_LIVES = 3;
 const FLOOR_SURFACE_Y = 0;
-const FLOOR_BOUNDS = { maxX: 5, minX: -5, maxZ: 2, minZ: -2 } as const;
-/** The near platform's own footprint, which the support surface below answers for. */
+/** The near platform's own footprint. */
 const FLOOR_SIZE = { depth: 4.2, width: 10 } as const;
 
 export class Play extends Scene<GameState, IPhysicsContext> {
@@ -195,11 +194,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
     // isMobile() arrives as an argument because src/render/ imports no framework package:
     // the platform decision is made here, in portable game code, exactly like createRandom.
-    const { key } = setupLighting(
+    const { key, dispose: disposeLighting } = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
       isMobile(),
     );
+    this.#disposeLighting = disposeLighting;
     const materialEnvironment = {
       web: getPlatform().runtime === "web",
       rendererKind: ctx.renderer.kind,
@@ -309,25 +309,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         this.#environmentSample,
       );
     }
-    const supportSurfaceY = (position: { readonly x: number; readonly z: number }):
-      | number
-      | undefined => {
-      if (
-        position.x >= FLOOR_BOUNDS.minX &&
-        position.x <= FLOOR_BOUNDS.maxX &&
-        position.z >= FLOOR_BOUNDS.minZ &&
-        position.z <= FLOOR_BOUNDS.maxZ
-      )
-        return FLOOR_SURFACE_Y;
-      if (
-        position.x >= ISLAND.x - ISLAND.width / 2 &&
-        position.x <= ISLAND.x + ISLAND.width / 2 &&
-        position.z >= ISLAND.z - ISLAND.depth / 2 &&
-        position.z <= ISLAND.z + ISLAND.depth / 2
-      )
-        return ISLAND.top;
-      return undefined;
-    };
     // The area says the character is over the island; the run is only won once it is also
     // standing on it. Ending on the overlap alone freezes the character in mid-air at the
     // lip of the island, half a metre short of a landing, which is what it looks like.
@@ -391,7 +372,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         frameCtx.state.set((state) => ({ flagGusts: state.flagGusts + 1 }));
       }
       const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
-      player.update(frameCtx, dt, supportSurfaceY, touch);
+      player.update(frameCtx, dt, touch);
       let respawned = false;
       let lives = previous.lives;
       if (player.mesh.position.y < KILL_PLANE) {
@@ -450,6 +431,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   }
 
   #post: ReturnType<typeof setupPost> | undefined;
+  #disposeLighting: (() => void) | undefined;
   #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
 
   override render(): void {
@@ -463,6 +445,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // Also releases the medium `setupPost` built, with the graph it composed into.
     this.#post?.dispose();
     this.#post = undefined;
+    // After the post graph, whose godrays stage reads the sun's shadow map.
+    this.#disposeLighting?.();
+    this.#disposeLighting = undefined;
     super.exit(ctx);
   }
 }

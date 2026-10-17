@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { capabilityDetail } from "../../engine-mcp/src/index.js";
 import {
   FRAME_BUDGET_MARKER,
   FRAME_BUDGET_PHASES,
@@ -199,6 +200,12 @@ function parseWindow(line: string): IFrameBudgetWindow {
 }
 
 describe("FrameBudget", () => {
+  it("documents the default 8 ms addInSlices budget in capability detail", () => {
+    const detail = capabilityDetail("addInSlices", "packages/create-threenative/capabilities.json");
+    expect(detail.summary).toContain("8 ms default budget");
+    expect(detail.overrides?.join(" ")).toContain("8 ms budget unless the game gives `sliceSize`");
+  });
+
   it("reports Long Tasks separately from presentation gaps and disconnects on disposal", () => {
     let deliver!: (list: { getEntries(): { startTime: number; duration: number }[] }) => void;
     const disconnect = vi.fn();
@@ -229,6 +236,7 @@ describe("FrameBudget", () => {
         longestMs: 600,
         afterFirstFrameMs: 75,
       });
+      budget.dispose();
       budget.dispose();
       expect(disconnect).toHaveBeenCalledOnce();
     } finally {
@@ -689,4 +697,35 @@ describe("the display's own present counter", () => {
     expect(last?.presentedFps ?? 0).toBeGreaterThanOrEqual(0);
     expect(Number.isFinite(last?.presentedFps ?? 0)).toBe(true);
   });
+});
+
+it("retains measured hitch phases in loop diagnostics without counting a hitch in frame windows", () => {
+  const lines: string[] = [];
+  const budget = new FrameBudget({ report: (line) => lines.push(line), reportEvery: 100 });
+  let clock = 0;
+  const loop = new FixedStepLoop({
+    budget,
+    collectMetrics: true,
+    now: () => clock,
+    onRender: () => {
+      clock += 4;
+      budget.addRender(4);
+      return { drawCalls: 1 };
+    },
+    onUpdate: () => undefined,
+  });
+  loop.start(0);
+  loop.freezeClock(0);
+  clock = 16;
+  loop.stepFrame(clock);
+  clock = 8016;
+  loop.stepFrame(clock);
+  const sample = loop.runtimeDiagnosticsSeries().at(-1);
+  expect(sample?.frameMs).toBe(8000);
+  expect(sample?.phases?.render).toBe(4);
+  expect(sample?.phases?.hostGap).toBeGreaterThan(7900);
+  expect(lines.filter((line) => line.startsWith(FRAME_HITCH_MARKER))).toHaveLength(1);
+  expect(budget.window().hitches).toBe(1);
+  expect(budget.window().phases.render.samples).toBe(1);
+  expect(budget.lastRenderMs).toBeUndefined();
 });

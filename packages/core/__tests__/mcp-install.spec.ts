@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -34,6 +34,7 @@ describe("mergeMcpServers", () => {
       "threenative-sculpt",
       "threenative-engine",
       "threenative-blender",
+      "threenative-terrain",
     ]);
   });
 
@@ -107,16 +108,40 @@ describe("MCP_SERVERS", () => {
     expect(MCP_PACKAGES.blender?.version).toBe(blender.version);
   });
 
-  // The four are ordered, not merely present: a host renders the table in declaration order and
+  // The five are ordered, not merely present: a host renders the table in declaration order and
   // the golden-path snapshot probes them by index. A server appended in the wrong place is the
   // kind of change that passes every set-shaped assertion and moves what a user sees.
-  it("should declare four ThreeNative servers", () => {
+  it("should declare five ThreeNative servers", () => {
     expect(Object.keys(MCP_SERVERS)).toEqual([
       "threenative-assets",
       "threenative-sculpt",
       "threenative-engine",
       "threenative-blender",
+      "threenative-terrain",
     ]);
+  });
+
+  // Terrain is not bundled and not a core dependency: bundling it would close a cycle
+  // (core -> assets -> terrain -> core). The shim resolves the project's `@threenative/terrain`
+  // bin, so the npx pin must name that package at its current version.
+  it("launches terrain from @threenative/terrain without depending on it", () => {
+    const manifest = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+    for (const table of [
+      manifest.dependencies,
+      manifest.devDependencies,
+      manifest.peerDependencies,
+    ]) {
+      expect(table?.["@threenative/terrain"]).toBeUndefined();
+    }
+    const terrain = JSON.parse(
+      readFileSync(path.resolve("packages/terrain/package.json"), "utf8"),
+    ) as { bin: string; name: string; version: string };
+    expect(MCP_PACKAGES.terrain).toEqual({ name: terrain.name, version: terrain.version });
+    expect(terrain.bin).toBe("./dist/mcp/server.js");
   });
 
   // The npx fallback in `launch.mjs` names the package `MCP_PACKAGES` declares, so a shim whose
@@ -474,58 +499,74 @@ describe("the sculpt server the engine ships", () => {
     expect(manifest.dependencies[sculpt.name]).toBe(sculpt.version);
   });
 
-  it("serves the 0.2 rig and animation gates through the shipped launch shim", async () => {
-    const child = spawn(process.execPath, [path.join(packageRoot, "mcp", "sculpt.mjs")], {
-      cwd: packageRoot,
-      stdio: ["pipe", "pipe", "inherit"],
-    });
-    const lines: string[] = [];
-    let buffer = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString();
-      const parts = buffer.split("\n");
-      buffer = parts.pop() ?? "";
-      lines.push(...parts.filter(Boolean));
-    });
-    const send = (message: object) => child.stdin.write(`${JSON.stringify(message)}\n`);
-    const reply = async (id: number) => {
-      for (let waited = 0; waited < 20_000; waited += 50) {
-        const found = lines.map((line) => JSON.parse(line)).find((m) => m.id === id);
-        if (found) return found;
-        await new Promise((resolve) => setTimeout(resolve, 50));
+  it.each([
+    {
+      shim: "sculpt",
+      tools: [
+        "sculpt_action_design",
+        "sculpt_clip_measure",
+        "sculpt_mesh_parity",
+        "sculpt_rig_gate",
+        "sculpt_rig_reference",
+        "sculpt_rig_spec_gate",
+        "sculpt_skin_condition",
+      ],
+    },
+    { shim: "terrain", tools: ["terrain_generate", "terrain_patch"] },
+  ])(
+    "serves the tools through the shipped $shim launch shim",
+    async ({ shim, tools }) => {
+      const cwd = shim === "terrain" ? project("terrain-game") : packageRoot;
+      if (shim === "terrain") {
+        mkdirSync(path.join(cwd, "node_modules", "@threenative"), { recursive: true });
+        symlinkSync(
+          path.resolve(packageRoot, "../terrain"),
+          path.join(cwd, "node_modules", "@threenative", "terrain"),
+        );
       }
-      throw new Error(`no reply to request ${id}`);
-    };
-
-    try {
-      send({
-        id: 1,
-        jsonrpc: "2.0",
-        method: "initialize",
-        params: {
-          capabilities: {},
-          clientInfo: { name: "mcp-install-spec", version: "0" },
-          protocolVersion: "2025-06-18",
-        },
+      const child = spawn(process.execPath, [path.join(packageRoot, "mcp", `${shim}.mjs`)], {
+        cwd,
+        stdio: ["pipe", "pipe", "inherit"],
       });
-      await reply(1);
-      send({ jsonrpc: "2.0", method: "notifications/initialized" });
-      send({ id: 2, jsonrpc: "2.0", method: "tools/list" });
-      const listed = (await reply(2)) as { result: { tools: { name: string }[] } };
+      const lines: string[] = [];
+      let buffer = "";
+      child.stdout.on("data", (chunk: Buffer) => {
+        buffer += chunk.toString();
+        const parts = buffer.split("\n");
+        buffer = parts.pop() ?? "";
+        lines.push(...parts.filter(Boolean));
+      });
+      const send = (message: object) => child.stdin.write(`${JSON.stringify(message)}\n`);
+      const reply = async (id: number) => {
+        for (let waited = 0; waited < 20_000; waited += 50) {
+          const found = lines.map((line) => JSON.parse(line)).find((m) => m.id === id);
+          if (found) return found;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        throw new Error(`no reply to request ${id}`);
+      };
 
-      expect(listed.result.tools.map((tool) => tool.name)).toEqual(
-        expect.arrayContaining([
-          "sculpt_action_design",
-          "sculpt_clip_measure",
-          "sculpt_mesh_parity",
-          "sculpt_rig_gate",
-          "sculpt_rig_reference",
-          "sculpt_rig_spec_gate",
-          "sculpt_skin_condition",
-        ]),
-      );
-    } finally {
-      child.kill();
-    }
-  }, 30_000);
+      try {
+        send({
+          id: 1,
+          jsonrpc: "2.0",
+          method: "initialize",
+          params: {
+            capabilities: {},
+            clientInfo: { name: "mcp-install-spec", version: "0" },
+            protocolVersion: "2025-06-18",
+          },
+        });
+        await reply(1);
+        send({ jsonrpc: "2.0", method: "notifications/initialized" });
+        send({ id: 2, jsonrpc: "2.0", method: "tools/list" });
+        const listed = (await reply(2)) as { result: { tools: { name: string }[] } };
+
+        expect(listed.result.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(tools));
+      } finally {
+        child.kill();
+      }
+    },
+    30_000,
+  );
 });

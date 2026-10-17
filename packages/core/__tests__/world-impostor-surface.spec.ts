@@ -286,7 +286,7 @@ describe("instanceSyncEvent", () => {
 });
 
 describe("WorldImpostorSurface atlas count", () => {
-  it("uses all sixteen octahedral layers the baker wrote", () => {
+  it("uses every octahedral layer the baker wrote", () => {
     const atlas = new WorldImpostorAtlas(8);
     const image = atlas.target.textures[0]?.image as { depth?: number } | undefined;
     expect(image?.depth).toBe(IMPOSTOR_VIEWS);

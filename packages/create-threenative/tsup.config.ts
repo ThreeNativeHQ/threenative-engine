@@ -5,7 +5,7 @@ export default defineConfig({
   banner: {
     js: "import { createRequire as __createRequire } from 'node:module';\nconst require = __createRequire(import.meta.url);",
   },
-  entry: ["src/index.ts", "src/threenative.ts"],
+  entry: ["src/index.ts", "src/threenative.ts", "src/terrain-kit.ts"],
   format: ["esm"],
   target: "node20",
   dts: true,

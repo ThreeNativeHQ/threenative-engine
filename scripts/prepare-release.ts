@@ -194,7 +194,7 @@ function requiredVersion(versions: ReadonlyMap<string, string>, name: string): s
   return version;
 }
 
-function syncPeerRanges(repo: string, versions: ReadonlyMap<string, string>): number {
+export function syncPeerRanges(repo: string, versions: ReadonlyMap<string, string>): number {
   const coreVersion = requiredVersion(versions, "@threenative/core");
   const playtestVersion = requiredVersion(versions, "@threenative/playtest");
   const assetsVersion = requiredVersion(versions, "@threenative/assets");
@@ -220,15 +220,26 @@ function syncPeerRanges(repo: string, versions: ReadonlyMap<string, string>): nu
   for (const [file, dependency, version] of Object.values(ranges)) {
     if (syncDependencyRange(file, dependency, version)) changed += 1;
   }
+  // Terrain peers are external packages, such as three and vite.
+  // Sync a terrain peer only when the release cohort names it.
+  const terrain = path.join(repo, "packages/terrain/package.json");
+  const { peerDependencies = {} } = JSON.parse(readFileSync(terrain, "utf8")) as {
+    peerDependencies?: Record<string, string>;
+  };
+  for (const dependency of Object.keys(peerDependencies)) {
+    const version = versions.get(dependency);
+    if (version !== undefined && syncDependencyRange(terrain, dependency, version)) changed += 1;
+  }
   return changed;
 }
 
-function syncSourceVersions(repo: string, versions: ReadonlyMap<string, string>): number {
+export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, string>): number {
   const coreVersion = versions.get("@threenative/core");
   const engineVersion = versions.get("threenative-engine-mcp");
   const blenderVersion = versions.get("threenative-blender-mcp");
   if (coreVersion === undefined || engineVersion === undefined || blenderVersion === undefined)
     throw new Error("TN_RELEASE_COHORT_INCOMPLETE: required release package is missing.");
+  const terrainVersion = requiredVersion(versions, "@threenative/terrain");
 
   const sourceUpdates: readonly [string, RegExp, string][] = [
     [
@@ -275,6 +286,11 @@ function syncSourceVersions(repo: string, versions: ReadonlyMap<string, string>)
       path.join(repo, "packages/create-threenative/engine-mcp-tools.json"),
       /("version": ")[^"]+(")/u,
       `$1${engineVersion}$2`,
+    ],
+    [
+      path.join(repo, "packages/terrain/src/core/io.ts"),
+      /(generator: "@threenative\/terrain )[^"]+(")/u,
+      `$1${terrainVersion}$2`,
     ],
   ];
   let changed = 0;

@@ -1,5 +1,6 @@
 import { assertCondition, startVisualScene, THREE } from "./scene-support.js";
 import { playClipAt } from "./planned-animation-support.js";
+import { assertSubmittedWorkPromise } from "./screenshot-completion.js";
 
 export function createMorphTargetAnimationProof() {
   const geometry = new THREE.BoxGeometry(0.95, 0.95, 0.95, 2, 2, 2);
@@ -39,13 +40,40 @@ export function createMorphTargetAnimationProof() {
 export function startScene(canvas, dimensions) {
   const proof = createMorphTargetAnimationProof();
   proof.mesh.rotation.set(-0.25, 0.55, 0.1);
-  return startVisualScene(canvas, dimensions, "morph-target-animation", ({ scene }) => {
+  return startVisualScene(canvas, dimensions, "morph-target-animation", async ({ renderer, scene, camera }) => {
     scene.add(proof.mesh);
+    const queue = renderer.backend?.device?.queue;
+    assertCondition(typeof queue?.onSubmittedWorkDone === "function", "Morph replacement requires GPU queue completion");
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    renderer.render(scene, camera);
+    const oldCompletion = queue.onSubmittedWorkDone();
+    assertSubmittedWorkPromise(oldCompletion, "original-morph-render");
+    await oldCompletion;
+
+    const original = proof.mesh.geometry;
+    const influence = proof.mesh.morphTargetInfluences[0];
+    let originalDisposals = 0;
+    original.addEventListener("dispose", () => { originalDisposals++; });
+    proof.mesh.geometry = original.clone();
+    proof.mesh.updateMorphTargets();
+    proof.mesh.morphTargetInfluences[0] = influence;
+    original.dispose();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    renderer.render(scene, camera);
+    const replacementCompletion = queue.onSubmittedWorkDone();
+    assertSubmittedWorkPromise(replacementCompletion, "replacement-morph-render");
+    await replacementCompletion;
+    assertCondition(original.uuid !== proof.mesh.geometry.uuid, "Morph geometry must be replaced");
+    assertCondition(originalDisposals === 1, "Original morph geometry must be disposed exactly once");
+    assertCondition(Math.abs(proof.mesh.morphTargetInfluences[0] - 0.65) < 1e-6, "Replacement must preserve morph influence");
     return {
       ...proof,
       detail: {
         clip: proof.clip.name,
         influence: proof.mesh.morphTargetInfluences[0],
+        originalGeometry: original.uuid,
+        replacementGeometry: proof.mesh.geometry.uuid,
+        originalDisposals,
       },
     };
   });

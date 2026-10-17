@@ -7,6 +7,7 @@ import {
   DataUtils,
   DoubleSide,
   EquirectangularReflectionMapping,
+  FrontSide,
   type Group,
   type Material,
   type Mesh,
@@ -47,12 +48,14 @@ import { MeshPhysicalNodeMaterial, type Node } from "three/webgpu";
 import { GROUND_MAPS, ROCKFACE_MAPS, WORLD_ROCKS } from "../world/terrainAssets.js";
 import {
   BIOMES,
+  type IWorldBiome,
   type WorldName,
   alpineRockAlbedo,
   alpineRockColor,
   alpineSnowCover,
   biomeWeights,
   desertRockColor,
+  measureBiome,
 } from "./biomes.js";
 import {
   type IPropGround,
@@ -149,6 +152,7 @@ interface ISurfaceContext {
   readonly source: MeshStandardMaterial;
   readonly asset: string;
   readonly world: WorldName;
+  readonly biome?: IWorldBiome;
   readonly stone: boolean;
   readonly cutout: boolean;
   readonly canopy: boolean;
@@ -206,6 +210,7 @@ function stoneSurface(
   snowMap?: Texture,
 ): void {
   const { source, world } = context;
+  if (world === "coastal") material.shadowSide = FrontSide;
   const growth = smoothstep(-0.15, 0.3, mx_noise_float(positionWorld.mul(2.1)));
   const moss = normalWorldGeometry.y
     .max(0)
@@ -221,16 +226,18 @@ function stoneSurface(
     moss,
   );
   if (world !== "alpine" && world !== "tundra") return;
+  const biome = context.biome;
+  if (!biome) throw new RangeError("Stone snow requires measured terrain elevations");
   const snow =
     world === "alpine"
-      ? smoothstep(0.12, 0.82, alpineSnowCover())
-      : (biomeWeights(BIOMES[world], float(1).sub(normalWorldGeometry.y), float(0), growth)
+      ? smoothstep(0.12, 0.82, alpineSnowCover(biome))
+      : (biomeWeights(biome, float(1).sub(normalWorldGeometry.y), float(0), growth)
           .snow as Node<"float">);
   material.colorNode = mix(
     material.colorNode as Node<"vec3">,
     world === "alpine"
       ? (snowMap ? texture(snowMap, positionWorld.xz.div(12)).rgb : vec3(0.82, 0.86, 0.9)).mul(
-          vec3(...BIOMES.alpine.snowTint),
+          vec3(...biome.snowTint),
         )
       : vec3(0.84, 0.87, 0.91),
     snow,
@@ -439,6 +446,7 @@ function surface(
   snowMap?: Texture,
   skyLight?: Texture,
   comparison?: ICanopyComparison,
+  biome?: IWorldBiome,
 ): MeshPhysicalNodeMaterial {
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
@@ -450,6 +458,7 @@ function surface(
     source,
     asset,
     world,
+    biome,
     stone,
     cutout,
     canopy,
@@ -713,7 +722,11 @@ export async function loadPack(
   world: WorldName = "forest",
   ground?: IPropGround,
   comparison?: ICanopyComparison,
+  biome?: IWorldBiome,
 ): Promise<IPackProps> {
+  const measured = biome ?? (ground ? measureBiome(BIOMES[world], ground.heights) : undefined);
+  if (!measured && (world === "alpine" || world === "tundra"))
+    throw new RangeError("Stone snow requires measured terrain elevations");
   const parts = new Map<string, IPropPart[]>();
   const built: { geometry: BufferGeometry; material: Material }[] = [];
   const selected = species
@@ -767,7 +780,7 @@ export async function loadPack(
           ),
         )
       : [];
-  const rockGround = await createRockGround(assets, ground, BIOMES[world]);
+  const rockGround = await createRockGround(assets, ground, measured);
   const sky = assets ? await loadSkyLight(assets) : undefined;
   const loaded = await Promise.all(
     selected.map(async (one) => {
@@ -816,7 +829,7 @@ export async function loadPack(
         const material =
           inherited instanceof MeshPhysicalNodeMaterial
             ? inherited
-            : surface(source, one.asset, world, rockface[2], sky, comparison);
+            : surface(source, one.asset, world, rockface[2], sky, comparison, measured);
         if (stone) rockGround?.apply(material);
         if (source !== section.material) source.dispose();
         built.push({ geometry, material });

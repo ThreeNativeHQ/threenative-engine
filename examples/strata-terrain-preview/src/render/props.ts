@@ -1,24 +1,18 @@
 // The starter props of the Temperate world: three seeded spruce variants, three boulders, grass
-// clumps and poppy patches, each instanced through the engine's existing `InstancedBatch`.
+// clumps and poppy patches. `propStreaming.ts` hands their draws to `WorldCells`.
 //
 // What lives here and what does not:
 //
 //   - The shapes, their variants, their materials and their placement rule are all this file's. They
 //     are the picture, and the picture is the game's (AGENTS rule 3).
-//   - Instancing, transform composition and ground contact are not. `InstancedBatch` collapses the
-//     draws and `GroundSnap` grounds the model, and both are engine mechanisms this file calls.
-//
-// Every prop keeps the same contract the editor has always relied on: a placement resolves to a
-// prepared matrix, that matrix is written into the instanced mesh by index, and the editor can read
-// it back and overwrite it. Adding a variant changes the shape, never that contract.
-import { GroundSnap, InstancedBatch, addInSlices, createRandom } from "@threenative/core";
+//   - GroundSnap measures ground contact; propStreaming.ts delegates instancing and LOD to WorldCells.
+import { GroundSnap, createRandom } from "@threenative/core";
 import type { IPlacement, IPlacementOverride } from "@threenative/terrain";
 import {
   type BufferGeometry,
   DoubleSide,
   Euler,
   Group,
-  type InstancedMesh,
   type Material,
   type Matrix4,
   Mesh,
@@ -27,7 +21,7 @@ import {
   Vector3,
 } from "three";
 import { boulder, fernClump, grassClump, poppyCluster } from "./cover.js";
-import { ATLAS_CELLS, spruceVariants } from "./spruce.js";
+import { ATLAS_CELLS, spruceFarCrown, spruceVariants } from "./spruce.js";
 
 /** Which cell of the needle atlas the poppy petals sample. */
 const POPPY_PETAL = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };
@@ -179,6 +173,8 @@ export function buildPropVariants(
       // Each variant leans on a different needle card, so three spruce silhouettes are three
       // textures rather than one texture at three sizes.
       { geometry: spruce.crown, role: "crown", variant: index },
+      { geometry: spruce.trunk.clone(), role: "bark", variant: index, level: 1 },
+      { geometry: spruceFarCrown(spruce.crown), role: "crown", variant: index, level: 1 },
     ]);
   }
   for (let i = 0; i < PROP_COUNTS.boulder; i += 1) {
@@ -229,6 +225,8 @@ export function buildPropVariants(
     variants.set(`sapling:${i}`, [
       { geometry: young.trunk, role: "bark", variant: i },
       { geometry: young.crown, role: "crown", variant: i },
+      { geometry: young.trunk.clone(), role: "bark", variant: i, level: 1 },
+      { geometry: spruceFarCrown(young.crown), role: "crown", variant: i, level: 1 },
     ]);
   }
   for (let i = 0; i < PROP_COUNTS.bush; i += 1) {
@@ -248,7 +246,11 @@ export function buildPropVariants(
       continue;
     }
     variants.set(`scrub:${i}`, [
-      { geometry: grassClump((VARIANTS.seed ^ (i * 0x165667b1)) >>> 0), role: "grass", variant: i },
+      {
+        geometry: grassClump((VARIANTS.seed ^ (i * 0x165667b1)) >>> 0, i),
+        role: "grass",
+        variant: i,
+      },
     ]);
   }
   for (let i = 0; i < VARIANTS.grass; i += 1) {
@@ -259,7 +261,7 @@ export function buildPropVariants(
       `grass:${i}`,
       ready ?? [
         {
-          geometry: grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0),
+          geometry: grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0, i),
           role: "grass",
           variant: i,
         },
@@ -342,8 +344,8 @@ export type PropGroundQuery = (
   position: [number, number, number],
 ) => { height: number | null; offset: number };
 export interface IPropInstance {
-  mesh: InstancedMesh;
-  index: number;
+  material: Material;
+  onTransform?: (transform: IPlacementOverride | undefined) => void;
   placement: IPlacement;
   pose: Matrix4;
   geometry: BufferGeometry;
@@ -351,8 +353,6 @@ export interface IPropInstance {
   clearance: number | null;
   cragBaseClearance?: number;
   cragRingSamples?: number;
-  /** Every draw of this placement, so a transform write reaches all of them. */
-  parts: { mesh: InstancedMesh; index: number }[];
 }
 export function preparePose(
   geometry: BufferGeometry,
@@ -418,6 +418,22 @@ export function preparePose(
               : BOULDER_BURIAL) * height;
     }
   }
+  // Bury the flat footprint on the downhill side too; a centre-only snap leaves a visible lip.
+  if (grounding && !transform && ["boulder", "riverrock", "scree"].includes(placement.asset)) {
+    const base = geometry.boundingBox?.min.y;
+    const positions = geometry.getAttribute("position");
+    const point = new Vector3();
+    let gap = 0;
+    model.updateMatrix();
+    for (let i = 0; i < positions.count; i++) {
+      if (Math.abs(positions.getY(i) - (base ?? Number.POSITIVE_INFINITY)) > 1e-5) continue;
+      point.fromBufferAttribute(positions, i).applyMatrix4(model.matrix);
+      const height = groundAt(placement, point.toArray()).height;
+      if (height === null) throw new Error(`Missing ground under rock '${placement.id}'`);
+      gap = Math.max(gap, point.y - height + 0.08);
+    }
+    model.position.y -= gap;
+  }
   let cragBaseClearance: number | undefined;
   let cragRingSamples: number | undefined;
   if (
@@ -481,30 +497,23 @@ export function preparePropTransform(
   transform: IPlacementOverride | undefined,
   groundAt: PropGroundQuery,
 ) {
-  const { material } = instance.mesh;
-  if (Array.isArray(material))
-    throw new Error(`Prop '${instance.placement.id}' has a multi-material draw`);
-  return preparePose(instance.geometry, material, instance.placement, transform, groundAt);
+  return {
+    ...preparePose(instance.geometry, instance.material, instance.placement, transform, groundAt),
+    transform,
+  };
 }
-let poseVersion = 0;
-
 export function writePropTransform(
   instance: IPropInstance,
   prepared: ReturnType<typeof preparePropTransform>,
 ): void {
+  const changed =
+    !instance.pose.equals(prepared.matrix) || instance.grounding !== prepared.grounding;
   instance.pose.copy(prepared.matrix);
-  poseVersion++;
-  // A spruce is a trunk draw and a crown draw, so a transform write has to reach both or the tree
-  // comes apart when the editor drags it.
-  for (const part of instance.parts) {
-    part.mesh.setMatrixAt(part.index, prepared.matrix);
-    part.mesh.instanceMatrix.needsUpdate = true;
-    part.mesh.computeBoundingSphere();
-  }
   instance.grounding = prepared.grounding;
   instance.clearance = prepared.clearance;
   instance.cragBaseClearance = prepared.cragBaseClearance;
   instance.cragRingSamples = prepared.cragRingSamples;
+  if (changed) instance.onTransform?.(prepared.transform);
 }
 export function readPropTransform(instance: IPropInstance): IPlacementOverride {
   const matrix = instance.pose;
@@ -596,351 +605,4 @@ export function flatPropMaterials(): IPropMaterials & { dispose: () => void } {
       for (const material of Object.values(materials)) material.dispose();
     },
   };
-}
-
-/** One variant's placements, their poses, and the draws each detail level of it owns. */
-interface IVariantGroup {
-  readonly entries: { instance: IPropInstance; pose: Matrix4 }[];
-  /** This variant's `asset:variant` key, which a per-variant draw reach is named by. */
-  readonly key: string;
-  /** One mesh per level per role, so a level is one draw and the matrix write reaches all of them. */
-  readonly levels: Map<number, InstancedMesh[]>;
-  /** Which level each placement drew last frame. The hysteresis reads it and writes it. */
-  readonly state: Uint8Array;
-  readonly asset: string;
-  readonly members: number[][];
-  readonly slots: Int32Array;
-}
-
-/**
- * Which detail level a placement draws at, and when it is allowed to change its mind.
- *
- * A step down happens at the band for the level it is leaving, and a step back up only once the
- * camera has come a fifth further inside it. Without that slack a camera sitting on a boundary
- * assigns a different level to the same tree on alternate frames, which reads as the tree
- * flickering rather than as a change of detail.
- *
- * The bands are indexed by level rather than picked from a pair, because a variant may have two
- * levels or three: the pine has a far cross-card as well as a mid mesh, and a two-band ladder
- * would leave the third level unreachable or reachable at the wrong distance.
- */
-export function levelFor(distance: number, current: number, levelCount: number): number {
-  let level = current;
-  const bands = [LOD_BANDS.mid, LOD_BANDS.far];
-  while (level + 1 < levelCount && distance > (bands[level] ?? LOD_BANDS.far)) level++;
-  while (level > 0 && distance < (bands[level - 1] ?? LOD_BANDS.mid) * (1 - LOD_BANDS.hysteresis))
-    level--;
-  return level;
-}
-
-/**
- * Place every prop and build one instanced mesh per (asset, variant, level, role).
- *
- * The grouping is what bounds the draw count: a forest of 200 spruces across three variants is six
- * draws, not six hundred, because every copy of a variant shares one geometry and one material and
- * differs only by its matrix. A variant with more than one detail level owns one mesh per level per
- * role, and {@link setPropLevels} refills them from the camera each frame; a variant with one never
- * touches its matrices again.
- */
-function* propWork(
-  placements: readonly IPlacement[],
-  groundAt: PropGroundQuery,
-  parts: Map<string, IPropPart[]>,
-  materials: IPropMaterials,
-) {
-  const object = new Group();
-  const meshes: InstancedMesh[] = [];
-  const byId = new Map<string, IPropInstance>();
-
-  // Group by variant first, then place once per group: the poses a group shares are the same
-  // matrices written into every one of its draws.
-  const groups = new Map<string, { instance: IPropInstance; pose: Matrix4 }[]>();
-  for (const placement of placements) {
-    const key = `${placement.asset}:${variantFor(placement, placement.asset)}`;
-    const chosen = parts.get(key);
-    if (!chosen) throw new Error(`Prop asset '${key}' was never built`);
-    // Grounding measures the prop's own lowest point, so it measures the part that reaches the
-    // ground: the trunk of a spruce, not its crown, and the body of a boulder.
-    const foot = chosen.find((part) => part.role === "bark" || part.role === "stone") ?? chosen[0];
-    if (!foot) throw new Error(`Prop asset '${key}' has no parts`);
-    const pose = preparePose(
-      foot.geometry,
-      materials[foot.role],
-      placement,
-      placement.transform,
-      groundAt,
-    );
-    const entries = groups.get(key) ?? [];
-    entries.push({
-      instance: {
-        clearance: pose.clearance,
-        cragBaseClearance: pose.cragBaseClearance,
-        cragRingSamples: pose.cragRingSamples,
-        grounding: pose.grounding,
-        index: 0,
-        // Filled in below once this group's meshes exist; the trunk draw is the one the editor
-        // picks and measures against.
-        mesh: undefined as unknown as InstancedMesh,
-        parts: [],
-        placement,
-        pose: pose.matrix,
-        geometry: foot.geometry,
-      },
-      pose: pose.matrix,
-    });
-    groups.set(key, entries);
-    yield;
-  }
-
-  function dispose(): void {
-    for (const mesh of meshes) mesh.dispose();
-    object.clear();
-    byId.clear();
-    groups.clear();
-    banded.length = 0;
-  }
-  /** Every variant with more than one detail level, which is the only thing that refills. */
-  const banded: IVariantGroup[] = [];
-  let completed = false;
-  try {
-    for (const [key, entries] of groups) {
-      const chosen = parts.get(key);
-      if (!chosen) throw new Error(`Prop asset '${key}' was never built`);
-      // Which role the editor treats as the prop's body: the part that touches the ground, because
-      // that is the one whose bounds centre the selection gizmo on the tree rather than on its leaves.
-      const bodyRole = chosen.some((part) => part.role === "bark")
-        ? "bark"
-        : chosen.some((part) => part.role === "stone")
-          ? "stone"
-          : chosen[0]?.role;
-      const levels = [...new Set(chosen.map((part) => part.level ?? 0))].sort((a, b) => a - b);
-      const byLevel = new Map<number, InstancedMesh[]>();
-      for (const level of levels) {
-        const levelParts = chosen.filter((part) => (part.level ?? 0) === level);
-        for (const part of levelParts) {
-          const batch = new InstancedBatch({
-            geometry: part.geometry,
-            // A pack species wears the material it was authored with; everything else wears the
-            // starter's surface for its role, which is what the lit surfaces later swap in.
-            material: part.material ?? materials[part.role],
-          });
-          for (const entry of entries) batch.add(entry.pose);
-          const mesh = batch.build({
-            name: `props:${key}:${part.role}`,
-            parent: object,
-            // Crowns and bark cast; grass does too, because its own shadow is most of its depth. The
-            // poppy's petals and stems do not, at five centimetres they only cost the shadow pass —
-            // and neither does the undergrowth that grew under the canopy, for the same reason one
-            // order of magnitude up: a thousand seedlings and shrubs drawn a second time into a
-            // shadow map is the single largest thing the pass could be asked to do, and none of it
-            // reaches the ground the shadow is cast on.
-            castShadow:
-              part.role !== "petal" &&
-              part.role !== "stem" &&
-              !NO_SHADOW_ASSETS.has(key.split(":")[0] ?? ""),
-            receiveShadow: true,
-          });
-          if (!mesh) throw new Error(`Empty prop batch '${key}:${part.role}'`);
-          mesh.userData.placementIds = entries.map((entry) => entry.instance.placement.id);
-          // Recorded rather than inferred later: the surface swap has to leave a pack species alone,
-          // and "does the role name appear in the lit set" is not the same question.
-          mesh.userData.ownMaterial = part.material !== undefined;
-          mesh.userData.body = part.role === bodyRole;
-          meshes.push(mesh);
-          const list = byLevel.get(level) ?? [];
-          list.push(mesh);
-          byLevel.set(level, list);
-          entries.forEach((entry, index) => {
-            entry.instance.parts.push({ index, mesh });
-            if (part.role === bodyRole) {
-              entry.instance.mesh = mesh;
-              entry.instance.index = index;
-            }
-          });
-        }
-      }
-      // Every level's mesh was filled with every placement at build time, so the bounding sphere
-      // `InstancedBatch` computed is already the union over the levels — the same bound, correct
-      // for whichever subset a frame happens to draw, and computed once.
-      banded.push({
-        asset: key.split(":")[0] ?? "",
-        key,
-        entries,
-        levels: byLevel,
-        state: new Uint8Array(entries.length),
-        members: levels.map((level) => (level === 0 ? entries.map((_, i) => i) : [])),
-        slots: Int32Array.from(entries.map((_, i) => i)),
-      });
-      for (const entry of entries) {
-        if (entry.instance.mesh === undefined)
-          throw new Error(`Prop '${entry.instance.placement.id}' built no body draw`);
-        entry.instance.parts = (byLevel.get(0) ?? []).map((mesh) => ({
-          mesh,
-          index: entry.instance.index,
-        }));
-        const body = byLevel.get(0)?.find((mesh) => mesh.userData.body);
-        if (body) entry.instance.mesh = body;
-        byId.set(entry.instance.placement.id, entry.instance);
-      }
-      for (const [level, list] of byLevel)
-        for (const mesh of list) {
-          mesh.count = level === 0 ? entries.length : 0;
-          if (level !== 0) mesh.userData.placementIds = [];
-        }
-      yield;
-    }
-    const levelCount = new Map<IVariantGroup, number>();
-
-    // Swap-delete only band crossings. Stable members retain their GPU buffer slot and editor
-    // handle; initial bounds cover every possible member, so moving the eye never rebuilds them.
-    const seenFrom = new Vector3(Number.NaN, 0, 0);
-    let seenPoseVersion = poseVersion;
-    const setLevels = (camera: Vector3): void => {
-      // The existing 0.75 m camera slack and authored hysteresis remain unchanged.
-      const edited = seenPoseVersion !== poseVersion;
-      if (!edited && seenFrom.distanceToSquared(camera) < 0.75 ** 2) return;
-      seenFrom.copy(camera);
-      seenPoseVersion = poseVersion;
-      const cx = camera.x;
-      const cy = camera.y;
-      const cz = camera.z;
-      for (const group of banded) {
-        const levels = levelCount.get(group) ?? 0;
-        const dirty = new Set<InstancedMesh>();
-        // Per group, so the walk below is three reads and arithmetic. `entries.entries()` allocated a
-        // pair per placement and the fade test allocated a literal array per placement, which on a
-        // forest of this size is half a million short-lived arrays on every camera move.
-        const poses = group.entries;
-        const reach = VARIANT_REACH[group.key] ?? DRAW_REACH[group.asset];
-        const thins = reach !== undefined && FADED_ASSETS.has(group.asset);
-        const fadeEnd = reach ?? 0;
-        const bindSlot = (index: number, level: number, slot: number): void => {
-          const entry = group.entries[index];
-          if (!entry) throw new Error(`Missing prop slot '${group.key}:${index}'`);
-          entry.instance.parts = [];
-          for (const mesh of group.levels.get(level) ?? []) {
-            mesh.setMatrixAt(slot, entry.pose);
-            mesh.userData.placementIds[slot] = entry.instance.placement.id;
-            entry.instance.parts.push({ mesh, index: slot });
-            if (mesh.userData.body) {
-              entry.instance.mesh = mesh;
-              entry.instance.index = slot;
-            }
-            dirty.add(mesh);
-          }
-          group.slots[index] = slot;
-        };
-        for (let index = 0; index < poses.length; index++) {
-          // The pose's own translation rather than `setFromMatrixPosition`: a Matrix4 decompose per
-          // placement is what made this the most expensive function in a walk.
-          const entry = poses[index];
-          if (!entry) throw new Error(`Missing prop placement '${group.key}:${index}'`);
-          const elements = entry.pose.elements;
-          const dx = elements[12] - cx;
-          const dy = elements[13] - cy;
-          const dz = elements[14] - cz;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          let visible = reach === undefined || distance <= reach;
-          if (visible && thins) {
-            const fade = Math.max(0, (distance - 28) / (fadeEnd - 28));
-            const seed = (Math.imul(index + 1, 2654435761) >>> 0) / 4294967296;
-            visible = seed <= (1 - fade) ** 2;
-          }
-          const previous = group.state[index] ?? 0;
-          const level = levelFor(distance, previous, levels);
-          const slot = group.slots[index] ?? -1;
-          if (slot >= 0 === visible && (!visible || previous === level)) continue;
-          if (slot >= 0) {
-            const members = group.members[previous];
-            if (!members) throw new Error(`Missing prop band '${group.key}:${previous}'`);
-            const last = members.pop();
-            if (last !== undefined && last !== index) {
-              members[slot] = last;
-              bindSlot(last, previous, slot);
-            }
-            for (const mesh of group.levels.get(previous) ?? []) {
-              mesh.userData.placementIds.length = members.length;
-              dirty.add(mesh);
-            }
-          }
-          entry.instance.parts = [];
-          group.slots[index] = -1;
-          if (visible) {
-            const members = group.members[level];
-            if (!members) throw new Error(`Missing prop band '${group.key}:${level}'`);
-            bindSlot(index, level, members.length);
-            members.push(index);
-            group.state[index] = level;
-          }
-        }
-        for (const [level, list] of group.levels) {
-          for (const mesh of list) {
-            mesh.count = group.members[level]?.length ?? 0;
-            if (dirty.has(mesh)) mesh.instanceMatrix.needsUpdate = true;
-            // The build's sphere already bounds ALL placements, not just this band's subset.
-            // A transform edit may extend it; camera movement cannot.
-            if (edited) {
-              const sphere = mesh.boundingSphere;
-              if (sphere)
-                for (const entry of group.entries) {
-                  if (mesh.geometry.boundingSphere === null) mesh.geometry.computeBoundingSphere();
-                  const local = mesh.geometry.boundingSphere?.clone().applyMatrix4(entry.pose);
-                  if (local) sphere.union(local);
-                }
-            }
-          }
-        }
-      }
-    };
-    for (const group of banded) levelCount.set(group, group.levels.size);
-    completed = true;
-    return { object, meshes, byId, dispose, setLevels };
-  } finally {
-    if (!completed) dispose();
-  }
-}
-
-export function createProps(
-  placements: readonly IPlacement[],
-  groundAt: PropGroundQuery,
-  parts: Map<string, IPropPart[]>,
-  materials: IPropMaterials,
-) {
-  const work = propWork(placements, groundAt, parts, materials);
-  for (;;) {
-    const step = work.next();
-    if (step.done) return step.value;
-  }
-}
-
-export async function createPropsInSlices(
-  placements: readonly IPlacement[],
-  groundAt: PropGroundQuery,
-  parts: Map<string, IPropPart[]>,
-  materials: IPropMaterials,
-  whileCurrent?: () => boolean,
-) {
-  const work = propWork(placements, groundAt, parts, materials);
-  const groups = new Set(
-    placements.map((placement) => `${placement.asset}:${variantFor(placement, placement.asset)}`),
-  );
-  try {
-    const report = await addInSlices(
-      Array.from({ length: placements.length + groups.size }),
-      () => {
-        work.next();
-      },
-      { while: whileCurrent },
-    );
-    if (report.stopped) {
-      work.return(undefined as never);
-      return undefined;
-    }
-    const result = work.next();
-    if (!result.done) throw new Error("Prop build did not finish its scheduled work");
-    return result.value;
-  } catch (error) {
-    work.return(undefined as never);
-    throw error;
-  }
 }

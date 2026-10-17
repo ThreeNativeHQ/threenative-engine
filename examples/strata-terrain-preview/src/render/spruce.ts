@@ -207,6 +207,7 @@ function trunk(height: number, seed: number): BufferGeometry {
  * crown that is not a stack of plates.
  */
 const CLUSTER = 3;
+const CROWN_SEGMENTS = 3;
 
 function branch(
   buffer: MeshBuffer,
@@ -370,7 +371,7 @@ function crown(height: number, seed: number): BufferGeometry {
         origin: new Vector3(0, at * height, 0),
         random,
         roll: (random() - 0.5) * 1.9,
-        segments: 3,
+        segments: CROWN_SEGMENTS,
         // The card is close to the atlas cell's own proportions on purpose. The needles in that cell
         // radiate from a twig across its whole width, so a card much narrower than it is long
         // squeezes a spray of needles into a blade, and a spruce drawn with blades is worse than one
@@ -382,6 +383,20 @@ function crown(height: number, seed: number): BufferGeometry {
     }
   }
   return buffer.build();
+}
+
+/** Keep the first two clusters of each branch, with every surviving card unchanged. */
+export function spruceFarCrown(crown: BufferGeometry): BufferGeometry {
+  const indices = crown.index;
+  if (!indices) throw new Error("Procedural spruce crown must be indexed");
+  const clusterIndices = CROWN_SEGMENTS * 6; // One independent quad per spray.
+  const far = crown.clone(); // Separate attributes and indices: scaling/disposal stay per part.
+  far.setIndex(
+    Array.from(indices.array).filter(
+      (_, index) => index % (CLUSTER * clusterIndices) < 2 * clusterIndices,
+    ),
+  );
+  return far;
 }
 
 /** One seeded spruce variant: a tapered trunk and its crown, as two buffers and a draw each. */

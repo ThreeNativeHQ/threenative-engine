@@ -668,16 +668,21 @@ interface IReflectorNodeLike {
  *
  * Three's `reflector()` hangs a `_reflectorBaseNode` off a `ReflectorNode` that a material's
  * `colorNode` (or a node composed around it) references. The walk is bounded and only descends
- * real nodes, so a material with no reflector costs one shallow pass.
+ * real nodes, so a material with no reflector costs one shallow pass. `seen` holds the shallowest
+ * depth each node was reached at: a TSL graph shares subgraphs, and without it every path to a
+ * shared node walks it again.
  */
-function nodeHasReflector(root: unknown, depth: number): boolean {
+function nodeHasReflector(root: unknown, depth: number, seen: Map<object, number>): boolean {
   if (depth > 64 || typeof root !== "object" || root === null) return false;
   const node = root as IReflectorNodeLike;
   if (node._reflectorBaseNode !== undefined) return true;
   if (node.isNode !== true || typeof node.getChildren !== "function") return false;
+  const reached = seen.get(node);
+  if (reached !== undefined && reached <= depth) return false;
+  seen.set(node, depth);
   try {
     for (const child of node.getChildren()) {
-      if (nodeHasReflector(child, depth + 1)) return true;
+      if (nodeHasReflector(child, depth + 1, seen)) return true;
     }
   } catch {
     return false;
@@ -686,6 +691,7 @@ function nodeHasReflector(root: unknown, depth: number): boolean {
 }
 
 function hasReflector(scene: Object3D): boolean {
+  const seen = new Map<object, number>();
   const stack: Object3D[] = [scene];
   while (stack.length > 0) {
     const object = stack.pop() as Object3D & { material?: unknown };
@@ -696,7 +702,7 @@ function hasReflector(scene: Object3D): boolean {
       (material as { isNodeMaterial?: boolean }).isNodeMaterial === true
     ) {
       for (const value of Object.values(material as Record<string, unknown>)) {
-        if (nodeHasReflector(value, 0)) return true;
+        if (nodeHasReflector(value, 0, seen)) return true;
       }
     }
     const children = object.children ?? [];

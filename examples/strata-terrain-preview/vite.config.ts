@@ -1,7 +1,8 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { terrainEditor } from "@threenative/terrain/editor/server";
+import { starterAssetsDir } from "@threenative/terrain/kit";
 import { type Plugin, defineConfig } from "vite";
 
 /**
@@ -27,6 +28,7 @@ import { type Plugin, defineConfig } from "vite";
  */
 function preparedAssets(): Plugin {
   const roots: { mount: string; dir: string; flat: boolean }[] = [
+    { dir: "./src/world", flat: true, mount: "/world" },
     { dir: "./local-assets/temperate", flat: false, mount: "/temperate" },
     { dir: "./local-assets/temperate/basis", flat: true, mount: "/basis" },
     { dir: "./local-assets/prepared", flat: true, mount: "/prepared" },
@@ -34,12 +36,15 @@ function preparedAssets(): Plugin {
     // The Basis transcoder a cooked KTX2 model decodes through, which the engine's asset pipeline
     // copies into `public/basis/` and this example has no pipeline. Same source, same path.
     { dir: "./local-assets/landscape-pro/basis", flat: true, mount: "/basis" },
+    // Explicit `?stage=before|after` forest arms: each folder is a baked copy of the forest kit.
+    { dir: "./local-assets/forest-stage", flat: false, mount: "/forest-stage" },
   ].map((entry) => ({
     ...entry,
     dir: fileURLToPath(new URL(entry.dir, import.meta.url)),
   }));
   const types: Record<string, string> = {
     ".glb": "model/gltf-binary",
+    ".json": "application/json",
     ".jpg": "image/jpeg",
     ".ktx2": "image/ktx2",
     ".png": "image/png",
@@ -78,6 +83,15 @@ function preparedAssets(): Plugin {
     name: "strata-prepared-assets",
     configureServer: serve,
     configurePreviewServer: serve,
+    generateBundle() {
+      for (const world of ["forest", "coastal", "alpine", "desert", "tundra"])
+        for (const suffix of ["placements.bin", "world.json", "layers.json", "splat.rgba8"])
+          this.emitFile({
+            type: "asset",
+            fileName: `world/${world}.${suffix}`,
+            source: readFileSync(new URL(`./src/world/${world}.${suffix}`, import.meta.url)),
+          });
+    },
   };
 }
 
@@ -85,7 +99,7 @@ export default defineConfig({
   // The starter PBR sets are the terrain package's prepared art, served to the game rather than
   // duplicated into this example's `public/`: `/leafy_grass/…` reaches the same bytes in dev and in
   // a build, and `ctx.assets` loads them by that path.
-  publicDir: fileURLToPath(new URL("../../packages/terrain/starter-assets", import.meta.url)),
+  publicDir: await starterAssetsDir(),
   plugins: [
     terrainEditor({
       documentPath: fileURLToPath(new URL("./terrain/world.json", import.meta.url)),

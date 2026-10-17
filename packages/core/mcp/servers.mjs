@@ -31,6 +31,12 @@ export const MCP_SERVERS = Object.freeze({
     command: "node",
     args: Object.freeze(["./node_modules/@threenative/core/mcp/blender.mjs"]),
   }),
+  // Cooks a starter terrain kit into a world.glb. The server lives in the optional
+  // `@threenative/terrain` package, which the shim resolves from the project at launch.
+  "threenative-terrain": Object.freeze({
+    command: "node",
+    args: Object.freeze(["./node_modules/@threenative/core/mcp/terrain.mjs"]),
+  }),
 });
 
 /** The external package each shim launches. Core installs asset and sculpt transitively and bundles
@@ -42,6 +48,7 @@ export const MCP_PACKAGES = Object.freeze({
   sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.1" }),
   engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.4" }),
   blender: Object.freeze({ name: "threenative-blender-mcp", version: "0.1.4" }),
+  terrain: Object.freeze({ name: "@threenative/terrain", version: "0.1.0" }),
 });
 
 /** How one host spells a stdio MCP server. Hosts agree on what to run and disagree on where to

@@ -28,6 +28,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { deflateSync } from "node:zlib";
+import { starterAssetsDir } from "@threenative/terrain/kit";
 import { createServer } from "vite";
 import {
   advanceFixedStep,
@@ -303,6 +304,14 @@ export const GROUND_MAPS = {
   snow: ${JSON.stringify(flat)},
 };
 export const GROUND_TILE = { dirt: 3.4, grass: 2.6, moss: 3.6, rock: 9, sand: 3.2, snow: 12 };
+// The rock-face pair the temperate stone binds, in the stock table's own two keys, pointing at this
+// consumer's own files. Its crag placements are empty because they are owner-local licensed models
+// and a consumer that ships none exports none: the loaders read an absent model as procedural stone.
+export const ROCKFACE_MAPS = {
+  diffuse: ${JSON.stringify(one(files.albedo))},
+  normal: ${JSON.stringify(one(files.normal))},
+};
+export const WORLD_ROCKS = [];
 export const PROP_MAPS = { bark: ${JSON.stringify(surface)}, stone: ${JSON.stringify(surface)} };
 export const SOIL_MAP = ${JSON.stringify(one(files.albedo))};
 export const NEEDLE_ATLAS = ${JSON.stringify(one(files.albedo))};
@@ -393,7 +402,7 @@ try {
     const server = await createServer({
       root,
       configFile: false,
-      publicDir: stock ? resolve(root, "../../packages/terrain/starter-assets") : false,
+      publicDir: stock ? await starterAssetsDir() : false,
       plugins: stock ? [] : [customArt()],
       server: { host: "127.0.0.1", port: PORT },
       optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
@@ -401,7 +410,7 @@ try {
     });
     try {
       await server.listen();
-      const url = `http://127.0.0.1:${PORT}/`;
+      const url = `http://127.0.0.1:${PORT}/?showcase=1`;
       const config = parseStandalonePlaytestArgs([
         "--scenario",
         "playtests/terrain.playtest.json",
@@ -413,7 +422,7 @@ try {
         "--timeout",
         "180000",
         "--artifacts",
-        `artifacts/playtest/custom-${arm}`,
+        join(temporary, `capture-${arm}`),
       ]);
       let observation = {};
       await withBrowserCapture(config, async (session) => {
@@ -478,6 +487,16 @@ try {
   }
 
   const customSource = customMappingSource(files, servedRoot);
+  // Every export the game's own table names must be in the consumer's copy of it, or a module that
+  // imports it fails to link and the run reports that as a browser error rather than as this. The
+  // names are read from the committed table, so a table that gains one cannot leave this behind.
+  for (const [, name] of stockSource.matchAll(/^export const (\w+)/gmu))
+    assert.match(
+      customSource,
+      new RegExp(`^export const ${name}\\b`, "mu"),
+      `The consumer mapping does not export ${name}, which src/world/terrainAssets.ts exports`,
+    );
+
   const stock = await runArm("stock", stockSource, true);
   const custom = await runArm("custom", customSource, false);
 

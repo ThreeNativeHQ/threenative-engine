@@ -38,7 +38,7 @@ import { mipAlphaTestNode } from "./foliage-alpha.js";
 export const WORLD_IMPOSTOR_MARKER = "TN_WORLD_IMPOSTOR";
 
 /** Views per atlas row and column: a full-sphere octahedral grid, so `N*N` layers. */
-export const IMPOSTOR_VIEW_GRID = 4;
+export const IMPOSTOR_VIEW_GRID = 8;
 /** Layers the atlas holds: one per view. */
 export const IMPOSTOR_VIEWS = IMPOSTOR_VIEW_GRID * IMPOSTOR_VIEW_GRID;
 /**

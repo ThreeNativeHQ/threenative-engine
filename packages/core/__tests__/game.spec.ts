@@ -14,6 +14,7 @@ import { MeshBasicNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { type IGamePlatformSource, defineGame } from "../src/game.js";
 import { InputMap } from "../src/input.js";
+import { onLaunchFailure, resetLaunchFailures } from "../src/launch-diagnostics.js";
 import type { IRenderPerformanceSample } from "../src/loop.js";
 import { type ICtx, Scene } from "../src/scene.js";
 import { SoftBody3D } from "../src/softbody.js";
@@ -94,6 +95,60 @@ describe("IGame", () => {
       error.mockRestore();
     }
   });
+
+  it.each([false, true])(
+    "reports a manifest rejection during Scene.load (transition: %s)",
+    async (transition) => {
+      resetLaunchFailures();
+      const message =
+        "Asset 'worlds/forest/world.glb' is not listed in the asset manifest 'assets.manifest.json'.";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({ version: 1, entries: { "other.glb": { output: "other.glb" } } }),
+            ),
+        ),
+      );
+      const failure = vi.fn();
+      const off = onLaunchFailure(failure);
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      class MissingWorld extends Scene {
+        override async load(ctx: ICtx): Promise<void> {
+          await ctx.assets.model("worlds/forest/world.glb");
+        }
+      }
+      class Boot extends Scene {
+        override enter(ctx: ICtx): void {
+          void ctx.goto("world");
+        }
+      }
+      const game = defineGame({
+        initialState: {},
+        renderer: renderer(testCanvas()),
+        scenes: { boot: Boot, world: MissingWorld },
+        start: transition ? "boot" : "world",
+      });
+      try {
+        if (transition) {
+          await game.start();
+          await Promise.resolve();
+        } else {
+          await expect(game.start()).rejects.toThrow(message);
+        }
+        await vi.waitFor(() =>
+          expect(failure).toHaveBeenCalledWith({ kind: "load-failed", message }),
+        );
+        expect(consoleError).toHaveBeenCalledWith(`TN_STARTUP_FAILED: ${message}`);
+      } finally {
+        game.stop();
+        off();
+        consoleError.mockRestore();
+        resetLaunchFailures();
+      }
+    },
+  );
 
   it.each([false, true])(
     "releases the UI bridge when renderer startup fails (host: %s)",

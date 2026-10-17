@@ -1,0 +1,65 @@
+{
+  "comment": "The terrain MCP surface a generated project gets once it installs @threenative/terrain. `tools` is set-equal to the tool table version 0.1.0 serves. Regenerate with `pnpm tsx scripts/capture-terrain-mcp-tools.ts`.",
+  "version": "0.1.0",
+  "serverInfo": {
+    "name": "threenative-terrain",
+    "version": "0.1.0"
+  },
+  "recommended": ["terrain_generate", "terrain_patch"],
+  "tools": ["terrain_generate", "terrain_patch"],
+  "inputSchemas": {
+    "terrain_generate": {
+      "type": "object",
+      "properties": {
+        "kit": {
+          "type": "string",
+          "enum": ["forest", "coastal", "alpine", "desert", "tundra"]
+        },
+        "request": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sizeMeters": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "out": {
+          "type": "string",
+          "description": "Relative directory that must not exist yet."
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["request"]
+        },
+        {
+          "required": ["kit"]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "terrain_patch": {
+      "type": "object",
+      "properties": {
+        "recipe": {
+          "type": "object"
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": ["recipe", "commands"],
+      "additionalProperties": false
+    }
+  },
+  "descriptions": {
+    "terrain_generate": "Choose from a request or explicit kit and cook one editable starter terrain kit (forest, coastal, alpine, desert or tundra) into a world.glb. Returns the kit as recipe, the world.glb, recipe.json and world.json paths, triangles, instances and draws measured from the produced GLB's default scene, and a ctx.assets.model load snippet. triangles counts every instance of the LOD0 default scene in full, before distance LOD and culling, instances sums the EXT_mesh_gpu_instancing instances, and draws counts primitives across instanced and non-instanced meshes, an instanced primitive counting once.",
+    "terrain_patch": "Apply editor commands (upsert, update, remove, move, toggle) to a terrain recipe and return the edited recipe."
+  }
+}

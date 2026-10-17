@@ -1,4 +1,3 @@
-import type { IAssetLoader, ICtx } from "@threenative/core";
 import {
   type Camera,
   CanvasTexture,
@@ -10,184 +9,7 @@ import {
   type Scene,
   type Texture,
 } from "three";
-import type { IPropPreparationProgress } from "./propProgress.js";
 const palette = { skyLow: 0x142321, skyHigh: 0x304636, accent: 0xb6c586 };
-
-type SpawnStartup = Pick<
-  ICtx["startup"],
-  "phase" | "progress" | "compileSettled" | "timeline" | "warmup"
->;
-
-function startupSnapshot(startup: SpawnStartup) {
-  const warmup = startup.warmup;
-  const timeline = startup.timeline;
-  return {
-    phase: startup.phase,
-    progress: startup.progress,
-    compileSettled: startup.compileSettled,
-    timeline: {
-      loadStartedMs: timeline.loadStartedMs,
-      enteredMs: timeline.enteredMs,
-      compileSettledMs: timeline.compileSettledMs,
-      frameworkReadyMs: timeline.frameworkReadyMs,
-      readyMs: timeline.readyMs,
-    },
-    warmup: warmup && {
-      status: warmup.status,
-      attempted: warmup.attempted,
-      candidates: warmup.candidates,
-      created: warmup.observed?.created,
-      failed: warmup.observed?.failed,
-      pending: warmup.observed?.pending,
-    },
-  };
-}
-
-function worldSnapshot(world: IPropPreparationProgress["worlds"][number]) {
-  const stats = world.stats();
-  return {
-    generation: world.uuid.slice(0, 64),
-    name: world.name.slice(0, 64),
-    parent: world.parent?.uuid.slice(0, 64) ?? null,
-    released: world.released,
-    residentCells: stats.residentCells,
-    loadedCells: stats.loadedCells,
-    loadsInFlight: stats.loadsInFlight,
-    loadsQueued: stats.loadsQueued,
-    pendingPrewarm: stats.pendingPrewarm,
-    prewarmMinted: stats.prewarmMinted,
-    failures: stats.failures,
-    admission: {
-      spentMs: stats.admission.spentMs,
-      backlog: stats.admission.backlog,
-      deferred: stats.admission.deferred,
-    },
-  };
-}
-
-/** A bounded value receipt taken by the spawn gate before rejection or scene teardown. */
-export function spawnReadinessSnapshot(input: {
-  readonly reason: string;
-  readonly atMs: number;
-  readonly world: string;
-  readonly sceneUuid: string;
-  readonly released: boolean;
-  readonly gate: { readonly ready: boolean; readonly error: string };
-  readonly stage: string;
-  readonly propsSettled: boolean;
-  readonly preparation?: IPropPreparationProgress;
-  readonly coverage?: {
-    readonly required: number;
-    readonly loaded: number;
-    readonly failures: number;
-    readonly ready: boolean;
-  };
-  readonly assets: IAssetLoader["progress"];
-  readonly startup: SpawnStartup;
-}) {
-  const preparation = input.preparation;
-  return {
-    version: 1,
-    reason: input.reason.slice(0, 256),
-    atMs: input.atMs,
-    world: input.world.slice(0, 64),
-    sceneUuid: input.sceneUuid.slice(0, 64),
-    released: input.released,
-    gate: { ready: input.gate.ready, error: input.gate.error.slice(0, 256) },
-    coverage: input.coverage && {
-      required: input.coverage.required,
-      loaded: input.coverage.loaded,
-      failures: input.coverage.failures,
-      ready: input.coverage.ready,
-    },
-    preparation: {
-      stage: input.stage.slice(0, 64),
-      propsSettled: input.propsSettled,
-      phase: preparation?.phase,
-      bucket: preparation?.bucket.slice(0, 64),
-      added: preparation?.added,
-      total: preparation?.total,
-      worldCount: preparation?.worlds.length ?? 0,
-      prewarmedWorlds: preparation?.prewarmedWorlds ?? 0,
-    },
-    assets: {
-      requested: input.assets.requested,
-      settled: input.assets.settled,
-      requestedBytes: input.assets.requestedBytes,
-      settledBytes: input.assets.settledBytes,
-      pendingCount: input.assets.pending.length,
-      pending: input.assets.pending.slice(0, 4).map((path) => path.slice(0, 128)),
-    },
-    startup: startupSnapshot(input.startup),
-    worlds: (preparation?.worlds ?? []).slice(0, 4).map(worldSnapshot),
-  };
-}
-
-/** A one-shot gameplay gate; streaming continues after its launch region is allowed to evict. */
-export function createSpawnReadiness(
-  label: string,
-  budgetMs = 120_000,
-  beforeFailure?: (reason: string) => void,
-) {
-  if (!label.trim() || !Number.isFinite(budgetMs) || budgetMs <= 0)
-    throw new Error("Spawn readiness requires a label and positive budget.");
-  let ready = false;
-  let error = "";
-  let cancelled = false;
-  let capturingFailure = false;
-  let resolve: () => void = () => undefined;
-  let reject: (reason: Error) => void = () => undefined;
-  const promise = new Promise<void>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  function fail(reason: unknown): void {
-    if (ready || error || cancelled || capturingFailure) return;
-    const message =
-      (reason instanceof Error ? reason.message : String(reason)) || `${label} failed`;
-    capturingFailure = true;
-    try {
-      beforeFailure?.(message);
-    } catch {
-      // A diagnostic must never replace the admission failure or leave its promise pending.
-    }
-    capturingFailure = false;
-    error = message;
-    clearTimeout(timer);
-    reject(new Error(error));
-  }
-  const timer = setTimeout(() => fail(`${label} admission exceeded ${budgetMs} ms`), budgetMs);
-  return {
-    promise,
-    fail,
-    get ready() {
-      return ready;
-    },
-    get error() {
-      return error;
-    },
-    observe(covered: boolean, failures = 0): void {
-      if (ready || error || cancelled || capturingFailure) return;
-      if (failures > 0) {
-        fail(`${label} assets failed to load`);
-        return;
-      }
-      if (covered) {
-        ready = true;
-        clearTimeout(timer);
-        resolve();
-      }
-    },
-    cancel(): void {
-      if (capturingFailure) return;
-      clearTimeout(timer);
-      if (!ready && !error && !cancelled) {
-        cancelled = true;
-        reject(new Error(`${label} cancelled`));
-      }
-    },
-  };
-}
 
 /* BEGIN THREENATIVE LOADING APPEARANCE */
 /** Edit these source constants for the starter's loading look. */
@@ -434,7 +256,7 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
       host.startup.warmup !== undefined && host.startup.warmup.status !== "complete";
     progress = observationUnknown ? Math.min(0.9, bounded) : bounded;
     setFillUv(fill.geometry, progress, fillBaseU);
-    status?.update(progress);
+    status?.update(observationUnknown ? "Preparing" : progress);
     layout();
   };
 

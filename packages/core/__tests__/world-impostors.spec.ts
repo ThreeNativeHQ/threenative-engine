@@ -52,11 +52,26 @@ import {
   IMPOSTOR_FAR_CULL_ATTRIBUTE,
   WorldImpostorSurface,
 } from "../src/render/world-impostor-surface.js";
-import { type IImpostorRawRenderer, WorldImpostorAtlas } from "../src/render/world-impostor.js";
+import {
+  type IImpostorRawRenderer,
+  IMPOSTOR_FRAME_PIXELS,
+  IMPOSTOR_VIEWS,
+  WorldImpostorAtlas,
+} from "../src/render/world-impostor.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { type IKernelInput, WorldGpuScene, cullAndSelect } from "../src/world-gpu-scene.js";
 import { type IWorldAsset, type IWorldRun, cellPlacements } from "../src/world-package.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
+
+// Two full-mip RGBA8 attachments per atlas, one layer per view.
+const atlasBytes =
+  2 *
+  Array.from(
+    { length: Math.floor(Math.log2(IMPOSTOR_FRAME_PIXELS)) + 1 },
+    (_, level) => Math.max(1, IMPOSTOR_FRAME_PIXELS >> level) ** 2 * IMPOSTOR_VIEWS * 4,
+  ).reduce((sum, bytes) => sum + bytes, 0);
+const atlasBudget = 128 * 1024 * 1024;
+const atlasCapacity = Math.floor(atlasBudget / atlasBytes);
 
 // Exercise the installed renderer's actual upload decision; its private module has no declarations.
 interface ITestAttributes {
@@ -498,9 +513,9 @@ function liveWideCasters(world: WorldCells, asset: string): InstancedMesh[] {
   return meshes;
 }
 
-/** Drive the bake's sixteen views to completion, one per render-cadence update. */
+/** Drive every bake view to completion, one per render-cadence update. */
 function runBake(world: WorldCells, renderer: IRendererLike): void {
-  for (let view = 0; view < 16; view += 1) world.update(renderer);
+  for (let view = 0; view < IMPOSTOR_VIEWS; view += 1) world.update(renderer);
 }
 
 // Impostors are opt-in (PRD-473 AC-3): this suite launches with the opt-in so the default path under
@@ -545,7 +560,7 @@ describe("WorldCells automatic impostors", () => {
     expect(impostor.assets).toBe(1);
     expect(impostor.pending).toBe(0);
     expect(impostor.terminalTriangles).toBe(2);
-    expect(impostor.atlasBytes).toBe(2_796_160);
+    expect(impostor.atlasBytes).toBe(atlasBytes);
     // The bake is independent of the GPU-driven main pass: this renderer is WebGPU but carries no
     // GPU-scene features, so the scene stays off while the atlas still lands on the CPU path.
     expect(world.stats().gpuScene.on).toBe(false);
@@ -597,13 +612,19 @@ describe("WorldCells automatic impostors", () => {
     expect(world.stats().impostor.pending).toBe(1);
     const refilters = world.stats().levelRefilters;
     const sources = scene.placements.map((placement) => ({ ...placement }));
-    // Offset the cadence so the first check lands on the exact update that finishes the 16-view bake.
-    for (let dispatch = 0; dispatch < 14; dispatch += 1) scene.dispatch(renderer, camera);
-    for (let view = 0; view < 15; view += 1) {
+    // Match WorldGpuScene's cadence so a check lands on the exact update finishing the full bake.
+    const validationEvery = 30;
+    const dispatchOffset = (validationEvery - (IMPOSTOR_VIEWS % validationEvery)) % validationEvery;
+    for (let dispatch = 0; dispatch < dispatchOffset; dispatch += 1)
+      scene.dispatch(renderer, camera);
+    for (let view = 1; view < IMPOSTOR_VIEWS; view += 1) {
+      const compared = scene.validation.compared;
       world.update(renderer, camera);
       await flush();
+      if (view === IMPOSTOR_VIEWS - 1) expect(scene.validation.compared).toBeGreaterThan(compared);
     }
     await flush();
+    expect(world.stats().impostor.assets).toBe(1);
 
     // Drain any post-publication admission: the regression used to enqueue two real CPU jobs.
     world.update(renderer, camera);
@@ -644,7 +665,8 @@ describe("WorldCells automatic impostors", () => {
     ];
     for (const corruption of corruptions) {
       scene.slot("pine", { ...published, ...corruption });
-      for (let dispatch = 0; dispatch < 30; dispatch += 1) scene.dispatch(renderer, camera);
+      for (let dispatch = 0; dispatch < validationEvery; dispatch += 1)
+        scene.dispatch(renderer, camera);
       await flush();
       expect(scene.validation.verdict).toBe("mismatch");
       expect(scene.validation.meshMismatched).toBeGreaterThan(0);
@@ -1198,47 +1220,47 @@ describe("WorldCells automatic impostors", () => {
     world.dispose();
   });
 
-  it("bounds the default cache at 48 active atlases and keeps the refused asset's source LODs", async () => {
-    const count = 49;
+  it("bounds the active atlas cache at the default byte budget and keeps the refused asset's source LODs", async () => {
+    const count = atlasCapacity + 1;
     stubManifestFetch(manyAlphaAssets(count));
     const world = await loadPine(treeLoader());
     // Settle the loads with no renderer: every asset is adopted and queued, and the first bake
-    // begins but cannot advance, so all 49 want an atlas before any lands.
+    // begins but cannot advance, so every asset wants an atlas before any lands.
     await flushed(world);
 
     const dispose = vi.spyOn(WorldImpostorAtlas.prototype, "dispose");
     const stub = rendererStub();
     const raw = stub.raw as unknown as { render: () => void };
     const render = vi.spyOn(raw, "render");
-    const budget = 128 * 1024 * 1024;
-    for (let pass = 0; pass < (count + 1) * 16 + 64; pass += 1) {
+    const budget = atlasBudget;
+    for (let pass = 0; pass < (count + 1) * IMPOSTOR_VIEWS + 64; pass += 1) {
       world.update(stub);
       await flush(1);
     }
 
     const impostor = world.stats().impostor;
     expect(world.stats().failures).toBe(0);
-    // 48 atlases fit in the default budget; the 49th is refused rather than overrunning it, and no
+    // The budget holds exactly atlasCapacity atlases; the next is refused, and no
     // atlas is disposed while a live asset still borrows it (that would have made a surface read a
-    // destroyed atlas). One bake per landed asset: 16 capture calls each.
-    expect(impostor.assets).toBe(48);
+    // destroyed atlas). One bake per landed asset: IMPOSTOR_VIEWS capture calls each.
+    expect(impostor.assets).toBe(atlasCapacity);
     expect(impostor.pending).toBe(0);
-    expect(impostor.atlasBytes).toBe(48 * 2_796_160);
+    expect(impostor.atlasBytes).toBe(atlasCapacity * atlasBytes);
     expect(impostor.atlasBytes).toBeLessThanOrEqual(budget);
     expect(impostor.budgetBytes).toBe(budget);
-    expect(render).toHaveBeenCalledTimes(48 * 16);
+    expect(render).toHaveBeenCalledTimes(atlasCapacity * IMPOSTOR_VIEWS);
     expect(dispose).not.toHaveBeenCalled();
 
     // A landed asset appended its terminal level; the refused one kept every source level and
     // appended none.
     expect(partsOf(world, "tree_0", 1, 0).length).toBeGreaterThan(0);
-    expect(partsOf(world, "tree_48", 1, 0).length).toBe(0);
-    expect(partsOf(world, "tree_48", 0, 0).length).toBeGreaterThan(0);
-    expect(partsOf(world, "tree_48", 0, 1).length).toBeGreaterThan(0);
+    expect(partsOf(world, `tree_${atlasCapacity}`, 1, 0).length).toBe(0);
+    expect(partsOf(world, `tree_${atlasCapacity}`, 0, 0).length).toBeGreaterThan(0);
+    expect(partsOf(world, `tree_${atlasCapacity}`, 0, 1).length).toBeGreaterThan(0);
 
     // Teardown releases each owned atlas exactly once, no more and no fewer.
     world.dispose();
-    expect(dispose).toHaveBeenCalledTimes(48);
+    expect(dispose).toHaveBeenCalledTimes(atlasCapacity);
   });
 
   it("shares one bake between two entries over the same cooked LOD0 with different metadata", async () => {
@@ -1250,19 +1272,19 @@ describe("WorldCells automatic impostors", () => {
     const stub = rendererStub();
     const raw = stub.raw as unknown as { render: () => void };
     const render = vi.spyOn(raw, "render");
-    for (let pass = 0; pass < 3 * 16 + 32; pass += 1) {
+    for (let pass = 0; pass < 3 * IMPOSTOR_VIEWS + 32; pass += 1) {
       world.update(stub);
       await flush(1);
     }
 
     // Both entries landed a terminal level, but from ONE atlas: the second re-checked the completed
     // cache when it was dequeued and reused the first bake instead of building a second surface on
-    // a disposed atlas. One bake is 16 capture calls, not 32.
+    // a disposed atlas. The capture count must equal exactly one full bake.
     const impostor = world.stats().impostor;
     expect(world.stats().failures).toBe(0);
     expect(impostor.assets).toBe(2);
-    expect(impostor.atlasBytes).toBe(2_796_160);
-    expect(render).toHaveBeenCalledTimes(16);
+    expect(impostor.atlasBytes).toBe(atlasBytes);
+    expect(render).toHaveBeenCalledTimes(IMPOSTOR_VIEWS);
     expect(dispose).not.toHaveBeenCalled();
     expect(partsOf(world, "alpha_a", 2, 0).length).toBeGreaterThan(0);
     expect(partsOf(world, "alpha_b", 1, 0).length).toBeGreaterThan(0);
@@ -1545,7 +1567,7 @@ describe("WorldCells far impostor residency", () => {
     // Every near source mesh is gone and the asset itself has been released, but the far mesh still
     // draws every original root from an atlas the far aggregate holds its own user on.
     expect(nearPineLive(world)).toBe(0);
-    expect(world.stats().impostor.atlasBytes).toBe(2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(atlasBytes);
     const far = farMeshes(world)[0] as InstancedMesh;
     expect(farLive(far)).toBe(799);
     expect(dispose).not.toHaveBeenCalled();
@@ -1607,7 +1629,7 @@ describe("WorldCells far impostor residency", () => {
     await flushed(world);
     runBake(world, rendererStub());
     await flushed(world);
-    expect(world.stats().impostor.atlasBytes).toBe(2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(atlasBytes);
 
     const sourceDisposes = sourceTextures.map((texture) => vi.spyOn(texture, "dispose"));
     for (const dispose of sourceDisposes) expect(dispose).not.toHaveBeenCalled();
@@ -1621,7 +1643,7 @@ describe("WorldCells far impostor residency", () => {
     await flushed(world);
 
     expect(farMeshes(world).length).toBe(1);
-    expect(world.stats().impostor.atlasBytes).toBe(2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(atlasBytes);
     expect(sourceDisposes.length).toBeGreaterThan(0);
     for (const dispose of sourceDisposes) expect(dispose).toHaveBeenCalledTimes(1);
     expect(unrelatedDispose).not.toHaveBeenCalled();
@@ -1834,7 +1856,7 @@ describe("WorldCells far impostor residency", () => {
     await flushed(world);
 
     const stub = rendererStub();
-    for (let pass = 0; pass < 4 * 16 + 96; pass += 1) {
+    for (let pass = 0; pass < 4 * IMPOSTOR_VIEWS + 96; pass += 1) {
       world.update(stub);
       await flush(1);
     }
@@ -1854,7 +1876,7 @@ describe("WorldCells far impostor residency", () => {
     expect(oak).toBeDefined();
     expect(farLive(oak as InstancedMesh)).toBe(1);
     // Its temporary source is released the moment the retried aggregate lands.
-    expect(world.stats().impostor.atlasBytes).toBe(2 * 2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(2 * atlasBytes);
     world.dispose();
   });
 
@@ -1952,7 +1974,7 @@ describe("WorldCells far impostor residency", () => {
     expect(farMeshes(world).length).toBe(0);
 
     const stub = rendererStub();
-    for (let pass = 0; pass < 4 * 16 + 96; pass += 1) {
+    for (let pass = 0; pass < 4 * IMPOSTOR_VIEWS + 96; pass += 1) {
       world.update(stub);
       await flush(1);
     }
@@ -1973,12 +1995,12 @@ describe("WorldCells far impostor residency", () => {
     for (const geometry of oakGeometries)
       expect(vi.mocked(geometry.dispose).mock.calls.length).toBe(1);
     // Two distinct atlases (pine + oak) held after oak's source is gone.
-    expect(world.stats().impostor.atlasBytes).toBe(2 * 2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(2 * atlasBytes);
     world.dispose();
   });
 
   it("keeps a far-pinned atlas out of the LRU when the cache is full", async () => {
-    const count = 49;
+    const count = atlasCapacity + 1;
     const pine = manifest.assets.pine;
     if (pine === undefined) throw new Error("the committed package has no pine asset.");
     const assets: Record<string, IWorldAsset> = {};
@@ -1996,18 +2018,18 @@ describe("WorldCells far impostor residency", () => {
 
     const dispose = vi.spyOn(WorldImpostorAtlas.prototype, "dispose");
     const stub = rendererStub();
-    for (let pass = 0; pass < (count + 2) * 24 + 128; pass += 1) {
+    for (let pass = 0; pass < (count + 2) * (IMPOSTOR_VIEWS + 8) + 128; pass += 1) {
       world.update(stub);
       await flush(1);
     }
 
     const stats = world.stats().impostor;
     expect(world.stats().failures).toBe(0);
-    // 48 atlases fit; the 49th is refused. Every one of the 48 is pinned by a far aggregate, so the
+    // Exactly atlasCapacity atlases fit; the next is refused. Each is pinned by a far aggregate, so the
     // LRU finds nothing inactive to evict and no atlas is disposed under a live far surface.
-    expect(stats.atlasBytes).toBe(48 * 2_796_160);
-    expect(stats.far.aggregates).toBe(48);
-    expect(stats.far.instances).toBe(48);
+    expect(stats.atlasBytes).toBe(atlasCapacity * atlasBytes);
+    expect(stats.far.aggregates).toBe(atlasCapacity);
+    expect(stats.far.instances).toBe(atlasCapacity);
     expect(dispose).not.toHaveBeenCalled();
     world.dispose();
   });
@@ -2149,7 +2171,7 @@ describe("WorldCells far impostor cohorts", () => {
     // Roots/cardinality: two canonical ids, two placement roots, one aggregate and one bake.
     expect(mesh.count).toBe(2);
     expect(world.stats().impostor.assets).toBe(2);
-    expect(world.stats().impostor.atlasBytes).toBe(2_796_160);
+    expect(world.stats().impostor.atlasBytes).toBe(atlasBytes);
     world.dispose();
   });
 
@@ -2190,7 +2212,7 @@ describe("WorldCells far impostor cohorts", () => {
     });
     await flushed(world);
     const stub = rendererStub();
-    for (let pass = 0; pass < 4 * 16 + 96; pass += 1) {
+    for (let pass = 0; pass < 4 * IMPOSTOR_VIEWS + 96; pass += 1) {
       world.update(stub);
       await flush(1);
     }

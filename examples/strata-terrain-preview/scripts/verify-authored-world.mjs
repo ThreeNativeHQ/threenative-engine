@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { TerrainEditorController } from "@threenative/terrain/editor";
 import { terrainEditor } from "@threenative/terrain/editor/server";
+import { starterAssetsDir } from "@threenative/terrain/kit";
 import { createServer } from "vite";
 import {
   advanceFixedStep,
@@ -34,7 +35,7 @@ const plugin = terrainEditor({ documentPath: path });
 const server = await createServer({
   root,
   configFile: false,
-  publicDir: resolve("../../packages/terrain/starter-assets"),
+  publicDir: await starterAssetsDir(),
   server: { host: "127.0.0.1", port: Number(process.env.EDITOR_PORT ?? 5184), strictPort: true },
   plugins: [plugin],
   optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
@@ -55,7 +56,7 @@ try {
     "--timeout",
     "120000",
     "--artifacts",
-    "artifacts/playtest/authored-world",
+    join(temporary, "capture"),
   ]);
   let recorded;
   await withBrowserCapture(config, async (session) => {
@@ -80,6 +81,14 @@ try {
       await advanceFixedStep(page, session.bridge, 2);
     };
     await ready();
+    assert.deepEqual(
+      await page.evaluate(() => [
+        document.querySelector("#brush-strength").value,
+        document.querySelector("#brush-falloff").value,
+      ]),
+      ["0.35", "0.65"],
+      "The shell preserves fractional brush defaults before input",
+    );
 
     // ---- GUI edits ------------------------------------------------------------------------------
     const box = await page.locator("#viewport").boundingBox();
@@ -233,15 +242,20 @@ try {
       saved.revision,
     );
 
-    // Placement matrices in the exported file: exact for the hand-posed one, and every id arrives.
+    // Placement matrices in the exported file: the hand-posed one, component by component within the
+    // tolerance a GLB round trip costs, and every id arrives. The exported translation is the only
+    // float32 hop between the two sides, so 2e-4 m is the floor that absorbs its rounding and still
+    // fails a placement that actually moved.
     const posed = after.placements.find((p) => p.id === chosen.id);
-    assert.deepEqual(
-      posed.matrix.slice(12, 15).map((v) => Math.round(v * 1e4) / 1e4),
-      [
-        after.live.props.find((p) => p.id === chosen.id).position[0],
-        55,
-        after.live.props.find((p) => p.id === chosen.id).position[2],
-      ].map((v) => Math.round(v * 1e4) / 1e4),
+    const live = after.live.props.find((p) => p.id === chosen.id);
+    const exported = posed.matrix.slice(12, 15);
+    const authored = [live.position[0], 55, live.position[2]];
+    assert.equal(exported.length, authored.length, "The exported matrix has no translation");
+    exported.forEach((value, axis) =>
+      assert.ok(
+        Math.abs(value - (authored[axis] ?? 0)) <= 2e-4,
+        `The exported ${axis} translation is ${value} m, not the authored ${authored[axis]} m`,
+      ),
     );
     assert.deepEqual(
       after.placements.map((p) => p.id).sort(),

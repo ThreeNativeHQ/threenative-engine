@@ -10,3 +10,38 @@ export function medianOfGrowingSamples(values: readonly number[]): number {
   medians.set(values, { length: values.length, value });
   return value;
 }
+
+export interface IViewVisit {
+  windows: number;
+  discard: boolean;
+  ready: boolean;
+}
+
+export function beginViewVisit(): IViewVisit {
+  return { windows: 0, discard: true, ready: false };
+}
+
+/** Accept one retained window for the current camera visit. */
+export function retainViewWindow(
+  visit: IViewVisit,
+  window: Pick<import("@threenative/core").IFrameBudgetWindow, "gpuMs" | "gpuFrames" | "surface">,
+  firstGpuFrame: number,
+): boolean {
+  if (!visit.ready || window.surface?.compiling === true) {
+    visit.discard = true;
+    return false;
+  }
+  if (
+    !Number.isFinite(firstGpuFrame) ||
+    window.gpuMs === undefined ||
+    window.gpuFrames === undefined ||
+    window.gpuFrames.first < firstGpuFrame
+  )
+    return false;
+  if (visit.discard) {
+    visit.discard = false;
+    return false;
+  }
+  visit.windows++;
+  return true;
+}

@@ -4,15 +4,8 @@ import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
 import { Vector3 } from "three";
 import { createHorizonGeometry } from "../src/render/horizon.js";
-import {
-  buildPropVariants,
-  createProps,
-  flatPropMaterials,
-  preparePropTransform,
-  readPropTransform,
-  variantFor,
-  writePropTransform,
-} from "../src/render/props.js";
+import { createStreamedProps } from "../src/render/propStreaming.js";
+import { buildPropVariants, flatPropMaterials, variantFor } from "../src/render/props.js";
 import { grassWeight, scatterProps, slopeDegrees } from "../src/render/scatter.js";
 
 const data = JSON.parse(
@@ -154,8 +147,8 @@ const placements = [0, 20, 200].map((x, index) => ({
   scale: 1,
 }));
 // Footprint support may be four metres downhill; the dressed crag must still emerge.
-const beddedCrag = createProps(
-  [
+const beddedCrag = await createStreamedProps({
+  placements: [
     {
       asset: "mountain",
       id: "check:outcrop",
@@ -167,10 +160,14 @@ const beddedCrag = createProps(
       scale: 0.7,
     },
   ],
-  () => ({ height: -4, offset: 0 }),
+  groundAt: () => ({ height: -4, offset: 0 }),
   parts,
   materials,
-);
+  follow: { position: new Vector3() },
+  size: data.size,
+  whileCurrent: () => true,
+});
+assert.ok(beddedCrag);
 const beddedInstance = beddedCrag.byId.get("check:outcrop");
 assert.ok(beddedInstance);
 beddedInstance.geometry.computeBoundingBox();
@@ -180,31 +177,52 @@ assert.ok(
   "Footprint grounding plus old burial hides the entire outcrop",
 );
 beddedCrag.dispose();
-const props = createProps(placements, ground, parts, materials);
-props.setLevels(new Vector3());
-const instance = props.byId.get("rock:0");
-assert.ok(instance);
-const transform = {
-  ...readPropTransform(instance),
-  position: [10, 0, 0] as [number, number, number],
-};
-writePropTransform(instance, preparePropTransform(instance, transform, ground));
-props.setLevels(new Vector3(0.3, 0, 0));
-assert.equal(readPropTransform(instance).position[0], 10);
-for (const draw of props.meshes) {
-  assert.equal(draw.userData.placementIds.length, draw.count);
-  for (const [index, id] of draw.userData.placementIds.entries()) {
-    assert.ok(props.byId.get(id)?.parts.some((part) => part.mesh === draw && part.index === index));
+const follow = { position: new Vector3() };
+async function draw(placements: readonly import("@threenative/terrain").IPlacement[]) {
+  const props = await createStreamedProps({
+    placements,
+    groundAt: ground,
+    parts,
+    materials,
+    follow,
+    size: data.size,
+    whileCurrent: () => true,
+  });
+  assert.ok(props);
+  for (let frame = 0; frame < 200; frame++) {
+    for (const world of props.worlds) world.update();
+    await Promise.resolve();
   }
+  return props;
 }
+const props = await draw(placements);
 const hidden = props.byId.get("rock:2");
 assert.ok(hidden);
-assert.equal(hidden.parts.length, 0);
-const revealed = { ...readPropTransform(hidden), position: [15, 0, 0] as [number, number, number] };
-writePropTransform(hidden, preparePropTransform(hidden, revealed, ground));
-props.setLevels(new Vector3(0.3, 0, 0));
-assert.ok(hidden.parts.length > 0, "A moved culled prop must reappear without camera movement");
+const count = props.meshes.reduce((n, mesh) => n + mesh.count, 0);
+assert.equal(count, 2, "Only rocks within their authored draw reach are rendered");
 props.dispose();
+const moved = await draw(
+  placements.map((placement) =>
+    placement.id === "rock:2"
+      ? {
+          ...placement,
+          transform: {
+            position: [15, 0, 0],
+            quaternion: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+            grounding: true,
+          },
+        }
+      : placement,
+  ),
+);
+assert.equal(moved.byId.get("rock:2")?.pose.elements[12], 15);
+assert.equal(
+  moved.meshes.reduce((n, mesh) => n + mesh.count, 0),
+  count + 1,
+  "A moved culled prop must reappear without camera movement",
+);
+moved.dispose();
 materials.dispose();
 for (const list of parts.values()) for (const part of list) part.geometry.dispose();
 console.log("Temperate checks passed", scatter.counts);

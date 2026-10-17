@@ -344,6 +344,7 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
   for (const line of text.split("\n")) {
     const budget = parseMarkerLine<IFrameBudgetWindowJson>(line, FRAME_BUDGET_MARKER);
     if (budget !== undefined) {
+      assertBudgetSurface(budget);
       // Android mirrors console output through MystralStdio and MystralJS. One measured window is
       // therefore present twice in logcat with the exact same payload; count that observation once
       // without hiding a second payload whose measurements differ.
@@ -436,6 +437,24 @@ function assertProjectionTimings(projection: IProjectionWindowJson): void {
   }
 }
 
+/** A malformed compilation flag must not qualify a window as settled. */
+function assertBudgetSurface(budget: IFrameBudgetWindowJson): void {
+  const surface: unknown = budget.surface;
+  if (surface === undefined) return;
+  if (typeof surface !== "object" || surface === null || Array.isArray(surface)) {
+    throw new Error(
+      `TN_PERF_MARKER_MALFORMED: a TN_FRAME_BUDGET line carried a non-object surface (${JSON.stringify(surface)}).`,
+    );
+  }
+  const compiling = (surface as Record<string, unknown>).compiling;
+  if (compiling === undefined) return;
+  if (typeof compiling !== "boolean") {
+    throw new Error(
+      `TN_PERF_MARKER_MALFORMED: a TN_FRAME_BUDGET line carried surface.compiling = ${JSON.stringify(compiling)} — it must be a boolean.`,
+    );
+  }
+}
+
 function parseMarkerLine<T>(line: string, marker: string): T | undefined {
   const start = line.indexOf(marker);
   if (start === -1) return undefined;
@@ -452,10 +471,12 @@ function parseMarkerLine<T>(line: string, marker: string): T | undefined {
 
 /**
  * Apply the one-window-always-lies rule and any requested bounds. The first window of a multi-
- * window run is discarded as startup; bounds are checked against every steady window, because a
- * bound that passes on the median and fails on the steady tail is a failed bound. Fewer steady
- * windows than `requireWindows` is a `TN_PERF_WINDOWS_MISSING` violation — the run did not
- * produce enough evidence to assess, which is a failure, not an empty pass.
+ * window run is discarded as startup, and so is every window whose `surface.compiling` is true:
+ * asynchronous pipeline compilation is not the steady frame a bound is about. Bounds are checked
+ * against every steady window, because a bound that passes on the median and fails on the steady
+ * tail is a failed bound. Fewer steady windows than `requireWindows` is a
+ * `TN_PERF_WINDOWS_MISSING` violation — the run did not produce enough evidence to assess, which is
+ * a failure, not an empty pass.
  */
 export function assessPerfMarkers(
   parse: IPerfMarkerParse,
@@ -463,9 +484,10 @@ export function assessPerfMarkers(
   source: string,
   display?: { readonly strategy: string; readonly virtual: boolean },
 ): IPerfReport {
-  const discardCount = parse.budgets.length > 1 ? 1 : 0;
-  const discardedWindows = parse.budgets.slice(0, discardCount).map(({ window }) => window);
-  const steady = parse.budgets.slice(discardCount);
+  const discard = (window: IFrameBudgetWindowJson, index: number) =>
+    (index === 0 && parse.budgets.length > 1) || window.surface?.compiling === true;
+  const discardedWindows = parse.budgets.filter(discard).map(({ window }) => window);
+  const steady = parse.budgets.filter((window, index) => !discard(window, index));
   const violations: IPerfViolation[] = [];
   /** Windows that counted presents but no present period long enough to carry a rate. */
   const unassessableWindows: number[] = [];
@@ -868,7 +890,7 @@ export function formatPerfReport(report: IPerfReport): string {
       ].join(" "),
     );
   }
-  if (report.discardedWindows.length > 0) lines.push("* discarded as startup (window 1 always lies)");
+  if (report.discardedWindows.length > 0) lines.push("* discarded as startup or active compilation");
   lines.push(...formatMainPassTriangles(report.budgets));
   // A zero in the fps column is true and easy to misread as a frozen game: name the windows where
   // the display simply showed nothing in a window of loop frames too short to contain a present.

@@ -99,7 +99,7 @@ thesis: each spends the training-data advantage to buy a surface the model then 
 | An IR, a compiler, a serialized scene format | Your game is TypeScript. The compiler was 25,898 LOC and bought nothing a model can't do with a `.ts` file. |
 | A second *renderer* | 32% of v1's commits went to a runtime no benchmark ever measured. §7's host is the bounded exception: it runs Three.js, it does not replace it. The moment the host starts drawing, it has become v1. |
 | A JSON/structured-source ECS | Measured at **14x vanilla Three.js** on greenfield work, and scored lower on playability and visuals. |
-| An editor | Not in v1. The paid editor is a separate product in a separate repository. |
+| A general game editor | The paid editor is a separate product in a separate repository. Terrain-only authoring companions are admitted by the narrow allowance below. |
 | A bespoke CLI vocabulary | 178 command forms, a 2,477-word root help. Models are worst at discovering novel API surfaces. |
 | A recipe/preset/genre system | 0 of 7 presets ever reproduced their genre. |
 | A code-first ECS (miniplex, bitECS) | Entities are plain classes (§9b). Gameplay architecture is the model's job. A game that wants one runs `pnpm add miniplex`; the framework neither ships nor fights it. |

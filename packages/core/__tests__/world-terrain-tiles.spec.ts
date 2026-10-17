@@ -1,11 +1,13 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  Group,
   Mesh,
   MeshBasicMaterial,
   OrthographicCamera,
   PerspectiveCamera,
   Vector3,
+  WebGPUCoordinateSystem,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { terrainHeight } from "../../../examples/abyss-framework/src/world/terrainSampler.js";
@@ -558,6 +560,261 @@ describe("TerrainTiles", () => {
       expect(canonicalEdgeError(b, "west", visibleSurface(b))).toBeLessThan(0.00001);
     } finally {
       tiles.dispose();
+    }
+  });
+
+  it("updates only morph boundaries with reference bytes for all masks and reversals", () => {
+    const options = {
+      surface: new MeshBasicMaterial(),
+      mergeTiles: false,
+      validate: false,
+      residentByteBudget: 2_000_000,
+      residentTileBudget: 25,
+      sampleHeight: (x: number, z: number) => sampleHeight(x, z) + deformation * Math.sin(x + z),
+      streamRadius: 2,
+      tileResolution: 9,
+      tileSize: 16,
+      lodDistances: [1000, 2000],
+    };
+    let deformation = 0;
+    const sides = [
+      [0, -1],
+      [0, 1],
+      [-1, 0],
+      [1, 0],
+    ] as const;
+    const denied = { admit: () => false };
+    const probe = new TerrainTiles({ ...options, streamRadius: 0 });
+    probe.follow({ x: 0, z: 0 });
+    const tileBytes = probe.residentBytes;
+    probe.dispose();
+    for (let requested = 0; requested < 16; requested += 1) {
+      const tiles = new TerrainTiles(options);
+      let byteCap = tileBytes;
+      // A changing public byte cap admits exactly the requested tile, with no pending construction.
+      Object.defineProperty(tiles, "residentByteBudget", { get: () => byteCap });
+      const residentKeys = new Set(["0:0"]);
+      try {
+        tiles.follow({ x: 0, z: 0 }, denied);
+        const tile = tiles.getTile("0:0");
+        if (tile === undefined) throw new Error("Expected the central tile.");
+        const meshes = tile.lod.levels.map(({ object }) => {
+          if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+          return object;
+        });
+        const finest = meshes[0];
+        if (finest === undefined) throw new Error("Expected the finest mesh.");
+        const reads = ["position", "normal"].flatMap((name) => {
+          const attribute = finest.geometry.getAttribute(name) as BufferAttribute;
+          return (["getX", "getY", "getZ"] as const).map((method) => vi.spyOn(attribute, method));
+        });
+        const check = () => {
+          const mask = sides.reduce(
+            (value, [x, z], side) =>
+              value | (tiles.getTile(`${x}:${z}`) === undefined ? 0 : 1 << side),
+            0,
+          );
+          for (const [level, fine] of meshes.entries()) {
+            const position = fine.geometry.getAttribute("position");
+            const normal = fine.geometry.getAttribute("normal");
+            const resolution = Math.round(Math.sqrt(position.count + 4) - 2);
+            const last = resolution - 1;
+            for (const [target, coarse] of meshes.slice(level + 1).entries()) {
+              const coarsePosition = coarse.geometry.getAttribute("position");
+              const coarseNormal = coarse.geometry.getAttribute("normal");
+              const coarseLast = Math.round(Math.sqrt(coarsePosition.count + 4) - 2) - 1;
+              const interpolate = (
+                attribute: typeof position,
+                component: number,
+                row: number,
+                column: number,
+              ) => {
+                const r = (row / last) * coarseLast;
+                const c = (column / last) * coarseLast;
+                const r0 = Math.floor(r);
+                const c0 = Math.floor(c);
+                const r1 = Math.min(coarseLast, r0 + 1);
+                const c1 = Math.min(coarseLast, c0 + 1);
+                const at = (y: number, x: number) =>
+                  attribute.array[(y * (coarseLast + 1) + x) * 3 + component] as number;
+                const upper = at(r0, c0) + (at(r0, c1) - at(r0, c0)) * (c - c0);
+                const lower = at(r1, c0) + (at(r1, c1) - at(r1, c0)) * (c - c0);
+                return upper + (lower - upper) * (r - r0);
+              };
+              const expectedPosition = new Float32Array(position.count * 3);
+              const expectedNormal = new Float32Array(position.count * 3);
+              for (let row = 0; row <= last; row += 1) {
+                for (let column = 0; column <= last; column += 1) {
+                  const index = row * resolution + column;
+                  if (
+                    (row === 0 && mask & 1) ||
+                    (row === last && mask & 2) ||
+                    (column === 0 && mask & 4) ||
+                    (column === last && mask & 8)
+                  )
+                    continue;
+                  expectedPosition[index * 3 + 1] =
+                    interpolate(coarsePosition, 1, row, column) -
+                    (position.array[index * 3 + 1] as number);
+                  const n = new Vector3(
+                    ...([0, 1, 2].map((component) =>
+                      interpolate(coarseNormal, component, row, column),
+                    ) as [number, number, number]),
+                  ).normalize();
+                  for (const [component, value] of [n.x, n.y, n.z].entries())
+                    expectedNormal[index * 3 + component] =
+                      value - (normal.array[index * 3 + component] as number);
+                }
+              }
+              for (let side = 0; side < 4; side += 1) {
+                for (let index = 0; index < resolution; index += 1) {
+                  const top = [
+                    index,
+                    last * resolution + index,
+                    index * resolution,
+                    index * resolution + last,
+                  ][side] as number;
+                  expectedPosition[(resolution ** 2 + side * resolution + index) * 3 + 1] =
+                    expectedPosition[top * 3 + 1] as number;
+                }
+              }
+              const actualPosition = fine.geometry.morphAttributes.position?.[target];
+              const actualNormal = fine.geometry.morphAttributes.normal?.[target];
+              if (actualPosition === undefined || actualNormal === undefined)
+                throw new Error("Missing morph targets.");
+              expect(new Uint8Array(actualPosition.array.buffer)).toEqual(
+                new Uint8Array(expectedPosition.buffer),
+              );
+              expect(new Uint8Array(actualNormal.array.buffer)).toEqual(
+                new Uint8Array(expectedNormal.buffer),
+              );
+            }
+          }
+          return mask;
+        };
+        const follow = (x: number, z: number) => {
+          for (const read of reads) read.mockClear();
+          const previous = finest.geometry;
+          const oldTargets = previous.morphAttributes.position?.slice();
+          const oldNormals = previous.morphAttributes.normal?.slice();
+          const influences = finest.morphTargetInfluences?.slice();
+          const disposed = vi.spyOn(previous, "dispose");
+          for (const key of residentKeys) {
+            const [tx, tz] = key.split(":").map(Number) as [number, number];
+            if (Math.abs(tx - x) > 2 || Math.abs(tz - z) > 2) residentKeys.delete(key);
+          }
+          residentKeys.add(`${x}:${z}`);
+          byteCap = residentKeys.size * tileBytes;
+          tiles.follow({ x: x * 16, z: z * 16 }, denied);
+          check();
+          if (finest.geometry !== previous) {
+            expect(finest.geometry.morphAttributes.position?.[0]).not.toBe(oldTargets?.[0]);
+            expect(finest.geometry.morphAttributes.normal?.[0]).not.toBe(oldNormals?.[0]);
+            expect(previous.morphAttributes.position).toEqual(oldTargets);
+            expect(finest.morphTargetInfluences).toEqual(influences);
+            expect(disposed).toHaveBeenCalledOnce();
+            const interiorReads = reads
+              .flatMap((read) => read.mock.calls)
+              .filter(
+                ([index]) =>
+                  index < 81 &&
+                  index % 9 > 0 &&
+                  index % 9 < 8 &&
+                  Math.floor(index / 9) > 0 &&
+                  Math.floor(index / 9) < 8,
+              );
+            expect(interiorReads).toHaveLength(0);
+          }
+        };
+        check();
+        for (const [side, [x, z]] of sides.entries()) if (requested & (1 << side)) follow(x, z);
+        expect(check()).toBe(requested);
+        for (const [side, [x, z]] of sides.entries()) {
+          if (!(requested & (1 << side))) continue;
+          follow(-x * 2, -z * 2);
+          expect(check() & (1 << side)).toBe(0);
+          follow(x, z);
+          expect(check() & (1 << side)).toBe(1 << side);
+        }
+        for (const read of reads) read.mockRestore();
+        const before = meshes.map((mesh) => ({
+          position: mesh.geometry.getAttribute("position").array.slice(),
+          normal: mesh.geometry.getAttribute("normal").array.slice(),
+        }));
+        const version = tile.field.version;
+        tile.field.updateHeights({
+          column: 4,
+          row: 4,
+          columns: 1,
+          rows: 1,
+          heights: new Float32Array([20]),
+        });
+        expect(tile.field.version).toBe(version + 1);
+        expect(tile.field.heightAt(0, 0)).toBe(20);
+        // GPU levels are construction-time copies; a field write alone does not refresh them.
+        follow(-2, 0);
+        follow(1, 0);
+        expect(tiles.getTile("0:0")).toBe(tile);
+        for (const [level, mesh] of meshes.entries()) {
+          expect(mesh.geometry.getAttribute("position").array).toEqual(before[level]?.position);
+          expect(mesh.geometry.getAttribute("normal").array).toEqual(before[level]?.normal);
+        }
+        const oldPosition = finest.geometry.morphAttributes.position?.[0]?.array.slice();
+        const oldNormal = finest.geometry.morphAttributes.normal?.[0]?.array.slice();
+        // Public LOD meshes publish buffer changes through Three's needsUpdate/version seam.
+        for (const [level, mesh] of meshes.entries()) {
+          const position = mesh.geometry.getAttribute("position") as BufferAttribute;
+          const normal = mesh.geometry.getAttribute("normal") as BufferAttribute;
+          const resolution = Math.round(Math.sqrt(position.count + 4) - 2);
+          const center = Math.floor(resolution / 2) * (resolution + 1);
+          position.setY(center, position.getY(center) + level + 1);
+          normal.setXYZ(center, 0.2 * (level + 1), 0.8, 0.1);
+          position.needsUpdate = true;
+          normal.needsUpdate = true;
+        }
+        follow(-2, 0);
+        expect(tiles.getTile("0:0")).toBe(tile);
+        expect(finest.geometry.morphAttributes.position?.[0]?.array[40 * 3 + 1]).not.toBe(
+          oldPosition?.[40 * 3 + 1],
+        );
+        expect(finest.geometry.morphAttributes.normal?.[0]?.array[40 * 3]).not.toBe(
+          oldNormal?.[40 * 3],
+        );
+        follow(1, 0);
+        expect(tiles.getTile("0:0")).toBe(tile);
+        const coarsest = meshes.at(-1);
+        if (coarsest === undefined) throw new Error("Expected a coarsest mesh.");
+        // Replacement attributes start at version zero; identity must invalidate finer targets too.
+        for (const name of ["position", "normal"]) {
+          const attribute = (coarsest.geometry.getAttribute(name) as BufferAttribute).clone();
+          attribute.setY(4, attribute.getY(4) + 2);
+          coarsest.geometry.setAttribute(name, attribute);
+        }
+        follow(-2, 0);
+        expect(tiles.getTile("0:0")).toBe(tile);
+        follow(1, 0);
+        const beforeRebuild = finest.geometry.morphAttributes.position?.[0]?.array.slice();
+        deformation += 0.1;
+        byteCap = tileBytes;
+        tiles.follow({ x: 160, z: 160 }, denied);
+        tiles.follow({ x: 0, z: 0 }, denied);
+        const rebuiltTile = tiles.getTile("0:0");
+        const rebuilt = rebuiltTile?.lod.levels[0]?.object;
+        if (rebuiltTile === undefined || !(rebuilt instanceof Mesh))
+          throw new Error("Expected the rebuilt tile.");
+        expect(rebuilt.geometry.morphAttributes.position?.[0]?.array).not.toEqual(beforeRebuild);
+        meshes.splice(
+          0,
+          meshes.length,
+          ...rebuiltTile.lod.levels.map(({ object }) => object as Mesh),
+        );
+        expect(check()).toBe(0);
+        byteCap = tileBytes * 2;
+        tiles.follow({ x: 16, z: 0 }, denied);
+        check();
+      } finally {
+        tiles.dispose();
+      }
     }
   });
 
@@ -2594,4 +2851,53 @@ describe("TerrainTiles", () => {
       }
     }
   });
+});
+
+it("measures missing visible terrain independently of pending offscreen tiles and updates camera matrices", () => {
+  const tiles = new TerrainTiles({
+    sampleHeight: () => 0,
+    surface: new MeshBasicMaterial(),
+    tileSize: 10,
+    tileResolution: 3,
+    lodFactors: [1],
+    lodDistances: [],
+    streamRadius: 1,
+    residentTileBudget: 9,
+    residentByteBudget: 1_000_000,
+    mergeTiles: false,
+  });
+  const camera = new OrthographicCamera(-2, 2, 2, -2, 0.1, 30);
+  camera.position.set(0, 10, 0);
+  camera.lookAt(0, 0, 0);
+  expect(tiles.readinessInView(camera, [0, 0])).toEqual({ required: 1, loaded: 0 });
+  tiles.follow(
+    { x: 0, z: 0 },
+    {
+      admit(work) {
+        if (tiles.residentTileCount > 0) return false;
+        work();
+        return true;
+      },
+    },
+  );
+  expect(tiles.residentTileCount).toBe(1);
+  expect(tiles.readinessInView(camera, [0, 0])).toEqual({ required: 1, loaded: 1 });
+  camera.position.set(10, 10, 0);
+  camera.lookAt(10, 0, 0);
+  expect(tiles.readinessInView(camera, [0, 0])).toEqual({ required: 1, loaded: 0 });
+  expect(() => tiles.readinessInView(camera, [1, 0])).toThrow(/bounds/u);
+  expect(() => tiles.readinessInView(camera, [0, Number.NaN])).toThrow(/bounds/u);
+  expect(() => tiles.readinessInView(camera, new Array(2) as [number, number])).toThrow(/bounds/u);
+  tiles.position.x = 100;
+  const parent = new Group();
+  parent.position.x = 100;
+  parent.add(camera);
+  camera.position.set(0, 10, 0);
+  camera.lookAt(100, 0, 0);
+  camera.coordinateSystem = WebGPUCoordinateSystem;
+  camera.updateProjectionMatrix();
+  expect(tiles.readinessInView(camera, [0, 0])).toEqual({ required: 1, loaded: 1 });
+  parent.position.x = 110;
+  expect(tiles.readinessInView(camera, [0, 0])).toEqual({ required: 1, loaded: 0 });
+  tiles.dispose();
 });

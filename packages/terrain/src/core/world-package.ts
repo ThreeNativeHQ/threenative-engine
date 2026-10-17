@@ -41,6 +41,8 @@ export interface IWorldPackageManifest {
   };
   readonly assets: Readonly<Record<string, IWorldPackageAsset>>;
   readonly placements: string;
+  /** Optional package-relative JSON array of placement IDs in binary record order. */
+  readonly placementIds?: string;
   readonly cells: readonly {
     readonly x: number;
     readonly z: number;
@@ -65,6 +67,7 @@ export interface IBakeWorldPackageOptions {
   readonly names?: {
     readonly heightmap?: string;
     readonly placements?: string;
+    readonly placementIds?: string;
     readonly splat?: string;
   };
 }
@@ -72,7 +75,7 @@ export interface IBakeWorldPackageOptions {
 export interface IBakedWorldPackage {
   readonly manifest: IWorldPackageManifest;
   readonly splat: IWorldPackageSplat;
-  /** The three binary files, keyed by the manifest names that point at them. */
+  /** The baked package files, keyed by the manifest names that point at them. */
   readonly files: Readonly<Record<string, Uint8Array>>;
 }
 
@@ -89,6 +92,7 @@ const SCALE_TOLERANCE = 1e-3;
 const SLOTS = MATERIAL_IDS.map((id, channel) => ({
   channel,
   component: COMPONENTS[channel % COMPONENTS.length] as Component,
+  componentIndex: channel % COMPONENTS.length,
   id,
   plane: Math.floor(channel / COMPONENTS.length),
 }));
@@ -132,22 +136,42 @@ function uniformScale(asset: string, id: string, scale: readonly [number, number
   return mean;
 }
 
-function placementRecord(item: IPlacement): number[] {
+export function writePlacementRecord(
+  out: Float32Array,
+  offset: number,
+  item: IPlacement,
+  extent: IWorldPackageManifest["extent"],
+): void {
   if (item.transform === undefined && !Number.isFinite(item.rotation))
     throw Error(`World package: placement '${item.id}' has a non-finite rotation.`);
   const { position, quaternion, scale } = poseOf(item);
+  if (
+    !Number.isFinite(position[0]) ||
+    !Number.isFinite(position[1]) ||
+    !Number.isFinite(position[2])
+  )
+    throw Error(
+      `World package: placement '${item.id}' has a non-finite position [${position.join(", ")}].`,
+    );
+  if (
+    position[0] < extent.minX ||
+    position[0] > extent.minX + extent.sizeX ||
+    position[2] < extent.minZ ||
+    position[2] > extent.minZ + extent.sizeZ
+  )
+    throw Error(
+      `World package: placement '${item.id}' position [${position[0]}, ${position[2]}] is outside extent bounds [${extent.minX}..${extent.minX + extent.sizeX}, ${extent.minZ}..${extent.minZ + extent.sizeZ}].`,
+    );
   const length = Math.hypot(...quaternion);
   if (!(length > 0)) throw Error(`World package: placement '${item.id}' has a zero quaternion.`);
-  return [
-    position[0],
-    position[1],
-    position[2],
-    quaternion[0] / length,
-    quaternion[1] / length,
-    quaternion[2] / length,
-    quaternion[3] / length,
-    uniformScale(item.asset, item.id, scale),
-  ];
+  out[offset] = position[0];
+  out[offset + 1] = position[1];
+  out[offset + 2] = position[2];
+  out[offset + 3] = quaternion[0] / length;
+  out[offset + 4] = quaternion[1] / length;
+  out[offset + 5] = quaternion[2] / length;
+  out[offset + 6] = quaternion[3] / length;
+  out[offset + 7] = uniformScale(item.asset, item.id, scale);
 }
 
 /**
@@ -158,23 +182,25 @@ function placementRecord(item: IPlacement): number[] {
  * first seen would overlap them. Instances are therefore bucketed per cell and asset first, then
  * written cell by cell and asset by asset, which is the layout the Blender recipe emits too.
  */
-function placementCells(
-  state: ITerrainState,
+export function placementCells(
+  state: Pick<ITerrainState, "instances">,
   assets: Readonly<Record<string, IWorldPackageAsset>>,
   cellSize: number,
   extent: IWorldPackageManifest["extent"],
-): { bytes: Uint8Array; cells: ICell[] } {
+): { bytes: Uint8Array; cells: ICell[]; ids: string[] } {
   const cells = new Map<string, ICellAcc>();
-  const across = Math.max(1, Math.ceil(extent.sizeX / cellSize));
-  const cellOf = (value: number, min: number): number =>
-    Math.min(across - 1, Math.max(0, Math.floor((value - min) / cellSize)));
+  const cellOf = (value: number, min: number, size: number): number =>
+    Math.min(
+      Math.max(1, Math.ceil(size / cellSize)) - 1,
+      Math.max(0, Math.floor((value - min) / cellSize)),
+    );
   for (const item of state.instances) {
     if (assets[item.asset] === undefined)
       throw Error(
         `World package: placement '${item.id}' names asset '${item.asset}', which options.assets does not.`,
       );
-    const x = cellOf(item.position[0], extent.minX);
-    const z = cellOf(item.position[2], extent.minZ);
+    const x = cellOf(item.position[0], extent.minX, extent.sizeX);
+    const z = cellOf(item.position[2], extent.minZ, extent.sizeZ);
     const key = `${String(x)},${String(z)}`;
     let cell = cells.get(key);
     if (cell === undefined) {
@@ -189,6 +215,7 @@ function placementCells(
   const buffer = new ArrayBuffer(state.instances.length * RECORD_VALUES * 4);
   const records = new Float32Array(buffer);
   const ordered: ICell[] = [];
+  const ids: string[] = [];
   let written = 0;
   const byId = (left: [string, IPlacement[]], right: [string, IPlacement[]]): number =>
     left[0] < right[0] ? -1 : 1;
@@ -197,19 +224,20 @@ function placementCells(
     for (const [asset, items] of [...cell.items.entries()].sort(byId)) {
       runs.push({ asset, count: items.length, offset: written });
       for (const item of items) {
-        records.set(placementRecord(item), written * RECORD_VALUES);
+        writePlacementRecord(records, written * RECORD_VALUES, item, extent);
+        ids.push(item.id);
         written += 1;
       }
     }
     ordered.push({ runs, x: cell.x, z: cell.z });
   }
-  return { bytes: new Uint8Array(buffer), cells: ordered };
+  return { bytes: new Uint8Array(buffer), cells: ordered, ids };
 }
 
 /**
  * Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16
- * heightmap, a splat mask array, a placement buffer of eight float32 per instance, and the square
- * cells that stream them. The encodings and row orders are the ones the Blender recipe
+ * heightmap, a splat mask array, a placement buffer of eight float32 per instance, a placement ID
+ * sidecar and the square cells that stream them. The encodings and row orders are the ones the Blender recipe
  * `export_world.py` writes, so one runtime streams both without a second reader.
  *
  * @requires npm i -D @threenative/terrain
@@ -223,9 +251,15 @@ export function bakeWorldPackage(
   options: IBakeWorldPackageOptions,
 ): IBakedWorldPackage {
   const { size, resolution } = state;
-  const { assets, cellSize = 64, layers, names } = options;
+  const cellSize = options.cellSize ?? 64;
+  if (!Number.isFinite(cellSize) || cellSize <= 0)
+    throw Error(
+      `World package: cellSize must be a positive finite number, got ${String(cellSize)}.`,
+    );
+  const { assets, layers, names } = options;
   const heightmapName = names?.heightmap ?? "heightmap.u16";
   const placementsName = names?.placements ?? "placements.bin";
+  const placementIdsName = names?.placementIds ?? "placement-ids.json";
   const splatName = names?.splat ?? "splat.rgba";
   const extent = { minX: -size / 2, minZ: -size / 2, sizeX: size, sizeZ: size };
 
@@ -257,6 +291,7 @@ export function bakeWorldPackage(
     files: {
       [heightmapName]: heightmap,
       [placementsName]: placements.bytes,
+      [placementIdsName]: new TextEncoder().encode(`${JSON.stringify(placements.ids)}\n`),
       [splatName]: splatBytes(state, resolution),
     },
     manifest: {
@@ -265,6 +300,7 @@ export function bakeWorldPackage(
       cells: placements.cells,
       extent,
       placements: placementsName,
+      placementIds: placementIdsName,
       terrain: {
         columns: resolution,
         heightMax,
@@ -299,16 +335,15 @@ function splatBytes(state: ITerrainState, resolution: number): Uint8Array {
   const bytes = new Uint8Array(planeBytes * PLANES);
   for (let row = 0; row < resolution; row += 1) {
     const source = (resolution - 1 - row) * resolution;
+    const rowOffset = row * resolution * 4;
     for (let column = 0; column < resolution; column += 1) {
       const sample = (source + column) * MATERIAL_IDS.length;
+      const rowCol = rowOffset + column * 4;
       for (const slot of SLOTS) {
         const weight = state.splat[sample + slot.channel] as number;
-        bytes[
-          slot.plane * planeBytes +
-            row * resolution * 4 +
-            column * 4 +
-            COMPONENTS.indexOf(slot.component)
-        ] = Math.round(Math.min(1, Math.max(0, weight)) * 255);
+        bytes[slot.plane * planeBytes + rowCol + slot.componentIndex] = Math.round(
+          (weight <= 0 ? 0 : weight >= 1 ? 1 : weight) * 255,
+        );
       }
     }
   }

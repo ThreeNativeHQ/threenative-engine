@@ -1657,6 +1657,63 @@
       "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "world-cells-proxy-stream",
+      "title": "WorldCells two-cell streaming and observed proxy replacement",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-cells-proxy-stream.js",
+      "tolerance": { "pixelMismatchRatio": 0.01, "perceptualDeltaE": 3.0 },
+      "browserRecipe": "webgpu",
+      "captureFrames": 2,
+      "nativeFrames": 300,
+      "desktopGate": true,
+      "required": true,
+      "meaningfulReason": "Two admitted cells, backend-observed HLOD swaps, near detail restoration and zero scoped validation errors"
+    },
+    {
+      "id": "world-cells-edited-proxy-stream",
+      "title": "WorldCells startup edit drops stale cell proxy and preserves untouched HLOD",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-cells-edited-proxy-stream.js",
+      "tolerance": { "pixelMismatchRatio": 0.01, "perceptualDeltaE": 3.0 },
+      "browserRecipe": "webgpu",
+      "captureFrames": 2,
+      "nativeFrames": 300,
+      "desktopGate": true,
+      "required": true,
+      "meaningfulReason": "Stable-ID startup move observed in cell A detail without its stale cell proxy, untouched cell B HLOD swap and zero scoped validation errors"
+    },
+    {
+      "id": "virtual-shadow-first-frame",
+      "title": "virtual shadow first frame GPU submission and texture lifetime",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/virtual-shadow-first-frame.js",
+      "tolerance": { "pixelMismatchRatio": 0.02, "perceptualDeltaE": 3.0 },
+      "browserRecipe": "webgpu",
+      "captureFrames": 2,
+      "nativeFrames": 300,
+      "desktopGate": true,
+      "required": true,
+      "meaningfulReason": "First-frame virtual shadow level submission, completed GPU work and zero validation errors including Destroyed texture"
+    },
+    {
+      "id": "compressed-texture-preparation",
+      "title": "compressed texture preparation",
+      "category": "materials",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/compressed-texture-preparation.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "browserRecipe": "webgpu",
+      "desktopGate": true,
+      "required": true,
+      "meaningfulReason": "Public bounded compressed upload and ExternalTexture material replacement on browser and native"
     }
   ],
   "generatedPlaytestProofs": [

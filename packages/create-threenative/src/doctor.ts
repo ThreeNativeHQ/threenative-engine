@@ -199,6 +199,9 @@ function requiredAndroidSdkFromRoot(root: string | undefined): number {
 interface IMcpServerSpec {
   readonly configName: string;
   readonly expectedArgs: string;
+  /** An addon the project opts into: its shim resolves the package from the project, so a project
+   * without it is incomplete rather than broken. */
+  readonly optional: boolean;
   readonly packageName: string;
   readonly version: string;
 }
@@ -215,6 +218,8 @@ const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set([
   "threenative-blender",
 ]);
 
+const OPTIONAL_ADDON_SERVERS: ReadonlySet<string> = new Set(["threenative-terrain"]);
+
 export const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = Object.entries(MCP_SERVERS).map(
   ([configName, server]) => {
     const resolvesToCore = CORE_RESOLVED_SERVERS.has(configName);
@@ -228,6 +233,7 @@ export const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = Object.entries(MCP_SE
     return {
       configName,
       expectedArgs: serverEntryPath(server),
+      optional: OPTIONAL_ADDON_SERVERS.has(configName),
       packageName: resolvesToCore ? CORE_PACKAGE_NAME : (declared as IMcpPackage).name,
       version: resolvesToCore ? CORE_PACKAGE_VERSION : (declared as IMcpPackage).version,
     };
@@ -632,6 +638,14 @@ function mcpServerCheck(
     };
   }
   const packageDirectory = resolvePackageDirectory(snapshot, spec.packageName);
+  if (packageDirectory === undefined && spec.optional) {
+    return {
+      detail: `${spec.configName} is optional and ${spec.packageName} is not installed in this project`,
+      fix: `Run: npm i -D ${spec.packageName}`,
+      name,
+      status: "warn",
+    };
+  }
   if (packageDirectory === undefined) {
     return {
       detail: `${spec.configName} is reachable by npx only: ${spec.packageName}@${spec.version} is not installed (npx --yes ${spec.packageName}@${spec.version})`,
@@ -2184,6 +2198,10 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
   const mcpServerHealth = new Map<string, IMcpServerHealth>();
   if (SHAPE_VERIFIABLE_HOSTS.some(({ file }) => files.has(file))) {
     for (const spec of MCP_SERVER_SPECS) {
+      // An optional addon that is not installed would send the probe's shim to npx for an
+      // unpublished package, and report a transport failure for a project that is merely without it.
+      if (spec.optional && resolvePackageDirectoryFrom(projectRoot, spec.packageName) === undefined)
+        continue;
       if (existsSync(path.resolve(projectRoot, spec.expectedArgs))) {
         mcpServerHealth.set(spec.configName, probeMcpServer(projectRoot, spec));
       }

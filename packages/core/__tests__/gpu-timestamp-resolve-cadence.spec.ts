@@ -226,9 +226,8 @@ async function runWindows(options: {
 }> {
   const canvas = testCanvas();
   const passes = options.passes ?? 6;
-  // Windows close on simulated ticks. Converting 300 presented frames at this frame rate keeps each
-  // window at the frame count the sampler is tested against.
-  const reportEvery = Math.round((300 * options.frameMs) / (1000 / 60));
+  // Live-clock windows close on presented frames, independently of simulation tick rate.
+  const reportEvery = 300;
   // Three 300-frame windows plus a margin, so the third window closes at every frame rate.
   const presented = 930;
   let presentedFrame = 0;

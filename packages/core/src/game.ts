@@ -21,7 +21,11 @@ import {
 } from "./geometry-capture.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import { PhysicsInterpolation } from "./interpolation.js";
-import { watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
+import {
+  reportSceneLoadFailure,
+  watchDeviceLoss,
+  watchStartupStall,
+} from "./launch-diagnostics.js";
 import {
   FixedStepLoop,
   type IAfterPhysicsPhase,
@@ -876,7 +880,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const scene = new SceneType();
     this.#scene = scene;
     this.#sceneName = name;
-    const loaded = scene.load(ctx);
+    let loaded: ReturnType<Scene<TState, TPhysics>["load"]>;
+    try {
+      loaded = scene.load(ctx);
+    } catch (error) {
+      reportSceneLoadFailure(error);
+      throw error;
+    }
     const transition =
       loaded === undefined
         ? this.#enterTransitionScene(scene, ctx)
@@ -886,7 +896,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     };
     // Handled here as well as by the caller: a start scene that navigates inside `enter()` throws
     // its transition away, and the gate below still has to learn that no world arrived.
-    void transition.then(settled, settled);
+    void transition.then(settled, (error: unknown) => {
+      settled();
+      reportSceneLoadFailure(error);
+    });
     this.#pendingSceneEnter = transition;
     return transition;
   }
@@ -1480,6 +1493,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               tick: () => gameLoop.tick(),
               get step() {
                 return gameLoop.step;
+              },
+              get clockFrozen() {
+                return gameLoop.clockFrozen;
               },
             },
             // The scaler reads the same windows the marker reports, so what it acted on and what
@@ -2090,6 +2106,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       startHeldLoop();
       if (loaded !== undefined) await loaded;
     } catch (error) {
+      reportSceneLoadFailure(error);
       this.#teardown(ctx);
       throw error;
     }
