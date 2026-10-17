@@ -215,6 +215,61 @@ it("rejects another game's capture whose walk never moves", async () => {
   expect(result.stderr).toContain("Machinefall route never moved");
 });
 
+it("imports another game's turning route and endpoint hold without changing its observed poses", async () => {
+  const f = await fixture();
+  const report = asOtherWorld(read(path.join(f.root, "report.json")), (i) => {
+    const step = Math.min(i, 30);
+    return step <= 16 ? step : 16 - (step - 16) / 2;
+  });
+  write(path.join(f.root, "report.json"), report);
+  const result = run(f.root, "--scenario", "machinefall-world-capture", "--world", "Machinefall");
+  expect(result.stderr).toBe("");
+  expect(result.status).toBe(0);
+  const manifest = read(path.join(f.root, "world-capture.json"));
+  expect(manifest.walk[17].position).toEqual([15.5, 6, 0]);
+  expect(manifest.walk[30].position).toEqual([9, 6, 0]);
+  expect(manifest.walk[32].position).toEqual([9, 6, 0]);
+});
+
+it.each(["stationary", "nonchronological"])(
+  "rejects another game's %s walk interval",
+  async (defect) => {
+    const f = await fixture();
+    const report = asOtherWorld(read(path.join(f.root, "report.json")), (i) => Math.min(i, 32));
+    const samples = report.observations.componentSeries;
+    if (defect === "stationary")
+      samples[8].snapshots.world.cameraPosition = samples[7].snapshots.world.cameraPosition;
+    else samples[8].snapshots.world.flyTimeMs = samples[7].snapshots.world.flyTimeMs;
+    write(path.join(f.root, "report.json"), report);
+    const result = run(f.root, "--scenario", "machinefall-world-capture", "--world", "Machinefall");
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("walk is not chronological or forward-moving");
+  },
+);
+
+it("rejects an endpoint hold that departs before returning to the endpoint", async () => {
+  const f = await fixture();
+  const report = asOtherWorld(read(path.join(f.root, "report.json")), (i) => {
+    const step = Math.min(i, 32);
+    return step === 17 || step === 18 || step === 32 ? 12 : step;
+  });
+  write(path.join(f.root, "report.json"), report);
+  const result = run(f.root, "--scenario", "machinefall-world-capture", "--world", "Machinefall");
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain("walk is not chronological or forward-moving");
+});
+
+it("still rejects a WorldProbe walk interval that reverses X", async () => {
+  const f = await fixture();
+  const report = read(path.join(f.root, "report.json"));
+  const samples = report.observations.componentSeries;
+  samples[8].snapshots.world.cameraPosition[0] = samples[7].snapshots.world.cameraPosition[0] - 1;
+  write(path.join(f.root, "report.json"), report);
+  const result = run(f.root);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain("walk is not chronological or forward-moving");
+});
+
 it("imports only the capture labels when a game's setup steps sample too", async () => {
   const f = await fixture();
   const report = read(path.join(f.root, "report.json"));

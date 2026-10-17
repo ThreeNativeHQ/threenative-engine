@@ -254,20 +254,20 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-619: all kits name interpolation; starter adds the live-clock motion proof.
   // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
   // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
-  "action-rpg": "b8f576eaf5989c8ad800e875b08d5a0ded4b6e56bb28bd184bab8ee9b4e9b887",
-  minimal: "f90b1164cfe9843fa4d966cc2ef791e5601a6144908b113fa26c861bf0f7cf50",
-  platformer: "d267834c8d4a7785db04f53bba558f265047d0f124c8e6520f129705350a124e",
-  puzzle: "0d9a413cd9c11b6ac2ece0d143fde616a361c2fbc936861386f960747fc7f5a1",
-  racing: "ad0cb7f8436f2fb72105c4320f598176750e4ae47a40983093ed8498ebbf7cf2",
-  rain: "9624754d1627fd2370c30547c21f89b4ac01c17c6cdf109f7cd3c9b418a4134f",
-  rts: "59415113c3b7ff6ea501938d666d33431610c7abad1c31078add14b3ed8c06f1",
-  runner: "4cf9fa3562741bc10a62cd0097bd2749907f1e06364b10414c9b7a9153920b72",
+  "action-rpg": "fd7d113bf6785fadfaf7dca58fc932f8867f0de524d38639565558c3badbdbef",
+  minimal: "1b528c6eb9549c72317237bbabcaa4a7392e4ccaeb169dffc45cd46c5b50a9f0",
+  platformer: "04e8db189c8865b1a71454b273eff0c01e8579573f31f8fc86491b4ff68a1154",
+  puzzle: "fe34e1a7215f20669abe34ff82d42290e8205b499c0e96c0baf0e85922978cc4",
+  racing: "63ca4af77bbdd851799f71fc6d9226461ae13f92830b53d03fa945503915615e",
+  rain: "62fed29fba8779c0772c35bac616b9ffa3af26f173e486bd7820e4c9d653fced",
+  rts: "13d1291e76eb2da27f0a92b28db95df414d1686062ea92127835da7c378108ff",
+  runner: "af6c480b7f7c8f61ee073636d95d4fa76a3806bea9431798a29474695c28e560",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "6c60cf1ae44aee3fa6d619a6f04adb11b9205dae40fa08f2260ba21880b9867a",
-  shooter: "5f838051056ab398106572ed49a882a097087db6da293ed9e9e9fffc11e5eec6",
-  snow: "b453da99303733e60d129da155960680be27a1dcf6cffc12bdc067962e0e34c9",
-  starter: "a962d9941292927ff3b8403e2038910a608ef9eef75814f84e4ad4574b7dfcd1",
-  "tower-defense": "442dcb534f9bbbfca13743493790ceb7ff9d099468c3137758d3fa23cd02de71",
+  sailing: "d234ef9c52f345e9d77532aed4d362a489fdee3a564be5343ab34c74b1e559e5",
+  shooter: "8be627a2ea3e105ab90919f753b05c0811fd3a5eb48fdeaf150225fcbbf904cd",
+  snow: "ef2f15094224aca37a4626b635dc7d958a38bbf6ab1787b0b0e70c5d6f6ac403",
+  starter: "77f5c5a6b976d48bc7ffe16d28a374c72d9f1bfedd85366db23382e691738535",
+  "tower-defense": "4693ad2dedf0f7b33b11f239d11d5f89abd980ac8a5408f973dce3e9249004b8",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

@@ -98,11 +98,15 @@ export function projectedLodError(
  * through {@link biasedLodDistance}, and the GPU scene mirrors it as a uniform, so a placement at
  * one distance crosses the same switch wherever the level is decided. `1` is exactly as authored.
  */
-let lodBiasValue = 1;
+// Unsplit package entries must share the control loop's bias, just like the chain registry.
+const LOD_BIAS_KEY = Symbol.for("threenative.lodBias");
+const lodBiasHost = globalThis as Record<symbol, unknown>;
+const lodBiasState = (lodBiasHost[LOD_BIAS_KEY] as { value: number } | undefined) ?? { value: 1 };
+lodBiasHost[LOD_BIAS_KEY] = lodBiasState;
 
 /** The multiplier every LOD selection path scales camera distance by. */
 export function lodBias(): number {
-  return lodBiasValue;
+  return lodBiasState.value;
 }
 
 /**
@@ -110,7 +114,7 @@ export function lodBias(): number {
  * authored, so it is refused rather than applied; a non-finite value is no reading and resets to 1.
  */
 export function setLodBias(bias: number): void {
-  lodBiasValue = Number.isFinite(bias) && bias >= 1 ? bias : 1;
+  lodBiasState.value = Number.isFinite(bias) && bias >= 1 ? bias : 1;
 }
 
 /**
@@ -119,7 +123,7 @@ export function setLodBias(bias: number): void {
  * only coarsen selection, never refine it below the level the chain would show unaided.
  */
 export function biasedLodDistance(distance: number): number {
-  return distance * lodBiasValue;
+  return distance * lodBiasState.value;
 }
 
 const nearest = new Vector3();
@@ -383,7 +387,8 @@ class ModelLod {
     const index = selectLodLevel(
       this.#chain.errors,
       this.#current,
-      this.#policy.maxPixelError,
+      this.#policy.maxPixelError /
+        Math.max(this.#mesh.matrixWorld.getMaxScaleOnAxis(), Number.EPSILON),
       this.#policy.hysteresis,
       [view],
     );
@@ -421,7 +426,8 @@ class ModelLod {
     const index = selectLodLevel(
       errors,
       this.#current,
-      this.#policy.maxPixelError,
+      this.#policy.maxPixelError /
+        Math.max(container.matrixWorld.getMaxScaleOnAxis(), Number.EPSILON),
       this.#policy.hysteresis,
       [view],
     );
