@@ -8,6 +8,8 @@ import {
   MeshStandardMaterial,
   SphereGeometry,
 } from "three";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { pass } from "three/tsl";
 import { ShadowPartialProbe } from "../probes/shadowPartial.js";
 import { terrainMaterial } from "../render/terrain.js";
 import { worldFog } from "../render/worldFog.js";
@@ -338,5 +340,35 @@ export class WorldProbe extends Scene<WorldState> {
       ...this.#moverDebug(),
       ...this.#partial?.results,
     };
+  }
+}
+
+export class WorldWarmUpProbe extends WorldProbe {
+  #worldPass: ReturnType<typeof pass> | undefined;
+  #outputInstallation: { dispose(): void } | undefined;
+
+  override enter(ctx: WorldCtx): void {
+    const worldPass = pass(ctx.scene, ctx.camera);
+    const colour = worldPass.getTextureNode();
+    const installation = ctx.renderer.setOutputNode(
+      colour.add(bloom(colour, 0.9, 0.5, 0.25)),
+      worldPass,
+    );
+    if (ctx.renderer.warmUpWorldPass === undefined)
+      throw new Error("WorldWarmUpProbe requires renderer.warmUpWorldPass.");
+    this.#worldPass = worldPass;
+    if (installation !== undefined) this.#outputInstallation = installation;
+    console.info("[WorldWarmUpProbe] installed world output pass");
+    super.enter(ctx);
+  }
+
+  override exit(ctx: WorldCtx): void {
+    super.exit(ctx);
+    this.#outputInstallation?.dispose();
+    this.#outputInstallation = undefined;
+    const worldPass = this.#worldPass;
+    this.#worldPass = undefined;
+    ctx.renderer.clearOutputNode?.(worldPass);
+    worldPass?.dispose();
   }
 }

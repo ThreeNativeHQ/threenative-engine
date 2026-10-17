@@ -1,3 +1,4 @@
+import { BoxGeometry, Mesh, MeshBasicMaterial } from "three";
 import { describe, expect, it } from "vitest";
 import {
   type IPipelineCensus,
@@ -31,7 +32,7 @@ interface IStubDevice {
 interface IStubBackend {
   device: IStubDevice;
   createProgram: (program: Record<string, unknown>) => void;
-  createRenderPipeline: (renderObject: Record<string, unknown>, promises: unknown) => void;
+  createRenderPipeline: (renderObject?: Record<string, unknown>, promises?: unknown) => void;
   createComputePipeline: (pipeline: Record<string, unknown>) => void;
   get: (key: object) => Record<string, unknown>;
 }
@@ -84,7 +85,8 @@ function webgpuStub(): { backend: IStubBackend; device: IStubDevice; pipelines: 
     device,
     get,
     createProgram,
-    createRenderPipeline: (renderObject: Record<string, unknown>, promises: unknown) => {
+    createRenderPipeline: (renderObject, promises) => {
+      if (renderObject === undefined) return;
       const pipeline = renderObject.pipeline as Record<string, unknown>;
       const descriptor = {
         label: "renderPipeline",
@@ -488,6 +490,7 @@ describe("pipeline census", () => {
     };
     const raw = {
       backend,
+      _nodes: { getForRender: (_renderObject: unknown) => ({}) },
       renderObject: (...args: unknown[]) => {
         backend.createRenderPipeline?.(
           args[0] as Record<string, unknown>,
@@ -561,6 +564,298 @@ describe("pipeline census", () => {
     expect(
       report.events.every(({ vertex, fragment }) => vertex !== undefined && fragment !== undefined),
     ).toBe(true);
+  });
+
+  it("counts distinct node-builder states on each side of the warm-up boundary", () => {
+    let now = 0;
+    const { backend, pipelines } = webgpuStub();
+    const nodes = {
+      getForRender: (renderObject: Record<string, unknown>) => renderObject.nodeBuilderState,
+    };
+    const raw = {
+      backend,
+      _nodes: nodes,
+      renderObject: (...args: unknown[]) => {
+        const object = args[0] as Record<string, unknown>;
+        nodes.getForRender(object);
+        pipelines.getForRender(object, args[1]);
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu", now: () => now });
+    census.installRenderer(raw);
+
+    const firstState = {};
+    const first = {
+      ...renderObject(
+        {
+          vertexProgram: { code: source("first vertex") },
+          fragmentProgram: { code: source("first fragment") },
+        },
+        { id: 1 },
+        { id: 2 },
+      ),
+      nodeBuilderState: firstState,
+    };
+    raw.renderObject(first, null);
+    census.warmUpSettled();
+    now += 1;
+
+    const secondState = {};
+    const second = {
+      ...renderObject(
+        {
+          vertexProgram: { code: source("second vertex") },
+          fragmentProgram: { code: source("second fragment") },
+        },
+        { id: 3 },
+        { id: 4 },
+      ),
+      nodeBuilderState: secondState,
+    };
+    raw.renderObject(second, null);
+    census.warmUpScopeSettled("chunk:0");
+    now += 1;
+    raw.renderObject(second, null);
+
+    const report = census.snapshot();
+    expect(report.counts.nodeBuilds).toBe(2);
+    expect(report.warmUpSettled).toMatchObject({
+      eventsSettled: 1,
+      nodeBuilds: 1,
+      renderPipelineCreations: 1,
+    });
+    expect(report.warmUpScopes).toMatchObject([
+      { label: "chunk:0", eventsSettled: 2, nodeBuilds: 2, renderPipelineCreations: 2 },
+    ]);
+    expect(
+      report.events.map(({ nodeBuilds, beforeWarmUpSettled, afterWarmUpScope }) => ({
+        nodeBuilds,
+        beforeWarmUpSettled,
+        ...(afterWarmUpScope === undefined ? {} : { afterWarmUpScope }),
+      })),
+    ).toEqual([
+      { nodeBuilds: 1, beforeWarmUpSettled: true },
+      { nodeBuilds: 1, beforeWarmUpSettled: false },
+      { nodeBuilds: 0, beforeWarmUpSettled: false, afterWarmUpScope: "chunk:0" },
+    ]);
+    expect(report.nodeBuilds?.map(({ beforeWarmUpSettled }) => beforeWarmUpSettled)).toEqual([
+      true,
+      false,
+    ]);
+  });
+
+  it("observes the renderer-owned node seam for a real Mesh instead of patching the Mesh", () => {
+    const { backend } = webgpuStub();
+    const geometry = new BoxGeometry();
+    const material = new MeshBasicMaterial();
+    const mesh = new Mesh(geometry, material);
+    const state = {};
+    const internalRenderObject = {
+      object: mesh,
+      material,
+      pipeline: {
+        vertexProgram: { code: source("mesh vertex") },
+        fragmentProgram: { code: source("mesh fragment") },
+      },
+    };
+    const originalGetForRender = (_renderObject: unknown): object => state;
+    const nodes = { getForRender: originalGetForRender };
+    const originalRenderObject = (..._args: unknown[]): void => {
+      nodes.getForRender(internalRenderObject);
+      backend.createRenderPipeline?.(internalRenderObject, null);
+    };
+    const raw = { backend, _nodes: nodes, renderObject: originalRenderObject };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+
+    raw.renderObject(mesh, {}, {}, geometry, material, null, null, null, "main");
+
+    const report = census.snapshot();
+    expect(report.complete).toBe(true);
+    expect(report.counts.nodeBuilds).toBe(1);
+    expect(report.events[0]?.nodeBuilds).toBe(1);
+    expect("getNodeBuilderState" in mesh).toBe(false);
+
+    census.dispose();
+    expect(nodes.getForRender).toBe(originalGetForRender);
+    expect(raw.renderObject).toBe(originalRenderObject);
+    geometry.dispose();
+    material.dispose();
+  });
+
+  it("binds a scope to its target's completed main frame, including node rebuilds without a pipeline event", () => {
+    const { backend } = webgpuStub();
+    const target = {};
+    const otherTarget = {};
+    const world = {};
+    const material = { id: 7, name: "chunk-material" };
+    const states = [{}, {}];
+    let stateIndex = 0;
+    let createPipeline = true;
+    const nodes = {
+      getForRender: (_renderObject: unknown) => states[stateIndex],
+    };
+    const pipeline = {
+      vertexProgram: { code: source("scope vertex") },
+      fragmentProgram: { code: source("scope fragment") },
+    };
+    const raw = {
+      backend,
+      _nodes: nodes,
+      renderObject: (object: unknown, scene: unknown, _camera: unknown, ...rest: unknown[]) => {
+        const internal = { object, material, pipeline };
+        nodes.getForRender(internal);
+        if (createPipeline) backend.createRenderPipeline?.(internal, null);
+        void scene;
+        void rest;
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+
+    raw.renderObject(target, world, {}, {}, material, null, null, null, "main");
+    census.warmUpScopeSettled("scope-a", target);
+    census.warmUpScopeSettled("scope-b", otherTarget);
+    stateIndex = 1;
+    createPipeline = false;
+    census.beginWorldFrame(world);
+    raw.renderObject(target, world, {}, {}, material, null, null, null, "main");
+    census.endWorldFrame(world, true);
+    census.firstPresent();
+
+    const report = census.snapshot();
+    expect(report.counts.nodeBuilds).toBe(2);
+    expect(report.warmUpScopes).toEqual([
+      expect.objectContaining({
+        label: "scope-a",
+        firstDraw: {
+          nodeBuilds: 1,
+          renderPipelineCreations: 0,
+        },
+      }),
+      expect.objectContaining({ label: "scope-b" }),
+    ]);
+    expect(report.warmUpScopes?.[1]?.firstDraw).toBeUndefined();
+    expect(report.events).toHaveLength(1);
+    expect(report.events[0]?.afterWarmUpScope).toBeUndefined();
+    expect(report.nodeBuilds).toHaveLength(2);
+    expect(report.nodeBuilds?.[1]?.provenance.material?.name).toBe("chunk-material");
+  });
+
+  it("records a completed zero-work target frame instead of passing a missing draw", () => {
+    const { backend } = webgpuStub();
+    const target = {};
+    const world = {};
+    const state = {};
+    const pipeline = {
+      vertexProgram: { code: source("zero vertex") },
+      fragmentProgram: { code: source("zero fragment") },
+    };
+    const nodes = { getForRender: (_renderObject: unknown) => state };
+    const internal = { object: target, material: { name: "warm" }, pipeline };
+    const raw = {
+      backend,
+      _nodes: nodes,
+      renderObject: () => {
+        nodes.getForRender(internal);
+        backend.createRenderPipeline?.(internal, null);
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+    raw.renderObject();
+    census.warmUpScopeSettled("zero", target);
+    census.beginWorldFrame(world);
+    // An unrelated UI frame must not close the target scope.
+    raw.renderObject();
+    census.endWorldFrame({}, true);
+    expect(census.snapshot().warmUpScopes?.[0]?.firstDraw).toBeUndefined();
+  });
+
+  it("closes a target scope on a completed cached main draw with zero new node work", () => {
+    const target = {};
+    const world = {};
+    const state = {};
+    const nodes = { getForRender: (_renderObject: unknown) => state };
+    const raw = {
+      _nodes: nodes,
+      backend: webgpuStub().backend,
+      renderObject: (object: unknown, scene: unknown, _camera: unknown, ...rest: unknown[]) => {
+        nodes.getForRender({ object });
+        void scene;
+        void rest;
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+    raw.renderObject(target, world, {}, {}, {}, null, null, null, "main");
+    census.warmUpScopeSettled("cached", target);
+    census.beginWorldFrame(world);
+    raw.renderObject(target, world, {}, {}, {}, null, null, null, "main");
+    census.endWorldFrame(world, true);
+
+    expect(census.snapshot().warmUpScopes?.[0]?.firstDraw).toEqual({
+      nodeBuilds: 0,
+      renderPipelineCreations: 0,
+    });
+  });
+
+  it("keeps draw-time scope matching flat as streamed targets accumulate", () => {
+    const { backend } = webgpuStub();
+    const world = {};
+    const state = {};
+    const nodes = { getForRender: (_renderObject: unknown) => state };
+    const raw = {
+      _nodes: nodes,
+      backend,
+      renderObject: (object: unknown, scene: unknown, _camera: unknown, ...rest: unknown[]) => {
+        nodes.getForRender({ object });
+        void scene;
+        void rest;
+      },
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+    const streamed = { parent: world };
+    const drawn = { parent: streamed };
+    const fastestDrawsMs = (): number => {
+      let fastest = Number.POSITIVE_INFINITY;
+      for (let round = 0; round < 3; round += 1) {
+        census.beginWorldFrame(world);
+        const startedMs = performance.now();
+        for (let draw = 0; draw < 100; draw += 1) {
+          raw.renderObject(drawn, world, {}, {}, {}, null, null, null, "main");
+        }
+        fastest = Math.min(fastest, performance.now() - startedMs);
+        census.endWorldFrame(world, true);
+      }
+      return fastest;
+    };
+    census.warmUpScopeSettled("streamed:0", streamed);
+    const soloMs = fastestDrawsMs();
+    for (let index = 1; index < 10_000; index += 1) {
+      census.warmUpScopeSettled(`streamed:${index}`, { parent: world });
+    }
+    const crowdedMs = fastestDrawsMs();
+
+    expect(census.snapshot().warmUpScopes?.[0]?.firstDraw).toBeDefined();
+    expect(crowdedMs / Math.max(soloMs, 1), "draw cost with 10,000 scopes vs one").toBeLessThan(50);
+  });
+
+  it("fails closed when the renderer-owned node seam cannot be installed", () => {
+    const { backend } = webgpuStub();
+    const raw = {
+      backend,
+      _nodes: {},
+      renderObject: () => backend.createRenderPipeline?.(),
+    };
+    const census = createPipelineCensus({ kind: "webgpu" });
+    census.installRenderer(raw);
+    raw.renderObject();
+
+    const report = census.snapshot();
+    expect(report.complete).toBe(false);
+    expect(report.incompleteReasons).toContain("node builder observation unavailable");
   });
 
   it("rejects completeness when creation observation is missing or bounded out", () => {

@@ -522,7 +522,7 @@ export default defineConfig({
     {
       name: "abyss-framework-replay",
       testDir: "./tests/browser-replay",
-      use: { baseURL: `http://127.0.0.1:${replayPort}` },
+      use: { baseURL: `http://127.0.0.1:${replayPort}`, headless: false },
     },
   ],
 });

@@ -59,6 +59,10 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Child libraries (including PulseAudio) leave scratch directories for their caller to own.
+TMPDIR="$runtime"
+export TMPDIR
+
 # 10s was enough until a loaded two-core CI runner missed it: run 33789430714's installed-verifier
 # case reported "Xvfb did not report a display within 10 seconds" while Xvfb was still alive and
 # starting. The loop already exits the moment Xvfb dies, so a higher ceiling costs a healthy run

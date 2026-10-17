@@ -12,6 +12,7 @@ import {
   MeshBasicMaterial,
   type Object3D,
   PerspectiveCamera,
+  Scene,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IRendererLike } from "../src/renderer.js";
@@ -277,7 +278,7 @@ describe("a chunk streamed into a walking world", () => {
       url: "/world/world.json",
     });
     // In a scene, because a world nothing projects is a world whose first frame is the first draw.
-    new Group().add(world);
+    new Scene().add(world);
     const { calls, renderer } = stubRenderer();
     const camera = cameraAt(follow.position.x, follow.position.z);
     for (let pass = 0; pass < 200; pass += 1) {

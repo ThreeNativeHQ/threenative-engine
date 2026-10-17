@@ -1536,15 +1536,36 @@ jobs:
           # The release container is a ZIP on macOS and Windows and desktop-distribution.mjs shells
           # out to `zip -r -q`. A missing archiver must be a red job, never a silent pass.
           if [ "${{ matrix.platform }}" = "Windows" ]; then
-            # The community feed drops requests now and then ("package was not found" for a listed
-            # version, run 37079046851). Retry twice; makensis -VERSION below still fails closed.
-            for attempt in 1 2 3; do
-              choco install zip -y --no-progress && choco install nsis --version=3.11.0 -y --no-progress && break
-              [ "$attempt" = 3 ] || sleep 30
-            done
-            nsis='/c/Program Files (x86)/NSIS'
-            "$nsis/makensis.exe" -VERSION
-            cygpath -w "$nsis" >> "$GITHUB_PATH"
+            # Pinned upstream archives keep the Windows packaging proof independent of Chocolatey's feed.
+            root=$(cygpath -u "$RUNNER_TEMP")
+            tools="$root/tn-packaging-tools"
+            mkdir -p "$tools/nsis" "$tools/zip"
+            curl -fsSL --retry 2 --retry-all-errors --retry-delay 3 --connect-timeout 15 --max-time 120 \
+              -o "$tools/nsis.zip" \
+              'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11.zip'
+            curl -fsSL --retry 2 --retry-all-errors --retry-delay 3 --connect-timeout 15 --max-time 120 \
+              -o "$tools/zip.zip" \
+              'https://fossies.org/windows/misc/zip300xn-x64.zip'
+            printf '%s  %s\n' \
+              'c7d27f780ddb6cffb4730138cd1591e841f4b7edb155856901cdf5f214394fa1' "$tools/nsis.zip" \
+              '63f32f1f797680d9c68379d36cff4373674d405527d7fa2b4bbd34edcc3370d2' "$tools/zip.zip" \
+              | sha256sum --check
+            export TN_NSIS_ARCHIVE="$(cygpath -w "$tools/nsis.zip")"
+            export TN_NSIS_DEST="$(cygpath -w "$tools/nsis")"
+            export TN_ZIP_ARCHIVE="$(cygpath -w "$tools/zip.zip")"
+            export TN_ZIP_DEST="$(cygpath -w "$tools/zip")"
+            powershell.exe -NoLogo -NoProfile -NonInteractive -Command '
+              $ErrorActionPreference = "Stop"
+              Expand-Archive -LiteralPath $env:TN_NSIS_ARCHIVE -DestinationPath $env:TN_NSIS_DEST -Force
+              Expand-Archive -LiteralPath $env:TN_ZIP_ARCHIVE -DestinationPath $env:TN_ZIP_DEST -Force
+            '
+            nsis="$tools/nsis/nsis-3.11"
+            export NSISDIR="$(cygpath -w "$nsis")"
+            "$nsis/Bin/makensis.exe" -VERSION
+            printf 'NSISDIR=%s\n' "$NSISDIR" >> "$GITHUB_ENV"
+            cygpath -w "$nsis/Bin" >> "$GITHUB_PATH"
+            cygpath -w "$tools/zip" >> "$GITHUB_PATH"
+            PATH="$tools/zip:$PATH"
             # The starter sets app.icon, so desktop-distribution.mjs shells out to rcedit to embed
             # the icon and version strings in the PE resources. rcedit is not on the runner image.
             # Pin the release: `latest` would make the packaged identity move under us.
