@@ -500,7 +500,7 @@ describe("playtest plugin", () => {
     }
   });
 
-  it("advances four ordered update/world-render pairs and suppresses queued automatic draws", async () => {
+  it("advances four ordered update/world-render pairs when asked to render, and suppresses queued automatic draws", async () => {
     const canvas = testCanvas();
     const events: string[] = [];
     let failUpdate = false;
@@ -541,7 +541,7 @@ describe("playtest plugin", () => {
     await game.start();
     try {
       const installed = bridge();
-      await installed.advance?.(4);
+      await installed.advance?.(4, { render: true });
       expect(events).toEqual(Array.from({ length: 4 }, () => ["update", "world"]).flat());
       const sample = await installed.sample({ resources: ["__threenativeFrameCounts"] });
       expect(sample.clock).toEqual({ mode: "fixed-step", tick: 4 });
@@ -558,25 +558,70 @@ describe("playtest plugin", () => {
       ).toEqual({ updates: 5, renders: 4 });
       expect(sample.resources?.__threenativeFrameCounts).toEqual({ updates: 4, renders: 4 });
       game.pause();
-      await installed.advance?.(1);
+      await installed.advance?.(1, { render: true });
       expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
         updates: 5,
         renders: 5,
       });
       game.resume();
       failUpdate = true;
-      await expect(installed.advance?.(1)).rejects.toThrow("scene update failed");
+      await expect(installed.advance?.(1, { render: true })).rejects.toThrow("scene update failed");
       expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
         updates: 5,
         renders: 5,
       });
       failUpdate = false;
       failRender = true;
-      await expect(installed.advance?.(1)).rejects.toThrow("world render failed");
+      await expect(installed.advance?.(1, { render: true })).rejects.toThrow("world render failed");
       expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
         updates: 6,
         renders: 5,
       });
+    } finally {
+      game.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("advances without drawing a world frame unless the caller asks for one", async () => {
+    const canvas = testCanvas();
+    const events: string[] = [];
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    class TestScene extends Scene<Record<string, unknown>> {
+      override update(): void {
+        events.push("update");
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
+          render: () => {
+            events.push("world");
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: TestScene },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      const installed = bridge();
+      const drawn = events.filter((event) => event === "world").length;
+      await installed.advance?.(4);
+      expect(events.filter((event) => event === "update")).toHaveLength(4);
+      expect(events.filter((event) => event === "world")).toHaveLength(drawn);
+      await installed.advance?.(2, { render: true });
+      expect(events.filter((event) => event === "world")).toHaveLength(drawn + 2);
     } finally {
       game.stop();
       vi.unstubAllGlobals();

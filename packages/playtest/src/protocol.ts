@@ -572,7 +572,7 @@ export interface IPlaytestAdvanceResult {
 }
 
 export interface IPlaytestBridgeV1 {
-  /** Core bridges render each driven frame by default; a host that owns presentation passes render:false. */
+  /** A core bridge draws a driven frame only when asked (`render: true`), as a measurement that couples updates to draws does. */
   advance?(ticks: number, options?: { render?: boolean }): Promise<IPlaytestAdvanceResult>;
   applySetup?(request: IPlaytestSetupRequest): Promise<IPlaytestSetupConfirmation | void>;
   describe(): IPlaytestBridgeDescription | Promise<IPlaytestBridgeDescription>;

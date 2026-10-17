@@ -103,7 +103,7 @@ export function playtest<
               fixedStep: (ticks, options) =>
                 clockMode === "wall-clock" && liveAdvance !== undefined
                   ? liveAdvance(ticks)
-                  : runtime.fixedStep(ticks, { render: options?.render ?? true }),
+                  : runtime.fixedStep(ticks, options),
               tick: runtime.tick,
             }),
         ...(runtime?.runtimeDiagnosticsSeries === undefined

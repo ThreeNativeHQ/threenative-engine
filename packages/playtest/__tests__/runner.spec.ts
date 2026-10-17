@@ -338,9 +338,19 @@ test("fixed-step startup races retry without hiding a stopped loop", async () =>
 
   await advanceFixedStep(page, bridge, 10);
 
-  expect(attempts).toBe(11);
-  expect(bridge.advance.mock.calls.every((args) => args[0] === 1)).toBe(true);
-  expect(page.evaluate).toHaveBeenCalledTimes(11);
+  expect(attempts).toBe(2);
+  expect(bridge.advance.mock.calls.every((args) => args[0] === 10 && args.length === 1)).toBe(true);
+  expect(page.evaluate).toHaveBeenCalledTimes(1);
+});
+
+test("a rendered fixed-step advance draws one world frame per tick and lets the HUD paint between them", async () => {
+  const bridge = { advance: vi.fn(async (_ticks: number, _options?: { render?: boolean }) => undefined) };
+  const page = { evaluate: vi.fn(async () => undefined) } as unknown as Page;
+
+  await advanceFixedStep(page, bridge, 10, true);
+
+  expect(bridge.advance.mock.calls).toEqual(Array.from({ length: 10 }, () => [1, { render: true }]));
+  expect(page.evaluate).toHaveBeenCalledTimes(9);
 });
 
 test.each([0, -1, 1.5, Number.NaN])("fixed-step driving rejects invalid tick count %s", async (ticks) => {

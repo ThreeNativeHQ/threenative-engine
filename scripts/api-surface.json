@@ -269,7 +269,7 @@
         "@threenative/playtest/protocol#jsonByteLength": "export function jsonByteLength(value: JsonValue): number { … }",
         "@threenative/playtest/protocol#requestedPlaytestClockMode": "export function requestedPlaytestClockMode(): PlaytestClockMode | undefined { … }",
         "@threenative/playtest/runner#AdbAndroidDriver": "export class AdbAndroidDriver implements IAndroidDriver { … }",
-        "@threenative/playtest/runner#advanceFixedStep": "export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, \"advance\">, ticks: number, settle = true, ): Promise<void> { … }",
+        "@threenative/playtest/runner#advanceFixedStep": "export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, \"advance\">, ticks: number, render = false, ): Promise<void> { … }",
         "@threenative/playtest/runner#advanceTimeoutMs": "export function advanceTimeoutMs( ticks: number, perTickMs: number = PLAYTEST_ADVANCE_TICK_BUDGET_MS, ): number { … }",
         "@threenative/playtest/runner#androidMailboxPaths": "export function androidMailboxPaths( packageName: string, root = `/sdcard/Android/data/$ { … }",
         "@threenative/playtest/runner#androidTouchBatches": "export function androidTouchBatches( identity: readonly string[], positions: readonly string[], ): string[][] { … }",

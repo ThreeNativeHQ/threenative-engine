@@ -239,7 +239,7 @@ export async function runStep(
     }
     const after = await waitForResource({
       advance: !liveClock && bridge.description.capabilities.includes("runtime.fixedStep")
-        ? () => advanceFixedStep(page, bridge, 1, false)
+        ? () => advanceFixedStep(page, bridge, 1)
         : undefined,
       id: wait.id,
       path: wait.path,
@@ -330,11 +330,11 @@ export async function runStep(
     }
     // Input-release ticks precede the WAIT window; its samples and release settling follow it.
     if (ticks > 1000) await advanceFixedStep(page, bridge, ticks - 1000);
-    await cpuWindow(() => advanceFixedStep(page, bridge, 1000, false));
+    await cpuWindow(() => advanceFixedStep(page, bridge, 1000, true));
     await waitFrames(page, 1);
     await samplePathPosition(bridge, pathEntity, pathPositions);
   } else if (ticks > 0 && fixedStep) {
-    // Path samples stay batched; advanceFixedStep yields after each world frame for the HUD.
+    // Path samples stay batched.
     const sampleTicks = 10;
     for (let index = 0; index < ticks; index += sampleTicks) {
       await advanceFixedStep(page, bridge, Math.min(sampleTicks, ticks - index));
@@ -541,14 +541,18 @@ export async function advanceFixedStep(
   page: Page,
   bridge: Pick<IPlaytestBridgeClient, "advance">,
   ticks: number,
-  settle = true,
+  render = false,
 ): Promise<void> {
   if (!Number.isInteger(ticks) || ticks <= 0)
     throw new Error("advance ticks must be a positive integer.");
-  for (let frame = 0; frame < ticks; frame += 1) {
+  // A measurement that couples updates to world draws asks for one drawn frame per tick and lets
+  // the HUD paint between ticks. Every other step advances without drawing, in one call.
+  const batches = render ? ticks : 1;
+  for (let batch = 0; batch < batches; batch += 1) {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        await bridge.advance(1);
+        if (render) await bridge.advance(1, { render: true });
+        else await bridge.advance(ticks);
         break;
       } catch (error) {
         if (
@@ -560,8 +564,7 @@ export async function advanceFixedStep(
         await waitFrames(page, 1);
       }
     }
-    // Resource polling already yields within its deadline; other steps settle the last HUD frame.
-    if (settle || frame + 1 < ticks) await waitFrames(page, 1);
+    if (render && batch + 1 < batches) await waitFrames(page, 1);
   }
 }
 

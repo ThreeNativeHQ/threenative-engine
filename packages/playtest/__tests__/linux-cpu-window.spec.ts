@@ -558,9 +558,10 @@ describe("fake proc/perf acquisition (no benchmark claims)", () => {
         },
       } as unknown as Page;
       const bridge = {
-        advance: async (ticks: number) => {
+        advance: async (ticks: number, options?: { render?: boolean }) => {
           expect(ticks).toBe(1);
-          events.push("advance");
+          // Only the measured window couples updates to world draws.
+          events.push(options?.render === true ? "advance" : "advance-plain");
         },
         description: { capabilities: ["runtime.fixedStep"] },
         sample: async () => {
@@ -588,12 +589,12 @@ describe("fake proc/perf acquisition (no benchmark claims)", () => {
       );
       const start = events.indexOf("enable");
       const end = events.indexOf("disable");
-      expect(events.slice(0, start)).toEqual(releaseOnly ? ["release", "advance", "yield"] : []);
+      expect(events.slice(0, start)).toEqual(releaseOnly ? ["release", "advance-plain"] : []);
       expect(events.slice(start, end).filter((event) => event === "advance")).toHaveLength(1000);
       expect(events.slice(start, end)).not.toContain("sample");
       expect(events.slice(end)).toEqual(
         releaseOnly
-          ? ["disable", "yield", "sample", "sample", "advance", "yield", "sample"]
+          ? ["disable", "yield", "sample", "sample", "advance-plain", "sample"]
           : ["disable", "yield", "sample", "sample"],
       );
     },
