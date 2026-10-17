@@ -939,6 +939,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-consumer-proof
           template: minimal
+          # This job proves the released Three.js host (`mystral`). The default-engine consumer has its own step.
+          engine: threejs
       - name: Prepare the scaffolded consumer proof
         run: |
           target="$RUNNER_TEMP/threenative-consumer-proof"
@@ -1283,6 +1285,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-ios-release-consumer
           template: minimal
+          # The iOS release proof builds the released Three.js host without a native compiler.
+          engine: threejs
       - name: Install the exact iOS consumer packages
         run: |
           target="$RUNNER_TEMP/threenative-ios-release-consumer"
@@ -1491,6 +1495,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-consumer-proof
           template: minimal
+          # This job proves the released Three.js host (`mystral`). The default-engine consumer has its own step.
+          engine: threejs
       - name: Prepare the scaffolded consumer proof
         run: |
           target="$RUNNER_TEMP/threenative-consumer-proof"
