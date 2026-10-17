@@ -917,6 +917,12 @@ export function defineBrowserClasses(
         continue;
       // A value class's lane is written in place: its engine setter is a plain store.
       const lane = valueClass !== undefined ? binding.fields?.[property] : undefined;
+      const flagField = binding.fields?.[property];
+      const peek = runtime.readByte;
+      const flag =
+        flagField !== undefined && flagField[1] === 0 && peek !== undefined
+          ? (self: object): boolean => peek(addressOf(self) + (flagField[0] ?? 0)) !== 0
+          : undefined;
       Object.defineProperty(accessors, property, {
         configurable: true,
         get:
@@ -944,6 +950,10 @@ export function defineBrowserClasses(
           : setters.has(property)
             ? {
                 set(this: object, value: unknown) {
+                  // A flag write of the value the flag holds changes nothing in the engine: a game
+                  // writes `visible` on hundreds of nodes a frame, so those stay out of the bridge.
+                  if (flag !== undefined && typeof value === "boolean" && flag(this) === value)
+                    return;
                   labels.delete(this);
                   runtime.set(refOf(this), property, toEngine(value));
                 },
