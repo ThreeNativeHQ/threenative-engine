@@ -2933,6 +2933,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         uint64_t h = reinterpret_cast<uintptr_t>(t);
         return h ^ (uint64_t(t->version()) + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2));
     };
+    uint64_t postStamp = 0;  // postViewsStamp(), read once after the views refresh below, not per draw
     const auto drawGroupKey = [&](const Planned& p) {
         const DrawItem& item = *p.item;
         uint64_t h = 0xcbf29ce484222325ull;
@@ -2943,7 +2944,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         mix(textureToken(item.envMap)); mix(textureToken(item.pmremMap));
         mix(reinterpret_cast<uintptr_t>(item.reflectorView));
         mix(reinterpret_cast<uintptr_t>(item.reflectorSampler));
-        mix(postViewsStamp());  // a node may sample a post texture
+        mix(postStamp);  // a node may sample a post texture
         if (item.nodeTextures)
             for (const auto& [label, texture] : *item.nodeTextures) {
                 mix(hashBytes(label.data(), label.size()));
@@ -2974,6 +2975,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (ShadowPass& pass : shadowPasses)
         for (Planned& draw : pass.draws) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
 
+    postStamp = postViewsStamp();
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
     // Created here, after the uniform buffer exists; cached per program and texture.
     for (Planned& p : plan) {
@@ -2992,7 +2994,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             continue;
         }
         if (postTexture)
-            graphKey += "|post," + std::to_string(postViewsStamp());
+            graphKey += "|post," + std::to_string(postStamp);
         if (viewport)
             graphKey += "|viewport," + std::to_string(reinterpret_cast<uintptr_t>(viewportColorView_)) + "," +
                         std::to_string(reinterpret_cast<uintptr_t>(viewportDepthView_));
