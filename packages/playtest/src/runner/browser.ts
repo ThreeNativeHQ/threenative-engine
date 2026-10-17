@@ -9,7 +9,7 @@ export const WEBGPU_BROWSER_ARGS = [
   "--enable-features=Vulkan",
   // Forced ANGLE/Vulkan selects NVIDIA locally but breaks hosted software adapters, especially headed.
   // Apply that workaround only when the caller explicitly requests the host display.
-  ...(process.env.TN_PLAYTEST_HOST_DISPLAY === "1"
+  ...(typeof process !== "undefined" && process.env.TN_PLAYTEST_HOST_DISPLAY === "1"
     ? ["--use-angle=vulkan", "--use-vulkan", "--disable-vulkan-surface"]
     : []),
 ] as const;

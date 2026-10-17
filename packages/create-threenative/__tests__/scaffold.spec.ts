@@ -190,6 +190,10 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PR489: all thirteen createProject trees change only by the four-line AA dispose closure;
+  // removing that closure from each generated tree recovers its previous fingerprint.
+  // PRD-564: measured all thirteen trees after retained-target sampling changes in
+  // worldEnvironment.ts and starter's grade/grain support declarations.
   // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
@@ -251,23 +255,26 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // createProject on the merged tree.
   // PRD-566/569/609 merge: measured all thirteen trees; action-rpg carries emitParticle bursts and onCull instructions.
   // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
-  // PRD-619: all kits name interpolation; starter adds the live-clock motion proof.
-  // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
-  // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
-  "action-rpg": "fd7d113bf6785fadfaf7dca58fc932f8867f0de524d38639565558c3badbdbef",
-  minimal: "1b528c6eb9549c72317237bbabcaa4a7392e4ccaeb169dffc45cd46c5b50a9f0",
-  platformer: "04e8db189c8865b1a71454b273eff0c01e8579573f31f8fc86491b4ff68a1154",
-  puzzle: "fe34e1a7215f20669abe34ff82d42290e8205b499c0e96c0baf0e85922978cc4",
-  racing: "63ca4af77bbdd851799f71fc6d9226461ae13f92830b53d03fa945503915615e",
-  rain: "62fed29fba8779c0772c35bac616b9ffa3af26f173e486bd7820e4c9d653fced",
-  rts: "13d1291e76eb2da27f0a92b28db95df414d1686062ea92127835da7c378108ff",
-  runner: "af6c480b7f7c8f61ee073636d95d4fa76a3806bea9431798a29474695c28e560",
+  // 2026-10-17 merged develop (PRD-619 interpolation) into PRD-564: all thirteen trees re-measured through
+  // createProject on the merged tree.
+  // Merged develop 1d056cec3 into PRD-564: AA disposal and the PR486 Three patch ship, so all thirteen
+  // trees are measured through createProject on this combined worktree, not either side's value.
+  // 2026-10-17 merged develop d27bad825 (PRD-564) into PRD-478: the only scaffold input that differs from
+  // develop is the three patch (settled-texture and alphaTestNode fixes), so all thirteen trees are re-measured.
+  "action-rpg": "befc4c1b95bd9482b1103330d018a49ca1441fbeaa3ada9433583d343380e7e4",
+  minimal: "d590825451c562e0992dd11c44b974476d85e76349832a428b516fa4dcad3816",
+  platformer: "4b0cc7157c555258ad1e6203893edadda98ab02b7b08a9282d87df2a6e98e2ca",
+  puzzle: "ef0508e20a99a579ade06215c4ee6889f977746da63c576f778a0a022cf32bab",
+  racing: "27f6ae53d4d492c81f82f34b1583e8647c87e7a974daae290cc642e86f667fbf",
+  rain: "96b4addf3df6fc80eed7261113708528b17de3a43e112ff55edd2db419233e89",
+  rts: "955be4f0f700cdbc2edc5df17150cb060b6ace9c40466d24c530c9d122121d47",
+  runner: "a151b9d8c8059696812ce44d66f64c83b3a43ee163490ba86066355d2cb76ce9",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "d234ef9c52f345e9d77532aed4d362a489fdee3a564be5343ab34c74b1e559e5",
-  shooter: "8be627a2ea3e105ab90919f753b05c0811fd3a5eb48fdeaf150225fcbbf904cd",
-  snow: "ef2f15094224aca37a4626b635dc7d958a38bbf6ab1787b0b0e70c5d6f6ac403",
-  starter: "77f5c5a6b976d48bc7ffe16d28a374c72d9f1bfedd85366db23382e691738535",
-  "tower-defense": "4693ad2dedf0f7b33b11f239d11d5f89abd980ac8a5408f973dce3e9249004b8",
+  sailing: "f27d5b0a54d15aab2d0d4247ec71890ddc2ed6b993d695118b20031ff22c9064",
+  shooter: "1166b62eace58ac770330027381dd4dfdcd037522ac2e1298cfda066258547c8",
+  snow: "a158d4b3818f90d58705c0be7ca3694a8558fc562ea8162d452960d484ddfd20",
+  starter: "0e70af8cc24ab3fc4dc8f1c5e87ff3bb6a9cd8e5fdea91d87ca2c470b75817ce",
+  "tower-defense": "d2a486795e4c86add8e40dae077983a8561301cfec8573d425101aedfd9c4eda",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
