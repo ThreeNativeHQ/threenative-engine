@@ -125,6 +125,9 @@ async function linkScaffoldDependencies(target: string): Promise<void> {
   // tsc reads vite.config.ts through the root-level *.ts include.
   await linkDependency(target, "@threenative/assets", path.resolve("packages/assets"));
   await linkDependency(target, "@threenative/playtest", path.resolve("packages/playtest"));
+  // The web build loads the Wasm engine from here. Left unlinked, resolution falls through to the
+  // hoisted store, which CI filled with a published 0.2.0 that has no build/web (TN_WASM_ENGINE_MISSING).
+  await linkDependency(target, "@threenative/runtime-native", path.resolve("packages/runtime-native"));
   await linkDependency(target, "@threenative/ui", path.resolve("packages/ui"));
   await linkDependency(target, "create-threenative", path.resolve("packages/create-threenative"));
   await linkDependency(target, "three", path.resolve("packages/core/node_modules/three"));

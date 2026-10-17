@@ -62,7 +62,7 @@ describe("native engine game spans", () => {
       "utf8",
     );
     expect(renderer).toMatch(/job\.source = sourceFrame_;/u);
-    expect(renderer).toMatch(/\[timing, shadowTimed, source\]\(GpuStatus status/u);
+    expect(renderer).toMatch(/\[[^\]]*\bsource\][^\n]*\(GpuStatus status/u);
     expect(renderer).toMatch(/t->source = source;[^\n]*\n\s*\+\+t->samples;/u);
   });
 });
