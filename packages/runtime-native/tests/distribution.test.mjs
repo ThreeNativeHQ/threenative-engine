@@ -94,6 +94,20 @@ async function serveFixtureRelease(root, contents) {
 const roots = [];
 const run = promisify(execFile);
 
+test.skipIf(process.platform !== 'linux')('display wrapper cleans child scratch without removing sibling data', async () => {
+  const parent = makeTempDirSync('tn-display-scratch-');
+  const retained = join(parent, 'retained');
+  writeFileSync(retained, 'preserve');
+  const result = await run('sh', [
+    join(import.meta.dirname, '../scripts/xvfb.sh'), process.execPath, '-e',
+    'const dir = require("node:path").join(require("node:os").tmpdir(), "pulse-child"); require("node:fs").mkdirSync(dir); console.log(dir)',
+  ], { env: { ...process.env, TMPDIR: parent } });
+  const scratch = result.stdout.trim();
+  assert.ok(scratch.startsWith(`${parent}/`));
+  assert.equal(existsSync(scratch), false, `child scratch leaked: ${scratch}`);
+  assert.equal(readFileSync(retained, 'utf8'), 'preserve');
+});
+
 async function packRuntime(root) {
   const archives = join(root, 'archives');
   mkdirSync(archives);

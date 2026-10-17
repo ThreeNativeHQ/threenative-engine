@@ -63,7 +63,7 @@ import type { IRendererLike } from "./renderer.js";
 import { isStatic, markStatic } from "./static-transform.js";
 import { addInSlices, loadAll } from "./streaming.js";
 import { DEFAULT_TARGET_FPS } from "./target-fps.js";
-import { within, yieldToHost } from "./warmup.js";
+import { warmUpScene, yieldToHost } from "./warmup.js";
 import {
   CellProxySelection,
   type IPreparedCellProxy,
@@ -141,8 +141,6 @@ const CHUNK_MERGE_MAX_TRIANGLES = Math.floor(
  * compile that is not coming back — which is a slow frame rather than a chunk that never appears.
  */
 const CHUNK_WARM_TIMEOUT_MS = 2000;
-/** The engine frame clock, for the warm-up's bound. */
-const warmClock = (): number => globalThis.performance?.now() ?? Date.now();
 /** Milliseconds one `update` may spend admitting streamed content, unless the game says otherwise. */
 const DEFAULT_ADMISSION_BUDGET_MS = 2;
 /**
@@ -3266,13 +3264,9 @@ function graphSnapshotCurrent(row: IBundleGraphSnapshot): boolean {
   }
   const reader = bundleGraphChildReader(node);
   if (reader !== row.childReader) return false;
-  const children = readBundleGraphChildren(node, reader);
-  return (
-    children !== undefined &&
-    row.children !== undefined &&
-    children.length === row.children.length &&
-    children.every((child, index) => child === row.children?.[index])
-  );
+  const expected = row.children;
+  if (expected === undefined) return false;
+  return readBundleGraphChildren(node, reader, expected) === expected;
 }
 
 /** Three reads non-enumerable own Node/Material slots, but never inherited TSL chain methods. */
@@ -3284,8 +3278,15 @@ function bundleGraphKeys(node: object): string[] {
 function bundleGraphChildReader(node: object): unknown {
   return Reflect.get(node, "isNode") === true ? Reflect.get(node, "getChildren") : undefined;
 }
-function readBundleGraphChildren(node: object, reader: unknown): readonly object[] | undefined {
-  if (reader === undefined) return [];
+function readBundleGraphChildren(
+  node: object,
+  reader: unknown,
+  expected?: readonly object[],
+): readonly object[] | undefined {
+  if (reader === undefined) {
+    if (expected === undefined) return [];
+    return expected.length === 0 ? expected : undefined;
+  }
   if (typeof reader !== "function") return undefined;
   try {
     const result: unknown = reader.call(node);
@@ -3295,6 +3296,22 @@ function readBundleGraphChildren(node: object, reader: unknown): readonly object
       typeof Reflect.get(result, Symbol.iterator) !== "function"
     )
       return undefined;
+    if (expected !== undefined) {
+      let index = 0;
+      let match = true;
+      for (const child of result as Iterable<unknown>) {
+        if (
+          index >= 8192 ||
+          child === null ||
+          typeof child !== "object" ||
+          Reflect.get(child, "isNode") !== true
+        )
+          return undefined;
+        if (match && child !== expected[index]) match = false;
+        index++;
+      }
+      return match && index === expected.length ? expected : undefined;
+    }
     const children: object[] = [];
     for (const child of result as Iterable<unknown>) {
       if (
@@ -3318,28 +3335,36 @@ function captureBundleGraph(
   childReader: unknown,
   children: readonly object[] | undefined,
 ): readonly unknown[] {
-  const entries = terminal
-    ? []
-    : bundleGraphKeys(node).map((key) => [key, Reflect.get(node, key)] as const);
-  capture.links += entries.length + (children?.length ?? 0);
+  const keys = terminal ? [] : bundleGraphKeys(node);
+  const count = keys.length;
+  capture.links += count + (children?.length ?? 0);
   if (children === undefined) capture.overflow = true;
   if (capture.rows.length >= 1024 || capture.links > 8192) capture.overflow = true;
-  if (!capture.overflow)
-    capture.rows.push({
-      node,
-      terminal,
-      childReader,
-      children,
-      keys: entries.map(([key]) => key),
-      links: entries.map(([, value]) =>
-        value !== null && typeof value === "object" ? value : undefined,
-      ),
-      isNode: Reflect.get(node, "isNode"),
-      beforeType: Reflect.get(node, "updateBeforeType"),
-      before: typeof Reflect.get(node, "updateBefore"),
-      version: Reflect.get(node, "version"),
-    });
-  return entries.map(([, value]) => value);
+  const values: unknown[] = new Array(count);
+  if (capture.overflow) {
+    for (let index = 0; index < count; index++)
+      values[index] = Reflect.get(node, keys[index] as string);
+    return values;
+  }
+  const links: (object | undefined)[] = new Array(count);
+  for (let index = 0; index < count; index++) {
+    const value: unknown = Reflect.get(node, keys[index] as string);
+    values[index] = value;
+    links[index] = value !== null && typeof value === "object" ? value : undefined;
+  }
+  capture.rows.push({
+    node,
+    terminal,
+    childReader,
+    children,
+    keys,
+    links,
+    isNode: Reflect.get(node, "isNode"),
+    beforeType: Reflect.get(node, "updateBeforeType"),
+    before: typeof Reflect.get(node, "updateBefore"),
+    version: Reflect.get(node, "version"),
+  });
+  return values;
 }
 
 function samplesFramebuffer(
@@ -3375,9 +3400,12 @@ function samplesFramebuffer(
   // Malformed/oversized child output retains the live source path. The stored witness is capped;
   // Three's eager getChildren implementation can still scan an authored array before yielding.
   if (children === undefined) return true;
-  for (const value of [...values, ...children]) {
+  for (const value of values) {
     if (value === null || typeof value !== "object") continue;
     if (samplesFramebuffer(value, seen, capture)) return true;
+  }
+  for (const child of children) {
+    if (samplesFramebuffer(child, seen, capture)) return true;
   }
   return false;
 }
@@ -9756,9 +9784,26 @@ export class WorldCells extends Group implements IComputeDriven {
     // No timeout counts as cancellation. This original promise owns every staged resource until it
     // settles, even if the cell/world has already left. Refusal keeps source and releases afterward.
     void Promise.resolve()
-      .then(() => renderer.compileAsync(prepared.root, camera, scene))
+      .then(() =>
+        warmUpScene(renderer, prepared.root, camera, {
+          budgetMs: CHUNK_WARM_TIMEOUT_MS,
+          renderPasses: false,
+          targetScene: scene,
+        }),
+      )
       .then(
-        () => {
+        (report) => {
+          if (
+            report.unsupported ||
+            report.timedOut ||
+            report.abandoned > 0 ||
+            (renderer.warmUpWorldPass !== undefined && report.passes?.includes("main") !== true)
+          )
+            throw new Error("cell proxy warm-up incomplete");
+          renderer.warmUpScopeSettled?.(
+            `cell:${state.cell.key}:${String(state.cell.generation)}`,
+            prepared.root,
+          );
           state.compiling = false;
           if (state.cancelled || !this.#cellLive(state.cell, state.cell.generation)) {
             state.cancelled = true;
@@ -10122,17 +10167,32 @@ export class WorldCells extends Group implements IComputeDriven {
    * in no scene is skipped outright — nothing projects it, so a compile would build nothing, which is
    * the same answer `load()` gets, where the loading screen is about to draw it anyway.
    */
-  async #warmChunk(chunk: Object3D): Promise<boolean> {
+  async #warmChunk(chunk: Object3D, scopeLabel: string): Promise<boolean> {
     const renderer = this.#renderer;
     const camera = this.#camera;
     if (renderer === undefined || camera === undefined || this.parent === null) return false;
+    let targetScene: Object3D = this;
+    while (targetScene.parent !== null) targetScene = targetScene.parent;
+    if (Reflect.get(targetScene, "isScene") !== true) return false;
     // The rejected compile is a pipeline this warm-up could not build, not a reason to fail the
     // admission: the frame that needs it will try again and fail there, where the error belongs.
-    return within(
-      renderer.compileAsync(chunk, camera, this),
-      CHUNK_WARM_TIMEOUT_MS,
-      yieldToHost,
-      warmClock,
+    return warmUpScene(renderer, chunk, camera, {
+      budgetMs: CHUNK_WARM_TIMEOUT_MS,
+      renderPasses: false,
+      targetScene,
+      yieldFrame: yieldToHost,
+    }).then(
+      (report) => {
+        const settled =
+          !report.unsupported &&
+          report.observed.status === "complete" &&
+          !report.timedOut &&
+          report.abandoned === 0 &&
+          (renderer.warmUpWorldPass === undefined || report.passes?.includes("main") === true);
+        if (settled) renderer.warmUpScopeSettled?.(scopeLabel, chunk);
+        return settled;
+      },
+      () => false,
     );
   }
 
@@ -10214,7 +10274,8 @@ export class WorldCells extends Group implements IComputeDriven {
         // merge and the attach. Everything the world does not own is released when the cell that
         // asked for the chunk is gone, so a chunk that arrives after its cell left is torn down here
         // rather than compiled and thrown at a world that is not looking.
-        if (live()) await this.#warmChunk(object);
+        if (live())
+          await this.#warmChunk(object, `chunk:${cell.key}:${String(cell.chunks.length)}`);
         if (!live()) {
           this.#failures += this.#disposeLoaded(object);
           continue;

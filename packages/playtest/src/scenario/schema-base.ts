@@ -475,6 +475,15 @@ export interface IPlaytestStartupAssertion {
   maxReadyMs?: number;
 }
 
+/** Ceilings on work observed after the runtime's explicit shader warm-up settled. */
+export interface IPlaytestPipelineCensusAssertion {
+  maxNodeBuildsAfterWarmUpSettled?: number;
+  maxRenderPipelineCreationsAfterWarmUpSettled?: number;
+  warmUpScope?: string;
+  maxNodeBuildsAfterWarmUpScope?: number;
+  maxRenderPipelineCreationsAfterWarmUpScope?: number;
+}
+
 export interface IPlaytestFramebufferCoverageAssertion {
   backdrop: [number, number, number];
   grid?: {
@@ -628,6 +637,7 @@ export interface IPlaytestScenarioAssertions {
   overlayNodes?: IPlaytestOverlayNodeAssertion[];
   parity?: IPlaytestParityAssertion;
   performance?: IPlaytestPerformanceAssertion;
+  pipelineCensus?: IPlaytestPipelineCensusAssertion;
   renderChain?: IPlaytestRenderChainAssertion;
   reachability?: IPlaytestReachabilityAssertion;
   resources?: IPlaytestResourceAssertion[];

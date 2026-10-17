@@ -863,7 +863,7 @@ describe("IGame", () => {
       expect(ctx.startup.progress).toBeLessThan(1); // still not ready after one frame
       expect(ctx.canvasLayer.opaque).toBe(true);
 
-      await Promise.resolve();
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
       const compileAsync = (game.ctx?.renderer.raw as { compileAsync: ReturnType<typeof vi.fn> })
         .compileAsync;
       expect(compileAsync).toHaveBeenCalledWith(ctx.scene, ctx.camera);
