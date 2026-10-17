@@ -155,6 +155,22 @@
       "required": false
     },
     {
+      "id": "resolution-subrect",
+      "title": "retained target resolution scale through a viewport sub-rectangle",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/resolution-subrect.js",
+      "captureFrames": 12,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "lut-grade",
       "title": "colour grade table and film grain",
       "category": "rendering",

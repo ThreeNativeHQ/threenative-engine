@@ -117,6 +117,7 @@ export function gradeStages(
   return [
     {
       name: "grade",
+      supportsResolutionSubrect: true,
       afterOutputTransform: true,
       available: () => refusal("grade", settings, loaded),
       build: (input) => {
@@ -141,6 +142,7 @@ export function gradeStages(
     },
     {
       name: "grain",
+      supportsResolutionSubrect: true,
       after: "grade",
       available: () => refusal("grain", settings, loaded),
       build: (input) =>
