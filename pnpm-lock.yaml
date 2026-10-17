@@ -950,6 +950,34 @@ importers:
         specifier: workspace:*
         version: link:../../packages/runtime-native
 
+  examples/wasm-engine-boot:
+    dependencies:
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1(patch_hash=00ce98ec952e72dff1f8f10e10ecc691f27365e9ae7a7482becdad1614181437)
+    devDependencies:
+      '@threenative/playtest':
+        specifier: workspace:*
+        version: link:../../packages/playtest
+      '@threenative/runtime-native':
+        specifier: workspace:*
+        version: link:../../packages/runtime-native
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
+      create-threenative:
+        specifier: workspace:*
+        version: link:../../packages/create-threenative
+      typescript:
+        specifier: 'catalog:'
+        version: '@typescript/typescript6@6.0.2'
+      vite:
+        specifier: 'catalog:'
+        version: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1)
+
   packages/assets:
     dependencies:
       '@gltf-transform/core':
@@ -1328,9 +1356,24 @@ importers:
 
   packages/runtime-native:
     dependencies:
+      '@threenative/assets':
+        specifier: workspace:*
+        version: link:../assets
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../core
+      '@threenative/three-native':
+        specifier: workspace:*
+        version: link:../three-native
+      esbuild:
+        specifier: 'catalog:'
+        version: 0.27.0
       pngjs:
         specifier: 'catalog:'
         version: 7.0.0
+      typescript:
+        specifier: 'catalog:'
+        version: '@typescript/typescript6@6.0.2'
     devDependencies:
       '@dimforge/rapier3d-compat':
         specifier: 'catalog:'
@@ -1341,9 +1384,6 @@ importers:
       '@types/three':
         specifier: 0.185.3
         version: 0.185.3
-      esbuild:
-        specifier: 'catalog:'
-        version: 0.27.0
       publint:
         specifier: 'catalog:'
         version: 0.3.22
@@ -1386,6 +1426,21 @@ importers:
       vite:
         specifier: 'catalog:'
         version: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1)
+
+  packages/three-native:
+    devDependencies:
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
+      publint:
+        specifier: 0.3.22
+        version: 0.3.22
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1(patch_hash=00ce98ec952e72dff1f8f10e10ecc691f27365e9ae7a7482becdad1614181437)
+      typescript:
+        specifier: 'catalog:'
+        version: '@typescript/typescript6@6.0.2'
 
   packages/ueformat:
     dependencies:

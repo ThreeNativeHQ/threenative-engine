@@ -28,8 +28,24 @@ export const NATIVE_PATHS = [
   /^pnpm-workspace\.yaml$/u,
 ];
 
+// PRD-573 slice 0b. The native engine's own tree is proven by the `native-engine` job, so a diff
+// made only of these paths skips the native-platforms matrix. The engine lives under runtime-native
+// (src/engine, src/adapters, tests/native-engine and cmake/NativeEngine*.cmake on
+// origin/feat/native-engine), so these carve out of NATIVE_PATHS rather than extend it. Anchored on
+// a trailing slash or a file prefix, never a bare directory prefix: `src/engineering/` and
+// `cmake/CheckNativeEngineGraph.cmake` are legacy runtime-native paths and keep the matrix.
+export const NATIVE_ENGINE_PATHS = [
+  /^packages\/runtime-native\/src\/(?:engine|adapters)\//u,
+  /^packages\/runtime-native\/tests\/native-engine\//u,
+  /^packages\/runtime-native\/cmake\/NativeEngine[^/]*$/u,
+];
+
+function isEnginePath(file) {
+  return NATIVE_ENGINE_PATHS.some((pattern) => pattern.test(file));
+}
+
 function isNativePath(file) {
-  return NATIVE_PATHS.some((pattern) => pattern.test(file));
+  return !isEnginePath(file) && NATIVE_PATHS.some((pattern) => pattern.test(file));
 }
 // Derive coverage from shipped kit identities; directory-prefix lookalikes earn no exemption.
 export const TEMPLATE_NAMES = readdirSync(
@@ -88,7 +104,16 @@ function representativeTemplates(files, target) {
   );
 }
 
-const SELECTIONS = new Set(["full", "prose", "instructions", "reused", "ci", "warm", "template"]);
+const SELECTIONS = new Set([
+  "full",
+  "prose",
+  "instructions",
+  "reused",
+  "ci",
+  "warm",
+  "template",
+  "native-engine",
+]);
 // CI configuration: the workflows, the scripts that decide and report on the board, their own specs
 // and the runner images. A diff made only of these cannot change a line of engine, template or
 // package, so the jobs with no consumer for a workflow file are the only thing it can break — and
@@ -128,6 +153,7 @@ const FULL_JOBS = [
   "performance-contracts",
   "native-platforms",
   "integration",
+  "native-engine",
 ];
 // Every check the plan can require, in the order the plan declares it. A reused run has to have
 // concluded every leg of the set its own profile requires; the reporting jobs are not evidence.
@@ -161,6 +187,7 @@ export function selectionPlan(
   const ciLane = selection === "ci";
   const warm = selection === "warm";
   const template = selection === "template";
+  const engine = selection === "native-engine";
   const representative = full && !qualification && representativeTemplates(files, target);
   const checks = {
     docs: !reused,
@@ -184,12 +211,16 @@ export function selectionPlan(
     FULL_JOBS.map((name) => {
       // `ci` narrows the board to the gates that read the configuration and `warm` to the two cache
       // producers; neither widens one, so any other job is exempt exactly as it is for prose.
+      // The engine job is the one lane a full board owes only conditionally: when the diff reaches the
+      // engine tree, or when the run qualifies a whole candidate. Every other full diff reads as before.
       const required =
-        (full && (name !== "test-native" || native)) ||
-        ((ciLane || template) && CI_JOBS.has(name)) ||
-        (template &&
-          ["template-nonvisual", "golden-path-template", "golden-path"].includes(name)) ||
-        (warm && WARM_JOBS.includes(name));
+        name === "native-engine"
+          ? engine || (full && (qualification || files.some(isEnginePath)))
+          : (full && (name !== "test-native" || native)) ||
+            ((ciLane || template) && CI_JOBS.has(name)) ||
+            (template &&
+              ["template-nonvisual", "golden-path-template", "golden-path"].includes(name)) ||
+            (warm && WARM_JOBS.includes(name));
       return [
         name,
         {
@@ -243,9 +274,11 @@ export function selectionPlan(
     required: nativeRequired,
     reason: nativeRequired
       ? "Native evidence blocks the merge: a full selection that touches native code, targets main, or cannot prove from a clean pull request that it avoids native code"
-      : exemption(
-          "Exempt: a clean develop pull request whose diff provably touches no native path; the matrix is skipped rather than awaited or run",
-        ),
+      : engine
+        ? "Exempt: the diff touches only native-engine paths, which the native-engine job proves; the matrix is skipped rather than awaited or run"
+        : exemption(
+            "Exempt: a clean develop pull request whose diff provably touches no native path; the matrix is skipped rather than awaited or run",
+          ),
   };
   // PRD-380 phase 2: how much of the matrix this run owes. Decided here, from whether the change
   // reached native code plus the branch it targets, and read from the plan by both the reusable
@@ -304,6 +337,7 @@ export function validatePlan(value) {
     /[\r\n]/u.test(value.reason) ||
     !Array.isArray(value.files) ||
     (value.selection === "template" && changedTemplates(value.files).length === 0) ||
+    (value.selection === "native-engine" && (value.native || !value.files.some(isEnginePath))) ||
     value.files.some((file) => typeof file !== "string" || !file || file.includes("\0")) ||
     typeof value.native !== "boolean" ||
     typeof value.target !== "string" ||
@@ -815,6 +849,7 @@ function pathFamily(file, selective) {
   // script matches the scripts/ci-* CI rule, so a change to it still runs the CI lanes.
   if (/^docs\/ci-speed\/(?:ledger\.json|index\.html)$/u.test(file)) return "prose";
   if (changedTemplates([file]).length > 0) return "template";
+  if (isEnginePath(file)) return "native-engine";
   return "a non-Markdown path";
 }
 
@@ -955,19 +990,31 @@ function diffSelection(paths, selective) {
   const families = new Set();
   for (const file of paths) {
     const family = pathFamily(file, selective);
-    if (!["prose", "instructions", "ci", "template"].includes(family))
+    if (!["prose", "instructions", "ci", "template", "native-engine"].includes(family))
       return { blocked: file, family };
     families.add(family);
   }
+  // The engine job proves only the engine tree. Beside a workflow or a template kit it would drop
+  // gates those paths owe, so the mixed diff keeps the whole board (which still runs the engine job).
+  if (families.has("native-engine")) {
+    const other = paths.find((file) => ["ci", "template"].includes(pathFamily(file, selective)));
+    if (other !== undefined)
+      return {
+        blocked: other,
+        family: "mixed with a native-engine path, whose narrower closure is unproven",
+      };
+  }
   return {
     families,
-    selection: families.has("template")
-      ? "template"
-      : families.has("ci")
-        ? "ci"
-        : families.has("instructions")
-          ? "instructions"
-          : "prose",
+    selection: families.has("native-engine")
+      ? "native-engine"
+      : families.has("template")
+        ? "template"
+        : families.has("ci")
+          ? "ci"
+          : families.has("instructions")
+            ? "instructions"
+            : "prose",
   };
 }
 

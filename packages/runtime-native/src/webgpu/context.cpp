@@ -6,7 +6,7 @@
  */
 
 #include "mystral/webgpu/context.h"
-#include "mystral/webgpu/bindings.h"
+#include "mystral/webgpu/presentation.h"
 #include <cstdlib>
 #include <string>
 #include <SDL3/SDL.h>
@@ -288,10 +288,13 @@ static void onDeviceError(WGPUDevice const* device, WGPUErrorType type, WGPUStri
 }
 
 /// `Destroyed` is this runtime shutting its own device down, not a fault.
+/// A context with a lost handler (the native engine's device lifecycle) hears every loss, its own
+/// destroy() included, and recovers; without one a loss stays fatal as above.
 static void onDeviceLost(WGPUDevice const* device, WGPUDeviceLostReason reason, WGPUStringView message, void* userdata1, void* userdata2) {
     (void)device;
-    (void)userdata1;
     (void)userdata2;
+    auto* context = static_cast<mystral::webgpu::Context*>(userdata1);
+    if (context && context->notifyDeviceLost(static_cast<uint32_t>(reason), WGPU_PRINT_STRING_VIEW(message).c_str())) return;
     if (reason == WGPUDeviceLostReason_Destroyed) return;
     reportFatalDeviceLoss(WGPU_PRINT_STRING_VIEW(message));
 }
@@ -341,7 +344,7 @@ static void onDeviceError(WGPUErrorType type, char const* message, void* userdat
 
 /// Every device this runtime creates reports the same way, and three call sites used to say only
 /// half of it. Whatever is added here reaches all of them.
-static void installDeviceCallbacks(WGPUDeviceDescriptor& deviceDesc) {
+static void installDeviceCallbacks(WGPUDeviceDescriptor& deviceDesc, mystral::webgpu::Context* context) {
     WGPUUncapturedErrorCallbackInfo errorCallbackInfo = {};
     errorCallbackInfo.callback = onDeviceError;
     deviceDesc.uncapturedErrorCallbackInfo = errorCallbackInfo;
@@ -349,7 +352,25 @@ static void installDeviceCallbacks(WGPUDeviceDescriptor& deviceDesc) {
     WGPUDeviceLostCallbackInfo lostCallbackInfo = {};
     lostCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
     lostCallbackInfo.callback = onDeviceLost;
+    lostCallbackInfo.userdata1 = context;
     deviceDesc.deviceLostCallbackInfo = lostCallbackInfo;
+#else
+    (void)context;
+#endif
+#if defined(MYSTRAL_WEBGPU_DAWN) && defined(TN_ENGINE_HOST_SERVICES)
+    // Dawn rounds timestamp queries to a coarse step by default (a browser's fingerprinting guard),
+    // so every pass of a small frame read the same time and the engine's GPU timer measured nothing.
+    // Only the native engine's host-services build asks for full resolution; the legacy host is
+    // compiled without TN_ENGINE_HOST_SERVICES and keeps Dawn's default.
+    static const char* const disabled[] = {"timestamp_quantization"};
+    static WGPUDawnTogglesDescriptor toggles = [] {
+        WGPUDawnTogglesDescriptor descriptor = {};
+        descriptor.chain.sType = WGPUSType_DawnTogglesDescriptor;
+        descriptor.disabledToggleCount = 1;
+        descriptor.disabledToggles = disabled;
+        return descriptor;
+    }();
+    deviceDesc.nextInChain = &toggles.chain;
 #endif
 }
 
@@ -470,6 +491,11 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
         static_cast<WGPUFeatureName>(WGPUNativeFeature_TextureAdapterSpecificFormatFeatures),
         "texture-adapter-specific-format-features");
 #endif
+#if defined(MYSTRAL_WEBGPU_DAWN) && defined(TN_ENGINE_HOST_SERVICES)
+    // Dawn locks the device around each call only when asked: the engine's GPU thread submits and
+    // presents while the game thread encodes, and pipeline workers create pipelines (PRD-610 AC-9).
+    appendIfSupported(WGPUFeatureName_ImplicitDeviceSynchronization, "implicit-device-synchronization");
+#endif
     appendIfSupported(WGPUFeatureName_TextureCompressionBC, "texture-compression-bc");
     appendIfSupported(WGPUFeatureName_TextureCompressionETC2, "texture-compression-etc2");
     appendIfSupported(WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc");
@@ -500,6 +526,7 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
 Context::Context() = default;
 
 Context::~Context() {
+    releaseSurfaceView();
     // Clean up offscreen resources
     if (offscreenTextureView_) {
         wgpuTextureViewRelease((WGPUTextureView)offscreenTextureView_);
@@ -513,6 +540,14 @@ Context::~Context() {
         wgpuSurfaceRelease(surface_);
         surface_ = nullptr;
     }
+#if defined(TN_ENGINE_HOST_SERVICES)
+    // The engine's tests build and destroy many contexts in one process; the legacy host keeps its
+    // queue reference as it always has.
+    if (queue_) {
+        wgpuQueueRelease(queue_);
+        queue_ = nullptr;
+    }
+#endif
     if (device_) {
         wgpuDeviceRelease(device_);
         device_ = nullptr;
@@ -691,7 +726,7 @@ bool Context::initializeHeadless() {
     deviceDesc.requiredFeatureCount = requiredFeatures.names.size();
     deviceDesc.requiredFeatures = !requiredFeatures.names.empty() ? requiredFeatures.names.data() : nullptr;
 
-    installDeviceCallbacks(deviceDesc);
+    installDeviceCallbacks(deviceDesc, this);
 
     DeviceRequestData deviceData;
 
@@ -721,6 +756,7 @@ bool Context::initializeHeadless() {
         return false;
     }
     device_ = deviceData.device;
+    ++deviceCreations_;
     reportGrantedFeatures(device_);
 
     queue_ = wgpuDeviceGetQueue(device_);
@@ -853,6 +889,7 @@ WGPUSurface Context::makeSurface(void* nativeHandle, int platformType) {
         std::cerr << "[WebGPU] Failed to create surface" << std::endl;
         return nullptr;
     }
+    ++surfaceCreations_;
     std::cout << "[WebGPU] Surface created" << std::endl;
     return created;
 }
@@ -985,7 +1022,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
     deviceDesc.requiredFeatures = !requiredFeatures.names.empty() ? requiredFeatures.names.data() : nullptr;
 
     // Set up error callback
-    installDeviceCallbacks(deviceDesc);
+    installDeviceCallbacks(deviceDesc, this);
 
     DeviceRequestData deviceData;
 
@@ -1017,6 +1054,7 @@ bool Context::createSurface(void* nativeHandle, int platformType) {
         return false;
     }
     device_ = deviceData.device;
+    ++deviceCreations_;
     reportGrantedFeatures(device_);
 
     // Get queue
@@ -1073,6 +1111,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         std::cerr << "[WebGPU] Failed to create surface" << std::endl;
         return false;
     }
+    ++surfaceCreations_;
     std::cout << "[WebGPU] Surface created" << std::endl;
 
     // Now request adapter with surface compatibility
@@ -1172,7 +1211,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
     deviceDesc.requiredFeatureCount = requiredFeatures.names.size();
     deviceDesc.requiredFeatures = !requiredFeatures.names.empty() ? requiredFeatures.names.data() : nullptr;
 
-    installDeviceCallbacks(deviceDesc);
+    installDeviceCallbacks(deviceDesc, this);
 
     DeviceRequestData deviceData;
 
@@ -1198,6 +1237,7 @@ bool Context::createSurfaceWithDisplay(void* display, void* window, int platform
         return false;
     }
     device_ = deviceData.device;
+    ++deviceCreations_;
     reportGrantedFeatures(device_);
 
     queue_ = wgpuDeviceGetQueue(device_);
@@ -1224,6 +1264,7 @@ bool Context::configureSurface(uint32_t width, uint32_t height, bool vsync) {
         return false;
     }
 
+    releaseSurfaceView();
     surfaceWidth_ = width;
     surfaceHeight_ = height;
 
@@ -1301,21 +1342,7 @@ bool Context::configureSurface(uint32_t width, uint32_t height, bool vsync) {
     config.width = width;
     config.height = height;
     config.presentMode = selectedPresentMode;
-#if defined(MYSTRAL_WEBGPU_WGPU)
-#if TN_WEBGPU_DESIRED_FRAME_LATENCY > 0
-    // The backend's default frame latency of 2 lets `getCurrentTexture` block the next frame's
-    // encode behind the previous frame's scan-out once a game runs slower than the display —
-    // measured on Pixel 8 as acquire waiting inside the render phase. Requesting a deeper
-    // flight of images lets CPU encoding overlap GPU and display work instead.
-    WGPUSurfaceConfigurationExtras latencyExtras = {};
-    latencyExtras.chain.sType = static_cast<WGPUSType>(WGPUSType_SurfaceConfigurationExtras);
-    latencyExtras.chain.next = nullptr;
-    latencyExtras.desiredMaximumFrameLatency = TN_WEBGPU_DESIRED_FRAME_LATENCY;
-    config.nextInChain = &latencyExtras.chain;
-#endif
-#endif
-
-    wgpuSurfaceConfigure(surface_, &config);
+    configurePresentationSurface(surface_, &config);
     vsync_ = vsync;
     presentMode_ = static_cast<uint32_t>(selectedPresentMode);
     std::cout << "[WebGPU] Surface configured: " << width << "x" << height << std::endl;
@@ -1342,12 +1369,7 @@ bool Context::rebuildSurface(void* nativeHandle, int platformType) {
         return false;
     }
 
-    if (surface_) {
-        // Unconfigure before release so the old swapchain is torn down explicitly rather than at
-        // whatever moment the last reference happens to drop.
-        wgpuSurfaceUnconfigure(surface_);
-        wgpuSurfaceRelease(surface_);
-    }
+    releaseSurface();
     surface_ = replacement;
     surfaceNativeHandle_ = nativeHandle;
     surfacePlatformType_ = platformType;
@@ -1356,6 +1378,18 @@ bool Context::rebuildSurface(void* nativeHandle, int platformType) {
     surfaceWidth_ = 0;
     surfaceHeight_ = 0;
     return true;
+}
+
+void Context::releaseSurface() {
+    releaseSurfaceView();
+    if (surface_) {
+        wgpuSurfaceUnconfigure(surface_);
+        wgpuSurfaceRelease(surface_);
+        surface_ = nullptr;
+    }
+    surfaceNativeHandle_ = nullptr;
+    surfacePlatformType_ = -1;
+    surfaceWidth_ = surfaceHeight_ = 0;
 }
 
 void Context::resizeSurface(uint32_t width, uint32_t height) {
@@ -1367,15 +1401,17 @@ void Context::resizeSurface(uint32_t width, uint32_t height) {
 }
 
 void* Context::getCurrentTextureView() {
+    if (surfaceView_) return surfaceView_;
     if (!surface_) {
         return nullptr;
     }
 
-    WGPUSurfaceTexture surfaceTexture;
-    wgpuSurfaceGetCurrentTexture(surface_, &surfaceTexture);
+    WGPUSurfaceTexture surfaceTexture = {};
+    acquirePresentationSurface(surface_, &surfaceTexture);
 
     if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) {
         std::cerr << "[WebGPU] Failed to get current texture, status: " << surfaceTexture.status << std::endl;
+        if (surfaceTexture.texture) wgpuTextureRelease(surfaceTexture.texture);
         return nullptr;
     }
 
@@ -1388,13 +1424,31 @@ void* Context::getCurrentTextureView() {
     viewDesc.arrayLayerCount = 1;
     viewDesc.aspect = WGPUTextureAspect_All;
 
-    return wgpuTextureCreateView(surfaceTexture.texture, &viewDesc);
+    surfaceView_ = wgpuTextureCreateView(surfaceTexture.texture, &viewDesc);
+    // wgpu-native's acquired handle discards an unpresented frame when released, even if a
+    // view survives. Keep it through present on both backends; release each reference once.
+    surfaceTexture_ = surfaceTexture.texture;
+    if (!surfaceView_) releaseSurfaceView();
+    return surfaceView_;
 }
 
-void Context::present() {
-    if (surface_) {
-        wgpuSurfacePresent(surface_);
+void Context::releaseSurfaceView() {
+    if (surfaceView_) wgpuTextureViewRelease(surfaceView_);
+    surfaceView_ = nullptr;
+    if (surfaceTexture_) wgpuTextureRelease(surfaceTexture_);
+    surfaceTexture_ = nullptr;
+}
+
+bool Context::present() {
+    bool presented = false;
+    if (surface_ && surfaceView_) {
+        presented = wgpuSurfacePresent(surface_) == WGPUStatus_Success;
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_INFO, "TN_Player", "TN_SURFACE_FRAME:{\"view\":true}");
+#endif
     }
+    releaseSurfaceView();
+    return presented;
 }
 
 // Screenshot callback data
@@ -1517,16 +1571,15 @@ static bool copyScreenshotPixels(
 }
 
 void Context::requestFrameScreenshot() {
-    // Qualified: the member name shadows the mystral::webgpu free function.
-    mystral::webgpu::requestFrameScreenshot(bindingsState_);
+    if (captureSource_) captureSource_->request();
 }
 
 bool Context::isFrameScreenshotReady() {
-    return mystral::webgpu::isScreenshotReady(bindingsState_);
+    return captureSource_ && captureSource_->ready();
 }
 
 void Context::clearFrameScreenshotReady() {
-    mystral::webgpu::clearScreenshotReady(bindingsState_);
+    if (captureSource_) captureSource_->clearReady();
 }
 
 bool Context::saveScreenshot(const char* filename) {
@@ -1536,23 +1589,24 @@ bool Context::saveScreenshot(const char* filename) {
     }
 
     // Check if screenshot buffer is ready (populated during queue.submit)
-    if (!mystral::webgpu::isScreenshotReady(bindingsState_)) {
+    if (!captureSource_ || !captureSource_->ready()) {
         std::cerr << "[Screenshot] No rendered frame available yet" << std::endl;
         return false;
     }
 
-    WGPUBuffer screenshotBuffer = (WGPUBuffer)mystral::webgpu::getScreenshotBuffer(bindingsState_);
+    const host::FrameCaptureView frame = captureSource_->view();
+    WGPUBuffer screenshotBuffer = static_cast<WGPUBuffer>(frame.buffer);
     if (!screenshotBuffer) {
         std::cerr << "[Screenshot] Screenshot buffer not available" << std::endl;
         return false;
     }
 
     // Get dimensions for screenshot
-    uint32_t width = mystral::webgpu::getCurrentTextureWidth(bindingsState_);
-    uint32_t height = mystral::webgpu::getCurrentTextureHeight(bindingsState_);
-    uint32_t bytesPerRow = mystral::webgpu::getScreenshotBytesPerRow(bindingsState_);
-    size_t bufferSize = mystral::webgpu::getScreenshotBufferSize(bindingsState_);
-    TN_CONTEXT_LOGI("renderer capture map begin %ux%u format=%u bytes=%zu", width, height, mystral::webgpu::getScreenshotFormat(bindingsState_), bufferSize);
+    uint32_t width = frame.width;
+    uint32_t height = frame.height;
+    uint32_t bytesPerRow = frame.bytesPerRow;
+    size_t bufferSize = frame.size;
+    TN_CONTEXT_LOGI("renderer capture map begin %ux%u format=%u bytes=%zu", width, height, frame.format, bufferSize);
 
     // Map the screenshot buffer (it was already populated during submit)
     auto mapData = std::make_shared<BufferMapData>();
@@ -1614,9 +1668,9 @@ bool Context::saveScreenshot(const char* filename) {
             width,
             height,
             bytesPerRow,
-            mystral::webgpu::getScreenshotFormat(bindingsState_),
+            frame.format,
             rgbaData)) {
-        std::cerr << "[Screenshot] Unsupported surface format: " << mystral::webgpu::getScreenshotFormat(bindingsState_) << std::endl;
+        std::cerr << "[Screenshot] Unsupported surface format: " << frame.format << std::endl;
         wgpuBufferUnmap(screenshotBuffer);
         return false;
     }
@@ -1643,20 +1697,21 @@ bool Context::captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, ui
     }
 
     // Check if screenshot buffer is ready (populated during queue.submit)
-    if (!mystral::webgpu::isScreenshotReady(bindingsState_)) {
+    if (!captureSource_ || !captureSource_->ready()) {
         return false;
     }
 
-    WGPUBuffer screenshotBuffer = (WGPUBuffer)mystral::webgpu::getScreenshotBuffer(bindingsState_);
+    const host::FrameCaptureView frame = captureSource_->view();
+    WGPUBuffer screenshotBuffer = static_cast<WGPUBuffer>(frame.buffer);
     if (!screenshotBuffer) {
         return false;
     }
 
     // Get dimensions
-    outWidth = mystral::webgpu::getCurrentTextureWidth(bindingsState_);
-    outHeight = mystral::webgpu::getCurrentTextureHeight(bindingsState_);
-    uint32_t bytesPerRow = mystral::webgpu::getScreenshotBytesPerRow(bindingsState_);
-    size_t bufferSize = mystral::webgpu::getScreenshotBufferSize(bindingsState_);
+    outWidth = frame.width;
+    outHeight = frame.height;
+    uint32_t bytesPerRow = frame.bytesPerRow;
+    size_t bufferSize = frame.size;
 
     // Map the screenshot buffer
     auto mapData = std::make_shared<BufferMapData>();
@@ -1691,7 +1746,7 @@ bool Context::captureFrame(std::vector<uint8_t>& outData, uint32_t& outWidth, ui
             outWidth,
             outHeight,
             bytesPerRow,
-            mystral::webgpu::getScreenshotFormat(bindingsState_),
+            frame.format,
             outData)) {
         wgpuBufferUnmap(screenshotBuffer);
         return false;

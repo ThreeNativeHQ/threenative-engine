@@ -67,6 +67,28 @@ void clearScreenshotReady(BindingsState* state) { state->screenshot.screenshotRe
 
 void requestFrameScreenshot(BindingsState* state) { state->screenshot.screenshotRequested = true; }
 
+namespace {
+class BindingsFrameCapture final : public host::IFrameCaptureSource {
+public:
+    explicit BindingsFrameCapture(BindingsState* state) : state_(state) {}
+    void request() override { requestFrameScreenshot(state_); }
+    bool ready() const override { return isScreenshotReady(state_); }
+    void clearReady() override { clearScreenshotReady(state_); }
+    host::FrameCaptureView view() const override {
+        return {getScreenshotBuffer(state_),         getScreenshotBufferSize(state_),
+                getCurrentTextureWidth(state_),      getCurrentTextureHeight(state_),
+                getScreenshotBytesPerRow(state_),    getScreenshotFormat(state_)};
+    }
+
+private:
+    BindingsState* state_;
+};
+}  // namespace
+
+std::unique_ptr<host::IFrameCaptureSource> makeFrameCaptureSource(BindingsState* state) {
+    return std::make_unique<BindingsFrameCapture>(state);
+}
+
 /**
  * Copies the finished frame into the screenshot buffer.
  *

@@ -1,0 +1,43 @@
+{
+  "name": "tonemap-ramp-linear",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — an HDR ramp 0..8 in nine strips, tone mapped with LinearToneMapping: the curve as one row of pixels",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "quad",
+      "kind": "json",
+      "path": "parameters",
+      "value": "s:%7B%22height%22%3A2%2C%22heightSegments%22%3A1%2C%22width%22%3A0.2222222222222222%2C%22widthSegments%22%3A1%7D",
+      "decimal": "{\"height\":2,\"heightSegments\":1,\"width\":0.2222222222222222,\"widthSegments\":1}"
+    },
+    {
+      "index": 1,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bfc9dbcc48676f31,n:0000000000000000,n:8000000000000000,n:8000000000000000,n:bff052bf5a814afd,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -0.20202020202020202, 0, -0, -0, -1.02020202020202, 1"
+    },
+    {
+      "index": 2,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:12b800d7f4ed79328a05a4c98b154850854d6f6318e9d46b0b1a4e6fbdf881f8",
+      "decimal": "12b800d7f4ed79328a05a4c98b154850854d6f6318e9d46b0b1a4e6fbdf881f8"
+    }
+  ],
+  "render": {
+    "png": "tonemap-ramp-linear.png",
+    "pngSha256": "12b800d7f4ed79328a05a4c98b154850854d6f6318e9d46b0b1a4e6fbdf881f8",
+    "width": 288,
+    "height": 64,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

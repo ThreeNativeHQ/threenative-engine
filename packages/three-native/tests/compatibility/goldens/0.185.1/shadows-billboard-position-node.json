@@ -1,0 +1,51 @@
+{
+  "name": "shadows-billboard-position-node",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — Midway's camera-facing cards: a quad whose positionNode spans cameraWorldMatrix's right and up axes, under shadows-directional's light; r185 draws the shadow pass through the shadow camera, so the card faces the light there and casts its full silhouette",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "sun",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:c008000000000000,n:4014000000000000,n:c008000000000000,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, 5, -3, 1"
+    },
+    {
+      "index": 2,
+      "id": "sun",
+      "kind": "number",
+      "path": "shadow.bias",
+      "value": "n:bf40624dd2f1a9fc",
+      "decimal": "-0.0005"
+    },
+    {
+      "index": 3,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:790b7a01ed6d6b3b328529edbf87823a855dc3ce54d6b9ce4aa62498f9f83b12",
+      "decimal": "790b7a01ed6d6b3b328529edbf87823a855dc3ce54d6b9ce4aa62498f9f83b12"
+    }
+  ],
+  "render": {
+    "png": "shadows-billboard-position-node.png",
+    "pngSha256": "790b7a01ed6d6b3b328529edbf87823a855dc3ce54d6b9ce4aa62498f9f83b12",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

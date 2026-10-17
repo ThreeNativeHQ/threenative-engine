@@ -189,6 +189,14 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     const rival = new Rival(ctx, GRID_DISTANCE.rival);
     ctx.entities.add("player", car);
     ctx.entities.add("rival", rival);
+    // The sun's aim as three reads it: the target's world matrix, which only a scene traversal refreshes.
+    ctx.entities.add("sun", {
+      get targetGap(): number {
+        return new Vector3()
+          .setFromMatrixPosition(lighting.key.target.matrixWorld)
+          .distanceTo(car.body.position);
+      },
+    });
 
     // `travelDirection` is the car's **measured** velocity, not the heading it was asked for: a
     // car that is sliding through a corner is travelling somewhere other than where it points, and

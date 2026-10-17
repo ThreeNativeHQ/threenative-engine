@@ -175,16 +175,6 @@ interface ISourceState {
   blue: number;
 }
 
-/** Element-wise equality, which is what "did this object move" reduces to. */
-function matrixEquals(a: Matrix4, b: Matrix4): boolean {
-  const left = a.elements;
-  const right = b.elements;
-  for (let index = 0; index < 16; index += 1) {
-    if (left[index] !== right[index]) return false;
-  }
-  return true;
-}
-
 function exactObject(entry: IProjectionExactEntry): Object3D {
   if (entry.object === undefined)
     throw new Error("Projection exact entry was cleared before apply.");
@@ -1008,7 +998,9 @@ export class ProjectionMirror {
     // Ancestor visibility, not the object's own flag: a prop under a hidden group does not draw,
     // and a batch has no hierarchy to inherit that from.
     const visible = this.#visibleInWorld(mesh);
-    if (visible !== current.visible || !matrixEquals(current.matrixWorld, mesh.matrixWorld)) {
+    // three's `equals` is the element-wise compare, and a host keeping matrices outside the script
+    // engine runs it in place instead of copying 32 numbers in.
+    if (visible !== current.visible || !current.matrixWorld.equals(mesh.matrixWorld)) {
       current.matrixWorld.copy(mesh.matrixWorld);
       current.visible = visible;
       // An `InstancedMesh` has no per-instance visibility flag, so a hidden object is given a
@@ -1042,6 +1034,9 @@ export class ProjectionMirror {
 
   /** Whether the game currently wants this object drawn, ancestors included. */
   #visibleInWorld(object: Object3D): boolean {
+    // A host whose parents cost a call and an allocation each answers for the whole chain.
+    const host = (object as { __tnVisibleInWorld?: () => boolean }).__tnVisibleInWorld;
+    if (typeof host === "function") return host.call(object);
     for (let node: Object3D | null = object; node !== null; node = node.parent) {
       if (!node.visible) return false;
     }
@@ -1275,7 +1270,7 @@ export class ProjectionMirror {
 
     const state = this.#state.get(mesh) as ISourceState;
     const visible = this.#visibleInWorld(mesh);
-    const matrixChanged = !matrixEquals(state.matrixWorld, mesh.matrixWorld);
+    const matrixChanged = !state.matrixWorld.equals(mesh.matrixWorld);
     if (visible !== state.visible || matrixChanged) {
       if (this.#velocityEnabled) {
         const previousMatrix =

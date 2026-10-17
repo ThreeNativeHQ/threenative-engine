@@ -1,0 +1,103 @@
+{
+  "name": "nan-and-signed-zero",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — the values JSON cannot hold, so goldens record binary64 bits",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "base",
+      "kind": "number",
+      "path": "x",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    },
+    {
+      "index": 1,
+      "id": "base",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:8000000000000000,n:0000000000000000,n:7ff8000000000000",
+      "decimal": "-0, 0, NaN"
+    },
+    {
+      "index": 2,
+      "id": "base",
+      "kind": "number",
+      "method": "length",
+      "value": "n:7ff8000000000000",
+      "decimal": "NaN"
+    },
+    {
+      "index": 3,
+      "id": "sum",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff0000000000000,n:3ff0000000000000,n:7ff8000000000000",
+      "decimal": "1, 1, NaN"
+    },
+    {
+      "index": 4,
+      "id": "sum",
+      "kind": "number",
+      "method": "length",
+      "value": "n:7ff8000000000000",
+      "decimal": "NaN"
+    },
+    {
+      "index": 5,
+      "id": "assigned",
+      "kind": "number",
+      "path": "x",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    },
+    {
+      "index": 6,
+      "id": "negated",
+      "kind": "number",
+      "path": "x",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    },
+    {
+      "index": 7,
+      "id": "negated",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:8000000000000000,n:8000000000000000,n:8000000000000000",
+      "decimal": "-0, -0, -0"
+    },
+    {
+      "index": 8,
+      "id": "infinite",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:7ff8000000000000,n:7ff8000000000000,n:7ff8000000000000",
+      "decimal": "NaN, NaN, NaN"
+    },
+    {
+      "index": 9,
+      "id": "overflow",
+      "kind": "number",
+      "path": "x",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 10,
+      "id": "indeterminate",
+      "kind": "number",
+      "method": "length",
+      "value": "n:7ff8000000000000",
+      "decimal": "NaN"
+    },
+    {
+      "index": 11,
+      "id": "readbackArray",
+      "kind": "numbers",
+      "value": "n:0000000000000000,n:0000000000000000,n:0000000000000000",
+      "decimal": "0, 0, 0"
+    }
+  ]
+}

@@ -1,0 +1,296 @@
+{
+  "name": "math-primitives-box3",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Box3.tests.js — the whole surface except setFromPoints, whose point array the line protocol cannot carry",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "b04",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 1,
+      "id": "b04",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:4018000000000000",
+      "decimal": "6"
+    },
+    {
+      "index": 2,
+      "id": "b04",
+      "kind": "boolean",
+      "method": "isEmpty",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 3,
+      "id": "b05",
+      "kind": "boolean",
+      "method": "isEmpty",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 4,
+      "id": "b05",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 5,
+      "id": "b08",
+      "kind": "boolean",
+      "method": "isEmpty",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 6,
+      "id": "b11",
+      "kind": "boolean",
+      "method": "isEmpty",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 7,
+      "id": "b12",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 8,
+      "id": "b12",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 9,
+      "id": "b15",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 10,
+      "id": "b15",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 11,
+      "id": "b19",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 12,
+      "id": "b19",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 13,
+      "id": "b22",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4020000000000000",
+      "decimal": "8"
+    },
+    {
+      "index": 14,
+      "id": "r28",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4022000000000000,n:4026000000000000,n:402a000000000000",
+      "decimal": "9, 11, 13"
+    },
+    {
+      "index": 15,
+      "id": "r32",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 16,
+      "id": "r33",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 17,
+      "id": "r34",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 18,
+      "id": "r35",
+      "kind": "number",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 19,
+      "id": "r41",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 20,
+      "id": "r44",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 21,
+      "id": "r46",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff8000000000000,n:3ff8000000000000,n:3ff8000000000000",
+      "decimal": "1.5, 1.5, 1.5"
+    },
+    {
+      "index": 22,
+      "id": "r51",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4014000000000000,n:401c000000000000,n:4022000000000000",
+      "decimal": "5, 7, 9"
+    },
+    {
+      "index": 23,
+      "id": "r56",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe3333333333333,n:3fd2492492492492,n:3fcc71c71c71c71c",
+      "decimal": "0.6, 0.2857142857142857, 0.2222222222222222"
+    },
+    {
+      "index": 24,
+      "id": "r62",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4010000000000000,n:4014000000000000,n:4018000000000000",
+      "decimal": "4, 5, 6"
+    },
+    {
+      "index": 25,
+      "id": "r68",
+      "kind": "number",
+      "path": "center.x",
+      "value": "n:3ff8000000000000",
+      "decimal": "1.5"
+    },
+    {
+      "index": 26,
+      "id": "r68",
+      "kind": "number",
+      "path": "radius",
+      "value": "n:4018e6593d77b0b8",
+      "decimal": "6.224949798994366"
+    },
+    {
+      "index": 27,
+      "id": "b71",
+      "kind": "boolean",
+      "method": "isEmpty",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 28,
+      "id": "b74",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 29,
+      "id": "b74",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 30,
+      "id": "b78",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bfc999999999999a",
+      "decimal": "-0.2"
+    },
+    {
+      "index": 31,
+      "id": "b78",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 32,
+      "id": "b81",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 33,
+      "id": "r86",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 34,
+      "id": "arr",
+      "kind": "numbers",
+      "value": "n:bff0000000000000,n:c000000000000000,n:c008000000000000",
+      "decimal": "-1, -2, -3"
+    },
+    {
+      "index": 35,
+      "id": "b88",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 36,
+      "id": "b88",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:c008000000000000",
+      "decimal": "-3"
+    }
+  ]
+}

@@ -20,7 +20,7 @@ import {
   rendererBackendIdentity,
 } from "./geometry-capture.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
-import { watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
+import { reportLaunchFailure, watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
 import {
   FixedStepLoop,
   type IAfterPhysicsPhase,
@@ -149,7 +149,9 @@ export interface IGameRuntimeObservations {
 }
 
 export interface IGamePluginRuntime {
-  readonly fixedStep: (ticks: number) => number;
+  readonly fixedStep: (ticks: number, options?: { render?: boolean }) => number;
+  /** Completed scene updates and primary world render requests, independent of budget windows. */
+  readonly frameCounts?: () => { updates: number; renders: number };
   /**
    * Announces that a diagnostics consumer is going to read render metrics, turning per-frame
    * sample collection on for the rest of the run. Optional: a runtime without collection
@@ -167,6 +169,13 @@ export interface IGamePluginRuntime {
    * used to land. Optional: a runtime without a clock just never freezes one.
    */
   readonly freezeClock?: () => void;
+  /**
+   * Draw the current world once without advancing it, for a screenshot taken while the loop is
+   * driven by `fixedStep` and presents nothing between ticks. Optional: a runtime without a frozen
+   * render loop just never draws a standing frame. The runner asks for it only when the bridge
+   * advertises it and the capture cannot otherwise see a present.
+   */
+  readonly renderCurrent?: () => number;
   /**
    * Hold start-scene entry until `gate` settles.
    *
@@ -564,6 +573,13 @@ function rendererDrawCallCount(raw: unknown): number | undefined {
   return typeof calls === "number" && Number.isFinite(calls) && calls >= 0 ? calls : undefined;
 }
 
+/** Cumulative render() calls the renderer declined to draw (the Wasm web engine's frame gate), when it counts them. */
+function rendererFrameGateSkips(raw: unknown): number | undefined {
+  const info = (raw as { info?: { engine?: { frameGateSkips?: unknown } } } | null)?.info;
+  const skips = info?.engine?.frameGateSkips;
+  return typeof skips === "number" && Number.isFinite(skips) ? skips : undefined;
+}
+
 function rendererPerformanceMetrics(raw: unknown): {
   drawCalls?: number;
   triangles?: number;
@@ -879,8 +895,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       if (this.#pendingSceneEnter === transition) this.#pendingSceneEnter = undefined;
     };
     // Handled here as well as by the caller: a start scene that navigates inside `enter()` throws
-    // its transition away, and the gate below still has to learn that no world arrived.
-    void transition.then(settled, settled);
+    // its transition away, and the gate below still has to learn that no world arrived. The failure
+    // is reported by name: a swallowed rejection left the loading screen up as a "stall" with
+    // nothing outstanding (midway-open-pacific on the Wasm engine).
+    void transition.then(settled, (error: unknown) => {
+      settled();
+      reportLaunchFailure({
+        kind: "scene-load-failed",
+        message: `Scene '${name}' failed to load: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    });
     this.#pendingSceneEnter = transition;
     return transition;
   }
@@ -950,8 +974,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       () => {
         if (this.#pendingStart === pendingStart) this.#pendingStart = undefined;
       },
-      () => {
+      (error: unknown) => {
         if (this.#pendingStart === pendingStart) this.#pendingStart = undefined;
+        // Reported by name: a game that writes `void game.start()` otherwise keeps its loading
+        // screen up until the stall watcher says "no asset is outstanding".
+        reportLaunchFailure({
+          kind: "start-failed",
+          message: `The game failed to start: ${error instanceof Error ? error.message : String(error)}`,
+        });
       },
     );
     return pendingStart;
@@ -1628,6 +1658,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // say nothing new.
     const devMetricsEnabled = isDevLaunch();
     let postedVerdict: string | undefined;
+    let updates = 0;
+    let renders = 0;
+    let lastGateSkips = 0;
     const gameLoop: FixedStepLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
@@ -1823,6 +1856,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           renderRoot.matrixWorldAutoUpdate = false;
           this.#matrixWorld?.apply(renderRoot);
           renderer.render(renderRoot, camera);
+          renders += 1;
+          // A frame the renderer declined costs nothing in the render phase; the budget counts it so a
+          // window mean is never read as the cost of a drawn frame.
+          const gateSkips = rendererFrameGateSkips(renderer.raw);
+          if (gateSkips !== undefined) {
+            if (gateSkips > lastGateSkips) frameBudget?.addRenderSkip();
+            lastGateSkips = gateSkips;
+          }
           // *After* the render, because that is where the draw happened. The matrices read here are
           // the ones drawn: the walk above refreshed them and `render()` did not touch them. The
           // frozen roots are passed because the draw root is the projection's mirror when the
@@ -1980,11 +2021,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
         const scene = this.#scene;
         const frame = this.#sceneFrame;
-        if (frame !== undefined) frame(ctx, dt);
+        if (frame !== undefined) {
+          frame(ctx, dt);
+          updates += 1;
+        }
         // An async goto() installs the incoming scene before its load resolves; until enter()
         // has run there is no gameplay to step and a game-overridden update() would run against
         // a cleared graph.
-        else if (this.#sceneEntered && scene !== undefined) scene.update(ctx, dt);
+        else if (this.#sceneEntered && scene !== undefined) {
+          scene.update(ctx, dt);
+          updates += 1;
+        }
         if (this.#scene !== scene || this.#sceneFrame !== frame) return;
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
@@ -2002,9 +2049,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       readonly resolveEntered: () => void;
     }> = [];
     const runtime: IGamePluginRuntime = {
-      fixedStep: (ticks) => gameLoop.advance(ticks),
+      fixedStep: (ticks, options) => gameLoop.advance(ticks, options),
+      frameCounts: () => ({ updates, renders }),
       frameBudgetWindow: () => this.#frameBudget?.window(),
       freezeClock: () => gameLoop.freezeClock(),
+      renderCurrent: () => gameLoop.renderCurrentFrame(),
       enableRuntimeDiagnostics: () => {
         this.#renderMetricsEnabled = true;
         gameLoop.setCollectMetrics(true);
@@ -2031,6 +2080,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       step: gameLoop.step,
       runtimeDiagnosticsSeries: () => gameLoop.runtimeDiagnosticsSeries(),
     };
+    Object.assign(runtime, {
+      _setClockMode: (mode: "fixed-step" | "wall-clock") => gameLoop._setClockMode(mode),
+    });
     // A boot that throws must end exactly like an aborted boot: every cleanup attempted, every
     // resource released — and the original error rethrown, not a teardown error standing in
     // for it. The abort branches below stay outside these guards: they tear down themselves.

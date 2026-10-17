@@ -492,6 +492,30 @@ constexpr const char* kScript = R"JS((async () => {
   bundleEncoder.setIndexBuffer(idxBuf, "uint16");
   bundleEncoder.draw(3, 1, 0, 0);
   bundleEncoder.drawIndexed(3, 1, 0, 0, 0);
+  // The GPU-driven world records its indirect batches into render bundles: a host whose bundle
+  // encoder lacks these throws "drawIndexedIndirect is not a function" on the first streamed cell.
+  bundleEncoder.drawIndirect(indirectBuf, 16);
+  bundleEncoder.drawIndexedIndirect(indirectBuf, 16);
+  // A bad indirect call fails closed with a TypeError that names the method, never a silent skip.
+  for (const method of ["drawIndirect", "drawIndexedIndirect"]) {
+    const bad = {
+      "no arguments": [],
+      "no offset": [indirectBuf],
+      "not a buffer": [{}, 16],
+      "NaN offset": [indirectBuf, NaN],
+      "infinite offset": [indirectBuf, Infinity],
+      "negative offset": [indirectBuf, -4],
+      "unaligned offset": [indirectBuf, 6],
+      "string offset": [indirectBuf, "16"],
+    };
+    for (const [label, callArgs] of Object.entries(bad)) {
+      let error;
+      try { bundleEncoder[method](...callArgs); } catch (e) { error = e; }
+      if (!(error instanceof TypeError) || !String(error.message).includes("GPURenderBundleEncoder." + method)) {
+        throw new Error("bundle " + method + " (" + label + ") did not throw a named TypeError: " + error);
+      }
+    }
+  }
   const renderBundle = bundleEncoder.finish();
   globalThis.__renderBundle = renderBundle;
 

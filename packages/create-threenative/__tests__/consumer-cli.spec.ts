@@ -24,7 +24,7 @@ async function desktopCallerFixture(): Promise<{ root: string; log: string }> {
   await writeFile(path.join(root, "package.json"), '{"name":"consumer-test","type":"module"}');
   await writeFile(
     path.join(root, "threenative.config.ts"),
-    'export default { ui: { renderer: "native" } };\n',
+    'export default { engine: "legacy", ui: { renderer: "native" } };\n',
   );
   await writeFile(path.join(root, "src/game.ts"), "export default {};\n");
   await writeFile(path.join(runtime, "package.json"), '{"name":"@threenative/runtime-native"}');

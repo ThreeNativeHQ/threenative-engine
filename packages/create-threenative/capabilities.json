@@ -5101,7 +5101,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
-      "signature": "export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, \"advance\">, ticks: number, ): Promise<void> { … }",
+      "signature": "export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, \"advance\">, ticks: number, settle = true, ): Promise<void> { … }",
       "situations": [
         "run a complete browser or device playtest",
         "capture diagnostics and screenshots from a managed server"
@@ -5293,6 +5293,23 @@
       "summary": "Decide which display a pixel-producing run paints on, the same decision the runner makes.",
       "supersedes": [],
       "symbol": "decideDisplayStrategy"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the mailbox lifecycle must be disposed after the run"],
+      "example": "const driver = new DesktopPlaytestDriver(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function desktopConsoleType(stream: \"stderr\" | \"stdout\", line: string): string { … }",
+      "situations": [
+        "run a desktop target through the playtest protocol",
+        "exchange observations with a native desktop host"
+      ],
+      "summary": "Drive a local desktop playtest mailbox.",
+      "supersedes": [],
+      "symbol": "desktopConsoleType"
     },
     {
       "aliases": [],

@@ -36,6 +36,7 @@ export type {
 } from "@threenative/core";
 
 export interface IResolvedThreeNativeConfig {
+  readonly engine: "legacy" | "native";
   readonly app: {
     readonly id: string;
     readonly name: string;
@@ -97,6 +98,8 @@ export interface IResolvedThreeNativeConfig {
     /** Validated, not yet resolved: per-asset resolution happens where the asset is known. */
     readonly lod?: boolean | IThreeNativeLodConfig;
     readonly models?: "none" | IThreeNativeModelsConfig;
+    /** Also emit the native cooked package beside the existing outputs. */
+    readonly nativePackage?: boolean;
     readonly output?: string;
     readonly source?: string;
     readonly targets?: {
@@ -923,6 +926,12 @@ async function validateBootSplash(
   };
 }
 
+function validateEngine(raw: unknown): "legacy" | "native" {
+  if (raw === undefined) return "native";
+  if (raw === "legacy" || raw === "native") return raw;
+  return fail("TN_CONFIG_ENGINE_INVALID", 'engine must be "legacy" or "native".');
+}
+
 /** Which renderer draws `src/ui/`. @see IThreeNativeConfig.ui */
 const UI_RENDERERS: readonly ThreeNativeUiRenderer[] = ["native", "native-css", "web"];
 
@@ -1180,6 +1189,7 @@ export const ASSETS_CONFIG_KEYS = [
   "concurrency",
   "lod",
   "models",
+  "nativePackage",
   "source",
   "output",
   "targets",
@@ -1588,6 +1598,9 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
   ) {
     fail("TN_CONFIG_ASSETS_INVALID", "assets.exclude must be an array of non-empty glob strings.");
   }
+  if (assets.nativePackage !== undefined && typeof assets.nativePackage !== "boolean") {
+    fail("TN_CONFIG_ASSETS_INVALID", "assets.nativePackage must be true or false.");
+  }
   return {
     ...(assets.audio === undefined ? {} : { audio: validateAudio(assets.audio) }),
     ...(assets.exclude === undefined ? {} : { exclude: assets.exclude as readonly string[] }),
@@ -1614,6 +1627,7 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
     ...(targets === undefined ? {} : { targets }),
     ...(lod === undefined ? {} : { lod }),
     ...(models === undefined ? {} : { models }),
+    ...(assets.nativePackage === undefined ? {} : { nativePackage: assets.nativePackage }),
     ...(textures === undefined ? {} : { textures }),
   };
 }
@@ -1625,6 +1639,7 @@ const PROFILE_ASSET_KEYS: readonly string[] = [
   "budget",
   "lod",
   "models",
+  "nativePackage",
   "targets",
   "textures",
 ];
@@ -1976,6 +1991,7 @@ async function loadConfigInternal(
       if (raw !== undefined) {
         assertKeys(raw, "config", [
           "app",
+          "engine",
           "display",
           "bootSplash",
           "window",
@@ -2006,6 +2022,7 @@ async function loadConfigInternal(
       }
       return {
         app,
+        engine: validateEngine(raw?.engine),
         display: validateDisplay(raw?.display),
         window: validateWindow(raw?.window, app.name),
         nativeEntry: validateNativeEntry(configuredEntry ?? packageEntry ?? "src/game.ts", root),

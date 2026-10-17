@@ -25,7 +25,8 @@
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
         "TN_ENABLE_DEBUG_SERVER": "OFF",
-        "TN_ENABLE_NATIVE_PHYSICS": "OFF"
+        "TN_ENABLE_NATIVE_PHYSICS": "ON",
+        "THREENATIVE_PHYSICS_LIBRARY": "${sourceDir}/.runtime/physics-target/x86_64-unknown-linux-gnu/release/libthreenative_native_physics.a"
       }
     },
     {
@@ -47,7 +48,8 @@
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
         "TN_ENABLE_DEBUG_SERVER": "OFF",
-        "TN_ENABLE_NATIVE_PHYSICS": "OFF"
+        "TN_ENABLE_NATIVE_PHYSICS": "ON",
+        "THREENATIVE_PHYSICS_LIBRARY": "${sourceDir}/.runtime/physics-target/x86_64-pc-windows-msvc/release/threenative_native_physics.lib"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
@@ -70,7 +72,8 @@
         "TN_ENABLE_NATIVE_GLTF": "OFF",
         "TN_ENABLE_DRACO": "OFF",
         "TN_ENABLE_DEBUG_SERVER": "OFF",
-        "TN_ENABLE_NATIVE_PHYSICS": "OFF"
+        "TN_ENABLE_NATIVE_PHYSICS": "ON",
+        "THREENATIVE_PHYSICS_LIBRARY": "${sourceDir}/.runtime/physics-target/aarch64-apple-darwin/release/libthreenative_native_physics.a"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
     },
@@ -125,6 +128,14 @@
         "TN_ENABLE_NATIVE_PHYSICS": "ON"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "wasm",
+      "displayName": "ThreeNative engine core and renderer, Wasm (browser WebGPU)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/wasm",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     }
   ],
   "buildPresets": [
@@ -132,7 +143,8 @@
     { "name": "tn-windows", "configurePreset": "tn-windows" },
     { "name": "tn-macos", "configurePreset": "tn-macos" },
     { "name": "tn-android", "configurePreset": "tn-android" },
-    { "name": "tn-ios", "configurePreset": "tn-ios" }
+    { "name": "tn-ios", "configurePreset": "tn-ios" },
+    { "name": "wasm", "configurePreset": "wasm", "targets": ["tn-native-engine-web"] }
   ],
   "testPresets": [
     { "name": "tn-linux", "configurePreset": "tn-linux", "output": { "outputOnFailure": true } }

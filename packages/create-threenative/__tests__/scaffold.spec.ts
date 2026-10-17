@@ -189,6 +189,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Three patch. Restoring the previous patch recovers every prior fingerprint.
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
+// Recomputed 2026-10-15 for the native engine default (PRD-573): every template AGENTS.md/CLAUDE.md pair gains
+// an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
@@ -253,20 +255,27 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
   // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
   // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
-  "action-rpg": "2ad57690b87fe80faa26931ea11d6ea210ac787bb58c7bb0f83e7b653426eeb7",
-  minimal: "6e9d255a6033e239e73dfabec172dfebb4a88849c01ca461d476ab8b17b91cbd",
-  platformer: "2ccf93236a0d6c1b8aa00bd3f86585427149f3788640dccb491f8d451c2c6894",
-  puzzle: "a25a9129f070b8a4cd25c1d3a174950b0367eba85d5a414b62325a571e2c40f3",
-  racing: "0fb3b6a6eacfc54acd74ae086cb5502789fdfe83e0466306202053843314f663",
-  rain: "9523312a5c0573b6ae886bd63ade36922a86f7a9b8e3730f7ead743609357bd7",
-  rts: "8a8d80b543d77717243274896b5b7a6a723b92e3a3f252fd470b2fb6dcfc12c8",
-  runner: "b14123d911dc3eb7d73e1ab3f91269b480a028938efff4a2bea4f56f2e570906",
+  // Recomputed 2026-10-15: puzzle drops its legacy pin and its Engine paragraph (PRD-617); the other twelve are unchanged.
+  // Recomputed 2026-10-15 through createProject after recovery: all kits now share the decoder-aware asset watch.
+  // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
+  // boot-failure text both engines now show, so only puzzle's tree moves.
+  "action-rpg": "b7ed7d42d302b9b6387b3071a69d27db349ff4132a6fcc15ae3e6bf4fcbce29e",
+  minimal: "1e713e749ad7dbfbf57f0ec8dc3f2838f66e472b9fd5ea4307b313e3b0ba6460",
+  platformer: "4ba41b98be364abca521c6ceb3cec443f3388f3e116d8a0ffcf5d380a166a5e5",
+  puzzle: "33c1425da91663c2232b863efe8f3575a50abff61ce4109925ab53fb916bfeeb",
+  racing: "799520392a864e04093b6e31b76f1dd14aaa9b1896237711aef966c1f4c2eae2",
+  rain: "005dfd923543708c7805365becb3d71c4fa378c61bba75ec4eb4a6647769f4f0",
+  rts: "752c4b3881d8e998379dead571cbfdb6eb7314fba83a58df99ea1b978436fd89",
+  runner: "75d899fc6b4e3901691ed1c1da59cfd743cfe425a78a6b7f0df73e4fb64a4768",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "73da167ba1fdc6360c58e61b51a2f3dba047fbe1c4e88648e9bce4abb64325da",
-  shooter: "ca09b0b25f3ba689af53772d82be0978d82cdaff8f997b04b160874428ec3e54",
-  snow: "482c1c7f1cd2f233d43cc3fd378c983b4ab8f13dca4bd6fca008e5b120cb0705",
-  starter: "fe84f7a992a2ffa07792e10efe4b673e01499f3d4d21bc09dac8e4397645c1c4",
-  "tower-defense": "7d816e530aee8842027a1666782d96c51b2cbfde55c4c23a7cdd1b0fd6a267ac",
+  sailing: "1d471f6dcfc420ff2ae593fc186b6935d6708d67355a3aa72463b9c63b4bcf57",
+  shooter: "2859b02828c5ad7c2be79e1369e7d3e0ce7979e86995eb6ec81d37c445da9029",
+  snow: "981cd0b3ddb518c5948d709ccf9545a3779e68fe32092e9f942a752754198964",
+  // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
+  // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
+  // to stay under the 200-line render-file cap; only starter's tree moves.
+  starter: "a815d66121d12aa205f8acb7574377882e2bbe13a319d3acd507945b2f94cf74",
+  "tower-defense": "8a81959588b51a8632f4e0b7f80b442a4f431770beb0adde497e822af1496590",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -365,6 +374,7 @@ const STARTER_PATHS = [
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
+  "src/render/qualityPolicy.ts",
   "src/render/worldEnvironment.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
@@ -1083,6 +1093,15 @@ describe("create-threenative", () => {
       const result = await createProject(
         { install: false, target: "minimal-bundle", template: "minimal" },
         root,
+      );
+      // This build checks core's bundle, not an engine: it names the legacy engine so it needs no Wasm module.
+      const configPath = path.join(result.target, "threenative.config.ts");
+      await writeFile(
+        configPath,
+        (await readFile(configPath, "utf8")).replace(
+          "const config: IThreeNativeConfig = {",
+          'const config: IThreeNativeConfig = {\n  engine: "legacy",',
+        ),
       );
       const scope = path.join(result.target, "node_modules", "@threenative");
       await mkdir(scope, { recursive: true });

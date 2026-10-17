@@ -211,3 +211,80 @@ describe("MatrixWorldPass", () => {
     all.dispose();
   });
 });
+
+/**
+ * A scene of `count` groups whose `children` reads are counted: each read stands for the bridge crossing it costs
+ * on the native engine, where the pass would otherwise make a handful per node.
+ */
+function countedScene(count: number): { reads: () => number; scene: Scene } {
+  let reads = 0;
+  const scene = new Scene();
+  const nodes: Object3D[] = [scene];
+  for (let index = 0; index < count; index += 1) {
+    const group = new Group();
+    scene.add(group);
+    nodes.push(group);
+  }
+  for (const node of nodes) {
+    const children = node.children;
+    Object.defineProperty(node, "children", {
+      configurable: true,
+      get() {
+        reads += 1;
+        return children;
+      },
+    });
+  }
+  return { reads: () => reads, scene };
+}
+
+describe("MatrixWorldPass on a native-engine root", () => {
+  it("walks the scene itself without a native walk, so reads grow with the node count", () => {
+    const small = countedScene(100);
+    const large = countedScene(1000);
+    new MatrixWorldPass().apply(small.scene);
+    new MatrixWorldPass().apply(large.scene);
+    expect(small.reads()).toBeGreaterThanOrEqual(100);
+    expect(large.reads()).toBeGreaterThanOrEqual(1000);
+  });
+
+  it("calls the root's native walk once and reads nothing, whatever the node count", () => {
+    for (const count of [100, 1000]) {
+      const { reads, scene } = countedScene(count);
+      const calls: [boolean, boolean][] = [];
+      (
+        scene as Scene & { __tnUpdateMatrixWorld: (force: boolean, prune: boolean) => number }
+      ).__tnUpdateMatrixWorld = (force, prune) => {
+        calls.push([force, prune]);
+        return count + 1;
+      };
+      const pass = new MatrixWorldPass();
+      pass.beginFrame();
+      expect(pass.apply(scene)).toBe(count + 1);
+      expect(pass.apply(scene, true)).toBe(count + 1);
+      expect(calls).toEqual([
+        [false, true],
+        [true, true],
+      ]);
+      expect(reads()).toBe(0);
+      expect(pass.report.visited).toBe(2 * (count + 1));
+      pass.dispose();
+    }
+  });
+
+  it('uses the native walk in "all" mode too, asking it not to prune', () => {
+    const { reads, scene } = countedScene(10);
+    const prunes: boolean[] = [];
+    (
+      scene as Scene & { __tnUpdateMatrixWorld: (force: boolean, prune: boolean) => number }
+    ).__tnUpdateMatrixWorld = (_force, prune) => {
+      prunes.push(prune);
+      return 11;
+    };
+    const pass = new MatrixWorldPass({ mode: "all" });
+    expect(pass.apply(scene)).toBe(11);
+    expect(prunes).toEqual([false]);
+    expect(reads()).toBe(0);
+    pass.dispose();
+  });
+});

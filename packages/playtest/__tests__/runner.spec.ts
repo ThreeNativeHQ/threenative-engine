@@ -329,7 +329,7 @@ test("browser visual element regions reject nodes hidden by a noninteractive ove
 test("fixed-step startup races retry without hiding a stopped loop", async () => {
   let attempts = 0;
   const bridge = {
-    advance: vi.fn(async () => {
+    advance: vi.fn(async (_ticks: number) => {
       attempts += 1;
       if (attempts === 1) throw new Error("page.evaluate: Error: Cannot advance a stopped loop.");
     }),
@@ -338,8 +338,15 @@ test("fixed-step startup races retry without hiding a stopped loop", async () =>
 
   await advanceFixedStep(page, bridge, 10);
 
-  expect(attempts).toBe(2);
-  expect(page.evaluate).toHaveBeenCalledTimes(1);
+  expect(attempts).toBe(11);
+  expect(bridge.advance.mock.calls.every((args) => args[0] === 1)).toBe(true);
+  expect(page.evaluate).toHaveBeenCalledTimes(11);
+});
+
+test.each([0, -1, 1.5, Number.NaN])("fixed-step driving rejects invalid tick count %s", async (ticks) => {
+  const bridge = { advance: vi.fn() };
+  await expect(advanceFixedStep({} as Page, bridge, ticks)).rejects.toThrow("positive integer");
+  expect(bridge.advance).not.toHaveBeenCalled();
 });
 
 test("browser bridge handshake honors the configured operation timeout", async () => {
@@ -1217,9 +1224,14 @@ test("browser runner times out a resource wait with the last observation", async
 
 test("served fixture reports the production protocol limits and valid capabilities", async () => {
   const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
-  const server = createServer((_request, response) => {
+  const server = createServer((request, response) => {
+    if (request.url === "/@vite/client") {
+      response.writeHead(200, { "content-type": "text/javascript" });
+      response.end("/* acquisition fixture */");
+      return;
+    }
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    response.end(fixtureHtml);
+    response.end(`${fixtureHtml}<script src="/@vite/client"></script>`);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -1271,6 +1283,9 @@ test("served fixture reports the production protocol limits and valid capabiliti
       url: `http://127.0.0.1:${address.port}`,
     });
     expect(report.pass).toBe(true);
+    expect(report.acquisition?.requestUrls).toContain(`http://127.0.0.1:${address.port}/`);
+    expect(report.acquisition?.requestUrls).toContain(`http://127.0.0.1:${address.port}/@vite/client`);
+    expect(new Set(report.acquisition?.requestUrls).size).toBe(report.acquisition?.requestUrls.length);
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => error === undefined ? resolve() : reject(error)),

@@ -1116,7 +1116,13 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // The discrete chain the asset pipeline baked in. Registered only when the file declares it,
         // so a game with no auto LOD never pays for the plugin. Levels are built after the quantized
         // positions are widened, so the derived geometries share the widened attributes.
-        const discreteLod = extensions.has(TN_DISCRETE_LOD) ? new DiscreteLodPlugin() : undefined;
+        // The Wasm engine's loader hosts this plugin too, and sets `failClosed`: a chain it cannot
+        // deliver rejects the load there instead of being logged.
+        const discreteLod = extensions.has(TN_DISCRETE_LOD)
+          ? new DiscreteLodPlugin({
+              failClosed: (loader as { failClosed?: boolean }).failClosed === true,
+            })
+          : undefined;
         if (discreteLod !== undefined) {
           const plugin = discreteLod;
           loader.register((parser) => {

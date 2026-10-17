@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Midway scoreboard</title>
+<style>
+  :root {
+    --bg:#FAF9F5; --card:#F0EEE6; --ink:#141413; --mute:#5E5D59; --line:#E3E0D3; --track:#E3E0D3; --accent:#D97757; --soft:#B0AEA5;
+    --green:#15803d; --green-bg:#e3f3e9; --red:#c8261b; --red-bg:#fbe6e3; --grey-bg:#E8E6DC; --amber:#9a5b00; --amber-bg:#f8ecd2;
+    --desktop:#D97757; --wasm:#6A9BCC; --legacy:#87867F;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg:#262624; --card:#30302E; --ink:#F0EEE6; --mute:#B0AEA5; --line:#454441; --track:#454441; --accent:#D97757; --soft:#B0AEA5;
+    --green:#4ade80; --green-bg:#16301f; --red:#ff7b70; --red-bg:#3a1a17; --grey-bg:#3A3936; --amber:#f0b45a; --amber-bg:#3d2f14;
+    --desktop:#E08A6D; --wasm:#7FAAD6; --legacy:#A9A79D;
+  } }
+  :root[data-theme="dark"] {
+    --bg:#262624; --card:#30302E; --ink:#F0EEE6; --mute:#B0AEA5; --line:#454441; --track:#454441; --accent:#D97757; --soft:#B0AEA5;
+    --green:#4ade80; --green-bg:#16301f; --red:#ff7b70; --red-bg:#3a1a17; --grey-bg:#3A3936; --amber:#f0b45a; --amber-bg:#3d2f14;
+    --desktop:#E08A6D; --wasm:#7FAAD6; --legacy:#A9A79D;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:14px 18px 40px; background:var(--bg); color:var(--ink); font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; font-variant-numeric:tabular-nums; }
+  main { max-width:1700px; margin:0 auto; display:grid; gap:14px; } main > * { min-width:0; }
+  header { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
+  h1 { font-size:17px; margin:0; font-weight:650; } h2 { font-size:12px; margin:0 0 10px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); }
+  .grow { flex:1; }
+  nav.tabs { display:flex; gap:6px; } nav.tabs a { padding:3px 12px; border-radius:999px; color:var(--mute); text-decoration:none; border:1px solid var(--line); }
+  nav.tabs a[aria-current] { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .mute { color:var(--mute); } .sm { font-size:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .hero { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start; }
+  .panel { display:grid; gap:10px; } .panel h3 { margin:0; font-size:17px; font-weight:700; }
+  .panel .head { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; }
+  .panel .sub { font-size:12px; color:var(--mute); display:flex; flex-wrap:wrap; gap:2px 12px; }
+  .panel .why { font-size:12px; border-radius:8px; padding:5px 9px; background:var(--grey-bg); }
+  .poses { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+  .pose { display:grid; gap:3px; align-content:start; min-width:0; } .pose .nm { font-size:12px; font-weight:650; color:var(--mute); text-transform:uppercase; letter-spacing:.05em; }
+  .ratio { font-size:44px; font-weight:780; line-height:1; letter-spacing:-.025em; } .ratio.ok { color:var(--green); } .ratio.bad { color:var(--red); } .ratio.none { color:var(--soft); }
+  .ok { color:var(--green); font-weight:650; } .bad { color:var(--red); font-weight:650; }
+  .pose .dl { font-size:12px; min-height:16px; } .pose .gp { font-size:12px; color:var(--mute); min-height:32px; }
+  .prog { position:relative; height:12px; margin-top:14px; border-radius:6px; background:var(--track); }
+  .prog i { position:absolute; inset:0 auto 0 0; border-radius:6px; background:var(--accent); } .prog.met i { background:var(--green); } .prog.slow i { background:var(--red); }
+  .prog u { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--green); }
+  .prog b { position:absolute; top:-9px; width:0; height:0; margin-left:-5px; border:5px solid transparent; border-top:7px solid var(--ink); border-bottom:0; }
+  .prog.slow b { border-top-color:var(--red); }
+  .scale { position:relative; height:14px; font-size:10.5px; color:var(--mute); } .scale span { position:absolute; top:2px; transform:translateX(-50%); white-space:nowrap; }
+  .scale span:first-child { transform:none; } .scale span:last-child { transform:translateX(-100%); }
+  .panel table th, .panel table td { padding:2px 6px; } .panel table td { text-align:right; } .panel tr.sec td, .panel tr.sec th { color:var(--mute); }
+  .chip.warn { background:var(--amber-bg); color:var(--amber); } .chip.run { background:var(--wasm); color:#fff; }
+  .two { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:14px; align-items:start; }
+  .cyc { display:grid; grid-template-columns:minmax(120px,1.2fr) 70px minmax(160px,3fr) 80px 90px minmax(0,2fr); gap:4px 10px; align-items:center; font-size:12.5px; }
+  .cyc .trk { position:relative; height:12px; border-radius:6px; background:var(--track); } .cyc .trk i { position:absolute; inset:0 auto 0 0; border-radius:6px; background:var(--green); } .cyc .trk.over i { background:var(--red); } .cyc .trk.live i { background:repeating-linear-gradient(135deg,var(--accent) 0 8px,transparent 8px 16px); } .cyc .trk.live.over i { background:repeating-linear-gradient(135deg,var(--red) 0 8px,transparent 8px 16px); }
+  .cyc .trk u { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--ink); }
+  .cyc .rn { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--mute); }
+  .count { font-size:20px; font-weight:750; margin-right:6px; }
+  .stack { display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
+  .kpi { display:grid; gap:5px; padding:9px 0 11px; border-top:1px solid var(--line); } .kpi:first-of-type { border-top:0; padding-top:0; }
+  .kpi .top { display:flex; align-items:baseline; gap:10px; }
+  .kpi .name { font-weight:600; font-size:14px; } .kpi .name small { color:var(--mute); font-weight:500; margin-right:6px; }
+  .kpi .big { font-size:36px; font-weight:750; line-height:1; letter-spacing:-.02em; } .kpi .big small { font-size:14px; font-weight:500; color:var(--mute); letter-spacing:0; margin-left:3px; }
+  .pass .big { color:var(--green); } .fail .big { color:var(--red); }
+  .bar { position:relative; height:16px; border-radius:8px; background:var(--track); overflow:hidden; }
+  .bar i { position:absolute; inset:0 auto 0 0; border-radius:8px; background:var(--accent); }
+  .pass .bar i { background:var(--green); }
+  .pending .bar { background:repeating-linear-gradient(135deg,var(--track) 0 8px,transparent 8px 16px); }
+  .bar b { position:absolute; top:0; bottom:0; width:3px; background:var(--red); }
+  .kpi .foot { display:flex; gap:8px; font-size:12px; color:var(--mute); align-items:center; }
+  .chip { display:inline-block; border-radius:999px; padding:1px 9px; font-size:11.5px; font-weight:650; background:var(--grey-bg); color:var(--mute); white-space:nowrap; }
+  .chip.pass { background:var(--green-bg); color:var(--green); } .chip.fail { background:var(--red-bg); color:var(--red); }
+  .pct { font-size:20px; font-weight:700; color:var(--ink); }
+  .ring { display:flex; gap:16px; align-items:center; }
+  .acs { display:flex; flex-wrap:wrap; gap:5px; } .acs .chip { min-width:48px; text-align:center; }
+  #ab { grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); }
+  .gaps { display:grid; grid-template-columns:1fr 1fr; gap:14px; } .gap { display:grid; gap:1px; align-content:start; }
+  .gapnum { font-size:46px; font-weight:750; line-height:1.05; letter-spacing:-.02em; } .gapnum.pass { color:var(--green); } .gapnum.fail { color:var(--red); }
+  .twin { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); gap:10px; }
+  .row3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:14px; }
+  .charthead { display:flex; align-items:center; gap:8px; margin-bottom:4px; } .charthead b { font-size:13px; }
+  svg { display:block; width:100%; height:auto; } svg text { fill:var(--mute); font-size:10.5px; }
+  svg .val { fill:var(--ink); font-size:12px; font-weight:650; } svg .tgt { fill:var(--ink); font-size:10.5px; }
+  .legend { display:flex; flex-wrap:wrap; gap:4px 14px; font-size:12px; color:var(--mute); }
+  .legend span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px; background:var(--c); }
+  .scroll { overflow-x:auto; } table { border-collapse:collapse; width:100%; font-size:12.5px; }
+  th, td { text-align:right; padding:3px 8px; border-top:1px solid var(--line); white-space:nowrap; } th:first-child, td:first-child { text-align:left; } th { color:var(--mute); font-weight:500; }
+  details summary { cursor:pointer; font-weight:650; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); }
+  #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px; }
+  @media (max-width:1100px) { .hero { grid-template-columns:minmax(0,1fr); } .two { grid-template-columns:minmax(0,1fr); } .poses { gap:8px; } .ratio { font-size:34px; } .cyc { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Midway scoreboard <span class="mute">PRD-610 · native engine vs three.js</span></h1>
+  <nav class="tabs"><a href="/">Epic scoreboard</a><a href="/midway" aria-current="page">Midway</a></nav>
+  <span class="grow"></span>
+  <span class="mute sm"><span id="dot"></span><span id="status">connecting…</span></span>
+</header>
+<section class="card"><h2>Recent measurements · exploratory</h2><div id="recent"></div></section>
+<section class="hero" id="hero"></section>
+<section class="card"><h2>Iteration cycles · start optimization to results · goal under 30 min</h2><div id="cycles"></div></section>
+<section class="two">
+  <div class="card"><h2>PRD-610 acceptance boxes</h2><div class="ring" id="ring"></div></div>
+  <div class="card"><h2>HUD round trip · AC-5</h2><div id="hud"></div></div>
+</section>
+<section class="card" id="progressCard" hidden><h2>Progress over engine commits · matched ratio per pose</h2><div id="progress"></div></section>
+<section class="card"><details><summary>Matched CPU detail per pose</summary><div id="gap" style="margin-top:8px"></div></details></section>
+<section class="card"><details id="hist"><summary>Historical diagnostics · retired AC-3 and AC-4, best measured experimental, native split</summary>
+  <h2 style="margin-top:12px">Now: Phase 2 · AC14 done · AC15 matched counter baseline pending</h2><p id="focus"></p>
+  <h2>Best measured experimental · not accepted</h2><div id="candidate"></div>
+  <h2>Pinned measurement and qualification</h2><div id="winner"></div>
+  <h2 style="margin-top:12px">Targets and retired measurements</h2><div id="kpis"></div>
+  <h2 style="margin-top:12px">Matched CPU overview · historical native split</h2><div class="twin" id="side"></div><div class="legend" id="sideLegend"></div>
+</details></section>
+<p class="mute sm">CPU and instructions use the last 1,000 complete active player frames. Qualification requires all 1,000. HUD uses all snapshots; matrix visits use the last legacy projection observation. Versioned world work uses the same active tail; v3 adds dirty propagation and subtree checks to v2. Versions and legacy Matrix last have different scopes and are not directly comparable. Headline targets retain the original metric.</p>
+<section class="card"><h2>Trend per build (median of its runs) · dashed line is the target</h2><div class="row3" id="trend"></div><div class="legend" id="trendLegend" style="margin-top:6px"></div></section>
+<section class="card"><h2>A/B groups · keep rule: every run of the next arm beats every run of the previous arm</h2><div class="row3" id="ab"></div></section>
+<section class="card"><details open><summary>Desktop builds and every run</summary><div class="scroll" id="builds" style="margin:8px 0"></div><div class="scroll" id="runs" style="margin-top:8px"></div></details></section>
+</main>
+<script>
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const $ = (id) => document.getElementById(id);
+const NS = '<span class="mute">no samples</span>';
+const ARM = { desktop: "Native engine (desktop)", native: "Web Wasm engine", legacy: "Web three.js" };
+const COLOR = { desktop: "var(--desktop)", native: "var(--wasm)", legacy: "var(--legacy)" };
+const DECISION_COLOR = { retained: "var(--green)", rejected: "var(--red)", pending: "var(--soft)" };
+const num = (v, d = 1) => (v >= 1000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(v >= 100 ? 0 : d));
+const n = (v, d = 2) => (v === undefined ? NS : v.toFixed(d));
+const ms = (r) => (r.arm === "desktop" ? r.desktop?.medians.cpuFrameCpuMs : r.budget?.frameP50);
+const parity = (r) => (r.parityMalformed ? '<span class="chip fail">malformed</span>' : !r.parity ? '<span class="chip">none</span>' : `<span class="chip ${r.parity.pass ? "pass" : "fail"}">${r.parity.pass ? "PASS" : "FAIL"}</span>`);
+const legendOf = (arms) => arms.map((a) => `<span style="--c:${COLOR[a]}">${ARM[a]}</span>`).join("");
+const short = (dir) => dir.replace(/-(desktop|native|legacy)$/, "");
+
+function kpi(k) {
+  const unit = { x: "×", "%": "%", ms: "ms", nodes: "nodes" }[k.unit];
+  const fmt = (v) => (typeof v !== "number" || !Number.isFinite(v) ? "—" : k.unit === "x" ? v.toFixed(2) : k.unit === "%" ? v.toFixed(k.id === "AC-4" ? 2 : 1) : num(v));
+  const deferred = k.id === "AC-3" && k.verdict === "fail";
+  const tgt = `${k.better === "lower" ? "≤" : "≥"} ${fmt(k.target)} ${unit}`;
+  if (k.verdict === "pending")
+    return `<div class="kpi pending"><div class="top"><span class="name"><small>${k.id}</small>${esc(k.title)}</span><span class="grow"></span><span class="big">—</span><span class="chip">pending</span></div><div class="bar"></div><div class="foot"><span>target ${tgt}</span><span class="grow"></span><span>${esc(k.detail)}</span></div></div>`;
+  const p = k.progress, fill = Math.max(0, Math.min(1, p)) * 100;
+  const notch = p < 0 ? '<b style="left:0"></b>' : "";
+  const pct = p < 0 ? (k.baselineDeltaPct === undefined ? undefined : Math.abs(k.baselineDeltaPct)) : Math.abs(p * 100);
+  const word = p < 0 ? `${pct === undefined ? "" : pct.toFixed(0) + "% "}worse than baseline` : p > 1 ? "past the target" : "of the way";
+  return `<div class="kpi ${k.verdict}"><div class="top"><span class="name"><small>${k.id}${k.ticked ? " ✓" : ""}</small>${esc(k.title)}</span><span class="grow"></span><span class="big">${fmt(k.current)}<small>${unit}</small></span><span class="chip ${k.verdict}"${deferred ? ' title="Original stretch goal not met; background work does not block AC-4–13"' : ""}>${deferred ? "DEFERRED" : k.verdict.toUpperCase()}</span></div>
+    <div class="bar" role="img" aria-label="${k.id} progress ${Math.round(p * 100)} percent"><i style="width:${fill}%"></i>${notch}</div>
+    <div class="foot"><span>start ${fmt(k.baseline)} ${unit} <span title="oldest build">(${esc(k.baselineBuild)})</span></span><span class="grow"></span><span class="pct">${p < 0 ? "−" : ""}${pct === undefined ? "—" : pct.toFixed(0) + "%"}</span><span>${word}</span><span class="grow"></span><span>target <b>${tgt}</b></span></div>
+    <div class="foot"><span><b>${esc(k.build)}</b> · median of ${k.runs} run${k.runs === 1 ? "" : "s"}: ${esc(k.detail)}</span></div></div>`;
+}
+
+function gapSide(g, name, color) {
+  if (!g) return `<div class="gap"><b style="color:var(--mute)">${name}</b><span class="mute">no samples</span></div>`;
+  const good = g.direction === "faster", word = g.direction === "equal" ? "level with" : `${Math.abs(g.pct).toFixed(0)}% ${g.direction} than`;
+  return `<div class="gap"><b style="color:${color}">${name}</b><span class="gapnum ${good ? "pass" : g.direction === "equal" ? "" : "fail"}">${g.pct > 0 ? "+" : g.pct < 0 ? "−" : ""}${Math.abs(g.pct).toFixed(0)}%<small> ${g.direction}</small></span><span>${g.ms.toFixed(1)} ms · ${g.absMs > 0 ? "+" : "−"}${Math.abs(g.absMs).toFixed(1)} ms ${good ? "ahead of" : "behind"} three.js</span><span class="mute sm">${name.toLowerCase()} is ${word} three.js (${esc(g.build)}, median of ${g.runs} run${g.runs === 1 ? "" : "s"})</span></div>`;
+}
+
+function renderGap(d) {
+  $("gap").innerHTML = `<div class="scroll"><table><tr><th>Pose / arm</th><th>Legacy/native CPU ratio</th><th>CPU ms/frame (legacy / native)</th><th>Instructions/frame (legacy / native)</th><th>Process-tree CPU ms/frame (legacy / native)</th><th>Qualification</th></tr>${(d.matchedCpu ?? []).map((p) => `<tr><td>${esc(p.pose)} / ${esc(p.arm)}</td><td>${p.ratio === undefined ? "pending/unavailable" : `${p.ratio.toFixed(3)}x`}</td><td>${n(p.legacyCpuMs ?? p.unpaired?.legacy?.cpuMs)} / ${p.unpaired?.nativeState === "failed" ? "failed" : n(p.nativeCpuMs ?? p.unpaired?.native?.cpuMs)}</td><td>${n(p.legacyInstructions ?? p.unpaired?.legacy?.instructions, 0)} / ${p.unpaired?.nativeState === "failed" ? "failed" : n(p.nativeInstructions ?? p.unpaired?.native?.instructions, 0)}</td><td>${n(p.legacyTreeCpuMs ?? p.unpaired?.legacy?.treeCpuMs)} / ${p.unpaired?.nativeState === "failed" ? "failed" : n(p.nativeTreeCpuMs ?? p.unpaired?.native?.treeCpuMs)}</td><td>${esc(p.detail)}</td></tr>`).join("")}</table></div><p class="mute sm">Fixed-step OS counters only; engine commits must match. Three alternating pairs per pose and native parity PASS are required; root execution review remains mandatory. Native host completion records must reconcile against labelled window ticks; missing records leave independent reconciliation unavailable. Attribution/profiles pending.</p>`;
+}
+
+function ring(prd) {
+  if (!prd) return '<span class="mute">no AC boxes found in the PRD file</span>';
+  const all = [...prd.ticked.map((id) => [id, 1]), ...prd.open.map((id) => [id, 0])].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
+  return `<div><span class="count">${prd.done}/${prd.total}</span><span class="mute">ticked · a box is ticked only when its proof ran</span><div class="acs" style="margin-top:6px">${all.map(([id, t]) => `<span class="chip ${t ? "pass" : ""}">${id}${t ? " ✓" : ""}</span>`).join("")}</div></div>`;
+}
+
+
+const POSE_IDS = ["takeoff", "cockpit", "reargun"];
+const POSE_NAME = { takeoff: "Takeoff", cockpit: "Cockpit", reargun: "Rear gunner" };
+const HERO_TITLE = { desktop: "Native desktop vs three.js", native: "Web Wasm vs three.js" };
+const STATE_CHIP = { qualified: ["pass", "QUALIFIED"], provisional: ["warn", "PROVISIONAL"], unverified: ["warn", "NO PARITY"], failed: ["fail", "FAILED"], running: ["run", "RUNNING"], nodata: ["", "NO DATA"] };
+const sc = (c) => (c ? c.slice(0, 7) : "unknown");
+const dash = '<span class="mute">—</span>';
+const f = (v, d) => (v === undefined || v === null ? dash : v.toFixed(d));
+
+function heroBar(r, a) {
+  const hi = a.stretch ?? a.target, pos = (v) => Math.max(0, Math.min(1, (v - 1) / (hi - 1))) * 100;
+  const cls = r === undefined ? "" : r < 1 ? "slow" : r >= a.target ? "met" : "";
+  const labels = `<span style="left:0">1.0x parity</span>${a.stretch ? `<span style="left:${pos(a.target)}%">${a.target}x target</span>` : ""}<span style="left:100%">${hi}x ${a.stretch ? "stretch" : "target"}</span>`;
+  return `<div class="prog ${cls}" role="img" aria-label="ratio ${r === undefined ? "unavailable" : r.toFixed(2) + "x"} on a scale from 1.0x to ${hi}x">${r === undefined ? "" : `<i style="width:${pos(r)}%"></i><b style="left:${pos(r)}%"></b>`}${a.stretch ? `<u style="left:${pos(a.target)}%"></u>` : ""}</div><div class="scale">${labels}</div>`;
+}
+
+function heroGap(p, a) {
+  if (p.ratio === undefined) return "no ratio yet";
+  if (p.ratio >= a.target) return `<span class="ok">target met</span>${a.stretch && p.ratio < a.stretch ? ` · stretch needs ${(a.stretch - p.ratio).toFixed(2)}x more` : ""}`;
+  return `needs ${p.needRatio.toFixed(2)}x more${p.needMs > 0 ? ` · −${p.needMs.toFixed(2)} ms/frame on the engine main thread` : ""}`;
+}
+
+function heroDelta(p, a) {
+  if (p.ratio === undefined) return "";
+  if (p.deltaRatio === undefined) return '<span class="mute">— first measurement</span>';
+  const d = p.deltaRatio;
+  if (Math.abs(d) < 0.005) return `<span class="mute">= no change vs ${sc(a.previousCommit)}</span>`;
+  return `<span class="${d > 0 ? "ok" : "bad"}">${d > 0 ? "▲ better +" : "▼ worse −"}${Math.abs(d).toFixed(2)}x vs ${sc(a.previousCommit)}</span>`;
+}
+
+function heroPanel(a) {
+  const [cls, word] = STATE_CHIP[a.state] ?? ["", String(a.state).toUpperCase()];
+  const poses = POSE_IDS.map((id) => a.poses.find((p) => p.pose === id) ?? { pose: id });
+  const message = { running: `matched flight in progress at engine ${sc(a.commit)}; nothing to compare yet`, nodata: a.commit ? `no matched run at engine ${sc(a.commit)}` : "no matched legacy run yet" }[a.state];
+  const why = a.reason ?? message;
+  const cols = poses.map((p) => `<div class="pose"><span class="nm">${POSE_NAME[p.pose]}</span><span class="ratio ${p.ratio === undefined ? "none" : p.ratio < 1 ? "bad" : p.ratio >= a.target ? "ok" : ""}">${p.ratio === undefined ? "—" : p.ratio.toFixed(2) + "x"}</span><span class="dl">${heroDelta(p, a)}</span>${heroBar(p.ratio, a)}<span class="gp">${heroGap(p, a)}</span></div>`).join("");
+  const cell = (get) => poses.map((p) => `<td>${get(p)}</td>`).join("");
+  const pair = (x, y, d, k = 1) => (x === undefined || y === undefined ? dash : `${(x / k).toFixed(d)} / ${(y / k).toFixed(d)}`);
+  const table = `<table><tr><th></th>${poses.map((p) => `<td class="mute">${POSE_NAME[p.pose]}</td>`).join("")}</tr>
+    <tr><th>CPU ms/frame · three.js / engine</th>${cell((p) => pair(p.legacyCpuMs, p.nativeCpuMs, 2))}</tr>
+    <tr><th>Instructions/frame (M) · three.js / engine</th>${cell((p) => pair(p.legacyInstructions, p.nativeInstructions, 1, 1e6))}</tr>
+    <tr><th>IPC · three.js / engine</th>${cell((p) => pair(p.legacyIpc, p.nativeIpc, 2))}</tr>
+    <tr class="sec"><th>Process-tree CPU ms/frame · three.js / engine</th>${cell((p) => pair(p.legacyTreeCpuMs, p.nativeTreeCpuMs, 1))}</tr></table>`;
+  return `<div class="card panel" data-arm="${a.arm}" data-state="${a.state}"><div class="head"><h3 style="color:${a.arm === "desktop" ? "var(--desktop)" : "var(--wasm)"}">${HERO_TITLE[a.arm]}</h3><span class="grow"></span>${a.running && a.state !== "running" ? '<span class="chip run">RUN IN PROGRESS</span>' : ""}<span class="chip ${cls === "run" ? "run" : cls}">${word}</span><span class="chip">${a.pairs} of ${a.pairsNeeded} pairs</span></div>
+    <div class="sub"><span>engine ${sc(a.commit)}</span><span>target <b>${a.target}x</b> (pass line)${a.stretch ? ` · stretch <b>${a.stretch}x</b>` : ""}</span><span>matched main-thread CPU, three.js ÷ engine</span></div>${why ? `<div class="why">${esc(why)}</div>` : ""}
+    <div class="poses">${cols}</div><div class="scroll">${table}</div></div>`;
+}
+
+function renderHero(d) {
+  $("hero").innerHTML = d.hero ? d.hero.arms.map(heroPanel).join("") : "";
+}
+
+/** Matched ratio per pose for every arm, x = engine commit in run order. Omitted with fewer than two commits. */
+function progress(d) {
+  const arms = d.hero?.arms ?? [], commits = [...new Map(arms.flatMap((a) => a.history).sort((x, y) => x.at - y.at).map((h) => [h.commit, h.at])).keys()];
+  if (commits.length < 2) return "";
+  const W = 860, H = 220, L = 38, R = 70, T = 12, B = 26, all = arms.flatMap((a) => a.history.flatMap((h) => Object.values(h.ratios)));
+  const hi = Math.max(...all, ...arms.map((a) => a.target), 1.2) * 1.1, lo = Math.min(...all, 1) * 0.9;
+  const x = (c) => L + (commits.indexOf(c) / (commits.length - 1)) * (W - L - R), y = (v) => H - B - ((v - lo) / (hi - lo)) * (H - B - T);
+  const dashes = { takeoff: "", cockpit: "7 4", reargun: "2 3" };
+  const refs = [[1, "three.js 1.0x", "var(--legacy)"], ...arms.map((a) => [a.target, `${HERO_TITLE[a.arm].split(" vs")[0]} target ${a.target}x`, "var(--green)"])].map(([v, t, c]) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${c}" stroke-dasharray="5 4"/><text x="${W - R + 4}" y="${y(v) + 3}">${t}</text>`).join("");
+  const lines = arms.flatMap((a) => POSE_IDS.map((pose) => { const pts = a.history.filter((h) => h.ratios[pose] !== undefined).map((h) => [x(h.commit), y(h.ratios[pose]), h.ratios[pose]]); const col = a.arm === "desktop" ? "var(--desktop)" : "var(--wasm)"; return `<polyline fill="none" stroke="${col}" stroke-width="2.4" stroke-dasharray="${dashes[pose]}" points="${pts.map((q) => q[0] + "," + q[1]).join(" ")}"/>${pts.map((q) => `<circle cx="${q[0]}" cy="${q[1]}" r="3.6" fill="${col}"><title>${HERO_TITLE[a.arm]} · ${POSE_NAME[pose]}: ${q[2].toFixed(2)}x</title></circle>`).join("")}`; })).join("");
+  const ticks = commits.map((c) => `<text x="${x(c)}" y="${H - 8}" text-anchor="middle" style="font-size:9px">${sc(c)}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Matched ratio per pose by engine commit">${refs}${lines}${ticks}</svg><div class="legend"><span style="--c:var(--desktop)">Native desktop</span><span style="--c:var(--wasm)">Web Wasm</span><span>solid takeoff · dashed cockpit · dotted rear gunner</span></div>`;
+}
+
+/** Closed cycles and live open ones as bars against the 30-minute goal; `now` is the viewer's clock. */
+function cyclesPanel(c, now = Date.now()) {
+  if (!c) return "";
+  const open = c.open.map((o) => ({ ...o, minutes: Math.max(0, (now - Date.parse(o.startedAt)) / 60000), live: true }));
+  const rows = [...c.last.map((x) => ({ ...x, live: false })), ...open];
+  const skipped = c.skipped ? `<span class="chip fail" title="Lines that did not parse or broke the start/end order">${c.skipped} malformed line${c.skipped === 1 ? "" : "s"} skipped</span>` : "";
+  if (!rows.length) return `<span class="mute">no cycles yet · start one with <code>node --import tsx scripts/midway-bench/cycle.ts start &lt;lever&gt;</code></span> ${skipped}`;
+  const T = c.targetMin, max = Math.max(T * 2, ...rows.map((r) => r.minutes)) * 1.05, pos = (m) => Math.min(100, (m / max) * 100);
+  const sum = c.count ? `<span class="chip ${c.medianMin < T ? "pass" : "fail"}">median ${c.medianMin.toFixed(1)} min</span><span class="chip ${c.pctUnder >= 50 ? "pass" : "fail"}">${c.pctUnder.toFixed(0)}% under ${T} min</span><span class="chip">${c.count} closed</span>` : '<span class="chip">no closed cycle yet</span>';
+  const V = { keep: "pass", reject: "fail", inconclusive: "" };
+  const body = rows.map((r) => `<span><b>${esc(r.lever)}</b></span><span class="mute">${esc(r.arm ?? "—")}</span><span class="trk ${r.minutes >= T ? "over" : ""} ${r.live ? "live" : ""}" role="img" aria-label="${r.minutes.toFixed(1)} minutes"><i style="width:${pos(r.minutes)}%"></i><u style="left:${pos(T)}%"></u></span><span class="${r.minutes >= T ? "bad" : "ok"}">${r.minutes.toFixed(1)} min${r.live ? " ⏱" : ""}</span><span>${r.live ? '<span class="chip run">OPEN</span>' : `<span class="chip ${V[r.verdict] ?? ""}">${esc(String(r.verdict).toUpperCase())}</span>`}</span><span class="rn" title="${esc((r.runs ?? []).join(", "))}">${esc((r.runs ?? []).join(", ") || r.note || "")}</span>`).join("");
+  return `<div class="legend" style="gap:6px;margin-bottom:8px">${sum}${skipped}<span>last ${c.last.length} · black tick = ${T} min goal</span></div><div class="cyc">${body}</div>`;
+}
+
+function side(d) {
+  const g = d.gap, bars = [["desktop", g.desktop], ["native", g.wasm], ["legacy", g.legacyMs === undefined ? undefined : { ms: g.legacyMs, build: "three.js", runs: d.runs.filter((r) => r.arm === "legacy").length }]].map(([arm, m]) => ({ arm, v: m?.ms, build: m?.build, runs: m?.runs }));
+  const W = 410, A = 320, H = 225, base = H - 34, top = 26, hi = Math.max(...bars.map((b) => b.v ?? 0), 1) * 1.15, bw = 64, gap = (A - 3 * bw) / 4;
+  const ref = d.legacyMs;
+  const cols = bars.map((b, i) => {
+    const x = gap + i * (bw + gap), label = { desktop: "Native", native: "Web Wasm", legacy: "three.js" }[b.arm];
+    const provisional = (d.matchedCpu ?? []).filter((p) => p.unpaired && (b.arm === "legacy" || p.arm === b.arm && p.unpaired.nativeState !== "missing"));
+    const pending = provisional.length ? b.arm !== "legacy" && provisional.some((p) => p.unpaired.nativeState === "failed") ? "failed" : "provisional" : "no samples";
+    if (b.v === undefined) return `<g><rect x="${x}" y="${top}" width="${bw}" height="${base - top}" rx="6" fill="none" stroke="var(--line)" stroke-dasharray="4 4"/><text x="${x + bw / 2}" y="${(base + top) / 2}" text-anchor="middle">${pending}</text><text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">${label}</text></g>`;
+    const v = b.v, h = (v / hi) * (base - top), chip = ref && b.arm !== "legacy" ? `${(ref / v).toFixed(2)}× three.js` : "reference";
+    return `<g><rect x="${x}" y="${base - h}" width="${bw}" height="${h}" rx="6" fill="${COLOR[b.arm]}"><title>${esc(b.build)} · median of ${b.runs} run${b.runs === 1 ? "" : "s"}</title></rect><text class="val" x="${x + bw / 2}" y="${base - h - 6}" text-anchor="middle">${v.toFixed(1)} ms</text><text x="${x + bw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">${b.arm === "legacy" ? "" : `${label} · `}${esc(b.build ?? label)}</text><text x="${x + bw / 2}" y="${H - 3}" text-anchor="middle" style="fill:${b.arm !== "legacy" && ref && ref / v < 1 ? "var(--red)" : "var(--mute)"}">${chip}</text></g>`;
+  }).join("");
+  const refLine = ref ? hlines((v) => base - (v / hi) * (base - top), 0, A, "ms", { bench: [{ arm: "legacy", label: "three.js", value: ref }], target: ref, targetLabel: "target" }) : "";
+  const bd = d.breakdown;
+  let stack = `<div class="mute sm">no desktop samples</div>`, legend = "";
+  if (bd) {
+    const parts = [["gameJs", "Game JS", "var(--wasm)", bd.gameJs], ["render", "Render", "var(--desktop)", bd.render], ["other", "Other main thread", "var(--soft)", bd.other]];
+    const total = parts.reduce((s, p) => s + p[3], 0), SW = 200, sb = H - 34, st = 46, bx = 40, sw = 80;
+    let y = sb;
+    const segs = parts.map(([, name, color, v]) => { const h = (v / total) * (sb - st); y -= h; return `<g><rect x="${bx}" y="${y}" width="${sw}" height="${Math.max(h, 0)}" fill="${color}"><title>${name}: ${v.toFixed(2)} ms</title></rect>${h > 13 ? `<text x="${bx + sw + 6}" y="${y + h / 2 + 4}" style="fill:var(--ink)">${name.split(" ")[0]} ${v.toFixed(1)}</text>` : ""}</g>`; }).join("");
+    stack = `<svg viewBox="0 0 ${SW} ${H}" role="img" aria-label="Desktop frame breakdown">${segs}<text class="val" x="${bx + sw / 2}" y="${st - 8}" text-anchor="middle">${total.toFixed(1)} ms</text><text x="${bx + sw / 2}" y="${st - 24}" text-anchor="middle">+ ${bd.present.toFixed(1)} present</text><text x="${bx + sw / 2}" y="${H - 16}" text-anchor="middle" style="fill:var(--ink)">Desktop split</text><text x="${bx + sw / 2}" y="${H - 3}" text-anchor="middle">${esc(bd.build)}</text></svg>`;
+    legend = `<span style="--c:var(--wasm)">Game JS</span><span style="--c:var(--desktop)">Render</span><span style="--c:var(--soft)">Other main thread</span><span>present call (${bd.present.toFixed(1)} ms) is outside the KPI</span>`;
+  }
+  $("side").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Main-thread ms per frame by arm"><line x1="0" x2="${A}" y1="${base}" y2="${base}" stroke="var(--line)"/>${cols}${refLine}</svg>${stack}`;
+  $("sideLegend").innerHTML = (ref ? `<span style="--c:var(--legacy)">line: three.js ${ref.toFixed(1)} ms, historical benchmark</span>` : "") + legend;
+}
+
+const halo = 'style="paint-order:stroke;stroke:var(--card);stroke-width:4px;fill:var(--ink)"';
+/** Benchmark (three.js, solid) and target (green, dashed) lines, labelled in the right margin. They coincide where the target is "beat three.js". */
+function hlines(y, x1, x2, unit, { bench = [], target, targetLabel }) {
+  const same = target !== undefined && bench.some((b) => b.arm === "legacy" && Math.abs(b.value - target) < 1e-9);
+  const b = bench.map((v) => `<line x1="${x1}" x2="${x2}" y1="${y(v.value)}" y2="${y(v.value)}" stroke="${COLOR[v.arm]}" stroke-width="2.4"/><text x="${x2 + 5}" y="${y(v.value) + 3}" style="fill:var(--ink);font-weight:600">${v.label} ${num(v.value)}${same && v.arm === "legacy" ? `<tspan x="${x2 + 5}" dy="11" style="fill:var(--green)">= target</tspan>` : ""}</text>`).join("");
+  const t = target === undefined ? "" : `<line x1="${x1}" x2="${x2}" y1="${y(target)}" y2="${y(target)}" stroke="var(--green)" stroke-width="1.8" stroke-dasharray="6 4"/>${same ? "" : `<text x="${x2 + 5}" y="${y(target) + 3}" style="fill:var(--green);font-weight:600">${targetLabel} ${num(target)}</text>`}`;
+  return b + t;
+}
+
+function trend(t) {
+  const W = 420, H = 190, L = 40, R = 96, T = 14, B = 26, pts = t.points;
+  if (!pts.length) return `<div><div class="charthead"><b>${t.title}</b></div><p class="mute sm">no samples</p></div>`;
+  const hi = Math.max(...pts.map((p) => p.v), ...t.benchmarks.map((b) => b.value), t.target ?? 0) * 1.12, x = (i) => L + (pts.length === 1 ? (W - L - R) / 2 : (i / (pts.length - 1)) * (W - L - R)), y = (v) => H - B - (v / hi) * (H - B - T);
+  const grid = [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${y(hi * f)}" y2="${y(hi * f)}" stroke="var(--line)"/><text x="${L - 5}" y="${y(hi * f) + 3}" text-anchor="end">${num(hi * f, 0)}</text>`).join("");
+  const lines = Object.keys(ARM).map((arm) => { const mine = pts.map((p, i) => ({ p, i })).filter((q) => q.p.arm === arm); if (!mine.length) return ""; return `${mine.length > 1 ? `<polyline fill="none" stroke="${COLOR[arm]}" stroke-width="2.5" stroke-linejoin="round" points="${mine.map((q) => `${x(q.i)},${y(q.p.v)}`).join(" ")}"/>` : ""}${mine.map((q) => `<circle cx="${x(q.i)}" cy="${y(q.p.v)}" r="4.8" data-decision="${q.p.decision ?? "pending"}" fill="${DECISION_COLOR[q.p.decision ?? "pending"]}" stroke="${COLOR[arm]}" stroke-width="1.5"><title>${esc(q.p.build)} · median of ${q.p.runs} run${q.p.runs === 1 ? "" : "s"}: ${q.p.v.toFixed(2)} ${t.unit} · ${(q.p.decision ?? "pending").toUpperCase()} · ${esc(q.p.decisionReason ?? "No explicit decision")}</title></circle>`).join("")}`; }).join("");
+  // Shaded gap between the native series and the three.js benchmark, labelled with the latest difference.
+  const leg = t.benchmarks.find((b) => b.arm === "legacy"), dsk = pts.map((p, i) => ({ p, i })).filter((q) => q.p.arm === "desktop" && q.p.decision !== "rejected" && !q.p.decisionReason?.startsWith("Mixed"));
+  let shade = "";
+  if (t.id === "ms" && leg && dsk.length) {
+    const ly = y(leg.value), last = dsk.at(-1), abs = last.p.v - leg.value, pct = (abs / leg.value) * 100, col = abs > 0 ? "var(--red)" : "var(--green)";
+    shade = `<polygon points="${dsk.map((q) => `${x(q.i)},${y(q.p.v)}`).join(" ")} ${x(last.i)},${ly} ${x(dsk[0].i)},${ly}" fill="${col}" opacity=".2"/><text x="${W - R - 6}" y="${(ly + y(last.p.v)) / 2 + 4}" text-anchor="end" ${halo}><tspan style="fill:${col};font-weight:700">${abs > 0 ? "+" : "−"}${Math.abs(abs).toFixed(1)} ms · ${Math.abs(pct).toFixed(0)}% ${abs > 0 ? "slower" : "faster"}</tspan></text>`;
+  }
+  const showAll = pts.length <= 8, ticks = pts.map((p, i) => (showAll || i === 0 || i === pts.length - 1 ? `<text x="${x(i)}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === pts.length - 1 ? "end" : "middle"}" style="font-size:9px">${esc(p.build)}</text>` : "")).join("");
+  const none = t.benchmarks.length ? "" : `<text x="${L + 4}" y="${T + 4}">no three.js equivalent for this metric</text>`;
+  const badge = t.deltaPct === undefined ? '<span class="chip">needs 2 desktop runs</span>' : `<span class="chip ${t.deltaPct >= 0 ? "pass" : "fail"}">${t.deltaPct >= 0 ? "▼" : "▲"} ${Math.abs(t.deltaPct).toFixed(0)}% ${t.deltaPct >= 0 ? "better" : "worse"} than baseline</span>`;
+  return `<div><div class="charthead"><b>${t.title}</b><span class="grow"></span>${badge}</div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t.title)} per build">${grid}${shade}${hlines(y, L, W - R, t.unit, { bench: t.benchmarks, target: t.target, targetLabel: t.targetLabel })}${lines}${none}${ticks}</svg></div>`;
+}
+
+const ARM_COLORS = ["var(--legacy)", "var(--desktop)", "var(--wasm)", "var(--green)", "var(--soft)"];
+function ab(p, legacy) {
+  const instr = p.metric === "instr", unit = instr ? "M instr" : "ms", val = (r) => (instr ? r.instr : r.ms);
+  const rounds = [...new Set(p.arms.flatMap((a) => a.runs.map((r) => r.round)))].sort((x, y) => x - y), n = p.arms.length;
+  const W = 420, H = 190, L = 34, T = 22, B = 26, right = instr ? 12 : 92, showLine = !instr && legacy !== undefined;
+  const hi = Math.max(...p.arms.flatMap((a) => a.runs.map(val)), showLine ? legacy : 0, 1) * 1.15, y = (v) => H - B - (v / hi) * (H - B - T);
+  const slot = (W - L - right) / rounds.length, bw = Math.min(30, (slot - 8) / n);
+  const bars = rounds.map((round, i) => p.arms.map((a, j) => { const r = a.runs.find((x) => x.round === round); if (!r) return ""; const bx = L + slot * i + (slot - n * bw) / 2 + j * bw; return `<rect x="${bx}" y="${y(val(r))}" width="${bw - 2}" height="${H - B - y(val(r))}" rx="4" fill="${ARM_COLORS[j % ARM_COLORS.length]}"><title>${esc(r.dir)} (${esc(r.pkg)}): ${val(r).toFixed(2)} ${unit}, ${r.ms.toFixed(2)} ms</title></rect><text class="val" style="font-size:${n > 2 ? 9.5 : 11}px" x="${bx + (bw - 2) / 2}" y="${y(val(r)) - 4}" text-anchor="middle">${val(r).toFixed(1)}</text>`; }).join("") + `<text x="${L + slot * i + slot / 2}" y="${H - 8}" text-anchor="middle" style="font-size:9px">round ${round}</text>`).join("");
+  const chip = { keep: ["pass", "KEEP"], reject: ["fail", "REJECT"], pending: ["", "needs two arms"] }[p.verdict];
+  const metricChip = `<span class="chip">${instr ? "instructions per frame" : "ms per frame"}</span>`;
+  const legend = p.arms.map((a, j) => `<span style="--c:${ARM_COLORS[j % ARM_COLORS.length]}">${esc(a.name)} (${esc([...new Set(a.runs.map((r) => r.pkg))].join(", "))})</span>`).join("");
+  const pct = (a, b) => `${((b / a - 1) * 100).toFixed(1)}%`;
+  const steps = p.steps.map((st) => `<div class="legend" style="margin-top:2px;flex-wrap:nowrap;align-items:flex-start"><span class="chip ${st.verdict === "keep" ? "pass" : "fail"}">${st.verdict === "keep" ? "KEEP" : "REJECT"}</span><span>${esc(st.to)} vs ${esc(st.from)}: median ${st.medianFrom.toFixed(1)} → ${st.medianTo.toFixed(1)} ${unit} (${pct(st.medianFrom, st.medianTo)})${st.verdict === "keep" ? ", every run beats every run" : ", an overlap"}${instr ? ` · ms ${st.msFrom.toFixed(1)} → ${st.msTo.toFixed(1)} (${pct(st.msFrom, st.msTo)}), noisy on shared host` : ""}</span></div>`).join("");
+  return `<div><div class="charthead"><b>${esc(p.stem)} · ${p.arm}</b><span class="grow"></span>${metricChip}<span class="chip ${chip[0]}">${chip[1]}</span></div><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="A/B ${unit} per round"><line x1="${L}" x2="${W - right + 4}" y1="${H - B}" y2="${H - B}" stroke="var(--line)"/>${bars}${showLine ? hlines(y, L, W - right + 4, "ms", { bench: [{ arm: "legacy", label: "three.js", value: legacy }], target: legacy, targetLabel: "target" }) : ""}</svg><div class="legend">${legend}</div>${steps}</div>`;
+}
+
+function recentMeasurements(runs = []) {
+  const poses = ["released-stick-climb", "canopy-and-instruments", "gun-view"];
+  const recent = runs.filter((r) => Number.isFinite(r.mtimeMs) && (r.completionWindow || poses.every((label) => {
+    const w = r.cpuWindows?.find((w) => w.label === label);
+    return w && w.frames === 1000 && w.updates === 1000 && w.renders === 1000 && w.endTick - w.startTick === 1000 && Number.isFinite(w.mainThread?.cpuMsPerFrame);
+  }))).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 5);
+  if (!recent.length) return '<p class="mute">No completed measurements yet.</p>';
+  return `<p class="sm">Latest acquisition completed ${esc(new Date(recent[0].mtimeMs).toLocaleString())} (run-log time). Raw observations below are unqualified; headline selection is unchanged.</p><div class="scroll"><table><tr><th>Acquisition completed</th><th>Arm / run</th><th>Takeoff · ms / M instructions</th><th>Cockpit · ms / M instructions</th><th>Rear gunner · ms / M instructions</th><th>Completion interval p50 · ms</th><th>Status</th></tr>${recent.map((r) => {
+    const sampled = r.profiled || r.cpuWindows?.some((w) => "profile" in w);
+    const excluded = r.timingExclusion || r.rejection || r.failure;
+    const cells = poses.map((label) => {
+      const w = r.cpuWindows?.find((w) => w.label === label);
+      if (!w) return '<td class="mute">—</td>';
+      return `<td>${sampled ? "instrumented diagnostic" : `${n(w.mainThread.cpuMsPerFrame)} / ${n(w.mainThread.instructionsPerFrame / 1e6, 1)}`}</td>`;
+    }).join("");
+    const c = r.completionWindow;
+    const cadence = c ? `${n(c.completionIntervalP50Ms)}<br>${esc(c.label)}<br><span class="sm">${c.intervalCount} intervals · ${n(c.durationMs / 1000, 1)} s · ${esc(c.clock)}<br>${esc(c.source)} · application completion</span>` : '—';
+    return `<tr><td>${esc(new Date(r.mtimeMs).toLocaleString())}</td><td>${esc(ARM[r.arm] ?? r.arm)}<br>${esc(r.dir)}</td>${cells}<td>${cadence}</td><td title="${esc(excluded || "")}">${sampled ? "sampled · excluded" : excluded ? "excluded" : "exploratory"} · unqualified</td></tr>`;
+  }).join("")}</table></div>`;
+}
+
+function render(d) {
+  $("recent").innerHTML = recentMeasurements(d.runs);
+  $("winner").textContent = d.winner.status === "accepted" ? `LOCKED accepted winner: ${d.winner.build}` : `Pinned measured experimental reference: ${d.selection.build ?? "unavailable"} · ${d.selection.runs.length} isolated run(s); not accepted winner. ${d.winner.reason}`;
+  const candidate = d.candidate.gap.desktop;
+  const structural = d.candidate.structural;
+  $("focus").textContent = "Phase 2: AC14 done; AC15 matched counter baseline pending (three alternating pairs). Next: AC16/17/18/5/19. AC19 speed target: 2x; free-run/display/visual proof pending. CPU measurement alone cannot pass AC19. Historical diagnostics retained.";
+  $("candidate").innerHTML = structural ? `<div class="kpi pending"><div class="top"><span class="name"><small>AC-3 · EXPERIMENTAL</small>Matrix world-walk visits · best package median</span><span class="grow"></span><span class="big">${num(structural.projection, 0)}<small> visits</small></span><span class="chip">Not accepted</span></div><div class="foot"><span>${esc(structural.build)} · median of ${structural.runs} complete run(s): ${structural.projections.map((v) => num(v, 0)).join(" / ")}</span><span class="grow"></span><span>target <b>≤ ${num(structural.target, 0)} visits</b></span></div><div class="foot"><span>${structural.projectionReductionPct === undefined ? "" : `${Math.abs(structural.projectionReductionPct).toFixed(1)}% ${structural.projectionReductionPct >= 0 ? "fewer" : "more"} visits vs pinned ${num(structural.pinnedProjection, 0)} · `}1,000 complete active frames per run · parity PASS${structural.timingExclusion ? " · includes timing-excluded measurements; structural metric only" : ""}. Acceptance and timing qualification remain separate.</span></div></div>` : candidate ? `<p>Latest experimental candidate: ${esc(candidate.build)} · ${candidate.ms.toFixed(2)} ms · ${Math.abs(candidate.pct).toFixed(1)}% ${candidate.direction} than matched three.js · ${candidate.runs} run(s). Not accepted.</p>` : "No experimental candidate measurements.";
+  $("kpis").innerHTML = d.kpis.filter((k) => k.id !== "AC-5").map(kpi).join("");
+  const hud = d.kpis.find((k) => k.id === "AC-5");
+  $("hud").innerHTML = hud ? kpi(hud) : '<span class="mute">no HUD samples</span>';
+  renderHero(d);
+  $("cycles").innerHTML = cyclesPanel(d.cycles);
+  const chart = progress(d);
+  $("progress").innerHTML = chart;
+  $("progressCard").hidden = !chart;
+  renderGap(d);
+  $("ring").innerHTML = ring(d.prd);
+  side(d);
+  $("trend").innerHTML = d.trends.map(trend).join("");
+  $("trendLegend").innerHTML = '<b>runtime lines:</b>' + legendOf(Object.keys(ARM)) + '<span style="--c:var(--green)">retained measured reference · not qualified winner</span><span style="--c:var(--red)">rejected · excluded from scores</span><span style="--c:var(--soft)">pending · unknown or mixed decision</span>' + '<span style="--c:var(--green)">dashed: PRD-610 target</span><span style="--c:var(--legacy)">solid line: historical three.js wall/budget diagnostic</span><span style="--c:var(--red)">shaded: gap to three.js</span>';
+  $("ab").innerHTML = d.abPairs.map((p) => ab(p, undefined)).join("") || '<span class="mute">no A/B tags yet (name runs like walk-a1 and walk-b1)</span>';
+  $("builds").innerHTML = `<table><tr><th>Build (oldest first)</th><th>Runs</th><th>Historical CPU ms / frame (median)</th><th>Instr / frame (M)</th><th>HUD p95</th><th>Matrix last</th><th>Parity PASS</th><th>First seen</th></tr>${d.builds.map((b, i) => `<tr><td>${esc(b.build)}${i === d.builds.length - 1 ? ' <span class="chip">experimental latest</span>' : ""}</td><td>${b.runs}</td><td>${n(b.ms)}</td><td>${n(b.instrM, 1)}</td><td>${n(b.hudP95, 1)}</td><td>${n(b.matrixLast, 0)}</td><td>${b.parityPass}/${b.runs}</td><td>${new Date(b.firstSeen).toLocaleString()}</td></tr>`).join("")}</table>`;
+  $("runs").innerHTML = `<table><tr><th>Run</th><th>Package</th><th>Updated</th><th>Active frames</th><th>Historical wall/budget or native CPU ms / frame</th><th>Instr / frame (M)</th><th>Frame p95</th><th>HUD p95</th><th>Matrix last (legacy projection)</th><th>World work (version; median / max; n)</th><th>Cull %</th><th>Parity</th><th>Skipped lines</th></tr>${[...d.runs].reverse().map((r) => `<tr><td>${esc(r.dir)}${r.rejection ? ` <span class="chip fail" title="${esc(r.rejection)}">rejected</span>` : ""}${r.profiled ? ' <span class="chip" title="Profiler or native diagnostic instrumentation was attached">instrumented, not scored</span>' : ""}${r.timingExclusion ? ` <span class="chip" title="${esc(r.timingExclusion)}">timing excluded</span>` : ""}</td><td>${esc(r.pkg ?? "—")}</td><td>${new Date(r.mtimeMs).toLocaleString()}</td><td title="used / eligible; ${r.desktop?.excluded ?? 0} inactive or incomplete frames excluded">${r.desktop ? `${r.desktop.n} / ${r.desktop.eligible}` : "—"}</td><td>${r.status === "ok" ? n(ms(r)) : "no samples"}</td><td>${n(r.desktop?.medians.cpuFrameKInstructions === undefined ? undefined : r.desktop.medians.cpuFrameKInstructions / 1000, 1)}</td><td>${n(r.desktop?.frameP95 ?? r.budget?.frameP95)}</td><td>${n(r.ui?.p95, 1)}</td><td>${n(r.matrix?.last, 0)}</td><td>${r.desktop?.worldWork ? `v${r.desktop.worldWork.version}; ${n(r.desktop.worldWork.median, 1)} / ${n(r.desktop.worldWork.max, 0)}; n=${r.desktop.worldWork.n}` : r.desktop?.worldWorkInvalid ? "invalid / mixed counters" : "—"}</td><td>${n(r.cullPct)}</td><td>${parity(r)}</td><td>${r.skipped}</td></tr>`).join("")}</table>`;
+}
+
+let busy = false;
+async function tick() {
+  if (busy) return; // the first load can take 20-45 s; never stack requests
+  busy = true;
+  try {
+    const d = await fetch("/api/midway", { cache: "no-store" }).then((x) => x.json());
+    render(d);
+    $("status").textContent = `live · ${d.runs.length} runs · ${d.skipped} skipped lines · updated ${new Date().toLocaleTimeString()}`;
+    $("dot").style.background = "var(--green)";
+  } catch (e) {
+    $("status").textContent = `server not reachable or page error: ${e}`;
+    $("dot").style.background = "var(--red)";
+  }
+  busy = false;
+}
+$("status").textContent = "loading runs… the first load parses all run logs and can take up to a minute";
+tick(); setInterval(tick, 5000);
+</script>
+</body>
+</html>

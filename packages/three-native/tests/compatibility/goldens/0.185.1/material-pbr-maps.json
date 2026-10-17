@@ -1,0 +1,27 @@
+{
+  "name": "material-pbr-maps",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a MeshStandardMaterial with one packed ORM data texture as roughnessMap (g), metalnessMap (b) and aoMap (r, aoMapIntensity 0.7), and a repeated emissiveMap, under a hemisphere and a directional light",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:7583e1eb70aed820906854f2f195c17ce8d3201d3a9ef1ad2d9c64f9f41f23da",
+      "decimal": "7583e1eb70aed820906854f2f195c17ce8d3201d3a9ef1ad2d9c64f9f41f23da"
+    }
+  ],
+  "render": {
+    "png": "material-pbr-maps.png",
+    "pngSha256": "7583e1eb70aed820906854f2f195c17ce8d3201d3a9ef1ad2d9c64f9f41f23da",
+    "width": 300,
+    "height": 200,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

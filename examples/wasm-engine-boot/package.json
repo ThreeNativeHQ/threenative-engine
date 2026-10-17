@@ -1,0 +1,28 @@
+{
+  "name": "wasm-engine-boot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:wasm": "node ../../packages/create-threenative/dist/threenative.js build --target web",
+    "build:renderer": "WASM_BOOT_PAGES=renderer node ../../packages/create-threenative/dist/threenative.js build --target web",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "playtest:renderer": "node ../../packages/playtest/dist/runner/cli.js playtests/renderer.playtest.json --url http://127.0.0.1:5293/renderer.html --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed",
+    "playtest:game": "node ../../packages/playtest/dist/runner/cli.js playtests/game.playtest.json --url http://127.0.0.1:5293 --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed",
+    "playtest:renderer:dev": "node ../../packages/playtest/dist/runner/cli.js playtests/renderer.playtest.json --url http://127.0.0.1:5296/renderer.html --server-command \"pnpm exec vite --host 127.0.0.1 --port 5296 --strictPort\" --browser-recipe webgpu --headed",
+    "playtest:compute": "node ../../packages/playtest/dist/runner/cli.js playtests/compute.playtest.json --url http://127.0.0.1:5293/compute.html --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed",
+    "playtest:post": "node ../../packages/playtest/dist/runner/cli.js playtests/post.playtest.json --url http://127.0.0.1:5293/post.html --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@threenative/playtest": "workspace:*",
+    "@threenative/runtime-native": "workspace:*",
+    "@types/three": "0.185.3",
+    "create-threenative": "workspace:*",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

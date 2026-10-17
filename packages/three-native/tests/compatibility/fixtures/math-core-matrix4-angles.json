@@ -1,0 +1,117 @@
+{
+  "name": "math-core-matrix4-angles",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Matrix4.tests.js \u2014 makeRotationX, makeRotationY, makeRotationZ, makeRotationAxis and makeRotationFromEuler",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "axis01",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "e02",
+      "class": "Euler",
+      "args": [0.4, -0.9, 0.25, "YZX"]
+    },
+    {
+      "op": "new",
+      "id": "m03",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m03",
+      "method": "makeRotationX",
+      "args": [0.75]
+    },
+    {
+      "op": "new",
+      "id": "m04",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m04",
+      "method": "makeRotationY",
+      "args": [0.75]
+    },
+    {
+      "op": "new",
+      "id": "m05",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m05",
+      "method": "makeRotationZ",
+      "args": [0.75]
+    },
+    {
+      "op": "new",
+      "id": "m06",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m06",
+      "method": "makeRotationAxis",
+      "args": [
+        {
+          "ref": "axis01"
+        },
+        0.75
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m07",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m07",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e02"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "m03",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m04",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m05",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m06",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m07",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

@@ -5,16 +5,19 @@ import {
   BufferGeometry,
   Float32BufferAttribute,
   Group,
+  Matrix4,
   MeshBasicMaterial,
   NumberKeyframeTrack,
   Object3D,
   PropertyBinding,
+  QuaternionKeyframeTrack,
   Skeleton,
   SkinnedMesh,
   VectorKeyframeTrack,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
+import { RigPreparation } from "../src/rig-preparation.js";
 import { SkeletalMesh3D } from "../src/skeletal-mesh.js";
 
 describe("AnimationPlayer", () => {
@@ -869,6 +872,97 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
       ),
     ]);
 
+  it("calibrates through owned world snapshots and restores animated transforms without cloning aliases", () => {
+    const root = new Group();
+    const foot = new Bone();
+    foot.name = "Foot";
+    root.add(foot);
+    root.position.set(7, 3, 5);
+    foot.position.set(0.2, 0.4, 0.1);
+    foot.rotation.set(0.2, 0.3, 0.4);
+    foot.scale.set(2, 3, 4);
+    const clip = plantedWalk();
+    clip.tracks.push(
+      new QuaternionKeyframeTrack("Foot.quaternion", [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]),
+      new VectorKeyframeTrack("Foot.scale", [0, 1], [1, 1, 1, 2, 2, 2]),
+    );
+    const originals = [root, foot].map((object) => ({
+      object,
+      position: object.position,
+      quaternion: object.quaternion,
+      scale: object.scale,
+      values: [object.position.toArray(), object.quaternion.toArray(), object.scale.toArray()],
+    }));
+    const copies = [root, foot].map((object) => {
+      const copy = vi.fn((target: Matrix4) => target.copy(object.matrixWorld));
+      Object.assign(object, { __tnCopyMatrixWorld: copy });
+      return copy;
+    });
+    const clones = originals.flatMap(({ position, quaternion, scale }) => [
+      vi.spyOn(position, "clone"),
+      vi.spyOn(quaternion, "clone"),
+      vi.spyOn(scale, "clone"),
+    ]);
+    try {
+      const player = new AnimationPlayer({ root, clips: [clip] });
+      player.play("walk");
+      expect(player.stride.clipGroundSpeed).toBeCloseTo(1, 1);
+      for (const copy of copies) expect(copy).toHaveBeenCalledTimes(65);
+      for (const clone of clones) expect(clone).not.toHaveBeenCalled();
+      for (const { object, position, quaternion, scale, values } of originals) {
+        expect(object.position).toBe(position);
+        expect(object.quaternion).toBe(quaternion);
+        expect(object.scale).toBe(scale);
+        expect([position.toArray(), quaternion.toArray(), scale.toArray()]).toEqual(values);
+      }
+    } finally {
+      for (const clone of clones) clone.mockRestore();
+    }
+  });
+
+  it("reads the sampled rig's world positions without re-walking each bone's ancestors", () => {
+    // One world update per sampled frame covers the rig; a per-bone walk costs a native back end
+    // one engine call per ancestor per bone per frame.
+    const { body, player } = character({ clips: [plantedWalk()] });
+    const rig = new Set<Object3D>();
+    (body.children[0] as Object3D).traverse((object) => rig.add(object));
+    const walked: Object3D[] = [];
+    const update = Object3D.prototype.updateWorldMatrix;
+    const spy = vi.spyOn(Object3D.prototype, "updateWorldMatrix").mockImplementation(function (
+      this: Object3D,
+      ...args
+    ) {
+      if (rig.has(this)) walked.push(this);
+      return update.apply(this, args);
+    });
+    try {
+      player.play("walk");
+      player.update(1 / 60);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(player.stride.clipGroundSpeed).toBeCloseTo(1, 1);
+    expect(walked).toEqual([]);
+  });
+
+  it("measures through an ancestor above the rig that moved since its last world update", () => {
+    // `stride` is readable the moment a clip plays, before any update has refreshed the ancestors.
+    const speedUnder = (stale: boolean) => {
+      const { body, player } = character({ clips: [plantedWalk()] });
+      const carrier = new Group();
+      carrier.add(body);
+      if (stale) carrier.updateMatrixWorld(true);
+      carrier.scale.setScalar(2);
+      carrier.position.set(5, 1, -3);
+      if (!stale) carrier.updateMatrixWorld(true);
+      player.play("walk");
+      return player.stride.clipGroundSpeed;
+    };
+    const fresh = speedUnder(false);
+    expect(fresh).toBeGreaterThan(1.9);
+    expect(speedUnder(true)).toBeCloseTo(fresh, 6);
+  });
+
   it("preserves the root's exact Euler while measuring a foot-plant stride", () => {
     const root = new Object3D();
     const foot = new Object3D();
@@ -991,6 +1085,31 @@ describe("SkeletalMesh3D shared preparation reuse", () => {
     } finally {
       setTime.mockRestore();
     }
+  });
+
+  it("reads shared stride scale from a native snapshot without exposing the live world matrix", () => {
+    const { root } = fixture();
+    const matrix = new Matrix4().makeScale(2, 2, 2);
+    const body = Object.assign(new Group(), {
+      __tnCopyMatrixWorld(target: Matrix4): void {
+        expect(this).toBe(body);
+        target.copy(matrix);
+      },
+    });
+    body.add(root);
+    const preparation = new RigPreparation();
+    vi.spyOn(preparation, "stride").mockReturnValue({ groundSpeed: 1, inPlace: true });
+    const player = new AnimationPlayer({ root, clips: [inPlaceClip()], preparation });
+    vi.spyOn(body, "updateWorldMatrix").mockImplementation(() => {});
+    vi.spyOn(body, "getWorldScale").mockImplementation((target) => target.set(2, 2, 2));
+    Object.defineProperty(body, "matrixWorld", {
+      get() {
+        throw new Error("Live native world matrix must not escape");
+      },
+    });
+
+    player.play("walk");
+    expect(player.stride.clipGroundSpeed).toBe(2);
   });
 
   it("keeps per-instance measurement under a non-uniform world scale", () => {

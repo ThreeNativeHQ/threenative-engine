@@ -316,6 +316,12 @@ export type ThreeNativeFramePhase = "hostGap" | "overlay" | "render" | "residual
 export type ThreeNativeRenderPassKind = "main" | "shadow" | "reflection" | "nested";
 
 export interface IThreeNativeConfig {
+  /**
+   * The engine that draws the game on web and desktop. Defaults to the owned C++ engine (`"native"`):
+   * the Wasm engine on web, the V8 engine player on desktop. `"legacy"` is the named override: it keeps
+   * upstream Three.js on web and the legacy host on desktop. Android and iOS still run the legacy host.
+   */
+  readonly engine?: "legacy" | "native";
   readonly app?: {
     readonly id?: string;
     readonly name?: string;
@@ -437,6 +443,12 @@ export interface IThreeNativeConfig {
      */
     readonly lod?: boolean | IThreeNativeLodConfig;
     readonly models?: "none" | IThreeNativeModelsConfig;
+    /**
+     * Also emit the native cooked package (`<output>/native/assets.tnpk`, TNPK v1) beside the
+     * existing outputs, for a native-engine build that loads its assets without a JS `GLTFLoader`.
+     * Absent or `false` leaves the output set unchanged.
+     */
+    readonly nativePackage?: boolean;
     readonly output?: string;
     readonly source?: string;
     readonly targets?: {
@@ -495,9 +507,16 @@ export interface IThreeNativeConfig {
      *   it when a game would rather pay the per-frame cost than accept the bound.
      *
      * Any other value throws at startup rather than falling back to a default nobody asked for.
+     *
+     * `"js"` names the mirror on a host that would not build one. The native engine player batches
+     * the authored scene in its own renderer and reports `hostProjected`, so core builds no mirror and
+     * reads no object across the boundary. `"js"` forces the mirror there anyway (for a comparison, or
+     * a game that depends on it), and the report states `path: "js"` and `pathOverridden: true`. On
+     * three the mirror is the only path, so `"js"` changes nothing.
      */
     readonly projection?:
       | boolean
+      | "js"
       | {
           readonly materialChecks?: "spread" | "everyFrame";
         };

@@ -1,0 +1,87 @@
+{
+  "name": "gltf-unlit",
+  "adaptedFrom": "original \u2014 GLTFLoader r185 native twin. Red control: load KHR_materials_unlit as Standard (left panel goes dark without lights); emissiveFactor must be ignored.",
+  "tolerance": {
+    "abs": 1e-12
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "bg",
+      "class": "Color",
+      "args": [0.04, 0.04, 0.04]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "bg"
+      }
+    },
+    {
+      "op": "gltf",
+      "id": "model",
+      "file": "packages/three-native/tests/compatibility/fixtures/gltf-unlit.glb"
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "model"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "model",
+      "method": "getObjectByName",
+      "args": ["authoredCamera"],
+      "result": "camera"
+    },
+    {
+      "op": "call",
+      "id": "model",
+      "method": "getObjectByName",
+      "args": ["authoredOrtho"],
+      "result": "ortho"
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "fov",
+      "kind": "number"
+    },
+    {
+      "id": "ortho",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  }
+}

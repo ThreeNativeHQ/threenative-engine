@@ -2764,9 +2764,13 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     , globalBindingHost},
         {"WebGPU", "__tnPresentedCount", 0, nullptr,
         &handleWebGpuPresentedCount
+    , globalBindingHost},
+        {"WebGPU", "__tnThreadCpuMs", 0, nullptr,
+        &handleWebGpuThreadCpuMs
     , globalBindingHost}})) ||
         !copyGlobalBinding(globalBindingHost, "__tnPresentationCap") ||
-        !copyGlobalBinding(globalBindingHost, "__tnPresentedCount")) return false;
+        !copyGlobalBinding(globalBindingHost, "__tnPresentedCount") ||
+        !copyGlobalBinding(globalBindingHost, "__tnThreadCpuMs")) return false;
 
     // Native helper that decodes image data off the frame thread
     if (!installBindingTable(state->engine, state, bindingTable({

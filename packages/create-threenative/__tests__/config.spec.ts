@@ -16,6 +16,7 @@ import {
   MODEL_VIRTUAL_KEYS,
   loadConfig,
 } from "../src/config.js";
+import { createProject, discoverTemplateNames } from "../src/index.js";
 
 const execFileAsync = promisify(execFile);
 const roots: string[] = [];
@@ -54,6 +55,24 @@ it("should carry asset exclusions from the real config loader into the compiler"
   expect(manifest.entries["keep.txt"]).toBeDefined();
   expect(manifest.entries["library.glb"]).toBeUndefined();
 });
+it.each([undefined, "legacy", "native"])(
+  "resolves engine %j with native as the default",
+  async (engine) => {
+    const root = await project();
+    await config(root, `export default ${JSON.stringify({ engine })};`);
+    expect((await loadConfig(root)).engine).toBe(engine ?? "native");
+  },
+);
+
+it.each(["unknown", null, 1, false, {}])(
+  "rejects invalid engine %j with a named error",
+  async (engine) => {
+    const root = await project();
+    await config(root, `export default ${JSON.stringify({ engine })};`);
+    await expect(loadConfig(root)).rejects.toThrow("TN_CONFIG_ENGINE_INVALID");
+  },
+);
+
 const VALID_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAXUlEQVR4AaXBQRHEAAgEwclWHGDivIBckIWG3Hf/dD/frz9MdOK2BhedOHEkjsTRG524rcFFJ25rcOJIHImjd2tw0YnbGlx04sSROBJHb3TitgYXnbitwYkjcSSO/o/fGRJxtqYFAAAAAElFTkSuQmCC",
   "base64",
@@ -277,6 +296,7 @@ describe("threenative.config.ts", () => {
     );
 
     await expect(loadConfig(root)).resolves.toEqual({
+      engine: "native",
       app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
       display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, maxFps: 120 },
       window: {
@@ -789,6 +809,29 @@ describe("threenative.config.ts", () => {
     await expect(loadConfig(root)).rejects.toThrow(/assets\.concurrency/u);
   });
 
+  it("hands assets.nativePackage to the pipeline that receives it", async () => {
+    // The same seam: the compiler grew the native cooked package, and this validator's key list is
+    // where the opt-in dies before an asset compiles.
+    const root = await project();
+    await config(root, "export default { assets: { nativePackage: true } };");
+    const resolved = await loadConfig(root);
+    expect(resolved.assets).toMatchObject({ nativePackage: true });
+    await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      concurrencyUsed: 1,
+      passCosts: [],
+      skipped: 0,
+      skippedCompression: [],
+      written: 0,
+    });
+  });
+
+  it("rejects a non-boolean assets.nativePackage with the named code", async () => {
+    const root = await project();
+    await config(root, 'export default { assets: { nativePackage: "yes" } };');
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    await expect(loadConfig(root)).rejects.toThrow(/assets\.nativePackage/u);
+  });
+
   it("hands assets.audio to the pipeline that receives it and ships the declared bytes", async () => {
     // The seam a real game hit: `assets.audio` is a documented compile option that this
     // validator's key list dropped, so a project asking to ship its cues exactly as authored
@@ -1192,6 +1235,7 @@ const SEAM_SAMPLE = {
       simplifyRatio: 0.5,
     },
   },
+  nativePackage: true,
   output: "public",
   source: "assets",
   targets: { maxTriangles: 100_000, maxTextureDimension: 2048 },
@@ -1268,4 +1312,26 @@ it("rejects a lightmap atlas size that is not a multiple of four on both sides o
       config: { models: { lightmap: { atlasSize: 130, padding: 2 } } } as never,
     }),
   ).rejects.toThrow("TN_ASSETS_CONFIG_INVALID");
+});
+
+// Templates whose imports the native engine does not bind yet (PRD-573 slice 8). Each pins
+// `engine: "legacy"` with a comment, and leaves this list when the pin goes.
+const LEGACY_PINNED_TEMPLATES = ["action-rpg", "runner", "sailing", "snow"];
+
+it("gives every freshly scaffolded template the native engine unless it names its legacy pin", async () => {
+  const root = await makeTempDir("threenative-scaffold-engine-");
+  roots.push(root);
+  const templates = discoverTemplateNames(path.resolve("packages/create-threenative/templates"));
+  expect(templates.filter((name) => LEGACY_PINNED_TEMPLATES.includes(name))).toEqual(
+    LEGACY_PINNED_TEMPLATES,
+  );
+  for (const template of templates) {
+    const { target } = await createProject({ install: false, target: template, template }, root);
+    const pinned = LEGACY_PINNED_TEMPLATES.includes(template);
+    expect(await loadConfig(target), template).toMatchObject({
+      engine: pinned ? "legacy" : "native",
+    });
+    const source = await readFile(path.join(target, "threenative.config.ts"), "utf8");
+    expect(source.includes("PRD-573 slice 8"), `${template} names its pin`).toBe(pinned);
+  }
 });

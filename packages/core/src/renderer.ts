@@ -1432,17 +1432,38 @@ function addResizeHandling(
   state: ISurfaceState,
   pixelRatio: number,
 ): { resize: () => void; stop: () => void } {
+  // The last layout size read and the drawing buffer set from it. A canvas with no CSS size lays
+  // out at its drawing buffer, so the buffer set here comes back as the next layout size: that echo
+  // is not a new layout, and scaling it again compounds (Midway's canvas fell to 3x3).
+  let layout: readonly [number, number] | undefined;
+  let applied: readonly [number, number] | undefined;
   const resize = () => {
-    const [width, height] =
+    let [width, height] =
       source?.readSize(renderer.domElement) ?? readCanvasSize(renderer.domElement);
+    if (
+      layout !== undefined &&
+      applied !== undefined &&
+      width === applied[0] &&
+      height === applied[1]
+    ) {
+      [width, height] = layout;
+      // The echo proves the canvas has no size of its own, so the page would show it at its buffer:
+      // shrunk under a scale below 1 (Midway fell to 1088x612), doubled at ratio 2. Pin it.
+      const style = (renderer.domElement as { style?: CSSStyleDeclaration }).style;
+      if (style !== undefined) {
+        style.width = `${width}px`;
+        style.height = `${height}px`;
+      }
+    }
+    layout = [width, height];
     // Recorded as it is applied rather than read back off the canvas: the canvas dimensions are
     // the host's to define and on native they have been the physical surface, which is exactly
     // the number this scale exists to stop a game from paying by hand.
-    renderer.setSize(
+    applied = [
       Math.max(1, Math.round(width * pixelRatio * state.resolutionScale)),
       Math.max(1, Math.round(height * pixelRatio * state.resolutionScale)),
-      false,
-    );
+    ];
+    renderer.setSize(applied[0], applied[1], false);
   };
   resize();
   const stop =
@@ -1687,11 +1708,23 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   }
 
   if (renderer === undefined) {
-    const raw = (
-      options.webgl2Factory
-        ? options.webgl2Factory(canvas, rendererParameters)
-        : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters })
-    ) as RendererInstance;
+    let raw: RendererInstance;
+    try {
+      raw = (
+        options.webgl2Factory
+          ? options.webgl2Factory(canvas, rendererParameters)
+          : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters })
+      ) as RendererInstance;
+    } catch (error) {
+      // No WebGPU adapter and no WebGL fallback is a boot failure the player must read. The native
+      // engine binds `WebGLRenderer` to a facade that refuses on use, and reporting that refusal
+      // verbatim would show an internal "uncatalogued" code; a browser with no context throws
+      // three's own message. Neither belongs in front of a player, so both become one named failure.
+      throw new Error(
+        "TN_NO_RENDERER: WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.",
+        { cause: error },
+      );
+    }
     const alphaAntialiasing = arm(raw);
     const pipelineCensus = createRendererPipelineCensus(raw, "webgl2", options);
     installDrawHook(raw, alphaAntialiasing);

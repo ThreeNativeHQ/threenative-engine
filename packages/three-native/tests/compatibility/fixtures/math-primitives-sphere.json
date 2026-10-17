@@ -1,0 +1,699 @@
+{
+  "name": "math-primitives-sphere",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Sphere.tests.js \u2014 the whole surface except setFromPoints, whose point array the line protocol cannot carry",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "p01",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "c02",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s03",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s03",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c02"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "s04",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "c05",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s06",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s06",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c05"
+        },
+        2
+      ]
+    },
+    {
+      "op": "call",
+      "id": "s06",
+      "method": "makeEmpty",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "c07",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s08",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s08",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c07"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c09",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s10",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s10",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c09"
+        },
+        2
+      ]
+    },
+    {
+      "op": "call",
+      "id": "s08",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "s10"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c11",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s12",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s12",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c11"
+        },
+        2
+      ]
+    },
+    {
+      "op": "call",
+      "id": "s12",
+      "method": "containsPoint",
+      "args": [
+        {
+          "ref": "p01"
+        }
+      ],
+      "result": "r13"
+    },
+    {
+      "op": "call",
+      "id": "s12",
+      "method": "distanceToPoint",
+      "args": [
+        {
+          "ref": "p01"
+        }
+      ],
+      "result": "r14"
+    },
+    {
+      "op": "new",
+      "id": "c15",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "s16",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s16",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c15"
+        },
+        9
+      ]
+    },
+    {
+      "op": "call",
+      "id": "s12",
+      "method": "intersectsSphere",
+      "args": [
+        {
+          "ref": "s16"
+        }
+      ],
+      "result": "r17"
+    },
+    {
+      "op": "new",
+      "id": "lo18",
+      "class": "Vector3",
+      "args": [-1, -1, -1]
+    },
+    {
+      "op": "new",
+      "id": "hi19",
+      "class": "Vector3",
+      "args": [1, 1, 1]
+    },
+    {
+      "op": "new",
+      "id": "b20",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b20",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo18"
+        },
+        {
+          "ref": "hi19"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "s12",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b20"
+        }
+      ],
+      "result": "r21"
+    },
+    {
+      "op": "new",
+      "id": "n22",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "p23",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p23",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n22"
+        },
+        20
+      ]
+    },
+    {
+      "op": "call",
+      "id": "s12",
+      "method": "intersectsPlane",
+      "args": [
+        {
+          "ref": "p23"
+        }
+      ],
+      "result": "r24"
+    },
+    {
+      "op": "new",
+      "id": "c25",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s26",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s26",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c25"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t27",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s26",
+      "method": "clampPoint",
+      "args": [
+        {
+          "ref": "p01"
+        },
+        {
+          "ref": "t27"
+        }
+      ],
+      "result": "r28"
+    },
+    {
+      "op": "new",
+      "id": "c29",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s30",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s30",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c29"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "lo31",
+      "class": "Vector3",
+      "args": [-1, -1, -1]
+    },
+    {
+      "op": "new",
+      "id": "hi32",
+      "class": "Vector3",
+      "args": [1, 1, 1]
+    },
+    {
+      "op": "new",
+      "id": "b33",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b33",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo31"
+        },
+        {
+          "ref": "hi32"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "s30",
+      "method": "getBoundingBox",
+      "args": [
+        {
+          "ref": "b33"
+        }
+      ],
+      "result": "r34"
+    },
+    {
+      "op": "new",
+      "id": "m35",
+      "class": "Matrix4",
+      "args": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    },
+    {
+      "op": "new",
+      "id": "c36",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s37",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s37",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c36"
+        },
+        2
+      ]
+    },
+    {
+      "op": "call",
+      "id": "s37",
+      "method": "applyMatrix4",
+      "args": [
+        {
+          "ref": "m35"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c38",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s39",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s39",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c38"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v40",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "s39",
+      "method": "translate",
+      "args": [
+        {
+          "ref": "v40"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c41",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s42",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s42",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c41"
+        },
+        2
+      ]
+    },
+    {
+      "op": "call",
+      "id": "s42",
+      "method": "expandByPoint",
+      "args": [
+        {
+          "ref": "p01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c43",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s44",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s44",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c43"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c45",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "s46",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s46",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c45"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "s44",
+      "method": "union",
+      "args": [
+        {
+          "ref": "s46"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c47",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "s48",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s48",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c47"
+        },
+        2
+      ]
+    },
+    {
+      "op": "call",
+      "id": "s48",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "s04"
+        }
+      ],
+      "result": "r49"
+    }
+  ],
+  "observe": [
+    {
+      "id": "s03",
+      "kind": "number",
+      "path": "center.x"
+    },
+    {
+      "id": "s03",
+      "kind": "number",
+      "path": "radius"
+    },
+    {
+      "id": "s03",
+      "kind": "boolean",
+      "method": "isEmpty"
+    },
+    {
+      "id": "s04",
+      "kind": "boolean",
+      "method": "isEmpty"
+    },
+    {
+      "id": "s04",
+      "kind": "number",
+      "path": "radius"
+    },
+    {
+      "id": "s06",
+      "kind": "boolean",
+      "method": "isEmpty"
+    },
+    {
+      "id": "s08",
+      "kind": "number",
+      "path": "radius"
+    },
+    {
+      "id": "r13",
+      "kind": "boolean"
+    },
+    {
+      "id": "r14",
+      "kind": "number"
+    },
+    {
+      "id": "r17",
+      "kind": "boolean"
+    },
+    {
+      "id": "r21",
+      "kind": "boolean"
+    },
+    {
+      "id": "r24",
+      "kind": "boolean"
+    },
+    {
+      "id": "r28",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r34",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "r34",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "s37",
+      "kind": "number",
+      "path": "center.x"
+    },
+    {
+      "id": "s37",
+      "kind": "number",
+      "path": "radius"
+    },
+    {
+      "id": "s39",
+      "kind": "number",
+      "path": "center.x"
+    },
+    {
+      "id": "s42",
+      "kind": "number",
+      "path": "radius"
+    },
+    {
+      "id": "s44",
+      "kind": "number",
+      "path": "radius"
+    },
+    {
+      "id": "s44",
+      "kind": "number",
+      "path": "center.x"
+    },
+    {
+      "id": "r49",
+      "kind": "boolean"
+    }
+  ]
+}

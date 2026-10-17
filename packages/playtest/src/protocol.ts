@@ -572,12 +572,19 @@ export interface IPlaytestAdvanceResult {
 }
 
 export interface IPlaytestBridgeV1 {
-  advance?(ticks: number): Promise<IPlaytestAdvanceResult>;
+  /** Core bridges render each driven frame by default; a host that owns presentation passes render:false. */
+  advance?(ticks: number, options?: { render?: boolean }): Promise<IPlaytestAdvanceResult>;
   applySetup?(request: IPlaytestSetupRequest): Promise<IPlaytestSetupConfirmation | void>;
   describe(): IPlaytestBridgeDescription | Promise<IPlaytestBridgeDescription>;
   drainEvents?(limit?: number): Promise<JsonValue[]>;
   focus?(): boolean | Promise<boolean>;
   ready(): IPlaytestBridgeReady | Promise<IPlaytestBridgeReady>;
+  /**
+   * Draw the current world once without advancing it, so a capture can see a present while a
+   * deterministic run's loop is driven and presents nothing between ticks. Present only when the
+   * bridge advertises `runtime.renderOnly`.
+   */
+  renderOnly?(): number | void | Promise<number | void>;
   sample(request: IPlaytestSampleRequest): IPlaytestObservationSnapshot | Promise<IPlaytestObservationSnapshot>;
 }
 

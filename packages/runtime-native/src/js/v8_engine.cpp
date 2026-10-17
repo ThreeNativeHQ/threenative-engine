@@ -31,6 +31,7 @@
 #include "v8-profiler.h"
 #include <algorithm>
 #include <cstdlib>
+#include <time.h>
 #endif
 
 namespace mystral {
@@ -128,7 +129,18 @@ static void writeJsonString(std::ostream& out, const char* text) {
     out << '"';
 }
 
-static bool writeCpuProfile(v8::Isolate* isolate, const v8::CpuProfile* profile, const std::string& path) {
+#if defined(__linux__)
+// CLOCK_MONOTONIC in microseconds: the clock Node's process.hrtime reads on Linux.
+static bool readMonotonicMicros(int64_t& micros) {
+    timespec now{};
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return false;
+    micros = int64_t(now.tv_sec) * 1000000 + now.tv_nsec / 1000;
+    return true;
+}
+#endif
+
+static bool writeCpuProfile(v8::Isolate* isolate, const v8::CpuProfile* profile, const std::string& path,
+                            const int64_t* clockBounds) {
     std::ofstream out(path, std::ios::binary);
     if (!out) return false;
     out << "{\"nodes\":[";
@@ -161,7 +173,12 @@ static bool writeCpuProfile(v8::Isolate* isolate, const v8::CpuProfile* profile,
         out << (i ? "," : "") << profile->GetSampleTimestamp(i) - previous;
         previous = profile->GetSampleTimestamp(i);
     }
-    out << "]}\n";
+    out << "]";
+    if (clockBounds) {
+        out << ",\"clockBounds\":{\"clock\":\"CLOCK_MONOTONIC\",\"start\":[" << clockBounds[0] << ","
+            << clockBounds[1] << "],\"end\":[" << clockBounds[2] << "," << clockBounds[3] << "]}";
+    }
+    out << "}\n";
     out.flush();
     return out.good();
 }
@@ -266,8 +283,14 @@ public:
                 cpuProfiler_ = v8::CpuProfiler::New(isolate_);
                 cpuProfiler_->SetSamplingInterval(200);
                 v8::HandleScope profileScope(isolate_);
+#if defined(__linux__)
+                const bool startBefore = readMonotonicMicros(cpuProfileClock_[0]);
+#endif
                 cpuProfiler_->StartProfiling(
                     v8::String::NewFromUtf8(isolate_, "tn-frame").ToLocalChecked(), true);
+#if defined(__linux__)
+                cpuProfileClockOk_ = startBefore && readMonotonicMicros(cpuProfileClock_[1]);
+#endif
                 std::cout << "[V8] CPU profiler started" << std::endl;
             };
             g_dumpCpuProfile = [this]() { dumpCpuProfile(); };
@@ -292,9 +315,22 @@ public:
         entryScope.enterContext(context);
         v8::HandleScope scope(isolate_);
         v8::Context::Scope contextScope(context);
+#if defined(__linux__)
+        cpuProfileClockOk_ = cpuProfileClockOk_ && readMonotonicMicros(cpuProfileClock_[2]);
+#endif
         v8::CpuProfile* profile = cpuProfiler_->StopProfiling(
             v8::String::NewFromUtf8(isolate_, "tn-frame").ToLocalChecked());
+#if defined(__linux__)
+        cpuProfileClockOk_ = cpuProfileClockOk_ && readMonotonicMicros(cpuProfileClock_[3]);
+#endif
         if (!profile) return;
+#if defined(__linux__)
+        if (!cpuProfileClockOk_ && !g_cpuProfilePath.empty()) {
+            std::cerr << "TN_CPU_PROFILE_CLOCK_UNOBSERVED: CLOCK_MONOTONIC unreadable; " << g_cpuProfilePath
+                      << " is written without clockBounds" << std::endl;
+            g_cpuProfileFailed = true;
+        }
+#endif
 
         struct Entry { unsigned hits = 0; std::string location; };
         std::unordered_map<std::string, Entry> self;
@@ -348,7 +384,8 @@ public:
             // Write beside the target and rename, so a kill mid-write cannot leave a truncated
             // `.cpuprofile` that still looks like a profile.
             const std::string temporaryPath = g_cpuProfilePath + ".tmp";
-            if (!writeCpuProfile(isolate_, profile, temporaryPath) ||
+            if (!writeCpuProfile(isolate_, profile, temporaryPath,
+                                 cpuProfileClockOk_ ? cpuProfileClock_ : nullptr) ||
                 std::rename(temporaryPath.c_str(), g_cpuProfilePath.c_str()) != 0) {
                 std::cerr << "TN_CPU_PROFILE_WRITE_FAILED: write failed for " << g_cpuProfilePath
                           << std::endl;
@@ -1466,6 +1503,16 @@ public:
         return result;
     }
 
+    void throwTypeError(const char* message) override {
+        V8EntryScope entry_scope(isolate_);
+        v8::Local<v8::Context> context = context_.Get(isolate_);
+        entry_scope.enterContext(context);
+        isolate_->ThrowException(v8::Exception::TypeError(
+            v8::String::NewFromUtf8(isolate_, message).ToLocalChecked()));
+        lastException_ = std::string("TypeError: ") + message;
+        if (nativeCallbackDepth_ > 0) exceptionFromNativeCallback_ = true;
+    }
+
     void throwException(const char* message) override {
         V8EntryScope entry_scope(isolate_);
         v8::Local<v8::Context> context = context_.Get(isolate_);
@@ -1995,6 +2042,9 @@ private:
     v8::Isolate* isolate_ = nullptr;
 #if TN_JS_PROFILE || TN_ANDROID_JS_PROFILE
     v8::CpuProfiler* cpuProfiler_ = nullptr;
+    // [startBefore, startAfter, endBefore, endAfter] on CLOCK_MONOTONIC, Linux only.
+    int64_t cpuProfileClock_[4] = {};
+    bool cpuProfileClockOk_ = false;
 #endif
     v8::ArrayBuffer::Allocator* allocator_ = nullptr;
     v8::Global<v8::Context> context_;

@@ -1,0 +1,195 @@
+{
+  "name": "probes-baked",
+  "adaptedFrom": "PRD-525: shipped ProbeVolume capture, packed SH sampling, cooked coefficients and isolated light rebake",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "OrthographicCamera",
+      "args": [-2.6666666666666665, 2.6666666666666665, 2, -2, 0.1, 20]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 6
+    },
+    {
+      "op": "new",
+      "id": "receiverGeometry",
+      "class": "PlaneGeometry",
+      "args": [1.8, 2.6]
+    },
+    {
+      "op": "new",
+      "id": "probeReceiverMaterial",
+      "class": "MeshStandardNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "probeReceiverMaterial",
+      "path": "color.r",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "probeReceiverMaterial",
+      "path": "color.g",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "probeReceiverMaterial",
+      "path": "color.b",
+      "value": 0
+    },
+    {
+      "op": "new",
+      "id": "probeReceiver",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "receiverGeometry"
+        },
+        {
+          "ref": "probeReceiverMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "probeReceiver",
+      "path": "name",
+      "value": "probeReceiver"
+    },
+    {
+      "op": "set",
+      "id": "probeReceiver",
+      "path": "position.x",
+      "value": -1.1
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "probeReceiver"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "unaffectedReceiverMaterial",
+      "class": "MeshStandardNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "unaffectedReceiverMaterial",
+      "path": "color.r",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "unaffectedReceiverMaterial",
+      "path": "color.g",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "unaffectedReceiverMaterial",
+      "path": "color.b",
+      "value": 0
+    },
+    {
+      "op": "new",
+      "id": "unaffectedReceiver",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "receiverGeometry"
+        },
+        {
+          "ref": "unaffectedReceiverMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "unaffectedReceiver",
+      "path": "name",
+      "value": "unaffectedReceiver"
+    },
+    {
+      "op": "set",
+      "id": "unaffectedReceiver",
+      "path": "position.x",
+      "value": 1.1
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "unaffectedReceiver"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "tsl",
+      "id": "scene",
+      "program": "probes-baked"
+    }
+  ],
+  "observe": [
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  }
+}

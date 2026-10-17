@@ -1,0 +1,455 @@
+{
+  "name": "math-core-constructors",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/*.tests.js \u2014 the numeric constructors, set and clone, which every other fixture reaches through a default object",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "m01",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "new",
+      "id": "m02",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m02",
+      "method": "set",
+      "args": [1, 0, 0, 0, 1, 0, 0, 0, 1]
+    },
+    {
+      "op": "new",
+      "id": "m03",
+      "class": "Matrix3",
+      "args": [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    },
+    {
+      "op": "call",
+      "id": "m03",
+      "method": "clone",
+      "args": [],
+      "result": "r04"
+    },
+    {
+      "op": "new",
+      "id": "m05",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m05",
+      "method": "set",
+      "args": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    },
+    {
+      "op": "new",
+      "id": "m06",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m06",
+      "method": "clone",
+      "args": [],
+      "result": "r07"
+    },
+    {
+      "op": "new",
+      "id": "m08",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m08",
+      "method": "makeScale",
+      "args": [2, 3, 4]
+    },
+    {
+      "op": "new",
+      "id": "q09",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q09",
+      "method": "set",
+      "args": [1, 0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "e10",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "call",
+      "id": "e10",
+      "method": "set",
+      "args": [0.1, 0.2, 0.3, "YZX"]
+    },
+    {
+      "op": "new",
+      "id": "e11",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "call",
+      "id": "e11",
+      "method": "clone",
+      "args": [],
+      "result": "r12"
+    },
+    {
+      "op": "new",
+      "id": "c13",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c13",
+      "method": "clone",
+      "args": [],
+      "result": "r14"
+    },
+    {
+      "op": "new",
+      "id": "c15",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c15",
+      "method": "setRGB",
+      "args": [0.1, 0.2, 0.3, "srgb"]
+    },
+    {
+      "op": "new",
+      "id": "o16",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d17",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r18",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r18",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o16"
+        },
+        {
+          "ref": "d17"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r18",
+      "method": "clone",
+      "args": [],
+      "result": "r19"
+    },
+    {
+      "op": "new",
+      "id": "n20",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p21",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p21",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n20"
+        },
+        0
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n22",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p23",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p23",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n22"
+        },
+        1
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n24",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p25",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p25",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n24"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n26",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p27",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p27",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n26"
+        },
+        3
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n28",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p29",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p29",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n28"
+        },
+        4
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n30",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p31",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p31",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n30"
+        },
+        5
+      ]
+    },
+    {
+      "op": "new",
+      "id": "f32",
+      "class": "Frustum",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "f32",
+      "method": "set",
+      "args": [
+        {
+          "ref": "p21"
+        },
+        {
+          "ref": "p23"
+        },
+        {
+          "ref": "p25"
+        },
+        {
+          "ref": "p27"
+        },
+        {
+          "ref": "p29"
+        },
+        {
+          "ref": "p31"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f32",
+      "method": "clone",
+      "args": [],
+      "result": "r33"
+    }
+  ],
+  "observe": [
+    {
+      "id": "m01",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m02",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r04",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m05",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "r07",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "m08",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "q09",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "e10",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e10",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e10",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e10",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r12",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r12",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r12",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r12",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r14",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c15",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r19",
+      "kind": "number",
+      "path": "origin.x"
+    },
+    {
+      "id": "r19",
+      "kind": "number",
+      "path": "direction.z"
+    },
+    {
+      "id": "r33",
+      "kind": "number",
+      "path": "planes.2.constant"
+    }
+  ]
+}

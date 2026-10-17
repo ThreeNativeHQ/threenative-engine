@@ -1,0 +1,120 @@
+{
+  "name": "alias-member-identity",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 src/core/Object3D.js — position, scale, up, quaternion and matrix are each allocated once in the constructor and returned by the same property on every read; the arrays-identity.json write-through-one-alias-read-through-the-other shape applied to Object3D's own member objects",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "pos2",
+      "kind": "number",
+      "path": "x",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 1,
+      "id": "pos2",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bff8000000000000",
+      "decimal": "-1.5"
+    },
+    {
+      "index": 2,
+      "id": "pos2",
+      "kind": "number",
+      "path": "z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 3,
+      "id": "o",
+      "kind": "number",
+      "path": "position.x",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 4,
+      "id": "o",
+      "kind": "number",
+      "path": "position.y",
+      "value": "n:bff8000000000000",
+      "decimal": "-1.5"
+    },
+    {
+      "index": 5,
+      "id": "scl2",
+      "kind": "number",
+      "path": "z",
+      "value": "n:4002000000000000",
+      "decimal": "2.25"
+    },
+    {
+      "index": 6,
+      "id": "o",
+      "kind": "number",
+      "path": "scale.z",
+      "value": "n:4002000000000000",
+      "decimal": "2.25"
+    },
+    {
+      "index": 7,
+      "id": "up2",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 8,
+      "id": "o",
+      "kind": "number",
+      "path": "up.z",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    },
+    {
+      "index": 9,
+      "id": "quat2",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3fd0000000000000",
+      "decimal": "0.25"
+    },
+    {
+      "index": 10,
+      "id": "quat2",
+      "kind": "number",
+      "path": "w",
+      "value": "n:3fe8000000000000",
+      "decimal": "0.75"
+    },
+    {
+      "index": 11,
+      "id": "o",
+      "kind": "number",
+      "path": "quaternion.x",
+      "value": "n:3fd0000000000000",
+      "decimal": "0.25"
+    },
+    {
+      "index": 12,
+      "id": "mat2",
+      "kind": "numbers",
+      "path": "elements",
+      "value": "n:3ff0000000000000,n:4014000000000000,n:4022000000000000,n:402a000000000000,n:4000000000000000,n:4018000000000000,n:4024000000000000,n:402c000000000000,n:4008000000000000,n:401c000000000000,n:4026000000000000,n:402e000000000000,n:4010000000000000,n:4020000000000000,n:4028000000000000,n:4030000000000000",
+      "decimal": "1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15, 4, 8, 12, 16"
+    },
+    {
+      "index": 13,
+      "id": "o",
+      "kind": "numbers",
+      "path": "matrix.elements",
+      "value": "n:3ff0000000000000,n:4014000000000000,n:4022000000000000,n:402a000000000000,n:4000000000000000,n:4018000000000000,n:4024000000000000,n:402c000000000000,n:4008000000000000,n:401c000000000000,n:4026000000000000,n:402e000000000000,n:4010000000000000,n:4020000000000000,n:4028000000000000,n:4030000000000000",
+      "decimal": "1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15, 4, 8, 12, 16"
+    }
+  ]
+}

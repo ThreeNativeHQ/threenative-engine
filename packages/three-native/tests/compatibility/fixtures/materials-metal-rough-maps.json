@@ -1,0 +1,235 @@
+{
+  "name": "materials-metal-rough-maps",
+  "adaptedFrom": "original — a lit MeshStandardMaterial sphere whose metalnessMap and roughnessMap are one 2x2 metallicRoughness DataTexture (glTF packing: roughness in green, metalness in blue), Nearest filtered, so four quarters are rough/smooth metal/dielectric under a directional and a hemisphere light",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "bg",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "bg"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [45, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 3.2
+    },
+    {
+      "op": "new",
+      "id": "sun",
+      "class": "DirectionalLight",
+      "args": [16777215, 3]
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.x",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.y",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.z",
+      "value": 3
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [11189196, 3355443, 0.8]
+    },
+    {
+      "op": "new",
+      "id": "mr",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [0, 255, 255, 255, 0, 255, 0, 255, 0, 51, 255, 255, 0, 51, 0, 255],
+          "type": "Uint8Array"
+        },
+        2,
+        2,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mr",
+      "path": "magFilter",
+      "value": 1003
+    },
+    {
+      "op": "set",
+      "id": "mr",
+      "path": "minFilter",
+      "value": 1003
+    },
+    {
+      "op": "set",
+      "id": "mr",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "geometry",
+      "class": "SphereGeometry",
+      "args": [1, 64, 32]
+    },
+    {
+      "op": "new",
+      "id": "material",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "metalness",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "roughness",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "metalnessMap",
+      "value": {
+        "ref": "mr"
+      }
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "roughnessMap",
+      "value": {
+        "ref": "mr"
+      }
+    },
+    {
+      "op": "new",
+      "id": "ball",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geometry"
+        },
+        {
+          "ref": "material"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "ball",
+      "path": "rotation.y",
+      "value": -0.7853981633974483
+    },
+    {
+      "op": "set",
+      "id": "ball",
+      "path": "rotation.x",
+      "value": 0.3
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "ball"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sun"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "material",
+      "path": "metalness",
+      "kind": "number"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  }
+}

@@ -62,6 +62,7 @@ describe("playtest plugin", () => {
         "runtime.state",
         "runtime.performance",
         "runtime.renderChain",
+        "runtime.renderOnly",
         "runtime.startup",
         "runtime.contacts",
         "runtime.tags",
@@ -112,6 +113,7 @@ describe("playtest plugin", () => {
         "runtime.state",
         "runtime.performance",
         "runtime.renderChain",
+        "runtime.renderOnly",
         "runtime.startup",
         "runtime.contacts",
         "runtime.tags",
@@ -236,9 +238,13 @@ describe("playtest plugin", () => {
           .runtimeDiagnosticsSeries ?? [];
       // The frame budget is on by default, so each sample also carries its phase split.
       expect(series.every(({ phases }) => phases !== undefined)).toBe(true);
-      expect(series.map(({ passes: _passes, phases: _phases, ...sample }) => sample)).toEqual([
-        { drawCalls: 7, frameMs: 16, triangles: 42 },
-      ]);
+      expect(
+        series.map((sample) => ({
+          drawCalls: sample.drawCalls,
+          frameMs: sample.frameMs,
+          triangles: sample.triangles,
+        })),
+      ).toEqual([{ drawCalls: 7, frameMs: 16, triangles: 42 }]);
     } finally {
       game.stop();
       if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
@@ -305,6 +311,7 @@ describe("playtest plugin", () => {
         "runtime.state",
         "runtime.performance",
         "runtime.renderChain",
+        "runtime.renderOnly",
         "runtime.startup",
         "runtime.contacts",
         "runtime.tags",
@@ -352,6 +359,7 @@ describe("playtest plugin", () => {
       });
       // `assets` is the loader's own ledger and is empty for a scene that loads none.
       expect(snapshot.resources).toEqual({
+        __threenativeFrameCounts: { updates: 0, renders: 0 },
         GameState: { score: 0 },
         assets: {},
         state: { score: 0 },
@@ -492,12 +500,21 @@ describe("playtest plugin", () => {
     }
   });
 
-  it("advances the running game through the fixed-step bridge", async () => {
+  it("advances four ordered update/world-render pairs and suppresses queued automatic draws", async () => {
     const canvas = testCanvas();
-    let updates = 0;
+    const events: string[] = [];
+    let failUpdate = false;
+    let failRender = false;
+    const callbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
     class TestScene extends Scene<Record<string, unknown>> {
       override update(): void {
-        updates += 1;
+        if (failUpdate) throw new Error("scene update failed");
+        events.push("update");
       }
     }
     const game = defineGame({
@@ -510,7 +527,10 @@ describe("playtest plugin", () => {
           dispose: () => undefined,
           domElement: canvas,
           getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
-          render: () => undefined,
+          render: () => {
+            if (failRender) throw new Error("world render failed");
+            events.push("world");
+          },
           setSize: () => undefined,
         }),
       },
@@ -522,11 +542,44 @@ describe("playtest plugin", () => {
     try {
       const installed = bridge();
       await installed.advance?.(4);
-
-      expect(updates).toBe(4);
-      expect((await installed.sample({})).clock).toEqual({ mode: "fixed-step", tick: 4 });
+      expect(events).toEqual(Array.from({ length: 4 }, () => ["update", "world"]).flat());
+      const sample = await installed.sample({ resources: ["__threenativeFrameCounts"] });
+      expect(sample.clock).toEqual({ mode: "fixed-step", tick: 4 });
+      expect(sample.resources?.__threenativeFrameCounts).toEqual({ updates: 4, renders: 4 });
+      const scheduled = callbacks.length;
+      callbacks[0]?.(1_000);
+      expect(callbacks).toHaveLength(scheduled);
+      expect(events).toHaveLength(8);
+      await installed.advance?.(1, { render: false });
+      expect(events.at(-1)).toBe("update");
+      expect(
+        (await installed.sample({ resources: ["__threenativeFrameCounts"] })).resources
+          ?.__threenativeFrameCounts,
+      ).toEqual({ updates: 5, renders: 4 });
+      expect(sample.resources?.__threenativeFrameCounts).toEqual({ updates: 4, renders: 4 });
+      game.pause();
+      await installed.advance?.(1);
+      expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
+        updates: 5,
+        renders: 5,
+      });
+      game.resume();
+      failUpdate = true;
+      await expect(installed.advance?.(1)).rejects.toThrow("scene update failed");
+      expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
+        updates: 5,
+        renders: 5,
+      });
+      failUpdate = false;
+      failRender = true;
+      await expect(installed.advance?.(1)).rejects.toThrow("world render failed");
+      expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
+        updates: 6,
+        renders: 5,
+      });
     } finally {
       game.stop();
+      vi.unstubAllGlobals();
     }
   });
 
@@ -778,9 +831,11 @@ describe("playtest holdUntilAttached", () => {
       expect(events).toEqual(["load"]);
       const installed = bridge();
       if (installed.applySetup === undefined) throw new Error("Setup channel was not installed.");
-      await installed.applySetup({
+      const confirmation = await installed.applySetup({
         entities: [{ entity: "player", transform: { position: [7, 2.5, -3] } }],
       });
+      // The held wrapper hands the bridge's read-back to the runner (a desktop mailbox needs JSON, not void).
+      expect(confirmation).toEqual({ entities: ["player"], resources: [] });
       const description = await installed.describe();
       events.push("describe returned");
       await started;
@@ -965,6 +1020,98 @@ describe("playtest holdUntilAttached", () => {
       });
       if (previousEndpoint === undefined) Reflect.deleteProperty(host, "TN_PLAYTEST_ENDPOINT");
       else host.TN_PLAYTEST_ENDPOINT = previousEndpoint;
+    }
+  });
+
+  it("negotiates an autonomous pose window and restores the fixed clock on teardown", async () => {
+    const host = globalThis as Record<string, unknown>;
+    const previousEndpoint = host[PLAYTEST_RUNNER_EXPECTED_GLOBAL];
+    host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = true;
+    const callbacks = new Map<number, (time: number) => void>();
+    let handle = 0;
+    const requestFrame = globalThis.requestAnimationFrame;
+    const cancelFrame = globalThis.cancelAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        callbacks.set(++handle, callback);
+        return handle;
+      },
+    });
+    Object.defineProperty(globalThis, "cancelAnimationFrame", {
+      configurable: true,
+      value: (id: number) => {
+        callbacks.delete(id);
+      },
+    });
+    const canvas = testCanvas();
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: false })],
+      renderer: stubRenderer(canvas),
+      scenes: { test: class extends Scene {} },
+      start: "test",
+    });
+    try {
+      await game.start();
+      await bridge().advance?.(2);
+      const control = bridge() as IPlaytestBridgeV1 & {
+        _clockEpoch: number;
+        _setClockMode(mode: unknown): { mode: string; tick: number; epoch: number };
+      };
+      const pump = (time: number): void => {
+        const entry = callbacks.entries().next().value;
+        expect(entry).toBeDefined();
+        if (entry === undefined) return;
+        callbacks.delete(entry[0]);
+        entry[1](time);
+      };
+      expect(control._setClockMode("wall-clock")).toEqual({
+        mode: "wall-clock",
+        tick: 2,
+        epoch: 1,
+      });
+      expect(callbacks.size).toBe(1);
+      pump(100_000);
+      pump(100_020);
+      expect(control._setClockMode("wall-clock")).toEqual({
+        mode: "wall-clock",
+        tick: 3,
+        epoch: 1,
+      });
+      expect((await bridge().sample({})).clock).toMatchObject({ mode: "wall-clock", tick: 3 });
+      expect((await bridge().describe()).capabilities).toContain("runtime.fixedStep");
+      expect(await bridge().ready?.()).toMatchObject({ ready: true });
+      expect(control._clockEpoch).toBe(1);
+      expect(() => control._setClockMode("invalid")).toThrow(/clock mode/iu);
+      expect(control._setClockMode("fixed-step")).toEqual({
+        mode: "fixed-step",
+        tick: 3,
+        epoch: 2,
+      });
+      pump(200_000);
+      await bridge().advance?.(2);
+      expect((await bridge().sample({})).clock).toMatchObject({ mode: "fixed-step", tick: 5 });
+      expect((await bridge().describe()).capabilities).toContain("runtime.fixedStep");
+      expect(await bridge().ready?.()).toMatchObject({ ready: true });
+      control._setClockMode("wall-clock");
+      game.stop();
+      expect(control._clockEpoch).toBe(4);
+      expect(callbacks.size).toBe(0);
+      expect(() => control._setClockMode("wall-clock")).toThrow(/disposed/iu);
+    } finally {
+      game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      Object.defineProperty(globalThis, "cancelAnimationFrame", {
+        configurable: true,
+        value: cancelFrame,
+      });
+      if (previousEndpoint === undefined)
+        Reflect.deleteProperty(host, PLAYTEST_RUNNER_EXPECTED_GLOBAL);
+      else host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = previousEndpoint;
     }
   });
 

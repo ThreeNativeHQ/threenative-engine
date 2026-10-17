@@ -1,0 +1,863 @@
+{
+  "name": "math-euler-orders",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Euler.tests.js \u2014 every one of the six orders round-trips through Matrix4 and through Quaternion",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "e01",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "new",
+      "id": "q02",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q02",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b03",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b03",
+      "method": "setFromQuaternion",
+      "args": [
+        {
+          "ref": "q02"
+        },
+        "XYZ"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m04",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m04",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b05",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b05",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m04"
+        },
+        "XYZ"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e06",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YXZ"]
+    },
+    {
+      "op": "new",
+      "id": "q07",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q07",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e06"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b08",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b08",
+      "method": "setFromQuaternion",
+      "args": [
+        {
+          "ref": "q07"
+        },
+        "YXZ"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m09",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m09",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e06"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b10",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b10",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m09"
+        },
+        "YXZ"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e11",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZXY"]
+    },
+    {
+      "op": "new",
+      "id": "q12",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q12",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e11"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b13",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b13",
+      "method": "setFromQuaternion",
+      "args": [
+        {
+          "ref": "q12"
+        },
+        "ZXY"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m14",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m14",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e11"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b15",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b15",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m14"
+        },
+        "ZXY"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e16",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "new",
+      "id": "q17",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q17",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e16"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b18",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b18",
+      "method": "setFromQuaternion",
+      "args": [
+        {
+          "ref": "q17"
+        },
+        "ZYX"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m19",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m19",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e16"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b20",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b20",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m19"
+        },
+        "ZYX"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e21",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YZX"]
+    },
+    {
+      "op": "new",
+      "id": "q22",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q22",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e21"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b23",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b23",
+      "method": "setFromQuaternion",
+      "args": [
+        {
+          "ref": "q22"
+        },
+        "YZX"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m24",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m24",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e21"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b25",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b25",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m24"
+        },
+        "YZX"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e26",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XZY"]
+    },
+    {
+      "op": "new",
+      "id": "q27",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q27",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e26"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b28",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b28",
+      "method": "setFromQuaternion",
+      "args": [
+        {
+          "ref": "q27"
+        },
+        "XZY"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m29",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m29",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e26"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b30",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b30",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m29"
+        },
+        "XZY"
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "e01",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e01",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e01",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e01",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "q02",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "b03",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b03",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b03",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b03",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "m04",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "b05",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b05",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b05",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b05",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "e06",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e06",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e06",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e06",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "q07",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "b08",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b08",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b08",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b08",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "m09",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "b10",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b10",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b10",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b10",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "e11",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e11",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e11",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e11",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "q12",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "b13",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b13",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b13",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b13",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "m14",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "b15",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b15",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b15",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b15",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "e16",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e16",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e16",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e16",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "q17",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "b18",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b18",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b18",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b18",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "m19",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "b20",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b20",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b20",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b20",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "e21",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e21",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e21",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e21",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "q22",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "b23",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b23",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b23",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b23",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "m24",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "b25",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b25",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b25",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b25",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "e26",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e26",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e26",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e26",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "q27",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "b28",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b28",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b28",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b28",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "m29",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "b30",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "b30",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "b30",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "b30",
+      "kind": "string",
+      "path": "order"
+    }
+  ]
+}

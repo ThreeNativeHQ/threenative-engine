@@ -1,6 +1,8 @@
 import type { IThreeNativeConfig } from "@threenative/core";
 
 export default {
+  // Proves the legacy desktop host's replay; the default engine is native.
+  engine: "legacy",
   app: {
     id: "com.threenative.prd162replay",
     name: "PRD-162 portable replay",

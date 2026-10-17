@@ -1,0 +1,396 @@
+{
+  "name": "shapes-extrude-geometry",
+  "adaptedFrom": "three@0.185.1 src/geometries/ExtrudeGeometry.js \u2014 Midway's bevelled panel with an elliptical hole, a flat two-shape plate, a bevel offset and the default square",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "panel",
+      "class": "Shape",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "panel",
+      "method": "moveTo",
+      "args": [-0.15000000000000002, -0.15]
+    },
+    {
+      "op": "call",
+      "id": "panel",
+      "method": "lineTo",
+      "args": [0.15000000000000002, -0.15]
+    },
+    {
+      "op": "call",
+      "id": "panel",
+      "method": "quadraticCurveTo",
+      "args": [0.2, -0.15, 0.2, -0.09999999999999999]
+    },
+    {
+      "op": "call",
+      "id": "panel",
+      "method": "lineTo",
+      "args": [0.2, 0.09999999999999999]
+    },
+    {
+      "op": "call",
+      "id": "panel",
+      "method": "quadraticCurveTo",
+      "args": [0.2, 0.15, 0.15000000000000002, 0.15]
+    },
+    {
+      "op": "call",
+      "id": "panel",
+      "method": "lineTo",
+      "args": [-0.15000000000000002, 0.15]
+    },
+    {
+      "op": "call",
+      "id": "panel",
+      "method": "quadraticCurveTo",
+      "args": [-0.2, 0.15, -0.2, 0.09999999999999999]
+    },
+    {
+      "op": "call",
+      "id": "panel",
+      "method": "lineTo",
+      "args": [-0.2, -0.09999999999999999]
+    },
+    {
+      "op": "call",
+      "id": "panel",
+      "method": "quadraticCurveTo",
+      "args": [-0.2, -0.15, -0.15000000000000002, -0.15]
+    },
+    {
+      "op": "call",
+      "id": "panel",
+      "method": "closePath",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "hole",
+      "class": "Path",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "hole",
+      "method": "absellipse",
+      "args": [0, 0, 0.05, 0.04, 0, 6.283185307179586, false, 0.3]
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "holes",
+      "value": {
+        "refs": ["hole"]
+      }
+    },
+    {
+      "op": "new",
+      "id": "p0",
+      "class": "Vector2",
+      "args": [0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p1",
+      "class": "Vector2",
+      "args": [0.3, 0.05]
+    },
+    {
+      "op": "new",
+      "id": "p2",
+      "class": "Vector2",
+      "args": [0.25, 0.2]
+    },
+    {
+      "op": "new",
+      "id": "p3",
+      "class": "Vector2",
+      "args": [-0.05, 0.15]
+    },
+    {
+      "op": "new",
+      "id": "plate",
+      "class": "Shape",
+      "args": [
+        {
+          "refs": ["p0", "p1", "p2", "p3"]
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "k0",
+      "class": "Vector2",
+      "args": [0.1, 0.2]
+    },
+    {
+      "op": "new",
+      "id": "k1",
+      "class": "Vector2",
+      "args": [0.3, 0.1]
+    },
+    {
+      "op": "new",
+      "id": "curvy",
+      "class": "Shape",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "curvy",
+      "method": "moveTo",
+      "args": [0, 0]
+    },
+    {
+      "op": "call",
+      "id": "curvy",
+      "method": "splineThru",
+      "args": [
+        {
+          "refs": ["k0", "k1"]
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "curvy",
+      "method": "bezierCurveTo",
+      "args": [0.3, -0.1, 0.1, -0.2, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "bevelled",
+      "class": "ExtrudeGeometry",
+      "args": [
+        {
+          "ref": "panel"
+        },
+        {
+          "record": {
+            "depth": 0.026,
+            "bevelEnabled": true,
+            "bevelThickness": 0.002,
+            "bevelSize": 0.002,
+            "bevelSegments": 3,
+            "steps": 2,
+            "curveSegments": 3
+          }
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "flat",
+      "class": "ExtrudeGeometry",
+      "args": [
+        {
+          "refs": ["plate", "curvy"]
+        },
+        {
+          "record": {
+            "depth": 0.1,
+            "bevelEnabled": false,
+            "curveSegments": 6
+          }
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "offset",
+      "class": "ExtrudeGeometry",
+      "args": [
+        {
+          "ref": "plate"
+        },
+        {
+          "record": {
+            "depth": 0.05,
+            "bevelOffset": 0.004,
+            "bevelSegments": 1
+          }
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "fallback",
+      "class": "ExtrudeGeometry",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "bevelled",
+      "method": "getAttribute",
+      "args": ["position"],
+      "result": "bevelledPosition"
+    },
+    {
+      "op": "call",
+      "id": "bevelled",
+      "method": "getAttribute",
+      "args": ["normal"],
+      "result": "bevelledNormal"
+    },
+    {
+      "op": "call",
+      "id": "bevelled",
+      "method": "getAttribute",
+      "args": ["uv"],
+      "result": "bevelledUv"
+    },
+    {
+      "op": "call",
+      "id": "flat",
+      "method": "getAttribute",
+      "args": ["position"],
+      "result": "flatPosition"
+    },
+    {
+      "op": "call",
+      "id": "flat",
+      "method": "getAttribute",
+      "args": ["normal"],
+      "result": "flatNormal"
+    },
+    {
+      "op": "call",
+      "id": "flat",
+      "method": "getAttribute",
+      "args": ["uv"],
+      "result": "flatUv"
+    },
+    {
+      "op": "call",
+      "id": "offset",
+      "method": "getAttribute",
+      "args": ["position"],
+      "result": "offsetPosition"
+    },
+    {
+      "op": "call",
+      "id": "offset",
+      "method": "getAttribute",
+      "args": ["normal"],
+      "result": "offsetNormal"
+    },
+    {
+      "op": "call",
+      "id": "offset",
+      "method": "getAttribute",
+      "args": ["uv"],
+      "result": "offsetUv"
+    },
+    {
+      "op": "call",
+      "id": "fallback",
+      "method": "getAttribute",
+      "args": ["position"],
+      "result": "fallbackPosition"
+    },
+    {
+      "op": "call",
+      "id": "fallback",
+      "method": "getAttribute",
+      "args": ["normal"],
+      "result": "fallbackNormal"
+    },
+    {
+      "op": "call",
+      "id": "fallback",
+      "method": "getAttribute",
+      "args": ["uv"],
+      "result": "fallbackUv"
+    }
+  ],
+  "observe": [
+    {
+      "id": "bevelledPosition",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "bevelledNormal",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "bevelledUv",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "bevelled",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "flatPosition",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "flatNormal",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "flatUv",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "flat",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "offsetPosition",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "offsetNormal",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "offsetUv",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "offset",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "fallbackPosition",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "fallbackNormal",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "fallbackUv",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "fallback",
+      "path": "groups",
+      "kind": "json"
+    }
+  ]
+}

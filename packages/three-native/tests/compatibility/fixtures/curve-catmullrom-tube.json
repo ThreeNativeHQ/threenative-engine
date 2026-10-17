@@ -1,0 +1,616 @@
+{
+  "name": "curve-catmullrom-tube",
+  "adaptedFrom": "three@0.185.1 src/extras/core/Curve.js, src/extras/curves/CatmullRomCurve3.js and src/geometries/TubeGeometry.js \u2014 a cockpit grip curve in each curve type, open and closed tubes",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "p0",
+      "class": "Vector3",
+      "args": [0, -0.11, 1.21]
+    },
+    {
+      "op": "new",
+      "id": "p1",
+      "class": "Vector3",
+      "args": [0.02, -0.24, 1.26]
+    },
+    {
+      "op": "new",
+      "id": "p2",
+      "class": "Vector3",
+      "args": [0.06, -0.35, 1.32]
+    },
+    {
+      "op": "new",
+      "id": "p3",
+      "class": "Vector3",
+      "args": [0.085, -0.42, 1.37]
+    },
+    {
+      "op": "new",
+      "id": "p4",
+      "class": "Vector3",
+      "args": [0.3, -0.2, 1.1]
+    },
+    {
+      "op": "new",
+      "id": "open",
+      "class": "CatmullRomCurve3",
+      "args": [
+        {
+          "refs": ["p0", "p1", "p2", "p3", "p4"]
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "loop",
+      "class": "CatmullRomCurve3",
+      "args": [
+        {
+          "refs": ["p0", "p1", "p2", "p3", "p4"]
+        },
+        true,
+        "catmullrom",
+        0.3
+      ]
+    },
+    {
+      "op": "new",
+      "id": "chord",
+      "class": "CatmullRomCurve3",
+      "args": [
+        {
+          "refs": ["p0", "p1", "p2", "p3", "p4"]
+        },
+        false,
+        "chordal"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t0",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "open",
+      "method": "getPoint",
+      "args": [
+        0.37,
+        {
+          "ref": "t0"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t1",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "open",
+      "method": "getPoint",
+      "args": [
+        1,
+        {
+          "ref": "t1"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t2",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "open",
+      "method": "getPointAt",
+      "args": [
+        0.61,
+        {
+          "ref": "t2"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t3",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "open",
+      "method": "getTangent",
+      "args": [
+        0.25,
+        {
+          "ref": "t3"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t4",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "open",
+      "method": "getTangentAt",
+      "args": [
+        0.9,
+        {
+          "ref": "t4"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t5",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "open",
+      "method": "getTangent",
+      "args": [
+        0,
+        {
+          "ref": "t5"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "open",
+      "method": "getPoint",
+      "args": [0.83],
+      "result": "fresh_open"
+    },
+    {
+      "op": "new",
+      "id": "t6",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "loop",
+      "method": "getPoint",
+      "args": [
+        0.37,
+        {
+          "ref": "t6"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t7",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "loop",
+      "method": "getPoint",
+      "args": [
+        1,
+        {
+          "ref": "t7"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t8",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "loop",
+      "method": "getPointAt",
+      "args": [
+        0.61,
+        {
+          "ref": "t8"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t9",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "loop",
+      "method": "getTangent",
+      "args": [
+        0.25,
+        {
+          "ref": "t9"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t10",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "loop",
+      "method": "getTangentAt",
+      "args": [
+        0.9,
+        {
+          "ref": "t10"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t11",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "loop",
+      "method": "getTangent",
+      "args": [
+        0,
+        {
+          "ref": "t11"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "loop",
+      "method": "getPoint",
+      "args": [0.83],
+      "result": "fresh_loop"
+    },
+    {
+      "op": "new",
+      "id": "t12",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "chord",
+      "method": "getPoint",
+      "args": [
+        0.37,
+        {
+          "ref": "t12"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t13",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "chord",
+      "method": "getPoint",
+      "args": [
+        1,
+        {
+          "ref": "t13"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t14",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "chord",
+      "method": "getPointAt",
+      "args": [
+        0.61,
+        {
+          "ref": "t14"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t15",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "chord",
+      "method": "getTangent",
+      "args": [
+        0.25,
+        {
+          "ref": "t15"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t16",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "chord",
+      "method": "getTangentAt",
+      "args": [
+        0.9,
+        {
+          "ref": "t16"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t17",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "chord",
+      "method": "getTangent",
+      "args": [
+        0,
+        {
+          "ref": "t17"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "chord",
+      "method": "getPoint",
+      "args": [0.83],
+      "result": "fresh_chord"
+    },
+    {
+      "op": "new",
+      "id": "tube",
+      "class": "TubeGeometry",
+      "args": [
+        {
+          "ref": "open"
+        },
+        12,
+        0.05,
+        6,
+        false
+      ]
+    },
+    {
+      "op": "new",
+      "id": "ring",
+      "class": "TubeGeometry",
+      "args": [
+        {
+          "ref": "loop"
+        },
+        10,
+        0.1,
+        5,
+        true
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "t0",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t1",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t2",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t3",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t4",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t5",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "fresh_open",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "open",
+      "kind": "number",
+      "method": "getLength"
+    },
+    {
+      "id": "open",
+      "kind": "numbers",
+      "method": "getLengths"
+    },
+    {
+      "id": "t6",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t7",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t8",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t9",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t10",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t11",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "fresh_loop",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "loop",
+      "kind": "number",
+      "method": "getLength"
+    },
+    {
+      "id": "loop",
+      "kind": "numbers",
+      "method": "getLengths"
+    },
+    {
+      "id": "t12",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t13",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t14",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t15",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t16",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t17",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "fresh_chord",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "chord",
+      "kind": "number",
+      "method": "getLength"
+    },
+    {
+      "id": "chord",
+      "kind": "numbers",
+      "method": "getLengths"
+    },
+    {
+      "id": "tube",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "tube",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "tube",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "tube",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "tube",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "ring",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "ring",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "ring",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "ring",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "ring",
+      "path": "groups",
+      "kind": "json"
+    }
+  ]
+}

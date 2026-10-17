@@ -19,14 +19,14 @@
   ],
   "assert": {
     "diagnostics": {
-      "consoleErrorsOptOutReason": "The scenario intentionally blocks the renderer adapter, whose expected WebGL context error is the failure message being surfaced.",
+      "consoleErrorsOptOutReason": "The scenario intentionally blocks the renderer adapter, whose boot failure is the message being surfaced.",
       "noConsoleErrors": false
     },
     "hud": [
       {
         "allowTrivial": "The forced boot failure is present before the first step by design; this run checks that its message remains visible.",
         "id": "threenative-canvas-error",
-        "textIncludes": "Error creating WebGL context",
+        "textIncludes": "WebGPU is not available on this device",
         "visible": true
       }
     ],
