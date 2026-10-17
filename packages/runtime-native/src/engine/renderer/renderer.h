@@ -344,6 +344,8 @@ public:
         sourceScene_ = color;
         sourceDepth_ = depth;
     }
+    /** The renderer whose post render-to-texture passes this target's materials sample (a material node may read one). */
+    void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
     WGPUTextureView sceneColorView() const { return sceneView_; }
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
@@ -783,6 +785,10 @@ private:
     std::shared_ptr<const shader::PostNode> post_;
     shader::graph::Node postGraph_;
     WGPUTextureView sourceScene_ = nullptr, sourceDepth_ = nullptr;
+    const Renderer* postSource_ = nullptr;
+    const PostEffects* postTextureOwner(const std::string& name) const;
+    WGPUTextureView postTextureView(const std::string& name) const;
+    uint64_t postViewsStamp() const;
     GraphTextures postTextures_;
     struct RttTarget {
         std::string name;

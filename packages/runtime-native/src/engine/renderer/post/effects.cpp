@@ -319,6 +319,13 @@ WGPUTextureView PostEffects::view(const std::string& name) const {
         return it->second;
     return nullptr;
 }
+uint64_t PostEffects::viewsStamp() const {
+    uint64_t h = 0xcbf29ce484222325ull;
+    const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
+    for (const auto& [name, view] : outputViews_) mix(reinterpret_cast<uintptr_t>(view));
+    for (const auto& [name, target] : targets_) mix(reinterpret_cast<uintptr_t>(target.view));
+    return h;
+}
 WGPUSampler PostEffects::sampler(const std::string& name) const {
     if (const auto it = inputSamplers_.find(name); it != inputSamplers_.end())
         return it->second;

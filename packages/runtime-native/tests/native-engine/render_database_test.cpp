@@ -1445,6 +1445,56 @@ void deferredTargetFollowsPostRtt() {
     CHECK(renderer.diagnostics().empty());
 }
 
+// PRD-617: an offscreen PassNode whose material samples a post render-to-texture node directly (rain's bloom pass
+// reads the chain colour that convertToTexture made) draws in its own renderer. That renderer has no post effects,
+// so the node's texture fell back to a default view and the bloom came out as a screen-wide gradient. It reads the
+// main renderer's post texture instead, as t_scene already does.
+void deferredTargetSamplesPostRttNode() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    const auto live = g::uniform("nodeLive", shader::Type::vec(4), {0.25f, 0.5f, 0.25f, 1});
+    auto rtt = std::make_shared<g::NodeData>();  // convertToTexture(colour): a render texture with no target or quad
+    rtt->kind = g::Kind::RenderTexture;
+    rtt->type = shader::Type::vec(4);
+    rtt->name = "native_rtt_7";  // convertToTexture names its texture node so
+    rtt->args = {live, g::uv()};
+    const auto side = RenderTarget::make(32, 32, kTextureHalfFloatType);
+    Scene inner;
+    OrthographicCamera innerCamera(-1, 1, 1, -1, 0.1, 10);
+    innerCamera.position.z = 5;
+    innerCamera.updateMatrixWorld();
+    auto sampling = std::make_shared<Material>(MaterialType::Basic, true);
+    sampling->rawNodeMaterial = true;
+    sampling->nodes.fragmentNode = rtt;  // the plane shows the post RTT through the node, not through a map
+    Mesh plane(makePlaneGeometry(2, 2), sampling);
+    inner.add(plane);
+    inner.updateMatrixWorld(true);
+    // The plane's program is built, and its bind group cached, before the post graph exists (a game builds its
+    // render targets first); the post graph then adds the texture the node reads.
+    CHECK(renderToTarget(renderer, *side, inner, innerCamera, {0, 0, 0, 1}, false, true).empty());
+    renderer.render({}, CameraState{}, LightState{}, {0, 0, 0, 1});
+    renderer.setPostGraph(g::add(g::objectTexture(side->texture, "nodeSampledSide", g::uv()), g::mul(rtt, g::float_(0))));
+    const auto frame = [&](float value) {
+        g::setUniformValues(live, {value, 0.5f, 0.25f, 1});
+        CHECK(renderToTarget(renderer, *side, inner, innerCamera, {0, 0, 0, 1}, false, true).empty());
+        renderer.render({}, CameraState{}, LightState{}, {0, 0, 0, 1});
+        const auto bytes = read(renderer, events);
+        CHECK(bytes.size() == 64 * 64 * 4);
+        return bytes.size() == 64 * 64 * 4 ? int(bytes[(32 * 64 + 32) * 4]) : -1;
+    };
+    frame(0.25f);
+    frame(0.25f);
+    const int hi = frame(0.75f), lo = frame(0.25f);
+    CHECK(std::abs(hi - 191) <= 1);
+    CHECK(std::abs(lo - 64) <= 1);
+    CHECK(renderer.diagnostics().empty());
+}
+
 // three draws the normal target in the scene pass it counts once, so a post graph that reads `normal`
 // adds no draws and no triangles to the frame's counters (the engine's extra normal pass used to land
 // in the shadow tally, which put the web platformer at 873 draws against three's 431).
@@ -3738,7 +3788,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},

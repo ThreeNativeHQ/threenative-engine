@@ -39,6 +39,7 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
     TargetGpu& gpu = gpuOf(main, target);
     gpu.database->shadowMapEnabled = shadowMap;
     gpu.renderer->setSourceAttachments(main.sceneColorView(), main.sceneDepthView());
+    gpu.renderer->setPostSource(&main);
     if (deferred) {
         std::vector<std::function<void()>> jobs;
         struct Reset {

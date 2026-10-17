@@ -225,6 +225,10 @@ std::array<double, 9> uvTransformOf(const Texture& t) {
 // A TSL texture(object, uv) binding (tsl_call's "nodeMap<id>"): the draw's own texture, in either stage.
 bool graphTextureBinding(std::string_view name) { return name.rfind("t_nodeMap", 0) == 0; }
 
+// A material node reading a post render-to-texture pass (convertToTexture's "native_rtt_<n>"): the pass's output view
+// belongs to the main renderer's post effects and moves when they resize, so each draw binds it itself.
+bool postTextureBinding(std::string_view name) { return (name.rfind("t_native_rtt", 0) == 0 || name.rfind("smp_native_rtt", 0) == 0); }
+
 // The store a vertex attribute reads for a draw, by the attribute's name; null for a name the draw lacks.
 // Shared by the plan, which syncs it, and the encode half, which binds it.
 BufferStore* vertexSourceOf(const DrawItem& item, const shader::VertexAttribute& a) {
@@ -258,6 +262,11 @@ bool viewportBinding(std::string_view name) {
            name == "smp_viewportDepth";
 }
 
+bool readsPostTexture(const shader::StageModule& stage) {
+    return std::any_of(stage.bindings.begin(), stage.bindings.end(),
+                       [](const shader::Binding& binding) { return postTextureBinding(binding.name); });
+}
+
 bool readsViewport(const shader::StageModule& stage) {
     return std::any_of(stage.bindings.begin(), stage.bindings.end(),
                        [](const shader::Binding& binding) { return viewportBinding(binding.name); });
@@ -266,7 +275,7 @@ bool readsViewport(const shader::StageModule& stage) {
 bool perDrawFragment(const shader::StageModule& stage) {
     for (const shader::Binding& binding : stage.bindings)
         if (binding.name == "t_map" || binding.name == "t_env" || binding.name == "t_reflector" || graphTextureBinding(binding.name) ||
-            viewportBinding(binding.name))
+            postTextureBinding(binding.name) || viewportBinding(binding.name))
             return true;
     return false;
 }
@@ -1089,6 +1098,24 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
 // texture/sampler pair the view and sampler given.
 // A stage's bind group: its uniform slice of `uniforms` (dynamic offset when the layout says so), and
 // for a texture/sampler pair the view and sampler given.
+uint64_t Renderer::postViewsStamp() const {
+    return (postEffects_ ? postEffects_->viewsStamp() : 0) ^
+           (postSource_ && postSource_->postEffects_ ? postSource_->postEffects_->viewsStamp() * 31 : 0);
+}
+
+// A post render-to-texture pass's output by name. A render target's own renderer has no post effects, so a material
+// node there (rain's bloom pass reads the chain colour) reads the main renderer's, whose passes ran before the draw.
+const PostEffects* Renderer::postTextureOwner(const std::string& name) const {
+    if (postEffects_ && postEffects_->view(name)) return postEffects_.get();
+    if (postSource_ && postSource_->postEffects_ && postSource_->postEffects_->view(name)) return postSource_->postEffects_.get();
+    return nullptr;
+}
+
+WGPUTextureView Renderer::postTextureView(const std::string& name) const {
+    const PostEffects* owner = postTextureOwner(name);
+    return owner ? owner->view(name) : nullptr;
+}
+
 WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                                   WGPUTextureView view, WGPUSampler sampler, WGPUTextureView mapView,
                                   WGPUSampler mapSampler, WGPUTextureView envView, WGPUSampler envSampler,
@@ -1165,14 +1192,14 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
                 e.textureView = virtualMap ? virtualShadows_.at(index).map.view : (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
             else e.sampler = compareSampler_;
         } else if (b.kind == shader::BindingKind::Texture) {
-            const auto postView = postEffects_ ? postEffects_->view(b.name.substr(2)) : nullptr;
+            const auto postView = postTextureView(b.name.substr(2));
             const MaterialTexture* pbrTexture = pbr(b.name, false);
             e.textureView = postView ? postView : pbrTexture ? pbrTexture->view : b.name == "t_map" ? mapView : b.name == "t_normalMap" ? normalView : b.name == "t_env" ? envView
                             : b.name == "t_pmrem" ? pmremView : b.name == "t_reflector" ? reflectorView : view;
         } else if (b.kind == shader::BindingKind::Sampler) {
-            const bool postView = postEffects_ && postEffects_->view(b.name.substr(4));
+            const PostEffects* const postOwner = postTextureOwner(b.name.substr(4));
             const MaterialTexture* pbrTexture = pbr(b.name, true);
-            e.sampler = postView ? postEffects_->sampler(b.name.substr(4)) : pbrTexture ? pbrTexture->sampler : b.name == "smp_map" ? mapSampler : b.name == "smp_normalMap" ? normalSampler : b.name == "smp_env" ? envSampler
+            e.sampler = postOwner ? postOwner->sampler(b.name.substr(4)) : pbrTexture ? pbrTexture->sampler : b.name == "smp_map" ? mapSampler : b.name == "smp_normalMap" ? normalSampler : b.name == "smp_env" ? envSampler
                         : b.name == "smp_pmrem" ? pmremSampler : b.name == "smp_reflector" ? reflectorSampler : sampler;
         } else {
             throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
@@ -2916,6 +2943,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         mix(textureToken(item.envMap)); mix(textureToken(item.pmremMap));
         mix(reinterpret_cast<uintptr_t>(item.reflectorView));
         mix(reinterpret_cast<uintptr_t>(item.reflectorSampler));
+        mix(postViewsStamp());  // a node may sample a post texture
         if (item.nodeTextures)
             for (const auto& [label, texture] : *item.nodeTextures) {
                 mix(hashBytes(label.data(), label.size()));
@@ -2950,10 +2978,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         p.vertexGroup = vertexGroupOf(p, graphKey);
         const bool viewport = readsViewport(p.program->fragment);
         if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr && !p.item->pmremMap &&
-            !p.item->reflectorView && !graphTextures && !viewport) continue;
+            !p.item->reflectorView && !graphTextures && !viewport && !postTexture) continue;
         DrawCache* cache = p.item->cache;
         const uint64_t groupKey = drawGroupKey(p);
         if (cache && cache->mapGroup && cache->mapGroupKey == groupKey) {
+        const bool postTexture = readsPostTexture(p.program->fragment);
             p.mapGroup = static_cast<WGPUBindGroup>(cache->mapGroup);
             continue;
         }
@@ -2962,6 +2991,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                         std::to_string(reinterpret_cast<uintptr_t>(viewportDepthView_));
         const MaterialTexture* normal = p.item->normalMap ? materialTexture(*p.item->normalMap) : nullptr;
         std::array<const MaterialTexture*, shader::kPbrMapCount> pbrTextures{};
+        if (postTexture)
+            graphKey += "|post," + std::to_string(postViewsStamp());
         for (int k = 0; k < shader::kPbrMapCount; ++k)
             if (p.item->pbrMaps[k]) pbrTextures[k] = materialTexture(*p.item->pbrMaps[k]);
         const MaterialTexture* map = p.item->map && !p.item->background ? materialTexture(*p.item->map) : nullptr;

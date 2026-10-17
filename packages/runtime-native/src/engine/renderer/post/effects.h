@@ -41,6 +41,8 @@ class PostEffects {
                 const std::function<WGPUCommandEncoder(WGPUCommandEncoder)>& split = {});
     WGPUTextureView view(const std::string& name) const;
     WGPUSampler sampler(const std::string& name) const;
+    /** Changes whenever any output view is replaced (a resize, a new target), so a cached bind group of one can be rebuilt. */
+    uint64_t viewsStamp() const;
 
   private:
     struct Image {
