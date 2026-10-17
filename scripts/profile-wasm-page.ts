@@ -106,7 +106,11 @@ export function cpuWork(profile: ICpuProfile, frames: number) {
   return { busyMsPerFrame: busyUs / 1000 / frames, frames, wallMs: wallUs / 1000 };
 }
 
-/** Frame-interval percentiles; a hitch is an interval over twice the run's own median. */
+/**
+ * Frame-interval percentiles. A `hitch` is an interval over twice the run's own median, so it is relative:
+ * a 446 fps run (p50 1.8 ms) counts 4 ms frames. `over16ms` and `over33ms` are absolute (a missed 60 Hz and
+ * 30 Hz frame) and `maxMs` is the longest interval, so two arms are comparable on the same scale.
+ */
 export function frameStats(intervals: readonly number[]) {
   if (intervals.length === 0) throw new Error("TN_PROFILE_NO_FRAMES: no frame interval recorded");
   const d = [...intervals].sort((a, b) => a - b);
@@ -118,6 +122,9 @@ export function frameStats(intervals: readonly number[]) {
     p95: at(0.95),
     p99: at(0.99),
     hitches: d.filter((x) => x > 2 * p50).length,
+    over16ms: d.filter((x) => x > 16.7).length,
+    over33ms: d.filter((x) => x > 33.3).length,
+    maxMs: d[d.length - 1] as number,
     fps: 1000 / mean,
   };
 }
@@ -284,7 +291,7 @@ async function calls(page: Page) {
 // Wraps the WebGPU prototypes' methods so that, while `__tnGpuCounts` is a Map, each call counts as
 // "<Interface>.<method>". Installed before the page's scripts; off, a wrapper costs one global read.
 const GPU_CENSUS = `(() => {
-  for (const name of ["GPUDevice", "GPUQueue", "GPUCommandEncoder", "GPURenderPassEncoder", "GPUComputePassEncoder", "GPURenderBundleEncoder"]) {
+  for (const name of ["GPUDevice", "GPUQueue", "GPUCommandEncoder", "GPURenderPassEncoder", "GPUComputePassEncoder", "GPURenderBundleEncoder", "GPUCanvasContext"]) {
     const proto = globalThis[name]?.prototype;
     if (!proto) continue;
     for (const key of Object.getOwnPropertyNames(proto)) {
@@ -300,25 +307,30 @@ const GPU_CENSUS = `(() => {
   }
 })();`;
 
+/**
+ * WebGPU API calls per presented frame. A game loop capped below the display rate (Midway's maxFps 60
+ * under an uncapped requestAnimationFrame) renders on some callbacks only, so dividing by callbacks
+ * would credit the arm with the faster callback rate. The divisor is `getCurrentTexture`, which both
+ * back ends call once per frame they present; the window runs until 120 such frames passed.
+ */
 async function gpuCalls(page: Page) {
   return page.evaluate(
     () =>
       new Promise<{ name: string; perFrame: number }[]>((resolve) => {
         const g = globalThis as { __tnGpuCounts?: Map<string, number> };
         g.__tnGpuCounts = new Map();
-        let frames = 0;
         const step = () => {
-          if (++frames < 121) {
+          const counts = g.__tnGpuCounts as Map<string, number>;
+          const presented = counts.get("GPUCanvasContext.getCurrentTexture") ?? 0;
+          if (presented < 120) {
             requestAnimationFrame(step);
             return;
           }
-          const counts = g.__tnGpuCounts as Map<string, number>;
           g.__tnGpuCounts = undefined;
           resolve(
             [...counts]
-              .map(([name, n]) => ({ name, perFrame: n / 120 }))
-              .sort((a, b) => b.perFrame - a.perFrame)
-              .slice(0, 25),
+              .map(([name, n]) => ({ name, perFrame: n / presented }))
+              .sort((a, b) => b.perFrame - a.perFrame),
           );
         };
         requestAnimationFrame(step);
@@ -417,7 +429,7 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
       `memory: Wasm ${r.memory.wasmMemoryBytes} bytes, JS heap used ${r.memory.jsHeapUsedBytes} bytes`,
     );
   console.log(
-    `startup ${(r.startupMs / 1000).toFixed(1)} s; frame p50 ${r.frame.p50.toFixed(2)} ms, p95 ${r.frame.p95.toFixed(2)} ms, p99 ${r.frame.p99.toFixed(2)} ms, ${r.frame.hitches} hitches, ${r.frame.fps.toFixed(0)} fps`,
+    `startup ${(r.startupMs / 1000).toFixed(1)} s; frame p50 ${r.frame.p50.toFixed(2)} ms, p95 ${r.frame.p95.toFixed(2)} ms, p99 ${r.frame.p99.toFixed(2)} ms, ${r.frame.hitches} hitches (over 2x own median), ${r.frame.over16ms} over 16.7 ms, ${r.frame.over33ms} over 33.3 ms, max ${r.frame.maxMs.toFixed(1)} ms, ${r.frame.fps.toFixed(0)} fps`,
   );
   if (r.profile.work)
     console.log(

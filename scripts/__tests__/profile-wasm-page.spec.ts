@@ -122,6 +122,17 @@ describe("profile:wasm-page startup, input and CPU work", () => {
     expect(() => cpuWork({ ...profile, timeDeltas: [1] }, 2)).toThrow("TN_PROFILE_CPU_WORK_DELTAS");
   });
 
+  it("counts absolute long frames beside the relative hitches, so a fast run is not judged against its own median", () => {
+    // 446 fps: p50 1.8 ms makes every 4 ms frame a relative hitch, yet no frame is anywhere near a 60 Hz budget.
+    const fast = frameStats([
+      ...Array.from({ length: 90 }, () => 1.8),
+      ...Array.from({ length: 10 }, () => 4.5),
+    ]);
+    expect(fast).toMatchObject({ hitches: 10, over16ms: 0, over33ms: 0, maxMs: 4.5 });
+    const slow = frameStats([...Array.from({ length: 97 }, () => 5), 17, 34, 60]);
+    expect(slow).toMatchObject({ over16ms: 3, over33ms: 2, maxMs: 60 });
+  });
+
   it("reports percentiles and counts a hitch as an interval over twice the median", () => {
     const stats = frameStats([...Array.from({ length: 98 }, () => 10), 25, 40]);
     expect(stats).toMatchObject({ p50: 10, p99: 40, hitches: 2 });
