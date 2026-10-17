@@ -13,6 +13,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <map>
 #include <set>
 #if TN_WEB_GLTF
@@ -52,6 +53,12 @@ bool outputChanged = true;
 bool shadowMap = false;
 int shadowMapType = 1;  // PCFShadowMap
 uint32_t sampleCount = 1;  // three's samples: 1 or 4x MSAA
+// The submit serial each drawn frame ended at, oldest first, while its GPU work is unfinished. Chromium
+// queues submitted frames without bound, so a page whose rAF outruns the GPU blocks until the GPU drains
+// and the GPU process is killed (the device is lost: "A valid external Instance reference no longer
+// exists"). Two frames on the GPU keep it busy; the caller draws no third (tnw_web_frame field 11).
+std::deque<uint64_t> framesOnGpu;
+constexpr size_t kMaxFramesOnGpu = 2;
 
 std::string text(WGPUStringView value) {
     if (value.data == nullptr) return {};
@@ -226,6 +233,7 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     }
     wgpuTextureViewRelease(view);
     wgpuTextureRelease(frame.texture);
+    framesOnGpu.push_back(renderer->gpu().submittedSerial());
     // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
     // so a page that draws less than its scene says why. TN_POST_NORMAL_SKIPPED is a note, not a fault (the
     // post pass reads a depth-derived normal there), so it goes to the console log, which a playtest's
@@ -496,7 +504,8 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  * the setup work done so far, which a steady frame must not add to: pipeline compiles (2), pipeline
  * text-key lookups (3), bind groups created (4), graph keys serialized (5), programs built (6),
  * the last resolved GPU frame time in ms (7), how many GPU times have resolved (8), the caller
- * frame id that sample was submitted under (9), and whether frames are timed at all (10).
+ * frame id that sample was submitted under (9), whether frames are timed at all (10), and 1 while
+ * two drawn frames are still on the GPU, so the caller draws none (11).
  */
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
@@ -514,6 +523,10 @@ extern "C" double tnw_web_frame(int field) {
         case 8: return double(renderer->gpuSamples());
         case 9: return double(renderer->gpuSourceFrame());
         case 10: return renderer->gpuTimerEnabled() ? 1 : 0;
+        case 11:
+            tnw_web_poll();  // delivers the work-done callbacks that advance completedSerial
+            while (!framesOnGpu.empty() && framesOnGpu.front() <= renderer->gpu().completedSerial()) framesOnGpu.pop_front();
+            return framesOnGpu.size() >= kMaxFramesOnGpu ? 1 : 0;
         default: return 0;
     }
 }

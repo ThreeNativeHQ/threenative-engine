@@ -264,6 +264,10 @@ export function defineWebRenderer(
     render(scene: unknown, camera: unknown): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
+      // Chromium queues a submitted frame without bound. When rAF outruns the GPU (an unthrottled
+      // loop, a heavy scene) the page blocks until the GPU drains and the GPU process is killed.
+      // The host says 1 while two drawn frames are still on the GPU: draw nothing this call.
+      if (module._tnw_web_frame(11) === 1) return;
       beforeRender();
       drawSecondaryPasses(
         () => ({ width: this.#drawWidth(), height: this.#drawHeight() }),

@@ -225,3 +225,38 @@ describe("the Wasm engine's offscreen PassNode draw", () => {
     expect(deferredFlags).toEqual([1]);
   });
 });
+
+/**
+ * rain's performance scenario (--disable-frame-rate-limit) lost its device on the Wasm engine: rAF ran
+ * 200+ times a second, the engine queued every frame, Chromium blocked the page until the GPU drained
+ * (16 s) and the GPU process was killed ("A valid external Instance reference no longer exists").
+ * The host reports field 11 = 1 while two frames are still on the GPU; render() draws nothing then.
+ */
+describe("the Wasm engine's WebGPURenderer backpressure", () => {
+  it("draws nothing while the GPU is behind and draws again once it catches up", async () => {
+    let behind = 0;
+    const drawnFrames: number[] = [];
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => (field === 11 ? behind : 0),
+      (...args) => {
+        drawnFrames.push(args[args.length - 1] ?? 0);
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      info: { frame: number };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    behind = 1;
+    renderer.render(scene, camera);
+    renderer.render(scene, camera);
+    expect(drawnFrames).toEqual([0]);
+    expect(renderer.info.frame).toBe(1);
+    behind = 0;
+    renderer.render(scene, camera);
+    expect(drawnFrames).toEqual([0, 1]);
+  });
+});
