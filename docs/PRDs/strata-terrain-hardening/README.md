@@ -24,7 +24,7 @@
 - [PRD-590 — One starter-world source, not five copies](../done/PRD-590-one-starter-world-source-not-five.md)
 - [PRD-591 — The preview stops re-implementing engine mechanisms](PRD-591-the-preview-stops-reimplementing-engine-mechanisms.md)
 - [PRD-592 — Terrain core fails closed and erodes without allocating](../done/PRD-592-terrain-core-fails-closed-and-erodes-without-allocating.md)
-- [PRD-593 — The three.js patch is generated, and the upload lane leaves it](PRD-593-the-three-patch-is-generated-and-the-upload-lane-leaves-it.md)
+- [PRD-593 — The three.js patch is generated, and the upload lane leaves it](../done/PRD-593-the-three-patch-is-generated-and-the-upload-lane-leaves-it.md)
 - [PRD-594 — The engine changes that rode in with #381 get native and visual proof](PRD-594-engine-changes-from-381-get-native-and-visual-proof.md)
 - [PRD-595 — `world-cells.ts` splits by seam and survives a load/evict race fuzz](PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md)
 
