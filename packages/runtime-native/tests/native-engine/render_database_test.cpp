@@ -551,6 +551,7 @@ void uniformBatchPreparation() {
         if (mode == 2) view.add(*hook);
         if (mode == 3) { light.setCastShadow(true); light.shadow.camera->add(*hook); }
         world.add(light).add(mesh);
+        if (mode < 2) world.add(*hook);  // three refreshes a light target only through the scene
         RenderDatabase db; db.shadowMapEnabled = mode == 3;
         CHECK(db.prepare(world, view, lights).size() == 1);
         CHECK(mesh.position.x == 2 && mesh.matrixWorld.elements[12] == 1);
@@ -927,6 +928,7 @@ void directionalTarget() {
     Object3D parent;
     parent.position.x = 1;
     parent.add(*light.target);
+    scene.add(parent);
     light.target->position.x = 2;
     RenderDatabase database;
     database.shadowMapEnabled = true;
@@ -946,6 +948,35 @@ void directionalTarget() {
     light.target->position.x = 10;
     database.prepare(scene, camera, lights);
     CHECK(lights.direct[0].direction[0] == 0 && lights.direct[0].direction[1] == 1);
+}
+
+// PRD-617: three reads `light.target.matrixWorld` as it stands, and only a scene traversal refreshes it. A
+// target the game never added to the scene stays at the origin whatever its position says: the racing
+// template's sun moves `key.target.position` with the car and, on stock three, still points at the origin.
+void directionalTargetOutsideScene() {
+    Scene scene;
+    PerspectiveCamera camera;
+    DirectionalLight light;
+    light.position.set(30, 40, 0);
+    light.setCastShadow(true);
+    scene.add(light);
+    light.target->position.set(30, 0, 0);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    LightState lights;
+    database.prepare(scene, camera, lights);
+    CHECK(lights.direct.size() == 1);
+    if (lights.direct.empty()) return;
+    CHECK(light.target->matrixWorld.elements[12] == 0);
+    CHECK(std::abs(lights.direct[0].direction[0] - 0.6) < 1e-12);
+    CHECK(std::abs(lights.direct[0].direction[1] - 0.8) < 1e-12);
+    Vector3 direction;
+    light.shadow.camera->getWorldDirection(direction);
+    CHECK(std::abs(direction.x + 0.6) < 1e-12 && std::abs(direction.y + 0.8) < 1e-12);
+    // In the scene, the same position is honoured: the sun now points straight down from the target.
+    scene.add(*light.target);
+    database.prepare(scene, camera, lights);
+    CHECK(std::abs(lights.direct[0].direction[0]) < 1e-12 && std::abs(lights.direct[0].direction[1] - 1) < 1e-12);
 }
 
 void invalidation() {
@@ -3920,7 +3951,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},

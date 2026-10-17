@@ -610,7 +610,6 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
         if (type == "DirectionalLight") {
             auto& l = static_cast<DirectionalLight&>(obj);
             if (l.castShadow()) {
-                l.target->updateWorldMatrix(true, false);
                 const auto from = worldPosition(l), to = worldPosition(*l.target);
                 Frustum f;
                 const uint32_t mask = effectiveShadowLayersMask(*l.shadow.camera, mainCamera);
@@ -620,7 +619,6 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
         } else if (type == "SpotLight") {
             auto& l = static_cast<SpotLight&>(obj);
             if (l.castShadow()) {
-                l.target->updateWorldMatrix(true, false);
                 constexpr double kRadToDeg = 180.0 / 3.14159265358979323846;
                 auto& shadowCamera = static_cast<PerspectiveCamera&>(*l.shadow.camera);
                 shadowCamera.fov = kRadToDeg * 2 * l.angle * l.shadow.focus;
@@ -812,7 +810,8 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 lights.ambient[c] += scaled(l.color, l.intensity)[c];
         } else if (mainPass && type == "DirectionalLight") {
             auto& l = static_cast<DirectionalLight&>(object); // its shadow camera moves, as three's does
-            l.target->updateWorldMatrix(true, false);
+            // three reads light.target.matrixWorld as it stands: only a scene traversal refreshes it, so a target
+            // outside the scene stays where its matrix last was (the origin) whatever its position says.
             const auto from = worldPosition(l), to = worldPosition(*l.target);
             direct_.emplace_back(object.id(), DirectLight::directional(normalized({from[0] - to[0], from[1] - to[1], from[2] - to[2]}),
                                                                       scaled(l.color, l.intensity)));

@@ -229,6 +229,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_instance_counts=instance_counts
         native_engine_renderer_flat_lane_equivalence=flat_lane_equivalence
         native_engine_directional_target=directional_target
+        native_engine_directional_target_outside_scene=directional_target_outside_scene
         native_engine_renderer_invalidation=invalidation
         native_engine_renderer_scene_alpha=alpha_scene
         native_engine_standard_materials_unsupported=material_unsupported
