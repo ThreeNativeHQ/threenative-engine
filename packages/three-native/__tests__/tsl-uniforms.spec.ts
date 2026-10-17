@@ -46,8 +46,10 @@ describe("uniform update hooks", () => {
   it("hands the rendering camera to an update hook, as three's frame does", () => {
     const { live, pushed } = setup();
     const camera = { name: "chase" };
-    live.uniform(0).onRenderUpdate?.(((frame: { camera?: unknown }) =>
-      frame.camera === camera ? 7 : -1) as never);
+    live
+      .uniform(0)
+      .onRenderUpdate?.(((frame: { camera?: unknown }) =>
+        frame.camera === camera ? 7 : -1) as never);
     live.sync({ camera });
     expect(pushed.at(-1)).toEqual([7]);
   });

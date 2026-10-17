@@ -67,6 +67,7 @@ export const { saturate, densityFogFactor, fog, context, velocity } = defineTslE
   clamp: (...args) => globalThis.tsl.clamp(...args),
   float: (value) => globalThis.tsl.float(value),
   linearDepth: () => globalThis.tsl.linearDepth(),
+  vec4: (...args) => vec4(...args),
 });
 
 export const struct = defineStruct(globalThis.tsl.struct);

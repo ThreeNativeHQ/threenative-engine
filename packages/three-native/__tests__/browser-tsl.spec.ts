@@ -101,7 +101,9 @@ describe("Wasm TSL fog", () => {
   // real node, vec4(color, factor): a frozen description had no engine node to set and the fog was dropped.
   it("answers an engine node that joins the colour and the factor", () => {
     const { tsl, runtime } = setup();
-    const fog = (tsl as unknown as { fog(color: unknown, factor: unknown): INode & { isFogNode?: boolean } }).fog;
+    const fog = (
+      tsl as unknown as { fog(color: unknown, factor: unknown): INode & { isFogNode?: boolean } }
+    ).fog;
     const haze = tsl.vec2(0.25, 0.75);
     const node = fog(haze, 0);
     expect(typeof node[TSL_NODE]).toBe("number");
