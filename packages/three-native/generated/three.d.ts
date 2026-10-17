@@ -2408,6 +2408,7 @@ readonly isScene: boolean;
 background: Color | Texture | null;
 environment: Texture | null;
 fog: (Fog | FogExp2) | null;
+fogNode: Node | null;
 backgroundBlurriness: number;
 backgroundIntensity: number;
 backgroundRotation: Euler;

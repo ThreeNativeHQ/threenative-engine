@@ -19010,6 +19010,15 @@
           }
         },
         {
+          "name": "fogNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
           "name": "backgroundBlurriness",
           "type": "number",
           "mutable": true,
