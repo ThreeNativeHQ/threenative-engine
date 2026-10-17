@@ -294,6 +294,7 @@ tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader
 target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
 
 tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp
+    native_engine_material_depth_node_writes_frag_depth=depth_node_writes_frag_depth
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds
     native_engine_fog_math=fog

@@ -886,6 +886,11 @@ static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprI
     return {direction, f.mul(f.mul(color, spot), attenuation)};
 }
 
+// NodeMaterial.depthNode: the fragment's own depth (frag_depth), on every material program that takes node slots.
+static void outputDepthNode(Program& f, const VertexVariant& variant) {
+    if (variant.nodes.depthNode) f.output("fragDepth", nodeValue(f, variant.nodes.depthNode, Type::f32(), kInvalid));
+}
+
 // The MeshStandardNodeMaterial / MeshPhysicalNodeMaterial body. `physical` swaps setupSpecular's
 // fixed 0.04 F0 / 1 F90 for the physical ior, specularIntensity and specularColor formula; every
 // other node is identical, so the standard output stays bit-identical.
@@ -1109,6 +1114,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha)));
+    outputDepthNode(f, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
@@ -1239,6 +1245,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId alpha = diffuseAlpha(f, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha)));
+    outputDepthNode(f, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
         for (const Diagnostic& d : stage->diagnostics()) {
@@ -1301,8 +1308,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
         if (color != kInvalid && f.expr(color).type == Type::vec(3))
             color = f.construct(Type::vec(4), {color, f.constant(1.0f)});
         f.output("color", color);
-        // NodeMaterial.depthNode: the fragment's own depth (rain's coast quad writes the coast's, so drops hide behind it).
-        if (variant.nodes.depthNode) f.output("fragDepth", nodeType(f, graph::lower(variant.nodes.depthNode, f), Type::f32()));
+        outputDepthNode(f, variant);  // rain's coast quad writes the coast's depth, so drops hide behind it
         linkNodeVaryings(out, variant, local.position, local.normal);
         return out;
     }
@@ -1325,6 +1331,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, nodeValue(f, variant.nodes.emissiveNode, Type::vec(3), kInvalid, normalView)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
     f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha)));
+    outputDepthNode(f, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     return out;
 }

@@ -267,7 +267,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_nested_record_cache=nested_record_cache
         native_engine_renderer_frustum_record_retention=frustum_record_retention
         native_engine_renderer_world_sphere_measured_once=world_sphere_measured_once
-        native_engine_renderer_reflection_reuse=reflection_reuse)
+        native_engine_renderer_reflection_reuse=reflection_reuse
+        native_engine_renderer_depth_node_sets_fragment_depth=depth_node_sets_fragment_depth
+        native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program)
     # The skinned cases drive the player's SkinnedCrowd scene.
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE

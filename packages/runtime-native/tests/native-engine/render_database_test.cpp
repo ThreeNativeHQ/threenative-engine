@@ -1579,6 +1579,54 @@ void depthNodeSetsFragmentDepth() {
     CHECK(renderer.diagnostics().empty());
 }
 
+// NodeMaterial.depthNode is honoured by every node material program, not only the unlit fragmentNode one. A lit
+// coast (emissive green) with a depthNode of 0.9 must let the later drop through, as MeshBasic's does.
+void depthNodeReachesEveryMaterialProgram() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    const auto quad = [&](auto material, float scale, float z) {
+        material->nodes.vertexNode = g::vec4({g::mul(g::swizzle(g::positionLocal(), "xy"), g::splat(g::float_(scale), 2)),
+                                             g::float_(z), g::float_(1)});
+        return material;
+    };
+    for (const MaterialType type : {MaterialType::Basic, MaterialType::Lambert, MaterialType::Phong, MaterialType::Standard,
+                                    MaterialType::Physical}) {
+        Scene scene;
+        auto coast = quad(std::make_shared<Material>(type, true), 1, 0);
+        coast->nodes.colorNode = g::vec4({g::float_(0), g::float_(0), g::float_(0), g::float_(1)});
+        coast->nodes.emissiveNode = g::vec3({g::float_(0), g::float_(1), g::float_(0)});
+        if (type == MaterialType::Basic) coast->nodes.colorNode = g::vec4({g::float_(0), g::float_(1), g::float_(0), g::float_(1)});
+        coast->nodes.depthNode = g::float_(0.9);
+        auto drop = quad(std::make_shared<Material>(MaterialType::Basic, true), 0.5, 0.5);
+        drop->rawNodeMaterial = true;
+        drop->nodes.fragmentNode = g::vec4({g::float_(1), g::float_(0), g::float_(0), g::float_(1)});
+        drop->transparent = true;
+        Mesh coastMesh(makePlaneGeometry(2, 2), coast), dropMesh(makePlaneGeometry(2, 2), drop);
+        scene.add(coastMesh);
+        scene.add(dropMesh);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.render(renderer, scene, camera, {0, 0, 0, 1});
+        const auto bytes = read(renderer, events);
+        CHECK(bytes.size() == 64 * 64 * 4);
+        if (bytes.size() != 64 * 64 * 4) continue;
+        const auto at = [&](int x, int y, int channel) { return int(bytes[(y * 64 + x) * 4 + channel]); };
+        if (!(at(32, 32, 0) == 255 && at(32, 32, 1) == 0))
+            std::fprintf(stderr, "material type %d: drop pixel %d,%d,%d\n", int(type), at(32, 32, 0), at(32, 32, 1), at(32, 32, 2));
+        CHECK(at(32, 32, 0) == 255 && at(32, 32, 1) == 0);  // the drop is in front of the coast's depthNode
+        CHECK(at(4, 4, 1) > 100 && at(4, 4, 0) < 50);       // the coast shows where the drop is not
+        CHECK(renderer.diagnostics().empty());
+    }
+}
+
 // three draws the normal target in the scene pass it counts once, so a post graph that reads `normal`
 // adds no draws and no triangles to the frame's counters (the engine's extra normal pass used to land
 // in the shadow tally, which put the web platformer at 873 draws against three's 431).
@@ -3872,7 +3920,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},

@@ -92,6 +92,23 @@ void fog() {
     CHECK(code.code.substr(output, code.code.find('\n', output) - output).ends_with(", 1f), vec4<f32>(0f));"));
 }
 
+// NodeMaterial.depthNode becomes @builtin(frag_depth) in every mesh material's fragment stage.
+void depthNodeWritesFragDepth() {
+    for (int material = 0; material < 5; ++material) {
+        VertexVariant variant;
+        variant.nodes.depthNode = graph::float_(0.25);
+        const auto p = material == 0 ? buildBasic(variant) : material == 1 ? buildLambert(variant) :
+            material == 2 ? buildPhong(variant) : material == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+        const auto fs = buildStage(p.fragment, 1);
+        CHECK(fs.wgsl.ok());
+        if (fs.wgsl.code.find("@builtin(frag_depth)") == std::string::npos) std::fprintf(stderr, "material %d: no frag_depth\n", material);
+        CHECK(fs.wgsl.code.find("@builtin(frag_depth)") != std::string::npos);
+        VertexVariant plain;
+        const auto q = material == 0 ? buildBasic(plain) : buildLambert(plain);
+        CHECK(buildStage(q.fragment, 1).wgsl.code.find("frag_depth") == std::string::npos);
+    }
+}
+
 void unsupported() {
     // Defaults are the pinned MeshStandardMaterial constructor's.
     const StandardMaterial defaults;
@@ -346,4 +363,4 @@ void bloomPasses() {
 
 }  // namespace
 
-TN_TEST_MAIN({"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses})
+TN_TEST_MAIN({"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses})
