@@ -131,6 +131,8 @@ export interface IStudyTier {
   readonly rainBudget: number;
   /** Whether wet surfaces run the 36-step secondary reflection march. */
   readonly reflections: boolean;
+  /** The coast march renders at this share of the frame's size per axis and is upscaled to it. */
+  readonly worldScale: number;
 }
 
 /**
@@ -140,13 +142,31 @@ export interface IStudyTier {
  */
 export const STUDY_TIERS: Readonly<Record<QualityName, IStudyTier>> = {
   // The phone rung: the cheapest clouds, a thinner rain and no reflection march (unmeasured).
-  performance: { cloudScale: 0.4, cloudSteps: 32, rainBudget: 6_500, reflections: false },
+  performance: {
+    cloudScale: 0.4,
+    cloudSteps: 32,
+    rainBudget: 6_500,
+    reflections: false,
+    worldScale: 0.5,
+  },
   // Reflections back on; clouds a little finer (unmeasured).
-  balanced: { cloudScale: 0.48, cloudSteps: 48, rainBudget: 12_000, reflections: true },
+  balanced: {
+    cloudScale: 0.48,
+    cloudSteps: 48,
+    rainBudget: 12_000,
+    reflections: true,
+    worldScale: 0.5,
+  },
   // The desktop default the panel opens on (unmeasured).
-  high: { cloudScale: 0.6, cloudSteps: 64, rainBudget: 12_000, reflections: true },
+  high: { cloudScale: 0.6, cloudSteps: 64, rainBudget: 12_000, reflections: true, worldScale: 0.5 },
   // The finest clouds and the full 16,000 drops (unmeasured).
-  ultra: { cloudScale: 0.75, cloudSteps: 88, rainBudget: 16_000, reflections: true },
+  ultra: {
+    cloudScale: 0.75,
+    cloudSteps: 88,
+    rainBudget: 16_000,
+    reflections: true,
+    worldScale: 0.5,
+  },
 };
 
 /** A tier by name. Throws on a name the select does not offer, rather than drawing a default. */
