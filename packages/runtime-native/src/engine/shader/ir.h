@@ -76,6 +76,7 @@ struct Diagnostic {
 using Where = std::source_location;
 
 struct StageModule;
+struct ProgramTestAccess;
 StageModule buildStage(const class Program& program, uint32_t group);
 
 /**
@@ -198,6 +199,7 @@ public:
 private:
     uint32_t loopDepth_ = 0;
     friend class WgslEmitter;
+    friend struct ProgramTestAccess;  // tests reorder statements the builder API cannot
     friend StageModule buildStage(const Program& program, uint32_t group);
 
     enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop, Output, Break, Continue, Return };

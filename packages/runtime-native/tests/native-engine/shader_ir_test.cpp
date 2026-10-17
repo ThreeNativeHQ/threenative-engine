@@ -7,6 +7,24 @@
 
 using namespace tn::engine::shader;
 
+// The builder API always writes a variable before it can be read. This hands a test the statement
+// lists, to build the order it cannot: a variable's one write moved after its reads.
+namespace tn::engine::shader {
+struct ProgramTestAccess {
+    static void writeLast(Program& p, VarId v) {
+        for (auto& block : p.blocks_) {
+            for (std::size_t i = 0; i < block.size(); ++i) {
+                if (block[i].kind != Program::StmtKind::Assign || block[i].a != v) continue;
+                const Program::Stmt write = block[i];
+                block.erase(block.begin() + static_cast<std::ptrdiff_t>(i));
+                block.push_back(write);
+                return;
+            }
+        }
+    }
+};
+}  // namespace tn::engine::shader
+
 namespace {
 
 void order() {
@@ -166,6 +184,35 @@ void branchLocalReadOutsideStaysVar() {
     CHECK_SHAPE(code, count(code, "var v0: f32;") == 1);
 }
 
+// A variable's one write that comes after a read of it cannot be a `let`: the read would name it before it exists.
+void readBeforeSingleWriteStaysVar() {
+    {  // the read opens a loop body and the one write ends it: the read is loop-carried
+        Program p(Stage::Fragment);
+        const ExprId x = p.uniform("x", Type::f32());
+        VarId v = 0;
+        p.Loop(p.constant(4), [&](ExprId) {
+            v = p.var(Type::f32(), x);
+            p.output("color", p.construct(Type::vec(4), {p.load(v), p.constant(0.0f), p.constant(0.0f), p.constant(1.0f)}));
+        });
+        ProgramTestAccess::writeLast(p, v);
+        const std::string code = wgsl(p);
+        CHECK_SHAPE(code, count(code, "let v" + std::to_string(v) + " = ") == 0);
+        CHECK_SHAPE(code, count(code, "var v" + std::to_string(v) + ": f32;") == 1);
+    }
+    {  // the read sits in a branch that precedes the write in the defining block
+        Program p(Stage::Fragment);
+        const ExprId x = p.uniform("x", Type::f32());
+        const VarId v = p.var(Type::f32(), x);
+        p.If(p.less(x, p.constant(1.0f)), [&] {
+            p.output("color", p.construct(Type::vec(4), {p.load(v), p.constant(0.0f), p.constant(0.0f), p.constant(1.0f)}));
+        });
+        ProgramTestAccess::writeLast(p, v);
+        const std::string code = wgsl(p);
+        CHECK_SHAPE(code, count(code, "let v0 = ") == 0);
+        CHECK_SHAPE(code, count(code, "var v0: f32;") == 1);
+    }
+}
+
 // A read made in a branch is out of scope at the join, and a read before it is still good there.
 void readsKeepTheirScope() {
     Program p(Stage::Fragment);
@@ -308,4 +355,5 @@ void unsupported() {
 TN_TEST_MAIN({"order", order}, {"types", types}, {"unsupported", unsupported},
             {"single_assign_is_let", singleAssignIsLet}, {"loads_survive_until_written", loadsSurviveUntilWritten},
             {"loop_carried_stays_var", loopCarriedStaysVar}, {"branch_write_stays_var", branchWriteStaysVar},
-            {"branch_local_read_outside_stays_var", branchLocalReadOutsideStaysVar}, {"reads_keep_their_scope", readsKeepTheirScope})
+            {"branch_local_read_outside_stays_var", branchLocalReadOutsideStaysVar}, {"reads_keep_their_scope", readsKeepTheirScope},
+            {"read_before_single_write_stays_var", readBeforeSingleWriteStaysVar})

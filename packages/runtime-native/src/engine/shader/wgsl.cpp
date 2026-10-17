@@ -84,18 +84,35 @@ WgslEmitter::WgslEmitter(const Program& program)
         }
     }
 
-    // A variable written once, at its definition, and read only from that block or one inside it, is
-    // an immutable `let` there: nothing to reload. Anything written again (a loop-carried value, a
-    // branch's result) stays a `var`, as does one read outside the block that defines it.
+    // A variable written once, with every read after that write in program order and inside the block
+    // that holds it, is an immutable `let` there: nothing to reload. Anything written again (a
+    // loop-carried value, a branch's result), read before its write, or read outside the block that
+    // defines it stays a `var`. Program order walks an If or Loop's blocks where its statement sits.
     constexpr uint32_t kNone = UINT32_MAX;
-    std::vector<uint32_t> writes(program.vars_.size()), definedIn(program.vars_.size(), kNone);
-    for (uint32_t b = 0; b < program.blocks_.size(); ++b) {
-        for (const auto& s : program.blocks_[b]) {
-            if (s.kind != Kind::Assign) continue;
-            ++writes[s.a];
-            definedIn[s.a] = b;
+    std::vector<uint32_t> writes(program.vars_.size()), definedIn(program.vars_.size(), kNone),
+        writtenAt(program.vars_.size(), kNone);
+    struct Read {
+        VarId var;
+        uint32_t at, block;
+    };
+    std::vector<Read> reads;
+    uint32_t position = 0;
+    const auto walk = [&](auto& self, uint32_t block) -> void {
+        for (const auto& s : program.blocks_[block]) {
+            ++position;
+            if (s.kind == Kind::Assign) {
+                ++writes[s.a];
+                definedIn[s.a] = block;
+                writtenAt[s.a] = position;
+            } else if (s.kind == Kind::Eval && program.exprs_[s.b].op == Op::LoadVar) {
+                reads.push_back({static_cast<VarId>(program.exprs_[s.b].immediate), position, block});
+            } else if (s.kind == Kind::If || s.kind == Kind::Loop) {
+                self(self, s.body);
+                if (s.kind == Kind::If && s.otherwise) self(self, s.otherwise);
+            }
         }
-    }
+    };
+    walk(walk, 0);
     const auto within = [&](uint32_t block, uint32_t outer) {
         for (;; block = program.blockParent_[block]) {
             if (block == outer) return true;
@@ -103,12 +120,8 @@ WgslEmitter::WgslEmitter(const Program& program)
         }
     };
     for (VarId v = 0; v < program.vars_.size(); ++v) let_[v] = writes[v] == 1;
-    for (uint32_t b = 0; b < program.blocks_.size(); ++b) {
-        for (const auto& s : program.blocks_[b]) {
-            if (s.kind != Kind::Eval) continue;
-            const Expr& e = program.exprs_[s.b];
-            if (e.op == Op::LoadVar && let_[e.immediate] && !within(b, definedIn[e.immediate])) let_[e.immediate] = false;
-        }
+    for (const Read& r : reads) {
+        if (let_[r.var] && (r.at < writtenAt[r.var] || !within(r.block, definedIn[r.var]))) let_[r.var] = false;
     }
 }
 

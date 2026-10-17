@@ -296,7 +296,8 @@ tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader
     native_engine_wgsl_loop_carried_stays_var=loop_carried_stays_var
     native_engine_wgsl_branch_write_stays_var=branch_write_stays_var
     native_engine_wgsl_branch_local_read_outside_stays_var=branch_local_read_outside_stays_var
-    native_engine_wgsl_reads_keep_their_scope=reads_keep_their_scope)
+    native_engine_wgsl_reads_keep_their_scope=reads_keep_their_scope
+    native_engine_wgsl_read_before_single_write_stays_var=read_before_single_write_stays_var)
 target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
 
 tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp
