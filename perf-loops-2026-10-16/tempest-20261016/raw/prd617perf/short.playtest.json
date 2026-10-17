@@ -1,0 +1,1 @@
+{"acceptanceId":"x","name":"passms","schemaVersion":1,"steps":[{"kind":"wait","waitTicks":120,"release":true}],"target":"web","viewport":{"height":1080,"width":1920},"warmupFrames":60}

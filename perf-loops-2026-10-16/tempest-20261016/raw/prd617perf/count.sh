@@ -1,0 +1,1 @@
+for f in "$@"; do echo "== $f"; for k in "fn " "loop" "for (" "if (" "break" "continue" "select(" "textureSample" "textureLoad" "pow(" "exp(" "sin(" "cos(" "sqrt(" "normalize(" "mix(" "floor(" "fract(" "inverseSqrt" "var<private>" "var v" "var "; do printf "%s: %s\n" "$k" "$(grep -o -F -- "$k" "$f" | wc -l)"; done; done

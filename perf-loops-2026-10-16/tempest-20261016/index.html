@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Tempest performance loop — tempest-20261016</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root { color-scheme: light dark; --fg:#111; --muted:#666; --line:#ddd; --bg:#fff; --card:#fafafa; }
+@media (prefers-color-scheme: dark) { :root { --fg:#eee; --muted:#9aa; --line:#3a3f45; --bg:#14171a; --card:#1c2024; } }
+body { font: 14px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0 auto; max-width: 1100px; padding: 1.5rem; }
+h1 { font-size: 1.3rem; } h2 { font-size: 1.05rem; margin-top: 1.75rem; border-bottom: 1px solid var(--line); padding-bottom: .25rem; }
+table { border-collapse: collapse; width: 100%; margin: .5rem 0 1rem; font-size: 13px; }
+th, td { border: 1px solid var(--line); padding: .3rem .45rem; text-align: left; vertical-align: top; }
+th { background: var(--card); }
+.muted { color: var(--muted); }
+.pill { display:inline-block; border-radius: 1rem; padding: 0 .5rem; font-size: 12px; border: 1px solid var(--line); }
+.keep { background: #d7f5dd; color:#0b3d1c; } .reject { background:#f8d7da; color:#5c1119; }
+.invalid, .blocked { background:#eee; color:#333; } .provisional { background:#fff3cd; color:#5a4400; }
+.inconclusive, .running, .baseline { background:#dbe9ff; color:#123; }
+svg { max-width: 100%; height: auto; border: 1px solid var(--line); background: var(--card); }
+.series { fill:none; stroke:#2f6fd0; stroke-width:2; } .dot { fill:#2f6fd0; } .goal { stroke:#c33; stroke-dasharray:4 3; }
+.exp { border: 1px solid var(--line); border-radius: .4rem; padding: .4rem .6rem; margin: .4rem 0; background: var(--card); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem .75rem; margin: .5rem 0 0; }
+dt { color: var(--muted); } dd { margin: 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0 1rem; }
+code { background: var(--card); padding: .05rem .25rem; }
+
+.banner{display:flex;gap:1rem;align-items:center;border-radius:.5rem;padding:.8rem 1rem;margin:.5rem 0 1rem;border:2px solid}
+.banner .big{font-size:2.2rem;font-weight:700}
+.banner.green,.pill.green{background:#d7f5dd;color:#0b3d1c;border-color:#1e8e3e}
+.banner.yellow,.pill.yellow{background:#fff3cd;color:#5a4400;border-color:#d4a106}
+.banner.red,.pill.red{background:#f8d7da;color:#5c1119;border-color:#c5221f}
+.banner.grey,.pill.grey{background:#eee;color:#333;border-color:#999}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,30rem),1fr));gap:1rem}
+.chart{margin:0;border:1px solid var(--line);border-radius:.4rem;padding:.5rem;background:var(--card)}
+.chart svg{border:0;width:100%}
+.ax{font-size:11px;fill:var(--muted)} .grid{stroke:var(--line);stroke-width:1}
+.wasm{fill:none;stroke:#2f6fd0;stroke-width:2.5}
+.hl{stroke-width:2;stroke-dasharray:6 4} .hl.legacy{stroke:#1e8e3e} .hl.goal2{stroke:#9334e6}
+.lbl{font-size:11px} .lbl.legacy{fill:#1e8e3e} .lbl.goal2{fill:#9334e6}
+.dot-baseline{fill:#2f6fd0} .dot-keep{fill:#1e8e3e} .dot-reject{fill:#c5221f} .dot-provisional{fill:#d4a106} .dot-invalid{fill:#888} .dot-inconclusive{fill:#5f6368}
+.brow{display:grid;grid-template-columns:minmax(8rem,16rem) 1fr 8rem;gap:.5rem;align-items:center;font-size:13px;margin:.2rem 0}
+.btrack{background:var(--line);height:12px;border-radius:6px;overflow:hidden} .bfill{display:block;height:100%;background:#c5221f}
+.bval{text-align:right;color:var(--muted)}
+</style></head>
+<body>
+<h1>Tempest performance loop — tempest-20261016</h1>
+<p class="muted">Snapshot 2026-10-17T05:38:59.783Z. This page is generated from <code>results.json</code> and opens offline; if it is old, reload for current progress.</p>
+<h2>Scoreboard: legacy vs Wasm web</h2>
+<p class="muted">Green: Wasm beats legacy. Yellow: moving toward legacy (kept gain or a promising try). Red: behind legacy with no kept progress. Grey: not measured.</p>
+<div class="banner yellow"><span class="big">1.02x</span>
+<div><strong>GPU ms per frame, 1080p, ALL passes (legacy: three&#39;s frame sum; Wasm: sum of per-pass timestamps): Wasm 44.30 ms vs legacy 43.40 ms</strong><br>
+↓ closing the gap. Owner bar 2026-10-16: the Wasm ENGINE must significantly beat three.js on the same template; a template change (half-res) speeds up both engines and does not count. Meters: both sides now sum every pass per frame (the old engine gpuMs read only the final pass, so the earlier 9% was wrong). Today: Wasm 44.3 ms vs legacy 43.4 ms, level. h-halfres stays a template lever, compared Wasm-half vs legacy-half. Engine levers under investigation: uniform specialization of settled quality knobs, WGSL work vs three, skipping static passes.</div></div><table class="score"><thead><tr><th>Status</th><th>Metric</th><th>Legacy (stock three)</th><th>Wasm at start</th><th>Wasm kept</th><th>Wasm / legacy</th><th>Latest try</th><th>Goal</th></tr></thead><tbody>
+<tr class="yellow"><td><span class="pill yellow">↓ closing the gap</span></td><td>GPU ms per frame, 1080p, ALL passes (legacy: three&#39;s frame sum; Wasm: sum of per-pass timestamps)</td>
+<td>43.40 ms</td><td>118.4 ms</td><td><strong>44.30 ms</strong></td>
+<td>1.02x</td>
+<td>26.50 ms <span class="muted">(h-halfres, template lever, not an engine win)</span></td>
+<td>≤ 22 (2x faster than legacy, owner: multiple times faster), then ≤ 16.7 (60 fps)</td></tr>
+<tr class="yellow"><td><span class="pill yellow">↘ promising try, not kept yet</span></td><td>Main scene shader size (WGSL)</td>
+<td>294.5 KB</td><td>684.4 KB</td><td><strong>684.4 KB</strong></td>
+<td>2.32x</td>
+<td>334.7 KB <span class="muted">(a1, provisional)</span></td>
+<td>≤ legacy</td></tr>
+<tr class="green"><td><span class="pill green">✓ beats legacy</span></td><td>Presented interval p50 (uncapped)</td>
+<td>110.1 ms</td><td>218.5 ms</td><td><strong>107.2 ms</strong></td>
+<td>0.97x</td>
+<td>107.2 ms <span class="muted">(n1, keep)</span></td>
+<td>≤ 16.7 with vsync</td></tr>
+<tr class="green"><td><span class="pill green">✓ beats legacy</span></td><td>CPU frame p95</td>
+<td>1.80 ms</td><td>1.70 ms</td><td><strong>1.70 ms</strong></td>
+<td>0.94x</td>
+<td>1.70 ms <span class="muted">(base, baseline)</span></td>
+<td>≤ legacy</td></tr>
+<tr class="yellow"><td><span class="pill yellow">↓ closing the gap</span></td><td>Main scene pass GPU ms</td>
+<td>38.60 ms</td><td>112.6 ms</td><td><strong>38.80 ms</strong></td>
+<td>1.01x</td>
+<td>38.80 ms <span class="muted">(n1, keep)</span></td>
+<td>≤ 19.3 (2x faster than legacy)</td></tr>
+<tr class="green"><td><span class="pill green">✓ within limit 0.01</span></td><td>Visual diff vs stock three (mean, 0–255)</td>
+<td>limit 0.01</td><td>0.006</td><td><strong>0.006</strong></td>
+<td>—</td>
+<td>—</td>
+<td>≤ 0.01 + judge</td></tr></tbody></table><div class="charts"><figure class="chart"><figcaption><strong>GPU gap: Wasm ÷ legacy</strong> (x, lower is better). Dots: every iteration, coloured by decision.</figcaption>
+<svg viewBox="0 0 640 220" role="img" aria-label="GPU gap: Wasm ÷ legacy per iteration against legacy and goal"><text x="46" y="190" text-anchor="end" class="ax">0</text><line x1="52" x2="530" y1="186" y2="186" class="grid"/><text x="46" y="104" text-anchor="end" class="ax">1</text><line x1="52" x2="530" y1="100" y2="100" class="grid"/><text x="46" y="18" text-anchor="end" class="ax">3</text><line x1="52" x2="530" y1="14" y2="14" class="grid"/><line x1="52" x2="530" y1="126.79581440176237" y2="126.79581440176237" class="hl legacy"/><text x="534" y="130.79581440176236" class="lbl legacy">parity 1</text><polyline points="52.0,31.5 211.3,26.7 370.7,127.3 530.0,132.4" class="wasm"/><circle cx="52" cy="31.477075588599778" r="5" class="dot-baseline"><title>earlier 3 pairs: 2.61 x (baseline, pre)</title></circle><text x="52" y="202" text-anchor="middle" class="ax">pre</text><circle cx="211.33333333333331" cy="26.74074074074076" r="5" class="dot-baseline"><title>19:12 base: 2.69 x (baseline, base)</title></circle><text x="211.33333333333331" y="202" text-anchor="middle" class="ax">base</text><circle cx="370.66666666666663" cy="127.32865207214651" r="5" class="dot-keep"><title>20:01 n1: 0.99 x (keep, n1)</title></circle><text x="370.66666666666663" y="202" text-anchor="middle" class="ax">n1</text><circle cx="530" cy="132.3610078479967" r="5" class="dot-keep"><title>20:40 n1 (gpuMs): 0.91 x (keep, n1-gpuMs)</title></circle><text x="530" y="202" text-anchor="middle" class="ax">n1-gpuMs</text></svg></figure><figure class="chart"><figcaption><strong>GPU ms per frame, 1080p, ALL passes (legacy: three&#39;s frame sum; Wasm: sum of per-pass timestamps)</strong> (ms, lower is better). Dots: every iteration, coloured by decision.</figcaption>
+<svg viewBox="0 0 640 220" role="img" aria-label="GPU ms per frame, 1080p, ALL passes (legacy: three&#39;s frame sum; Wasm: sum of per-pass timestamps) per iteration against legacy and goal"><text x="46" y="190" text-anchor="end" class="ax">0</text><line x1="52" x2="530" y1="186" y2="186" class="grid"/><text x="46" y="104" text-anchor="end" class="ax">64</text><line x1="52" x2="530" y1="100" y2="100" class="grid"/><text x="46" y="18" text-anchor="end" class="ax">128</text><line x1="52" x2="530" y1="14" y2="14" class="grid"/><line x1="52" x2="530" y1="127.6278029570826" y2="127.6278029570826" class="hl legacy"/><text x="534" y="131.6278029570826" class="lbl legacy">legacy 43.4</text><line x1="52" x2="530" y1="163.53880897196495" y2="163.53880897196495" class="hl goal2"/><text x="534" y="167.53880897196495" class="lbl goal2">goal 16.7</text><polyline points="52.0,33.2 171.5,26.7 291.0,127.1 410.5,132.4 530.0,113.8" class="wasm"/><circle cx="52" cy="33.21010174941431" r="5" class="dot-baseline"><title>earlier 3 pairs (10-16): 113.6 ms (baseline, pre-campaign)</title></circle><text x="52" y="202" text-anchor="middle" class="ax">pre-campaign</text><circle cx="171.5" cy="26.74074074074074" r="5" class="dot-baseline"><title>19:12 base-O1: 118.4 ms (baseline, base)</title></circle><text x="171.5" y="202" text-anchor="middle" class="ax">base</text><circle cx="291" cy="127.0898103576087" r="5" class="dot-keep"><title>20:01 n1 (3 pairs, idle GPU): 43.80 ms (keep, n1)</title></circle><text x="291" y="202" text-anchor="middle" class="ax">n1</text><circle cx="410.5" cy="132.38903746242653" r="5" class="dot-keep"><title>20:40 n1 engine gpuMs (3 runs): 39.86 ms (keep, n1-gpuMs)</title></circle><text x="410.5" y="202" text-anchor="middle" class="ax">n1-gpuMs</text><circle cx="530" cy="113.76104370564299" r="5" class="dot-reject"><title>20:40 n2: 53.71 ms (reject, n2)</title></circle><text x="530" y="202" text-anchor="middle" class="ax">n2</text></svg></figure><figure class="chart"><figcaption><strong>Main scene shader size (WGSL)</strong> (KB, lower is better). Dots: every iteration, coloured by decision.</figcaption>
+<svg viewBox="0 0 640 220" role="img" aria-label="Main scene shader size (WGSL) per iteration against legacy and goal"><text x="46" y="190" text-anchor="end" class="ax">0</text><line x1="52" x2="530" y1="186" y2="186" class="grid"/><text x="46" y="104" text-anchor="end" class="ax">370</text><line x1="52" x2="530" y1="100" y2="100" class="grid"/><text x="46" y="18" text-anchor="end" class="ax">739</text><line x1="52" x2="530" y1="14" y2="14" class="grid"/><line x1="52" x2="530" y1="117.47011710717146" y2="117.47011710717146" class="hl legacy"/><text x="534" y="121.47011710717146" class="lbl legacy">legacy 294.5</text><polyline points="52.0,26.7 530.0,108.1" class="wasm"/><circle cx="52" cy="26.74074074074076" r="5" class="dot-baseline"><title>19:20 wgsl-O: 684.4 KB (baseline, wgsl)</title></circle><text x="52" y="202" text-anchor="middle" class="ax">wgsl</text><circle cx="530" cy="108.1156135679806" r="5" class="dot-provisional"><title>19:26 a1: 334.7 KB (provisional, a1)</title></circle><text x="530" y="202" text-anchor="middle" class="ax">a1</text></svg></figure><figure class="chart"><figcaption><strong>CPU frame p95</strong> (ms, lower is better). Dots: every iteration, coloured by decision.</figcaption>
+<svg viewBox="0 0 640 220" role="img" aria-label="CPU frame p95 per iteration against legacy and goal"><text x="46" y="190" text-anchor="end" class="ax">0</text><line x1="52" x2="530" y1="186" y2="186" class="grid"/><text x="46" y="104" text-anchor="end" class="ax">1</text><line x1="52" x2="530" y1="100" y2="100" class="grid"/><text x="46" y="18" text-anchor="end" class="ax">2</text><line x1="52" x2="530" y1="14" y2="14" class="grid"/><line x1="52" x2="530" y1="26.74074074074076" y2="26.74074074074076" class="hl legacy"/><text x="534" y="30.74074074074076" class="lbl legacy">legacy 1.8</text><polyline points="291.0,35.6" class="wasm"/><circle cx="291" cy="35.58847736625517" r="5" class="dot-baseline"><title>19:12 base-O1: 1.70 ms (baseline, base)</title></circle><text x="291" y="202" text-anchor="middle" class="ax">base</text></svg></figure><figure class="chart"><figcaption><strong>Main scene pass GPU ms</strong> (ms, lower is better). Dots: every iteration, coloured by decision.</figcaption>
+<svg viewBox="0 0 640 220" role="img" aria-label="Main scene pass GPU ms per iteration against legacy and goal"><text x="46" y="190" text-anchor="end" class="ax">0</text><line x1="52" x2="530" y1="186" y2="186" class="grid"/><text x="46" y="104" text-anchor="end" class="ax">68</text><line x1="52" x2="530" y1="100" y2="100" class="grid"/><text x="46" y="18" text-anchor="end" class="ax">136</text><line x1="52" x2="530" y1="14" y2="14" class="grid"/><line x1="52" x2="530" y1="137.20408147666012" y2="137.20408147666012" class="hl legacy"/><text x="534" y="141.20408147666012" class="lbl legacy">legacy 38.6</text><polyline points="52.0,26.7 147.6,88.2 243.2,85.7 338.8,135.5 434.4,43.7 530.0,137.0" class="wasm"/><circle cx="52" cy="26.74074074074076" r="5" class="dot-baseline"><title>19:18 pmO (pre-fix, likely): 126.0 ms (baseline, pm)</title></circle><text x="52" y="202" text-anchor="middle" class="ax">pm</text><circle cx="147.60000000000002" cy="88.19199450597588" r="5" class="dot-baseline"><title>19:25 pmO2 (load1 10.9): 77.37 ms (baseline, pm)</title></circle><text x="147.60000000000002" y="202" text-anchor="middle" class="ax">pm</text><circle cx="243.20000000000002" cy="85.6801424306941" r="5" class="dot-provisional"><title>19:26 a1 (47 frames): 79.36 ms (provisional, a1)</title></circle><text x="243.20000000000002" y="202" text-anchor="middle" class="ax">a1</text><circle cx="338.8" cy="135.51897890174786" r="5" class="dot-reject"><title>19:29 e1 MSAA=1: 39.93 ms (reject, e1)</title></circle><text x="338.8" y="202" text-anchor="middle" class="ax">e1</text><circle cx="434.40000000000003" cy="43.65750192414321" r="5" class="dot-baseline"><title>20:01 pre-fix idle: 112.6 ms (baseline, n1-pre)</title></circle><text x="434.40000000000003" y="202" text-anchor="middle" class="ax">n1-pre</text><circle cx="530" cy="136.95125288327495" r="5" class="dot-keep"><title>20:01 n1: 38.80 ms (keep, n1)</title></circle><text x="530" y="202" text-anchor="middle" class="ax">n1</text></svg></figure><figure class="chart"><figcaption><strong>Where the Wasm GPU time goes</strong> — n1, idle GPU, per-pass timestamps, total 43.9 ms. Legacy: scene 38.1-38.8, everything else 5.1 (sum 43.9).</figcaption><div class="brow"><span class="bname">scene 1920x1080 (4x MSAA)</span><span class="btrack"><span class="bfill" style="width:100.0%"></span></span><span class="bval">38.80 ms · 88%</span></div><div class="brow"><span class="bname">cloud 1152x648 (includes present wait)</span><span class="btrack"><span class="bfill" style="width:11.3%"></span></span><span class="bval">4.40 ms · 10%</span></div><div class="brow"><span class="bname">depthResolve</span><span class="btrack"><span class="bfill" style="width:0.2%"></span></span><span class="bval">0.09 ms · 0%</span></div><div class="brow"><span class="bname">SMAA input/edges/weights/blend</span><span class="btrack"><span class="bfill" style="width:0.6%"></span></span><span class="bval">0.24 ms · 1%</span></div><div class="brow"><span class="bname">bloom rtt 480x270</span><span class="btrack"><span class="bfill" style="width:0.7%"></span></span><span class="bval">0.26 ms · 1%</span></div><div class="brow"><span class="bname">output</span><span class="btrack"><span class="bfill" style="width:0.4%"></span></span><span class="bval">0.14 ms · 0%</span></div></figure></div>
+
+<h2>Now</h2>
+<div class="grid">
+<p><strong>Status</strong><br><span class="pill running">running</span> — cutting below legacy<br>
+<strong>Evidence</strong> gameplay scenario (web lane) + diagnostic builds</p>
+<p><strong>Target</strong><br>web WebGPU, Wasm C++ engine, private Xvfb --headed · Tempest (rain template), playtests/performance.playtest.json, 1920x1080, tier high<br>
+AMD Ryzen 9 5900X (24 threads) · NVIDIA GeForce RTX 2080 (nvidia/turing, checked per run) · private Xvfb, --disable-frame-rate-limit --disable-gpu-vsync (uncapped)</p>
+<p><strong>Started / updated</strong><br>2026-10-16T19:08:00-07:00<br>2026-10-16T21:35:00-07:00<br>
+<strong>Heartbeat</strong> 2026-10-16T21:10:00-07:00<br>
+<strong>Deadline</strong> none</p>
+<p><strong>Revisions</strong><br>starting 97301154e (dirty)<br>
+incumbent b7362aa5b<br>
+worktree <code>.claude/worktrees/prd617-perf</code><br>branch <code>prd617/rain-gpu-perf</code></p>
+</div>
+<p><strong>Active experiment</strong> none: engine-only levers are exhausted for rain — phase cutting below legacy</p>
+<p><strong>Next hypothesis</strong> Rain is GPU-ALU bound on its own world shader, so the engine cannot reach 2x without changing that shader. Getting there needs a template change (owner decision): fewer march steps, cheaper reflections, or a half-resolution march with upscaling.</p>
+
+
+<h2>Benchmarks</h2>
+<table>
+<thead><tr><th>Workload</th><th>Platform</th><th>Metric</th><th>Unit</th><th>Baseline</th><th>Best accepted</th><th>Current candidate</th><th>Goal</th><th>Δ vs baseline</th><th>Noise margin</th><th>Samples / repeats</th><th>Gate</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>Tempest performance scenario</td><td>web Wasm engine</td><td>GPU ms per frame (median window) — goal: 2x faster than stock three</td><td>ms</td><td>118.41 ms</td><td>39.86 ms</td><td>39.86 ms</td><td>22.00 ms</td><td>+78.55 (+66.3%)</td><td><span class="muted">uncalibrated</span></td><td>2 windows<br><span class="muted">1 repeats</span></td><td>adapter turing; rc 0</td><td><span class="pill keep">keep</span></td></tr>
+<tr><td>Tempest performance scenario</td><td>web stock three (control)</td><td>GPU ms per frame (median window), control arm</td><td>ms</td><td>43.98 ms</td><td>43.93 ms</td><td>43.93 ms</td><td>no numeric target</td><td>+0.05 (+0.1%)</td><td><span class="muted">uncalibrated</span></td><td>2 windows<br><span class="muted">2 repeats</span></td><td>adapter turing</td><td><span class="pill baseline">baseline</span></td></tr>
+<tr><td>Tempest performance scenario</td><td>web Wasm engine</td><td>main scene pass 1920x1080 GPU ms (PASSPROF)</td><td>ms</td><td>112.60 ms</td><td>38.80 ms</td><td>38.80 ms</td><td>no numeric target</td><td>+73.80 (+65.5%)</td><td><span class="muted">uncalibrated</span></td><td>203 frames<br><span class="muted">2 repeats</span></td><td>diagnostic build only</td><td><span class="pill keep">keep</span></td></tr>
+<tr><td>Tempest main scene shader</td><td>web Wasm engine</td><td>WGSL size of the main scene shader (KPI G2 proxy) — goal = three</td><td>KB</td><td>684.40 KB</td><td>684.40 KB</td><td>334.70 KB</td><td>294.50 KB</td><td>+349.70 (+51.1%)</td><td><span class="muted">uncalibrated</span></td><td>1<br><span class="muted">1 repeats</span></td><td>deterministic dump</td><td><span class="pill provisional">provisional</span></td></tr>
+<tr><td>Tempest performance scenario</td><td>web Wasm engine</td><td>CPU frame p95 (stock three 1.8 ms)</td><td>ms</td><td>1.70 ms</td><td>1.70 ms</td><td><span class="muted">not a target while GPU-bound</span></td><td>1.80 ms</td><td>+0.00 (+0.0%)</td><td><span class="muted">uncalibrated</span></td><td>2 windows<br><span class="muted">1 repeats</span></td><td>rc 0</td><td><span class="pill baseline">baseline</span></td></tr>
+</tbody>
+</table>
+
+<h2>Progress</h2>
+<figure>
+<figcaption>GPU ms per frame (median window) — goal: 2x faster than stock three — Tempest performance scenario (ms, lower is better). Baseline 118.41 ms.</figcaption>
+<svg viewBox="0 0 640 150" role="img" aria-label="GPU ms per frame (median window) — goal: 2x faster than stock three accepted history">
+<line x1="0" y1="140.0" x2="640" y2="140.0" class="goal" />
+<polyline points="0.0,26.0 160.0,20.0 320.0,112.9 480.0,117.8 640.0,100.5" class="series" />
+<circle cx="0.0" cy="26.0" r="3" class="dot"><title>earlier 3 pairs (10-16) — 113.60 ms (baseline)</title></circle><circle cx="160.0" cy="20.0" r="3" class="dot"><title>19:12 base-O1 — 118.41 ms (baseline)</title></circle><circle cx="320.0" cy="112.9" r="3" class="dot"><title>20:01 n1 (3 pairs, idle GPU) — 43.80 ms (keep)</title></circle><circle cx="480.0" cy="117.8" r="3" class="dot"><title>20:40 n1 engine gpuMs (3 runs) — 39.86 ms (keep)</title></circle><circle cx="640.0" cy="100.5" r="3" class="dot"><title>20:40 n2 — 53.71 ms (reject)</title></circle>
+</svg>
+<table><thead><tr><th>At</th><th>Value</th><th>Decision</th><th>Experiment</th></tr></thead><tbody>
+<tr><td>earlier 3 pairs (10-16)</td><td>113.60 ms</td><td>baseline</td><td>pre-campaign</td></tr>
+<tr><td>19:12 base-O1</td><td>118.41 ms</td><td>baseline</td><td>base</td></tr>
+<tr><td>20:01 n1 (3 pairs, idle GPU)</td><td>43.80 ms</td><td>keep</td><td>n1</td></tr>
+<tr><td>20:40 n1 engine gpuMs (3 runs)</td><td>39.86 ms</td><td>keep</td><td>n1-gpuMs</td></tr>
+<tr><td>20:40 n2</td><td>53.71 ms</td><td>reject</td><td>n2</td></tr>
+</tbody></table>
+</figure>
+<figure>
+<figcaption>GPU ms per frame (median window), control arm — Tempest performance scenario (ms, lower is better). Baseline 43.98 ms.</figcaption>
+<svg viewBox="0 0 640 150" role="img" aria-label="GPU ms per frame (median window), control arm accepted history">
+
+<polyline points="0.0,140.0 320.0,20.0 640.0,32.5" class="series" />
+<circle cx="0.0" cy="140.0" r="3" class="dot"><title>earlier 3 pairs (10-16) — 43.50 ms (baseline)</title></circle><circle cx="320.0" cy="20.0" r="3" class="dot"><title>19:10 base-L1 — 43.98 ms (baseline)</title></circle><circle cx="640.0" cy="32.5" r="3" class="dot"><title>19:14 pm-L1 — 43.93 ms (baseline)</title></circle>
+</svg>
+<table><thead><tr><th>At</th><th>Value</th><th>Decision</th><th>Experiment</th></tr></thead><tbody>
+<tr><td>earlier 3 pairs (10-16)</td><td>43.50 ms</td><td>baseline</td><td>pre-campaign</td></tr>
+<tr><td>19:10 base-L1</td><td>43.98 ms</td><td>baseline</td><td>base</td></tr>
+<tr><td>19:14 pm-L1</td><td>43.93 ms</td><td>baseline</td><td>pm</td></tr>
+</tbody></table>
+</figure>
+<figure>
+<figcaption>main scene pass 1920x1080 GPU ms (PASSPROF) — Tempest performance scenario (ms, lower is better). Baseline 112.60 ms.</figcaption>
+<svg viewBox="0 0 640 150" role="img" aria-label="main scene pass 1920x1080 GPU ms (PASSPROF) accepted history">
+
+<polyline points="0.0,20.0 128.0,86.9 256.0,84.2 384.0,138.4 512.0,38.4 640.0,140.0" class="series" />
+<circle cx="0.0" cy="20.0" r="3" class="dot"><title>19:18 pmO (pre-fix, likely) — 125.98 ms (baseline)</title></circle><circle cx="128.0" cy="86.9" r="3" class="dot"><title>19:25 pmO2 (load1 10.9) — 77.37 ms (baseline)</title></circle><circle cx="256.0" cy="84.2" r="3" class="dot"><title>19:26 a1 (47 frames) — 79.36 ms (provisional)</title></circle><circle cx="384.0" cy="138.4" r="3" class="dot"><title>19:29 e1 MSAA=1 — 39.93 ms (reject)</title></circle><circle cx="512.0" cy="38.4" r="3" class="dot"><title>20:01 pre-fix idle — 112.60 ms (baseline)</title></circle><circle cx="640.0" cy="140.0" r="3" class="dot"><title>20:01 n1 — 38.80 ms (keep)</title></circle>
+</svg>
+<table><thead><tr><th>At</th><th>Value</th><th>Decision</th><th>Experiment</th></tr></thead><tbody>
+<tr><td>19:18 pmO (pre-fix, likely)</td><td>125.98 ms</td><td>baseline</td><td>pm</td></tr>
+<tr><td>19:25 pmO2 (load1 10.9)</td><td>77.37 ms</td><td>baseline</td><td>pm</td></tr>
+<tr><td>19:26 a1 (47 frames)</td><td>79.36 ms</td><td>provisional</td><td>a1</td></tr>
+<tr><td>19:29 e1 MSAA=1</td><td>39.93 ms</td><td>reject</td><td>e1</td></tr>
+<tr><td>20:01 pre-fix idle</td><td>112.60 ms</td><td>baseline</td><td>n1-pre</td></tr>
+<tr><td>20:01 n1</td><td>38.80 ms</td><td>keep</td><td>n1</td></tr>
+</tbody></table>
+</figure>
+<figure>
+<figcaption>WGSL size of the main scene shader (KPI G2 proxy) — goal = three — Tempest main scene shader (KB, lower is better). Baseline 684.40 KB.</figcaption>
+<svg viewBox="0 0 640 150" role="img" aria-label="WGSL size of the main scene shader (KPI G2 proxy) — goal = three accepted history">
+<line x1="0" y1="140.0" x2="640" y2="140.0" class="goal" />
+<polyline points="0.0,20.0 640.0,127.6" class="series" />
+<circle cx="0.0" cy="20.0" r="3" class="dot"><title>19:20 wgsl-O — 684.40 KB (baseline)</title></circle><circle cx="640.0" cy="127.6" r="3" class="dot"><title>19:26 a1 — 334.70 KB (provisional)</title></circle>
+</svg>
+<table><thead><tr><th>At</th><th>Value</th><th>Decision</th><th>Experiment</th></tr></thead><tbody>
+<tr><td>19:20 wgsl-O</td><td>684.40 KB</td><td>baseline</td><td>wgsl</td></tr>
+<tr><td>19:26 a1</td><td>334.70 KB</td><td>provisional</td><td>a1</td></tr>
+</tbody></table>
+</figure>
+<figure>
+<figcaption>CPU frame p95 (stock three 1.8 ms) — Tempest performance scenario (ms, lower is better). Baseline 1.70 ms.</figcaption>
+<svg viewBox="0 0 640 150" role="img" aria-label="CPU frame p95 (stock three 1.8 ms) accepted history">
+<line x1="0" y1="20.0" x2="640" y2="20.0" class="goal" />
+<polyline points="0.0,140.0" class="series" />
+<circle cx="0.0" cy="140.0" r="3" class="dot"><title>19:12 base-O1 — 1.70 ms (baseline)</title></circle>
+</svg>
+<table><thead><tr><th>At</th><th>Value</th><th>Decision</th><th>Experiment</th></tr></thead><tbody>
+<tr><td>19:12 base-O1</td><td>1.70 ms</td><td>baseline</td><td>base</td></tr>
+</tbody></table>
+</figure>
+
+<h2>Experiments</h2>
+<label>Decision <select id="f-decision"><option value="">all</option><option value="baseline">baseline</option><option value="inconclusive">inconclusive</option><option value="invalid">invalid</option><option value="keep">keep</option><option value="reject">reject</option><option value="running">running</option></select></label> <label>Workload <select id="f-workload"><option value="">all</option><option value="Tempest">Tempest</option></select></label> <label>Platform <select id="f-platform"><option value="">all</option><option value="web">web</option></select></label>
+<div id="experiments"><details class="exp" data-decision="baseline" data-workload="Tempest" data-platform="web">
+<summary><span class="pill baseline">baseline</span> <strong>base</strong> — Unchanged pair: Wasm engine against stock three on the Tempest scenario</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>Earlier 3 pairs: Wasm 113.6 ms vs three 43.5 ms GPU at 1080p; both 3.5x faster at 960x540, so the cost is per pixel.</dd>
+<dt>Layer and files</dt><dd>none: </dd>
+<dt>Candidate</dt><dd>none</dd>
+<dt>Primary scalar</dt><dd>118.41 ms vs incumbent 43.98 ms</dd>
+<dt>Pre-registered prediction</dt><dd>Reproduce the 2.6x gap</dd>
+<dt>Falsifier</dt><dd>Ratio under 2x</dd>
+<dt>Paired samples / order</dt><dd>1 pair, legacy first (L1 19:10, O1 19:12)</dd>
+<dt>Real-game result</dt><dd>three 43.98 ms (p95 45.1), Wasm 118.41 ms (p95 149.97); presented p50 114.8 vs 218.5 ms uncapped</dd>
+<dt>Sentinel result</dt><dd>not run</dd>
+<dt>Gates</dt><dd>both rc 0, adapter turing</dd>
+<dt>Trade-offs</dt><dd>host load1 6-7 during the pair</dd>
+<dt>Decision and reason</dt><dd><strong>baseline</strong> — Gap reproduced (2.69x). Noise margin not yet calibrated: needs 3 pairs on an idle GPU.</dd>
+<dt>Duration</dt><dd>about 4 min</dd>
+<dt>Evidence</dt><dd><a href="raw/base/base.tsv">raw/base/base.tsv</a> · <a href="raw/base/base-L1.log">raw/base/base-L1.log</a> · <a href="raw/base/base-O1.log">raw/base/base-O1.log</a></dd>
+</dl>
+</details>
+<details class="exp" data-decision="invalid" data-workload="Tempest" data-platform="web">
+<summary><span class="pill invalid">invalid</span> <strong>pm</strong> — Per-pass GPU timestamps show which pass holds the gap</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>Total gap is about 75 ms; reflections:false saves only 19 ms.</dd>
+<dt>Layer and files</dt><dd>measurement (diagnostic PASSPROF meter, not a product change): packages/runtime-native (local timestamp patch)</dd>
+<dt>Candidate</dt><dd>harness only</dd>
+<dt>Primary scalar</dt><dd>77.37 ms vs incumbent unavailable</dd>
+<dt>Pre-registered prediction</dt><dd>One pass holds most of the gap</dd>
+<dt>Falsifier</dt><dd>Cost spread evenly over passes</dd>
+<dt>Paired samples / order</dt><dd>Wasm twice (pmO, pmO2), three once (pm-L1, gpuMs 43.93)</dd>
+<dt>Real-game result</dt><dd>Main scene 1080p pass 77.4-126.0 ms of 82.6-131 ms total. Reflection 1152x648 4.4 ms. Post chain (SMAA x4, rtt, outputs) under 0.5 ms. depthResolve 0.09 ms.</dd>
+<dt>Sentinel result</dt><dd>not applicable</dd>
+<dt>Gates</dt><dd>rc 1: the timestamp build drops gpuMs from the scenario report</dd>
+<dt>Trade-offs</dt><dd>none (diagnostic)</dd>
+<dt>Decision and reason</dt><dd><strong>invalid</strong> — Attribution holds (main pass is about 94%). Its timings were taken under GPU contention, so they are invalid as numbers. Measured under GPU contention (another agent at 99% util); only gated runs count.</dd>
+<dt>Duration</dt><dd>about 11 min</dd>
+<dt>Evidence</dt><dd><a href="raw/pm/pm.tsv">raw/pm/pm.tsv</a> · <a href="raw/pm/pmO.tsv">raw/pm/pmO.tsv</a> · <a href="raw/pm/pmO2.tsv">raw/pm/pmO2.tsv</a> · <a href="raw/passprof-pmO-O1.txt">raw/passprof-pmO-O1.txt</a> · <a href="raw/passprof-pmO2-O1.txt">raw/passprof-pmO2-O1.txt</a></dd>
+</dl>
+</details>
+<details class="exp" data-decision="keep" data-workload="Tempest" data-platform="web">
+<summary><span class="pill keep">keep</span> <strong>wgsl</strong> — The Wasm codegen emits a heavier main scene shader than three</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>pm: the main scene pass holds the gap; post and reflection do not.</dd>
+<dt>Layer and files</dt><dd>diagnosis (WGSL dump, both engines): </dd>
+<dt>Candidate</dt><dd>none</dd>
+<dt>Primary scalar</dt><dd>684.40 KB vs incumbent 294.50 KB</dd>
+<dt>Pre-registered prediction</dt><dd>Wasm main shader clearly larger than three&#39;s</dd>
+<dt>Falsifier</dt><dd>Sizes within 10%</dd>
+<dt>Paired samples / order</dt><dd>1 dump per engine, 33 programs each</dd>
+<dt>Real-game result</dt><dd>Main scene shader: Wasm 684 KB (wgsl-O-26) vs three 295 KB (wgsl-L-7), 2.3x. Root cause: the full sky graph is emitted twice (color + depth). With that removed, the op counts match three exactly. Var/let reloads (5844) and 84 select() remain as candidates.</dd>
+<dt>Sentinel result</dt><dd>not applicable</dd>
+<dt>Gates</dt><dd>none</dd>
+<dt>Trade-offs</dt><dd>none</dd>
+<dt>Decision and reason</dt><dd><strong>keep</strong> — Diagnosis accepted: it names the root cause and the codegen site (standard.cpp outputDepthNode, graph.cpp Lowerer).</dd>
+<dt>Duration</dt><dd>about 1 min</dd>
+<dt>Evidence</dt><dd><a href="raw/wgsl/wgsl-O-26.wgsl">raw/wgsl/wgsl-O-26.wgsl</a> · <a href="raw/wgsl/wgsl-L-7.wgsl">raw/wgsl/wgsl-L-7.wgsl</a></dd>
+</dl>
+</details>
+<details class="exp" data-decision="invalid" data-workload="Tempest" data-platform="web">
+<summary><span class="pill invalid">invalid</span> <strong>a1</strong> — Lower color and depth outputs with one Lowerer, so the sky graph is evaluated once per fragment (identified by the WGSL diff)</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>WGSL diff: O-26 has 2 complete 148-step marches (color at :2658, depth at :10874) and 2x three&#39;s fract/dot/sin counts. outputDepthNode -&gt; nodeValue -&gt; graph::lower builds a fresh Lowerer with unshared memo tables.</dd>
+<dt>Layer and files</dt><dd>engine (WGSL codegen), per the dump: packages/runtime-native (uncommitted in prd617-perf)</dd>
+<dt>Candidate</dt><dd>uncommitted</dd>
+<dt>Primary scalar</dt><dd>79.36 ms vs incumbent 125.98 ms (37.0%)</dd>
+<dt>Pre-registered prediction</dt><dd>not recorded</dd>
+<dt>Falsifier</dt><dd>not recorded</dd>
+<dt>Paired samples / order</dt><dd>1 short run (47 frames), no pair</dd>
+<dt>Real-game result</dt><dd>a1 WGSL op counts equal three&#39;s exactly (1 march). Main pass 126.0 ms (pmO, likely pre-fix) -&gt; 77.4 / 79.4 ms (pmO2, a1; likely post-fix). Build order is unconfirmed, and no gated pair exists yet.</dd>
+<dt>Sentinel result</dt><dd>not run</dd>
+<dt>Gates</dt><dd>not run</dd>
+<dt>Trade-offs</dt><dd>unknown</dd>
+<dt>Decision and reason</dt><dd><strong>invalid</strong> — Superseded by n1. The perf agent found that its 77/79 ms main-pass readings came from GPU contention (the parity agent&#39;s runs), not from the fix. Measured under GPU contention (another agent at 99% util); only gated runs count.</dd>
+<dt>Duration</dt><dd>about 1 min</dd>
+<dt>Evidence</dt><dd><a href="raw/a1/a1.log">raw/a1/a1.log</a> · <a href="raw/wgsl/wgsl-a1.wgsl">raw/wgsl/wgsl-a1.wgsl</a> · <a href="raw/passprof-a1-art.txt">raw/passprof-a1-art.txt</a></dd>
+</dl>
+</details>
+<details class="exp" data-decision="reject" data-workload="Tempest" data-platform="web">
+<summary><span class="pill reject">reject</span> <strong>e1</strong> — MSAA cost sits in the main pass</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>pm: main pass ≈ 94% of GPU time; scene renders with 4x MSAA</dd>
+<dt>Layer and files</dt><dd>diagnosis (Renderer::setSampleCount forced to 1): packages/runtime-native/src/engine/renderer/renderer.cpp (EXPERIMENT line)</dd>
+<dt>Candidate</dt><dd>diagnostic patch, never ships</dd>
+<dt>Primary scalar</dt><dd>39.93 ms vs incumbent 77.37 ms (48.4%)</dd>
+<dt>Pre-registered prediction</dt><dd>Main pass drops a lot</dd>
+<dt>Falsifier</dt><dd>Main pass changes under 10%</dd>
+<dt>Paired samples / order</dt><dd>1 run, no pair</dd>
+<dt>Real-game result</dt><dd>Main pass 77.4 -&gt; 39.9 ms; total 82.6 -&gt; 45.1 ms</dd>
+<dt>Sentinel result</dt><dd>not applicable</dd>
+<dt>Gates</dt><dd>image changes (no anti-aliasing)</dd>
+<dt>Trade-offs</dt><dd>loses MSAA</dd>
+<dt>Decision and reason</dt><dd><strong>reject</strong> — Changes the image, so it cannot ship. It shows that half the main pass scales with the sample count: compare our MSAA setup with three&#39;s. Re-measured on an idle GPU: 1 sample 38.2 ms vs 4 samples 38.8 ms, so MSAA costs 0.6 ms. The 77 vs 40 ms pair was GPU contention.</dd>
+<dt>Duration</dt><dd>about 4 min</dd>
+<dt>Evidence</dt><dd><a href="raw/e1/e1.tsv">raw/e1/e1.tsv</a> · <a href="raw/e1/e1-O1.log">raw/e1/e1-O1.log</a> · <a href="raw/passprof-e1-O1.txt">raw/passprof-e1-O1.txt</a></dd>
+</dl>
+</details>
+<details class="exp" data-decision="running" data-workload="Tempest" data-platform="web">
+<summary><span class="pill running">running</span> <strong>tex</strong> — Render-target census differs between engines (KPI G4)</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>e1: cost scales with samples</dd>
+<dt>Layer and files</dt><dd>diagnosis: </dd>
+<dt>Candidate</dt><dd>none</dd>
+<dt>Primary scalar</dt><dd>unavailable vs incumbent unavailable</dd>
+<dt>Pre-registered prediction</dt><dd>not recorded</dd>
+<dt>Falsifier</dt><dd>not recorded</dd>
+<dt>Paired samples / order</dt><dd>one dump per engine</dd>
+<dt>Real-game result</dt><dd>no result yet</dd>
+<dt>Sentinel result</dt><dd>not applicable</dd>
+<dt>Gates</dt><dd>none</dd>
+<dt>Trade-offs</dt><dd>none</dd>
+<dt>Decision and reason</dt><dd><strong>running</strong> — in progress</dd>
+<dt>Duration</dt><dd>running</dd>
+<dt>Evidence</dt><dd><a href="raw/tex/tex-L.log">raw/tex/tex-L.log</a> · <a href="raw/tex/tex-O.log">raw/tex/tex-O.log</a></dd>
+</dl>
+</details>
+<details class="exp" data-decision="keep" data-workload="Tempest" data-platform="web">
+<summary><span class="pill keep">keep</span> <strong>n1</strong> — Lower all of a material&#39;s node slots (colour, depth, emissive, metalness, roughness, opacity) through one graph::Lowering, so a shared subgraph such as the 148-step sky march is compiled and run once per pixel</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>WGSL diff: two complete marches in the 684 KB fragment shader, against one in three&#39;s. Each slot ran graph::lower with a fresh Lowerer.</dd>
+<dt>Layer and files</dt><dd>engine (WGSL codegen): packages/runtime-native/src/engine/shader/standard.cpp, packages/runtime-native/src/engine/shader/graph/graph.cpp, packages/runtime-native/src/engine/shader/graph/graph.h, packages/runtime-native/tests/native-engine/material_test.cpp</dd>
+<dt>Candidate</dt><dd>abd06f6e6 on prd617/rain-gpu-perf (cherry-picked to prd617/integration as b7362aa5b)</dd>
+<dt>Primary scalar</dt><dd>43.90 ms vs incumbent 117.70 ms (62.7%)</dd>
+<dt>Pre-registered prediction</dt><dd>Main pass roughly halves or better</dd>
+<dt>Falsifier</dt><dd>Main pass changes under 10%</dd>
+<dt>Paired samples / order</dt><dd>Pre-fix 3 runs (O 117.6/117.9/117.7). Fixed: 3 alternating pairs L,O,L,O,L,O on an idle GPU (util 1-8%)</dd>
+<dt>Real-game result</dt><dd>Frame GPU: Wasm 43.9/43.9/43.6 ms against legacy 44.5/44.4/43.7 ms. Main pass 112.6 -&gt; 38.8 ms (legacy 38.1-38.8). Presented p50 uncapped: Wasm 107 ms, legacy 108-112 ms.</dd>
+<dt>Sentinel result</dt><dd>Not run as a separate pair. The change only removes duplicated lowering. The 13-template matrix run after rain acts as the sentinel.</dd>
+<dt>Gates</dt><dd>RED material_test.cpp:140 &#39;shared march lowered 2 times / CHECK failed: n == 1&#39; for fragmentNode and the Basic, Lambert, Phong, Standard and Physical colorNode. GREEN: PASS. ctest core build: 186 pass, the 2 tn-known-red references fail as before. Visual judge: pending. Visual judge (fresh, read-only, 2 runs per arm): NEUTRAL on all 5 criteria; only the FPS HUD digits differ. Pixel mean diff 0.002-0.004 against both pre-fix and stock three.</dd>
+<dt>Trade-offs</dt><dd>none expected (same WGSL math, emitted once)</dd>
+<dt>Decision and reason</dt><dd><strong>keep</strong> — Kept: Wasm frame GPU is level with stock three (43.8 vs 44.2 ms, -62.7% from 117.7), with an identical image. On prd617/integration as b7362aa5b.</dd>
+<dt>Duration</dt><dd>about 30 min</dd>
+<dt>Evidence</dt><dd><a href="raw/n1/pre.tsv">raw/n1/pre.tsv</a> · <a href="raw/n1/n1.tsv">raw/n1/n1.tsv</a> · <a href="raw/n1/run1-side-by-side.png">raw/n1/run1-side-by-side.png</a> · <a href="raw/n1/run2-side-by-side.png">raw/n1/run2-side-by-side.png</a></dd>
+</dl>
+</details>
+<details class="exp" data-decision="reject" data-workload="Tempest" data-platform="web">
+<summary><span class="pill reject">reject</span> <strong>n2</strong> — Emit single-assignment values as let and skip reloads of unwritten vars (fewer vars, less register pressure)</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>WGSL diff: 1149 vars and 5844 reloads, against none in three</dd>
+<dt>Layer and files</dt><dd>engine (WGSL codegen): packages/runtime-native/src/engine/shader/ir.cpp, packages/runtime-native/src/engine/shader/wgsl.cpp</dd>
+<dt>Candidate</dt><dd>7c124064b + 372bbcd45 on prd617/wgsl-let-shape (not merged)</dd>
+<dt>Primary scalar</dt><dd>53.71 ms vs incumbent 39.86 ms (-34.8%)</dd>
+<dt>Pre-registered prediction</dt><dd>Main pass drops through better occupancy</dd>
+<dt>Falsifier</dt><dd>No change, or slower</dd>
+<dt>Paired samples / order</dt><dd>3 alternating n1/n2 pairs, idle GPU (util 0-6%)</dd>
+<dt>Real-game result</dt><dd>Engine gpuMs: n1 39.87/39.82/39.89, n2 53.71/53.97/53.21 ms. WGSL shape: vars 1149 -&gt; 660 (+489 let), reloads 5844 -&gt; 1460, 335 -&gt; 215 KB.</dd>
+<dt>Sentinel result</dt><dd>not run (rejected)</dd>
+<dt>Gates</dt><dd>native tests green: RED/GREEN recorded, 164/166 (2 known reds)</dd>
+<dt>Trade-offs</dt><dd>slower on the NVIDIA driver despite smaller WGSL</dd>
+<dt>Decision and reason</dt><dd><strong>reject</strong> — About +35% GPU time. Fewer vars did not help, so the driver compiler prefers the old shape. The branch is kept for the record and not merged.</dd>
+<dt>Duration</dt><dd>about 40 min</dd>
+<dt>Evidence</dt><dd><a href="raw/n2/n2.alt.tsv">raw/n2/n2.alt.tsv</a></dd>
+</dl>
+</details>
+<details class="exp" data-decision="reject" data-workload="Tempest" data-platform="web">
+<summary><span class="pill reject">reject</span> <strong>b-msaa</strong> — MSAA store/resolve is a large cost after n1</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>e1 (pre-n1): main pass scaled with the sample count</dd>
+<dt>Layer and files</dt><dd>diagnosis: </dd>
+<dt>Candidate</dt><dd>none</dd>
+<dt>Primary scalar</dt><dd>38.20 ms vs incumbent 38.80 ms (1.5%)</dd>
+<dt>Pre-registered prediction</dt><dd>Several ms</dd>
+<dt>Falsifier</dt><dd>Ceiling under 1 ms</dd>
+<dt>Paired samples / order</dt><dd>quiet GPU, 1x vs 4x</dd>
+<dt>Real-game result</dt><dd>Main pass 38.8 (4x) vs 38.2 ms (1x): ceiling 0.6 ms</dd>
+<dt>Sentinel result</dt><dd>not applicable</dd>
+<dt>Gates</dt><dd>none</dd>
+<dt>Trade-offs</dt><dd>none</dd>
+<dt>Decision and reason</dt><dd><strong>reject</strong> — Dead lever: the ceiling is 0.6 ms. The e1 effect was the doubled march, removed by n1.</dd>
+<dt>Duration</dt><dd>short</dd>
+<dt>Evidence</dt><dd><span class="muted">none</span></dd>
+</dl>
+</details>
+<details class="exp" data-decision="reject" data-workload="Tempest" data-platform="web">
+<summary><span class="pill reject">reject</span> <strong>c-earlyz</strong> — Early-Z for the full-screen coast quad</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>frag_depth disables early-Z</dd>
+<dt>Layer and files</dt><dd>diagnosis: </dd>
+<dt>Candidate</dt><dd>none</dd>
+<dt>Primary scalar</dt><dd>unavailable vs incumbent unavailable</dd>
+<dt>Pre-registered prediction</dt><dd>Skip covered pixels</dd>
+<dt>Falsifier</dt><dd>Nothing covers the quad</dd>
+<dt>Paired samples / order</dt><dd>analysis</dd>
+<dt>Real-game result</dt><dd>Zero ceiling: one full-screen quad, nothing in front of it to reject</dd>
+<dt>Sentinel result</dt><dd>not applicable</dd>
+<dt>Gates</dt><dd>none</dd>
+<dt>Trade-offs</dt><dd>none</dd>
+<dt>Decision and reason</dt><dd><strong>reject</strong> — No pixels to skip.</dd>
+<dt>Duration</dt><dd>short</dd>
+<dt>Evidence</dt><dd><span class="muted">none</span></dd>
+</dl>
+</details>
+<details class="exp" data-decision="inconclusive" data-workload="Tempest" data-platform="web">
+<summary><span class="pill inconclusive">inconclusive</span> <strong>t-options</strong> — Template-side savings (owner approval needed; not applied)</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>per-pixel cost of the template&#39;s own shaders</dd>
+<dt>Layer and files</dt><dd>template (proposal only): packages/create-threenative/templates/rain/src/render/</dd>
+<dt>Candidate</dt><dd>not applied</dd>
+<dt>Primary scalar</dt><dd>unavailable vs incumbent unavailable</dd>
+<dt>Pre-registered prediction</dt><dd>n/a</dd>
+<dt>Falsifier</dt><dd>n/a</dd>
+<dt>Paired samples / order</dt><dd>quiet GPU</dd>
+<dt>Real-game result</dt><dd>reflections off -5.0 ms; 96 march steps -4.2 ms; cloud 0.4/32 -3.2 ms; all three together -4.3 ms (they overlap)</dd>
+<dt>Sentinel result</dt><dd>not applicable</dd>
+<dt>Gates</dt><dd>would need the owner&#39;s yes and a visual judge</dd>
+<dt>Trade-offs</dt><dd>changes how rain looks</dd>
+<dt>Decision and reason</dt><dd><strong>inconclusive</strong> — Recorded for the owner. Not an engine lever, so not applied.</dd>
+<dt>Duration</dt><dd>short</dd>
+<dt>Evidence</dt><dd><span class="muted">none</span></dd>
+</dl>
+</details>
+<details class="exp" data-decision="reject" data-workload="Tempest" data-platform="web">
+<summary><span class="pill reject">reject</span> <strong>floor</strong> — A constant-colour world quad still costs 13.5 ms in the main pass (fixed cost in the pass setup)</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>xdbg=const run: max pass 13.5 ms</dd>
+<dt>Layer and files</dt><dd>diagnosis (per-pass table, world/rain/lightning hidden): </dd>
+<dt>Candidate</dt><dd>none</dd>
+<dt>Primary scalar</dt><dd>2.30 ms vs incumbent 13.50 ms</dd>
+<dt>Pre-registered prediction</dt><dd>Main pass has a large fixed cost</dd>
+<dt>Falsifier</dt><dd>1920x1080 pass under 3 ms with a constant shader</dd>
+<dt>Paired samples / order</dt><dd>3 diag runs, idle GPU</dd>
+<dt>Real-game result</dt><dd>MISREAD. The 13.5 ms was the 1152x648 cloud pass, the first pass of the frame: its begin timestamp waits for the previous present, so it grows as the other work shrinks (4.4 ms with the full world, 9.5 with a constant quad, 16 with nothing drawn). The 1920x1080 scene pass costs 2.3 ms with a constant shader, 1.9 with the world hidden, 1.5 with nothing drawn. Fixed cost of the main pass (MSAA clear, resolve, depth, formats) is at most 2 ms; the world shader is the other 36 ms.</dd>
+<dt>Sentinel result</dt><dd>not applicable</dd>
+<dt>Gates</dt><dd>none</dd>
+<dt>Trade-offs</dt><dd>none</dd>
+<dt>Decision and reason</dt><dd><strong>reject</strong> — No fixed-cost lever in the main pass. Engine-only levers a-d are closed: let-shape +35%, MSAA 0.6 ms ceiling, early-Z zero ceiling, per-pass setup under 2 ms.</dd>
+<dt>Duration</dt><dd>short</dd>
+<dt>Evidence</dt><dd><a href="raw/floor/">raw/floor/</a></dd>
+</dl>
+</details>
+<details class="exp" data-decision="reject" data-workload="Tempest" data-platform="web">
+<summary><span class="pill reject">reject</span> <strong>d-setup</strong> — Per-pass setup and a 13.5 ms fixed main-pass cost</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>A constant-colour world quad still timed at 13.5 ms</dd>
+<dt>Layer and files</dt><dd>diagnosis: </dd>
+<dt>Candidate</dt><dd>none</dd>
+<dt>Primary scalar</dt><dd>unavailable vs incumbent unavailable</dd>
+<dt>Pre-registered prediction</dt><dd>Several ms of fixed cost</dd>
+<dt>Falsifier</dt><dd>Fixed cost under 2 ms</dd>
+<dt>Paired samples / order</dt><dd>per-pass timestamps, idle GPU</dd>
+<dt>Real-game result</dt><dd>Main-pass fixed cost is at most 2 ms. The 13.5 ms came from the 1152x648 cloud pass absorbing the present wait, not real GPU work.</dd>
+<dt>Sentinel result</dt><dd>not applicable</dd>
+<dt>Gates</dt><dd>none</dd>
+<dt>Trade-offs</dt><dd>none</dd>
+<dt>Decision and reason</dt><dd><strong>reject</strong> — No fixed cost to remove. The remaining 36 ms is the world shader&#39;s own ALU, the same work as in three.</dd>
+<dt>Duration</dt><dd>short</dd>
+<dt>Evidence</dt><dd><span class="muted">none</span></dd>
+</dl>
+</details>
+<details class="exp" data-decision="running" data-workload="Tempest" data-platform="web">
+<summary><span class="pill running">running</span> <strong>h-halfres</strong> — Coast march at 0.5x per axis (960x540), depth-aware upscale to 1080p</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>the world march is 36 of 44 ms and is smooth, so it can render below frame resolution</dd>
+<dt>Layer and files</dt><dd>game (template src/render, owner-approved): packages/create-threenative/templates/rain/src/render/world.ts, packages/create-threenative/templates/rain/src/render/quality.ts</dd>
+<dt>Candidate</dt><dd>worldScale 0.5 PassNode + 4-tap view-distance-weighted upscale</dd>
+<dt>Primary scalar</dt><dd>26.50 ms vs incumbent 44.30 ms (40.2%)</dd>
+<dt>Pre-registered prediction</dt><dd>march cost falls with pixel count: frame GPU at or under 22 ms</dd>
+<dt>Falsifier</dt><dd>frame GPU over 22 ms, or a visible regression at the judged poses</dd>
+<dt>Paired samples / order</dt><dd>L1: total 43.4 ms (); O1: total 44.3 ms (scene1152x648 4.3, scene1920x1080 39.2); H1: total 26.5 ms (scene1152x648 6.8, scene960x540 16.9); L2: total 43.3 ms (); O2: total 44.7 ms (scene1152x648 4.3, scene1920x1080 39.6); H2: total 22.4 ms (scene1152x648 6.0, scene960x540 14.9); L3: total 43.4 ms (); O3: total 43.6 ms (scene1152x648 4.3, scene1920x1080 38.6); H3: total 27.6 ms (scene1152x648 7.0, scene960x540 17.3)</dd>
+<dt>Real-game result</dt><dd>3 alternating gated triples (L, O, H), total GPU over all passes. Legacy 43.4 / 43.3 / L3, n1 O1-O3 about 44.5, half-res H1-H3 listed. Total counts every pass because the engine gpuMs meter leaves out offscreen passes (it read 5 ms for half-res). The cloud pass reads 6-6.8 ms against 4.3 because the first pass absorbs the present wait; busy time is about 2 ms lower than the total. Visual judge pending: coarser grass speckle and stair-stepped tree edges seen in my own crop.</dd>
+<dt>Sentinel result</dt><dd>not applicable</dd>
+<dt>Gates</dt><dd>judge pending</dd>
+<dt>Trade-offs</dt><dd>lower march resolution, upscaled depth-aware</dd>
+<dt>Decision and reason</dt><dd><strong>running</strong> — pending judge</dd>
+<dt>Duration</dt><dd>short</dd>
+<dt>Evidence</dt><dd><span class="muted">none</span></dd>
+</dl>
+</details>
+<details class="exp" data-decision="running" data-workload="Tempest" data-platform="web">
+<summary><span class="pill running">running</span> <strong>h-halfres-067</strong> — Coast march at 0.67x per axis (1286x723), same upscale</summary>
+<dl>
+<dt>Bottleneck evidence</dt><dd>the world march is 36 of 44 ms and is smooth, so it can render below frame resolution</dd>
+<dt>Layer and files</dt><dd>game (template src/render, owner-approved): packages/create-threenative/templates/rain/src/render/world.ts, packages/create-threenative/templates/rain/src/render/quality.ts</dd>
+<dt>Candidate</dt><dd>worldScale 0.67</dd>
+<dt>Primary scalar</dt><dd>unavailable vs incumbent unavailable</dd>
+<dt>Pre-registered prediction</dt><dd>march cost falls with pixel count: frame GPU at or under 22 ms</dd>
+<dt>Falsifier</dt><dd>frame GPU over 22 ms, or a visible regression at the judged poses</dd>
+<dt>Paired samples / order</dt><dd>O1: total 42.9 ms (scene1152x648 4.3, scene1920x1080 37.9); H1: total 31.9 ms (scene1152x648 5.8, scene1286x723 24.8); O2: total 45.1 ms (scene1152x648 4.3, scene1920x1080 40.0); H2: total 30.0 ms (scene1152x648 5.5, scene1286x723 23.3)</dd>
+<dt>Real-game result</dt><dd>2 alternating gated pairs: total 31.9 and 30.0 ms against n1 42.9 and 45.1. Over the 22 ms target by 8-10 ms. March cost is not linear in pixels (rays diverge more per warp at low resolution): 0.44x pixels cost 0.64x time.</dd>
+<dt>Sentinel result</dt><dd>not applicable</dd>
+<dt>Gates</dt><dd>judge pending</dd>
+<dt>Trade-offs</dt><dd>lower march resolution, upscaled depth-aware</dd>
+<dt>Decision and reason</dt><dd><strong>running</strong> — 30 ms, over target; judge pending</dd>
+<dt>Duration</dt><dd>short</dd>
+<dt>Evidence</dt><dd><span class="muted">none</span></dd>
+</dl>
+</details></div>
+
+<h2>Coverage and continuation</h2>
+<div class="grid">
+<p><strong>Platforms</strong><br>web WebGPU, RTX 2080: measured — campaign lane<br>desktop V8 player (T3): not run — after the web gap closes<br>sentinel template: not run — no candidate kept yet</p>
+<p><strong>Workload families</strong><br>Tempest performance scenario (gameplay)<br>WGSL dumps (diagnosis)</p>
+<p><strong>Unresolved bottlenecks</strong><br>Main scene pass: 2.3x larger WGSL than three<br>4x MSAA: half the main pass scales with samples<br>Noise margin uncalibrated (49 ms spread under host load)</p>
+</div>
+<p><strong>Stop reason</strong> running</p>
+<p><strong>Resume</strong> Calibrate noise with 3 idle-GPU baseline pairs, then diff wgsl-O-26 against wgsl-L-7 for instructions and texture samples.</p>
+<h3>Reproduction</h3>
+<pre><code>cd /tmp/prd617perf &amp;&amp; ./servers.sh          # serves rain (Wasm) on 5500 and rain-legacy on 5501
+SCEN=/tmp/prd617perf/passms.playtest.json TAG=&lt;id&gt; ARMS=&quot;L O&quot; ROUNDS=3 ./paired.sh
+./dump.sh   # WGSL dump per engine</code></pre>
+<p class="muted">Artifacts: scenario=performance.playtest.json + passms.playtest.json (prd617perf harness) · engine=97301154e + local diagnostic patches</p>
+
+<script id="campaign-data" type="application/json">{"benchmarks":[{"id":"gpu-ms","metric":"GPU ms per frame (median window) — goal: 2x faster than stock three"},{"id":"gpu-ms-three","metric":"GPU ms per frame (median window), control arm"},{"id":"main-pass","metric":"main scene pass 1920x1080 GPU ms (PASSPROF)"},{"id":"wgsl-kb","metric":"WGSL size of the main scene shader (KPI G2 proxy) — goal = three"},{"id":"cpu-p95","metric":"CPU frame p95 (stock three 1.8 ms)"}]}</script>
+<script>
+(function () {
+  var picks = { "f-decision": "decision", "f-workload": "workload", "f-platform": "platform" };
+  function apply() {
+    var wanted = {};
+    Object.keys(picks).forEach(function (id) {
+      var el = document.getElementById(id);
+      wanted[picks[id]] = el && el.value ? el.value : "";
+    });
+    document.querySelectorAll("#experiments .exp").forEach(function (node) {
+      var show = Object.keys(wanted).every(function (key) {
+        return wanted[key] === "" || node.getAttribute("data-" + key) === wanted[key];
+      });
+      node.style.display = show ? "" : "none";
+    });
+  }
+  Object.keys(picks).forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener("change", apply);
+  });
+})();
+</script>
+<p id="live" class="muted" aria-live="polite"></p>
+<script>
+// Live reload: over http, poll this page's Last-Modified every 5 s and reload on change, keeping
+// scroll, filters and open experiment cards. Over file:// there is no header, so it stays a snapshot.
+(function () {
+  var KEY = "tn-dash-state", live = document.getElementById("live");
+  try {
+    var saved = JSON.parse(sessionStorage.getItem(KEY) || "null");
+    if (saved) {
+      sessionStorage.removeItem(KEY);
+      Object.keys(saved.filters || {}).forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) { el.value = saved.filters[id]; el.dispatchEvent(new Event("change")); }
+      });
+      document.querySelectorAll("details.exp").forEach(function (d, i) { d.open = (saved.open || []).indexOf(i) >= 0; });
+      window.scrollTo(0, saved.y || 0);
+    }
+  } catch (e) {}
+  if (location.protocol === "file:") { live.textContent = "Snapshot (file://). Open http://127.0.0.1:8767/tempest/ for live updates."; return; }
+  var stamp = null;
+  function check() {
+    fetch(location.href, { method: "HEAD", cache: "no-store" }).then(function (r) {
+      var m = r.headers.get("Last-Modified") || r.headers.get("ETag");
+      var now = new Date().toLocaleTimeString();
+      if (stamp !== null && m && m !== stamp) {
+        var state = { y: window.scrollY, filters: {}, open: [] };
+        ["f-decision", "f-workload", "f-platform"].forEach(function (id) { var el = document.getElementById(id); if (el) state.filters[id] = el.value; });
+        document.querySelectorAll("details.exp").forEach(function (d, i) { if (d.open) state.open.push(i); });
+        try { sessionStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+        location.reload();
+        return;
+      }
+      stamp = m;
+      live.textContent = "Live: checks for new data every 5 s. Last check " + now + ".";
+    }).catch(function () { live.textContent = "Live: server not reachable. Showing the last loaded data."; });
+  }
+  check();
+  setInterval(check, 5000);
+})();
+</script>
+</body></html>

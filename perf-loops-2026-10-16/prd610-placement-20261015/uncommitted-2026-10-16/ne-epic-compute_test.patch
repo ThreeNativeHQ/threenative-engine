@@ -1,0 +1,150 @@
+diff --git a/packages/runtime-native/tests/native-engine/compute_test.cpp b/packages/runtime-native/tests/native-engine/compute_test.cpp
+index 94231b536..43ab20aea 100644
+--- a/packages/runtime-native/tests/native-engine/compute_test.cpp
++++ b/packages/runtime-native/tests/native-engine/compute_test.cpp
+@@ -166,6 +166,137 @@ void jointReadback(mystral::webgpu::Context& context, GpuResources& gpu, EventQu
+     gpu.destroy(input); gpu.destroy(output);
+ }
+ 
++// Ordinary retained meshes: gather rootWorld * meshRelative into mat4 + RGB/pad (80 bytes).
++void worldGatherReadback(mystral::webgpu::Context& context, GpuResources& gpu, EventQueue& events) {
++    Program program(Stage::Compute);
++    const auto roots = program.storageBuffer("roots", Type::vec(4));
++    const auto meshes = program.storageBuffer("meshes", Type::vec(4));
++    const auto selection = program.storageBuffer("selection", Type::vec(4));
++    const auto instances = program.storageBuffer("instances", Type::vec(4));
++    auto u = [&](int32_t n) { return program.construct(Type::u32(), {program.constant(n)}); };
++    const auto id = program.swizzle(program.builtin("globalInvocationId"), "x");
++    program.If(program.less(program.construct(Type::f32(), {id}), program.uniform("count", Type::f32())), [&] {
++        const auto selected = program.loadStorage(selection, id);
++        const auto mesh = program.mul(program.construct(Type::u32(), {program.swizzle(selected, "x")}), u(5));
++        const auto root = program.mul(program.construct(Type::u32(), {
++            program.swizzle(program.loadStorage(meshes, program.add(mesh, u(4))), "x")}), u(4));
++        std::vector<ExprId> columns;
++        for (int col = 0; col < 4; ++col)
++            columns.push_back(program.loadStorage(roots, program.add(root, u(col))));
++        const auto rootWorld = program.construct(Type::mat(4, 4), columns);
++        const auto output = program.mul(id, u(5));
++        for (int col = 0; col < 4; ++col)
++            program.store(instances, program.add(output, u(col)), program.mul(rootWorld,
++                program.loadStorage(meshes, program.add(mesh, u(col)))));
++        const auto colorAt = program.add(output, u(4));
++        const auto padding = program.swizzle(program.loadStorage(instances, colorAt), "w");
++        program.store(instances, colorAt, program.construct(Type::vec(4), {
++            program.swizzle(selected, "y"), program.swizzle(selected, "z"), program.swizzle(selected, "w"), padding}));
++    });
++    CHECK(program.diagnostics().empty());
++    ComputePass pass(context.getDevice(), gpu, program);
++    if (!pass.error().empty()) std::fprintf(stderr, "%s\n", pass.error().c_str());
++    CHECK(pass.error().empty());
++    if (!pass.error().empty()) return;
++
++    using Root = std::array<float, 16>;
++    using Mesh = std::array<float, 20>;
++    using Selection = std::array<float, 4>;
++    static_assert(sizeof(Root) == 64 && sizeof(Mesh) == 80 && sizeof(Selection) == 16);
++    std::array<Root, 2> rootData{};
++    std::array<Mesh, 4> meshData{};
++    for (size_t mesh = 0; mesh < meshData.size(); ++mesh) {
++        const float angle = float(mesh + 1) * 0.17f;
++        const auto relative = compose({float(mesh) - 1.3f, 0.9f, float(mesh) * -0.7f, 0,
++            0, std::sin(angle), 0, std::cos(angle), 0.8f, 1.4f, -1.1f, 0});
++        for (int k = 0; k < 16; ++k) meshData[mesh][k] = float(relative[k]);
++        // Exact small f32 IDs let the existing IR represent mixed records without a new type.
++        meshData[mesh][16] = float(mesh % rootData.size());
++        meshData[mesh][17] = meshData[mesh][18] = meshData[mesh][19] = -333;
++    }
++    std::array<float, 7 * 20> expected{};
++    for (size_t k = 0; k < expected.size(); ++k) expected[k] = -777.0f - float(k);
++    const auto usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst;
++    const std::array<Handle, 4> storage{
++        gpu.createBuffer(sizeof(rootData), usage),
++        gpu.createBuffer(sizeof(meshData), usage, meshData.data(), sizeof(meshData)),
++        gpu.createBuffer(5 * sizeof(Selection), usage),
++        gpu.createBuffer(sizeof(expected), usage, expected.data(), sizeof(expected))};
++    // Validate before recording or uploading; zero instances are a successful no-op.
++    auto dispatch = [&](WGPUCommandEncoder encoder, std::span<const Selection> selected) {
++        auto validId = [](float value, size_t count) {
++            return std::isfinite(value) && value >= 0 && value < float(count) && std::floor(value) == value;
++        };
++        if (selected.size() > 5) return false;
++        for (const auto& mesh : meshData) if (!validId(mesh[16], rootData.size())) return false;
++        for (const auto& item : selected) if (!validId(item[0], meshData.size())) return false;
++        if (selected.empty()) return true;
++        if (gpu.writeBuffer(storage[0], 0, rootData.data(), sizeof(rootData)) != GpuStatus::Ok ||
++            gpu.writeBuffer(storage[2], 0, selected.data(), selected.size_bytes()) != GpuStatus::Ok) return false;
++        return pass.dispatch(encoder, storage, uint32_t(selected.size()) + 37, {{"count", double(selected.size())}});
++    };
++    CHECK(dispatch(nullptr, {}));
++    const Selection badMesh{float(meshData.size()), 1, 2, 3};
++    CHECK(!dispatch(nullptr, std::span<const Selection>{&badMesh, 1}));
++    meshData[0][16] = float(rootData.size());
++    CHECK(!dispatch(nullptr, {}));
++    meshData[0][16] = 0;
++    for (int frame = 0; frame < 2; ++frame) {
++        for (size_t root = 0; root < rootData.size(); ++root) {
++            const float angle = float(root + 1) * 0.23f + float(frame) * 0.41f;
++            const auto world = compose({float(root) * 7.1f + float(frame) * -2.4f,
++                float(frame) * 3.2f - 1, float(root) * -5.7f, 0,
++                std::sin(angle), 0, 0, std::cos(angle), 1.3f, -0.6f, 1.7f, 0});
++            for (int k = 0; k < 16; ++k) rootData[root][k] = float(world[k]);
++        }
++        // Main/shadow-style order: roots interleave, mesh IDs repeat, and the second list shrinks.
++        const std::vector<Selection> selected = frame == 0
++            ? std::vector<Selection>{{3, .1f, .2f, .3f}, {0, .4f, .5f, .6f}, {2, .7f, .8f, .9f},
++                {3, .9f, .3f, .1f}, {1, .6f, .2f, .8f}}
++            : std::vector<Selection>{{1, .8f, .4f, .2f}, {3, .2f, .7f, .4f},
++                {0, .3f, .1f, .9f}, {1, .5f, .6f, .7f}};
++        WGPUCommandEncoderDescriptor desc{};
++        const auto encoder = wgpuDeviceCreateCommandEncoder(context.getDevice(), &desc);
++        CHECK(dispatch(encoder, selected));
++        WGPUCommandBufferDescriptor commands{};
++        gpu.submit(wgpuCommandEncoderFinish(encoder, &commands));
++        wgpuCommandEncoderRelease(encoder);
++        std::vector<uint8_t> got; bool done = false;
++        CHECK(gpu.readBuffer(storage[3], 0, sizeof(expected), [&](GpuStatus status, std::vector<uint8_t> bytes) {
++            CHECK(status == GpuStatus::Ok); got = std::move(bytes); done = true;
++        }) == GpuStatus::Ok);
++        for (int i = 0; i < 4000 && !done; ++i) {
++            gpu.poll(); events.drain();
++            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
++        }
++        CHECK(done && got.size() == sizeof(expected));
++        if (got.size() != sizeof(expected)) break;
++        for (size_t i = 0; i < selected.size(); ++i) {
++            const auto& mesh = meshData[size_t(selected[i][0])];
++            const auto& root = rootData[size_t(mesh[16])];
++            Matrix a{}, b{};
++            for (int k = 0; k < 16; ++k) { a[k] = root[k]; b[k] = mesh[k]; }
++            const auto world = multiply(a, b); // Independent float64 oracle from uploaded f32 inputs.
++            for (int k = 0; k < 16; ++k) expected[i * 20 + k] = float(world[k]);
++            for (int k = 0; k < 3; ++k) expected[i * 20 + 16 + k] = selected[i][1 + k];
++        }
++        size_t mismatch = 0;
++        for (size_t k = 0; k < expected.size(); ++k) {
++            float value; std::memcpy(&value, got.data() + k * sizeof(float), sizeof(value));
++            // Matrix f32 multiply permits 2e-5 relative/absolute error; RGB, padding and tail are exact.
++            const bool matrix = k / 20 < selected.size() && k % 20 < 16;
++            mismatch += !std::isfinite(value) || (matrix
++                ? std::abs(value - expected[k]) > 2e-5f * std::max(1.0f, std::abs(expected[k]))
++                : value != expected[k]);
++        }
++        std::printf("world gather readback frame %d: %zu mismatched components\n", frame, mismatch);
++        CHECK(mismatch == 0);
++        // A shorter next selection must preserve the previous GPU bytes outside its written range.
++        std::memcpy(expected.data(), got.data(), sizeof(expected));
++    }
++    for (const auto handle : storage) gpu.destroy(handle);
++}
++
+ void readback() {
+     mystral::webgpu::Context context;
+     CHECK(context.initializeHeadless());
+@@ -226,6 +357,7 @@ void readback() {
+     wgpuCommandEncoderRelease(other);
+     gpu.destroy(positions);
+     jointReadback(context, gpu, events);
++    worldGatherReadback(context, gpu, events);
+ }
+ 
+ }  // namespace

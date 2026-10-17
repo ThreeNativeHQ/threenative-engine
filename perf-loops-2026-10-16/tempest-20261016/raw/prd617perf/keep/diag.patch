@@ -1,0 +1,144 @@
+diff --git a/packages/runtime-native/src/engine/renderer/post/effects.cpp b/packages/runtime-native/src/engine/renderer/post/effects.cpp
+index e459619b7..968d458bf 100644
+--- a/packages/runtime-native/src/engine/renderer/post/effects.cpp
++++ b/packages/runtime-native/src/engine/renderer/post/effects.cpp
+@@ -1,4 +1,5 @@
+ #include "effects.h"
++#include "engine/renderer/pass_profile.h"
+ #include "engine/scene/material.h"
+ #include "engine/scene/render_target.h"
+ #include "engine/scene/nodes.h"
+@@ -521,6 +522,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
+         WGPURenderPassDescriptor passDesc{};
+         passDesc.colorAttachmentCount = 1;
+         passDesc.colorAttachments = &color;
++        passprof::begin(device_, "fx:" + pass.source.output, passDesc);
+         const auto render = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+         if (pass.source.visible) {
+             wgpuRenderPassEncoderSetPipeline(render, pass.pipeline);
+diff --git a/packages/runtime-native/src/engine/renderer/post/traa.cpp b/packages/runtime-native/src/engine/renderer/post/traa.cpp
+index ad8bb82a8..b43c5bae7 100644
+--- a/packages/runtime-native/src/engine/renderer/post/traa.cpp
++++ b/packages/runtime-native/src/engine/renderer/post/traa.cpp
+@@ -1,4 +1,5 @@
+ #include "traa.h"
++#include "engine/renderer/pass_profile.h"
+ #include "engine/renderer/pipeline_cache.h"
+ #include "engine/foundation/math/Matrix.h"
+ #include "mystral/webgpu_compat.h"
+@@ -302,6 +303,7 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
+     color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+ #endif
+     WGPURenderPassDescriptor desc{}; desc.colorAttachmentCount = 1; desc.colorAttachments = &color;
++    passprof::begin(device_, "traaResolve", desc);
+     auto pass = wgpuCommandEncoderBeginRenderPass(encoder, &desc);
+     wgpuRenderPassEncoderSetPipeline(pass, pipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
+diff --git a/packages/runtime-native/src/engine/renderer/renderer.cpp b/packages/runtime-native/src/engine/renderer/renderer.cpp
+index 4e637c97f..99fda3cf8 100644
+--- a/packages/runtime-native/src/engine/renderer/renderer.cpp
++++ b/packages/runtime-native/src/engine/renderer/renderer.cpp
+@@ -1,4 +1,5 @@
+ #include "renderer.h"
++#include "engine/renderer/pass_profile.h"
+ #include "engine/renderer/pipeline_cache.h"
+ #include "engine/renderer/render_target_pass.h"
+ 
+@@ -1033,6 +1034,7 @@ void Renderer::resolveDepth(WGPUCommandEncoder encoder) {
+     depth.depthClearValue = 1.0f;
+     WGPURenderPassDescriptor passDesc = {};
+     passDesc.depthStencilAttachment = &depth;
++    passprof::begin(device_, "depthResolve", passDesc);
+     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+     wgpuRenderPassEncoderSetPipeline(pass, depthResolve_);
+     wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+@@ -3288,6 +3290,7 @@ void Renderer::encodeFrame(FrameJob& job) {
+             shadowDesc.timestampWrites = &shadowTimes;
+             shadowTimesTaken = true;
+         }
++        passprof::begin(device_, "shadow", shadowDesc);
+         WGPURenderPassEncoder shadowPass = wgpuCommandEncoderBeginRenderPass(encoder, &shadowDesc);
+         if (shadowPlan.size) {
+             wgpuRenderPassEncoderSetViewport(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size, 0, 1);
+@@ -3302,6 +3305,7 @@ void Renderer::encodeFrame(FrameJob& job) {
+         wgpuRenderPassEncoderRelease(shadowPass);
+     }
+     if (traa_) traa_->seedHistory(encoder, sceneColor_);
++    passprof::begin(device_, "scene" + std::to_string(width_) + "x" + std::to_string(height_), passDesc);
+     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+     bound = nullptr;
+     boundIndex = nullptr;
+@@ -3367,6 +3371,7 @@ void Renderer::encodeFrame(FrameJob& job) {
+         viewportDesc.colorAttachmentCount = 1;
+         viewportDesc.colorAttachments = &loadColor;
+         viewportDesc.depthStencilAttachment = &loadDepth;
++        passprof::begin(device_, "sceneRest", viewportDesc);
+         WGPURenderPassEncoder rest = wgpuCommandEncoderBeginRenderPass(encoder, &viewportDesc);
+         wgpuRenderPassEncoderExecuteBundles(rest, 1, &viewportBundle_);
+         wgpuRenderPassEncoderEnd(rest);
+@@ -3385,6 +3390,7 @@ void Renderer::encodeFrame(FrameJob& job) {
+         WGPURenderPassDescriptor normalDesc{};
+         normalDesc.colorAttachmentCount = 1; normalDesc.colorAttachments = &normals;
+         normalDesc.depthStencilAttachment = &normalDepth;
++        passprof::begin(device_, "normal", normalDesc);
+         auto normalEncoder = wgpuCommandEncoderBeginRenderPass(encoder, &normalDesc);
+         bound = nullptr; boundIndex = nullptr;
+         for (const Planned& p : normalPlan) encode(normalEncoder, p, Tally::Extra);
+@@ -3401,6 +3407,7 @@ void Renderer::encodeFrame(FrameJob& job) {
+         WGPURenderPassDescriptor motionDesc{};
+         motionDesc.colorAttachmentCount = 1; motionDesc.colorAttachments = &motion;
+         motionDesc.depthStencilAttachment = &motionDepth;
++        passprof::begin(device_, "velocity", motionDesc);
+         auto velocityPass = wgpuCommandEncoderBeginRenderPass(encoder, &motionDesc);
+         bound = nullptr; boundIndex = nullptr;
+         for (const Planned& p : velocityPlan) encode(velocityPass, p, Tally::Extra);
+@@ -3433,9 +3440,28 @@ void Renderer::encodeFrame(FrameJob& job) {
+     encoder = recordSampledTargets(encoder);
+     outputPass(encoder, timed, presentTarget, presentFormat);
+     if (timed) wgpuCommandEncoderResolveQuerySet(encoder, timestamps_, 0, 6, gpu_.buffer(timestampResolve_), 0);
++    const bool profiling = presentTarget && passprof::st().used > 0 && !passprof::st().pending && passprof::st().qs;
++    uint32_t profUsed = 0;
++    std::vector<std::string> profLabels;
++    if (profiling) {
++        auto& ps = passprof::st();
++        if (!profMade_) { profMade_ = true; profResolve_ = gpu_.createBuffer(passprof::kMax * 16, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc); }
++        wgpuCommandEncoderResolveQuerySet(encoder, ps.qs, 0, ps.used * 2, gpu_.buffer(profResolve_), 0);
++        profUsed = ps.used; profLabels = ps.labels;
++        ps.pending = true; ps.used = 0; ps.labels.clear();
++    }
+     WGPUCommandBufferDescriptor commandDesc = {};
+     submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+     wgpuCommandEncoderRelease(encoder);
++    if (profiling) {
++        gpu_.readBuffer(profResolve_, 0, profUsed * 16, [profLabels](GpuStatus status, std::vector<uint8_t> bytes) {
++            passprof::st().pending = false;
++            if (status != GpuStatus::Ok || bytes.size() != profLabels.size() * 16) return;
++            std::vector<uint64_t> ns(profLabels.size() * 2);
++            std::memcpy(ns.data(), bytes.data(), bytes.size());
++            passprof::absorb(ns.data(), profLabels);
++        });
++    }
+     if (timed) {
+         timing_->pending = true;
+         std::weak_ptr<Timing> timing = timing_;
+@@ -3500,6 +3526,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, bool timed, WGPUTextureVie
+         outputTimes.endOfPassWriteIndex = 3;
+         passDesc.timestampWrites = &outputTimes;
+     }
++    passprof::begin(device_, "output", passDesc);
+     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &passDesc);
+     wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+     wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+diff --git a/packages/runtime-native/src/engine/renderer/renderer.h b/packages/runtime-native/src/engine/renderer/renderer.h
+index 12f7970b5..792372961 100644
+--- a/packages/runtime-native/src/engine/renderer/renderer.h
++++ b/packages/runtime-native/src/engine/renderer/renderer.h
+@@ -843,6 +843,8 @@ private:
+     uint64_t sourceFrame_ = 0;  // the caller frame id the next timed frame is submitted with
+     WGPUQuerySet timestamps_ = nullptr;  // scene pass begin/end [0, 1], output pass begin/end [2, 3], first shadow pass begin [4, 5]
+     Handle timestampResolve_;
++    Handle profResolve_;
++    bool profMade_ = false;
+     // Shared with the readback callback by weak reference: a backend may deliver it after this
+     // renderer is gone (wgpu does at teardown), and it must then find nothing to write into.
+     struct Timing {

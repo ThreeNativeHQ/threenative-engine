@@ -1,0 +1,77 @@
+[
+  {
+    "source": "browser-console",
+    "text": "[vite] connecting...",
+    "type": "debug"
+  },
+  {
+    "source": "browser-console",
+    "text": "[vite] connected.",
+    "type": "debug"
+  },
+  {
+    "source": "browser-console",
+    "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_TEMPEST ready · 0x0 · running",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"\",\"device\":\"\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"the host renderer declined this scene (belowMeshFloor)\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":0,\"materialCheckStaleFrames\":0,\"path\":\"host\"}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_QUALITY_TIER high mobile=false software=false source=platform",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_CHAIN:{\"applied\":{\"contributions\":[{\"graphOutputChanged\":true,\"name\":\"antialias\"},{\"graphOutputChanged\":true,\"name\":\"stormPost\"}],\"dropped\":[],\"requested\":[\"antialias\",\"stormPost\"],\"source\":\"pinned\",\"stages\":[\"antialias\",\"stormPost\"],\"tier\":\"high\",\"velocity\":{\"provisioned\":false,\"required\":false,\"source\":null}},\"marker\":\"TN_RENDER_CHAIN\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_WORLD_ENVIRONMENT:{\"denoise\":false,\"exposure\":1,\"marker\":\"TN_WORLD_ENVIRONMENT\",\"screenSpaceAA\":\"smaa\",\"ssgiQuality\":\"medium\",\"stages\":[{\"applied\":false,\"name\":\"ambientOcclusion\",\"reason\":\"gtaoEnabled is false\"},{\"applied\":true,\"name\":\"antialias\"},{\"applied\":false,\"name\":\"bloom\",\"reason\":\"bloomEnabled is false\"},{\"applied\":false,\"name\":\"godRays\",\"reason\":\"godraysEnabled is false\"},{\"applied\":false,\"name\":\"kuwahara\",\"reason\":\"kuwaharaEnabled is false\"},{\"applied\":false,\"name\":\"outline\",\"reason\":\"outlineEnabled is false\"},{\"applied\":false,\"name\":\"sharpen\",\"reason\":\"sharpenEnabled is false\"},{\"applied\":false,\"name\":\"ssgi\",\"reason\":\"ssgiEnabled is false\"},{\"applied\":false,\"name\":\"ssr\",\"reason\":\"ssrEnabled is false\"},{\"applied\":false,\"name\":\"vignette\",\"reason\":\"vignetteAmount is 0\"},{\"applied\":false,\"name\":\"watercolor\",\"reason\":\"watercolorEnabled is false\"}],\"tonemapMode\":\"aces\"}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_ALPHA_ANTIALIASING:{\"applied\":false,\"marker\":\"TN_ALPHA_ANTIALIASING\",\"materials\":0,\"reason\":\"no cutout material has been drawn; nothing in this scene carves its silhouette with an alpha test\",\"sampleCount\":4}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_STARTUP_WARMUP:{\"compiled\":1,\"pipelines\":3,\"candidates\":3,\"attempted\":1,\"observed\":{\"created\":0,\"failed\":0,\"pending\":0,\"uniquePrograms\":0,\"uniquePipelines\":0,\"status\":\"unavailable\"},\"slices\":1,\"elapsedMs\":2,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false,\"passes\":[\"main\"],\"passPipelines\":0,\"cullingForced\":0,\"visibilityForced\":0,\"cache\":\"disabled\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FRAME_BUDGET:{\"longTasks\":{\"available\":true,\"count\":4,\"longestMs\":275,\"afterFirstFrameMs\":275},\"fps\":10.25,\"frame\":{\"max\":83.8,\"mean\":1.6,\"p50\":1.3,\"p95\":1.9,\"p99\":2.8,\"samples\":307},\"frames\":307,\"simulatedSeconds\":5,\"hitches\":0,\"phases\":{\"hostGap\":{\"max\":411.4,\"mean\":95.93,\"p50\":122.5,\"p95\":136.5,\"p99\":181.3,\"samples\":306},\"overlay\":{\"max\":12.4,\"mean\":0.04,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":307},\"render\":{\"max\":83.4,\"mean\":1.01,\"p50\":0.8,\"p95\":1.2,\"p99\":1.6,\"samples\":307},\"residual\":{\"max\":0.8,\"mean\":0.05,\"p50\":0,\"p95\":0.2,\"p99\":0.2,\"samples\":307},\"ui\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":307},\"update\":{\"max\":17.7,\"mean\":0.5,\"p50\":0.5,\"p95\":0.8,\"p99\":0.9,\"samples\":307}},\"presented\":{\"max\":400,\"mean\":97.53,\"p50\":117.2,\"p95\":133.5,\"p99\":216.6,\"samples\":306},\"shares\":{\"hostGap\":0.984,\"overlay\":0,\"render\":0.01,\"residual\":0.001,\"ui\":0,\"update\":0.005},\"substeps\":{\"max\":60,\"mean\":0.98,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":307},\"passes\":{\"main\":{\"draws\":{\"max\":5,\"mean\":0.02,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":306},\"frames\":306,\"triangles\":{\"max\":36481,\"mean\":119.22,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":306}}},\"gpu\":{\"max\":82.15,\"mean\":53.17,\"p50\":53.31,\"p95\":54.63,\"p99\":82.15,\"samples\":96},\"gpuStale\":210,\"gpuMs\":53.17,\"gpuFrames\":{\"first\":0,\"last\":303},\"gpuAgeFrames\":3,\"targetFps\":60,\"targetSource\":\"config\",\"surface\":{\"atFloor\":false,\"compiling\":true,\"drawingBufferHeight\":1080,\"drawingBufferWidth\":1920,\"resolutionScale\":1,\"sampleCount\":4,\"scaleSource\":\"auto\"},\"counters\":{\"simulationTick\":300},\"window\":1}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_PROJECTION:{\"drawsActual\":9,\"cull\":{\"enabled\":true,\"cameraResolved\":true,\"thresholdPixels\":0.5,\"considered\":2,\"culled\":0,\"exemptCameraAttached\":0,\"exemptMarked\":2,\"exemptShadowCasters\":0,\"exemptWithoutBounds\":0,\"exemptDynamicBounds\":0,\"exemptFrustumCulled\":0},\"drawsPlanned\":3,\"exact\":{},\"exactObjects\":0,\"matrixWorld\":{\"mode\":\"visible\",\"visited\":4},\"path\":\"host\",\"projecting\":false,\"reason\":\"the host renderer declined this scene (belowMeshFloor)\",\"reasonCode\":\"belowMeshFloor\",\"sourceRenderables\":3,\"timings\":{\"compileMs\":0,\"reconcileMs\":15.099999845027924,\"lastReconcileMs\":0.10000002384185791,\"maxReconcileMs\":2.2999999821186066},\"window\":1}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FRAME_BUDGET:{\"longTasks\":{\"available\":true,\"count\":4,\"longestMs\":275,\"afterFirstFrameMs\":275},\"fps\":10.06,\"frame\":{\"max\":3.3,\"mean\":1.1,\"p50\":1.2,\"p95\":1.7,\"p99\":1.9,\"samples\":300},\"frames\":300,\"simulatedSeconds\":5,\"hitches\":0,\"phases\":{\"hostGap\":{\"max\":196.4,\"mean\":98.27,\"p50\":121.7,\"p95\":127.2,\"p99\":142.2,\"samples\":300},\"overlay\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":300},\"render\":{\"max\":1.6,\"mean\":0.55,\"p50\":0.7,\"p95\":1,\"p99\":1.2,\"samples\":300},\"residual\":{\"max\":0.2,\"mean\":0.05,\"p50\":0,\"p95\":0.1,\"p99\":0.2,\"samples\":300},\"ui\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":300},\"update\":{\"max\":2,\"mean\":0.5,\"p50\":0.5,\"p95\":0.7,\"p99\":0.8,\"samples\":300}},\"presented\":{\"max\":197.7,\"mean\":99.38,\"p50\":122.6,\"p95\":128.4,\"p99\":142.9,\"samples\":300},\"shares\":{\"hostGap\":0.989,\"overlay\":0,\"render\":0.006,\"residual\":0.001,\"ui\":0,\"update\":0.005},\"substeps\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":300},\"passes\":{\"main\":{\"draws\":{\"max\":2,\"mean\":0.01,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":300},\"frames\":300,\"triangles\":{\"max\":984,\"mean\":3.28,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":300}}},\"gpu\":{\"max\":54.76,\"mean\":53.71,\"p50\":53.62,\"p95\":54.6,\"p99\":54.76,\"samples\":97},\"gpuStale\":203,\"gpuMs\":53.71,\"gpuFrames\":{\"first\":306,\"last\":602},\"gpuAgeFrames\":4,\"targetFps\":60,\"targetSource\":\"config\",\"overTarget\":{\"frameMs\":16.67,\"gpu\":97,\"render\":0},\"surface\":{\"atFloor\":false,\"compiling\":false,\"drawingBufferHeight\":1080,\"drawingBufferWidth\":1920,\"resolutionScale\":1,\"sampleCount\":4,\"scaleSource\":\"auto\"},\"counters\":{\"simulationTick\":600},\"window\":2}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_PROJECTION:{\"drawsActual\":9,\"cull\":{\"enabled\":true,\"cameraResolved\":true,\"thresholdPixels\":0.5,\"considered\":2,\"culled\":0,\"exemptCameraAttached\":0,\"exemptMarked\":2,\"exemptShadowCasters\":0,\"exemptWithoutBounds\":0,\"exemptDynamicBounds\":0,\"exemptFrustumCulled\":0},\"drawsPlanned\":3,\"exact\":{},\"exactObjects\":0,\"matrixWorld\":{\"mode\":\"visible\",\"visited\":4},\"path\":\"host\",\"projecting\":false,\"reason\":\"the host renderer declined this scene (belowMeshFloor)\",\"reasonCode\":\"belowMeshFloor\",\"sourceRenderables\":3,\"timings\":{\"compileMs\":0,\"reconcileMs\":26.399999618530273,\"lastReconcileMs\":0.09999999403953552,\"maxReconcileMs\":2.2999999821186066},\"window\":2}",
+    "type": "info"
+  }
+]

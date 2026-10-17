@@ -1,0 +1,3 @@
+L1	load1=7.47	rc=0	fps=8.66	frame_p95=1.8	pres_p50=114.8	gpuMs=43.98	gpu_p95=45.1	win=2	turing/nvidia
+O1	load1=6.36	rc=0	fps=5.98	frame_p95=1.7	pres_p50=218.5	gpuMs=118.41	gpu_p95=149.97	win=2	turing/nvidia
+done

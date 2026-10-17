@@ -1,0 +1,162 @@
+[
+  {
+    "source": "browser-console",
+    "text": "[vite] connecting...",
+    "type": "debug"
+  },
+  {
+    "source": "browser-console",
+    "text": "[vite] connected.",
+    "type": "debug"
+  },
+  {
+    "source": "browser-console",
+    "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_TEMPEST ready · 0x0 · running",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"\",\"device\":\"\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"the host renderer declined this scene (belowMeshFloor)\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":0,\"materialCheckStaleFrames\":0,\"path\":\"host\"}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_QUALITY_TIER high mobile=false software=false source=platform",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_CHAIN:{\"applied\":{\"contributions\":[{\"graphOutputChanged\":true,\"name\":\"antialias\"},{\"graphOutputChanged\":true,\"name\":\"stormPost\"}],\"dropped\":[],\"requested\":[\"antialias\",\"stormPost\"],\"source\":\"pinned\",\"stages\":[\"antialias\",\"stormPost\"],\"tier\":\"high\",\"velocity\":{\"provisioned\":false,\"required\":false,\"source\":null}},\"marker\":\"TN_RENDER_CHAIN\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_WORLD_ENVIRONMENT:{\"denoise\":false,\"exposure\":1,\"marker\":\"TN_WORLD_ENVIRONMENT\",\"screenSpaceAA\":\"smaa\",\"ssgiQuality\":\"medium\",\"stages\":[{\"applied\":false,\"name\":\"ambientOcclusion\",\"reason\":\"gtaoEnabled is false\"},{\"applied\":true,\"name\":\"antialias\"},{\"applied\":false,\"name\":\"bloom\",\"reason\":\"bloomEnabled is false\"},{\"applied\":false,\"name\":\"godRays\",\"reason\":\"godraysEnabled is false\"},{\"applied\":false,\"name\":\"kuwahara\",\"reason\":\"kuwaharaEnabled is false\"},{\"applied\":false,\"name\":\"outline\",\"reason\":\"outlineEnabled is false\"},{\"applied\":false,\"name\":\"sharpen\",\"reason\":\"sharpenEnabled is false\"},{\"applied\":false,\"name\":\"ssgi\",\"reason\":\"ssgiEnabled is false\"},{\"applied\":false,\"name\":\"ssr\",\"reason\":\"ssrEnabled is false\"},{\"applied\":false,\"name\":\"vignette\",\"reason\":\"vignetteAmount is 0\"},{\"applied\":false,\"name\":\"watercolor\",\"reason\":\"watercolorEnabled is false\"}],\"tonemapMode\":\"aces\"}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_ALPHA_ANTIALIASING:{\"applied\":false,\"marker\":\"TN_ALPHA_ANTIALIASING\",\"materials\":0,\"reason\":\"no cutout material has been drawn; nothing in this scene carves its silhouette with an alpha test\",\"sampleCount\":4}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_STARTUP_WARMUP:{\"compiled\":1,\"pipelines\":3,\"candidates\":3,\"attempted\":1,\"observed\":{\"created\":0,\"failed\":0,\"pending\":0,\"uniquePrograms\":0,\"uniquePipelines\":0,\"status\":\"unavailable\"},\"slices\":1,\"elapsedMs\":2,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false,\"passes\":[\"main\"],\"passPipelines\":0,\"cullingForced\":0,\"visibilityForced\":0,\"cache\":\"disabled\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=12 | scene1152x648#0=5.478(n11) | output#1=0.022(n11) | scene1286x723#2=23.193(n11) | output#3=0.024(n11) | scene1920x1080#4=0.228(n11) | depthResolve#5=0.114(n11) | fx:native_live_post_1_input#6=0.055(n11) | fx:native_live_post_1_edges#7=0.053(n11) | fx:native_live_post_1_weights#8=0.053(n11) | fx:native_live_post_1#9=0.069(n11) | fx:native_rtt_62#10=0.052(n11) | scene480x270#11=0.171(n11) | output#12=0.007(n11) | output#13=0.133(n11) | SUM=29.651398",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=24 | scene1152x648#0=5.547(n23) | output#1=0.022(n23) | scene1286x723#2=23.678(n23) | output#3=0.024(n23) | scene1920x1080#4=0.232(n23) | depthResolve#5=0.107(n23) | fx:native_live_post_1_input#6=0.056(n23) | fx:native_live_post_1_edges#7=0.055(n23) | fx:native_live_post_1_weights#8=0.059(n23) | fx:native_live_post_1#9=0.072(n23) | fx:native_rtt_62#10=0.054(n23) | scene480x270#11=0.219(n23) | output#12=0.053(n23) | output#13=0.138(n23) | SUM=30.316611",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=36 | scene1152x648#0=5.671(n35) | output#1=0.027(n35) | scene1286x723#2=24.294(n35) | output#3=0.029(n35) | scene1920x1080#4=0.335(n35) | depthResolve#5=0.121(n35) | fx:native_live_post_1_input#6=0.069(n35) | fx:native_live_post_1_edges#7=0.065(n35) | fx:native_live_post_1_weights#8=0.066(n35) | fx:native_live_post_1#9=0.088(n35) | fx:native_rtt_62#10=0.067(n35) | scene480x270#11=0.267(n35) | output#12=0.038(n35) | output#13=0.150(n35) | SUM=31.287257",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=48 | scene1152x648#0=5.646(n47) | output#1=0.026(n47) | scene1286x723#2=24.238(n47) | output#3=0.028(n47) | scene1920x1080#4=0.312(n47) | depthResolve#5=0.114(n47) | fx:native_live_post_1_input#6=0.066(n47) | fx:native_live_post_1_edges#7=0.063(n47) | fx:native_live_post_1_weights#8=0.068(n47) | fx:native_live_post_1#9=0.086(n47) | fx:native_rtt_62#10=0.064(n47) | scene480x270#11=0.281(n47) | output#12=0.041(n47) | output#13=0.157(n47) | SUM=31.188494",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=60 | scene1152x648#0=5.655(n59) | output#1=0.025(n59) | scene1286x723#2=24.326(n59) | output#3=0.027(n59) | scene1920x1080#4=0.298(n59) | depthResolve#5=0.109(n59) | fx:native_live_post_1_input#6=0.065(n59) | fx:native_live_post_1_edges#7=0.063(n59) | fx:native_live_post_1_weights#8=0.069(n59) | fx:native_live_post_1#9=0.084(n59) | fx:native_rtt_62#10=0.063(n59) | scene480x270#11=0.291(n59) | output#12=0.035(n59) | output#13=0.155(n59) | SUM=31.264194",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=72 | scene1152x648#0=5.735(n71) | output#1=0.027(n71) | scene1286x723#2=24.633(n71) | output#3=0.029(n71) | scene1920x1080#4=0.341(n71) | depthResolve#5=0.116(n71) | fx:native_live_post_1_input#6=0.070(n71) | fx:native_live_post_1_edges#7=0.066(n71) | fx:native_live_post_1_weights#8=0.070(n71) | fx:native_live_post_1#9=0.090(n71) | fx:native_rtt_62#10=0.067(n71) | scene480x270#11=0.303(n71) | output#12=0.046(n71) | output#13=0.158(n71) | SUM=31.751794",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=84 | scene1152x648#0=5.759(n83) | output#1=0.026(n83) | scene1286x723#2=24.761(n83) | output#3=0.029(n83) | scene1920x1080#4=0.328(n83) | depthResolve#5=0.112(n83) | fx:native_live_post_1_input#6=0.068(n83) | fx:native_live_post_1_edges#7=0.065(n83) | fx:native_live_post_1_weights#8=0.071(n83) | fx:native_live_post_1#9=0.089(n83) | fx:native_rtt_62#10=0.066(n83) | scene480x270#11=0.308(n83) | output#12=0.054(n83) | output#13=0.157(n83) | SUM=31.893223",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FRAME_BUDGET:{\"longTasks\":{\"available\":true,\"count\":4,\"longestMs\":255,\"afterFirstFrameMs\":255},\"fps\":11.65,\"frame\":{\"max\":100.1,\"mean\":1.81,\"p50\":1.4,\"p95\":2.6,\"p99\":8.8,\"samples\":306},\"frames\":306,\"simulatedSeconds\":5,\"hitches\":0,\"phases\":{\"hostGap\":{\"max\":414.3,\"mean\":84.06,\"p50\":100.2,\"p95\":128.2,\"p99\":181.5,\"samples\":305},\"overlay\":{\"max\":78.3,\"mean\":0.26,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":306},\"render\":{\"max\":27,\"mean\":0.94,\"p50\":0.9,\"p95\":1.8,\"p99\":4.3,\"samples\":306},\"residual\":{\"max\":0.8,\"mean\":0.06,\"p50\":0,\"p95\":0.2,\"p99\":0.3,\"samples\":306},\"ui\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":306},\"update\":{\"max\":21.5,\"mean\":0.56,\"p50\":0.5,\"p95\":1,\"p99\":1.4,\"samples\":306}},\"presented\":{\"max\":416.7,\"mean\":85.87,\"p50\":100,\"p95\":130.4,\"p99\":183.1,\"samples\":305},\"shares\":{\"hostGap\":0.979,\"overlay\":0.003,\"render\":0.011,\"residual\":0.001,\"ui\":0,\"update\":0.007},\"substeps\":{\"max\":60,\"mean\":0.98,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":306},\"passes\":{\"main\":{\"draws\":{\"max\":5,\"mean\":0.02,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":305},\"frames\":305,\"triangles\":{\"max\":36481,\"mean\":119.61,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":305}}},\"gpuStale\":305,\"targetFps\":60,\"targetSource\":\"config\",\"surface\":{\"atFloor\":false,\"compiling\":true,\"drawingBufferHeight\":1080,\"drawingBufferWidth\":1920,\"resolutionScale\":1,\"sampleCount\":4,\"scaleSource\":\"auto\"},\"counters\":{\"simulationTick\":300},\"window\":1}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_PROJECTION:{\"drawsActual\":9,\"cull\":{\"enabled\":true,\"cameraResolved\":true,\"thresholdPixels\":0.5,\"considered\":2,\"culled\":0,\"exemptCameraAttached\":0,\"exemptMarked\":2,\"exemptShadowCasters\":0,\"exemptWithoutBounds\":0,\"exemptDynamicBounds\":0,\"exemptFrustumCulled\":0},\"drawsPlanned\":3,\"exact\":{},\"exactObjects\":0,\"matrixWorld\":{\"mode\":\"visible\",\"visited\":4},\"path\":\"host\",\"projecting\":false,\"reason\":\"the host renderer declined this scene (belowMeshFloor)\",\"reasonCode\":\"belowMeshFloor\",\"sourceRenderables\":3,\"timings\":{\"compileMs\":0,\"reconcileMs\":16.69999998807907,\"lastReconcileMs\":0,\"maxReconcileMs\":1.800000011920929},\"window\":1}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=96 | scene1152x648#0=5.744(n95) | output#1=0.026(n95) | scene1286x723#2=24.722(n95) | output#3=0.028(n95) | scene1920x1080#4=0.318(n95) | depthResolve#5=0.110(n95) | fx:native_live_post_1_input#6=0.067(n95) | fx:native_live_post_1_edges#7=0.065(n95) | fx:native_live_post_1_weights#8=0.071(n95) | fx:native_live_post_1#9=0.087(n95) | fx:native_rtt_62#10=0.065(n95) | scene480x270#11=0.310(n95) | output#12=0.056(n95) | output#13=0.156(n95) | SUM=31.823715",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=108 | scene1152x648#0=5.741(n107) | output#1=0.025(n107) | scene1286x723#2=24.703(n107) | output#3=0.028(n107) | scene1920x1080#4=0.310(n107) | depthResolve#5=0.107(n107) | fx:native_live_post_1_input#6=0.066(n107) | fx:native_live_post_1_edges#7=0.064(n107) | fx:native_live_post_1_weights#8=0.071(n107) | fx:native_live_post_1#9=0.086(n107) | fx:native_rtt_62#10=0.064(n107) | scene480x270#11=0.312(n107) | output#12=0.057(n107) | output#13=0.155(n107) | SUM=31.789522",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=120 | scene1152x648#0=5.823(n119) | output#1=0.025(n119) | scene1286x723#2=25.068(n119) | output#3=0.028(n119) | scene1920x1080#4=0.305(n119) | depthResolve#5=0.106(n119) | fx:native_live_post_1_input#6=0.066(n119) | fx:native_live_post_1_edges#7=0.064(n119) | fx:native_live_post_1_weights#8=0.072(n119) | fx:native_live_post_1#9=0.086(n119) | fx:native_rtt_62#10=0.064(n119) | scene480x270#11=0.319(n119) | output#12=0.053(n119) | output#13=0.155(n119) | SUM=32.233792",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=132 | scene1152x648#0=5.812(n131) | output#1=0.025(n131) | scene1286x723#2=25.027(n131) | output#3=0.027(n131) | scene1920x1080#4=0.299(n131) | depthResolve#5=0.105(n131) | fx:native_live_post_1_input#6=0.065(n131) | fx:native_live_post_1_edges#7=0.064(n131) | fx:native_live_post_1_weights#8=0.072(n131) | fx:native_live_post_1#9=0.085(n131) | fx:native_rtt_62#10=0.063(n131) | scene480x270#11=0.320(n131) | output#12=0.049(n131) | output#13=0.155(n131) | SUM=32.167666",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=144 | scene1152x648#0=5.799(n143) | output#1=0.025(n143) | scene1286x723#2=24.958(n143) | output#3=0.027(n143) | scene1920x1080#4=0.295(n143) | depthResolve#5=0.104(n143) | fx:native_live_post_1_input#6=0.065(n143) | fx:native_live_post_1_edges#7=0.063(n143) | fx:native_live_post_1_weights#8=0.072(n143) | fx:native_live_post_1#9=0.085(n143) | fx:native_rtt_62#10=0.063(n143) | scene480x270#11=0.320(n143) | output#12=0.047(n143) | output#13=0.154(n143) | SUM=32.075814",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=156 | scene1152x648#0=5.789(n155) | output#1=0.025(n155) | scene1286x723#2=24.903(n155) | output#3=0.027(n155) | scene1920x1080#4=0.291(n155) | depthResolve#5=0.103(n155) | fx:native_live_post_1_input#6=0.064(n155) | fx:native_live_post_1_edges#7=0.063(n155) | fx:native_live_post_1_weights#8=0.072(n155) | fx:native_live_post_1#9=0.084(n155) | fx:native_rtt_62#10=0.062(n155) | scene480x270#11=0.320(n155) | output#12=0.044(n155) | output#13=0.154(n155) | SUM=32.001223",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=168 | scene1152x648#0=5.785(n167) | output#1=0.025(n167) | scene1286x723#2=24.879(n167) | output#3=0.027(n167) | scene1920x1080#4=0.288(n167) | depthResolve#5=0.102(n167) | fx:native_live_post_1_input#6=0.064(n167) | fx:native_live_post_1_edges#7=0.063(n167) | fx:native_live_post_1_weights#8=0.072(n167) | fx:native_live_post_1#9=0.084(n167) | fx:native_rtt_62#10=0.062(n167) | scene480x270#11=0.321(n167) | output#12=0.041(n167) | output#13=0.153(n167) | SUM=31.964185",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=180 | scene1152x648#0=5.779(n179) | output#1=0.025(n179) | scene1286x723#2=24.844(n179) | output#3=0.026(n179) | scene1920x1080#4=0.285(n179) | depthResolve#5=0.101(n179) | fx:native_live_post_1_input#6=0.064(n179) | fx:native_live_post_1_edges#7=0.063(n179) | fx:native_live_post_1_weights#8=0.073(n179) | fx:native_live_post_1#9=0.084(n179) | fx:native_rtt_62#10=0.061(n179) | scene480x270#11=0.321(n179) | output#12=0.039(n179) | output#13=0.153(n179) | SUM=31.916423",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FRAME_BUDGET:{\"longTasks\":{\"available\":true,\"count\":4,\"longestMs\":255,\"afterFirstFrameMs\":255},\"fps\":11.26,\"frame\":{\"max\":4.6,\"mean\":1.42,\"p50\":1.5,\"p95\":2.3,\"p99\":3.4,\"samples\":300},\"frames\":300,\"simulatedSeconds\":5,\"hitches\":0,\"phases\":{\"hostGap\":{\"max\":166.7,\"mean\":87.37,\"p50\":101.6,\"p95\":114.3,\"p99\":148.1,\"samples\":300},\"overlay\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":300},\"render\":{\"max\":2.8,\"mean\":0.76,\"p50\":0.9,\"p95\":1.5,\"p99\":1.9,\"samples\":300},\"residual\":{\"max\":0.3,\"mean\":0.05,\"p50\":0,\"p95\":0.2,\"p99\":0.3,\"samples\":300},\"ui\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":300},\"update\":{\"max\":2.4,\"mean\":0.61,\"p50\":0.6,\"p95\":0.9,\"p99\":1.2,\"samples\":300}},\"presented\":{\"max\":170.8,\"mean\":88.79,\"p50\":102.9,\"p95\":116.3,\"p99\":148.6,\"samples\":300},\"shares\":{\"hostGap\":0.984,\"overlay\":0,\"render\":0.009,\"residual\":0.001,\"ui\":0,\"update\":0.007},\"substeps\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":300},\"passes\":{\"main\":{\"draws\":{\"max\":2,\"mean\":0.01,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":300},\"frames\":300,\"triangles\":{\"max\":984,\"mean\":3.28,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":300}}},\"gpuStale\":300,\"targetFps\":60,\"targetSource\":\"config\",\"overTarget\":{\"frameMs\":16.67,\"gpu\":0,\"render\":0},\"surface\":{\"atFloor\":false,\"compiling\":false,\"drawingBufferHeight\":1080,\"drawingBufferWidth\":1920,\"resolutionScale\":1,\"sampleCount\":4,\"scaleSource\":\"auto\"},\"counters\":{\"simulationTick\":600},\"window\":2}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_PROJECTION:{\"drawsActual\":9,\"cull\":{\"enabled\":true,\"cameraResolved\":true,\"thresholdPixels\":0.5,\"considered\":2,\"culled\":0,\"exemptCameraAttached\":0,\"exemptMarked\":2,\"exemptShadowCasters\":0,\"exemptWithoutBounds\":0,\"exemptDynamicBounds\":0,\"exemptFrustumCulled\":0},\"drawsPlanned\":3,\"exact\":{},\"exactObjects\":0,\"matrixWorld\":{\"mode\":\"visible\",\"visited\":4},\"path\":\"host\",\"projecting\":false,\"reason\":\"the host renderer declined this scene (belowMeshFloor)\",\"reasonCode\":\"belowMeshFloor\",\"sourceRenderables\":3,\"timings\":{\"compileMs\":0,\"reconcileMs\":31.199999928474426,\"lastReconcileMs\":0,\"maxReconcileMs\":1.800000011920929},\"window\":2}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=192 | scene1152x648#0=5.771(n191) | output#1=0.025(n191) | scene1286x723#2=24.808(n191) | output#3=0.026(n191) | scene1920x1080#4=0.283(n191) | depthResolve#5=0.100(n191) | fx:native_live_post_1_input#6=0.063(n191) | fx:native_live_post_1_edges#7=0.063(n191) | fx:native_live_post_1_weights#8=0.073(n191) | fx:native_live_post_1#9=0.083(n191) | fx:native_rtt_62#10=0.061(n191) | scene480x270#11=0.322(n191) | output#12=0.040(n191) | output#13=0.152(n191) | SUM=31.869196",
+    "type": "error"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSPROF n=204 | scene1152x648#0=5.769(n203) | output#1=0.025(n203) | scene1286x723#2=24.812(n203) | output#3=0.027(n203) | scene1920x1080#4=0.297(n203) | depthResolve#5=0.103(n203) | fx:native_live_post_1_input#6=0.065(n203) | fx:native_live_post_1_edges#7=0.064(n203) | fx:native_live_post_1_weights#8=0.073(n203) | fx:native_live_post_1#9=0.085(n203) | fx:native_rtt_62#10=0.063(n203) | scene480x270#11=0.324(n203) | output#12=0.038(n203) | output#13=0.153(n203) | SUM=31.897276",
+    "type": "error"
+  }
+]

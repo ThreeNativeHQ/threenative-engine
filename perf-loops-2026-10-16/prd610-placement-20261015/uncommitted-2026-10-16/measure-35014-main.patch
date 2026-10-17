@@ -1,0 +1,143 @@
+diff --git a/examples/abyss-framework/src/main.tsx b/examples/abyss-framework/src/main.tsx
+index 206946b4d..13c7bf1a6 100644
+--- a/examples/abyss-framework/src/main.tsx
++++ b/examples/abyss-framework/src/main.tsx
+@@ -1,3 +1,4 @@
++import { RenderPipeline, WebGPURenderer } from "three/webgpu";
+ import { defineGame, replay } from "@threenative/core";
+ import type { IGamePluginHooks, IGamePluginRuntime } from "@threenative/core";
+ import { acceptHotUpdate } from "@threenative/core/hot";
+@@ -9,6 +10,125 @@ import { Abyss, type AbyssState } from "./scenes/Abyss.js";
+ import { ViewportProbe } from "./scenes/ViewportProbe.js";
+ import { App } from "./ui/App.js";
+ 
++// Temporary PR #35014 measurement; enabled only for the dedicated browser run.
++if (new URLSearchParams(location.search).has("measure35014")) {
++  const builds: Record<string, unknown>[] = [];
++  const times: number[] = [];
++  let phase = "boot";
++  let frame = 0;
++  let raw: any;
++  let warmSnapshot: unknown;
++  const snapshot = () => ({
++    vertex: raw._pipelines.programs.vertex.size,
++    fragment: raw._pipelines.programs.fragment.size,
++    caches: raw._pipelines.caches.size,
++  });
++  const originalLog = console.log;
++  console.log = (...args) => {
++    if (typeof args[0] === "string" && /^TN_(STARTUP_)?WARMUP:/.test(args[0])) {
++      warmSnapshot = snapshot();
++      phase = "real";
++    }
++    originalLog(...args);
++  };
++  const originalInit = WebGPURenderer.prototype.init;
++  WebGPURenderer.prototype.init = async function (...args: any[]) {
++    await originalInit.apply(this, args);
++    raw = this as any;
++    const adapter = raw.backend.adapter?.info;
++    originalLog(
++      "MEASURE35014_ADAPTER",
++      JSON.stringify(
++        adapter && {
++          vendor: adapter.vendor,
++          architecture: adapter.architecture,
++          device: adapter.device,
++          description: adapter.description,
++        },
++      ),
++    );
++    const builderRecords = new WeakMap();
++    const renderRecords = new WeakMap();
++    const shaderIds = new Map();
++    const shaderId = (source: string) => {
++      if (!shaderIds.has(source)) shaderIds.set(source, shaderIds.size);
++      return shaderIds.get(source);
++    };
++    const createState = raw._nodes._createNodeBuilderState;
++    raw._nodes._createNodeBuilderState = function (builder: any) {
++      Object.assign(builderRecords.get(builder), {
++        vertexShader: shaderId(builder.vertexShader),
++        fragmentShader: shaderId(builder.fragmentShader),
++      });
++      return createState.call(this, builder);
++    };
++    const getPipeline = raw._pipelines.getForRender;
++    raw._pipelines.getForRender = function (object: any, promises: any) {
++      const pipeline = getPipeline.call(this, object, promises);
++      const record = renderRecords.get(object);
++      if (record) record.pipeline = pipeline.cacheKey;
++      return pipeline;
++    };
++    let renderObject: any;
++    const createRenderBuilder = raw._nodes._createNodeBuilder;
++    raw._nodes._createNodeBuilder = function (object: any, material: any) {
++      renderObject = object;
++      try {
++        const builder = createRenderBuilder.call(this, object, material);
++        renderRecords.set(object, builderRecords.get(builder));
++        return builder;
++      } finally {
++        renderObject = undefined;
++      }
++    };
++    const createBuilder = raw.backend.createNodeBuilder;
++    raw.backend.createNodeBuilder = function (object: any, renderer: any) {
++      const record = {
++        phase,
++        frame,
++        depth: raw._callDepth,
++        context: renderObject?.context.id,
++        material: renderObject?.material.uuid,
++        geometry: renderObject?.geometry.uuid,
++        kind: renderObject ? "render" : "compute",
++      };
++      builds.push(record);
++      const builder = createBuilder.call(this, object, renderer);
++      builderRecords.set(builder, record);
++      return builder;
++    };
++    const compile = raw.compileAsync;
++    raw.compileAsync = function (...args: any[]) {
++      phase = "warmup";
++      return compile.apply(this, args);
++    };
++  };
++  const render = RenderPipeline.prototype.render;
++  RenderPipeline.prototype.render = function () {
++    const measured = phase === "real" && frame < 120;
++    if (measured) frame++;
++    const start = performance.now();
++    const result = render.call(this);
++    if (measured) {
++      times.push(performance.now() - start);
++      if (frame === 120) {
++        if (!warmSnapshot || !builds.some((b) => b.phase === "warmup")) {
++          throw new Error("Measurement missing warm-up observation");
++        }
++        (globalThis as any).__measure35014 = {
++          warmSnapshot,
++          finalSnapshot: snapshot(),
++          builds,
++          times,
++        };
++        originalLog("MEASURE35014_RESULT", JSON.stringify((globalThis as any).__measure35014));
++        phase = "done";
++      }
++    }
++    return result;
++  };
++}
++
+ const viewportProbe = new URLSearchParams(globalThis.location.search).has("viewport");
+ const replayPlugin = replay<AbyssState>();
+ let gameRuntime: IGamePluginRuntime | undefined;
+@@ -20,6 +140,7 @@ const replayRuntime: IGamePluginHooks<AbyssState> = {
+ };
+ 
+ const game = defineGame<AbyssState>({
++  warmUp: new URLSearchParams(location.search).has("measure35014") ? {} : undefined,
+   camera: { far: 7_000, near: 5_000, projection: "orthogonal", size: 520 },
+   inputTarget: window,
+   input: {

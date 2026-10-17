@@ -1,0 +1,886 @@
+{
+  "schemaVersion": 1,
+  "campaign": {
+    "id": "tempest-20261016",
+    "status": "running",
+    "phase": "cutting below legacy",
+    "startedAt": "2026-10-16T19:08:00-07:00",
+    "updatedAt": "2026-10-16T21:35:00-07:00",
+    "heartbeatAt": "2026-10-16T21:10:00-07:00",
+    "deadlineAt": null,
+    "owner": {
+      "worktree": ".claude/worktrees/prd617-perf",
+      "branch": "prd617/rain-gpu-perf",
+      "revision": "97301154e",
+      "revisionShort": "97301154e",
+      "dirty": true
+    },
+    "evidence": [
+      "gameplay scenario (web lane)",
+      "diagnostic builds"
+    ],
+    "activeExperiment": "none: engine-only levers are exhausted for rain",
+    "nextHypothesis": "Rain is GPU-ALU bound on its own world shader, so the engine cannot reach 2x without changing that shader. Getting there needs a template change (owner decision): fewer march steps, cheaper reflections, or a half-resolution march with upscaling."
+  },
+  "contract": {
+    "primaryPlatform": "web WebGPU, Wasm C++ engine, private Xvfb --headed",
+    "primaryWorkload": "Tempest (rain template), playtests/performance.playtest.json, 1920x1080, tier high",
+    "mutablePaths": [
+      "packages/runtime-native/",
+      "packages/three-native/"
+    ],
+    "frozenPaths": [
+      "packages/create-threenative/templates/rain/",
+      "three"
+    ],
+    "hashes": {
+      "scenario": "performance.playtest.json + passms.playtest.json (prd617perf harness)",
+      "engine": "97301154e + local diagnostic patches"
+    }
+  },
+  "environment": {
+    "os": "Linux 7.2.9-2-cachyos x86_64",
+    "cpu": "AMD Ryzen 9 5900X (24 threads)",
+    "gpu": "NVIDIA GeForce RTX 2080 (nvidia/turing, checked per run)",
+    "display": "private Xvfb, --disable-frame-rate-limit --disable-gpu-vsync (uncapped)"
+  },
+  "benchmarks": [
+    {
+      "id": "gpu-ms",
+      "workload": "Tempest performance scenario",
+      "platform": "web Wasm engine",
+      "metric": "GPU ms per frame (median window) \u2014 goal: 2x faster than stock three",
+      "unit": "ms",
+      "direction": "lower-is-better",
+      "baseline": 118.41,
+      "best": 39.86,
+      "current": 39.86,
+      "currentReason": null,
+      "goal": 22.0,
+      "noiseMargin": null,
+      "samples": "2 windows",
+      "repeats": 1,
+      "gate": "adapter turing; rc 0",
+      "status": "keep"
+    },
+    {
+      "id": "gpu-ms-three",
+      "workload": "Tempest performance scenario",
+      "platform": "web stock three (control)",
+      "metric": "GPU ms per frame (median window), control arm",
+      "unit": "ms",
+      "direction": "lower-is-better",
+      "baseline": 43.98,
+      "best": 43.93,
+      "current": 43.93,
+      "currentReason": null,
+      "goal": null,
+      "noiseMargin": null,
+      "samples": "2 windows",
+      "repeats": 2,
+      "gate": "adapter turing",
+      "status": "baseline"
+    },
+    {
+      "id": "main-pass",
+      "workload": "Tempest performance scenario",
+      "platform": "web Wasm engine",
+      "metric": "main scene pass 1920x1080 GPU ms (PASSPROF)",
+      "unit": "ms",
+      "direction": "lower-is-better",
+      "baseline": 112.6,
+      "best": 38.8,
+      "current": 38.8,
+      "currentReason": null,
+      "goal": null,
+      "noiseMargin": null,
+      "samples": "203 frames",
+      "repeats": 2,
+      "gate": "diagnostic build only",
+      "status": "keep"
+    },
+    {
+      "id": "wgsl-kb",
+      "workload": "Tempest main scene shader",
+      "platform": "web Wasm engine",
+      "metric": "WGSL size of the main scene shader (KPI G2 proxy) \u2014 goal = three",
+      "unit": "KB",
+      "direction": "lower-is-better",
+      "baseline": 684.4,
+      "best": 684.4,
+      "current": 334.7,
+      "currentReason": null,
+      "goal": 294.5,
+      "noiseMargin": null,
+      "samples": 1,
+      "repeats": 1,
+      "gate": "deterministic dump",
+      "status": "provisional"
+    },
+    {
+      "id": "cpu-p95",
+      "workload": "Tempest performance scenario",
+      "platform": "web Wasm engine",
+      "metric": "CPU frame p95 (stock three 1.8 ms)",
+      "unit": "ms",
+      "direction": "lower-is-better",
+      "baseline": 1.7,
+      "best": 1.7,
+      "current": null,
+      "currentReason": "not a target while GPU-bound",
+      "goal": 1.8,
+      "noiseMargin": null,
+      "samples": "2 windows",
+      "repeats": 1,
+      "gate": "rc 0",
+      "status": "baseline"
+    }
+  ],
+  "history": {
+    "gpu-ms": [
+      {
+        "at": "earlier 3 pairs (10-16)",
+        "value": 113.6,
+        "decision": "baseline",
+        "experimentId": "pre-campaign"
+      },
+      {
+        "at": "19:12 base-O1",
+        "value": 118.41,
+        "decision": "baseline",
+        "experimentId": "base"
+      },
+      {
+        "at": "20:01 n1 (3 pairs, idle GPU)",
+        "value": 43.8,
+        "decision": "keep",
+        "experimentId": "n1"
+      },
+      {
+        "at": "20:40 n1 engine gpuMs (3 runs)",
+        "value": 39.86,
+        "decision": "keep",
+        "experimentId": "n1-gpuMs"
+      },
+      {
+        "at": "20:40 n2",
+        "value": 53.71,
+        "decision": "reject",
+        "experimentId": "n2"
+      }
+    ],
+    "gpu-ms-three": [
+      {
+        "at": "earlier 3 pairs (10-16)",
+        "value": 43.5,
+        "decision": "baseline",
+        "experimentId": "pre-campaign"
+      },
+      {
+        "at": "19:10 base-L1",
+        "value": 43.98,
+        "decision": "baseline",
+        "experimentId": "base"
+      },
+      {
+        "at": "19:14 pm-L1",
+        "value": 43.93,
+        "decision": "baseline",
+        "experimentId": "pm"
+      }
+    ],
+    "main-pass": [
+      {
+        "at": "19:18 pmO (pre-fix, likely)",
+        "value": 125.982,
+        "decision": "baseline",
+        "experimentId": "pm"
+      },
+      {
+        "at": "19:25 pmO2 (load1 10.9)",
+        "value": 77.371,
+        "decision": "baseline",
+        "experimentId": "pm"
+      },
+      {
+        "at": "19:26 a1 (47 frames)",
+        "value": 79.358,
+        "decision": "provisional",
+        "experimentId": "a1"
+      },
+      {
+        "at": "19:29 e1 MSAA=1",
+        "value": 39.933,
+        "decision": "reject",
+        "experimentId": "e1"
+      },
+      {
+        "at": "20:01 pre-fix idle",
+        "value": 112.6,
+        "decision": "baseline",
+        "experimentId": "n1-pre"
+      },
+      {
+        "at": "20:01 n1",
+        "value": 38.8,
+        "decision": "keep",
+        "experimentId": "n1"
+      }
+    ],
+    "wgsl-kb": [
+      {
+        "at": "19:20 wgsl-O",
+        "value": 684.4,
+        "decision": "baseline",
+        "experimentId": "wgsl"
+      },
+      {
+        "at": "19:26 a1",
+        "value": 334.7,
+        "decision": "provisional",
+        "experimentId": "a1"
+      }
+    ],
+    "cpu-p95": [
+      {
+        "at": "19:12 base-O1",
+        "value": 1.7,
+        "decision": "baseline",
+        "experimentId": "base"
+      }
+    ]
+  },
+  "baselines": [],
+  "incumbent": {
+    "revisionShort": "b7362aa5b",
+    "kind": "accepted"
+  },
+  "experiments": [
+    {
+      "id": "base",
+      "hypothesis": "Unchanged pair: Wasm engine against stock three on the Tempest scenario",
+      "bottleneckEvidence": "Earlier 3 pairs: Wasm 113.6 ms vs three 43.5 ms GPU at 1080p; both 3.5x faster at 960x540, so the cost is per pixel.",
+      "layer": "none",
+      "files": [],
+      "candidate": "none",
+      "unit": "ms",
+      "scalar": {
+        "incumbent": 43.98,
+        "candidate": 118.41,
+        "relativePercent": null
+      },
+      "prediction": "Reproduce the 2.6x gap",
+      "falsifier": "Ratio under 2x",
+      "pairs": "1 pair, legacy first (L1 19:10, O1 19:12)",
+      "gameResult": "three 43.98 ms (p95 45.1), Wasm 118.41 ms (p95 149.97); presented p50 114.8 vs 218.5 ms uncapped",
+      "sentinelResult": "not run",
+      "gates": "both rc 0, adapter turing",
+      "tradeoffs": "host load1 6-7 during the pair",
+      "decision": "baseline",
+      "reason": "Gap reproduced (2.69x). Noise margin not yet calibrated: needs 3 pairs on an idle GPU.",
+      "duration": "about 4 min",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": [
+        "raw/base/base.tsv",
+        "raw/base/base-L1.log",
+        "raw/base/base-O1.log"
+      ]
+    },
+    {
+      "id": "pm",
+      "hypothesis": "Per-pass GPU timestamps show which pass holds the gap",
+      "bottleneckEvidence": "Total gap is about 75 ms; reflections:false saves only 19 ms.",
+      "layer": "measurement (diagnostic PASSPROF meter, not a product change)",
+      "files": [
+        "packages/runtime-native (local timestamp patch)"
+      ],
+      "candidate": "harness only",
+      "unit": "ms",
+      "scalar": {
+        "incumbent": null,
+        "candidate": 77.371,
+        "relativePercent": null
+      },
+      "prediction": "One pass holds most of the gap",
+      "falsifier": "Cost spread evenly over passes",
+      "pairs": "Wasm twice (pmO, pmO2), three once (pm-L1, gpuMs 43.93)",
+      "gameResult": "Main scene 1080p pass 77.4-126.0 ms of 82.6-131 ms total. Reflection 1152x648 4.4 ms. Post chain (SMAA x4, rtt, outputs) under 0.5 ms. depthResolve 0.09 ms.",
+      "sentinelResult": "not applicable",
+      "gates": "rc 1: the timestamp build drops gpuMs from the scenario report",
+      "tradeoffs": "none (diagnostic)",
+      "decision": "invalid",
+      "reason": "Attribution holds (main pass is about 94%). Its timings were taken under GPU contention, so they are invalid as numbers. Measured under GPU contention (another agent at 99% util); only gated runs count.",
+      "duration": "about 11 min",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": [
+        "raw/pm/pm.tsv",
+        "raw/pm/pmO.tsv",
+        "raw/pm/pmO2.tsv",
+        "raw/passprof-pmO-O1.txt",
+        "raw/passprof-pmO2-O1.txt"
+      ]
+    },
+    {
+      "id": "wgsl",
+      "hypothesis": "The Wasm codegen emits a heavier main scene shader than three",
+      "bottleneckEvidence": "pm: the main scene pass holds the gap; post and reflection do not.",
+      "layer": "diagnosis (WGSL dump, both engines)",
+      "files": [],
+      "candidate": "none",
+      "unit": "KB",
+      "scalar": {
+        "incumbent": 294.5,
+        "candidate": 684.4,
+        "relativePercent": null
+      },
+      "prediction": "Wasm main shader clearly larger than three's",
+      "falsifier": "Sizes within 10%",
+      "pairs": "1 dump per engine, 33 programs each",
+      "gameResult": "Main scene shader: Wasm 684 KB (wgsl-O-26) vs three 295 KB (wgsl-L-7), 2.3x. Root cause: the full sky graph is emitted twice (color + depth). With that removed, the op counts match three exactly. Var/let reloads (5844) and 84 select() remain as candidates.",
+      "sentinelResult": "not applicable",
+      "gates": "none",
+      "tradeoffs": "none",
+      "decision": "keep",
+      "reason": "Diagnosis accepted: it names the root cause and the codegen site (standard.cpp outputDepthNode, graph.cpp Lowerer).",
+      "duration": "about 1 min",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": [
+        "raw/wgsl/wgsl-O-26.wgsl",
+        "raw/wgsl/wgsl-L-7.wgsl"
+      ]
+    },
+    {
+      "id": "a1",
+      "hypothesis": "Lower color and depth outputs with one Lowerer, so the sky graph is evaluated once per fragment (identified by the WGSL diff)",
+      "bottleneckEvidence": "WGSL diff: O-26 has 2 complete 148-step marches (color at :2658, depth at :10874) and 2x three's fract/dot/sin counts. outputDepthNode -> nodeValue -> graph::lower builds a fresh Lowerer with unshared memo tables.",
+      "layer": "engine (WGSL codegen), per the dump",
+      "files": [
+        "packages/runtime-native (uncommitted in prd617-perf)"
+      ],
+      "candidate": "uncommitted",
+      "unit": "ms",
+      "scalar": {
+        "incumbent": 125.982,
+        "candidate": 79.358,
+        "relativePercent": 37.0
+      },
+      "prediction": "not recorded",
+      "falsifier": "not recorded",
+      "pairs": "1 short run (47 frames), no pair",
+      "gameResult": "a1 WGSL op counts equal three's exactly (1 march). Main pass 126.0 ms (pmO, likely pre-fix) -> 77.4 / 79.4 ms (pmO2, a1; likely post-fix). Build order is unconfirmed, and no gated pair exists yet.",
+      "sentinelResult": "not run",
+      "gates": "not run",
+      "tradeoffs": "unknown",
+      "decision": "invalid",
+      "reason": "Superseded by n1. The perf agent found that its 77/79 ms main-pass readings came from GPU contention (the parity agent's runs), not from the fix. Measured under GPU contention (another agent at 99% util); only gated runs count.",
+      "duration": "about 1 min",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": [
+        "raw/a1/a1.log",
+        "raw/wgsl/wgsl-a1.wgsl",
+        "raw/passprof-a1-art.txt"
+      ]
+    },
+    {
+      "id": "e1",
+      "hypothesis": "MSAA cost sits in the main pass",
+      "bottleneckEvidence": "pm: main pass \u2248 94% of GPU time; scene renders with 4x MSAA",
+      "layer": "diagnosis (Renderer::setSampleCount forced to 1)",
+      "files": [
+        "packages/runtime-native/src/engine/renderer/renderer.cpp (EXPERIMENT line)"
+      ],
+      "candidate": "diagnostic patch, never ships",
+      "unit": "ms",
+      "scalar": {
+        "incumbent": 77.371,
+        "candidate": 39.933,
+        "relativePercent": 48.4
+      },
+      "prediction": "Main pass drops a lot",
+      "falsifier": "Main pass changes under 10%",
+      "pairs": "1 run, no pair",
+      "gameResult": "Main pass 77.4 -> 39.9 ms; total 82.6 -> 45.1 ms",
+      "sentinelResult": "not applicable",
+      "gates": "image changes (no anti-aliasing)",
+      "tradeoffs": "loses MSAA",
+      "decision": "reject",
+      "reason": "Changes the image, so it cannot ship. It shows that half the main pass scales with the sample count: compare our MSAA setup with three's. Re-measured on an idle GPU: 1 sample 38.2 ms vs 4 samples 38.8 ms, so MSAA costs 0.6 ms. The 77 vs 40 ms pair was GPU contention.",
+      "duration": "about 4 min",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": [
+        "raw/e1/e1.tsv",
+        "raw/e1/e1-O1.log",
+        "raw/passprof-e1-O1.txt"
+      ]
+    },
+    {
+      "id": "tex",
+      "hypothesis": "Render-target census differs between engines (KPI G4)",
+      "bottleneckEvidence": "e1: cost scales with samples",
+      "layer": "diagnosis",
+      "files": [],
+      "candidate": "none",
+      "unit": "ms",
+      "scalar": null,
+      "prediction": "not recorded",
+      "falsifier": "not recorded",
+      "pairs": "one dump per engine",
+      "gameResult": "no result yet",
+      "sentinelResult": "not applicable",
+      "gates": "none",
+      "tradeoffs": "none",
+      "decision": null,
+      "phase": "running",
+      "reason": null,
+      "duration": "running",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": [
+        "raw/tex/tex-L.log",
+        "raw/tex/tex-O.log"
+      ]
+    },
+    {
+      "id": "n1",
+      "hypothesis": "Lower all of a material's node slots (colour, depth, emissive, metalness, roughness, opacity) through one graph::Lowering, so a shared subgraph such as the 148-step sky march is compiled and run once per pixel",
+      "bottleneckEvidence": "WGSL diff: two complete marches in the 684 KB fragment shader, against one in three's. Each slot ran graph::lower with a fresh Lowerer.",
+      "layer": "engine (WGSL codegen)",
+      "files": [
+        "packages/runtime-native/src/engine/shader/standard.cpp",
+        "packages/runtime-native/src/engine/shader/graph/graph.cpp",
+        "packages/runtime-native/src/engine/shader/graph/graph.h",
+        "packages/runtime-native/tests/native-engine/material_test.cpp"
+      ],
+      "candidate": "abd06f6e6 on prd617/rain-gpu-perf (cherry-picked to prd617/integration as b7362aa5b)",
+      "unit": "ms",
+      "scalar": {
+        "incumbent": 117.7,
+        "candidate": 43.9,
+        "relativePercent": 62.7
+      },
+      "prediction": "Main pass roughly halves or better",
+      "falsifier": "Main pass changes under 10%",
+      "pairs": "Pre-fix 3 runs (O 117.6/117.9/117.7). Fixed: 3 alternating pairs L,O,L,O,L,O on an idle GPU (util 1-8%)",
+      "gameResult": "Frame GPU: Wasm 43.9/43.9/43.6 ms against legacy 44.5/44.4/43.7 ms. Main pass 112.6 -> 38.8 ms (legacy 38.1-38.8). Presented p50 uncapped: Wasm 107 ms, legacy 108-112 ms.",
+      "sentinelResult": "Not run as a separate pair. The change only removes duplicated lowering. The 13-template matrix run after rain acts as the sentinel.",
+      "gates": "RED material_test.cpp:140 'shared march lowered 2 times / CHECK failed: n == 1' for fragmentNode and the Basic, Lambert, Phong, Standard and Physical colorNode. GREEN: PASS. ctest core build: 186 pass, the 2 tn-known-red references fail as before. Visual judge: pending. Visual judge (fresh, read-only, 2 runs per arm): NEUTRAL on all 5 criteria; only the FPS HUD digits differ. Pixel mean diff 0.002-0.004 against both pre-fix and stock three.",
+      "tradeoffs": "none expected (same WGSL math, emitted once)",
+      "decision": "keep",
+      "reason": "Kept: Wasm frame GPU is level with stock three (43.8 vs 44.2 ms, -62.7% from 117.7), with an identical image. On prd617/integration as b7362aa5b.",
+      "duration": "about 30 min",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": [
+        "raw/n1/pre.tsv",
+        "raw/n1/n1.tsv",
+        "raw/n1/run1-side-by-side.png",
+        "raw/n1/run2-side-by-side.png"
+      ]
+    },
+    {
+      "id": "n2",
+      "hypothesis": "Emit single-assignment values as let and skip reloads of unwritten vars (fewer vars, less register pressure)",
+      "bottleneckEvidence": "WGSL diff: 1149 vars and 5844 reloads, against none in three",
+      "layer": "engine (WGSL codegen)",
+      "files": [
+        "packages/runtime-native/src/engine/shader/ir.cpp",
+        "packages/runtime-native/src/engine/shader/wgsl.cpp"
+      ],
+      "candidate": "7c124064b + 372bbcd45 on prd617/wgsl-let-shape (not merged)",
+      "unit": "ms",
+      "scalar": {
+        "incumbent": 39.86,
+        "candidate": 53.71,
+        "relativePercent": -34.8
+      },
+      "prediction": "Main pass drops through better occupancy",
+      "falsifier": "No change, or slower",
+      "pairs": "3 alternating n1/n2 pairs, idle GPU (util 0-6%)",
+      "gameResult": "Engine gpuMs: n1 39.87/39.82/39.89, n2 53.71/53.97/53.21 ms. WGSL shape: vars 1149 -> 660 (+489 let), reloads 5844 -> 1460, 335 -> 215 KB.",
+      "sentinelResult": "not run (rejected)",
+      "gates": "native tests green: RED/GREEN recorded, 164/166 (2 known reds)",
+      "tradeoffs": "slower on the NVIDIA driver despite smaller WGSL",
+      "decision": "reject",
+      "reason": "About +35% GPU time. Fewer vars did not help, so the driver compiler prefers the old shape. The branch is kept for the record and not merged.",
+      "duration": "about 40 min",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": [
+        "raw/n2/n2.alt.tsv"
+      ]
+    },
+    {
+      "id": "b-msaa",
+      "hypothesis": "MSAA store/resolve is a large cost after n1",
+      "bottleneckEvidence": "e1 (pre-n1): main pass scaled with the sample count",
+      "layer": "diagnosis",
+      "files": [],
+      "candidate": "none",
+      "unit": "ms",
+      "scalar": {
+        "incumbent": 38.8,
+        "candidate": 38.2,
+        "relativePercent": 1.5
+      },
+      "prediction": "Several ms",
+      "falsifier": "Ceiling under 1 ms",
+      "pairs": "quiet GPU, 1x vs 4x",
+      "gameResult": "Main pass 38.8 (4x) vs 38.2 ms (1x): ceiling 0.6 ms",
+      "sentinelResult": "not applicable",
+      "gates": "none",
+      "tradeoffs": "none",
+      "decision": "reject",
+      "reason": "Dead lever: the ceiling is 0.6 ms. The e1 effect was the doubled march, removed by n1.",
+      "duration": "short",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": []
+    },
+    {
+      "id": "c-earlyz",
+      "hypothesis": "Early-Z for the full-screen coast quad",
+      "bottleneckEvidence": "frag_depth disables early-Z",
+      "layer": "diagnosis",
+      "files": [],
+      "candidate": "none",
+      "unit": "ms",
+      "scalar": null,
+      "prediction": "Skip covered pixels",
+      "falsifier": "Nothing covers the quad",
+      "pairs": "analysis",
+      "gameResult": "Zero ceiling: one full-screen quad, nothing in front of it to reject",
+      "sentinelResult": "not applicable",
+      "gates": "none",
+      "tradeoffs": "none",
+      "decision": "reject",
+      "reason": "No pixels to skip.",
+      "duration": "short",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": []
+    },
+    {
+      "id": "t-options",
+      "hypothesis": "Template-side savings (owner approval needed; not applied)",
+      "bottleneckEvidence": "per-pixel cost of the template's own shaders",
+      "layer": "template (proposal only)",
+      "files": [
+        "packages/create-threenative/templates/rain/src/render/"
+      ],
+      "candidate": "not applied",
+      "unit": "ms",
+      "scalar": null,
+      "prediction": "n/a",
+      "falsifier": "n/a",
+      "pairs": "quiet GPU",
+      "gameResult": "reflections off -5.0 ms; 96 march steps -4.2 ms; cloud 0.4/32 -3.2 ms; all three together -4.3 ms (they overlap)",
+      "sentinelResult": "not applicable",
+      "gates": "would need the owner's yes and a visual judge",
+      "tradeoffs": "changes how rain looks",
+      "decision": "inconclusive",
+      "reason": "Recorded for the owner. Not an engine lever, so not applied.",
+      "duration": "short",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": []
+    },
+    {
+      "id": "floor",
+      "hypothesis": "A constant-colour world quad still costs 13.5 ms in the main pass (fixed cost in the pass setup)",
+      "bottleneckEvidence": "xdbg=const run: max pass 13.5 ms",
+      "layer": "diagnosis (per-pass table, world/rain/lightning hidden)",
+      "files": [],
+      "candidate": "none",
+      "unit": "ms",
+      "scalar": {
+        "incumbent": 13.5,
+        "candidate": 2.3,
+        "relativePercent": null
+      },
+      "prediction": "Main pass has a large fixed cost",
+      "falsifier": "1920x1080 pass under 3 ms with a constant shader",
+      "pairs": "3 diag runs, idle GPU",
+      "gameResult": "MISREAD. The 13.5 ms was the 1152x648 cloud pass, the first pass of the frame: its begin timestamp waits for the previous present, so it grows as the other work shrinks (4.4 ms with the full world, 9.5 with a constant quad, 16 with nothing drawn). The 1920x1080 scene pass costs 2.3 ms with a constant shader, 1.9 with the world hidden, 1.5 with nothing drawn. Fixed cost of the main pass (MSAA clear, resolve, depth, formats) is at most 2 ms; the world shader is the other 36 ms.",
+      "sentinelResult": "not applicable",
+      "gates": "none",
+      "tradeoffs": "none",
+      "decision": "reject",
+      "reason": "No fixed-cost lever in the main pass. Engine-only levers a-d are closed: let-shape +35%, MSAA 0.6 ms ceiling, early-Z zero ceiling, per-pass setup under 2 ms.",
+      "duration": "short",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": [
+        "raw/floor/"
+      ]
+    },
+    {
+      "id": "d-setup",
+      "hypothesis": "Per-pass setup and a 13.5 ms fixed main-pass cost",
+      "bottleneckEvidence": "A constant-colour world quad still timed at 13.5 ms",
+      "layer": "diagnosis",
+      "files": [],
+      "candidate": "none",
+      "unit": "ms",
+      "scalar": null,
+      "prediction": "Several ms of fixed cost",
+      "falsifier": "Fixed cost under 2 ms",
+      "pairs": "per-pass timestamps, idle GPU",
+      "gameResult": "Main-pass fixed cost is at most 2 ms. The 13.5 ms came from the 1152x648 cloud pass absorbing the present wait, not real GPU work.",
+      "sentinelResult": "not applicable",
+      "gates": "none",
+      "tradeoffs": "none",
+      "decision": "reject",
+      "reason": "No fixed cost to remove. The remaining 36 ms is the world shader's own ALU, the same work as in three.",
+      "duration": "short",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": []
+    },
+    {
+      "id": "h-halfres",
+      "hypothesis": "Coast march at 0.5x per axis (960x540), depth-aware upscale to 1080p",
+      "bottleneckEvidence": "the world march is 36 of 44 ms and is smooth, so it can render below frame resolution",
+      "layer": "game (template src/render, owner-approved)",
+      "files": [
+        "packages/create-threenative/templates/rain/src/render/world.ts",
+        "packages/create-threenative/templates/rain/src/render/quality.ts"
+      ],
+      "candidate": "worldScale 0.5 PassNode + 4-tap view-distance-weighted upscale",
+      "unit": "ms",
+      "scalar": {
+        "incumbent": 44.3,
+        "candidate": 26.5,
+        "relativePercent": 40.2
+      },
+      "prediction": "march cost falls with pixel count: frame GPU at or under 22 ms",
+      "falsifier": "frame GPU over 22 ms, or a visible regression at the judged poses",
+      "pairs": "L1: total 43.4 ms (); O1: total 44.3 ms (scene1152x648 4.3, scene1920x1080 39.2); H1: total 26.5 ms (scene1152x648 6.8, scene960x540 16.9); L2: total 43.3 ms (); O2: total 44.7 ms (scene1152x648 4.3, scene1920x1080 39.6); H2: total 22.4 ms (scene1152x648 6.0, scene960x540 14.9); L3: total 43.4 ms (); O3: total 43.6 ms (scene1152x648 4.3, scene1920x1080 38.6); H3: total 27.6 ms (scene1152x648 7.0, scene960x540 17.3)",
+      "gameResult": "3 alternating gated triples (L, O, H), total GPU over all passes. Legacy 43.4 / 43.3 / L3, n1 O1-O3 about 44.5, half-res H1-H3 listed. Total counts every pass because the engine gpuMs meter leaves out offscreen passes (it read 5 ms for half-res). The cloud pass reads 6-6.8 ms against 4.3 because the first pass absorbs the present wait; busy time is about 2 ms lower than the total. Visual judge pending: coarser grass speckle and stair-stepped tree edges seen in my own crop.",
+      "sentinelResult": "not applicable",
+      "gates": "judge pending",
+      "tradeoffs": "lower march resolution, upscaled depth-aware",
+      "decision": null,
+      "reason": "pending judge",
+      "duration": "short",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": []
+    },
+    {
+      "id": "h-halfres-067",
+      "hypothesis": "Coast march at 0.67x per axis (1286x723), same upscale",
+      "bottleneckEvidence": "the world march is 36 of 44 ms and is smooth, so it can render below frame resolution",
+      "layer": "game (template src/render, owner-approved)",
+      "files": [
+        "packages/create-threenative/templates/rain/src/render/world.ts",
+        "packages/create-threenative/templates/rain/src/render/quality.ts"
+      ],
+      "candidate": "worldScale 0.67",
+      "unit": "ms",
+      "scalar": null,
+      "prediction": "march cost falls with pixel count: frame GPU at or under 22 ms",
+      "falsifier": "frame GPU over 22 ms, or a visible regression at the judged poses",
+      "pairs": "O1: total 42.9 ms (scene1152x648 4.3, scene1920x1080 37.9); H1: total 31.9 ms (scene1152x648 5.8, scene1286x723 24.8); O2: total 45.1 ms (scene1152x648 4.3, scene1920x1080 40.0); H2: total 30.0 ms (scene1152x648 5.5, scene1286x723 23.3)",
+      "gameResult": "2 alternating gated pairs: total 31.9 and 30.0 ms against n1 42.9 and 45.1. Over the 22 ms target by 8-10 ms. March cost is not linear in pixels (rays diverge more per warp at low resolution): 0.44x pixels cost 0.64x time.",
+      "sentinelResult": "not applicable",
+      "gates": "judge pending",
+      "tradeoffs": "lower march resolution, upscaled depth-aware",
+      "decision": null,
+      "reason": "30 ms, over target; judge pending",
+      "duration": "short",
+      "workload": "Tempest",
+      "platform": "web",
+      "evidence": []
+    }
+  ],
+  "coverage": {
+    "platforms": [
+      {
+        "name": "web WebGPU, RTX 2080",
+        "status": "measured",
+        "reason": "campaign lane"
+      },
+      {
+        "name": "desktop V8 player (T3)",
+        "status": "not run",
+        "reason": "after the web gap closes"
+      },
+      {
+        "name": "sentinel template",
+        "status": "not run",
+        "reason": "no candidate kept yet"
+      }
+    ],
+    "workloads": [
+      "Tempest performance scenario (gameplay)",
+      "WGSL dumps (diagnosis)"
+    ],
+    "unresolved": [
+      "Main scene pass: 2.3x larger WGSL than three",
+      "4x MSAA: half the main pass scales with samples",
+      "Noise margin uncalibrated (49 ms spread under host load)"
+    ],
+    "reproduction": [
+      "cd /tmp/prd617perf && ./servers.sh          # serves rain (Wasm) on 5500 and rain-legacy on 5501",
+      "SCEN=/tmp/prd617perf/passms.playtest.json TAG=<id> ARMS=\"L O\" ROUNDS=3 ./paired.sh",
+      "./dump.sh   # WGSL dump per engine"
+    ]
+  },
+  "stopReason": null,
+  "nextAction": "Calibrate noise with 3 idle-GPU baseline pairs, then diff wgsl-O-26 against wgsl-L-7 for instructions and texture samples.",
+  "scoreboard": {
+    "headlineRow": "gpu-ms",
+    "direction": "Owner bar 2026-10-16: the Wasm ENGINE must significantly beat three.js on the same template; a template change (half-res) speeds up both engines and does not count. Meters: both sides now sum every pass per frame (the old engine gpuMs read only the final pass, so the earlier 9% was wrong). Today: Wasm 44.3 ms vs legacy 43.4 ms, level. h-halfres stays a template lever, compared Wasm-half vs legacy-half. Engine levers under investigation: uniform specialization of settled quality knobs, WGSL work vs three, skipping static passes.",
+    "rows": [
+      {
+        "id": "gpu-ms",
+        "metric": "GPU ms per frame, 1080p, ALL passes (legacy: three's frame sum; Wasm: sum of per-pass timestamps)",
+        "unit": "ms",
+        "legacy": 43.4,
+        "wasmStart": 118.41,
+        "wasmKept": 44.3,
+        "latest": {
+          "value": 26.5,
+          "experimentId": "h-halfres",
+          "decision": "template lever, not an engine win"
+        },
+        "goal": "\u2264 22 (2x faster than legacy, owner: multiple times faster), then \u2264 16.7 (60 fps)",
+        "goalValue": 16.7,
+        "historyId": "gpu-ms",
+        "target": 22.0
+      },
+      {
+        "id": "wgsl-kb",
+        "metric": "Main scene shader size (WGSL)",
+        "unit": "KB",
+        "legacy": 294.5,
+        "wasmStart": 684.4,
+        "wasmKept": 684.4,
+        "latest": {
+          "value": 334.7,
+          "experimentId": "a1",
+          "decision": "provisional"
+        },
+        "goal": "\u2264 legacy",
+        "historyId": "wgsl-kb"
+      },
+      {
+        "id": "pres-p50",
+        "metric": "Presented interval p50 (uncapped)",
+        "unit": "ms",
+        "legacy": 110.1,
+        "wasmStart": 218.5,
+        "wasmKept": 107.2,
+        "latest": {
+          "value": 107.2,
+          "experimentId": "n1",
+          "decision": "keep"
+        },
+        "goal": "\u2264 16.7 with vsync",
+        "goalValue": 16.7
+      },
+      {
+        "id": "cpu-p95",
+        "metric": "CPU frame p95",
+        "unit": "ms",
+        "legacy": 1.8,
+        "wasmStart": 1.7,
+        "wasmKept": 1.7,
+        "latest": {
+          "value": 1.7,
+          "experimentId": "base",
+          "decision": "baseline"
+        },
+        "goal": "\u2264 legacy",
+        "historyId": "cpu-p95"
+      },
+      {
+        "id": "main-pass",
+        "metric": "Main scene pass GPU ms",
+        "unit": "ms",
+        "legacy": 38.6,
+        "wasmStart": 112.6,
+        "wasmKept": 38.8,
+        "latest": {
+          "value": 38.8,
+          "experimentId": "n1",
+          "decision": "keep"
+        },
+        "goal": "\u2264 19.3 (2x faster than legacy)",
+        "historyId": "main-pass",
+        "target": 19.3
+      },
+      {
+        "id": "parity",
+        "kind": "limit",
+        "metric": "Visual diff vs stock three (mean, 0\u2013255)",
+        "unit": "",
+        "limit": 0.01,
+        "wasmStart": 0.006,
+        "wasmKept": 0.006,
+        "goal": "\u2264 0.01 + judge"
+      }
+    ],
+    "ratioHistory": [
+      {
+        "at": "earlier 3 pairs",
+        "value": 2.61,
+        "decision": "baseline",
+        "experimentId": "pre"
+      },
+      {
+        "at": "19:12 base",
+        "value": 2.69,
+        "decision": "baseline",
+        "experimentId": "base"
+      },
+      {
+        "at": "20:01 n1",
+        "value": 0.991,
+        "decision": "keep",
+        "experimentId": "n1"
+      },
+      {
+        "at": "20:40 n1 (gpuMs)",
+        "value": 0.906,
+        "decision": "keep",
+        "experimentId": "n1-gpuMs"
+      }
+    ],
+    "passes": {
+      "run": "n1, idle GPU, per-pass timestamps",
+      "note": "Legacy: scene 38.1-38.8, everything else 5.1 (sum 43.9).",
+      "items": [
+        [
+          "scene 1920x1080 (4x MSAA)",
+          38.8
+        ],
+        [
+          "cloud 1152x648 (includes present wait)",
+          4.4
+        ],
+        [
+          "depthResolve",
+          0.09
+        ],
+        [
+          "SMAA input/edges/weights/blend",
+          0.24
+        ],
+        [
+          "bloom rtt 480x270",
+          0.26
+        ],
+        [
+          "output",
+          0.14
+        ]
+      ]
+    }
+  }
+}

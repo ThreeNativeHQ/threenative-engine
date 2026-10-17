@@ -1,0 +1,6 @@
+L1	util=4 load1=4.98	rc=1	main=38.8	total=44.5	pres_p50=112.5	nvidia/turing
+O1	util=6 load1=4.19	rc=1	main=38.8	total=43.9	pres_p50=107.3	nvidia/turing
+L2	util=2 load1=3.22	rc=1	main=38.8	total=44.4	pres_p50=110	nvidia/turing
+O2	util=8 load1=2.32	rc=1	main=38.8	total=43.9	pres_p50=107.3	nvidia/turing
+L3	util=2 load1=2.35	rc=1	main=38.1	total=43.7	pres_p50=107.7	nvidia/turing
+O3	util=1 load1=1.57	rc=1	main=38.5	total=43.6	pres_p50=106.9	nvidia/turing

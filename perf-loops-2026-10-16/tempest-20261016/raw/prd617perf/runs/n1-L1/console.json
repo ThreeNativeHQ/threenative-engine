@@ -1,0 +1,132 @@
+[
+  {
+    "source": "browser-console",
+    "text": "[vite] connecting...",
+    "type": "debug"
+  },
+  {
+    "source": "browser-console",
+    "text": "[vite] connected.",
+    "type": "debug"
+  },
+  {
+    "source": "browser-console",
+    "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_TEMPEST ready · 0x0 · running",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"\",\"device\":\"\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0,\"path\":\"js\"}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_QUALITY_TIER high mobile=false software=false source=platform",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_CHAIN:{\"applied\":{\"contributions\":[{\"graphOutputChanged\":true,\"name\":\"antialias\"},{\"graphOutputChanged\":true,\"name\":\"stormPost\"}],\"dropped\":[],\"requested\":[\"antialias\",\"stormPost\"],\"source\":\"pinned\",\"stages\":[\"antialias\",\"stormPost\"],\"tier\":\"high\",\"velocity\":{\"provisioned\":false,\"required\":false,\"source\":null}},\"marker\":\"TN_RENDER_CHAIN\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_WORLD_ENVIRONMENT:{\"denoise\":false,\"exposure\":1,\"marker\":\"TN_WORLD_ENVIRONMENT\",\"screenSpaceAA\":\"smaa\",\"ssgiQuality\":\"medium\",\"stages\":[{\"applied\":false,\"name\":\"ambientOcclusion\",\"reason\":\"gtaoEnabled is false\"},{\"applied\":true,\"name\":\"antialias\"},{\"applied\":false,\"name\":\"bloom\",\"reason\":\"bloomEnabled is false\"},{\"applied\":false,\"name\":\"godRays\",\"reason\":\"godraysEnabled is false\"},{\"applied\":false,\"name\":\"kuwahara\",\"reason\":\"kuwaharaEnabled is false\"},{\"applied\":false,\"name\":\"outline\",\"reason\":\"outlineEnabled is false\"},{\"applied\":false,\"name\":\"sharpen\",\"reason\":\"sharpenEnabled is false\"},{\"applied\":false,\"name\":\"ssgi\",\"reason\":\"ssgiEnabled is false\"},{\"applied\":false,\"name\":\"ssr\",\"reason\":\"ssrEnabled is false\"},{\"applied\":false,\"name\":\"vignette\",\"reason\":\"vignetteAmount is 0\"},{\"applied\":false,\"name\":\"watercolor\",\"reason\":\"watercolorEnabled is false\"}],\"tonemapMode\":\"aces\"}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_ALPHA_ANTIALIASING:{\"applied\":false,\"marker\":\"TN_ALPHA_ANTIALIASING\",\"materials\":0,\"reason\":\"no cutout material has been drawn; nothing in this scene carves its silhouette with an alpha test\",\"sampleCount\":4}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_STARTUP_WARMUP:{\"compiled\":1,\"pipelines\":3,\"candidates\":3,\"attempted\":1,\"observed\":{\"created\":3,\"failed\":0,\"pending\":0,\"uniquePrograms\":3,\"uniquePipelines\":3,\"status\":\"complete\"},\"slices\":1,\"elapsedMs\":897,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false,\"passes\":[\"main\"],\"passPipelines\":0,\"cullingForced\":0,\"visibilityForced\":0,\"cache\":\"disabled\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "THREE.WebGPURenderer: Timestamp tracking is disabled.",
+    "type": "warning"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSMS {\"r:1:0\":\"0.089 n=1\",\"r:2:1\":\"0.040 n=1\",\"r:1:1\":\"0.165 n=11\",\"r:2:2\":\"0.063 n=10\",\"r:3:3\":\"0.047 n=10\",\"r:4:4\":\"0.076 n=10\",\"r:5:5\":\"38.612 n=10\",\"r:6:6\":\"4.596 n=10\",\"r:7:3\":\"0.089 n=10\",\"r:8:3\":\"0.079 n=10\",\"r:9:4\":\"0.071 n=10\",\"r:10:7\":\"0.072 n=10\",\"r:11:8\":\"0.063 n=10\",\"r:12:1\":\"0.176 n=1\"} order=[]",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSMS {\"r:1:0\":\"0.089 n=1\",\"r:2:1\":\"0.040 n=1\",\"r:1:1\":\"0.170 n=22\",\"r:2:2\":\"0.063 n=21\",\"r:3:3\":\"0.048 n=21\",\"r:4:4\":\"0.077 n=21\",\"r:5:5\":\"38.524 n=21\",\"r:6:6\":\"4.575 n=21\",\"r:7:3\":\"0.088 n=21\",\"r:8:3\":\"0.079 n=21\",\"r:9:4\":\"0.070 n=21\",\"r:10:7\":\"0.072 n=21\",\"r:11:8\":\"0.063 n=21\",\"r:12:1\":\"0.176 n=1\"} order=[]",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSMS {\"r:1:0\":\"0.089 n=1\",\"r:2:1\":\"0.040 n=1\",\"r:1:1\":\"0.172 n=33\",\"r:2:2\":\"0.063 n=32\",\"r:3:3\":\"0.048 n=32\",\"r:4:4\":\"0.077 n=32\",\"r:5:5\":\"38.526 n=32\",\"r:6:6\":\"4.572 n=32\",\"r:7:3\":\"0.087 n=32\",\"r:8:3\":\"0.079 n=32\",\"r:9:4\":\"0.070 n=32\",\"r:10:7\":\"0.072 n=32\",\"r:11:8\":\"0.063 n=32\",\"r:12:1\":\"0.176 n=1\"} order=[]",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FRAME_BUDGET:{\"longTasks\":{\"available\":true,\"count\":5,\"longestMs\":203,\"afterFirstFrameMs\":203},\"fps\":9.03,\"frame\":{\"max\":201.7,\"mean\":2.13,\"p50\":1.2,\"p95\":2.1,\"p99\":14.6,\"samples\":307},\"frames\":307,\"simulatedSeconds\":5,\"hitches\":0,\"phases\":{\"hostGap\":{\"max\":213.5,\"mean\":108.6,\"p50\":109.4,\"p95\":120.9,\"p99\":142.6,\"samples\":306},\"overlay\":{\"max\":4.8,\"mean\":0.04,\"p50\":0,\"p95\":0.2,\"p99\":0.7,\"samples\":307},\"render\":{\"max\":200.8,\"mean\":1.72,\"p50\":0.8,\"p95\":2,\"p99\":2.6,\"samples\":307},\"residual\":{\"max\":0.9,\"mean\":0.05,\"p50\":0,\"p95\":0.2,\"p99\":0.2,\"samples\":307},\"ui\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":307},\"update\":{\"max\":9.6,\"mean\":0.32,\"p50\":0.3,\"p95\":0.5,\"p99\":0.6,\"samples\":307}},\"presented\":{\"max\":216.6,\"mean\":110.73,\"p50\":110.7,\"p95\":119.9,\"p99\":166.6,\"samples\":306},\"shares\":{\"hostGap\":0.981,\"overlay\":0,\"render\":0.016,\"residual\":0,\"ui\":0,\"update\":0.003},\"substeps\":{\"max\":60,\"mean\":0.98,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":307},\"passes\":{\"main\":{\"draws\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":295},\"drawsBySource\":{\"other\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":295}},\"frames\":295,\"triangles\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":295}},\"nested\":{\"draws\":{\"max\":3,\"mean\":1.2,\"p50\":1,\"p95\":3,\"p99\":3,\"samples\":1024},\"frames\":2931,\"triangles\":{\"max\":36482,\"mean\":3635.05,\"p50\":1,\"p95\":36482,\"p99\":36482,\"samples\":1024}}},\"gpu\":{\"max\":44.44,\"mean\":41.52,\"p50\":43.8,\"p95\":44.29,\"p99\":44.44,\"samples\":38},\"gpuStale\":257,\"gpuMs\":41.52,\"gpuFrames\":{\"first\":0,\"last\":296},\"gpuAgeFrames\":10,\"targetFps\":60,\"targetSource\":\"config\",\"surface\":{\"atFloor\":false,\"compiling\":true,\"drawingBufferHeight\":1080,\"drawingBufferWidth\":1920,\"resolutionScale\":1,\"sampleCount\":4,\"scaleSource\":\"auto\"},\"counters\":{\"simulationTick\":300},\"window\":1,\"gpuMain\":0.2,\"gpuShadow\":0,\"gpuOther\":43.6,\"gpuShadowP95\":0,\"gpuShadowSamples\":36}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_PROJECTION:{\"drawsActual\":13,\"cull\":{\"enabled\":true,\"cameraResolved\":true,\"thresholdPixels\":0.5,\"considered\":2,\"culled\":0,\"exemptCameraAttached\":0,\"exemptMarked\":2,\"exemptShadowCasters\":0,\"exemptWithoutBounds\":0,\"exemptDynamicBounds\":0,\"exemptFrustumCulled\":0},\"drawsPlanned\":3,\"exact\":{},\"exactObjects\":0,\"matrixWorld\":{\"mode\":\"visible\",\"visited\":4},\"path\":\"js\",\"projecting\":false,\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"reasonCode\":\"belowMeshFloor\",\"sourceRenderables\":3,\"timings\":{\"compileMs\":0,\"reconcileMs\":1.4000000357627869,\"lastReconcileMs\":0.20000001788139343,\"maxReconcileMs\":0.5},\"window\":1}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSMS {\"r:1:0\":\"0.089 n=1\",\"r:2:1\":\"0.040 n=1\",\"r:1:1\":\"0.173 n=44\",\"r:2:2\":\"0.063 n=43\",\"r:3:3\":\"0.047 n=43\",\"r:4:4\":\"0.077 n=43\",\"r:5:5\":\"38.540 n=43\",\"r:6:6\":\"4.580 n=43\",\"r:7:3\":\"0.086 n=43\",\"r:8:3\":\"0.079 n=43\",\"r:9:4\":\"0.070 n=43\",\"r:10:7\":\"0.072 n=43\",\"r:11:8\":\"0.063 n=43\",\"r:12:1\":\"0.176 n=1\"} order=[]",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FRAME_HITCH:{\"gapMs\":5074.7,\"uptimeMs\":48127.9,\"wallClock\":1792205206445}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSMS {\"r:1:0\":\"0.089 n=1\",\"r:2:1\":\"0.040 n=1\",\"r:1:1\":\"0.173 n=49\",\"r:2:2\":\"0.063 n=48\",\"r:3:3\":\"0.047 n=48\",\"r:4:4\":\"0.077 n=48\",\"r:5:5\":\"38.538 n=48\",\"r:6:6\":\"4.572 n=48\",\"r:7:3\":\"0.086 n=48\",\"r:8:3\":\"0.079 n=48\",\"r:9:4\":\"0.070 n=48\",\"r:10:7\":\"0.072 n=48\",\"r:11:8\":\"0.063 n=48\",\"r:12:1\":\"0.176 n=1\"} order=[]",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSMS {\"r:1:0\":\"0.089 n=1\",\"r:2:1\":\"0.040 n=1\",\"r:1:1\":\"0.173 n=60\",\"r:2:2\":\"0.063 n=59\",\"r:3:3\":\"0.048 n=59\",\"r:4:4\":\"0.077 n=59\",\"r:5:5\":\"38.551 n=59\",\"r:6:6\":\"4.586 n=59\",\"r:7:3\":\"0.086 n=59\",\"r:8:3\":\"0.079 n=59\",\"r:9:4\":\"0.070 n=59\",\"r:10:7\":\"0.072 n=59\",\"r:11:8\":\"0.063 n=59\",\"r:12:1\":\"0.176 n=1\"} order=[]",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FRAME_HITCH:{\"gapMs\":5068.3,\"uptimeMs\":69735.1,\"wallClock\":1792205228052}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSMS {\"r:1:0\":\"0.089 n=1\",\"r:2:1\":\"0.040 n=1\",\"r:1:1\":\"0.174 n=65\",\"r:2:2\":\"0.063 n=64\",\"r:3:3\":\"0.047 n=64\",\"r:4:4\":\"0.077 n=64\",\"r:5:5\":\"38.573 n=64\",\"r:6:6\":\"4.583 n=64\",\"r:7:3\":\"0.086 n=64\",\"r:8:3\":\"0.079 n=64\",\"r:9:4\":\"0.070 n=64\",\"r:10:7\":\"0.072 n=64\",\"r:11:8\":\"0.063 n=64\",\"r:12:1\":\"0.176 n=1\"} order=[]",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FRAME_BUDGET:{\"longTasks\":{\"available\":true,\"count\":5,\"longestMs\":203,\"afterFirstFrameMs\":203},\"fps\":8.61,\"frame\":{\"max\":6.9,\"mean\":1.28,\"p50\":1.2,\"p95\":1.6,\"p99\":2.3,\"samples\":298},\"frames\":298,\"simulatedSeconds\":5,\"hitches\":2,\"phases\":{\"hostGap\":{\"max\":729.2,\"mean\":114.87,\"p50\":111.3,\"p95\":119.7,\"p99\":140.3,\"samples\":298},\"overlay\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":298},\"render\":{\"max\":5.9,\"mean\":0.87,\"p50\":0.8,\"p95\":1.1,\"p99\":1.7,\"samples\":298},\"residual\":{\"max\":0.2,\"mean\":0.04,\"p50\":0,\"p95\":0.1,\"p99\":0.2,\"samples\":298},\"ui\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":298},\"update\":{\"max\":0.9,\"mean\":0.37,\"p50\":0.4,\"p95\":0.5,\"p99\":0.7,\"samples\":298}},\"presented\":{\"max\":730.3,\"mean\":116.15,\"p50\":112.5,\"p95\":121.4,\"p99\":141.5,\"samples\":298},\"shares\":{\"hostGap\":0.989,\"overlay\":0,\"render\":0.007,\"residual\":0,\"ui\":0,\"update\":0.003},\"substeps\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":298},\"passes\":{\"main\":{\"draws\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":298},\"drawsBySource\":{\"other\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":298}},\"frames\":298,\"triangles\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":298}},\"nested\":{\"draws\":{\"max\":5,\"mean\":1.26,\"p50\":1,\"p95\":3,\"p99\":5,\"samples\":1024},\"frames\":2980,\"triangles\":{\"max\":36858,\"mean\":3647.17,\"p50\":1,\"p95\":36482,\"p99\":36858,\"samples\":1024}}},\"gpu\":{\"max\":57.4,\"mean\":44.49,\"p50\":43.98,\"p95\":46.67,\"p99\":57.4,\"samples\":38},\"gpuStale\":260,\"gpuMs\":44.49,\"gpuFrames\":{\"first\":304,\"last\":600},\"gpuAgeFrames\":6,\"targetFps\":60,\"targetSource\":\"config\",\"overTarget\":{\"frameMs\":16.67,\"gpu\":38,\"render\":0},\"surface\":{\"atFloor\":false,\"compiling\":false,\"drawingBufferHeight\":1080,\"drawingBufferWidth\":1920,\"resolutionScale\":1,\"sampleCount\":4,\"scaleSource\":\"auto\"},\"counters\":{\"simulationTick\":600},\"window\":2,\"gpuMain\":0.2,\"gpuShadow\":0,\"gpuOther\":43.8,\"gpuShadowP95\":0,\"gpuShadowSamples\":38}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_PROJECTION:{\"drawsActual\":13,\"cull\":{\"enabled\":true,\"cameraResolved\":true,\"thresholdPixels\":0.5,\"considered\":2,\"culled\":0,\"exemptCameraAttached\":0,\"exemptMarked\":2,\"exemptShadowCasters\":0,\"exemptWithoutBounds\":0,\"exemptDynamicBounds\":0,\"exemptFrustumCulled\":0},\"drawsPlanned\":3,\"exact\":{},\"exactObjects\":0,\"matrixWorld\":{\"mode\":\"visible\",\"visited\":4},\"path\":\"js\",\"projecting\":false,\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"reasonCode\":\"belowMeshFloor\",\"sourceRenderables\":3,\"timings\":{\"compileMs\":0,\"reconcileMs\":1.8000000417232513,\"lastReconcileMs\":0.20000001788139343,\"maxReconcileMs\":0.5},\"window\":2}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "PASSMS {\"r:1:0\":\"0.089 n=1\",\"r:2:1\":\"0.040 n=1\",\"r:1:1\":\"0.174 n=76\",\"r:2:2\":\"0.063 n=75\",\"r:3:3\":\"0.048 n=75\",\"r:4:4\":\"0.076 n=75\",\"r:5:5\":\"38.830 n=75\",\"r:6:6\":\"4.621 n=75\",\"r:7:3\":\"0.088 n=75\",\"r:8:3\":\"0.079 n=75\",\"r:9:4\":\"0.070 n=75\",\"r:10:7\":\"0.072 n=75\",\"r:11:8\":\"0.063 n=75\",\"r:12:1\":\"0.176 n=1\"} order=[]",
+    "type": "log"
+  }
+]
