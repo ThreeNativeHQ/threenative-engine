@@ -56,9 +56,23 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
             upload(e.buffer, store, 0, store.byteLength());
             ++stats_.fullUploads;
         } else {
-            const uint32_t elementSize = scalarSize(store.scalar());
+            // Ranges pile up for every frame the renderer did not reach, and a game that redraws a
+            // window each frame adds an overlapping one each time: upload their union once, in byte
+            // order, so a changed byte crosses to the GPU once however many ranges named it.
+            const uint64_t elementSize = scalarSize(store.scalar());
+            const uint64_t total = store.byteLength();
+            spans_.clear();
             for (const UpdateRange& r : ranges) {
-                upload(e.buffer, store, r.start * elementSize, r.count * elementSize);
+                if (r.count == 0 || r.start > total / elementSize) continue;
+                const uint64_t begin = (r.start * elementSize) & ~uint64_t{3};
+                const uint64_t end = std::min<uint64_t>(r.start * elementSize + std::min(r.count, total / elementSize) * elementSize, total);
+                if (end > begin) spans_.push_back({begin, end});
+            }
+            std::sort(spans_.begin(), spans_.end());
+            for (size_t i = 0; i < spans_.size();) {
+                auto [begin, end] = spans_[i];
+                for (++i; i < spans_.size() && spans_[i].first <= end; ++i) end = std::max(end, spans_[i].second);
+                upload(e.buffer, store, begin, end - begin);
                 ++stats_.rangeUploads;
             }
         }

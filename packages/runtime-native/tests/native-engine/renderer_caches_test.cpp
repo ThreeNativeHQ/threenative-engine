@@ -119,6 +119,20 @@ void geometry() {
     CHECK(gpu.queueWriteBytes() == 8);                                        // an update writes only its range
     CHECK(readBack(gpu, d.events, first, 1200) == bytesOf(positions, 1200));
 
+    // Frames that never reached the renderer leave their ranges pending together. Overlapping and
+    // touching ranges go up once as their union, a disjoint one on its own, and an empty one not at all.
+    const uint64_t uploadsBefore = cache.stats().rangeUploads;
+    const uint64_t queuedBefore = gpu.queueWriteBytes();
+    for (const auto& [start, count] : {std::pair<uint64_t, uint64_t>{20, 10}, {25, 10}, {35, 5}, {22, 4}, {100, 0}, {200, 4}})
+        positions.addUpdateRange(start, count);
+    positions.write(20 * 4, &changed, 4);
+    positions.needsUpdate();
+    cache.sync(positions, usage);
+    CHECK(cache.stats().rangeUploads == uploadsBefore + 2);                    // [20,40) and [200,204)
+    CHECK(gpu.queueWriteBytes() - queuedBefore == (20 + 4) * 4);               // each changed byte once
+    CHECK(positions.updateRanges().empty());
+    CHECK(readBack(gpu, d.events, first, 1200) == bytesOf(positions, 1200));
+
     positions.write(0, &changed, 4);
     positions.needsUpdate();                                                  // no ranges: the whole store
     cache.sync(positions, usage);

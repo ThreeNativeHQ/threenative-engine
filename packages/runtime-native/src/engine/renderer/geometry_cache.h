@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "engine/foundation/buffers.h"
 #include "engine/renderer/gpu_resources.h"
@@ -71,6 +73,7 @@ private:
     GpuResources& gpu_;
     uint64_t sweptAt_ = ~uint64_t{0};  // BufferStore::released() at the last sweep
     std::unordered_map<const BufferStore*, Entry> entries_;
+    std::vector<std::pair<uint64_t, uint64_t>> spans_;  // sync's byte ranges, kept to reuse its storage
     Stats stats_;
 };
 
