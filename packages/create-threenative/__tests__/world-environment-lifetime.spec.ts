@@ -1,8 +1,10 @@
 import { PerspectiveCamera, Scene, Texture } from "three";
 import BloomNode from "three/addons/tsl/display/BloomNode.js";
+import FXAANode from "three/addons/tsl/display/FXAANode.js";
 import { rtt, texture, vec4 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, NodeBuilder } from "three/webgpu";
 import { expect, it, vi } from "vitest";
+import { ResolutionSubrect } from "../../core/src/render/resolution-subrect.js";
 import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
 
 it.each([undefined, 0, 4])(
@@ -64,6 +66,99 @@ it("releases the bloom effect and its materialized input when its chain is repla
   applied.dispose?.();
   for (const release of releases) expect(release).toHaveBeenCalledTimes(1);
 });
+
+it.each(["smaa", "fxaa"] as const)(
+  "releases retired %s targets on repeated stage rebuilds with and without subrect support",
+  (screenSpaceAA) => {
+    vi.stubGlobal(
+      "Image",
+      class {
+        src = "";
+        onload = () => {};
+      },
+    );
+    try {
+      for (const subrect of [true, false]) {
+        const controller = new ResolutionSubrect();
+        const renderer: OutputRenderer = {
+          kind: "webgpu",
+          raw: {},
+          ...(subrect ? { createResolutionSubrect: () => controller } : {}),
+          createRenderChain(options) {
+            const stage = options.stages?.find((entry) => entry.name === "antialias");
+            if (!stage) throw new Error("Missing antialias");
+            controller.activate(0.72);
+            for (let generation = 1; generation <= 3; generation++) {
+              const graph = stage.build(options.input, { tier: "high" }) as Node;
+              const targets: import("three").RenderTarget[] = [];
+              const releases: ReturnType<typeof vi.fn>[] = [];
+              const seen = new Set<Node>();
+              graph.traverse((node) => {
+                if (!(node instanceof FXAANode) && !Reflect.has(node, "_renderTargetEdges")) return;
+                if (seen.has(node)) return;
+                seen.add(node);
+                releases.push(vi.spyOn(node, "dispose"));
+                const scratch = Reflect.get(node, "textureNode") as {
+                  renderTarget: import("three").RenderTarget;
+                  _quadMesh: { material: { dispose(): void } };
+                };
+                targets.push(scratch.renderTarget);
+                releases.push(vi.spyOn(scratch._quadMesh.material, "dispose"));
+                if (Reflect.has(node, "_renderTargetEdges")) {
+                  const owned = node as unknown as {
+                    _renderTargetEdges: import("three").RenderTarget;
+                    _renderTargetWeights: import("three").RenderTarget;
+                    _renderTargetBlend: import("three").RenderTarget;
+                  };
+                  targets.push(
+                    owned._renderTargetEdges,
+                    owned._renderTargetWeights,
+                    owned._renderTargetBlend,
+                  );
+                }
+              });
+              expect(targets).toHaveLength(screenSpaceAA === "smaa" ? 4 : 1);
+              controller.setSize(128 * generation, 64 * generation);
+              for (const target of targets) {
+                if (subrect) expect(controller.textureView(target.texture)).toBeDefined();
+                releases.push(vi.spyOn(target, "dispose"));
+              }
+              stage.dispose?.();
+              stage.dispose?.();
+              for (const release of releases) expect(release).toHaveBeenCalledTimes(1);
+              const retiredSizes = targets.map((target) => [
+                target.width,
+                target.height,
+                target.viewport.toArray(),
+              ]);
+              for (const target of targets)
+                expect(controller.textureView(target.texture)).toBeUndefined();
+              controller.setScale(0.61);
+              controller.setSize(128 * (generation + 1), 64 * (generation + 1));
+              expect(
+                targets.map((target) => [target.width, target.height, target.viewport.toArray()]),
+              ).toEqual(retiredSizes);
+              for (const release of releases) expect(release).toHaveBeenCalledTimes(1);
+            }
+            return {
+              applied: { stages: ["antialias"], dropped: [] },
+              dispose: () => stage.dispose?.(),
+            };
+          },
+        };
+        const applied = new WorldEnvironment({ bloomEnabled: true, screenSpaceAA }).apply(
+          renderer,
+          new Scene(),
+          new PerspectiveCamera(),
+        );
+        applied.dispose?.();
+        controller.dispose();
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("keeps default exposure direct and installs the authored opt-in on its existing world pass", () => {
   const output = vi.fn();
@@ -251,4 +346,199 @@ it("releases the unique direct installation receipt rather than the legacy node 
   applied.dispose?.();
   expect(dispose).toHaveBeenCalledTimes(1);
   expect(clearOutputNode).not.toHaveBeenCalled();
+});
+
+it("admits default spatial stages and explicitly refuses unadapted graphs", () => {
+  const handle = {
+    active: false,
+    retain: vi.fn(),
+    release: vi.fn(),
+    textureView: () => undefined,
+    dispose: vi.fn(),
+  };
+  const optionsSeen: Parameters<NonNullable<OutputRenderer["createRenderChain"]>>[0][] = [];
+  const renderer: OutputRenderer = {
+    kind: "webgpu",
+    raw: {},
+    createResolutionSubrect: () => handle,
+    createRenderChain(options) {
+      optionsSeen.push(options);
+      return { applied: { stages: [], dropped: [] }, dispose() {} };
+    },
+  };
+  const graph = new WorldEnvironment({ gtaoEnabled: true, bloomEnabled: true }).apply(
+    renderer,
+    new Scene(),
+    new PerspectiveCamera(),
+  );
+  const options = optionsSeen[0];
+  expect(options?.resolutionSubrect).toBe(handle);
+  for (const name of ["ambientOcclusion", "bloom", "vignette", "antialias"])
+    expect(options?.stages?.find((stage) => stage.name === name)?.supportsResolutionSubrect).toBe(
+      true,
+    );
+  for (const name of ["ssgi", "ssr", "godRays", "sharpen"])
+    expect(
+      options?.stages?.find((stage) => stage.name === name)?.supportsResolutionSubrect,
+    ).not.toBe(true);
+  expect(handle.retain).toHaveBeenCalled();
+  graph.dispose?.();
+  expect(handle.dispose).toHaveBeenCalledOnce();
+});
+
+it.each([
+  {
+    name: "custom base colour",
+    environment: new WorldEnvironment({ bloomEnabled: true }),
+    target: { baseColour: (scenePass: ReturnType<typeof import("three/tsl").pass>) => scenePass },
+    refusal: "baseColour",
+  },
+  {
+    name: "automatic exposure",
+    environment: new WorldEnvironment({ autoExposureEnabled: true, bloomEnabled: true }),
+    target: undefined,
+    refusal: "autoExposure",
+  },
+])("keeps the sub-rectangle fallback for $name", ({ environment, target, refusal }) => {
+  const createResolutionSubrect = vi.fn(() => ({
+    active: false,
+    textureView: () => undefined,
+    retain: vi.fn(),
+    release: vi.fn(),
+    dispose: vi.fn(),
+  }));
+  const createRenderChain = vi.fn(
+    (_options: Parameters<NonNullable<OutputRenderer["createRenderChain"]>>[0]) => ({
+      applied: { stages: [], dropped: [] },
+      dispose() {},
+    }),
+  );
+  const report = vi.spyOn(console, "info").mockImplementation(() => {});
+  try {
+    const renderer: OutputRenderer = {
+      kind: "webgpu",
+      raw: {},
+      createRenderChain,
+      createResolutionSubrect,
+    };
+    const applied = environment.apply(renderer, new Scene(), new PerspectiveCamera(), target);
+    expect(createResolutionSubrect).not.toHaveBeenCalled();
+    expect(createRenderChain.mock.calls[0]?.[0].resolutionSubrect).toBeUndefined();
+    expect(report.mock.calls.some(([line]) => line.includes(refusal))).toBe(true);
+    applied.dispose?.();
+  } finally {
+    report.mockRestore();
+  }
+});
+
+it("retains every spatial intermediate target rather than only the scene pass", () => {
+  const retain = vi.fn();
+  const handle = {
+    active: false,
+    retain,
+    release: vi.fn(),
+    textureView: () => undefined,
+    dispose: vi.fn(),
+  };
+  vi.stubGlobal(
+    "Image",
+    class {
+      src = "";
+      onload = () => {};
+    },
+  );
+  let release: (() => void) | undefined;
+  try {
+    const renderer: OutputRenderer = {
+      kind: "webgpu",
+      raw: {},
+      createResolutionSubrect: () => handle,
+      createRenderChain(options) {
+        let node = options.input;
+        for (const name of ["ambientOcclusion", "bloom", "vignette", "antialias"]) {
+          const stage = options.stages?.find((entry) => entry.name === name);
+          if (!stage) throw new Error(`Missing ${name}`);
+          node = stage.build(node, { tier: "high" });
+        }
+        const prepared = new Set<Node>();
+        (node as Node).traverse((entry) => {
+          if (entry instanceof BloomNode && !prepared.has(entry)) {
+            prepared.add(entry);
+            entry.setup({ getSharedContext: () => ({}) } as unknown as NodeBuilder);
+          }
+        });
+        return { applied: { stages: [], dropped: [] }, dispose() {} };
+      },
+    };
+    const graph = new WorldEnvironment({ gtaoEnabled: true, bloomEnabled: true }).apply(
+      renderer,
+      new Scene(),
+      new PerspectiveCamera(),
+    );
+    release = graph.dispose;
+    const targets = retain.mock.calls.flatMap(([, targets]) => targets as unknown[]);
+    // Scene + GTAO + bloom input/11 mips + SMAA input/3 targets.
+    expect(targets.length).toBeGreaterThanOrEqual(18);
+    expect(new Set(targets).size).toBe(targets.length);
+  } finally {
+    release?.();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps lazy bloom mips valid at small viewports and releases retired bindings", () => {
+  const controller = new ResolutionSubrect();
+  let effect: BloomNode | undefined;
+  let stageDispose: (() => void) | undefined;
+  const renderer: OutputRenderer = {
+    kind: "webgpu",
+    raw: {},
+    createResolutionSubrect: () => controller,
+    createRenderChain(options) {
+      const stage = options.stages?.find((entry) => entry.name === "bloom");
+      if (!stage) throw new Error("Missing bloom");
+      const graph = stage.build(options.input, { tier: "high" }) as Node;
+      graph.traverse((node) => {
+        if (node instanceof BloomNode) effect ??= node;
+      });
+      stageDispose = stage.dispose;
+      return {
+        applied: { stages: ["bloom"], dropped: [] },
+        dispose() {
+          stageDispose?.();
+        },
+      };
+    },
+  };
+  const graph = new WorldEnvironment({ bloomEnabled: true, screenSpaceAA: "disabled" }).apply(
+    renderer,
+    new Scene(),
+    new PerspectiveCamera(),
+  );
+  try {
+    if (!effect) throw new Error("Missing stock bloom");
+    controller.activate(0.23);
+    controller.setSize(128, 64);
+    expect(() =>
+      effect?.setup({ getSharedContext: () => ({}) } as unknown as NodeBuilder),
+    ).not.toThrow();
+    const retained = effect as unknown as {
+      _renderTargetBright: import("three").RenderTarget;
+      _renderTargetsHorizontal: import("three").RenderTarget[];
+      _separableBlurMaterials: { invSize: { value: import("three").Vector2 } }[];
+    };
+    for (const target of retained._renderTargetsHorizontal) {
+      expect(target.width).toBeGreaterThan(0);
+      expect(target.height).toBeGreaterThan(0);
+    }
+    for (const material of retained._separableBlurMaterials)
+      expect(material.invSize.value.toArray().every(Number.isFinite)).toBe(true);
+    stageDispose?.();
+    expect(controller.textureView(retained._renderTargetBright.texture)).toBeUndefined();
+    const resize = vi.spyOn(retained._renderTargetBright, "setSize");
+    controller.setScale(0.72);
+    expect(resize).not.toHaveBeenCalled();
+  } finally {
+    graph.dispose?.();
+  }
 });

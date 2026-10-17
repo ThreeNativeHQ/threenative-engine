@@ -190,6 +190,10 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PR489: all thirteen createProject trees change only by the four-line AA dispose closure;
+  // removing that closure from each generated tree recovers its previous fingerprint.
+  // PRD-564: measured all thirteen trees after retained-target sampling changes in
+  // worldEnvironment.ts and starter's grade/grain support declarations.
   // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
@@ -251,23 +255,24 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // createProject on the merged tree.
   // PRD-566/569/609 merge: measured all thirteen trees; action-rpg carries emitParticle bursts and onCull instructions.
   // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
-  // PRD-619: all kits name interpolation; starter adds the live-clock motion proof.
-  // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
-  // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
-  "action-rpg": "b8f576eaf5989c8ad800e875b08d5a0ded4b6e56bb28bd184bab8ee9b4e9b887",
-  minimal: "f90b1164cfe9843fa4d966cc2ef791e5601a6144908b113fa26c861bf0f7cf50",
-  platformer: "d267834c8d4a7785db04f53bba558f265047d0f124c8e6520f129705350a124e",
-  puzzle: "0d9a413cd9c11b6ac2ece0d143fde616a361c2fbc936861386f960747fc7f5a1",
-  racing: "ad0cb7f8436f2fb72105c4320f598176750e4ae47a40983093ed8498ebbf7cf2",
-  rain: "9624754d1627fd2370c30547c21f89b4ac01c17c6cdf109f7cd3c9b418a4134f",
-  rts: "59415113c3b7ff6ea501938d666d33431610c7abad1c31078add14b3ed8c06f1",
-  runner: "4cf9fa3562741bc10a62cd0097bd2749907f1e06364b10414c9b7a9153920b72",
+  // 2026-10-17 merged develop (PRD-619 interpolation) into PRD-564: all thirteen trees re-measured through
+  // createProject on the merged tree.
+  // Merged develop 1d056cec3 into PRD-564: AA disposal and the PR486 Three patch ship, so all thirteen
+  // trees are measured through createProject on this combined worktree, not either side's value.
+  "action-rpg": "c0d6de48044320e84ea2ac7d4ed6f1ee34d1666fd823838905d82cbd92814941",
+  minimal: "4b8c75461d05cb51e20e37eef98b2c183707c7132c622e84f27572dd32048ecc",
+  platformer: "5282196f894fd75bef78d5d6e080ff1a3107ba53256f79b866fcd0c25510faae",
+  puzzle: "232c78732cffa1669622b57b8221e4e6df30d1b54140428525548b4d91f5403b",
+  racing: "af591cad4364cdbde7652a51ca7ef07935468a66e87bb726be8dec0c8cdb01a8",
+  rain: "6c473543a655ae1eae01b78318bc84a449cffe4b811144060c22e6832a9937de",
+  rts: "b2bccad5648a665c4812fba8292c1267b4b47b5c8fff921e72b78aa8db504f2e",
+  runner: "876d1c68e80cb566be6093c0b608e1ec0c5d8c02cb6468b1b5995fd523bb1b95",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "6c60cf1ae44aee3fa6d619a6f04adb11b9205dae40fa08f2260ba21880b9867a",
-  shooter: "5f838051056ab398106572ed49a882a097087db6da293ed9e9e9fffc11e5eec6",
-  snow: "b453da99303733e60d129da155960680be27a1dcf6cffc12bdc067962e0e34c9",
-  starter: "a962d9941292927ff3b8403e2038910a608ef9eef75814f84e4ad4574b7dfcd1",
-  "tower-defense": "442dcb534f9bbbfca13743493790ceb7ff9d099468c3137758d3fa23cd02de71",
+  sailing: "9bff33bf989975f4b9b05ba468bb293bcbacad832f4ef509566754461a7d5632",
+  shooter: "8f771c884a980d620e3c79f411b8e8d3b2cfe0ab9a2871052443fff4ac55dd19",
+  snow: "dbabd0e6406e8e074063bdb985018664ffd0ee915c7237976f403dca81269afe",
+  starter: "f40897f30b8b1ebd890c5a559e965606a52c50663ac29b76fc24fdab544219e3",
+  "tower-defense": "69ee2732bfe738a454f7df7d0803715645aceb36fbbc1594fb417867e5412944",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
