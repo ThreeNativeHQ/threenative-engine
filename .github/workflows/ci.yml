@@ -1239,6 +1239,19 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "::notice::packages/runtime-native/cmake/NativeEngineCore.cmake does not exist on this commit; nothing to build"
           fi
+      # Five ctest cases run Node against the workspace: the TSL corpus and graph references, the
+      # TRAA jitter reference, and the raycaster and LOD reference-current checks import `three` and
+      # run `pnpm exec tsx`. Without an install they stop at "Cannot find package 'tsx'".
+      - uses: ./.github/actions/pnpm
+        if: steps.engine.outputs.present == 'true'
+      - uses: actions/setup-node@v7
+        if: steps.engine.outputs.present == 'true'
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install the workspace
+        if: steps.engine.outputs.present == 'true'
+        run: pnpm install --frozen-lockfile
       - name: Restore the native-engine compiler cache
         if: steps.engine.outputs.present == 'true'
         uses: actions/cache@v4
