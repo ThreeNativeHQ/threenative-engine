@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { describe, expect, it, vi } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   ENGINE_PARITY_THRESHOLD,
   KNOWN_GAPS,
@@ -31,7 +31,7 @@ function frame(width: number, height: number, paint: (x: number, y: number) => n
 
 describe("engine parity guard", () => {
   it("persists Chromium watchdog evidence when a capture fails, then rethrows that failure", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "engine-parity-watchdog-"));
+    const directory = await makeTempDir("engine-parity-watchdog-");
     let histogramRequests = 0;
     const cdp = {
       send: async () => {
@@ -87,7 +87,7 @@ describe("engine parity guard", () => {
   });
 
   it("records unavailable or empty CDP data as inconclusive without masking the capture failure", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "engine-parity-watchdog-"));
+    const directory = await makeTempDir("engine-parity-watchdog-");
     const failure = new Error("diagnostic capture failed");
     const cases = [
       {
@@ -133,7 +133,7 @@ describe("engine parity guard", () => {
 
   it("bounds delayed CDP attach and detaches a session that arrives after cleanup", async () => {
     vi.useFakeTimers();
-    const directory = mkdtempSync(path.join(tmpdir(), "engine-parity-watchdog-"));
+    const directory = await makeTempDir("engine-parity-watchdog-");
     let resolveSession!: (session: { detach: () => Promise<void> }) => void;
     let detached = false;
     const pendingSession = new Promise<{ detach: () => Promise<void> }>((resolve) => {
@@ -179,7 +179,7 @@ describe("engine parity guard", () => {
   });
 
   it("persists raw capture observations when the capture callback throws, then rethrows that failure", async () => {
-    const directory = mkdtempSync(path.join(tmpdir(), "engine-parity-observations-"));
+    const directory = await makeTempDir("engine-parity-observations-");
     const failure = new Error("TN_CAPTURE_BLANK: pose: 0.03947 < 0.05 nonblank pixels");
     const cdp = { send: async () => ({ histograms: [] }), detach: async () => undefined };
     const session = {
