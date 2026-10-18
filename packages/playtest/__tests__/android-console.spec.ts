@@ -1,5 +1,5 @@
-import { expect, test } from "vitest";
-import { readFile, writeFile } from "node:fs/promises";
+import { expect, test, vi } from "vitest";
+import { open, readFile, writeFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
@@ -9,6 +9,7 @@ import { PlaytestBridgeError } from "../src/runner/bridgeClient.js";
 import {
   androidMailboxPaths,
   type IDevicePlaytestTransport,
+  type IDeviceResponseObservation,
 } from "../src/runner/deviceTransport.js";
 import { PLAYTEST_PROTOCOL_LIMITS } from "../src/protocol.js";
 
@@ -517,3 +518,112 @@ test("Android console classifies WebView internals as log and page console as er
   expect(parsed.map(({ type }) => type)).toEqual(["log", "log", "error", "error"]);
   expect(parsed).toHaveLength(4);
 });
+
+
+test.each([0, 3])("device response archive streams %s records without aggregate serialization", async (count) => {
+  const records = Array.from({ length: count }, (_, index) => ({
+    body: JSON.stringify({ id: String(index), result: `raw\n雪\"${"x".repeat(1024)}` }),
+    method: "sample",
+    order: index + 1,
+    requestId: String(index),
+  }));
+  const stringify = JSON.stringify;
+  const guard = vi.spyOn(JSON, "stringify").mockImplementation((value, replacer, space) => {
+    if (value?.observations?.length > 1 && typeof value.observations[0]?.body === "string") {
+      throw new RangeError("Invalid string length (simulated aggregate limit)");
+    }
+    return stringify(value, replacer, space);
+  });
+  try {
+    const { artifactPath, responsePath, stopped, closed } = await runResponseArchive(records);
+    expect(JSON.parse(await readFile(artifactPath, "utf8"))).toEqual({ responsePath, observations: records });
+    expect(stopped()).toBe(true);
+    expect(closed()).toBe(true);
+  } finally {
+    guard.mockRestore();
+  }
+});
+
+test("device response archive writes each record before the producer continues", async () => {
+  await runResponseArchive([{ body: "raw response", method: "sample", order: 1, requestId: "1" }], { verifyWrites: true });
+});
+
+test.each([false, true])("device response archive write failure closes resources and retains prior error %s", async (priorError) => {
+  const scratch = await open(join(await makeTempDir("playtest-archive-handle-"), "scratch"), "w");
+  const prototype = Object.getPrototypeOf(scratch) as FileHandle;
+  await scratch.close();
+  const original = prototype.writeFile;
+  let archiveHandle: FileHandle | undefined;
+  const write = vi.spyOn(prototype, "writeFile").mockImplementation(async function (this: FileHandle, data, options) {
+    archiveHandle = this;
+    if (typeof data === "string" && (priorError ? data === "]\n}\n" : data.includes('"method":"sample"'))) {
+      throw new Error("archive disk full");
+    }
+    await original.call(this, data, options);
+  });
+  const stopped = vi.fn();
+  const closed = vi.fn();
+  try {
+    const failure = runResponseArchive(priorError ? [] : [{ body: "raw", method: "sample", order: 1, requestId: "1" }], {
+      prepareError: priorError ? new Error("original prepare failure") : undefined,
+      onStop: stopped, onClose: closed,
+    });
+    await expect(failure).rejects.toMatchObject({
+      errors: [
+        expect.objectContaining({ message: priorError ? "original prepare failure" : "archive disk full" }),
+        expect.objectContaining({ message: "archive disk full" }),
+      ],
+    });
+    expect(stopped).toHaveBeenCalledOnce();
+    expect(closed).toHaveBeenCalledOnce();
+    expect(archiveHandle?.fd).toBe(-1);
+  } finally {
+    write.mockRestore();
+  }
+});
+
+async function runResponseArchive(records: IDeviceResponseObservation[], options: {
+  verifyWrites?: boolean;
+  prepareError?: Error;
+  onStop?: () => void;
+  onClose?: () => void;
+} = {}) {
+  const projectPath = await makeTempDir("playtest-response-archive-");
+  await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
+    schemaVersion: 1, name: "archive", warmupFrames: 0,
+    steps: [{ waitFrames: 1 }], viewport: { width: 960, height: 640 },
+    artifacts: { screenshots: false },
+    assert: { resources: [{ id: "state", path: "frames", changed: true }] },
+  }));
+  const artifactDirectory = join(projectPath, "artifacts");
+  const artifactPath = join(artifactDirectory, "device-response-observations.json");
+  const paths = androidMailboxPaths("com.example.archive");
+  let observer: ((record: IDeviceResponseObservation) => void | Promise<void>) | undefined;
+  let stopped = false;
+  let closed = false;
+  const transport: IDevicePlaytestTransport = {
+    capabilities: [],
+    setResponseObserver: (callback) => { observer = callback; },
+    start: async () => {
+      for (const record of records) {
+        await observer?.(record);
+        if (options.verifyWrites) expect(await readFile(artifactPath, "utf8")).toContain(JSON.stringify(record));
+      }
+    },
+    waitForBridge: async () => false,
+    call: async () => { throw new Error("unexpected call"); },
+    close: async () => { closed = true; options.onClose?.(); },
+  };
+  await runDevicePlaytest({
+    projectPath, scenarioPath: "scenario.json", artifactDirectory,
+    headless: true, timeoutMs: 1000, trace: false, url: "", target: "android",
+  }, {
+    driver: {
+      captureConsole: async () => [], isAlive: async () => true,
+      prepare: async () => { if (options.prepareError) throw options.prepareError; }, screenshot: async () => {},
+      stop: async () => { stopped = true; options.onStop?.(); },
+    },
+    mailboxPaths: paths, name: "android", processName: "com.example.archive", transport,
+  });
+  return { artifactPath, responsePath: paths.response, stopped: () => stopped, closed: () => closed };
+}
