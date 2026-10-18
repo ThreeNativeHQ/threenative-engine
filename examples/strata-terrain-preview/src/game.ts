@@ -7,7 +7,7 @@ import {
   markStatic,
 } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
-import { Heightfield } from "@threenative/core/world";
+import { Heightfield, type WorldCells } from "@threenative/core/world";
 import {
   CharacterBody3D,
   CollisionShape3D,
@@ -127,6 +127,7 @@ const initialState = {
   canopyComparison: { normals: "authored", specular: "disabled" } as ICanopyComparison,
   showcase: false,
   worldReady: false,
+  spawnReadiness: [] as Array<Record<string, string | number | boolean>>,
   loadingError: "",
   spawnCellsRequired: 0,
   spawnCellsLoaded: 0,
@@ -299,6 +300,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         view: "player",
         currentViewWindows: 0,
         worldReady: false,
+        spawnReadiness: [],
         loadingError: "",
         spawnCellsRequired: 0,
         spawnCellsLoaded: 0,
@@ -374,6 +376,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const textureUploads = new AbortController();
       let propsStage = "waiting-for-physics";
       let preparation: IPropPreparationProgress | undefined;
+      let buildStartedAt: number | undefined;
+      let phaseStartedAt: number | undefined;
+      let lastProgressAt: number | undefined;
       let completedPropsWork = 0;
       // One scene-local spawn gate: a single deadline taken here, settled once by the world readiness
       // join, a failure or teardown. `WorldCells.whenSpawnReady` is the data authority and each
@@ -381,6 +386,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const deadlineAt = performance.now() + 120_000;
       let spawnCells = { required: 0, loaded: 0 };
       let spawnReady = false;
+      const spawnJoins = new Map<WorldCells, { data: string; prewarm: string }>();
       let spawnError = "";
       let spawnSettled = false;
       let capturingSpawnFailure = false;
@@ -421,11 +427,29 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         120_000,
       );
       function captureSpawnFailure(reason: string): void {
+        const failedAt = performance.now();
+        const sceneStartedAt = deadlineAt - 120_000;
         console.error(
           `TN_STRATA_SPAWN_FAILURE ${JSON.stringify({
             reason: reason.slice(0, 256),
             world,
             stage: (preparation?.phase ?? propsStage).slice(0, 64),
+            bucket: preparation?.bucket.slice(0, 64) ?? null,
+            added: preparation?.added ?? null,
+            total: preparation?.total ?? null,
+            deadlineElapsedMs: Math.max(0, Math.round(failedAt - sceneStartedAt)),
+            buildStartedMs:
+              buildStartedAt === undefined
+                ? null
+                : Math.max(0, Math.round(buildStartedAt - sceneStartedAt)),
+            phaseStartedMs:
+              phaseStartedAt === undefined
+                ? null
+                : Math.max(0, Math.round(phaseStartedAt - sceneStartedAt)),
+            lastProgressMs:
+              lastProgressAt === undefined
+                ? null
+                : Math.max(0, Math.round(lastProgressAt - sceneStartedAt)),
           })}`,
         );
       }
@@ -818,6 +842,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // loaders run together and fail soft per file, so one missing species costs that species and
         // nothing else. One load, because `afterPhysics` runs every frame.
         buildProps = async (): Promise<void> => {
+          buildStartedAt = performance.now();
           propsStage = "assets";
           const [prepared, pack, skyLight] = await Promise.all([
             loadPreparedProps(ctx.assets),
@@ -883,6 +908,15 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
                 : 5000,
             whileCurrent: () => !released,
             onProgress: (progress) => {
+              const progressedAt = performance.now();
+              const previousPreparation = preparation;
+              if (
+                previousPreparation === undefined ||
+                previousPreparation.phase !== progress.phase ||
+                previousPreparation.bucket !== progress.bucket
+              )
+                phaseStartedAt = progressedAt;
+              lastProgressAt = progressedAt;
               const previous =
                 preparation?.phase === progress.phase && preparation.bucket === progress.bucket
                   ? preparation.added
@@ -919,7 +953,29 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           } else {
             void Promise.all([
               Promise.all(
-                props.worlds.map((stream) => stream.whenSpawnReady(spawn, 60, remaining)),
+                props.worlds.map((stream) => {
+                  const status = { data: "pending", prewarm: "pending" };
+                  spawnJoins.set(stream, status);
+                  const data = stream.whenSpawnReady(spawn, 60, remaining);
+                  // Observe settlement without replacing the promises the spawn join awaits.
+                  void data.then(
+                    () => {
+                      status.data = "resolved";
+                    },
+                    () => {
+                      status.data = "rejected";
+                    },
+                  );
+                  void stream.prewarmed.then(
+                    () => {
+                      status.prewarm = "resolved";
+                    },
+                    () => {
+                      status.prewarm = "rejected";
+                    },
+                  );
+                  return data;
+                }),
               ),
               ...props.worlds.map((stream) => stream.prewarmed),
             ]).then(
@@ -1153,6 +1209,19 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
               admissionBacklog: stagedStreaming.admission.backlog,
             }
           : props?.stats();
+        const spawnReadiness = [...spawnJoins].map(([stream, status], index) => {
+          if (spawnReady)
+            return { name: stream.name, ...ctx.state.getState().spawnReadiness[index], ...status };
+          const stats = stream.stats();
+          return {
+            name: stream.name,
+            observedFrame: frames,
+            ...status,
+            ...stream.readinessAt(spawn, 60),
+            admissionBacklog: stats.admission.backlog,
+            impostorPending: stats.impostor.pending,
+          };
+        });
         const worldReady = spawnReady;
         if (spawnError) ctx.state.set({ loadingError: spawnError });
         if (
@@ -1214,6 +1283,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             ? ((mesh.material as MeshStandardMaterial).userData.biome ?? "baked")
             : `stage:${forestStageArm(globalThis.location?.search ?? "")}`,
           worldReady,
+          spawnReadiness,
           spawnCellsRequired: spawnCells.required,
           spawnCellsLoaded: spawnCells.loaded,
           streamingResidentCells: streaming?.residentCells ?? 0,

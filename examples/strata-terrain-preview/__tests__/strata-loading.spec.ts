@@ -159,27 +159,46 @@ function host(ready: Promise<void>) {
   };
 }
 
-it.each(["attached", "cancelled", "released"] as const)(
+it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected"] as const)(
   "defers hidden world draws until prepared streams attach: %s",
   async (outcome) => {
     const declarations = gameDeclarations(["buildProps"], true);
     const controllerHost = host(new Promise<void>(() => undefined));
     controllerHost.canvasLayer.opaque = true;
     controllerHost.canvasLayer.renderWorldDuringStartup = false;
-    let admit: () => void = () => undefined;
-    let draw: () => void = () => undefined;
-    const world = {
-      prewarmed: new Promise<void>((resolve) => {
-        draw = resolve;
-      }),
-      update: () => undefined,
-      whenSpawnReady: vi.fn(
-        () =>
-          new Promise<{ requiredCells: number; loadedCells: number }>((resolve) => {
-            admit = () => resolve({ requiredCells: 1, loadedCells: 1 });
-          }),
-      ),
-    };
+    const gates = [0, 1].map((index) => {
+      let admit: () => void = () => undefined;
+      let draw: () => void = () => undefined;
+      let rejectData: (error: Error) => void = () => undefined;
+      let rejectDraw: (error: Error) => void = () => undefined;
+      const data = new Promise<{ requiredCells: number; loadedCells: number }>(
+        (resolve, reject) => {
+          admit = () => resolve({ requiredCells: index + 1, loadedCells: index + 1 });
+          rejectData = reject;
+        },
+      );
+      const world = {
+        name: `strata-props:${index}`,
+        prewarmed: new Promise<void>((resolve, reject) => {
+          draw = resolve;
+          rejectDraw = reject;
+        }),
+        update: () => undefined,
+        whenSpawnReady: vi.fn(() => data),
+        readinessAt: vi.fn(() => ({
+          ready: false,
+          requiredCells: index + 1,
+          loadedCells: 0,
+          failures: 0,
+        })),
+        stats: vi.fn(() => ({
+          admission: { backlog: index + 4 },
+          impostor: { pending: index + 2 },
+        })),
+      };
+      return { world, data, admit, draw, rejectData, rejectDraw };
+    });
+    const all = vi.fn((values: Iterable<unknown>) => Promise.all(values));
     const attachments: boolean[] = [];
     let entered: () => void = () => undefined;
     const preparing = new Promise<void>((resolve) => {
@@ -190,15 +209,29 @@ it.each(["attached", "cancelled", "released"] as const)(
       finish = resolve;
     });
     let disposed = false;
+    let clock = 0;
+    const progressSnapshots: Array<{
+      phaseStartedAt: number | undefined;
+      lastProgressAt: number | undefined;
+    }> = [];
+    const failure = vi.fn();
     const parts = new Map();
     const scope = {
       exports: {} as { Controller?: new () => { run(): Promise<void> } },
-      performance,
-      deadlineAt: performance.now() + 120_000,
+      performance: { now: () => clock },
+      deadlineAt: 120_000,
+      buildStartedAt: undefined as number | undefined,
+      phaseStartedAt: undefined as number | undefined,
+      lastProgressAt: undefined as number | undefined,
+      console: { error: failure },
+      reason: "observed preparation failure",
+      world: "forest",
       settleSpawn: vi.fn(),
+      spawnJoins: new Map(),
       spawnSettled: false,
       spawnCells: { required: 0, loaded: 0 },
-      failSpawn: () => undefined,
+      failSpawn: vi.fn(),
+      Promise: { all, resolve: Promise.resolve.bind(Promise) },
       ctx: {
         ...controllerHost,
         assets: undefined,
@@ -218,7 +251,6 @@ it.each(["attached", "cancelled", "released"] as const)(
       preparation: undefined,
       props: undefined,
       propParts: parts,
-      world: "forest",
       data: { size: 512 },
       spawn: { x: 0, y: 0, z: 0 },
       biome: {},
@@ -242,20 +274,28 @@ it.each(["attached", "cancelled", "released"] as const)(
         progress(2);
       },
       createStreamedProps: async (options: { onProgress: (progress: object) => void }) => {
-        for (const [phase, added] of [
-          ["grounding", 0],
-          ["grounding", 50],
-          ["grounding", 50],
-          ["models", 0],
-          ["models", 3],
-        ] as const)
-          options.onProgress({ phase, bucket: "trees", added, total: 100 });
+        for (const [phase, bucket, added] of [
+          ["grounding", "trees", 0],
+          ["grounding", "trees", 50],
+          ["grounding", "trees", 50],
+          ["models", "trees", 0],
+          ["models", "trees", 3],
+          ["models", "trees", 4],
+          ["models", "rocks", 2],
+        ] as const) {
+          clock += 10;
+          options.onProgress({ phase, bucket, added, total: 100 });
+          progressSnapshots.push({
+            phaseStartedAt: scope.phaseStartedAt,
+            lastProgressAt: scope.lastProgressAt,
+          });
+        }
         entered();
         await prepared;
         return outcome === "cancelled"
           ? undefined
           : {
-              worlds: [world],
+              worlds: gates.map((gate) => gate.world),
               byId: new Map(),
               meshes: [],
               dispose: () => {
@@ -266,7 +306,7 @@ it.each(["attached", "cancelled", "released"] as const)(
     };
     runInNewContext(
       ts.transpileModule(
-        `export class Controller { #surfaces; async run() { ${declarations}; await buildProps(); } }`,
+        `export class Controller { #surfaces; async run() { ${declarations}; await buildProps(); ${gameDeclarations(["captureSpawnFailure"])}; captureSpawnFailure(reason); } }`,
         { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } },
       ).outputText,
       scope,
@@ -281,7 +321,7 @@ it.each(["attached", "cancelled", "released"] as const)(
       }),
     ]);
     try {
-      expect(scope.completedPropsWork).toBe(55);
+      expect(scope.completedPropsWork).toBe(58);
       expect(controllerHost.canvasLayer.keepWorldRendering).toBe(false);
       expect(attachments).toEqual([]);
     } finally {
@@ -289,24 +329,163 @@ it.each(["attached", "cancelled", "released"] as const)(
       finish();
       await work;
     }
-    expect(attachments).toEqual(outcome === "attached" ? [false] : []);
-    expect(controllerHost.canvasLayer.keepWorldRendering).toBe(outcome === "attached");
+    const encodedFailure = failure.mock.calls[0]?.[0] as string;
+    const receipt = JSON.parse(encodedFailure.slice("TN_STRATA_SPAWN_FAILURE ".length));
+    expect(receipt).toMatchObject({
+      reason: "observed preparation failure",
+      world: "forest",
+      stage: "models",
+      bucket: "rocks",
+      added: 2,
+      total: 100,
+      buildStartedMs: 0,
+      phaseStartedMs: 70,
+      lastProgressMs: 70,
+      deadlineElapsedMs: 70,
+    });
+    expect(progressSnapshots.slice(4, 7)).toEqual([
+      { phaseStartedAt: 40, lastProgressAt: 50 },
+      { phaseStartedAt: 40, lastProgressAt: 60 },
+      { phaseStartedAt: 70, lastProgressAt: 70 },
+    ]);
+    const attached = outcome !== "cancelled" && outcome !== "released";
+    expect(attachments).toEqual(attached ? [false, false] : []);
+    expect(controllerHost.canvasLayer.keepWorldRendering).toBe(attached);
     expect(disposed).toBe(outcome === "released");
     expect(scope.settleSpawn).not.toHaveBeenCalled();
     expect(scope.spawnCells).toEqual({ required: 0, loaded: 0 });
-    draw();
+    if (!attached) return;
+    expect([...scope.spawnJoins.values()]).toEqual([
+      { data: "pending", prewarm: "pending" },
+      { data: "pending", prewarm: "pending" },
+    ]);
+    expect(
+      all.mock.calls.some(
+        ([values]) =>
+          Array.isArray(values) && values[0] === gates[0]?.data && values[1] === gates[1]?.data,
+      ),
+    ).toBe(true);
+    expect(
+      all.mock.calls.some(
+        ([values]) =>
+          Array.isArray(values) &&
+          values[1] === gates[0]?.world.prewarmed &&
+          values[2] === gates[1]?.world.prewarmed,
+      ),
+    ).toBe(true);
+    gates[0]?.admit();
+    gates[1]?.draw();
     for (let turn = 0; turn < 5; turn++) await Promise.resolve();
+    expect([...scope.spawnJoins.values()]).toEqual([
+      { data: "resolved", prewarm: "pending" },
+      { data: "pending", prewarm: "resolved" },
+    ]);
     expect(scope.settleSpawn).not.toHaveBeenCalled();
-    admit();
+    const error = new Error("original world gate rejection");
+    if (outcome === "data-rejected") gates[1]?.rejectData(error);
+    else gates[1]?.admit();
+    if (outcome === "prewarm-rejected") gates[0]?.rejectDraw(error);
+    else gates[0]?.draw();
     for (let turn = 0; turn < 5; turn++) await Promise.resolve();
-    expect(scope.settleSpawn).toHaveBeenCalledTimes(outcome === "attached" ? 1 : 0);
     if (outcome === "attached") {
-      expect(scope.spawnCells).toEqual({ required: 1, loaded: 1 });
-      expect(scope.ctx.state.set).not.toHaveBeenCalled();
-      expect(world.whenSpawnReady).toHaveBeenCalledWith(scope.spawn, 60, expect.any(Number));
+      expect(scope.settleSpawn).toHaveBeenCalledOnce();
+      expect(scope.spawnCells).toEqual({ required: 3, loaded: 3 });
+      expect([...scope.spawnJoins.values()]).toEqual([
+        { data: "resolved", prewarm: "resolved" },
+        { data: "resolved", prewarm: "resolved" },
+      ]);
+      expect(scope.failSpawn).not.toHaveBeenCalled();
+    } else {
+      expect(scope.settleSpawn).not.toHaveBeenCalled();
+      expect(scope.failSpawn).toHaveBeenCalledExactlyOnceWith(error);
+      expect([...scope.spawnJoins.values()]).toContainEqual(
+        outcome === "data-rejected"
+          ? { data: "rejected", prewarm: "resolved" }
+          : { data: "resolved", prewarm: "rejected" },
+      );
     }
+    expect(scope.ctx.state.set).not.toHaveBeenCalled();
+    expect(gates[0]?.world.whenSpawnReady).toHaveBeenCalledExactlyOnceWith(
+      scope.spawn,
+      60,
+      119_930,
+    );
+    expect(gates[1]?.world.whenSpawnReady).toHaveBeenCalledExactlyOnceWith(
+      scope.spawn,
+      60,
+      119_930,
+    );
   },
 );
+
+it("reports each spawn region and promise status without querying readiness after settlement", () => {
+  const status = { data: "pending", prewarm: "rejected" };
+  const stream = {
+    name: "strata-props:coastal-trees",
+    readinessAt: vi.fn(() => ({
+      ready: false,
+      requiredCells: 3,
+      loadedCells: 2,
+      requiredTerrainTiles: 0,
+      loadedTerrainTiles: 0,
+      failures: 1,
+      cancelled: false,
+    })),
+    stats: vi.fn(() => ({ admission: { backlog: 7 }, impostor: { pending: 4 } })),
+  };
+  const scope = {
+    exports: { snapshot: [] as Array<Record<string, string | number | boolean>> },
+    spawnJoins: new Map([[stream, status]]),
+    spawn: { x: 11, z: 23 },
+    spawnReady: false,
+    frames: 12,
+    ctx: { state: { getState: () => ({ spawnReadiness: scope.exports.snapshot }) } },
+  };
+  const code = ts.transpileModule(
+    `(function () { ${gameDeclarations(["spawnReadiness"])}; exports.snapshot = spawnReadiness; })();`,
+    {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+    },
+  ).outputText;
+  runInNewContext(code, scope);
+  expect(scope.exports.snapshot).toEqual([
+    {
+      name: stream.name,
+      observedFrame: 12,
+      data: "pending",
+      prewarm: "rejected",
+      ready: false,
+      requiredCells: 3,
+      loadedCells: 2,
+      requiredTerrainTiles: 0,
+      loadedTerrainTiles: 0,
+      failures: 1,
+      cancelled: false,
+      admissionBacklog: 7,
+      impostorPending: 4,
+    },
+  ]);
+  expect(stream.readinessAt).toHaveBeenCalledExactlyOnceWith(scope.spawn, 60);
+  status.data = "resolved";
+  status.prewarm = "resolved";
+  scope.spawnReady = true;
+  scope.frames = 13;
+  runInNewContext(code, scope);
+  expect(scope.exports.snapshot[0]).toMatchObject({
+    data: "resolved",
+    prewarm: "resolved",
+    loadedCells: 2,
+    observedFrame: 12,
+  });
+  expect(stream.readinessAt).toHaveBeenCalledOnce();
+  expect(stream.stats).toHaveBeenCalledOnce();
+  scope.exports.snapshot = [];
+  runInNewContext(code, scope);
+  expect(scope.exports.snapshot).toEqual([
+    { name: stream.name, data: "resolved", prewarm: "resolved" },
+  ]);
+  expect(stream.readinessAt).toHaveBeenCalledOnce();
+});
 
 it("reports completed streamed admission work before spawn cells become ready", () => {
   const progress = startupProgressExpression();
@@ -324,8 +503,46 @@ it("reports completed streamed admission work before spawn cells become ready", 
   expect(result).toBe(10);
 });
 
+it("reports that preparation has not started when the spawn fails before physics", () => {
+  const error = vi.fn();
+  const reason = "Strata spawn admission exceeded 120000 ms";
+  runInNewContext(
+    ts.transpileModule(
+      `${gameDeclarations(["captureSpawnFailure"])}; captureSpawnFailure(reason);`,
+      { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+    ).outputText,
+    {
+      console: { error },
+      performance: { now: () => 121_000 },
+      deadlineAt: 121_000,
+      buildStartedAt: undefined,
+      phaseStartedAt: undefined,
+      lastProgressAt: undefined,
+      reason,
+      world: "forest",
+      propsStage: "waiting-for-physics",
+      preparation: undefined,
+    },
+  );
+  expect(error).toHaveBeenCalledOnce();
+  const encoded = error.mock.calls[0]?.[0] as string;
+  const receipt = JSON.parse(encoded.slice("TN_STRATA_SPAWN_FAILURE ".length));
+  expect(receipt).toMatchObject({
+    reason,
+    world: "forest",
+    stage: "waiting-for-physics",
+    bucket: null,
+    added: null,
+    total: null,
+    deadlineElapsedMs: 120_000,
+    buildStartedMs: null,
+    phaseStartedMs: null,
+    lastProgressMs: null,
+  });
+});
+
 it.each(["世界", "\u0000", "\uD800"])(
-  "bounds failure receipts for %j without retaining scene objects or resident key arrays",
+  "bounds long failure receipts for %j without retaining scene objects or resident key arrays",
   (text) => {
     const error = vi.fn();
     runInNewContext(
@@ -335,20 +552,37 @@ it.each(["世界", "\u0000", "\uD800"])(
       ).outputText,
       {
         console: { error },
+        performance: { now: () => 121_000 },
+        deadlineAt: 121_000,
+        buildStartedAt: undefined,
+        phaseStartedAt: undefined,
+        lastProgressAt: undefined,
         reason: text.repeat(10_000),
         world: "forest",
         propsStage: "streaming",
-        preparation: { phase: "world-load" },
+        preparation: {
+          phase: "world-load",
+          bucket: "x".repeat(10_000),
+          added: 0,
+          total: 0,
+        },
       },
     );
     expect(error).toHaveBeenCalledTimes(1);
     const encoded = error.mock.calls[0]?.[0] as string;
     expect(Buffer.byteLength(encoded)).toBeLessThan(2048);
     const receipt = JSON.parse(encoded.slice("TN_STRATA_SPAWN_FAILURE ".length));
-    expect(receipt).toEqual({
+    expect(receipt).toMatchObject({
       reason: text.repeat(10_000).slice(0, 256),
       world: "forest",
       stage: "world-load",
+      bucket: "x".repeat(64),
+      added: 0,
+      total: 0,
+      buildStartedMs: null,
+      phaseStartedMs: null,
+      lastProgressMs: null,
+      deadlineElapsedMs: 120_000,
     });
   },
 );
