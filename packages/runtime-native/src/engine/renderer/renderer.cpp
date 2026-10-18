@@ -1653,6 +1653,7 @@ void Renderer::beginEnvironment(const Texture& equirect) {
     env = EnvironmentGpu{};
     env.source = &equirect;
     env.version = equirect.version();
+    env.ready = false;  // a re-bake never reads as ready until its last packet completes
     const MaterialTexture* source = materialTexture(equirect);
     if (source->view == nullptr) throw std::runtime_error("TN_NATIVE_ENVIRONMENT_UPLOAD_FAILED");
     // three's _setSizeFromTexture: an equirect's cube size is image.width / 4.
@@ -1875,18 +1876,18 @@ bool Renderer::pumpEnvironment() {
 
 bool Renderer::prepareEnvironments(std::span<const DrawItem> items) {
     sweepTextures();  // a retired source must not keep a preparation reading a dead view
-    if (envPrep_) {
-        // An environment the frame no longer samples must not stall it: abandon and re-scan.
-        const uint64_t active = envPrep_->ident;
-        const bool sampled = std::any_of(items.begin(), items.end(), [active](const DrawItem& item) {
-            return (item.envMap && item.envMap->ident.value() == active) ||
-                   (item.pmremMap && item.pmremMap->ident.value() == active);
-        });
-        if (sampled) {
-            if (!pumpEnvironment()) return false;  // still pending, or this frame's one packet went out
-        } else {
-            abandonEnvironment();
-        }
+    // The active bake advances on every call, sampled by this pass or not: a render-target or
+    // secondary pass that does not sample it must not discard its progress. Only a version change
+    // or a disposal abandons it (pumpEnvironment, sweepTextures).
+    if (envPrep_ && !pumpEnvironment()) {
+        for (const DrawItem& item : items)
+            for (const Texture* texture : {item.envMap, item.pmremMap}) {
+                if (texture == nullptr) continue;
+                const auto found = environments_.find(texture->ident.value());
+                if (found == environments_.end() || !found->second.ready || found->second.version != texture->version())
+                    return false;  // this pass samples an environment that is not baked yet
+            }
+        return true;
     }
     for (const DrawItem& item : items) {
         for (const Texture* texture : {item.envMap, item.pmremMap}) {
