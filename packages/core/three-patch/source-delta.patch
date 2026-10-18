@@ -848,7 +848,7 @@ index 5f3d213a016b37db3b2e5d022da3dd0234d86f6d..892e97cc6804b75d358b2a0e46900a49
  		}
  
 diff --git a/src/renderers/common/Geometries.js b/src/renderers/common/Geometries.js
-index eb332c415882927e2fc1ac9b0cc0ed903f70432c..74100c31a7d8d09986cbf327d31a824aaf6bf9ae 100644
+index eb332c4..b3654df 100644
 --- a/src/renderers/common/Geometries.js
 +++ b/src/renderers/common/Geometries.js
 @@ -139,6 +139,17 @@ class Geometries extends DataMap {
@@ -869,7 +869,7 @@ index eb332c415882927e2fc1ac9b0cc0ed903f70432c..74100c31a7d8d09986cbf327d31a824a
  	}
  
  	/**
-@@ -163,11 +174,173 @@ class Geometries extends DataMap {
+@@ -163,11 +174,172 @@ class Geometries extends DataMap {
  	updateForRender( renderObject ) {
  
  		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
@@ -901,13 +901,17 @@ index eb332c415882927e2fc1ac9b0cc0ed903f70432c..74100c31a7d8d09986cbf327d31a824a
 +		const index = this.getIndex( renderObject );
 +		const settled = this._settledAttributes.get( renderObject );
 +
-+		if ( settled !== undefined && settled.size === attributes.length + ( index === null ? 0 : 1 ) ) {
++		if ( settled !== undefined && settled.attributes.length === attributes.length && settled.index === index ) {
 +
 +			let changed = false;
 +
-+			for ( const attribute of attributes ) {
++			for ( let i = 0; i < attributes.length; i ++ ) {
 +
-+				if ( settled.get( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) !== attribute.version ) {
++				const attribute = attributes[ i ];
++				const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++				const previous = settled.attributes[ i ];
++
++				if ( previous.attribute !== attribute || previous.data !== data || previous.version !== data.version ) {
 +
 +					changed = true;
 +					break;
@@ -916,23 +920,18 @@ index eb332c415882927e2fc1ac9b0cc0ed903f70432c..74100c31a7d8d09986cbf327d31a824a
 +
 +			}
 +
-+			if ( changed === false && ( index === null || settled.get( index ) === index.version ) ) return false;
++			if ( changed === false && ( index === null || settled.indexVersion === index.version ) ) return false;
 +
 +		}
 +
-+		const versions = new Map();
-+
-+		for ( const attribute of attributes ) {
++		const versions = attributes.map( ( attribute ) => {
 +
 +			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			return { attribute, data, version: data.version };
 +
-+			versions.set( data, data.version );
++		} );
 +
-+		}
-+
-+		if ( index !== null ) versions.set( index, index.version );
-+
-+		this._settledAttributes.set( renderObject, versions );
++		this._settledAttributes.set( renderObject, { attributes: versions, index, indexVersion: index === null ? undefined : index.version } );
 +
 +		return true;
 +
@@ -1043,7 +1042,7 @@ index eb332c415882927e2fc1ac9b0cc0ed903f70432c..74100c31a7d8d09986cbf327d31a824a
  	/**
  	 * Initializes the geometry of the given render object.
  	 *
-@@ -186,20 +359,7 @@ class Geometries extends DataMap {
+@@ -186,20 +358,7 @@ class Geometries extends DataMap {
  
  			this.info.memory.geometries --;
  

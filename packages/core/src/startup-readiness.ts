@@ -80,8 +80,8 @@ export const STARTUP_HOLD_BUDGET_MS = 45_000;
 /** One registered hold: the game's own launch work, and the bounded wait for it. */
 interface IHold {
   readonly label: string;
-  /** Polled once per rendered frame for a predicate hold; absent for a promise hold. */
-  readonly ready?: () => boolean;
+  /** Polled for a predicate hold; absent for a promise hold or a failed-open predicate. */
+  ready?: () => boolean;
   release?: (expired: boolean) => void;
   settled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined;
@@ -295,6 +295,17 @@ export class StartupReadiness {
     }
   }
 
+  #holdReady(hold: IHold): boolean {
+    if (hold.expired || hold.ready === undefined) return true;
+    try {
+      return hold.ready();
+    } catch {
+      // Like a rejected promise, a failed predicate remains settled on later quiet polls.
+      hold.ready = undefined;
+      return true;
+    }
+  }
+
   /**
    * Predicate holds settle on rendered frames, not simulation steps: a deterministic playtest clock
    * advances no fixed step while startup is held, so a gate read only in `afterPhysics` waited on
@@ -303,13 +314,7 @@ export class StartupReadiness {
   #pollHolds(): void {
     for (const hold of this.#holds.values()) {
       if (hold.settled || hold.ready === undefined) continue;
-      let done: boolean;
-      try {
-        done = hold.ready();
-      } catch {
-        done = true;
-      }
-      if (done) hold.release?.(false);
+      if (this.#holdReady(hold)) hold.release?.(false);
     }
   }
 
@@ -343,9 +348,7 @@ export class StartupReadiness {
     if (this.#afterHoldsDone && this.#settled !== undefined) {
       const quiet =
         this.#settled() &&
-        [...this.#holds.values()].every(
-          (hold) => hold.settled && (hold.ready === undefined || hold.ready()),
-        );
+        [...this.#holds.values()].every((hold) => hold.settled && this.#holdReady(hold));
       this.#quietFrames = quiet ? this.#quietFrames + 1 : 0;
       if (this.#quietFrames >= 2) {
         if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);

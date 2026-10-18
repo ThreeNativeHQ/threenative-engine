@@ -25,7 +25,7 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2c43bd4e7 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..c5eabf72f4366e9ae652a12acaf7c06af4cbcb6f 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -514,13 +514,13 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
 +			// When the renderer is drawing through an override material, that material is shared by
 +			// the whole pass and mutated per object, so its `version` alone answers the wrong
 +			// question. The source material this object actually carries answers the right one.
-+
+ 
+-				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
 +			const sourceMaterial = this.renderer._currentSourceMaterial;
 +			const sourceTracked = sourceMaterial !== null && sourceMaterial !== undefined;
 +			const sourceReplaced = sourceTracked && renderObject._sourceMaterial !== sourceMaterial;
 +			const sourceChanged = sourceTracked && ( sourceReplaced || renderObject.sourceVersion !== sourceMaterial.version );
- 
--				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
++
 +			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
 +
 +				if ( sourceReplaced || renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
@@ -570,7 +570,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	}
  
  	/**
-@@ -31189,11 +31357,173 @@ class Geometries extends DataMap {
+@@ -31189,11 +31357,172 @@ class Geometries extends DataMap {
  	updateForRender( renderObject ) {
  
  		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
@@ -602,13 +602,17 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
 +		const index = this.getIndex( renderObject );
 +		const settled = this._settledAttributes.get( renderObject );
 +
-+		if ( settled !== undefined && settled.size === attributes.length + ( index === null ? 0 : 1 ) ) {
++		if ( settled !== undefined && settled.attributes.length === attributes.length && settled.index === index ) {
 +
 +			let changed = false;
 +
-+			for ( const attribute of attributes ) {
++			for ( let i = 0; i < attributes.length; i ++ ) {
 +
-+				if ( settled.get( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) !== attribute.version ) {
++				const attribute = attributes[ i ];
++				const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++				const previous = settled.attributes[ i ];
++
++				if ( previous.attribute !== attribute || previous.data !== data || previous.version !== data.version ) {
 +
 +					changed = true;
 +					break;
@@ -617,23 +621,18 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
 +
 +			}
 +
-+			if ( changed === false && ( index === null || settled.get( index ) === index.version ) ) return false;
++			if ( changed === false && ( index === null || settled.indexVersion === index.version ) ) return false;
 +
 +		}
 +
-+		const versions = new Map();
-+
-+		for ( const attribute of attributes ) {
++		const versions = attributes.map( ( attribute ) => {
 +
 +			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			return { attribute, data, version: data.version };
 +
-+			versions.set( data, data.version );
++		} );
 +
-+		}
-+
-+		if ( index !== null ) versions.set( index, index.version );
-+
-+		this._settledAttributes.set( renderObject, versions );
++		this._settledAttributes.set( renderObject, { attributes: versions, index, indexVersion: index === null ? undefined : index.version } );
 +
 +		return true;
 +
@@ -744,7 +743,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	/**
  	 * Initializes the geometry of the given render object.
  	 *
-@@ -31212,20 +31542,7 @@ class Geometries extends DataMap {
+@@ -31212,20 +31541,7 @@ class Geometries extends DataMap {
  
  			this.info.memory.geometries --;
  
@@ -766,7 +765,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			const wireframeAttribute = this.wireframes.get( geometry );
  
-@@ -32771,7 +33088,7 @@ class Bindings extends DataMap {
+@@ -32771,7 +33087,7 @@ class Bindings extends DataMap {
  	 */
  	updateForRender( renderObject ) {
  
@@ -775,7 +774,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  	}
  
-@@ -32832,10 +33149,14 @@ class Bindings extends DataMap {
+@@ -32832,10 +33148,14 @@ class Bindings extends DataMap {
  
  					} else if ( binding.isSampledTexture ) {
  
@@ -790,7 +789,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  						this.textures.updateSampler( binding );
  
  					} else if ( binding.isStorageBuffer ) {
-@@ -32880,6 +33201,20 @@ class Bindings extends DataMap {
+@@ -32880,6 +33200,20 @@ class Bindings extends DataMap {
  
  			if ( groupData.usedTimes === 0 ) {
  
@@ -811,7 +810,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  				for ( const binding of bindGroup.bindings ) {
  
  					if ( binding.isUniformBuffer ) {
-@@ -32918,12 +33253,13 @@ class Bindings extends DataMap {
+@@ -32918,12 +33252,13 @@ class Bindings extends DataMap {
  	 * Updates the given array of bindings.
  	 *
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -827,7 +826,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		}
  
-@@ -32934,12 +33270,31 @@ class Bindings extends DataMap {
+@@ -32934,12 +33269,31 @@ class Bindings extends DataMap {
  	 *
  	 * @param {BindGroup} bindGroup - The bind group to update.
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -861,7 +860,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		let cacheBindings = true;
  		let cacheIndex = 0;
  		let version = 0;
-@@ -32948,12 +33303,32 @@ class Bindings extends DataMap {
+@@ -32948,12 +33302,32 @@ class Bindings extends DataMap {
  
  		for ( const binding of bindGroup.bindings ) {
  
@@ -896,7 +895,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			//
  
-@@ -33011,12 +33386,19 @@ class Bindings extends DataMap {
+@@ -33011,12 +33385,19 @@ class Bindings extends DataMap {
  
  					}
  
@@ -918,7 +917,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  				const textureData = backend.get( texture );
  
  				if ( textureData.externalTexture !== undefined || texturesTextureData.isDefaultTexture ) {
-@@ -33079,6 +33461,7 @@ class Bindings extends DataMap {
+@@ -33079,6 +33460,7 @@ class Bindings extends DataMap {
  		if ( needsBindingsUpdate === true ) {
  
  			this.backend.updateBindings( bindGroup, bindings, cacheBindings ? cacheIndex : 0, version );
@@ -926,7 +925,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		}
  
-@@ -33952,7 +34335,8 @@ class RenderContexts {
+@@ -33952,7 +34334,8 @@ class RenderContexts {
  
  		}
  
@@ -936,7 +935,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		renderState.clearDepthValue = this.renderer.getClearDepth();
  		renderState.clearStencilValue = this.renderer.getClearStencil();
-@@ -34181,6 +34565,22 @@ class Textures extends DataMap {
+@@ -34181,6 +34564,22 @@ class Textures extends DataMap {
  
  			backend.destroyTexture( texture );
  
@@ -959,7 +958,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		}
  
  		//
-@@ -34583,6 +34983,7 @@ class Textures extends DataMap {
+@@ -34583,6 +34982,7 @@ class Textures extends DataMap {
  
  					bindingsData.groups = undefined;
  					bindingsData.versions = undefined;
@@ -967,7 +966,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  					// go through all bindings and if one points to the destroyed texture, trigger dispose as well
  
-@@ -39725,7 +40126,8 @@ class VelocityNode extends TempNode {
+@@ -39725,7 +40125,8 @@ class VelocityNode extends TempNode {
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -977,7 +976,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		//
  
-@@ -40270,7 +40672,7 @@ class PassMultipleTextureNode extends PassTextureNode {
+@@ -40270,7 +40671,7 @@ class PassMultipleTextureNode extends PassTextureNode {
  	 * @param {string} textureName - The output texture name.
  	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
  	 */
@@ -986,7 +985,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		// null is passed to the super call since this class does not
  		// use an external texture for rendering pass data into. Instead
-@@ -40291,6 +40693,8 @@ class PassMultipleTextureNode extends PassTextureNode {
+@@ -40291,6 +40692,8 @@ class PassMultipleTextureNode extends PassTextureNode {
  		 * @type {boolean}
  		 */
  		this.previousTexture = previousTexture;
@@ -995,7 +994,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		/**
  		 * This flag can be used for type testing.
-@@ -40312,17 +40716,33 @@ class PassMultipleTextureNode extends PassTextureNode {
+@@ -40312,17 +40715,33 @@ class PassMultipleTextureNode extends PassTextureNode {
  
  	}
  
@@ -1030,7 +1029,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		newNode.uvNode = this.uvNode;
  		newNode.levelNode = this.levelNode;
  		newNode.biasNode = this.biasNode;
-@@ -40503,6 +40923,8 @@ class PassNode extends TempNode {
+@@ -40503,6 +40922,8 @@ class PassNode extends TempNode {
  		 * @type {Object<string, TextureNode>}
  		 */
  		this._textureNodes = {};
@@ -1039,7 +1038,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		/**
  		 * A dictionary holding the internal depth nodes.
-@@ -40809,6 +41231,7 @@ class PassNode extends TempNode {
+@@ -40809,6 +41230,7 @@ class PassNode extends TempNode {
  			this._previousTextures[ name ] = texture;
  
  			this._textureNodes[ name ].updateTexture();
@@ -1047,7 +1046,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  			this._previousTextureNodes[ name ].updateTexture();
  
  		}
-@@ -40821,6 +41244,17 @@ class PassNode extends TempNode {
+@@ -40821,6 +41243,17 @@ class PassNode extends TempNode {
  	 * @param {string} [name='output'] - The output name to get the texture node for.
  	 * @return {TextureNode} The texture node.
  	 */
@@ -1065,7 +1064,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	getTextureNode( name = 'output' ) {
  
  		let textureNode = this._textureNodes[ name ];
-@@ -41163,6 +41597,7 @@ class PassNode extends TempNode {
+@@ -41163,6 +41596,7 @@ class PassNode extends TempNode {
  	 */
  	dispose() {
  
@@ -1073,7 +1072,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		this.renderTarget.dispose();
  
  	}
-@@ -44431,6 +44866,46 @@ var RendererUtils = /*#__PURE__*/Object.freeze({
+@@ -44431,6 +44865,46 @@ var RendererUtils = /*#__PURE__*/Object.freeze({
  
  const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
  
@@ -1120,7 +1119,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  /**
   * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
   * with a binary `[0,1]` result.
-@@ -44485,8 +44960,8 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
+@@ -44485,8 +44959,8 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
  
  	};
  
@@ -1131,7 +1130,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  	const texelSize = vec2( 1 ).div( mapSize );
  	const radiusScaled = radius.mul( texelSize.x );
-@@ -44517,7 +44992,7 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
+@@ -44517,7 +44991,7 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
   */
  const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
  
@@ -1140,7 +1139,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  	const texelSize = vec2( 1 ).div( mapSize );
  
-@@ -45586,8 +46061,8 @@ const BasicPointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp } )
+@@ -45586,8 +46060,8 @@ const BasicPointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp } )
   */
  const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
  
@@ -1151,7 +1150,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  	const texelSize = radius.div( mapSize.x );
  
-@@ -45623,9 +46098,9 @@ const pointShadowFilter = /*@__PURE__*/ Fn( ( { filterFn, depthTexture, shadowCo
+@@ -45623,9 +46097,9 @@ const pointShadowFilter = /*@__PURE__*/ Fn( ( { filterFn, depthTexture, shadowCo
  	const shadowPositionAbs = shadowPosition.abs().toConst();
  	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
  
@@ -1164,7 +1163,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  	const result = float( 1.0 ).toVar();
  
-@@ -48407,6 +48882,7 @@ var TSL = /*#__PURE__*/Object.freeze({
+@@ -48407,6 +48881,7 @@ var TSL = /*#__PURE__*/Object.freeze({
  	getShIrradianceAt: getShIrradianceAt,
  	getShadowMaterial: getShadowMaterial,
  	getShadowRenderObjectFunction: getShadowRenderObjectFunction,
@@ -1172,7 +1171,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	getTextureIndex: getTextureIndex,
  	getViewPosition: getViewPosition,
  	ggxConvolution: ggxConvolution,
-@@ -53841,7 +54317,7 @@ class NodeBuilder {
+@@ -53841,7 +54316,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -1181,7 +1180,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  	}
  
-@@ -55244,15 +55720,17 @@ class NodeManager extends DataMap {
+@@ -55244,15 +55719,17 @@ class NodeManager extends DataMap {
  	 * Returns `true` if the given node uniforms group must be updated or not.
  	 *
  	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
@@ -1202,7 +1201,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		// check for update
  
-@@ -56056,6 +56534,21 @@ class NodeManager extends DataMap {
+@@ -56056,6 +56533,21 @@ class NodeManager extends DataMap {
  
  	}
  
@@ -1224,7 +1223,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	/**
  	 * Triggers the call of `updateBefore()` methods
  	 * for all nodes of the given render object.
-@@ -56065,9 +56558,14 @@ class NodeManager extends DataMap {
+@@ -56065,9 +56557,14 @@ class NodeManager extends DataMap {
  	updateBefore( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1239,7 +1238,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  			// update frame state for each node
  
  			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
-@@ -56085,10 +56583,11 @@ class NodeManager extends DataMap {
+@@ -56085,10 +56582,11 @@ class NodeManager extends DataMap {
  	updateAfter( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1252,7 +1251,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
  
-@@ -56125,9 +56624,14 @@ class NodeManager extends DataMap {
+@@ -56125,9 +56623,14 @@ class NodeManager extends DataMap {
  
  		const nodeFrame = this.getNodeFrameForRender( renderObject );
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1267,7 +1266,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  			nodeFrame.updateNode( node );
  
  		}
-@@ -60919,6 +61423,7 @@ class Renderer {
+@@ -60919,6 +61422,7 @@ class Renderer {
  		//
  
  		renderContext.camera = camera;
@@ -1275,7 +1274,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		this.backend.beginRender( renderContext );
  
  		// process render lists
-@@ -60931,13 +61436,23 @@ class Renderer {
+@@ -60931,13 +61435,23 @@ class Renderer {
  			opaque: opaqueObjects
  		} = renderList;
  
@@ -1288,20 +1287,20 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
 -		// finish render pass
 +		renderComplete = true;
-+
+ 
+-		this.backend.finishRender( renderContext );
 +		} finally {
 +
 +		try {
 +
 +			if ( renderComplete ) this.backend.finishRender( renderContext );
 +			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
- 
--		this.backend.finishRender( renderContext );
++
 +		} finally {
  
  		// restore render tree
  
-@@ -60952,6 +61467,9 @@ class Renderer {
+@@ -60952,6 +61466,9 @@ class Renderer {
  
  		this._callDepth --;
  
@@ -1311,7 +1310,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		if ( frameBufferTarget !== null ) {
  
  			this.setRenderTarget( outputRenderTarget, activeCubeFace, activeMipmapLevel );
-@@ -61118,6 +61636,18 @@ class Renderer {
+@@ -61118,6 +61635,18 @@ class Renderer {
  
  	}
  
@@ -1330,7 +1329,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	/**
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
-@@ -62604,7 +63134,8 @@ class Renderer {
+@@ -62604,7 +63133,8 @@ class Renderer {
  				version,
  				colorNode,
  				depthNode,
@@ -1340,7 +1339,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  			};
  
  			this._cacheShadowNodes.set( material, cache );
-@@ -62731,6 +63262,8 @@ class Renderer {
+@@ -62731,6 +63261,8 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -1349,7 +1348,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -62756,6 +63289,8 @@ class Renderer {
+@@ -62756,6 +63288,8 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -1358,7 +1357,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -62763,7 +63298,15 @@ class Renderer {
+@@ -62763,7 +63297,15 @@ class Renderer {
  
  			}
  
@@ -1375,7 +1374,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -62774,7 +63317,7 @@ class Renderer {
+@@ -62774,7 +63316,7 @@ class Renderer {
  
  			if ( overrideMaterial.isShadowPassMaterial ) {
  
@@ -1384,7 +1383,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  				if ( this.shadowMap.type === VSMShadowMap ) {
  
-@@ -62786,6 +63329,7 @@ class Renderer {
+@@ -62786,6 +63328,7 @@ class Renderer {
  
  				}
  
@@ -1392,7 +1391,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  				if ( colorNode !== null ) overrideMaterial.colorNode = colorNode;
  				if ( depthNode !== null ) overrideMaterial.depthNode = depthNode;
  				if ( positionNode !== null ) overrideMaterial.positionNode = positionNode;
-@@ -62825,6 +63369,8 @@ class Renderer {
+@@ -62825,6 +63368,8 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -1401,12 +1400,13 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		}
  
-@@ -62886,18 +63432,17 @@ class Renderer {
+@@ -62886,18 +63431,17 @@ class Renderer {
  
  		//
  
 -		const needsRefresh = this._nodes.needsRefresh( renderObject );
--
++		this._nodes.needsRefresh( renderObject );
+ 
 -		if ( needsRefresh ) {
 -
 -			this._nodes.updateBefore( renderObject );
@@ -1415,8 +1415,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
 -
 -			this._nodes.updateForRender( renderObject );
 -			this._bindings.updateForRender( renderObject );
-+		this._nodes.needsRefresh( renderObject );
- 
+-
 -		}
 +		// Every step of a draw runs, settled or not. What a settled static object skips is decided
 +		// inside each of them - its OBJECT node updates, its object uniform group write and its
@@ -1430,7 +1429,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -62907,7 +63452,7 @@ class Renderer {
+@@ -62907,7 +63451,7 @@ class Renderer {
  
  			this.backend.draw( renderObject, this.info );
  
@@ -1439,7 +1438,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		}
  
-@@ -76397,6 +76942,9 @@ class WebGPUTextureUtils {
+@@ -76397,6 +76941,9 @@ class WebGPUTextureUtils {
  		 */
  		this._samplerCache = new Map();
  
@@ -1449,7 +1448,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	}
  
  	/**
-@@ -76613,7 +77161,12 @@ class WebGPUTextureUtils {
+@@ -76613,7 +77160,12 @@ class WebGPUTextureUtils {
  
  		}
  
@@ -1463,7 +1462,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -76686,6 +77239,23 @@ class WebGPUTextureUtils {
+@@ -76686,6 +77238,23 @@ class WebGPUTextureUtils {
  	destroyTexture( texture, isDefaultTexture = false ) {
  
  		const backend = this.backend;
@@ -1487,7 +1486,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		const textureData = backend.get( texture );
  
  		if ( textureData.texture !== undefined && isDefaultTexture === false && texture.isExternalTexture !== true ) textureData.texture.destroy();
-@@ -76726,7 +77296,7 @@ class WebGPUTextureUtils {
+@@ -76726,7 +77295,7 @@ class WebGPUTextureUtils {
  		const colorTexture = canvasTarget.colorTexture;
  		const colorTextureData = backend.get( colorTexture );
  
@@ -1496,7 +1495,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			return colorTextureData.texture;
  
-@@ -76751,8 +77321,8 @@ class WebGPUTextureUtils {
+@@ -76751,8 +77320,8 @@ class WebGPUTextureUtils {
  
  		//
  
@@ -1507,7 +1506,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		colorTexture.samples = samples;
  
  		colorTextureData.texture = colorBuffer;
-@@ -76775,64 +77345,59 @@ class WebGPUTextureUtils {
+@@ -76775,64 +77344,59 @@ class WebGPUTextureUtils {
  		const canvasTarget = backend.renderer.getCanvasTarget();
  		const { width, height } = backend.getDrawingBufferSize();
  		const samples = backend.renderer.currentSamples;
@@ -1528,13 +1527,13 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
 -		}
 -
 -		//
+-
+-		const depthTextureGPU = backend.get( depthTexture ).texture;
 +		let cache = this._depthBuffers.get( depthTexture );
  
--		const depthTextureGPU = backend.get( depthTexture ).texture;
+-		let format, type;
 +		if ( cache !== undefined && ( cache.width !== width || cache.height !== height || cache.format !== format || cache.type !== type ) ) {
  
--		let format, type;
--
 -		if ( stencil ) {
 +			this.destroyTexture( depthTexture );
 +			cache = undefined;
@@ -1557,12 +1556,12 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		}
  
 -		if ( depthTextureGPU !== undefined ) {
+-
+-			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
 +		// Output and direct overlay passes alternate effective samples 4 and 1.
 +		// Retain at most those two buffers for this canvas size and depth format.
 +		let buffer = cache.textures.get( sampleCount );
  
--			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
--
 -				return depthTextureGPU;
 -
 -			}
@@ -1600,7 +1599,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	/**
  	 * Uploads the updated texture data to the GPU.
  	 *
-@@ -77060,6 +77625,8 @@ class WebGPUTextureUtils {
+@@ -77060,6 +77624,8 @@ class WebGPUTextureUtils {
  	 */
  	dispose() {
  
@@ -1609,7 +1608,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		this._samplerCache.clear();
  
  	}
-@@ -78986,7 +79553,7 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -78986,7 +79552,7 @@ class WGSLNodeBuilder extends NodeBuilder {
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -1618,7 +1617,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79004,7 +79571,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79004,7 +79570,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -1634,7 +1633,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -79545,7 +80119,7 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79545,7 +80118,7 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -1643,7 +1642,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  				if ( needsSampler ) {
  
-@@ -79586,7 +80160,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79586,7 +80159,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
  
@@ -1653,7 +1652,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			} else {
  
-@@ -79974,7 +80549,8 @@ ${ flowData.code }
+@@ -79974,7 +80548,8 @@ ${ flowData.code }
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -1663,7 +1662,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			}
  
-@@ -80230,6 +80806,8 @@ ${ flowData.code }
+@@ -80230,6 +80805,8 @@ ${ flowData.code }
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -1672,7 +1671,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80252,7 +80830,12 @@ ${ flowData.code }
+@@ -80252,7 +80829,12 @@ ${ flowData.code }
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -1686,7 +1685,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80329,9 +80912,12 @@ ${ flowData.code }
+@@ -80329,9 +80911,12 @@ ${ flowData.code }
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -1702,7 +1701,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  				if ( needsSampler ) {
  
-@@ -80353,7 +80939,7 @@ ${ flowData.code }
+@@ -80353,7 +80938,7 @@ ${ flowData.code }
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -1711,7 +1710,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  					multisampled = '_multisampled';
  
-@@ -81107,7 +81693,19 @@ class WebGPUAttributeUtils {
+@@ -81107,7 +81692,19 @@ class WebGPUAttributeUtils {
  
  			buffer.unmap();
  
@@ -1731,7 +1730,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		}
  
-@@ -81128,6 +81726,13 @@ class WebGPUAttributeUtils {
+@@ -81128,6 +81725,13 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -1745,7 +1744,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -81209,6 +81814,9 @@ class WebGPUAttributeUtils {
+@@ -81209,6 +81813,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -1755,25 +1754,25 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	}
  
  	/**
-@@ -81295,9 +81903,15 @@ class WebGPUAttributeUtils {
+@@ -81295,9 +81902,15 @@ class WebGPUAttributeUtils {
  	destroyAttribute( attribute ) {
  
  		const backend = this.backend;
 -		const data = backend.get( this._getBufferAttribute( attribute ) );
 +		const bufferAttribute = this._getBufferAttribute( attribute );
 +		const data = backend.get( bufferAttribute );
-+
+ 
+-		data.buffer.destroy();
 +		// An interleaved attribute's GPU buffer lives on its InterleavedBuffer, and several attributes
 +		// share it: destroy it once and forget it there too, as the WebGL backend does, or the next
 +		// createAttribute() finds the destroyed buffer and submits it (threenative patch).
 +		if ( data.buffer !== undefined ) data.buffer.destroy();
- 
--		data.buffer.destroy();
++
 +		if ( bufferAttribute !== attribute ) backend.delete( bufferAttribute );
  
  		backend.delete( attribute );
  
-@@ -81598,18 +82212,16 @@ class WebGPUBindingUtils {
+@@ -81598,18 +82211,16 @@ class WebGPUBindingUtils {
  
  		const bindingsData = backend.get( bindGroup );
  
@@ -1797,7 +1796,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		// try to find an existing layout in the cache
  
-@@ -81682,6 +82294,7 @@ class WebGPUBindingUtils {
+@@ -81682,6 +82293,7 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -1805,7 +1804,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		bindingsData.group = bindGroupGPU;
  
  	}
-@@ -81701,6 +82314,7 @@ class WebGPUBindingUtils {
+@@ -81701,6 +82313,7 @@ class WebGPUBindingUtils {
  
  		const updateRanges = binding.updateRanges;
  
@@ -1813,7 +1812,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		if ( updateRanges.length === 0 ) {
  
  			device.queue.writeBuffer(
-@@ -81754,6 +82368,15 @@ class WebGPUBindingUtils {
+@@ -81754,6 +82367,15 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -1829,7 +1828,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	}
  
  	/**
-@@ -81830,7 +82453,20 @@ class WebGPUBindingUtils {
+@@ -81830,7 +82452,20 @@ class WebGPUBindingUtils {
  
  				let resourceGPU;
  
@@ -1851,7 +1850,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -81904,6 +82540,12 @@ class WebGPUBindingUtils {
+@@ -81904,6 +82539,12 @@ class WebGPUBindingUtils {
  		}
  
  		const bindGroupGPU = device.createBindGroup( _bindGroupDescriptor );
@@ -1864,7 +1863,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		_bindGroupDescriptor.reset();
  
-@@ -82001,7 +82643,7 @@ class WebGPUBindingUtils {
+@@ -82001,7 +82642,7 @@ class WebGPUBindingUtils {
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -1873,7 +1872,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  					texture.multisampled = true;
  
-@@ -82039,7 +82681,7 @@ class WebGPUBindingUtils {
+@@ -82039,7 +82680,7 @@ class WebGPUBindingUtils {
  
  					} else if ( type === FloatType ) {
  
@@ -1882,7 +1881,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  							texture.sampleType = GPUTextureSampleType.Float;
  
-@@ -82131,6 +82773,9 @@ class WebGPUBindingUtils {
+@@ -82131,6 +82772,9 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -1892,7 +1891,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	}
  
  	/**
-@@ -82502,6 +83147,16 @@ class WebGPUPipelineUtils {
+@@ -82502,6 +83146,16 @@ class WebGPUPipelineUtils {
  
  		}
  
@@ -1909,7 +1908,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		// create pipeline
  
  		device.pushErrorScope( 'validation' );
-@@ -82515,6 +83170,7 @@ class WebGPUPipelineUtils {
+@@ -82515,6 +83169,7 @@ class WebGPUPipelineUtils {
  		if ( promises === null ) {
  
  			pipelineData.pipeline = device.createRenderPipeline( _renderPipelineDescriptor );
@@ -1917,7 +1916,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			_renderPipelineDescriptor.reset();
  
-@@ -82553,6 +83209,15 @@ class WebGPUPipelineUtils {
+@@ -82553,6 +83208,15 @@ class WebGPUPipelineUtils {
  
  					_renderPipelineDescriptor.reset();
  
@@ -1933,7 +1932,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  					if ( pipelinePromise !== null ) {
  
  						try {
-@@ -82567,7 +83232,7 @@ class WebGPUPipelineUtils {
+@@ -82567,7 +83231,7 @@ class WebGPUPipelineUtils {
  
  					}
  
@@ -1942,7 +1941,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  					if ( errorScope !== null || asyncError !== null ) {
  
-@@ -83814,6 +84479,27 @@ class WebGPUBackend extends Backend {
+@@ -83814,6 +84478,27 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -1970,7 +1969,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +84612,11 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +84611,11 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -1983,7 +1982,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			if ( adapter === null ) {
  
-@@ -84153,7 +84843,9 @@ class WebGPUBackend extends Backend {
+@@ -84153,7 +84842,9 @@ class WebGPUBackend extends Backend {
  
  		let descriptor = canvasData.descriptor;
  
@@ -1994,7 +1993,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			descriptor = new GPURenderPassDescriptor();
  			descriptor.colorAttachments.push( new GPURenderPassColorAttachment() );
-@@ -84180,6 +84872,9 @@ class WebGPUBackend extends Backend {
+@@ -84180,6 +84871,9 @@ class WebGPUBackend extends Backend {
  
  			canvasData.descriptor = descriptor;
  			canvasData.samples = samples;
@@ -2004,7 +2003,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		}
  
-@@ -84496,6 +85191,150 @@ class WebGPUBackend extends Backend {
+@@ -84496,6 +85190,150 @@ class WebGPUBackend extends Backend {
  	 *
  	 * @param {RenderContext} renderContext - The render context.
  	 */
@@ -2155,7 +2154,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  	beginRender( renderContext ) {
  
  		const renderContextData = this.get( renderContext );
-@@ -84648,10 +85487,15 @@ class WebGPUBackend extends Backend {
+@@ -84648,10 +85486,15 @@ class WebGPUBackend extends Backend {
  
  		//
  
@@ -2171,7 +2170,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		// Layered render targets: prepare bundle encoders for each camera in the array camera.
  
  		if ( this._isRenderCameraDepthArray( renderContext ) === true ) {
-@@ -84945,6 +85789,8 @@ class WebGPUBackend extends Backend {
+@@ -84945,6 +85788,8 @@ class WebGPUBackend extends Backend {
  
  		}
  
@@ -2180,7 +2179,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		if ( occlusionQueryCount > 0 ) {
  
  			const bufferSize = occlusionQueryCount * 8; // 8 byte entries for query results
-@@ -84987,7 +85833,16 @@ class WebGPUBackend extends Backend {
+@@ -84987,7 +85832,16 @@ class WebGPUBackend extends Backend {
  
  		}
  
@@ -2198,7 +2197,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  
  		//
-@@ -85081,6 +85936,8 @@ class WebGPUBackend extends Backend {
+@@ -85081,6 +85935,8 @@ class WebGPUBackend extends Backend {
  	 */
  	updateViewport( renderContext ) {
  
@@ -2207,7 +2206,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		const { currentPass } = this.get( renderContext );
  		const { x, y, width, height, minDepth, maxDepth } = renderContext.viewportValue;
  
-@@ -85095,6 +85952,8 @@ class WebGPUBackend extends Backend {
+@@ -85095,6 +85951,8 @@ class WebGPUBackend extends Backend {
  	 */
  	updateScissor( renderContext ) {
  
@@ -2216,7 +2215,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		const { currentPass } = this.get( renderContext );
  		const { x, y, width, height } = renderContext.scissorValue;
  
-@@ -85461,13 +86320,12 @@ class WebGPUBackend extends Backend {
+@@ -85461,13 +86319,12 @@ class WebGPUBackend extends Backend {
  		for ( let i = 0, l = bindings.length; i < l; i ++ ) {
  
  			const bindGroup = bindings[ i ];
@@ -2233,7 +2232,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			}
  
-@@ -85593,6 +86451,11 @@ class WebGPUBackend extends Backend {
+@@ -85593,6 +86450,11 @@ class WebGPUBackend extends Backend {
  			} else {
  
  				passEncoderGPU.draw( vertexCount, instanceCount, firstVertex, 0 );
@@ -2245,7 +2244,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			}
  
-@@ -85628,6 +86491,15 @@ class WebGPUBackend extends Backend {
+@@ -85628,6 +86490,15 @@ class WebGPUBackend extends Backend {
  		// vertex buffers
  
  		const vertexBuffers = renderObject.getVertexBuffers();
@@ -2261,7 +2260,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		if ( renderObject.camera.isArrayCamera && renderObject.camera.cameras.length > 0 ) {
  
-@@ -85766,6 +86638,7 @@ class WebGPUBackend extends Backend {
+@@ -85766,6 +86637,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -2269,7 +2268,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -85787,7 +86660,8 @@ class WebGPUBackend extends Backend {
+@@ -85787,7 +86659,8 @@ class WebGPUBackend extends Backend {
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -2279,7 +2278,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -85807,6 +86681,7 @@ class WebGPUBackend extends Backend {
+@@ -85807,6 +86680,7 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -2287,7 +2286,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  			needsUpdate = true;
  
-@@ -85828,6 +86703,7 @@ class WebGPUBackend extends Backend {
+@@ -85828,6 +86702,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -2295,7 +2294,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,9 +86722,10 @@ class WebGPUBackend extends Backend {
+@@ -85846,9 +86721,10 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -2307,7 +2306,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  			renderObject.clippingContextCacheKey
  		].join();
  
-@@ -86017,6 +86894,8 @@ class WebGPUBackend extends Backend {
+@@ -86017,6 +86893,8 @@ class WebGPUBackend extends Backend {
  		_shaderModuleDescriptor.label = program.stage + ( program.name !== '' ? `_${ program.name }` : '' );
  		_shaderModuleDescriptor.code = program.code;
  
@@ -2316,7 +2315,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		programGPU.module = {
  			module: this.device.createShaderModule( _shaderModuleDescriptor ),
  			entryPoint: 'main'
-@@ -86164,6 +87043,7 @@ class WebGPUBackend extends Backend {
+@@ -86164,6 +87042,7 @@ class WebGPUBackend extends Backend {
  			_bufferDescriptor.reset();
  
  			uniformBufferData.buffer = bufferGPU;
@@ -2324,7 +2323,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  
  		}
  
-@@ -86430,6 +87310,7 @@ class WebGPUBackend extends Backend {
+@@ -86430,6 +87309,7 @@ class WebGPUBackend extends Backend {
  
  		submit( this.device, encoder.finish() );
  
@@ -2332,7 +2331,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
  
  			this.textureUtils.generateMipmaps( dstTexture );
-@@ -86447,6 +87328,8 @@ class WebGPUBackend extends Backend {
+@@ -86447,6 +87327,8 @@ class WebGPUBackend extends Backend {
  	 */
  	copyFramebufferToTexture( texture, renderContext, rectangle ) {
  
@@ -2341,7 +2340,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		const renderContextData = this.get( renderContext );
  
  		let sourceGPU = null;
-@@ -87073,7 +87956,20 @@ class RenderPipeline {
+@@ -87073,7 +87955,20 @@ class RenderPipeline {
  		const currentXR = renderer.xr.enabled;
  		renderer.xr.enabled = false;
  
@@ -2364,7 +2363,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..22e00089cb828f71d3f3e80085d1cac2
  		renderer.xr.enabled = currentXR;
  
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc26c6aa7b 100644
+index f707acc24f5711fdae065ce920b08435b0869c1b..c859d13083d47062df3129fda6e4360abd069e17 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -2853,13 +2852,13 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
 +			// When the renderer is drawing through an override material, that material is shared by
 +			// the whole pass and mutated per object, so its `version` alone answers the wrong
 +			// question. The source material this object actually carries answers the right one.
-+
+ 
+-				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
 +			const sourceMaterial = this.renderer._currentSourceMaterial;
 +			const sourceTracked = sourceMaterial !== null && sourceMaterial !== undefined;
 +			const sourceReplaced = sourceTracked && renderObject._sourceMaterial !== sourceMaterial;
 +			const sourceChanged = sourceTracked && ( sourceReplaced || renderObject.sourceVersion !== sourceMaterial.version );
- 
--				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
++
 +			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
 +
 +				if ( sourceReplaced || renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
@@ -2909,7 +2908,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	}
  
  	/**
-@@ -31189,11 +31357,173 @@ class Geometries extends DataMap {
+@@ -31189,11 +31357,172 @@ class Geometries extends DataMap {
  	updateForRender( renderObject ) {
  
  		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
@@ -2941,13 +2940,17 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
 +		const index = this.getIndex( renderObject );
 +		const settled = this._settledAttributes.get( renderObject );
 +
-+		if ( settled !== undefined && settled.size === attributes.length + ( index === null ? 0 : 1 ) ) {
++		if ( settled !== undefined && settled.attributes.length === attributes.length && settled.index === index ) {
 +
 +			let changed = false;
 +
-+			for ( const attribute of attributes ) {
++			for ( let i = 0; i < attributes.length; i ++ ) {
 +
-+				if ( settled.get( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) !== attribute.version ) {
++				const attribute = attributes[ i ];
++				const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++				const previous = settled.attributes[ i ];
++
++				if ( previous.attribute !== attribute || previous.data !== data || previous.version !== data.version ) {
 +
 +					changed = true;
 +					break;
@@ -2956,23 +2959,18 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
 +
 +			}
 +
-+			if ( changed === false && ( index === null || settled.get( index ) === index.version ) ) return false;
++			if ( changed === false && ( index === null || settled.indexVersion === index.version ) ) return false;
 +
 +		}
 +
-+		const versions = new Map();
-+
-+		for ( const attribute of attributes ) {
++		const versions = attributes.map( ( attribute ) => {
 +
 +			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			return { attribute, data, version: data.version };
 +
-+			versions.set( data, data.version );
++		} );
 +
-+		}
-+
-+		if ( index !== null ) versions.set( index, index.version );
-+
-+		this._settledAttributes.set( renderObject, versions );
++		this._settledAttributes.set( renderObject, { attributes: versions, index, indexVersion: index === null ? undefined : index.version } );
 +
 +		return true;
 +
@@ -3083,7 +3081,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	/**
  	 * Initializes the geometry of the given render object.
  	 *
-@@ -31212,20 +31542,7 @@ class Geometries extends DataMap {
+@@ -31212,20 +31541,7 @@ class Geometries extends DataMap {
  
  			this.info.memory.geometries --;
  
@@ -3105,7 +3103,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			const wireframeAttribute = this.wireframes.get( geometry );
  
-@@ -32771,7 +33088,7 @@ class Bindings extends DataMap {
+@@ -32771,7 +33087,7 @@ class Bindings extends DataMap {
  	 */
  	updateForRender( renderObject ) {
  
@@ -3114,7 +3112,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  	}
  
-@@ -32832,10 +33149,14 @@ class Bindings extends DataMap {
+@@ -32832,10 +33148,14 @@ class Bindings extends DataMap {
  
  					} else if ( binding.isSampledTexture ) {
  
@@ -3129,7 +3127,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  						this.textures.updateSampler( binding );
  
  					} else if ( binding.isStorageBuffer ) {
-@@ -32880,6 +33201,20 @@ class Bindings extends DataMap {
+@@ -32880,6 +33200,20 @@ class Bindings extends DataMap {
  
  			if ( groupData.usedTimes === 0 ) {
  
@@ -3150,7 +3148,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  				for ( const binding of bindGroup.bindings ) {
  
  					if ( binding.isUniformBuffer ) {
-@@ -32918,12 +33253,13 @@ class Bindings extends DataMap {
+@@ -32918,12 +33252,13 @@ class Bindings extends DataMap {
  	 * Updates the given array of bindings.
  	 *
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -3166,7 +3164,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		}
  
-@@ -32934,12 +33270,31 @@ class Bindings extends DataMap {
+@@ -32934,12 +33269,31 @@ class Bindings extends DataMap {
  	 *
  	 * @param {BindGroup} bindGroup - The bind group to update.
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -3200,7 +3198,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		let cacheBindings = true;
  		let cacheIndex = 0;
  		let version = 0;
-@@ -32948,12 +33303,32 @@ class Bindings extends DataMap {
+@@ -32948,12 +33302,32 @@ class Bindings extends DataMap {
  
  		for ( const binding of bindGroup.bindings ) {
  
@@ -3235,7 +3233,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			//
  
-@@ -33011,12 +33386,19 @@ class Bindings extends DataMap {
+@@ -33011,12 +33385,19 @@ class Bindings extends DataMap {
  
  					}
  
@@ -3257,7 +3255,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  				const textureData = backend.get( texture );
  
  				if ( textureData.externalTexture !== undefined || texturesTextureData.isDefaultTexture ) {
-@@ -33079,6 +33461,7 @@ class Bindings extends DataMap {
+@@ -33079,6 +33460,7 @@ class Bindings extends DataMap {
  		if ( needsBindingsUpdate === true ) {
  
  			this.backend.updateBindings( bindGroup, bindings, cacheBindings ? cacheIndex : 0, version );
@@ -3265,7 +3263,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		}
  
-@@ -33952,7 +34335,8 @@ class RenderContexts {
+@@ -33952,7 +34334,8 @@ class RenderContexts {
  
  		}
  
@@ -3275,7 +3273,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		renderState.clearDepthValue = this.renderer.getClearDepth();
  		renderState.clearStencilValue = this.renderer.getClearStencil();
-@@ -34181,6 +34565,22 @@ class Textures extends DataMap {
+@@ -34181,6 +34564,22 @@ class Textures extends DataMap {
  
  			backend.destroyTexture( texture );
  
@@ -3298,7 +3296,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		}
  
  		//
-@@ -34583,6 +34983,7 @@ class Textures extends DataMap {
+@@ -34583,6 +34982,7 @@ class Textures extends DataMap {
  
  					bindingsData.groups = undefined;
  					bindingsData.versions = undefined;
@@ -3306,7 +3304,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  					// go through all bindings and if one points to the destroyed texture, trigger dispose as well
  
-@@ -39725,7 +40126,8 @@ class VelocityNode extends TempNode {
+@@ -39725,7 +40125,8 @@ class VelocityNode extends TempNode {
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -3316,7 +3314,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		//
  
-@@ -40270,7 +40672,7 @@ class PassMultipleTextureNode extends PassTextureNode {
+@@ -40270,7 +40671,7 @@ class PassMultipleTextureNode extends PassTextureNode {
  	 * @param {string} textureName - The output texture name.
  	 * @param {boolean} [previousTexture=false] - Whether previous frame data should be used or not.
  	 */
@@ -3325,7 +3323,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		// null is passed to the super call since this class does not
  		// use an external texture for rendering pass data into. Instead
-@@ -40291,6 +40693,8 @@ class PassMultipleTextureNode extends PassTextureNode {
+@@ -40291,6 +40692,8 @@ class PassMultipleTextureNode extends PassTextureNode {
  		 * @type {boolean}
  		 */
  		this.previousTexture = previousTexture;
@@ -3334,7 +3332,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		/**
  		 * This flag can be used for type testing.
-@@ -40312,17 +40716,33 @@ class PassMultipleTextureNode extends PassTextureNode {
+@@ -40312,17 +40715,33 @@ class PassMultipleTextureNode extends PassTextureNode {
  
  	}
  
@@ -3369,7 +3367,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		newNode.uvNode = this.uvNode;
  		newNode.levelNode = this.levelNode;
  		newNode.biasNode = this.biasNode;
-@@ -40503,6 +40923,8 @@ class PassNode extends TempNode {
+@@ -40503,6 +40922,8 @@ class PassNode extends TempNode {
  		 * @type {Object<string, TextureNode>}
  		 */
  		this._textureNodes = {};
@@ -3378,7 +3376,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		/**
  		 * A dictionary holding the internal depth nodes.
-@@ -40809,6 +41231,7 @@ class PassNode extends TempNode {
+@@ -40809,6 +41230,7 @@ class PassNode extends TempNode {
  			this._previousTextures[ name ] = texture;
  
  			this._textureNodes[ name ].updateTexture();
@@ -3386,7 +3384,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  			this._previousTextureNodes[ name ].updateTexture();
  
  		}
-@@ -40821,6 +41244,17 @@ class PassNode extends TempNode {
+@@ -40821,6 +41243,17 @@ class PassNode extends TempNode {
  	 * @param {string} [name='output'] - The output name to get the texture node for.
  	 * @return {TextureNode} The texture node.
  	 */
@@ -3404,7 +3402,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	getTextureNode( name = 'output' ) {
  
  		let textureNode = this._textureNodes[ name ];
-@@ -41163,6 +41597,7 @@ class PassNode extends TempNode {
+@@ -41163,6 +41596,7 @@ class PassNode extends TempNode {
  	 */
  	dispose() {
  
@@ -3412,7 +3410,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		this.renderTarget.dispose();
  
  	}
-@@ -44431,6 +44866,46 @@ var RendererUtils = /*#__PURE__*/Object.freeze({
+@@ -44431,6 +44865,46 @@ var RendererUtils = /*#__PURE__*/Object.freeze({
  
  const shadowMaterialLib = /*@__PURE__*/ new WeakMap();
  
@@ -3459,7 +3457,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  /**
   * A shadow filtering function performing basic filtering. This is in fact an unfiltered version of the shadow map
   * with a binary `[0,1]` result.
-@@ -44485,8 +44960,8 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
+@@ -44485,8 +44959,8 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
  
  	};
  
@@ -3470,7 +3468,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  	const texelSize = vec2( 1 ).div( mapSize );
  	const radiusScaled = radius.mul( texelSize.x );
-@@ -44517,7 +44992,7 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
+@@ -44517,7 +44991,7 @@ const PCFShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow,
   */
  const PCFSoftShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord, shadow, depthLayer } ) => {
  
@@ -3479,7 +3477,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  	const texelSize = vec2( 1 ).div( mapSize );
  
-@@ -45586,8 +46061,8 @@ const BasicPointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp } )
+@@ -45586,8 +46060,8 @@ const BasicPointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp } )
   */
  const PointShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, bd3D, dp, shadow } ) => {
  
@@ -3490,7 +3488,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  	const texelSize = radius.div( mapSize.x );
  
-@@ -45623,9 +46098,9 @@ const pointShadowFilter = /*@__PURE__*/ Fn( ( { filterFn, depthTexture, shadowCo
+@@ -45623,9 +46097,9 @@ const pointShadowFilter = /*@__PURE__*/ Fn( ( { filterFn, depthTexture, shadowCo
  	const shadowPositionAbs = shadowPosition.abs().toConst();
  	const viewZ = shadowPositionAbs.x.max( shadowPositionAbs.y ).max( shadowPositionAbs.z );
  
@@ -3503,7 +3501,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  	const result = float( 1.0 ).toVar();
  
-@@ -48407,6 +48882,7 @@ var TSL = /*#__PURE__*/Object.freeze({
+@@ -48407,6 +48881,7 @@ var TSL = /*#__PURE__*/Object.freeze({
  	getShIrradianceAt: getShIrradianceAt,
  	getShadowMaterial: getShadowMaterial,
  	getShadowRenderObjectFunction: getShadowRenderObjectFunction,
@@ -3511,7 +3509,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	getTextureIndex: getTextureIndex,
  	getViewPosition: getViewPosition,
  	ggxConvolution: ggxConvolution,
-@@ -53841,7 +54317,7 @@ class NodeBuilder {
+@@ -53841,7 +54316,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -3520,7 +3518,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  	}
  
-@@ -55244,15 +55720,17 @@ class NodeManager extends DataMap {
+@@ -55244,15 +55719,17 @@ class NodeManager extends DataMap {
  	 * Returns `true` if the given node uniforms group must be updated or not.
  	 *
  	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
@@ -3541,7 +3539,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		// check for update
  
-@@ -56056,6 +56534,21 @@ class NodeManager extends DataMap {
+@@ -56056,6 +56533,21 @@ class NodeManager extends DataMap {
  
  	}
  
@@ -3563,7 +3561,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	/**
  	 * Triggers the call of `updateBefore()` methods
  	 * for all nodes of the given render object.
-@@ -56065,9 +56558,14 @@ class NodeManager extends DataMap {
+@@ -56065,9 +56557,14 @@ class NodeManager extends DataMap {
  	updateBefore( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -3578,7 +3576,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  			// update frame state for each node
  
  			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
-@@ -56085,10 +56583,11 @@ class NodeManager extends DataMap {
+@@ -56085,10 +56582,11 @@ class NodeManager extends DataMap {
  	updateAfter( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -3591,7 +3589,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
  
-@@ -56125,9 +56624,14 @@ class NodeManager extends DataMap {
+@@ -56125,9 +56623,14 @@ class NodeManager extends DataMap {
  
  		const nodeFrame = this.getNodeFrameForRender( renderObject );
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -3606,7 +3604,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  			nodeFrame.updateNode( node );
  
  		}
-@@ -60919,6 +61423,7 @@ class Renderer {
+@@ -60919,6 +61422,7 @@ class Renderer {
  		//
  
  		renderContext.camera = camera;
@@ -3614,7 +3612,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		this.backend.beginRender( renderContext );
  
  		// process render lists
-@@ -60931,13 +61436,23 @@ class Renderer {
+@@ -60931,13 +61435,23 @@ class Renderer {
  			opaque: opaqueObjects
  		} = renderList;
  
@@ -3627,20 +3625,20 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
 -		// finish render pass
 +		renderComplete = true;
-+
+ 
+-		this.backend.finishRender( renderContext );
 +		} finally {
 +
 +		try {
 +
 +			if ( renderComplete ) this.backend.finishRender( renderContext );
 +			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
- 
--		this.backend.finishRender( renderContext );
++
 +		} finally {
  
  		// restore render tree
  
-@@ -60952,6 +61467,9 @@ class Renderer {
+@@ -60952,6 +61466,9 @@ class Renderer {
  
  		this._callDepth --;
  
@@ -3650,7 +3648,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		if ( frameBufferTarget !== null ) {
  
  			this.setRenderTarget( outputRenderTarget, activeCubeFace, activeMipmapLevel );
-@@ -61118,6 +61636,18 @@ class Renderer {
+@@ -61118,6 +61635,18 @@ class Renderer {
  
  	}
  
@@ -3669,7 +3667,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	/**
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
-@@ -62604,7 +63134,8 @@ class Renderer {
+@@ -62604,7 +63133,8 @@ class Renderer {
  				version,
  				colorNode,
  				depthNode,
@@ -3679,7 +3677,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  			};
  
  			this._cacheShadowNodes.set( material, cache );
-@@ -62731,6 +63262,8 @@ class Renderer {
+@@ -62731,6 +63261,8 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -3688,7 +3686,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -62756,6 +63289,8 @@ class Renderer {
+@@ -62756,6 +63288,8 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -3697,7 +3695,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -62763,7 +63298,15 @@ class Renderer {
+@@ -62763,7 +63297,15 @@ class Renderer {
  
  			}
  
@@ -3714,7 +3712,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -62774,7 +63317,7 @@ class Renderer {
+@@ -62774,7 +63316,7 @@ class Renderer {
  
  			if ( overrideMaterial.isShadowPassMaterial ) {
  
@@ -3723,7 +3721,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  				if ( this.shadowMap.type === VSMShadowMap ) {
  
-@@ -62786,6 +63329,7 @@ class Renderer {
+@@ -62786,6 +63328,7 @@ class Renderer {
  
  				}
  
@@ -3731,7 +3729,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  				if ( colorNode !== null ) overrideMaterial.colorNode = colorNode;
  				if ( depthNode !== null ) overrideMaterial.depthNode = depthNode;
  				if ( positionNode !== null ) overrideMaterial.positionNode = positionNode;
-@@ -62825,6 +63369,8 @@ class Renderer {
+@@ -62825,6 +63368,8 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -3740,12 +3738,13 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		}
  
-@@ -62886,18 +63432,17 @@ class Renderer {
+@@ -62886,18 +63431,17 @@ class Renderer {
  
  		//
  
 -		const needsRefresh = this._nodes.needsRefresh( renderObject );
--
++		this._nodes.needsRefresh( renderObject );
+ 
 -		if ( needsRefresh ) {
 -
 -			this._nodes.updateBefore( renderObject );
@@ -3754,8 +3753,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
 -
 -			this._nodes.updateForRender( renderObject );
 -			this._bindings.updateForRender( renderObject );
-+		this._nodes.needsRefresh( renderObject );
- 
+-
 -		}
 +		// Every step of a draw runs, settled or not. What a settled static object skips is decided
 +		// inside each of them - its OBJECT node updates, its object uniform group write and its
@@ -3769,7 +3767,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -62907,7 +63452,7 @@ class Renderer {
+@@ -62907,7 +63451,7 @@ class Renderer {
  
  			this.backend.draw( renderObject, this.info );
  
@@ -3778,7 +3776,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		}
  
-@@ -76397,6 +76942,9 @@ class WebGPUTextureUtils {
+@@ -76397,6 +76941,9 @@ class WebGPUTextureUtils {
  		 */
  		this._samplerCache = new Map();
  
@@ -3788,7 +3786,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	}
  
  	/**
-@@ -76613,7 +77161,12 @@ class WebGPUTextureUtils {
+@@ -76613,7 +77160,12 @@ class WebGPUTextureUtils {
  
  		}
  
@@ -3802,7 +3800,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			usage |= GPUTextureUsage.RENDER_ATTACHMENT;
  
-@@ -76686,6 +77239,23 @@ class WebGPUTextureUtils {
+@@ -76686,6 +77238,23 @@ class WebGPUTextureUtils {
  	destroyTexture( texture, isDefaultTexture = false ) {
  
  		const backend = this.backend;
@@ -3826,7 +3824,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		const textureData = backend.get( texture );
  
  		if ( textureData.texture !== undefined && isDefaultTexture === false && texture.isExternalTexture !== true ) textureData.texture.destroy();
-@@ -76726,7 +77296,7 @@ class WebGPUTextureUtils {
+@@ -76726,7 +77295,7 @@ class WebGPUTextureUtils {
  		const colorTexture = canvasTarget.colorTexture;
  		const colorTextureData = backend.get( colorTexture );
  
@@ -3835,7 +3833,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			return colorTextureData.texture;
  
-@@ -76751,8 +77321,8 @@ class WebGPUTextureUtils {
+@@ -76751,8 +77320,8 @@ class WebGPUTextureUtils {
  
  		//
  
@@ -3846,7 +3844,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		colorTexture.samples = samples;
  
  		colorTextureData.texture = colorBuffer;
-@@ -76775,64 +77345,59 @@ class WebGPUTextureUtils {
+@@ -76775,64 +77344,59 @@ class WebGPUTextureUtils {
  		const canvasTarget = backend.renderer.getCanvasTarget();
  		const { width, height } = backend.getDrawingBufferSize();
  		const samples = backend.renderer.currentSamples;
@@ -3867,13 +3865,13 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
 -		}
 -
 -		//
+-
+-		const depthTextureGPU = backend.get( depthTexture ).texture;
 +		let cache = this._depthBuffers.get( depthTexture );
  
--		const depthTextureGPU = backend.get( depthTexture ).texture;
+-		let format, type;
 +		if ( cache !== undefined && ( cache.width !== width || cache.height !== height || cache.format !== format || cache.type !== type ) ) {
  
--		let format, type;
--
 -		if ( stencil ) {
 +			this.destroyTexture( depthTexture );
 +			cache = undefined;
@@ -3896,12 +3894,12 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		}
  
 -		if ( depthTextureGPU !== undefined ) {
+-
+-			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
 +		// Output and direct overlay passes alternate effective samples 4 and 1.
 +		// Retain at most those two buffers for this canvas size and depth format.
 +		let buffer = cache.textures.get( sampleCount );
  
--			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
--
 -				return depthTextureGPU;
 -
 -			}
@@ -3939,7 +3937,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	/**
  	 * Uploads the updated texture data to the GPU.
  	 *
-@@ -77060,6 +77625,8 @@ class WebGPUTextureUtils {
+@@ -77060,6 +77624,8 @@ class WebGPUTextureUtils {
  	 */
  	dispose() {
  
@@ -3948,7 +3946,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		this._samplerCache.clear();
  
  	}
-@@ -78986,7 +79553,7 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -78986,7 +79552,7 @@ class WGSLNodeBuilder extends NodeBuilder {
  	 * @param {?string} offsetSnippet - A WGSL snippet that represents the offset that will be applied to the unnormalized texture coordinate before sampling the texture.
  	 * @return {string} The WGSL snippet.
  	 */
@@ -3957,7 +3955,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		if ( levelSnippet === null ) levelSnippet = '0u';
  
-@@ -79004,7 +79571,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79004,7 +79570,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -3973,7 +3971,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -79545,7 +80119,7 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79545,7 +80118,7 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				// Cube textures always need samplers (they use textureSampleLevel, not textureLoad)
  				// Also textureGather always need sampler.
@@ -3982,7 +3980,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  				if ( needsSampler ) {
  
-@@ -79586,7 +80160,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79586,7 +80159,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
  
@@ -3992,7 +3990,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			} else {
  
-@@ -79974,7 +80549,8 @@ ${ flowData.code }
+@@ -79974,7 +80548,8 @@ ${ flowData.code }
  
  			for ( const { name, property, type } of builtins.values() ) {
  
@@ -4002,7 +4000,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			}
  
-@@ -80230,6 +80806,8 @@ ${ flowData.code }
+@@ -80230,6 +80805,8 @@ ${ flowData.code }
  	getVaryings( shaderStage ) {
  
  		const snippets = [];
@@ -4011,7 +4009,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		if ( shaderStage === 'vertex' ) {
  
-@@ -80252,7 +80830,12 @@ ${ flowData.code }
+@@ -80252,7 +80829,12 @@ ${ flowData.code }
  
  					let attributesSnippet = `@location( ${ varyingIndex ++ } )`;
  
@@ -4025,7 +4023,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  						const samplingSnippet = varying.interpolationSampling !== null ? `, ${ varying.interpolationSampling } )` : ' )';
  
-@@ -80329,9 +80912,12 @@ ${ flowData.code }
+@@ -80329,9 +80911,12 @@ ${ flowData.code }
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -4041,7 +4039,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  				if ( needsSampler ) {
  
-@@ -80353,7 +80939,7 @@ ${ flowData.code }
+@@ -80353,7 +80938,7 @@ ${ flowData.code }
  
  				const { primarySamples } = backend.utils.getTextureSampleData( texture );
  
@@ -4050,7 +4048,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  					multisampled = '_multisampled';
  
-@@ -81107,7 +81693,19 @@ class WebGPUAttributeUtils {
+@@ -81107,7 +81692,19 @@ class WebGPUAttributeUtils {
  
  			buffer.unmap();
  
@@ -4070,7 +4068,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		}
  
-@@ -81128,6 +81726,13 @@ class WebGPUAttributeUtils {
+@@ -81128,6 +81725,13 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -4084,7 +4082,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -81209,6 +81814,9 @@ class WebGPUAttributeUtils {
+@@ -81209,6 +81813,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -4094,25 +4092,25 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	}
  
  	/**
-@@ -81295,9 +81903,15 @@ class WebGPUAttributeUtils {
+@@ -81295,9 +81902,15 @@ class WebGPUAttributeUtils {
  	destroyAttribute( attribute ) {
  
  		const backend = this.backend;
 -		const data = backend.get( this._getBufferAttribute( attribute ) );
 +		const bufferAttribute = this._getBufferAttribute( attribute );
 +		const data = backend.get( bufferAttribute );
-+
+ 
+-		data.buffer.destroy();
 +		// An interleaved attribute's GPU buffer lives on its InterleavedBuffer, and several attributes
 +		// share it: destroy it once and forget it there too, as the WebGL backend does, or the next
 +		// createAttribute() finds the destroyed buffer and submits it (threenative patch).
 +		if ( data.buffer !== undefined ) data.buffer.destroy();
- 
--		data.buffer.destroy();
++
 +		if ( bufferAttribute !== attribute ) backend.delete( bufferAttribute );
  
  		backend.delete( attribute );
  
-@@ -81598,18 +82212,16 @@ class WebGPUBindingUtils {
+@@ -81598,18 +82211,16 @@ class WebGPUBindingUtils {
  
  		const bindingsData = backend.get( bindGroup );
  
@@ -4136,7 +4134,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		// try to find an existing layout in the cache
  
-@@ -81682,6 +82294,7 @@ class WebGPUBindingUtils {
+@@ -81682,6 +82293,7 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -4144,7 +4142,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		bindingsData.group = bindGroupGPU;
  
  	}
-@@ -81701,6 +82314,7 @@ class WebGPUBindingUtils {
+@@ -81701,6 +82313,7 @@ class WebGPUBindingUtils {
  
  		const updateRanges = binding.updateRanges;
  
@@ -4152,7 +4150,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		if ( updateRanges.length === 0 ) {
  
  			device.queue.writeBuffer(
-@@ -81754,6 +82368,15 @@ class WebGPUBindingUtils {
+@@ -81754,6 +82367,15 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -4168,7 +4166,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	}
  
  	/**
-@@ -81830,7 +82453,20 @@ class WebGPUBindingUtils {
+@@ -81830,7 +82452,20 @@ class WebGPUBindingUtils {
  
  				let resourceGPU;
  
@@ -4190,7 +4188,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  					resourceGPU = device.importExternalTexture( { source: textureData.externalTexture } );
  
-@@ -81904,6 +82540,12 @@ class WebGPUBindingUtils {
+@@ -81904,6 +82539,12 @@ class WebGPUBindingUtils {
  		}
  
  		const bindGroupGPU = device.createBindGroup( _bindGroupDescriptor );
@@ -4203,7 +4201,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		_bindGroupDescriptor.reset();
  
-@@ -82001,7 +82643,7 @@ class WebGPUBindingUtils {
+@@ -82001,7 +82642,7 @@ class WebGPUBindingUtils {
  
  				const { primarySamples } = backend.utils.getTextureSampleData( binding.texture );
  
@@ -4212,7 +4210,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  					texture.multisampled = true;
  
-@@ -82039,7 +82681,7 @@ class WebGPUBindingUtils {
+@@ -82039,7 +82680,7 @@ class WebGPUBindingUtils {
  
  					} else if ( type === FloatType ) {
  
@@ -4221,7 +4219,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  							texture.sampleType = GPUTextureSampleType.Float;
  
-@@ -82131,6 +82773,9 @@ class WebGPUBindingUtils {
+@@ -82131,6 +82772,9 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -4231,7 +4229,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	}
  
  	/**
-@@ -82502,6 +83147,16 @@ class WebGPUPipelineUtils {
+@@ -82502,6 +83146,16 @@ class WebGPUPipelineUtils {
  
  		}
  
@@ -4248,7 +4246,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		// create pipeline
  
  		device.pushErrorScope( 'validation' );
-@@ -82515,6 +83170,7 @@ class WebGPUPipelineUtils {
+@@ -82515,6 +83169,7 @@ class WebGPUPipelineUtils {
  		if ( promises === null ) {
  
  			pipelineData.pipeline = device.createRenderPipeline( _renderPipelineDescriptor );
@@ -4256,7 +4254,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			_renderPipelineDescriptor.reset();
  
-@@ -82553,6 +83209,15 @@ class WebGPUPipelineUtils {
+@@ -82553,6 +83208,15 @@ class WebGPUPipelineUtils {
  
  					_renderPipelineDescriptor.reset();
  
@@ -4272,7 +4270,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  					if ( pipelinePromise !== null ) {
  
  						try {
-@@ -82567,7 +83232,7 @@ class WebGPUPipelineUtils {
+@@ -82567,7 +83231,7 @@ class WebGPUPipelineUtils {
  
  					}
  
@@ -4281,7 +4279,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  					if ( errorScope !== null || asyncError !== null ) {
  
-@@ -83814,6 +84479,27 @@ class WebGPUBackend extends Backend {
+@@ -83814,6 +84478,27 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -4309,7 +4307,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +84612,11 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +84611,11 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -4322,7 +4320,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			if ( adapter === null ) {
  
-@@ -84153,7 +84843,9 @@ class WebGPUBackend extends Backend {
+@@ -84153,7 +84842,9 @@ class WebGPUBackend extends Backend {
  
  		let descriptor = canvasData.descriptor;
  
@@ -4333,7 +4331,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			descriptor = new GPURenderPassDescriptor();
  			descriptor.colorAttachments.push( new GPURenderPassColorAttachment() );
-@@ -84180,6 +84872,9 @@ class WebGPUBackend extends Backend {
+@@ -84180,6 +84871,9 @@ class WebGPUBackend extends Backend {
  
  			canvasData.descriptor = descriptor;
  			canvasData.samples = samples;
@@ -4343,7 +4341,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		}
  
-@@ -84496,6 +85191,150 @@ class WebGPUBackend extends Backend {
+@@ -84496,6 +85190,150 @@ class WebGPUBackend extends Backend {
  	 *
  	 * @param {RenderContext} renderContext - The render context.
  	 */
@@ -4494,7 +4492,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  	beginRender( renderContext ) {
  
  		const renderContextData = this.get( renderContext );
-@@ -84648,10 +85487,15 @@ class WebGPUBackend extends Backend {
+@@ -84648,10 +85486,15 @@ class WebGPUBackend extends Backend {
  
  		//
  
@@ -4510,7 +4508,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		// Layered render targets: prepare bundle encoders for each camera in the array camera.
  
  		if ( this._isRenderCameraDepthArray( renderContext ) === true ) {
-@@ -84945,6 +85789,8 @@ class WebGPUBackend extends Backend {
+@@ -84945,6 +85788,8 @@ class WebGPUBackend extends Backend {
  
  		}
  
@@ -4519,7 +4517,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		if ( occlusionQueryCount > 0 ) {
  
  			const bufferSize = occlusionQueryCount * 8; // 8 byte entries for query results
-@@ -84987,7 +85833,16 @@ class WebGPUBackend extends Backend {
+@@ -84987,7 +85832,16 @@ class WebGPUBackend extends Backend {
  
  		}
  
@@ -4537,7 +4535,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  
  		//
-@@ -85081,6 +85936,8 @@ class WebGPUBackend extends Backend {
+@@ -85081,6 +85935,8 @@ class WebGPUBackend extends Backend {
  	 */
  	updateViewport( renderContext ) {
  
@@ -4546,7 +4544,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		const { currentPass } = this.get( renderContext );
  		const { x, y, width, height, minDepth, maxDepth } = renderContext.viewportValue;
  
-@@ -85095,6 +85952,8 @@ class WebGPUBackend extends Backend {
+@@ -85095,6 +85951,8 @@ class WebGPUBackend extends Backend {
  	 */
  	updateScissor( renderContext ) {
  
@@ -4555,7 +4553,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		const { currentPass } = this.get( renderContext );
  		const { x, y, width, height } = renderContext.scissorValue;
  
-@@ -85461,13 +86320,12 @@ class WebGPUBackend extends Backend {
+@@ -85461,13 +86319,12 @@ class WebGPUBackend extends Backend {
  		for ( let i = 0, l = bindings.length; i < l; i ++ ) {
  
  			const bindGroup = bindings[ i ];
@@ -4572,7 +4570,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			}
  
-@@ -85593,6 +86451,11 @@ class WebGPUBackend extends Backend {
+@@ -85593,6 +86450,11 @@ class WebGPUBackend extends Backend {
  			} else {
  
  				passEncoderGPU.draw( vertexCount, instanceCount, firstVertex, 0 );
@@ -4584,7 +4582,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			}
  
-@@ -85628,6 +86491,15 @@ class WebGPUBackend extends Backend {
+@@ -85628,6 +86490,15 @@ class WebGPUBackend extends Backend {
  		// vertex buffers
  
  		const vertexBuffers = renderObject.getVertexBuffers();
@@ -4600,7 +4598,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		if ( renderObject.camera.isArrayCamera && renderObject.camera.cameras.length > 0 ) {
  
-@@ -85766,6 +86638,7 @@ class WebGPUBackend extends Backend {
+@@ -85766,6 +86637,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -4608,7 +4606,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -85787,7 +86660,8 @@ class WebGPUBackend extends Backend {
+@@ -85787,7 +86659,8 @@ class WebGPUBackend extends Backend {
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -4618,7 +4616,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -85807,6 +86681,7 @@ class WebGPUBackend extends Backend {
+@@ -85807,6 +86680,7 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -4626,7 +4624,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  			needsUpdate = true;
  
-@@ -85828,6 +86703,7 @@ class WebGPUBackend extends Backend {
+@@ -85828,6 +86702,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -4634,7 +4632,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,9 +86722,10 @@ class WebGPUBackend extends Backend {
+@@ -85846,9 +86721,10 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -4646,7 +4644,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  			renderObject.clippingContextCacheKey
  		].join();
  
-@@ -86017,6 +86894,8 @@ class WebGPUBackend extends Backend {
+@@ -86017,6 +86893,8 @@ class WebGPUBackend extends Backend {
  		_shaderModuleDescriptor.label = program.stage + ( program.name !== '' ? `_${ program.name }` : '' );
  		_shaderModuleDescriptor.code = program.code;
  
@@ -4655,7 +4653,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		programGPU.module = {
  			module: this.device.createShaderModule( _shaderModuleDescriptor ),
  			entryPoint: 'main'
-@@ -86164,6 +87043,7 @@ class WebGPUBackend extends Backend {
+@@ -86164,6 +87042,7 @@ class WebGPUBackend extends Backend {
  			_bufferDescriptor.reset();
  
  			uniformBufferData.buffer = bufferGPU;
@@ -4663,7 +4661,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  
  		}
  
-@@ -86430,6 +87310,7 @@ class WebGPUBackend extends Backend {
+@@ -86430,6 +87309,7 @@ class WebGPUBackend extends Backend {
  
  		submit( this.device, encoder.finish() );
  
@@ -4671,7 +4669,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
  
  			this.textureUtils.generateMipmaps( dstTexture );
-@@ -86447,6 +87328,8 @@ class WebGPUBackend extends Backend {
+@@ -86447,6 +87327,8 @@ class WebGPUBackend extends Backend {
  	 */
  	copyFramebufferToTexture( texture, renderContext, rectangle ) {
  
@@ -4680,7 +4678,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..1b9e12db4f8b8a3c02ba6674457488cc
  		const renderContextData = this.get( renderContext );
  
  		let sourceGPU = null;
-@@ -87020,7 +87903,20 @@ class RenderPipeline {
+@@ -87020,7 +87902,20 @@ class RenderPipeline {
  		const currentXR = renderer.xr.enabled;
  		renderer.xr.enabled = false;
  
@@ -5552,7 +5550,7 @@ index 5f3d213a016b37db3b2e5d022da3dd0234d86f6d..892e97cc6804b75d358b2a0e46900a49
  		}
  
 diff --git a/src/renderers/common/Geometries.js b/src/renderers/common/Geometries.js
-index eb332c415882927e2fc1ac9b0cc0ed903f70432c..74100c31a7d8d09986cbf327d31a824aaf6bf9ae 100644
+index eb332c415882927e2fc1ac9b0cc0ed903f70432c..b3654df2d90654f93972c88301a8ae3fb3afe8fe 100644
 --- a/src/renderers/common/Geometries.js
 +++ b/src/renderers/common/Geometries.js
 @@ -139,6 +139,17 @@ class Geometries extends DataMap {
@@ -5573,7 +5571,7 @@ index eb332c415882927e2fc1ac9b0cc0ed903f70432c..74100c31a7d8d09986cbf327d31a824a
  	}
  
  	/**
-@@ -163,11 +174,173 @@ class Geometries extends DataMap {
+@@ -163,11 +174,172 @@ class Geometries extends DataMap {
  	updateForRender( renderObject ) {
  
  		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
@@ -5605,13 +5603,17 @@ index eb332c415882927e2fc1ac9b0cc0ed903f70432c..74100c31a7d8d09986cbf327d31a824a
 +		const index = this.getIndex( renderObject );
 +		const settled = this._settledAttributes.get( renderObject );
 +
-+		if ( settled !== undefined && settled.size === attributes.length + ( index === null ? 0 : 1 ) ) {
++		if ( settled !== undefined && settled.attributes.length === attributes.length && settled.index === index ) {
 +
 +			let changed = false;
 +
-+			for ( const attribute of attributes ) {
++			for ( let i = 0; i < attributes.length; i ++ ) {
 +
-+				if ( settled.get( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) !== attribute.version ) {
++				const attribute = attributes[ i ];
++				const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++				const previous = settled.attributes[ i ];
++
++				if ( previous.attribute !== attribute || previous.data !== data || previous.version !== data.version ) {
 +
 +					changed = true;
 +					break;
@@ -5620,23 +5622,18 @@ index eb332c415882927e2fc1ac9b0cc0ed903f70432c..74100c31a7d8d09986cbf327d31a824a
 +
 +			}
 +
-+			if ( changed === false && ( index === null || settled.get( index ) === index.version ) ) return false;
++			if ( changed === false && ( index === null || settled.indexVersion === index.version ) ) return false;
 +
 +		}
 +
-+		const versions = new Map();
-+
-+		for ( const attribute of attributes ) {
++		const versions = attributes.map( ( attribute ) => {
 +
 +			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			return { attribute, data, version: data.version };
 +
-+			versions.set( data, data.version );
++		} );
 +
-+		}
-+
-+		if ( index !== null ) versions.set( index, index.version );
-+
-+		this._settledAttributes.set( renderObject, versions );
++		this._settledAttributes.set( renderObject, { attributes: versions, index, indexVersion: index === null ? undefined : index.version } );
 +
 +		return true;
 +
@@ -5747,7 +5744,7 @@ index eb332c415882927e2fc1ac9b0cc0ed903f70432c..74100c31a7d8d09986cbf327d31a824a
  	/**
  	 * Initializes the geometry of the given render object.
  	 *
-@@ -186,20 +359,7 @@ class Geometries extends DataMap {
+@@ -186,20 +358,7 @@ class Geometries extends DataMap {
  
  			this.info.memory.geometries --;
  

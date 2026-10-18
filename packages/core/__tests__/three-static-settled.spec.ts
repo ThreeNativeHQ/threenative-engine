@@ -1,4 +1,11 @@
-import { BoxGeometry, Euler, InstancedMesh, Quaternion } from "three";
+import {
+  BoxGeometry,
+  Euler,
+  InstancedMesh,
+  InterleavedBuffer,
+  InterleavedBufferAttribute,
+  Quaternion,
+} from "three";
 import Bindings from "three/src/renderers/common/Bindings.js";
 import Geometries from "three/src/renderers/common/Geometries.js";
 import Renderer from "three/src/renderers/common/Renderer.js";
@@ -126,7 +133,12 @@ function createGroup(group: IGroup): void {
  * `appears` is a bind group a node created after the render object's own bindings were - the
  * renderer has no layout or buffer for it, and only the update that walks its bindings builds them.
  */
-function draw(mesh: InstancedMesh, observer: ReturnType<typeof observerFor>, appears?: IGroup[]) {
+function draw(
+  mesh: InstancedMesh,
+  observer: ReturnType<typeof observerFor>,
+  appears?: IGroup[],
+  attributes = [mesh.geometry.getAttribute("position"), mesh.instanceMatrix],
+) {
   const counts: ICounted = {
     objectGroupWrites: 0,
     objectNodeUpdates: 0,
@@ -174,7 +186,6 @@ function draw(mesh: InstancedMesh, observer: ReturnType<typeof observerFor>, app
   NodeManager.prototype.updateBefore.call(nodes, renderObject);
 
   // The vertex attributes this draw reads, with the versions a writer bumps.
-  const attributes = [mesh.geometry.getAttribute("position"), mesh.instanceMatrix];
   Object.assign(renderObject, { getAttributes: () => attributes });
   (renderObject as { index?: unknown }).index = mesh.geometry.index;
 
@@ -340,6 +351,82 @@ function textureBinding() {
 }
 
 describe("a settled static object skips the per-object draw work", () => {
+  it("rechecks interleaved storage, wrapper/count changes and index transitions", () => {
+    const mesh = litMesh();
+    mesh.static = true;
+    const position = new InterleavedBufferAttribute(
+      new InterleavedBuffer(new Float32Array(72), 3),
+      3,
+      0,
+    );
+    mesh.geometry.setAttribute("position", position);
+    const attributes = [position, mesh.instanceMatrix];
+    const observer = observerFor(mesh);
+    draw(mesh, observer, undefined, attributes);
+    draw(mesh, observer, undefined, attributes);
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(0);
+
+    // Same version, different storage: the wrapper alone cannot identify the published buffer.
+    position.data = new InterleavedBuffer(new Float32Array(72), 3);
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(1);
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(0);
+    const replacement = new InterleavedBufferAttribute(position.data, 3, 0);
+    mesh.geometry.setAttribute("position", replacement);
+    attributes[0] = replacement;
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(1);
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(0);
+    attributes.reverse();
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(1);
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(0);
+    attributes.push(new InterleavedBufferAttribute(position.data, 3, 0));
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(1);
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(0);
+
+    mesh.geometry.setIndex(null);
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(1);
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(0);
+    mesh.geometry.setIndex([0, 1, 2]);
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(1);
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(0);
+    const index = mesh.geometry.index;
+    if (index === null) throw new Error("index fixture was not installed");
+    index.needsUpdate = true;
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(1);
+    expect(draw(mesh, observer, undefined, attributes).counts.attributeScans).toBe(0);
+  });
+
+  it.each([1, 2])("keeps %i interleaved wrappers over one buffer quiet until a write", (count) => {
+    const mesh = litMesh();
+    mesh.static = true;
+    const data = new InterleavedBuffer(new Float32Array(24 * count * 3), count * 3);
+    const position = new InterleavedBufferAttribute(data, 3, 0);
+    mesh.geometry.setAttribute("position", position);
+    const attributes = [position, mesh.instanceMatrix];
+    if (count === 2) {
+      const normal = new InterleavedBufferAttribute(data, 3, 3);
+      mesh.geometry.setAttribute("normal", normal);
+      attributes.push(normal);
+    }
+    const observer = observerFor(mesh);
+    draw(mesh, observer, undefined, attributes);
+    expect(draw(mesh, observer, undefined, attributes).settled).toBe(true);
+    const third = draw(mesh, observer, undefined, attributes);
+    expect.soft(third.counts.attributeScans, "unchanged shared storage needs no scan").toBe(0);
+    expect.soft(third.counts.uploads.length).toBe(0);
+
+    data.needsUpdate = true;
+    expect(data.version).toBe(1);
+    const written = draw(mesh, observer, undefined, attributes);
+    expect(written.settled).toBe(true);
+    expect(written.counts.attributeScans).toBe(1);
+    expect(
+      written.counts.uploads.filter((attribute) => Reflect.get(attribute, "data") === data),
+    ).toHaveLength(1);
+    const quiet = draw(mesh, observer, undefined, attributes);
+    expect.soft(quiet.counts.attributeScans, "the buffer write is spent after one upload").toBe(0);
+    expect.soft(quiet.counts.uploads.length).toBe(0);
+  });
+
   it("settles on the second draw and keeps the frame-scoped updates", () => {
     const mesh = litMesh();
     mesh.static = true;

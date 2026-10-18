@@ -539,6 +539,109 @@ describe("StartupReadiness holds", () => {
 });
 
 describe("StartupReadiness predicate holds", () => {
+  it("fails open if a previously true predicate throws during a quiet recheck", async () => {
+    vi.useFakeTimers();
+    const readiness = new StartupReadiness({
+      stableFrames: 1,
+      stableWindowMs: 100,
+      settled: () => true,
+    });
+    const ready = vi.fn();
+    const failed = vi.fn();
+    void readiness.whenReady().then(ready, failed);
+    try {
+      let broken = false;
+      readiness.hold("late-error", () => {
+        if (broken) throw new Error("late hold error");
+        return true;
+      });
+      readiness.start();
+      readiness.observe(1);
+      readiness.observe(1);
+      expect(readiness.ready).toBe(false);
+      broken = true;
+      expect(() => readiness.observe(1)).not.toThrow();
+      await Promise.resolve();
+      expect(readiness.ready).toBe(true);
+      expect(ready).toHaveBeenCalledOnce();
+      expect(failed).not.toHaveBeenCalled();
+      expect(readiness.holdReport).toEqual([{ label: "late-error", expired: false }]);
+    } finally {
+      readiness.cancel();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps an expired false predicate fail-open during required-world quiet polls", async () => {
+    vi.useFakeTimers();
+    const readiness = new StartupReadiness({
+      holdBudgetMs: 10,
+      stableFrames: 1,
+      stableWindowMs: 100,
+      settled: () => true,
+    });
+    const ready = vi.fn();
+    const failed = vi.fn();
+    void readiness.whenReady().then(ready, failed);
+    try {
+      readiness.hold("never", () => false);
+      readiness.start();
+      readiness.observe(1);
+      await vi.advanceTimersByTimeAsync(9);
+      expect(readiness.holdReport).toEqual([{ label: "never", expired: false }]);
+      expect(readiness.ready).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(readiness.holdReport).toEqual([{ label: "never", expired: true }]);
+      readiness.observe(1);
+      expect(readiness.ready).toBe(false);
+      readiness.observe(1);
+      await Promise.resolve();
+      expect(readiness.ready).toBe(true);
+      expect(ready).toHaveBeenCalledOnce();
+      expect(failed).not.toHaveBeenCalled();
+    } finally {
+      readiness.cancel();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["always throws", "throws once then returns false"])(
+    "keeps a predicate that %s fail-open during required-world quiet polls",
+    async (behavior) => {
+      vi.useFakeTimers();
+      const readiness = new StartupReadiness({
+        stableFrames: 1,
+        stableWindowMs: 100,
+        settled: () => true,
+      });
+      const ready = vi.fn();
+      const failed = vi.fn();
+      void readiness.whenReady().then(ready, failed);
+      try {
+        let calls = 0;
+        readiness.hold("broken", () => {
+          calls += 1;
+          if (behavior === "always throws" || calls === 1) throw new Error("lost hold");
+          return false;
+        });
+        readiness.start();
+        expect(() => readiness.observe(1)).not.toThrow();
+        expect(readiness.holdReport).toEqual([{ label: "broken", expired: false }]);
+        expect(readiness.ready).toBe(false);
+        expect(() => readiness.observe(1)).not.toThrow();
+        expect(readiness.ready).toBe(false);
+        expect(() => readiness.observe(1)).not.toThrow();
+        await Promise.resolve();
+        expect(readiness.ready).toBe(true);
+        expect(ready).toHaveBeenCalledOnce();
+        expect(failed).not.toHaveBeenCalled();
+      } finally {
+        readiness.cancel();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   // A game observed its spawn gate only in afterPhysics; the playtest's deterministic clock advances
   // no fixed step while startup is held, so the gate never ran and the hold met its 120 s deadline.
   // A predicate hold is polled on every rendered frame, so no simulation tick is involved.

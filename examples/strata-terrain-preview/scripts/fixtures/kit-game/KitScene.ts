@@ -462,8 +462,17 @@ export class KitScene extends Scene<GameState, IPhysicsContext> {
     void spawn.catch((error: unknown) => {
       this.#fail(ctx, error instanceof Error ? error.message : String(error));
     });
-    if (ctx.startup.phase !== "ready")
+    if (ctx.startup.phase !== "ready") {
+      ctx.startup.hold("fixture-expired-false-predicate", () => false, 1);
+      ctx.startup.hold(
+        "fixture-throwing-predicate",
+        () => {
+          throw new Error("fixture startup predicate should fail open");
+        },
+        120_000,
+      );
       ctx.startup.hold(`${KIT.toLowerCase()}-spawn`, spawn, 120_000);
+    }
     let kit: IKitWorld | undefined;
     // A holder rather than a `let`: the progress getter reads it, and the spawn is set once it is known.
     const loadingScene = this;
