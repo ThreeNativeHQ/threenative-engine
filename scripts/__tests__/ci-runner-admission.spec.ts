@@ -99,7 +99,7 @@ it.each([3, "3"])("accepts the nonnegative integer count %p", (slots) => {
   expect(admissionPlan(selected, slots)).toHaveLength(3);
 });
 
-it("selects only the plan-required instances, in the inventory's CPU-heavy order", () => {
+it("selects required Strata before the remaining CPU-heavy instances", () => {
   const plan = {
     jobs: {
       typecheck: { required: true },
@@ -114,13 +114,81 @@ it("selects only the plan-required instances, in the inventory's CPU-heavy order
     templateMatrix: { template: [] },
   };
   expect(selectInstances(plan, { csg: true, ik: false })).toEqual([
+    "ci:strata",
     "ci:test-unit:1/4",
     "ci:test-unit:2/4",
     "ci:typecheck",
-    "ci:strata",
     "integration:csg",
   ]);
   expect(selectInstances(plan, {})).not.toContain("integration:csg");
+});
+
+it("reserves available heavy capacity for required Strata before hostable CI work", () => {
+  const plan = {
+    qualification: true,
+    jobs: {
+      "test-unit": { required: true },
+      "test-native": { required: true },
+      test: { required: true },
+      typecheck: { required: true },
+      lint: { required: true },
+      "build-artifacts": { required: true },
+      "performance-contracts": { required: true },
+      benchmark: { required: true },
+      budgets: { required: true },
+      "test-browser": { required: true },
+      "test-playtest": { required: true },
+      strata: { required: true },
+      "golden-path-template": { required: true },
+      "template-nonvisual": { required: true },
+      integration: { required: true },
+      "native-platforms": { required: true },
+    },
+    unitMatrix: { shard: ["1/4", "2/4", "3/4", "4/4"] },
+    goldenMatrix: { template: ["starter", "platformer"] },
+    templateMatrix: {
+      template: ADMISSION_INVENTORY.filter((id: string) =>
+        id.startsWith("ci:template-nonvisual:"),
+      ).map((id: string) => id.slice("ci:template-nonvisual:".length)),
+    },
+  };
+  const selectedInstances = selectInstances(plan, {
+    csg: true,
+    ik: true,
+    vegetation: true,
+    decals: true,
+    tone: true,
+    temporal: true,
+    velocity: true,
+    animation: true,
+    fog: true,
+    capture: true,
+    "fluid-collision": true,
+    exposure: true,
+    "cold-boot": true,
+  });
+
+  expect(new Set(selectedInstances)).toEqual(new Set(ADMISSION_INVENTORY));
+  expect(admissionPlan(selectedInstances, 6)).toEqual([
+    "ci:strata",
+    "ci:test-unit:1/4",
+    "ci:test-unit:2/4",
+    "ci:test-unit:3/4",
+    "ci:test-unit:4/4",
+    "ci:test-native",
+  ]);
+  expect(admissionPlan(selectedInstances, 1)).toEqual(["ci:strata"]);
+});
+
+it("keeps the prior admission order when Strata is not selected", () => {
+  const plan = {
+    jobs: { "test-unit": { required: true }, typecheck: { required: true } },
+    unitMatrix: { shard: ["1/4", "2/4"] },
+  };
+  const selectedInstances = selectInstances(plan);
+
+  expect(selectedInstances).toEqual(["ci:test-unit:1/4", "ci:test-unit:2/4", "ci:typecheck"]);
+  expect(admissionPlan(selectedInstances, 1)).toEqual(["ci:test-unit:1/4"]);
 });
 
 it("keeps a plan-required instance with an unroutable matrix leg out of the selection", () => {

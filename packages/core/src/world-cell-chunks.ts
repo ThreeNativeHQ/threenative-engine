@@ -20,7 +20,7 @@ import { displacesVertices } from "./projection-plan.js";
 import type { IRendererLike } from "./renderer.js";
 import { markStatic } from "./static-transform.js";
 import { addInSlices, loadAll } from "./streaming.js";
-import { warmUpScene, yieldToHost } from "./warmup.js";
+import { warmUpScene, warmUpSceneWithCompletion, yieldToHost } from "./warmup.js";
 import type { SharedBatch } from "./world-cell-batches.js";
 import type { ICellProxyState, IResidentCell } from "./world-cell-data.js";
 import {
@@ -111,8 +111,8 @@ export const CHUNK_MERGE_MAX_TRIANGLES = Math.floor(
 );
 /**
  * How long one chunk's warm-up may take before the chunk is attached uncompiled. The engine's own
- * loading-screen bound for a single pipeline is 2,000 ms, and a compile that outlives it is a
- * compile that is not coming back — which is a slow frame rather than a chunk that never appears.
+ * loading-screen bound for a single pipeline is 2,000 ms. A cell proxy that times out is refused;
+ * its staged geometry remains owned until the original compile settles.
  */
 const CHUNK_WARM_TIMEOUT_MS = 2000;
 
@@ -504,21 +504,30 @@ export class CellChunks {
     // settles, even if the cell/world has already left. Refusal keeps source and releases afterward.
     void Promise.resolve()
       .then(() =>
-        warmUpScene(renderer, prepared.root, camera, {
+        warmUpSceneWithCompletion(renderer, prepared.root, camera, {
           budgetMs: CHUNK_WARM_TIMEOUT_MS,
           renderPasses: false,
           targetScene,
         }),
       )
       .then(
-        (report) => {
+        async ({ report, completion }) => {
           if (
             report.unsupported ||
             report.timedOut ||
             report.abandoned > 0 ||
             (renderer.warmUpWorldPass !== undefined && report.passes?.includes("main") !== true)
-          )
-            throw new Error("cell proxy warm-up incomplete");
+          ) {
+            // The report honors the 2 s budget, but Three may still be compiling a pipeline. Keep
+            // the staged geometry and its reservation alive until that original promise settles.
+            state.cancelled = true;
+            this.#hlodFailures++;
+            await completion.catch(() => undefined);
+            state.compiling = false;
+            this.releaseCellProxy(state);
+            return;
+          }
+          await completion;
           renderer.warmUpScopeSettled?.(
             `cell:${state.cell.key}:${String(state.cell.generation)}`,
             prepared.root,
