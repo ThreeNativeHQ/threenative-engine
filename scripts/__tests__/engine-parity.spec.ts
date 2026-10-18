@@ -62,9 +62,13 @@ describe("engine parity guard", () => {
     const failure = new Error("screenshot failed");
     try {
       await expect(
-        withBrowserWatchdogArtifact(page, path.join(directory, "watchdog.json"), async () => {
-          throw failure;
-        }),
+        withBrowserWatchdogArtifact(
+          { page } as never,
+          path.join(directory, "watchdog.json"),
+          async () => {
+            throw failure;
+          },
+        ),
       ).rejects.toBe(failure);
       const artifact = JSON.parse(readFileSync(path.join(directory, "watchdog.json"), "utf8"));
       expect(artifact).toMatchObject({
@@ -112,7 +116,7 @@ describe("engine parity guard", () => {
         } as never;
         const artifactPath = path.join(directory, `${item.label}.json`);
         await expect(
-          withBrowserWatchdogArtifact(page, artifactPath, async () => {
+          withBrowserWatchdogArtifact({ page } as never, artifactPath, async () => {
             throw failure;
           }),
         ).rejects.toBe(failure);
@@ -146,7 +150,7 @@ describe("engine parity guard", () => {
     const failure = new Error("capture failed during browser teardown");
     try {
       const capture = withBrowserWatchdogArtifact(
-        page,
+        { page } as never,
         path.join(directory, "watchdog.json"),
         async () => {
           throw failure;
@@ -170,6 +174,53 @@ describe("engine parity guard", () => {
       expect(detached).toBe(true);
     } finally {
       vi.useRealTimers();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("persists raw capture observations when the capture callback throws, then rethrows that failure", async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "engine-parity-observations-"));
+    const failure = new Error("TN_CAPTURE_BLANK: pose: 0.03947 < 0.05 nonblank pixels");
+    const cdp = { send: async () => ({ histograms: [] }), detach: async () => undefined };
+    const session = {
+      errors: ["Uncaught TypeError: boom"],
+      consoleEntries: [{ type: "log", text: "GPU.WatchdogThread.Event" }],
+      networkEntries: [{ method: "GET", url: "http://127.0.0.1:5173/missing.png" }],
+      provenance: { adapter: { vendor: "nvidia" } },
+      page: {
+        context: () => ({
+          browser: () => ({
+            version: () => "Chromium 151.0.0.0",
+            newBrowserCDPSession: async () => cdp,
+          }),
+        }),
+      },
+      screenshot: async () => {
+        throw failure;
+      },
+    };
+    try {
+      await expect(
+        withBrowserWatchdogArtifact(
+          session as never,
+          path.join(directory, "browser-watchdog.json"),
+          async () => {
+            await (session as { screenshot: (label: string) => Promise<string> }).screenshot(
+              "pose",
+            );
+          },
+        ),
+      ).rejects.toBe(failure);
+      const artifact = JSON.parse(
+        readFileSync(path.join(directory, "capture-observations.json"), "utf8"),
+      );
+      expect(artifact).toMatchObject({
+        provenance: { adapter: { vendor: "nvidia" } },
+        observedErrorsAfterStartup: ["Uncaught TypeError: boom"],
+        observedConsoleEntries: [{ type: "log", text: "GPU.WatchdogThread.Event" }],
+        observedNetworkEntries: [{ method: "GET", url: "http://127.0.0.1:5173/missing.png" }],
+      });
+    } finally {
       rmSync(directory, { recursive: true, force: true });
     }
   });

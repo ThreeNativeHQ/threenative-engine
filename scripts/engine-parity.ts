@@ -166,21 +166,47 @@ export function withEngine(source: string, engine: (typeof ENGINES)[number]): st
   return `${source.replace(/^export\s+default\s+/mu, "const __engineParityBase = ")}\nexport default { ...__engineParityBase, engine: "${engine}" };\n`;
 }
 
-/** Preserve the browser's GPU watchdog sample before its owned capture session tears down. */
+/** Preserve the browser's GPU watchdog sample and the raw capture observations before its owned capture session tears down. */
 export async function withBrowserWatchdogArtifact<T>(
-  page: IBrowserCaptureSession["page"],
+  session: IBrowserCaptureSession,
   artifactPath: string,
   capture: () => Promise<T>,
 ): Promise<T> {
+  const page = session.page;
   const captureStartedAt = new Date().toISOString();
   let captureFailed = false;
+  let captureFailure: unknown;
   try {
     return await capture();
   } catch (error) {
     captureFailed = true;
+    captureFailure = error;
     throw error;
   } finally {
     if (captureFailed) {
+      try {
+        writeFileSync(
+          path.join(path.dirname(artifactPath), "capture-observations.json"),
+          `${JSON.stringify(
+            {
+              captureStartedAt,
+              captureFailedAt: new Date().toISOString(),
+              captureError:
+                captureFailure instanceof Error ? captureFailure.message : String(captureFailure),
+              provenance: session.provenance,
+              observedErrorsAfterStartup: session.errors,
+              observedConsoleEntries: session.consoleEntries,
+              observedNetworkEntries: session.networkEntries,
+            },
+            null,
+            2,
+          )}\n`,
+        );
+      } catch (error) {
+        console.error(
+          `TN_ENGINE_PARITY_OBSERVATIONS_ARTIFACT: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       let detachSession: (() => Promise<void>) | undefined;
       let expired = false;
       const deadlineMs = 900;
@@ -469,10 +495,8 @@ async function main(argv: string[]): Promise<number> {
           );
         };
         await withBrowserCapture(captureConfig, (session) =>
-          withBrowserWatchdogArtifact(
-            session.page,
-            path.join(artifacts, "browser-watchdog.json"),
-            () => capture(session),
+          withBrowserWatchdogArtifact(session, path.join(artifacts, "browser-watchdog.json"), () =>
+            capture(session),
           ),
         );
       } catch (error) {
