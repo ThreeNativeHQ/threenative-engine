@@ -2,6 +2,7 @@ import type { Camera, Object3D, Texture } from "three";
 import { pmremTexture } from "three/tsl";
 
 import type { IPipelineCensus } from "./pipeline-census.js";
+import { STARTUP_HOLD_BUDGET_MS } from "./startup-readiness.js";
 
 /**
  * Compiles a scene's pipelines before the first frame, in slices, yielding between them.
@@ -79,8 +80,18 @@ export interface IWarmUpOptions {
    * How long the whole warm-up may take before it stops and lets the game start. Default 15000 ms.
    *
    * The launch must never be *worse* for having tried to optimize it.
+   *
+   * It bounds compilation only, and starts once the scene's environment is prepared: a
+   * full-quality PMREM bake is lighting the first frame needs, not compile work, and on a software
+   * adapter it alone outlasts this budget (about 20 s on 3-CPU SwiftShader).
    */
   readonly budgetMs?: number;
+  /**
+   * How long the scene environment's PMREM preparation may take before warm-up gives up on it and
+   * compiles anyway. Default `STARTUP_HOLD_BUDGET_MS` (45000 ms), the startup bound for a game's own
+   * launch work.
+   */
+  readonly environmentBudgetMs?: number;
   /**
    * How the scene is handed to the renderer. Default `"scene"`.
    *
@@ -909,9 +920,11 @@ export async function warmUpScene(
   }
   const compileTimeoutMs = options.compileTimeoutMs ?? DEFAULT_COMPILE_TIMEOUT_MS;
   const budgetMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
+  const environmentBudgetMs = options.environmentBudgetMs ?? STARTUP_HOLD_BUDGET_MS;
   for (const [name, value] of [
     ["compileTimeoutMs", compileTimeoutMs],
     ["budgetMs", budgetMs],
+    ["environmentBudgetMs", environmentBudgetMs],
   ] as const) {
     if (!Number.isFinite(value) || value <= 0) {
       throw new Error(
@@ -921,7 +934,9 @@ export async function warmUpScene(
   }
   const now = (): number => globalThis.performance?.now() ?? Date.now();
   const yieldFrame = options.yieldFrame ?? yieldToHost;
-  const startedAt = now();
+  const environmentDeadline = now() + environmentBudgetMs;
+  // The compile budget's clock; it restarts once the environment is prepared (see `budgetMs`).
+  let startedAt = now();
   let environmentPreparationStarted = false;
   let environmentPrepared = false;
   let environmentPreparation: Promise<void> | undefined;
@@ -935,7 +950,7 @@ export async function warmUpScene(
         renderer,
         targetScene,
         camera,
-        startedAt + budgetMs,
+        environmentDeadline,
       ).then((prepared) => {
         environmentPrepared = prepared;
         if (!prepared) {
@@ -953,6 +968,30 @@ export async function warmUpScene(
   const censusBefore = readPipelineCensus(renderer);
   const cacheIdentity = warmUpCacheIdentity(options.cache);
   let cacheStatus = readWarmUpCache(cacheIdentity, candidates, computeNodes.length);
+
+  // Lighting first, on its own budget: every compile below waits on this same preparation, so a
+  // bake that outlasts the compile budget must not spend it. Settled or given up, the compile
+  // budget starts now.
+  const upfront = ensureEnvironmentPreparation();
+  if (upfront !== undefined) {
+    if (!(await withinDeadline(environmentDeadline, upfront, yieldFrame, now))) {
+      // Every compile would wait on this same preparation, so none is started.
+      return reconcileWarmUpObservation({
+        compiled: 0,
+        pipelines: candidates,
+        candidates,
+        attempted: 0,
+        observed: observePipelineCensus(censusBefore, readPipelineCensus(renderer)),
+        slices: 0,
+        elapsedMs: now() - startedAt,
+        unsupported: false,
+        abandoned: 1,
+        timedOut: now() >= environmentDeadline,
+        cache: cacheStatus,
+      });
+    }
+    startedAt = now();
+  }
 
   // A hit means the previous complete warm-up gave the platform a chance to populate its own
   // persistent driver cache. WebGPU has no portable serialized pipeline to restore, so the marker

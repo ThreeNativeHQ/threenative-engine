@@ -102,6 +102,32 @@ describe("scene warm-up", () => {
     }
   });
 
+  test("should start the compile budget once a slow environment bake settles", async () => {
+    // 3-CPU SwiftShader: the full-quality bake alone outlasts the 15 s compile budget, which left
+    // warm-up timed out with nothing compiled (PRD-624). The bake has its own budget now.
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", {
+      configurable: true,
+      value: () => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 80)),
+    });
+    try {
+      const compileAsync = vi.fn(async () => undefined);
+      const report = await warmUpScene(
+        { raw: { backend: { isWebGPUBackend: true } }, compileAsync },
+        { children: [], environment: { isTexture: true } } as never,
+        {} as never,
+        { granularity: "scene", budgetMs: 40, environmentBudgetMs: 1000 },
+      );
+      expect(compileAsync).toHaveBeenCalledTimes(1);
+      expect(report.attempted).toBe(1);
+      expect(report.timedOut).toBe(false);
+      expect(report.abandoned).toBe(0);
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+    }
+  });
+
   test("should wait for the native engine's environment bake before the covered world pass", async () => {
     // The native engine skips every frame until its PMREM is baked; a warm-up that does not wait
     // lets the pose capture a skipped, empty frame (platformer on SwiftShader, PRD-624).
@@ -261,7 +287,7 @@ describe("scene warm-up", () => {
         { ...fakeRenderer(), raw, pipelineCensus: () => census },
         { ...sceneOf(1), environment } as never,
         {} as never,
-        { cache, budgetMs: 5, yieldFrame: () => Promise.resolve() },
+        { cache, environmentBudgetMs: 5, yieldFrame: () => Promise.resolve() },
       );
 
       expect(report.cache).toBe("hit");
@@ -275,7 +301,7 @@ describe("scene warm-up", () => {
     }
   });
 
-  test("should not start compile after environment preparation exceeds its compile deadline", async () => {
+  test("should not start compile after environment preparation exceeds its own budget", async () => {
     const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
     const environment = { isTexture: true } as never;
     const raw = { backend: { isWebGPUBackend: true } };
@@ -293,6 +319,7 @@ describe("scene warm-up", () => {
           granularity: "object",
           compileTimeoutMs: 5,
           budgetMs: 100,
+          environmentBudgetMs: 5,
           yieldFrame: () => Promise.resolve(),
         },
       );
