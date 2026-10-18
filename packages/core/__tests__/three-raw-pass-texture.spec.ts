@@ -365,7 +365,7 @@ describe("stored raw pass attachments", () => {
     group.bindings[0] = new NodeSampledTexture("output", alternateOwner.getTextureNode(), {});
     bindings.updateForRender({ getBindings: () => [group] });
     expect(layouts).toHaveLength(2);
-    expect(layouts[1]?.[0]?.texture?.multisampled).toBeUndefined();
+    expect(layouts[1]?.[0]?.texture).not.toHaveProperty("multisampled");
     expect(backendData(group).layoutKey).not.toBe(firstLayoutKey);
     expect(backend.updateBindings).toHaveBeenCalledTimes(1);
     expect(group.bindings[0]?.texture).toBe(alternateTexture);
