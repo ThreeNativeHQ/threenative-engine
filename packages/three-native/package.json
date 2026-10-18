@@ -26,7 +26,7 @@
   "peerDependencies": {
     "three": "catalog:"
   },
-  "files": ["src/**/*.ts"],
+  "files": ["src/**/*.ts", "README.md"],
   "exports": {
     "./package.json": "./package.json"
   },
