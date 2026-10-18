@@ -154,22 +154,32 @@ renderer.shadowMap.enabled = true;
 
 const waiting = [];
 const nextTick = () => new Promise((resolve) => waiting.push(resolve));
+const progress = (phase, details = {}) => globalThis.tn.log("HOST_PROJECTION_PROGRESS " + JSON.stringify({ phase, ...details, atMs: Date.now() }));
 
 /** The draw list the player submits for a root on its own frame: three's renderer.info.render, a frame behind. */
-async function frameDraws(root) {
+async function frameDraws(root, label) {
+  const startedAt = Date.now();
+  progress("frame-draws-start", { label });
   globalThis.tn.scene = root;
   globalThis.tn.camera = camera;
   for (let index = 0; index < 4; index += 1) await nextTick();
   const info = globalThis.tn.renderInfo();
+  progress("frame-draws-complete", { label, elapsedMs: Date.now() - startedAt });
   return { draws: info.drawCalls, triangles: info.triangles };
 }
 
-async function draw(root) {
+async function draw(root, label, frame) {
+  const startedAt = Date.now();
+  progress("draw-start", { label, frame });
   const target = new RenderTarget(WIDTH, HEIGHT, { type: UnsignedByteType });
   renderer.setRenderTarget(target);
   renderer.render(root, camera);
   renderer.setRenderTarget(null);
+  progress("render-complete", { label, frame, elapsedMs: Date.now() - startedAt });
+  const readbackStartedAt = Date.now();
+  progress("readback-start", { label, frame });
   const pixels = await renderer.readRenderTargetPixelsAsync(target, 0, 0, WIDTH, HEIGHT);
+  progress("readback-complete", { label, frame, elapsedMs: Date.now() - readbackStartedAt });
   const copy = Uint8Array.from(pixels);
   target.dispose();
   return copy;
@@ -195,6 +205,8 @@ function compare(a, b) {
 }
 
 async function check(label, withHook, withBatched) {
+  const startedAt = Date.now();
+  progress("check-start", { label });
   const { cubes, hidden, scene } = build(withHook, withBatched);
   const host = new SceneRenderProjection(scene, { onReport: () => {} });
   const mirror = new SceneRenderProjection(scene, { onReport: () => {}, projection: "js" });
@@ -220,10 +232,10 @@ async function check(label, withHook, withBatched) {
     if (host.root !== scene) throw new Error(label + ": the host path built a mirror");
     if (mirror.root === scene && !withHook && !withBatched) throw new Error(label + ": the forced mirror did not project: " + mirror.report.reasonCode + " " + (mirror.report.reason ?? ""));
     let before = hookCalls;
-    const hostPixels = await draw(host.root);
+    const hostPixels = await draw(host.root, label + ":host", frame);
     hooks.host += hookCalls - before;
     before = hookCalls;
-    const mirrorPixels = await draw(mirror.root);
+    const mirrorPixels = await draw(mirror.root, label + ":mirror", frame);
     hooks.mirror += hookCalls - before;
     results.push({ frame, ...compare(mirrorPixels, hostPixels) });
     if (frame === 2) {
@@ -231,15 +243,16 @@ async function check(label, withHook, withBatched) {
       cubes[3].position.x += 3;
       scene.updateMatrixWorld(true);
       host.reconcile();
-      control = compare(mirrorPixels, await draw(host.root));
+      control = compare(mirrorPixels, await draw(host.root, label + ":control", frame));
       cubes[3].position.x -= 3;
       scene.updateMatrixWorld(true);
       host.reconcile();
-      lists = { host: await frameDraws(host.root), mirror: await frameDraws(mirror.root) };
+      lists = { host: await frameDraws(host.root, label + ":host"), mirror: await frameDraws(mirror.root, label + ":mirror") };
     }
   }
   const hostReport = host.report;
   const mirrorReport = mirror.report;
+  progress("check-complete", { label, elapsedMs: Date.now() - startedAt });
   return {
     label,
     control,
@@ -258,7 +271,9 @@ globalThis.tn.onUpdate(() => {
   if (ticks === 1) { globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); }
   if (ticks !== 10) return;
   (async () => {
+    progress("comparison-start", { tick: ticks });
     const report = [await check("mixed", false, false), await check("batched", false, true), await check("hook", true, false)];
+    progress("comparison-complete", { tick: ticks });
     globalThis.tn.log("HOST_PROJECTION_RESULT " + JSON.stringify(report));
   })().catch((error) => globalThis.tn.log("HOST_PROJECTION_ERROR " + (error && error.stack || error)));
 });

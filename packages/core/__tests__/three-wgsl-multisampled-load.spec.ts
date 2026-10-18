@@ -1,6 +1,8 @@
-import { DepthTexture, Mesh } from "three";
-import { WGSLNodeBuilder } from "three/webgpu";
-import { describe, expect, it } from "vitest";
+import { DepthTexture, Mesh, PerspectiveCamera, PlaneGeometry, Scene } from "three";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
+import { texture } from "three/tsl";
+import { RenderTarget, WGSLNodeBuilder, WebGPURenderer } from "three/webgpu";
+import { describe, expect, it, vi } from "vitest";
 
 interface ITextureLoadBuilder {
   generateTextureLoad(
@@ -75,5 +77,50 @@ describe("WGSL multisampled textureLoad sample index", () => {
 
     expect(snippet).toContain("u32( 0 )");
     expect(snippet).not.toContain("i32(");
+  });
+});
+
+describe("SMAA weights texture sampling", () => {
+  it("samples the single-level edges at explicit mip zero inside all four bounded searches", () => {
+    vi.stubGlobal(
+      "Image",
+      class {
+        src = "";
+      },
+    );
+    const renderer = new WebGPURenderer({ canvas: new EventTarget() as HTMLCanvasElement });
+    Reflect.set(renderer.backend, "renderer", renderer);
+    vi.spyOn(
+      Reflect.get(renderer.backend, "capabilities"),
+      "getUniformBufferLimit",
+    ).mockReturnValue(65_536);
+    vi.spyOn(renderer, "hasFeature").mockReturnValue(false);
+    const input = new RenderTarget(64, 64);
+    const effect = smaa(texture(input.texture));
+    const geometry = new PlaneGeometry();
+    try {
+      effect.setup({ getSharedContext: () => ({}) } as never);
+      const mesh = new Mesh(geometry, Reflect.get(effect, "_materialWeights"));
+      const builder = new WGSLNodeBuilder(mesh, renderer);
+      Reflect.set(builder, "camera", new PerspectiveCamera());
+      Reflect.set(builder, "scene", new Scene());
+      builder.build();
+      const shader = builder.fragmentShader;
+      const searches = [
+        ...shader.matchAll(/for \( var i : i32 = 0; i < 8; i \+\+ \) \{([\s\S]*?)break;/g),
+      ];
+      expect(searches).toHaveLength(4);
+      expect(Reflect.get(effect, "_renderTargetEdges").texture.generateMipmaps).toBe(false);
+      for (const [, body] of searches) {
+        expect(body).toMatch(/textureSampleLevel\( [^\n]+, 0\.0 \)/);
+        expect(body).not.toContain("textureSample(");
+      }
+    } finally {
+      effect.dispose();
+      geometry.dispose();
+      input.dispose();
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    }
   });
 });

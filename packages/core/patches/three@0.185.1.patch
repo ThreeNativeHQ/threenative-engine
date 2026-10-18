@@ -7119,3 +7119,10 @@ index ff8ee2dbace2816105aa7152891c04f2333f33e8..f6d510b59151e02c46928689b2be9948
  		this._samplerCache.clear();
  
  	}
+diff --git a/examples/jsm/tsl/display/SMAANode.js b/examples/jsm/tsl/display/SMAANode.js
+--- a/examples/jsm/tsl/display/SMAANode.js
++++ b/examples/jsm/tsl/display/SMAANode.js
+@@ -159 +159,2 @@ class SMAANode extends TempNode {
+-		this._edgesTextureUniform = texture( this._renderTargetEdges.texture );
++		// Single-level edges need no implicit derivatives inside the bounded searches (FXC).
++		this._edgesTextureUniform = texture( this._renderTargetEdges.texture ).level( 0 );
