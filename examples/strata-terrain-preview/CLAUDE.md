@@ -92,6 +92,8 @@ All scripts, playtest definitions, manual preparation helpers and fixtures under
   - `scripts/bake.mjs`: bakes source elevation data and generates canonical world JSON packages.
   - `scripts/consumer-world.mjs`: exports `openConsumerPage` to serve an installed consumer directory to headless Chromium and run vanilla full-world export against packed tarballs.
   - `scripts/stage-native-assets.mjs`: stages textures and models for native desktop/mobile bundles.
+  - `scripts/verify-native-staging.mjs`: verifies staged native assets resolve with their manifest hashes and sizes.
+  - `playtests/reveal.playtest.json`: checks startup readiness and publication, shadow and impostor stability after reveal.
   - `scripts/make-needle-atlas.mjs`: procedural generator for conifer needle foliage atlases.
   - `scripts/prep-fab-pines.py`: manual prep script requiring Blender CLI and authored Fab Scots pine GLB to decimate and budget pines.
   - `scripts/prep-fab-temperate.mjs`: cooks and fixes texture atlas and opacity bindings for temperate models.

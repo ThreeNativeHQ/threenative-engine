@@ -76,6 +76,31 @@ test('desktop runner exceptions retain failed evidence rather than disappearing'
   assert.match(source, /return desktopFailureRun\(error, await driver.captureConsole\(\),/u);
 });
 
+test('desktop production console preserves GLib warning severity and real errors', async () => {
+  const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
+  const driverSource = sliceSource(source, 'function createDesktopDriver(', 'export async function installNativeProfileEntry(');
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  const context = {
+    join,
+    process: { env: { DISPLAY: ':fixture' }, platform: 'linux' },
+    spawn: () => {
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    },
+  };
+  runInNewContext(driverSource, context);
+  const driver = context.createDesktopDriver('/fixture/mystral', '/fixture/scaffold', { renderSize: { height: 900, width: 1600 } }, '/fixture/mailbox');
+  await driver.launch();
+  const warning = '(platformer:23234): dbind-WARNING **: 05:31:00: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files';
+  child.stderr.emit('data', `${warning}\nError: destroyed texture\nFATAL: native failure\n`);
+  child.stdout.emit('data', 'Error: application failure\n');
+  const entries = await driver.captureConsole();
+  assert.equal(entries[0].text, warning);
+  assert.deepEqual(Array.from(entries, ({ type }) => type), ['warning', 'error', 'error', 'error']);
+});
+
 test('desktop cleanup tolerates a child process group that already exited', async () => {
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
   const driverSource = sliceSource(source, 'function createDesktopDriver(', 'export async function installNativeProfileEntry(');

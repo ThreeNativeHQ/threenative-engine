@@ -980,7 +980,7 @@ export class CellRender {
   }
 
   /**
-   * Tell the shadow levels in up to two calls, if anything changed and a second has passed.
+   * Tell the shadow levels in up to two calls; covered loading drains without the walk throttle.
    *
    * The companions used to make this the expensive call it still is; the levels redraw from
    * scratch, so the cadence is the only lever and once a second is the one that keeps a walk's
@@ -988,7 +988,7 @@ export class CellRender {
    * what the changed records' own bounds add: a hook that forwards it redraws the levels whose
    * window covers them, which for a streaming world is usually the finest one alone.
    */
-  tellShadows(): void {
+  tellShadows(covered = false): void {
     if (!this.#shadowMoved) return;
     // No hook means there is no level to tell, so the flag is discharged here. Leaving it set made
     // `#residencyStale` true forever, and every update ran a full residency pass on a world that had
@@ -1001,7 +1001,7 @@ export class CellRender {
       return;
     }
     const now = this.#host.now();
-    if (now - this.#shadowToldAt < 1e3) return;
+    if (!covered && now - this.#shadowToldAt < 1e3) return;
     this.#shadowToldAt = now;
     this.#shadowMoved = false;
     const region = this.#shadowRegion;

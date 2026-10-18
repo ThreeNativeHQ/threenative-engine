@@ -955,7 +955,8 @@ function createDesktopDriver(artifactPath, project, options, mailboxRoot) {
   let stopping;
   const screenshotRequestPath = join(mailboxRoot, 'tn-playtest-screenshot-request.txt');
   return {
-    captureConsole: async () => output.split(/\r?\n/u).filter(Boolean).map((text) => ({ text, type: /\b(?:Error|FAILED|FATAL)\b/u.test(text) ? 'error' : 'log' })),
+    // GLib supplies severity before its message, which can itself contain the word Error.
+    captureConsole: async () => output.split(/\r?\n/u).filter(Boolean).map((text) => ({ text, type: /^\s*(?:\*\* \([^)]*\): WARNING \*\*:|\([^)]*\): dbind-WARNING \*\*:)/u.test(text) ? 'warning' : /\b(?:Error|FAILED|FATAL)\b/u.test(text) ? 'error' : 'log' })),
     isAlive: async () => child !== undefined && child.exitCode === null,
     launch: async () => {
       child = spawnNative(artifactPath, project, options, mailboxRoot);

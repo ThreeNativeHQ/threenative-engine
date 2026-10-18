@@ -54,8 +54,9 @@ index them in the example's `AGENTS.md`.
 
 #### Phase 2: the CI job
 **Status:** PARTIAL
-**Files:** `.github/workflows/ci.yml`, `scripts/ci-change-scope.mjs`, `scripts/__tests__/ci-structure.spec.ts`, `scripts/__tests__/ci-needs.spec.ts`
+**Files:** `.github/workflows/ci.yml`, `scripts/ci-change-scope.mjs`, `scripts/verify-strata-startup.ts`, `scripts/__tests__/verify-strata-startup.spec.ts`, `scripts/__tests__/ci-structure.spec.ts`, `scripts/__tests__/ci-needs.spec.ts`
 - [x] Scope selects and skips correctly. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts` — PASS (213 tests); the existing protected main-job join rejects missing, skipped, failed and unmapped results. Focused Biome checks passed with complexity warnings.
+- [ ] Keep the 88b Strata startup benchmark comparable using the game package and emitted third-party runtime package identities; record owned Three patch digests as treatment, accept unrelated workspace lock/catalog drift, and reject changed or missing emitted package metadata. proof: `pnpm exec vitest run scripts/__tests__/verify-strata-startup.spec.ts` and a current-candidate startup benchmark CI run.
 - [ ] Web playtest green in CI. proof: CI run link
 - [ ] Consumer and editor scripts green in CI. proof: CI run link
 
@@ -225,3 +226,14 @@ Starter pack mismatch reproduces locally. CI Node20.20.2 and local Node20.19.6 b
 Fresh code review caught protocol-relative `//cdn/...` map prefix loss in the initial path fix. A real-loader red/green regression now preserves that supported URL form; final focused total186 tests and core typecheck pass. Fresh read-only rereview returns APPROVE; post-rebuild visual proof remains pending.
 
 Published immutable starter revision: [content-addressed asset release](https://github.com/ThreeNativeHQ/threenative-engine/releases/tag/terrain-starter-assets-sha256-db382c88c02719e68556b5a655e304b3bb97c7be5b4bd571ba6fcc6601600514). A fresh public download matches31,599,993 bytes and SHA256 `db382c88c02719e68556b5a655e304b3bb97c7be5b4bd571ba6fcc6601600514`; the old v0.1.0 release is unchanged. Final scoped code review returns APPROVE. Core rebuild passes; preview rebuild and fresh visual proof remain pending.
+
+#### Current CI repair scope — 2026-10-17
+
+- [ ] Repair destroyed sampled-texture bindings on resize. proof: existing raw-pass regression and fresh error-free GPU captures. Native morph-target case53 also submits a destroyed texture; shared cause remains unverified.
+- [ ] Repair native Bloom retained-capacity failure. proof: exact size regression and affected native output gate.
+- [x] Preserve explicitly labelled GLib warnings in production-profile observations without counting their message's word `Error` as application severity. proof: exact CI warning fails red before repair; all80 production-profile contracts pass after repair, including real Error/FATAL controls. Scoped Biome has existing warnings only; native CI rerun remains pending.
+- [ ] Restore PR510 camera draw-reach readiness, covered publication flush and terminal impostor first-draw debt in the extracted develop modules. proof: current CI admission and shadow-prewarm tests, runtime reveal.
+
+Exact CI URL on rebuilt06c reaches startup ready in23.1 seconds on NVIDIA/Turing: compiler settled3.72s, framework ready3.79s, streaming drained, spawn6/6, no console/network/page errors. This is local startup evidence only; old9a hosted startup remains unexplained pending current-source CI. Settled06c captures fail WebGPU validation twice (destroyed RGBA16Float texture); no visual acceptance is claimed.
+
+Laptop06c full JavaScript suite:810 files pass,6 fail;11,436 tests pass,10 fail,52 skip. Subsequent chained typecheck/lint did not execute. Failures reproduce the current CI census, Three patch/upgrade/morph, admission and terminal-prewarm defects; archive mismatch is fixed. Restored camera draw-reach readiness and covered publication drain now pass19/19 admission tests and core typecheck locally. Census repair documents the existing reveal and native-staging verifier commands; census test passes and generated CLAUDE mirror is synchronized. Terminal-prewarm and Three repair lanes remain open.

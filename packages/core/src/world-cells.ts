@@ -100,7 +100,6 @@ import {
 import { type IAdmissionBudget, TerrainTileBudgetError, TerrainTiles } from "./world-tiles.js";
 
 const _readinessPosition = new Vector3();
-const _readinessBounds = new Box3();
 const LOD_RANGE_RECORD_BYTES = 8;
 
 export { bundleSafeMaterial } from "./world-bundle-safety.js";
@@ -568,6 +567,9 @@ export class WorldCells extends Group implements IComputeDriven {
 
   readonly #render: CellRender;
   readonly #onPublication: IWorldCellsInit["onPublication"];
+  readonly #readinessVisible = new Map<IWorldCell, boolean>();
+  #readinessView: number[] = [];
+  #readinessReach: Float32Array | undefined;
   readonly #readinessFrustum = new Frustum();
   readonly #readinessProjection = new Matrix4();
   readonly #prewarm: CellPrewarm;
@@ -1317,7 +1319,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // far mesh without the camera ever traversing its cell. Bounded to one asset per idle frame.
     this.#impostorState.pumpFarAcquisition();
     // After the drain, so the levels are told about this update's records and not the last one's.
-    this.#render.tellShadows();
+    this.#render.tellShadows(this.#covered);
     // After the drain too, so a record admitted this update is in the window the camera draws and
     // not one frame behind it.
     this.#chunks.restoreSources();
@@ -1677,6 +1679,29 @@ export class WorldCells extends Group implements IComputeDriven {
       radius < 0
     )
       throw new Error("WorldCells readiness requires finite coordinates and a nonnegative radius.");
+    if (camera !== undefined) {
+      const view = [
+        ...camera.projectionMatrix.elements,
+        ...camera.matrixWorldInverse.elements,
+        point.x,
+        (point as Vector3).y,
+        point.z,
+        camera.coordinateSystem,
+        Number(this.#render.gpuOn),
+      ];
+      // Package placements/bounds are immutable; reach is compared too so edits cannot go stale.
+      if (
+        !view.every((value, index) => value === this.#readinessView[index]) ||
+        this.#placementReach?.some((value, index) => value !== this.#readinessReach?.[index])
+      ) {
+        this.#readinessVisible.clear();
+        this.#readinessView = view;
+        if (this.#placementReach !== undefined) {
+          this.#readinessReach ??= new Float32Array(this.#placementReach.length);
+          this.#readinessReach.set(this.#placementReach);
+        }
+      }
+    }
     const lowX = Math.floor((point.x - radius - this.#minX) / this.#cellSize);
     const highX = Math.floor((point.x + radius - this.#minX) / this.#cellSize);
     const lowZ = Math.floor((point.z - radius - this.#minZ) / this.#cellSize);
@@ -1689,22 +1714,15 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const cell of this.#cells) {
       if (camera === undefined) {
         if (cell.x < lowX || cell.x > highX || cell.z < lowZ || cell.z > highZ) continue;
-      } else {
-        _readinessBounds.min.set(
-          this.#minX + cell.x * this.#cellSize,
-          this.#manifest.terrain.heightMin - 16,
-          this.#minZ + cell.z * this.#cellSize,
-        );
-        _readinessBounds.max.set(
-          this.#minX + (cell.x + 1) * this.#cellSize,
-          this.#manifest.terrain.heightMax + 64,
-          this.#minZ + (cell.z + 1) * this.#cellSize,
-        );
-        if (!this.#readinessFrustum.intersectsBox(_readinessBounds)) continue;
-      }
+      } else if (!this.#cellInView(cell, point as Vector3)) continue;
       requiredCells++;
       const resident = this.#resident.get(cellKey(cell.x, cell.z));
-      if (resident && this.#cellLoaded(resident)) loadedCells++;
+      if (
+        resident &&
+        this.#cellLoaded(resident) &&
+        (camera === undefined || !this.#jobs.some((job) => job.cell === resident))
+      )
+        loadedCells++;
       if (resident?.chunkFailed) failures++;
       for (const run of cell.runs)
         if (this.#models.asset(this.#canonical(run.asset))?.failed) failures++;
@@ -1732,8 +1750,63 @@ export class WorldCells extends Group implements IComputeDriven {
         !this.#released &&
         failures === 0 &&
         loadedCells === requiredCells &&
-        loadedTerrainTiles === requiredTerrainTiles,
+        loadedTerrainTiles === requiredTerrainTiles &&
+        (camera === undefined || (!this.#render.shadowMoved && !this.#refilterOwed)),
     };
+  }
+
+  /** Use the same authored placement bounds and distance test as admission, even before residency. */
+  #cellInView(cell: IWorldCell, eye: Vector3): boolean {
+    const cached = this.#readinessVisible.get(cell);
+    if (cached !== undefined) return cached;
+    this.#readinessVisible.set(cell, false);
+    if (this.#terrain !== undefined || (cell.chunks?.length ?? 0) > 0) {
+      const box = this.#recordBounds;
+      box.min.set(
+        this.#minX + cell.x * this.#cellSize,
+        this.#extentBounds.min.y,
+        this.#minZ + cell.z * this.#cellSize,
+      );
+      box.max.set(
+        this.#minX + (cell.x + 1) * this.#cellSize,
+        this.#extentBounds.max.y,
+        this.#minZ + (cell.z + 1) * this.#cellSize,
+      );
+      if (this.#readinessFrustum.intersectsBox(box)) {
+        this.#readinessVisible.set(cell, true);
+        return true;
+      }
+    }
+    for (const run of cell.runs) {
+      const asset = this.#manifest.assets[this.#canonical(run.asset)];
+      if (asset === undefined) continue;
+      const records = cellPlacements(this.#placements, run);
+      for (let index = 0; index < run.count; index++) {
+        const at = index * PLACEMENT_RECORD_FLOATS;
+        this.#position.fromArray(records, at);
+        const distance =
+          this.#placementReach === undefined
+            ? Math.hypot(this.#position.x - eye.x, this.#position.z - eye.z)
+            : this.#position.distanceTo(eye);
+        const reach = this.#placementReach?.[run.offset + index];
+        if (reach !== undefined && distance > reach) continue;
+        this.#rotation.fromArray(records, at + 3);
+        this.#scale.setScalar(records[at + 7] as number);
+        this.#matrix.compose(this.#position, this.#rotation, this.#scale);
+        const box = this.#boundsAt(asset.bounds, this.#matrix);
+        const inner = cullDistance(asset.maxDistance);
+        const centre = box.getCenter(this.#sourceCentre);
+        const drawDistance = this.#render.gpuOn
+          ? Math.hypot(centre.x - eye.x, centre.z - eye.z)
+          : distance;
+        if (inner !== undefined && drawDistance > inner) continue;
+        if (this.#readinessFrustum.intersectsBox(box)) {
+          this.#readinessVisible.set(cell, true);
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /** Terrain data needed by the current camera, including visible tiles not yet admitted. */
