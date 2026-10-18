@@ -67,12 +67,15 @@ describe("engine parity guard", () => {
     expect(verdict("starter", 0.05).ok).toBe(true);
   });
 
-  it("sets the engine on a pinned config and on one that names none", () => {
-    expect(
-      withEngine('export default {\n  engine: "threejs",\n  app: {},\n};\n', "threenative"),
-    ).toBe('export default {\n  engine: "threenative",\n  app: {},\n};\n');
-    expect(withEngine("export default defineConfig({ app: {} });\n", "threejs")).toBe(
-      'export default defineConfig({\n  engine: "threejs", app: {} });\n',
+  it("re-exports the config under one engine, overriding a pin, for any export shape", () => {
+    const template =
+      'const config = {\n  engine: "threejs",\n  app: {},\n};\n\nexport default config;\n';
+    expect(withEngine(template, "threenative")).toBe(
+      'const config = {\n  engine: "threejs",\n  app: {},\n};\n\nconst __engineParityBase = config;\n' +
+        '\nexport default { ...__engineParityBase, engine: "threenative" };\n',
+    );
+    expect(withEngine("export default defineConfig({ app: {} });\n", "threejs")).toContain(
+      "const __engineParityBase = defineConfig({ app: {} });",
     );
     expect(() => withEngine("module.exports = {};", "threejs")).toThrow("TN_ENGINE_PARITY_CONFIG");
   });

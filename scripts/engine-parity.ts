@@ -83,14 +83,14 @@ export function verdict(template: string, score: number): { ok: boolean; message
     : { ok: true, message: `${value}: known gap (${gap})` };
 }
 
-/** The config source with `engine` set to one value: an existing property is replaced, else one is added. */
+/** The config source with its default export re-exported under one engine; works for any export shape and overrides a pin. */
 export function withEngine(source: string, engine: (typeof ENGINES)[number]): string {
-  const property = /(^|[\s{,])engine\s*:\s*["'][^"']*["']/mu;
-  if (property.test(source)) return source.replace(property, `$1engine: "${engine}"`);
-  const open = /(export\s+default\s+(?:defineConfig\s*\(\s*)?\{)/u;
-  if (!open.test(source))
-    throw new Error("TN_ENGINE_PARITY_CONFIG: no `export default {` to add engine to");
-  return source.replace(open, `$1\n  engine: "${engine}",`);
+  const matches = source.match(/^export\s+default\s+/gmu) ?? [];
+  if (matches.length !== 1)
+    throw new Error(
+      "TN_ENGINE_PARITY_CONFIG: expected exactly one `export default` in threenative.config.ts",
+    );
+  return `${source.replace(/^export\s+default\s+/mu, "const __engineParityBase = ")}\nexport default { ...__engineParityBase, engine: "${engine}" };\n`;
 }
 
 /** Two frames side by side, threejs left, for the reviewer. */
@@ -149,6 +149,8 @@ function main(argv: string[]): number {
             "--headed",
             "--artifacts",
             artifacts,
+            "--timeout",
+            "120000",
             "--server-timeout",
             "120000",
             "--server-command",
