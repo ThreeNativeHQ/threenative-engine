@@ -20,10 +20,8 @@ export const ENGINE_PARITY_THRESHOLD = 0.12;
 export const ENGINES = ["threejs", "threenative"] as const;
 
 /** Templates whose engines still differ, each with the open box that tracks it. A gap that closes fails until it leaves this list. */
-export const KNOWN_GAPS: Readonly<Record<string, string>> = {
-  "action-rpg": "the threejs arm itself fails (TN_TONE console errors, dark frame); PRD-617 AC-7",
-  sailing: "threenative renders about 1.6x brighter; PRD-617 AC-7",
-};
+// Empty since 2026-10-17: sailing (fc56ef24d, lit mesh without normals) and action-rpg (5bb12e56c, NaN launch cone) closed.
+export const KNOWN_GAPS: Readonly<Record<string, string>> = {};
 
 const POSE = {
   name: "engine-parity-pose",
@@ -67,8 +65,12 @@ export function parityScore(a: PNG, b: PNG): number {
 }
 
 /** The verdict for one template's score. A known gap passes; a known gap that closed fails until it is delisted. */
-export function verdict(template: string, score: number): { ok: boolean; message: string } {
-  const gap = KNOWN_GAPS[template];
+export function verdict(
+  template: string,
+  score: number,
+  gaps: Readonly<Record<string, string>> = KNOWN_GAPS,
+): { ok: boolean; message: string } {
+  const gap = gaps[template];
   const within = score <= ENGINE_PARITY_THRESHOLD;
   const value = `${template}: score ${score.toFixed(3)} (threshold ${ENGINE_PARITY_THRESHOLD})`;
   if (gap === undefined)

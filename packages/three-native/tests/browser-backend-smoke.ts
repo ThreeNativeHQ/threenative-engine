@@ -582,12 +582,36 @@ engine.collect();
   const action = mixer.clipAction(clip) as {
     setLoop(mode: unknown, repetitions: number): unknown;
     play(): unknown;
+    stop(): unknown;
     reset(): unknown;
     clampWhenFinished: boolean;
   };
   action.setLoop(web.LoopOnce, 1);
   action.clampWhenFinished = true;
   action.play();
+  // three's `mixer.stats`: one cached action, running, over one bound property.
+  const stats = (
+    mixer as unknown as {
+      stats: Record<
+        "actions" | "bindings" | "controlInterpolants",
+        { total: number; inUse: number }
+      >;
+    }
+  ).stats;
+  const actionStats = stats.actions;
+  check(
+    (mixer as unknown as { stats: unknown }).stats === stats && stats.actions === actionStats,
+    "mixer.stats and nested counts keep their identity",
+  );
+  check(
+    stats.actions.total === 1 &&
+      stats.actions.inUse === 1 &&
+      stats.bindings.total === 1 &&
+      stats.bindings.inUse === 1 &&
+      stats.controlInterpolants.total === 0 &&
+      stats.controlInterpolants.inUse === 0,
+    "mixer.stats counts the action and its binding",
+  );
   const events: Record<string, unknown>[] = [];
   const onFinished = (event: Record<string, unknown>) => events.push({ ...event });
   mixer.addEventListener("finished", onFinished);
@@ -603,6 +627,8 @@ engine.collect();
       events[0]?.target === mixer,
     "finished event reaches its listener with its action and target",
   );
+  action.stop();
+  check(stats.actions.inUse === 0, "mixer.stats reads live action counts after stop");
   mixer.removeEventListener("finished", onFinished);
   check(mixer.hasEventListener("finished", onFinished) === false, "mixer listener removed");
   const loops: unknown[] = [];

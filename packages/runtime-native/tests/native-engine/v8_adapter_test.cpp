@@ -1451,6 +1451,8 @@ void skeletal() {
         const action = mixer.clipAction(nativeClip);
         check(mixer.getRoot()===root && action.getClip()===nativeClip, 'mixer root and action clip');
         action.setLoop(LoopOnce, 1); action.clampWhenFinished = true; action.play();
+        const stats = mixer.stats; const actionStats = stats.actions;
+        check(mixer.stats===stats && mixer.stats.actions===actionStats, 'mixer stats identity');
         check(action.loop===LoopOnce && action.isScheduled() && action.getEffectiveWeight()===1, 'action state');
         const events = [];
         const onFinished = (event) => events.push(event);
@@ -1459,6 +1461,7 @@ void skeletal() {
         mixer.update(0.5); check(events.length===0 && Math.abs(hip.position.x-0.5)<1e-6, 'no event mid-clip');
         mixer.update(1);
         check(events.length===1 && events[0].type==='finished' && events[0].action===action && events[0].direction===1, 'finished event');
+        action.stop(); check(stats.actions.inUse===0, 'live mixer stats after stop');
         check(!action.isRunning() && action.time===1, 'clamped at the end');
         mixer.removeEventListener('finished', onFinished);
         check(!mixer.hasEventListener('finished', onFinished), 'listener removed');

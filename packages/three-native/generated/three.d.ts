@@ -67,6 +67,7 @@ export declare class AnimationMixer extends EventDispatcher {
 constructor(root: Object3D);
 readonly time: number;
 timeScale: number;
+readonly stats: { actions: { total: number; inUse: number }; bindings: { total: number; inUse: number }; controlInterpolants: { total: number; inUse: number } };
 
   clipAction(clip: AnimationClip): AnimationAction;
 

@@ -288,10 +288,15 @@ function overloadSignature(overload: ICatalogOverload): string {
 function typeNames(text: string): readonly string[] {
   const withoutLiterals = text.replace(/'[^']*'/gu, "''").replace(/"[^"]*"/gu, '""');
   // Object literals, index signatures and a callback's own parameter list name no type.
-  const withoutBlocks = withoutLiterals
-    .replace(/\{[^{}]*\}/gu, " ")
-    .replace(/\[[^\[\]]*\]/gu, " ")
-    .replace(/\([^()]*\)/gu, " ");
+  // An object literal may nest another (`{ actions: { total: number } }`), so strip innermost first.
+  let withoutBlocks = withoutLiterals;
+  for (let previous = ""; previous !== withoutBlocks; ) {
+    previous = withoutBlocks;
+    withoutBlocks = withoutBlocks
+      .replace(/\{[^{}]*\}/gu, " ")
+      .replace(/\[[^\[\]]*\]/gu, " ")
+      .replace(/\([^()]*\)/gu, " ");
+  }
   return [...new Set(withoutBlocks.match(/[A-Za-z_$][\w$]*/gu) ?? [])];
 }
 

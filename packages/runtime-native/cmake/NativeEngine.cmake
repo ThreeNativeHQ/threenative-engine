@@ -232,6 +232,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_directional_target=directional_target
         native_engine_directional_target_outside_scene=directional_target_outside_scene
         native_engine_scene_fog_node=scene_fog_node
+        native_engine_lit_mesh_without_normals=lit_mesh_without_normals
         native_engine_renderer_invalidation=invalidation
         native_engine_renderer_scene_alpha=alpha_scene
         native_engine_standard_materials_unsupported=material_unsupported

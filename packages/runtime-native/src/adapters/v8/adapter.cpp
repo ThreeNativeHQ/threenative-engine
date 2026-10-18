@@ -1076,7 +1076,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
             auto* data = keep(new MethodData{this, path, {}});
             data->own = fixed && !settable;
             if (fixed && slots.count(path)) { data->slot = slots[path]; data->type = type; }
-            else if (fixed) data->cache.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:" + path)));
+            else if (fixed || (name == "AnimationMixer" && path == "stats")) data->cache.Reset(isolate_, v8::Private::New(isolate_, str(isolate_, "tn:" + path)));
             for (v8::Local<v8::ObjectTemplate> on : slotTemplates)
             on->SetAccessorProperty(
                 str(isolate_, path),
@@ -1087,6 +1087,62 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                         v8::Isolate* isolate = info.GetIsolate();
                         v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
                         v8::Local<v8::Object> self = info.This();
+                        if (d->name == "stats" && d->cache.IsEmpty() == false) {
+                            v8::Local<v8::Value> cached;
+                            if (self->GetPrivate(ctx, d->cache.Get(isolate)).ToLocal(&cached) && !cached->IsUndefined()) {
+                                info.GetReturnValue().Set(cached);
+                                return;
+                            }
+                            tn_handle_t h{};
+                            if (!d->adapter->unwrap(self, h)) return;
+                            v8::Local<v8::Object> facade = v8::Object::New(isolate);
+                            for (const char* group : {"actions", "bindings", "controlInterpolants"}) {
+                                v8::Local<v8::Object> counts = v8::Object::New(isolate);
+                                for (const char* field : {"total", "inUse"}) {
+                                    v8::Local<v8::Array> data = v8::Array::New(isolate, 4);
+                                    data->Set(ctx, 0, v8::External::New(isolate, d->adapter)).Check();
+                                    data->Set(ctx, 1, self).Check();
+                                    data->Set(ctx, 2, str(isolate, group)).Check();
+                                    data->Set(ctx, 3, str(isolate, field)).Check();
+                                    v8::Local<v8::Function> getter;
+                                    if (!v8::Function::New(ctx,
+                                        [](const v8::FunctionCallbackInfo<v8::Value>& args) {
+                                            v8::Isolate* isolate = args.GetIsolate();
+                                            v8::Local<v8::Context> ctx = isolate->GetCurrentContext();
+                                            v8::Local<v8::Array> data = args.Data().As<v8::Array>();
+                                            v8::Local<v8::Value> adapterValue, owner, group, field;
+                                            if (!data->Get(ctx, 0).ToLocal(&adapterValue) || !data->Get(ctx, 1).ToLocal(&owner) ||
+                                                !data->Get(ctx, 2).ToLocal(&group) || !data->Get(ctx, 3).ToLocal(&field) ||
+                                                !adapterValue->IsExternal() || !owner->IsObject()) return;
+                                            auto* adapter = static_cast<Adapter*>(adapterValue.As<v8::External>()->Value());
+                                            tn_handle_t h{};
+                                            if (!adapter->unwrap(owner.As<v8::Object>(), h)) return;
+                                            tn_value_t result{};
+                                            tn_diagnostic_t diagnostic{nullptr, 0};
+                                            if (tn_get(h, "stats", &result, &diagnostic) != TN_OK) {
+                                                throwStatus(isolate, diagnostic);
+                                                return;
+                                            }
+                                            v8::Local<v8::Value> snapshot = fromValue(*adapter, result);
+                                            v8::Local<v8::Object> snapshotObject, groupObject;
+                                            v8::Local<v8::Value> groupValue, value;
+                                            if (!snapshot->ToObject(ctx).ToLocal(&snapshotObject) ||
+                                                !snapshotObject->Get(ctx, group).ToLocal(&groupValue) ||
+                                                !groupValue->ToObject(ctx).ToLocal(&groupObject) ||
+                                                !groupObject->Get(ctx, field).ToLocal(&value)) return;
+                                            args.GetReturnValue().Set(value);
+                                        }, data).ToLocal(&getter)) return;
+                                    v8::PropertyDescriptor descriptor(getter, v8::Undefined(isolate));
+                                    descriptor.set_enumerable(true);
+                                    descriptor.set_configurable(true);
+                                    if (!counts->DefineProperty(ctx, str(isolate, field), descriptor).FromMaybe(false)) return;
+                                }
+                                if (!facade->Set(ctx, str(isolate, group), counts).FromMaybe(false)) return;
+                            }
+                            self->SetPrivate(ctx, d->cache.Get(isolate), facade).Check();
+                            info.GetReturnValue().Set(facade);
+                            return;
+                        }
                         // The slot belongs to this class's wrappers only: a getter borrowed onto another
                         // class's object (or a plain object inheriting from one) never reads or writes it.
                         tn_handle_t h{};

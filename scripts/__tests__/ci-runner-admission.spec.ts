@@ -140,7 +140,7 @@ it("selects ci:native-engine exactly once when the plan requires it, and omits i
   };
   const ids = selectInstances(plan, {});
   expect(ids).toContain("ci:native-engine");
-  expect(ids.filter((id) => id === "ci:native-engine")).toHaveLength(1);
+  expect(ids.filter((id: string) => id === "ci:native-engine")).toHaveLength(1);
   expect(
     selectInstances(
       { ...plan, jobs: { "native-engine": { required: false }, typecheck: { required: true } } },

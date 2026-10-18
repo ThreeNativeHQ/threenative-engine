@@ -186,6 +186,33 @@ describe("the browser-JS back end", () => {
     expect(Object.hasOwn(geometry, "boundingBox")).toBe(false);
   });
 
+  it("keeps mixer stats and nested counts stable while reading live snapshots", () => {
+    let total = 1;
+    const runtime: IBrowserRuntime = {
+      ...surfaceOnly(),
+      construct: (name) => ({ key: name, type: runtime.typeId(name) }),
+      get: (_self, property) => {
+        if (property !== "stats") throw new Error(`unexpected getter ${property}`);
+        return {
+          actions: { total, inUse: 1 },
+          bindings: { total: 1, inUse: 1 },
+          controlInterpolants: { total: 0, inUse: 0 },
+        };
+      },
+    };
+    const { classes: bound } = defineBrowserClasses(registry, runtime);
+    const mixer = new (bound.AnimationMixer as new (...args: unknown[]) => object)({});
+    const first = (mixer as { stats: object }).stats;
+    const actions = (first as { actions: object }).actions;
+    total = 2;
+    expect((mixer as { stats: object }).stats).toBe(first);
+    expect((first as { actions: object }).actions).toBe(actions);
+    expect((actions as { total: number }).total).toBe(2);
+    expect(Object.keys(actions)).toEqual(["total", "inUse"]);
+    expect(Object.getOwnPropertyDescriptor(actions, "total")?.configurable).toBe(true);
+    expect(JSON.stringify(first)).toContain('"total":2');
+  });
+
   it("sends a write-only setter to the engine instead of keeping a JS property", () => {
     const writes: unknown[][] = [];
     const runtime: IBrowserRuntime = {

@@ -427,6 +427,13 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
                                        shader::kPbrMapNames[k] + " needs a uv attribute (drawn without it)");
         r.buffers = {floatStore(*mesh.geometry, "position"), floatStore(*mesh.geometry, "normal"),
                      floatStore(*mesh.geometry, "uv"), mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};
+        // three reads the constant zero for a normal attribute the geometry lacks (AttributeNode warns, returns the
+        // type's default) and still draws; a material that sets normalNode, as the sailing sea does, never reads it.
+        if (!r.buffers[1] && r.buffers[0] && !material->flatShading && !material->nodes.fragmentNode &&
+            kindOf(material->type) != MaterialKind::Basic) {
+            r.zeroNormals = std::make_shared<BufferStore>(Scalar::F32, r.buffers[0]->count());
+            r.buffers[1] = r.zeroNormals.get();
+        }
         r.drawable = r.buffers[0] != nullptr;
     }
     if (!materialize || !r.drawable)

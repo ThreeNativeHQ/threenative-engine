@@ -353,6 +353,7 @@ export function defineBrowserClasses(
     "material",
   ]);
   const labels = new WeakMap<object, Map<string, unknown>>();
+  const mixerStats = new WeakMap<object, object>();
   const fastGetter = (binding: IRegistryClass, property: string) => {
     const field = binding.fields?.[property];
     const read = runtime.readDoubles;
@@ -934,6 +935,39 @@ export function defineBrowserClasses(
         configurable: true,
         get:
           fastGetter(binding, property) ??
+          (name === "AnimationMixer" && property === "stats"
+            ? function (this: object) {
+                let stats = mixerStats.get(this);
+                if (stats !== undefined) return stats;
+                const count = (name: string) => {
+                  const read = (field: "total" | "inUse") => {
+                    const counts = (
+                      runtime.get(refOf(this), "stats") as Record<
+                        string,
+                        Record<string, number> | undefined
+                      >
+                    )[name];
+                    if (counts === undefined)
+                      throw new TypeError(`TN_BROWSER_STATS_MISSING: ${name}`);
+                    return counts[field];
+                  };
+                  return Object.defineProperties(
+                    {},
+                    {
+                      total: { get: () => read("total"), enumerable: true, configurable: true },
+                      inUse: { get: () => read("inUse"), enumerable: true, configurable: true },
+                    },
+                  );
+                };
+                stats = {
+                  actions: count("actions"),
+                  bindings: count("bindings"),
+                  controlInterpolants: count("controlInterpolants"),
+                };
+                mixerStats.set(this, stats);
+                return stats;
+              }
+            : undefined) ??
           (labelled.has(property)
             ? function (this: object) {
                 let known = labels.get(this);

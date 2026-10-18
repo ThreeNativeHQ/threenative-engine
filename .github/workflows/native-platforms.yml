@@ -2280,7 +2280,8 @@ jobs:
           # (including Canvas2D and the web UI library) stays in the same CMake cache.
           cp "$runtime/build/tn-linux/mystral" "$runtime/build/tn-linux/mystral-v8"
           cp "$runtime/build/tn-linux/CMakeCache.txt" "$evidence/v8-CMakeCache.txt"
-          mapfile -t feature_flags < <(sed -n 's/^\(TN_ENABLE_[^:]*\):[^=]*=\(.*\)$/-D\1=\2/p' "$evidence/v8-CMakeCache.txt")
+          # The physics library too: the tn-linux preset names the x86_64 build, and this runner is arm64.
+          mapfile -t feature_flags < <(sed -n 's/^\(TN_ENABLE_[^:]*\|THREENATIVE_PHYSICS_LIBRARY\):[^=]*=\(.*\)$/-D\1=\2/p' "$evidence/v8-CMakeCache.txt")
           restore_v8() {
             cp "$runtime/build/tn-linux/mystral-v8" "$runtime/build/tn-linux/mystral"
             cmake --preset tn-linux -S "$runtime" -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF \

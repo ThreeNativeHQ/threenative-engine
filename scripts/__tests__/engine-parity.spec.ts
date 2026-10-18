@@ -58,11 +58,11 @@ describe("engine parity guard", () => {
   });
 
   it("passes a known gap and fails it once it closes, so the list cannot go stale", () => {
-    const [gap] = Object.keys(KNOWN_GAPS);
-    expect(gap).toBeDefined();
-    expect(verdict(gap as string, 0.85).ok).toBe(true);
-    expect(verdict(gap as string, 0.01)).toMatchObject({ ok: false });
-    expect(verdict(gap as string, 0.01).message).toContain("TN_ENGINE_PARITY_GAP_CLOSED");
+    const gaps = { sailing: "tracked elsewhere" };
+    expect(verdict("sailing", 0.85, gaps).ok).toBe(true);
+    expect(verdict("sailing", 0.01, gaps)).toMatchObject({ ok: false });
+    expect(verdict("sailing", 0.01, gaps).message).toContain("TN_ENGINE_PARITY_GAP_CLOSED");
+    expect(verdict("sailing", 0.85, KNOWN_GAPS).ok).toBe(false);
     expect(verdict("starter", 0.2).message).toContain("TN_ENGINE_PARITY:");
     expect(verdict("starter", 0.05).ok).toBe(true);
   });

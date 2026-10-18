@@ -262,7 +262,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-15 through createProject after recovery: all kits now share the decoder-aware asset watch.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "2a35acfc0176cadeb5cf1f31754e8dfbeddbc22c17e25a207dd3d18d447edd96",
+  "action-rpg": "2d126162a7dc1df399d414915dced04674ccc27b6b554852b4f5faf9e454a654",
   minimal: "58b5078eeb08b314a498ce2c63a188f771ba5860f9a268b2f297a156c3a24cdd",
   platformer: "9dd99850b55265aa27cf56097c3a38b8c124b067ea95d4f471d8168d04097380",
   puzzle: "187dcfa17cf733554651b7ef9a48a8237501b28981002bf5ea66e326638d84ca",
