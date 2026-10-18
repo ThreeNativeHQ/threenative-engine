@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { expect, it } from "vitest";
 import {
   BASELINE_SHA,
+  collectBundledThirdPartyPackages,
   parseStartupReport,
+  verifyStartupBuildIdentity,
   verifyStartupPackageIdentity,
   verifyStartupRuns,
 } from "../verify-strata-startup.js";
@@ -181,4 +185,135 @@ it("accepts native command edits but rejects dependency or compiler identity cha
   expect(() =>
     verifyStartupPackageIdentity(baseline, { ...candidate, engines: { node: ">=24" } }),
   ).toThrow(/engines/);
+});
+
+it("accepts unrelated workspace lock drift while retaining game and emitted package identity", () => {
+  const gamePackage = { name: "strata-terrain-preview", dependencies: { three: "catalog:" } };
+  const packages = [{ name: "three", version: "0.185.1" }];
+  const compilerPackages = ["vite@8.2.0_patch_hash=abc/node_modules/vite", "rolldown@1.2.1"];
+  const vitePatchSha256 = "a".repeat(64);
+  expect(() =>
+    verifyStartupBuildIdentity(
+      {
+        gamePackage,
+        bundledPackages: packages,
+        compilerPackages,
+        vitePatchSha256,
+        workspaceLockSha256: "before-lock",
+      },
+      {
+        gamePackage,
+        bundledPackages: packages,
+        compilerPackages,
+        vitePatchSha256,
+        workspaceLockSha256: "candidate-lock",
+      },
+    ),
+  ).not.toThrow();
+});
+
+it("rejects an emitted third-party package version change", () => {
+  const gamePackage = { name: "strata-terrain-preview" };
+  const compilerPackages = ["vite@8.2.0/node_modules/vite", "rolldown@1.2.1"];
+  const vitePatchSha256 = "b".repeat(64);
+  expect(() =>
+    verifyStartupBuildIdentity(
+      {
+        gamePackage,
+        bundledPackages: [{ name: "three", version: "0.185.1" }],
+        compilerPackages,
+        vitePatchSha256,
+      },
+      {
+        gamePackage,
+        bundledPackages: [{ name: "three", version: "0.186.0" }],
+        compilerPackages,
+        vitePatchSha256,
+      },
+    ),
+  ).toThrow(/bundled third-party package identity/);
+});
+
+it("rejects Vite transitive compiler changes and missing compiler metadata", () => {
+  const gamePackage = { name: "strata-terrain-preview" };
+  const baseline = {
+    gamePackage,
+    bundledPackages: [{ name: "three", version: "0.185.1" }],
+    compilerPackages: ["vite@8.2.0/node_modules/vite", "rolldown@1.2.1"],
+    vitePatchSha256: "c".repeat(64),
+  };
+  expect(() =>
+    verifyStartupBuildIdentity(baseline, {
+      ...baseline,
+      compilerPackages: ["vite@8.2.0/node_modules/vite", "rolldown@1.2.2"],
+    }),
+  ).toThrow(/Vite compiler package identity/);
+  expect(() =>
+    verifyStartupBuildIdentity(baseline, { ...baseline, vitePatchSha256: "d".repeat(64) }),
+  ).toThrow(/Vite patch digest/);
+  expect(() => verifyStartupBuildIdentity(baseline, { ...baseline, compilerPackages: [] })).toThrow(
+    /missing Vite compiler package metadata/,
+  );
+});
+
+it("collects emitted package versions and fails closed on missing package metadata", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "strata-bundle-identity-"));
+  try {
+    const packageRoot = path.join(root, "node_modules", "sample-runtime");
+    mkdirSync(packageRoot, { recursive: true });
+    writeFileSync(
+      path.join(packageRoot, "package.json"),
+      JSON.stringify({ name: "sample-runtime", version: "1.2.3" }),
+    );
+    writeFileSync(path.join(packageRoot, "index.js"), "export {};\n");
+    const workspaceRoot = path.join(root, "packages", "core");
+    mkdirSync(workspaceRoot, { recursive: true });
+    writeFileSync(
+      path.join(workspaceRoot, "package.json"),
+      JSON.stringify({ name: "@threenative/core", version: "0.3.0" }),
+    );
+    writeFileSync(path.join(workspaceRoot, "index.js"), "export {};\n");
+    const chunk = (modules: string[]) => [
+      { type: "chunk", modules: Object.fromEntries(modules.map((id) => [id, {}])) },
+    ];
+    expect(
+      collectBundledThirdPartyPackages(
+        chunk([path.join(packageRoot, "index.js"), path.join(workspaceRoot, "index.js")]),
+      ),
+    ).toEqual([{ name: "sample-runtime", version: "1.2.3" }]);
+    const missingPackage = path.join(root, "node_modules", "missing-metadata", "index.js");
+    mkdirSync(path.dirname(missingPackage), { recursive: true });
+    writeFileSync(missingPackage, "export {};\n");
+    expect(() => collectBundledThirdPartyPackages(chunk([missingPackage]))).toThrow(
+      /package metadata/,
+    );
+    const malformedPackage = path.join(root, "node_modules", "malformed-runtime");
+    mkdirSync(malformedPackage, { recursive: true });
+    writeFileSync(
+      path.join(malformedPackage, "package.json"),
+      JSON.stringify({ name: "malformed-runtime", version: "" }),
+    );
+    writeFileSync(path.join(malformedPackage, "index.js"), "export {};\n");
+    expect(() =>
+      collectBundledThirdPartyPackages(chunk([path.join(malformedPackage, "index.js")])),
+    ).toThrow(/package version missing/);
+    expect(() =>
+      verifyStartupBuildIdentity(
+        {
+          gamePackage: {},
+          bundledPackages: [],
+          compilerPackages: ["vite@8.2.0"],
+          vitePatchSha256: "e".repeat(64),
+        },
+        {
+          gamePackage: {},
+          bundledPackages: [],
+          compilerPackages: ["vite@8.2.0"],
+          vitePatchSha256: "e".repeat(64),
+        },
+      ),
+    ).toThrow(/missing emitted third-party package metadata/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

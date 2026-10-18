@@ -2,9 +2,18 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { IStandalonePlaytestReport } from "../packages/playtest/src/runner/shared.js";
 
 export const BASELINE_SHA = "88b988cd70d5db7266eb0281e5f74bd0e030b3e7";
@@ -20,6 +29,23 @@ interface IStartupRun {
   arm: "before" | "after";
   status: number | null;
   report: StartupReport;
+}
+interface IRuntimePackageIdentity {
+  name: string;
+  version: string;
+}
+interface IStartupBuildIdentity {
+  gamePackage: Record<string, unknown>;
+  bundledPackages: readonly IRuntimePackageIdentity[];
+  compilerPackages: readonly string[];
+  vitePatchSha256: string;
+  workspaceLockSha256?: string;
+}
+interface IPnpmPackageNode {
+  from: string;
+  version: string;
+  path: string;
+  dependencies?: Record<string, IPnpmPackageNode>;
 }
 
 export function verifyStartupRuns(runs: readonly IStartupRun[]) {
@@ -159,7 +185,219 @@ export function verifyStartupPackageIdentity(
     assert.deepEqual(candidate[field], baseline[field], `incompatible package identity: ${field}`);
 }
 
-function main() {
+function normalizeBundledPackages(packages: readonly IRuntimePackageIdentity[]) {
+  assert(
+    Array.isArray(packages) && packages.length > 0,
+    "missing emitted third-party package metadata",
+  );
+  return [
+    ...new Map(
+      packages.map(({ name, version }) => {
+        assert(typeof name === "string" && name.trim(), "emitted package name metadata missing");
+        assert(
+          typeof version === "string" && version.trim(),
+          `emitted package version metadata missing: ${name}`,
+        );
+        return [`${name}@${version}`, { name, version }] as const;
+      }),
+    ).values(),
+  ].sort((left, right) =>
+    `${left.name}@${left.version}`.localeCompare(`${right.name}@${right.version}`),
+  );
+}
+
+function normalizeCompilerPackages(packages: readonly string[]) {
+  assert(Array.isArray(packages) && packages.length > 0, "missing Vite compiler package metadata");
+  return [
+    ...new Set(
+      packages.map((item) => {
+        assert(typeof item === "string" && item.trim(), "Vite compiler package metadata missing");
+        return item;
+      }),
+    ),
+  ].sort();
+}
+
+export function verifyStartupBuildIdentity(
+  baseline: IStartupBuildIdentity,
+  candidate: IStartupBuildIdentity,
+) {
+  verifyStartupPackageIdentity(baseline.gamePackage, candidate.gamePackage);
+  assert.deepEqual(
+    normalizeBundledPackages(candidate.bundledPackages),
+    normalizeBundledPackages(baseline.bundledPackages),
+    "bundled third-party package identity differs",
+  );
+  assert.deepEqual(
+    normalizeCompilerPackages(candidate.compilerPackages),
+    normalizeCompilerPackages(baseline.compilerPackages),
+    "Vite compiler package identity differs",
+  );
+  assert.match(baseline.vitePatchSha256, /^[a-f0-9]{64}$/);
+  assert.equal(candidate.vitePatchSha256, baseline.vitePatchSha256, "Vite patch digest differs");
+}
+
+function emittedPackageForModule(moduleId: string): IRuntimePackageIdentity | undefined {
+  if (moduleId.startsWith("\0")) return undefined;
+  let file = moduleId.startsWith("file:") ? fileURLToPath(moduleId) : moduleId;
+  file = file.split("?", 1)[0] ?? file;
+  if (!path.isAbsolute(file)) return undefined;
+  const resolved = realpathSync.native(file);
+  if (!resolved.split(path.sep).includes("node_modules")) return undefined;
+  const segments = resolved.split(path.sep);
+  const nodeModulesIndex = segments.lastIndexOf("node_modules");
+  const packageNameParts = segments[nodeModulesIndex + 1]?.startsWith("@")
+    ? segments.slice(nodeModulesIndex + 1, nodeModulesIndex + 3)
+    : segments.slice(nodeModulesIndex + 1, nodeModulesIndex + 2);
+  const packageRoot = path.join(
+    path.sep,
+    ...segments.slice(1, nodeModulesIndex + 1 + packageNameParts.length),
+  );
+  const manifestPath = path.join(packageRoot, "package.json");
+  assert(existsSync(manifestPath), `emitted package metadata missing: ${manifestPath}`);
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+  assert(
+    typeof manifest.name === "string" && manifest.name.trim(),
+    `emitted package name missing: ${manifestPath}`,
+  );
+  assert(
+    typeof manifest.version === "string" && manifest.version.trim(),
+    `emitted package version missing: ${manifestPath}`,
+  );
+  assert.equal(
+    manifest.name,
+    packageNameParts.join("/"),
+    `emitted package name differs from path: ${manifestPath}`,
+  );
+  return { name: manifest.name, version: manifest.version };
+}
+
+export function collectBundledThirdPartyPackages(outputs: readonly unknown[]) {
+  const moduleIds = outputs.flatMap((output) => {
+    if (!output || typeof output !== "object" || (output as { type?: unknown }).type !== "chunk")
+      return [];
+    const modules = (output as { modules?: Record<string, unknown> }).modules;
+    assert(modules && typeof modules === "object", "emitted chunk module metadata missing");
+    return Object.keys(modules);
+  });
+  assert(moduleIds.length > 0, "emitted chunk module metadata missing");
+  const packages = new Map<string, IRuntimePackageIdentity>();
+  for (const moduleId of moduleIds) {
+    const identity = emittedPackageForModule(moduleId);
+    if (identity) packages.set(`${identity.name}@${identity.version}`, identity);
+  }
+  return normalizeBundledPackages([...packages.values()]);
+}
+
+function collectThreePatchDigests(worktreeRoot: string) {
+  const files = [
+    "packages/core/patches/three@0.185.1.patch",
+    "packages/core/patches/three@0.185.1-prd269-upgrade.patch",
+    "packages/core/three-patch/pin.json",
+    "packages/core/three-patch/source-delta.patch",
+  ];
+  return Object.fromEntries(
+    files
+      .filter((file) => existsSync(path.join(worktreeRoot, file)))
+      .map((file) => [
+        file,
+        createHash("sha256")
+          .update(readFileSync(path.join(worktreeRoot, file)))
+          .digest("hex"),
+      ]),
+  );
+}
+
+export async function collectViteBuildIdentity(worktreeRoot: string) {
+  const exampleRoot = path.join(worktreeRoot, "examples/strata-terrain-preview");
+  const require = createRequire(path.join(exampleRoot, "package.json"));
+  const viteEntry = require.resolve("vite");
+  const viteManifestPath = require.resolve("vite/package.json");
+  const viteManifest = JSON.parse(readFileSync(viteManifestPath, "utf8")) as {
+    version?: unknown;
+    dependencies?: Record<string, unknown>;
+  };
+  const viteVersion = viteManifest.version;
+  assert(
+    typeof viteVersion === "string" && viteVersion,
+    `Vite version metadata missing: ${viteManifestPath}`,
+  );
+  const vitePatch = path.join(worktreeRoot, `patches/vite@${viteVersion}.patch`);
+  assert(existsSync(vitePatch), `Vite patch missing: ${vitePatch}`);
+  const pnpmTree = JSON.parse(
+    execFileSync(
+      "pnpm",
+      ["--filter", "strata-terrain-preview", "list", "--depth", "Infinity", "--json"],
+      {
+        cwd: exampleRoot,
+        encoding: "utf8",
+      },
+    ),
+  ) as Array<{ devDependencies?: Record<string, IPnpmPackageNode> }>;
+  const viteNode = pnpmTree[0]?.devDependencies?.vite;
+  assert(viteNode, "Vite dependency closure missing from pnpm tree");
+  const compilerPackages = new Set<string>();
+  const seenCompilerPaths = new Set<string>();
+  const visitCompilerPackage = (node: IPnpmPackageNode, viteRoot = false) => {
+    if (seenCompilerPaths.has(node.path)) return;
+    seenCompilerPaths.add(node.path);
+    assert(typeof node.from === "string" && node.from, "Vite compiler package name missing");
+    assert(
+      typeof node.version === "string" && node.version,
+      `Vite compiler version missing: ${node.from}`,
+    );
+    assert(typeof node.path === "string", `Vite compiler package path missing: ${node.from}`);
+    const storeMarker = `${path.sep}node_modules${path.sep}.pnpm${path.sep}`;
+    const storeIndex = node.path.lastIndexOf(storeMarker);
+    assert(storeIndex >= 0, `Vite compiler package is outside pnpm store: ${node.path}`);
+    const storeKey = node.path
+      .slice(storeIndex + storeMarker.length)
+      .split(`${path.sep}node_modules`, 1)[0];
+    const patchHash = /(?:^|_)patch_hash=([a-f0-9]{64})/.exec(storeKey ?? "")?.[1];
+    compilerPackages.add(`${node.from}@${node.version}${patchHash ? `#patch=${patchHash}` : ""}`);
+    for (const [name, dependency] of Object.entries(node.dependencies ?? {}))
+      if (
+        !viteRoot ||
+        Object.hasOwn(viteManifest.dependencies ?? {}, name) ||
+        name === "esbuild" ||
+        name === "tsx"
+      )
+        visitCompilerPackage(dependency);
+  };
+  visitCompilerPackage(viteNode, true);
+  const vite = (await import(pathToFileURL(viteEntry).href)) as {
+    build?: (config: unknown) => Promise<unknown>;
+  };
+  assert(typeof vite.build === "function", `Vite build API missing: ${viteEntry}`);
+  const previousCwd = process.cwd();
+  process.chdir(exampleRoot);
+  try {
+    const result = await vite.build({
+      configFile: path.join(exampleRoot, "vite.config.ts"),
+      root: exampleRoot,
+      logLevel: "error",
+      build: { write: true },
+    });
+    const outputs = Array.isArray(result)
+      ? result.flatMap((item) => (item as { output?: unknown[] }).output ?? [])
+      : ((result as { output?: unknown[] }).output ?? []);
+    const chunks = outputs.filter((item) => (item as { type?: unknown }).type === "chunk");
+    return {
+      bundledPackages: collectBundledThirdPartyPackages(chunks),
+      compilerPackages: [...compilerPackages].sort(),
+      vitePatchSha256: createHash("sha256").update(readFileSync(vitePatch)).digest("hex"),
+      chunkCount: chunks.length,
+      moduleCount: chunks.reduce<number>(
+        (count, item) => count + Object.keys((item as { modules: object }).modules).length,
+        0,
+      ),
+    };
+  } finally {
+    process.chdir(previousCwd);
+  }
+}
+
+async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const commonDirectory = execFileSync(
     "git",
@@ -174,12 +412,6 @@ function main() {
   assert.equal(git(baseline), BASELINE_SHA, "baseline must remain reviewed source");
   assert.match(process.env.EXPECTED_SOURCE_SHA ?? "", /^[a-f0-9]{40}$/);
   assert.equal(git(root), process.env.EXPECTED_SOURCE_SHA, "candidate must match scoped source");
-  for (const file of ["pnpm-lock.yaml", "pnpm-workspace.yaml"])
-    assert.equal(
-      readFileSync(path.join(root, file), "utf8"),
-      readFileSync(path.join(baseline, file), "utf8"),
-      `incompatible identity: ${file}`,
-    );
   const packageIdentity = (cwd: string) =>
     JSON.parse(
       readFileSync(path.join(cwd, "examples/strata-terrain-preview/package.json"), "utf8"),
@@ -212,6 +444,24 @@ function main() {
     }).trim();
   const compiler = toolchain(root);
   assert.equal(toolchain(baseline), compiler, "compiler identity differs");
+  const baselineViteBuild = await collectViteBuildIdentity(baseline);
+  const candidateViteBuild = await collectViteBuildIdentity(root);
+  const baselineIdentity = {
+    gamePackage: packageIdentity(baseline),
+    bundledPackages: baselineViteBuild.bundledPackages,
+    compilerPackages: baselineViteBuild.compilerPackages,
+    vitePatchSha256: baselineViteBuild.vitePatchSha256,
+  };
+  const candidateIdentity = {
+    gamePackage: packageIdentity(root),
+    bundledPackages: candidateViteBuild.bundledPackages,
+    compilerPackages: candidateViteBuild.compilerPackages,
+    vitePatchSha256: candidateViteBuild.vitePatchSha256,
+  };
+  const threePatchDigests = {
+    baseline: collectThreePatchDigests(baseline),
+    candidate: collectThreePatchDigests(root),
+  };
   writeFileSync(
     path.join(output, "identity.json"),
     JSON.stringify({
@@ -224,8 +474,21 @@ function main() {
         encoding: "utf8",
       }),
       compiler,
+      emittedBuildIdentity: {
+        baseline: {
+          ...baselineViteBuild,
+          gamePackage: baselineIdentity.gamePackage,
+          threePatchDigests: threePatchDigests.baseline,
+        },
+        candidate: {
+          ...candidateViteBuild,
+          gamePackage: candidateIdentity.gamePackage,
+          threePatchDigests: threePatchDigests.candidate,
+        },
+      },
     }),
   );
+  verifyStartupBuildIdentity(baselineIdentity, candidateIdentity);
   const runs: IStartupRun[] = [];
   const deadline = Date.now() + 8 * 60_000;
   for (const [index, arm] of ORDER.entries()) {
@@ -270,4 +533,8 @@ function main() {
   writeFileSync(path.join(output, "summary.json"), JSON.stringify(summary, null, 2));
   console.log(JSON.stringify(summary));
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  main().catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
