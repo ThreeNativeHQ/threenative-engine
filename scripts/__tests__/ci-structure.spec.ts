@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
@@ -1101,10 +1102,84 @@ describe("CI pipeline structure", () => {
     `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
   const heavyMatrix = (format: string, axis: string, need = "scope") =>
     `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
+  const gpuPinGuard =
+    "(!vars.TN_RUNNER_GPU_HEAD || github.event.pull_request.head.sha == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || ''";
   const gpuHeavy = (id: string, need = "scope") =>
-    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || vars.TN_RUNNER_GPU || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${gpuPinGuard}) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
   const gpuHeavyMatrix = (format: string, axis: string, need = "scope") =>
-    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${axis} == 'racing' && vars.TN_RUNNER_GPU) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${axis} == 'racing' && (${gpuPinGuard})) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+
+  it("pins optional GPU routing to the candidate pull request head without changing fallbacks", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const scope = requiredJob(ci, "scope");
+    const gpuGuard = scope.match(/TN_RUNNER_GPU: \$\{\{ (.+) \}\}/u)?.[1];
+    expect(gpuGuard).toBe(gpuPinGuard);
+
+    const pinnedGpuHeavy = (id: string) =>
+      `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${gpuPinGuard}) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+    const pinnedGpuMatrix = `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (matrix.template == 'racing' && (${gpuPinGuard})) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-nonvisual:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+    for (const [job, expected] of [
+      ["strata", pinnedGpuHeavy("ci:strata")],
+      ["benchmark", pinnedGpuHeavy("ci:benchmark")],
+      ["template-nonvisual", pinnedGpuMatrix],
+    ] as const) {
+      expect(requiredJob(ci, job).match(/^ {4}runs-on: (.+)$/mu)?.[1], `${job} GPU pin`).toBe(
+        expected,
+      );
+    }
+
+    const evaluateGpuGuard = (input: {
+      isPullRequest: boolean;
+      headSha?: string;
+      pin?: string;
+      gpuLabel?: string;
+    }): unknown =>
+      runInNewContext(gpuGuard ?? "", {
+        vars: {
+          TN_RUNNER_GPU_HEAD: input.pin ?? "",
+          TN_RUNNER_GPU: input.gpuLabel ?? "",
+        },
+        github: {
+          event: {
+            pull_request: { head: { sha: input.isPullRequest ? (input.headSha ?? "") : "" } },
+          },
+        },
+      });
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: true,
+        headSha: "candidate-sha",
+        pin: "candidate-sha",
+        gpuLabel: "tn-gpu-pr483",
+      }),
+    ).toBe("tn-gpu-pr483");
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: true,
+        headSha: "different-sha",
+        pin: "candidate-sha",
+        gpuLabel: "tn-gpu-pr483",
+      }),
+    ).toBe("");
+    expect(
+      evaluateGpuGuard({ isPullRequest: true, headSha: "candidate-sha", gpuLabel: "tn-gpu-pr483" }),
+    ).toBe("tn-gpu-pr483");
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: true,
+        headSha: "candidate-sha",
+        pin: "candidate-sha",
+      }),
+    ).toBe("");
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: false,
+        pin: "candidate-sha",
+        gpuLabel: "tn-gpu-pr483",
+      }),
+    ).toBe("");
+  });
+
   // `starter-linux` resolves its per-row runner inside the scope job, so the admission output it
   // reads is a step output there, not a `needs` one.
   const heavyStep = (id: string) =>
@@ -1431,7 +1506,7 @@ describe("CI pipeline structure", () => {
     expect(scope).toContain("runner_admission: ${{ steps.admission.outputs.runner_admission }}");
     expect(scope).toContain("node scripts/ci-runner-admission.mjs --admit");
     expect(scope).toContain("TN_RUNNER_SLOTS: ${{ vars.TN_RUNNER_SLOTS }}");
-    expect(scope).toContain("TN_RUNNER_GPU: ${{ vars.TN_RUNNER_GPU }}");
+    expect(scope).toContain(`TN_RUNNER_GPU: \${{ ${gpuPinGuard} }}`);
     const forwarded =
       ci.match(/runner_admission: \$\{\{ needs\.scope\.outputs\.runner_admission \}\}/gu) ?? [];
     expect(forwarded, "one plan reaches both reusable workflows").toHaveLength(2);

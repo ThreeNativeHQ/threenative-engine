@@ -100,7 +100,8 @@ jobs:
           TN_CI_FORK: ${{ github.event.pull_request.head.repo.fork }}
           TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
           TN_RUNNER: ${{ vars.TN_RUNNER }}
-          TN_RUNNER_GPU: ${{ vars.TN_RUNNER_GPU }}
+          # A temporary GPU route is effective only for the exact ready PR head being served.
+          TN_RUNNER_GPU: ${{ (!vars.TN_RUNNER_GPU_HEAD || github.event.pull_request.head.sha == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || '' }}
           TN_RUNNER_SLOTS: ${{ vars.TN_RUNNER_SLOTS }}
         run: node scripts/ci-runner-admission.mjs --admit
 
@@ -681,7 +682,7 @@ jobs:
   strata:
     needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs.strata.required }}
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || vars.TN_RUNNER_GPU || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:strata')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || ((!vars.TN_RUNNER_GPU_HEAD || github.event.pull_request.head.sha == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || '') || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:strata')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
     timeout-minutes: 60
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -865,7 +866,7 @@ jobs:
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
     # Racing can use the opt-in GPU pool; other legs use the shared CPU pool with hosted fallback.
     # Forks always stay hosted, and snapshot fallback is best-effort.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (matrix.template == 'racing' && vars.TN_RUNNER_GPU) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-nonvisual:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (matrix.template == 'racing' && ((!vars.TN_RUNNER_GPU_HEAD || github.event.pull_request.head.sha == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || '')) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-nonvisual:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
     # rain relaunches the page for each of its five GPU-free scenarios. On the hosted SwiftShader
     # adapter each launch now takes about 7 minutes, against about 1 minute on develop (runs
     # 38818830914 and 38824021621), so five launches exceed the 30-minute cap. Only rain gets the
@@ -984,7 +985,7 @@ jobs:
   benchmark:
     needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || vars.TN_RUNNER_GPU || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:benchmark')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || ((!vars.TN_RUNNER_GPU_HEAD || github.event.pull_request.head.sha == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || '') || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:benchmark')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
     timeout-minutes: 25
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
