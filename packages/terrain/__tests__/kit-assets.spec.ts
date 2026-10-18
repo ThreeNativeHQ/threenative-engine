@@ -79,7 +79,7 @@ describe("pinned starter assets", () => {
     const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
     expect(manifest.version).toBe(version);
     expect(manifest.url).toBe(
-      `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/terrain-starter-assets-v${version}/terrain-starter-assets-${version}.tar.gz`,
+      `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/terrain-starter-assets-sha256-${manifest.sha256}/terrain-starter-assets-${version}.tar.gz`,
     );
     expect(first.bytes.readUInt32LE(4)).toBe(0);
   }, 30_000);

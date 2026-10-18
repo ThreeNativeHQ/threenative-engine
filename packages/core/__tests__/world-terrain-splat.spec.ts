@@ -10,7 +10,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { float, vec3 } from "three/tsl";
 import { MeshStandardNodeMaterial, type Node } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { IAssetLoader } from "../src/assets.js";
+import { type IAssetLoader, createAssetLoader } from "../src/assets.js";
 import {
   type ITerrainSplatMaterialContext,
   type ITerrainSplatSample,
@@ -356,6 +356,117 @@ describe("loadTerrainSplat", () => {
         "world/terrain/tex/grass_nrm.jpg",
         "world/terrain/tex/rock_diff.jpg",
       ].sort(),
+    );
+  });
+
+  it("normalizes parent-relative layer maps before strict manifest resolution", async () => {
+    const entries = {
+      "world/world.json": { output: "world/world.123.json", bytes: 1 },
+      "world/layers.json": { output: "world/layers.123.json", bytes: 1 },
+      "world/splat.rgba8": { output: "world/splat.123.rgba8", bytes: 64 },
+      "leafy_grass/leafy_grass_diff_1k.jpg": {
+        output: "leafy_grass/leafy_grass_diff_123.jpg",
+        bytes: 16,
+      },
+    };
+    const responses: Record<string, string | Uint8Array> = {
+      "/assets/assets.manifest.json": JSON.stringify({ version: 1, entries }),
+      "/assets/world/world.123.json": JSON.stringify(
+        world({ splat: "splat.rgba8", table: "layers.json" }),
+      ),
+      "/assets/world/layers.123.json": JSON.stringify({
+        ...table,
+        base: {
+          ...table.base,
+          maps: { diffuse: "../leafy_grass/leafy_grass_diff_1k.jpg" },
+          normal: false,
+        },
+        layers: [],
+      }),
+      "/assets/world/splat.123.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const body = responses[url];
+        if (body === undefined) return new Response(null, { status: 404 });
+        return new Response(body instanceof Uint8Array ? new Blob([body]) : body);
+      }),
+    );
+    const requested: string[] = [];
+    const assets = createAssetLoader({
+      basePath: "/assets",
+      texture: async (url) => {
+        requested.push(url);
+        return bitmap(4, 4);
+      },
+    });
+
+    await expect(assets.resolve("world/../leafy_grass/leafy_grass_diff_1k.jpg")).rejects.toThrow(
+      /not listed in the asset manifest/u,
+    );
+    await expect(assets.resolve("leafy_grass/leafy_grass_diff_1k.jpg")).resolves.toEqual([
+      "/assets/leafy_grass/leafy_grass_diff_123.jpg",
+    ]);
+    await loadTerrainSplat({ assets, url: "world/world.json" });
+
+    expect(requested).toEqual(["/assets/leafy_grass/leafy_grass_diff_123.jpg"]);
+  });
+
+  it("preserves protocol-relative package URLs when resolving parent-relative maps", async () => {
+    const url = "//cdn.example/world/world.json";
+    const responses: Record<string, string | Uint8Array> = {
+      [url]: JSON.stringify(world({ splat: "splat.rgba8", table: "layers.json" })),
+      "//cdn.example/world/layers.json": JSON.stringify({
+        ...table,
+        base: {
+          ...table.base,
+          maps: { diffuse: "../leafy_grass/leafy_grass_diff_1k.jpg" },
+          normal: false,
+        },
+        layers: [],
+      }),
+      "//cdn.example/world/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) => {
+        const body = responses[path];
+        if (body === undefined) return new Response(null, { status: 404 });
+        return new Response(body instanceof Uint8Array ? new Blob([body]) : body);
+      }),
+    );
+    const requested: string[] = [];
+    const assets = createAssetLoader({
+      basePath: "/assets",
+      texture: async (path) => {
+        requested.push(path);
+        return bitmap(4, 4);
+      },
+    });
+
+    await loadTerrainSplat({ assets, url });
+
+    expect(requested).toEqual(["//cdn.example/leafy_grass/leafy_grass_diff_1k.jpg"]);
+  });
+
+  it("rejects a layer map that traverses above the package asset root", async () => {
+    const { assets } = served({
+      "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
+      "world/terrain/layers.json": {
+        ...table,
+        base: {
+          ...table.base,
+          maps: { diffuse: "../../outside.jpg" },
+          normal: false,
+        },
+        layers: [],
+      },
+      "world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    });
+
+    await expect(loadTerrainSplat({ assets, url: "world/world.json" })).rejects.toThrow(
+      /map path '\.\.\/\.\.\/outside\.jpg' escapes the package asset root/u,
     );
   });
 

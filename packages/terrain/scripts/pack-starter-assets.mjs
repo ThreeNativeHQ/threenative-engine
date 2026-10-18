@@ -64,7 +64,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   await writeFile(file, archive);
   if (process.argv.includes("--write-manifest")) {
     const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-    const url = `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/terrain-starter-assets-v${version}/terrain-starter-assets-${version}.tar.gz`;
+    const tag = `terrain-starter-assets-sha256-${record.sha256}`;
+    const url = `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/${tag}/terrain-starter-assets-${version}.tar.gz`;
     await writeFile(
       join(root, "starter-assets.json"),
       `${JSON.stringify({ version, url, sha256: record.sha256, bytes: record.bytes }, null, 2)}\n`,

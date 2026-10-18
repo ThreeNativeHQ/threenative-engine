@@ -210,6 +210,23 @@ function packageDir(url: string): string {
   return slash === -1 ? "" : url.slice(0, slash + 1);
 }
 
+function packageAssetPath(directory: string, path: string): string {
+  const joined = `${directory}${path}`;
+  const prefix = /^(?:(?:[a-z][a-z\d+.-]*:)?\/\/[^/]+\/|\/)?/iu.exec(joined)?.[0] ?? "";
+  const segments: string[] = [];
+  for (const segment of joined.slice(prefix.length).split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      if (segments.length === 0)
+        throw new Error(`loadTerrainSplat: map path '${path}' escapes the package asset root.`);
+      segments.pop();
+    } else {
+      segments.push(segment);
+    }
+  }
+  return `${prefix}${segments.join("/")}`;
+}
+
 async function fetchResolved(assets: IAssetLoader, path: string): Promise<Response> {
   for (const candidate of await assets.resolve(path)) {
     const response = await fetch(candidate);
@@ -487,7 +504,7 @@ export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promi
       );
     const path =
       explicitPath === undefined ? `${table.textures}/${layer.id}_${kind}.jpg` : explicitPath;
-    const map = await assets.texture(`${dir}${path}`, { data: kind !== "diff" });
+    const map = await assets.texture(packageAssetPath(dir, path), { data: kind !== "diff" });
     map.wrapS = RepeatWrapping;
     map.wrapT = RepeatWrapping;
     map.anisotropy = 8;
