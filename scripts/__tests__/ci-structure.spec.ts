@@ -1103,13 +1103,13 @@ describe("CI pipeline structure", () => {
   const heavyMatrix = (format: string, axis: string, need = "scope") =>
     `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
   const gpuPinGuard =
-    "(!vars.TN_RUNNER_GPU_HEAD || github.event.pull_request.head.sha == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || ''";
+    "(!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || ''";
   const gpuHeavy = (id: string, need = "scope") =>
     `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${gpuPinGuard}) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
   const gpuHeavyMatrix = (format: string, axis: string, need = "scope") =>
     `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${axis} == 'racing' && (${gpuPinGuard})) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
 
-  it("pins optional GPU routing to the candidate pull request head without changing fallbacks", async () => {
+  it("pins optional GPU routing to the exact supported event SHA without changing fallbacks", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const scope = requiredJob(ci, "scope");
     const gpuGuard = scope.match(/TN_RUNNER_GPU: \$\{\{ (.+) \}\}/u)?.[1];
@@ -1131,6 +1131,9 @@ describe("CI pipeline structure", () => {
     const evaluateGpuGuard = (input: {
       isPullRequest: boolean;
       headSha?: string;
+      eventName?: string;
+      eventSha?: string;
+      mergeGroupSha?: string;
       pin?: string;
       gpuLabel?: string;
     }): unknown =>
@@ -1140,8 +1143,11 @@ describe("CI pipeline structure", () => {
           TN_RUNNER_GPU: input.gpuLabel ?? "",
         },
         github: {
+          event_name: input.eventName ?? (input.isPullRequest ? "pull_request" : "push"),
+          sha: input.eventSha ?? "",
           event: {
             pull_request: { head: { sha: input.isPullRequest ? (input.headSha ?? "") : "" } },
+            merge_group: { head_sha: input.mergeGroupSha ?? "" },
           },
         },
       });
@@ -1149,6 +1155,7 @@ describe("CI pipeline structure", () => {
       evaluateGpuGuard({
         isPullRequest: true,
         headSha: "candidate-sha",
+        eventSha: "merge-candidate-sha",
         pin: "candidate-sha",
         gpuLabel: "tn-gpu-pr483",
       }),
@@ -1157,6 +1164,7 @@ describe("CI pipeline structure", () => {
       evaluateGpuGuard({
         isPullRequest: true,
         headSha: "different-sha",
+        eventSha: "candidate-sha",
         pin: "candidate-sha",
         gpuLabel: "tn-gpu-pr483",
       }),
@@ -1178,6 +1186,38 @@ describe("CI pipeline structure", () => {
         gpuLabel: "tn-gpu-pr483",
       }),
     ).toBe("");
+    for (const eventName of ["push", "merge_group"]) {
+      for (const matches of [true, false]) {
+        expect
+          .soft(
+            evaluateGpuGuard({
+              isPullRequest: false,
+              eventName,
+              eventSha: eventName === "push" ? "candidate-sha" : "different-event-sha",
+              mergeGroupSha: eventName === "merge_group" ? "candidate-sha" : "",
+              pin: matches ? "candidate-sha" : "different-pin",
+              gpuLabel: "tn-gpu-pr483",
+            }),
+            `${eventName} exact pin match=${matches}`,
+          )
+          .toBe(matches ? "tn-gpu-pr483" : "");
+      }
+    }
+    for (const eventName of ["workflow_dispatch", "schedule"]) {
+      expect(
+        evaluateGpuGuard({
+          isPullRequest: false,
+          eventName,
+          eventSha: "candidate-sha",
+          pin: "candidate-sha",
+          gpuLabel: "tn-gpu-pr483",
+        }),
+        `${eventName} cannot use a pinned GPU route`,
+      ).toBe("");
+      expect(evaluateGpuGuard({ isPullRequest: false, eventName, gpuLabel: "tn-gpu-pr483" })).toBe(
+        "tn-gpu-pr483",
+      );
+    }
   });
 
   // `starter-linux` resolves its per-row runner inside the scope job, so the admission output it
@@ -2058,7 +2098,7 @@ describe("CI pipeline structure", () => {
     const job = requiredJob(ci, "template-nonvisual");
     // Runs on every event since 2026-09-01 (owner call): the PR skip reported nothing on the
     // branch where the regression was written, and the merge that shipped it reported too late.
-    expect(job).not.toContain("github.event_name == 'push'");
+    expect(job).not.toMatch(/^\s+if:.*github\.event_name/mu);
     // An `if:` gate naming the event, not any mention of it: the TN_RUNNER routing expression
     // (PRD-480) reads `github.event.pull_request.head.repo.fork` in every routed job and gates
     // nothing on it. What this forbids is a gate that skips pull requests.
@@ -3117,7 +3157,7 @@ describe("CI pipeline structure", () => {
     // The lane it delegates to has to run the same classifier and runner, on every event.
     expect(nonVisual).toContain("non-visual-scenarios.mjs");
     expect(nonVisual).toContain("threenative-playtest");
-    expect(nonVisual).not.toContain("github.event_name == 'push'");
+    expect(nonVisual).not.toMatch(/^\s+if:.*github\.event_name/mu);
     // And it has to cover every template this matrix drives.
     const driven = matrixTemplates(goldenPath);
     expect(driven.length).toBeGreaterThan(0);
