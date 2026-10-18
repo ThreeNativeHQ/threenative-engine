@@ -40,17 +40,10 @@
         "profile": {
           "default": "generic",
           "type": "string",
-          "enum": [
-            "generic",
-            "character",
-            "animated-character"
-          ]
+          "enum": ["generic", "character", "animated-character"]
         }
       },
-      "required": [
-        "referencePath",
-        "intent"
-      ]
+      "required": ["referencePath", "intent"]
     },
     "sculpt_spec_gate": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -64,9 +57,7 @@
           "additionalProperties": {}
         }
       },
-      "required": [
-        "spec"
-      ]
+      "required": ["spec"]
     },
     "sculpt_compare": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -112,20 +103,11 @@
                 "maximum": 1
               }
             },
-            "required": [
-              "id",
-              "x",
-              "y",
-              "width",
-              "height"
-            ]
+            "required": ["id", "x", "y", "width", "height"]
           }
         }
       },
-      "required": [
-        "referencePath",
-        "capturePath"
-      ]
+      "required": ["referencePath", "capturePath"]
     },
     "sculpt_pass_gate": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -174,10 +156,7 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "width",
-                    "height"
-                  ]
+                  "required": ["width", "height"]
                 },
                 "capture": {
                   "type": "object",
@@ -189,10 +168,7 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "width",
-                    "height"
-                  ]
+                  "required": ["width", "height"]
                 },
                 "normalizedForComparison": {
                   "type": "object",
@@ -204,17 +180,10 @@
                       "type": "number"
                     }
                   },
-                  "required": [
-                    "width",
-                    "height"
-                  ]
+                  "required": ["width", "height"]
                 }
               },
-              "required": [
-                "reference",
-                "capture",
-                "normalizedForComparison"
-              ]
+              "required": ["reference", "capture", "normalizedForComparison"]
             },
             "overall": {
               "type": "object",
@@ -226,10 +195,7 @@
                   "type": "number"
                 }
               },
-              "required": [
-                "score",
-                "confidence"
-              ]
+              "required": ["score", "confidence"]
             },
             "regions": {
               "type": "array",
@@ -278,14 +244,7 @@
                     }
                   }
                 },
-                "required": [
-                  "id",
-                  "pixels",
-                  "score",
-                  "confidence",
-                  "signals",
-                  "corrections"
-                ]
+                "required": ["id", "pixels", "score", "confidence", "signals", "corrections"]
               }
             },
             "ambiguous": {
@@ -351,21 +310,11 @@
                     "type": "boolean"
                   }
                 },
-                "required": [
-                  "id",
-                  "score",
-                  "threshold",
-                  "critical"
-                ]
+                "required": ["id", "score", "threshold", "critical"]
               }
             }
           },
-          "required": [
-            "score",
-            "confidence",
-            "notes",
-            "criticalFeatures"
-          ]
+          "required": ["score", "confidence", "notes", "criticalFeatures"]
         },
         "threshold": {
           "default": 0.7,
@@ -392,10 +341,7 @@
           "maximum": 9007199254740991
         }
       },
-      "required": [
-        "passId",
-        "compareResult"
-      ]
+      "required": ["passId", "compareResult"]
     },
     "sculpt_grimoire": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -406,9 +352,7 @@
           "minLength": 1
         }
       },
-      "required": [
-        "topic"
-      ]
+      "required": ["topic"]
     },
     "sculpt_clip_measure": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -416,9 +360,7 @@
       "properties": {
         "payload": {}
       },
-      "required": [
-        "payload"
-      ],
+      "required": ["payload"],
       "additionalProperties": false
     },
     "sculpt_rig_reference": {
@@ -463,9 +405,7 @@
           "exclusiveMinimum": 0
         }
       },
-      "required": [
-        "glbPath"
-      ],
+      "required": ["glbPath"],
       "additionalProperties": false
     },
     "sculpt_rig_spec_gate": {
@@ -480,9 +420,7 @@
           "additionalProperties": {}
         }
       },
-      "required": [
-        "payload"
-      ],
+      "required": ["payload"],
       "additionalProperties": false
     },
     "sculpt_skin_condition": {
@@ -499,10 +437,7 @@
           "exclusiveMinimum": 0
         }
       },
-      "required": [
-        "binding",
-        "figureHeight"
-      ],
+      "required": ["binding", "figureHeight"],
       "additionalProperties": false
     },
     "sculpt_mesh_parity": {
@@ -511,18 +446,12 @@
       "properties": {
         "operation": {
           "type": "string",
-          "enum": [
-            "freeze",
-            "verify"
-          ]
+          "enum": ["freeze", "verify"]
         },
         "payload": {},
         "manifest": {}
       },
-      "required": [
-        "operation",
-        "payload"
-      ],
+      "required": ["operation", "payload"],
       "additionalProperties": false
     },
     "sculpt_action_design": {
@@ -531,12 +460,7 @@
       "properties": {
         "operation": {
           "type": "string",
-          "enum": [
-            "resolve-chains",
-            "foot-slide",
-            "accept",
-            "synthesize"
-          ]
+          "enum": ["resolve-chains", "foot-slide", "accept", "synthesize"]
         },
         "nodes": {
           "type": "array",
@@ -564,10 +488,7 @@
         },
         "intendedClass": {
           "type": "string",
-          "enum": [
-            "walk",
-            "run"
-          ]
+          "enum": ["walk", "run"]
         },
         "figureHeight": {
           "type": "number",
@@ -578,9 +499,7 @@
           "minimum": 0
         }
       },
-      "required": [
-        "operation"
-      ],
+      "required": ["operation"],
       "additionalProperties": false
     },
     "sculpt_rig_gate": {
@@ -589,9 +508,7 @@
       "properties": {
         "payload": {}
       },
-      "required": [
-        "payload"
-      ],
+      "required": ["payload"],
       "additionalProperties": false
     }
   },
