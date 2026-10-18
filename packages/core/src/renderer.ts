@@ -1020,6 +1020,17 @@ function wrapRenderer(
           (previousGetRenderTarget as () => unknown).call(raw) ??
           (renderingFrame > 0 ? null : overrideTarget);
       }
+      // Three's frame-buffer target carries one unnamed texture. An MRT node resolves its outputs by
+      // name, so a material with an `mrtNode` (a transparent sea, say) compiled against it builds an
+      // empty output struct and its pipeline fails. Name that texture after the pass's first output
+      // for this compile only. ponytail: first output only; a material needing a later output still
+      // warms up empty.
+      const frameBufferTexture = (overrideTarget as { textures?: { name: string }[] } | undefined)
+        ?.textures?.[0];
+      const frameBufferName = frameBufferTexture?.name;
+      const firstOutputName = outputPass?.renderTarget?.textures[0]?.name;
+      if (frameBufferTexture !== undefined && firstOutputName)
+        frameBufferTexture.name = firstOutputName;
       activeCompiles += 1;
       compileCount += 1;
       try {
@@ -1033,6 +1044,7 @@ function wrapRenderer(
           else await raw.compileAsync(scene, camera, targetScene);
         }
       } finally {
+        if (frameBufferTexture !== undefined) frameBufferTexture.name = frameBufferName ?? "";
         if (overrideTarget !== undefined) {
           if (hadOwnGetRenderTarget) raw.getRenderTarget = previousGetRenderTarget;
           else Reflect.deleteProperty(raw as object, "getRenderTarget");
