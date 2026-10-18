@@ -1,4 +1,6 @@
+import { PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
+import { followShip, setupCamera } from "../templates/sailing/src/render/camera.js";
 import { createHeightReconciler } from "../templates/sailing/src/render/ocean.js";
 
 const sample = (height: number, verticalVelocity: number, staleFrames: number) => ({
@@ -55,5 +57,29 @@ describe("Sailing height-copy reconciliation", () => {
     expect(() => createHeightReconciler()(sample(1, 0, 0), frame, delta)).toThrow(
       "height prediction",
     );
+  });
+});
+
+describe("Sailing chase camera startup", () => {
+  it("starts on the authored chase pose, then keeps easing later follow updates", () => {
+    const camera = new PerspectiveCamera();
+    setupCamera(camera);
+    const seaAtCamera = () => 8;
+    const initialTarget = { x: 0, y: 0.24, z: 7 };
+
+    followShip(camera, initialTarget, 0, 1 / 60, seaAtCamera);
+
+    expect(camera.position.toArray()).toEqual([2.3, 9.5, 15.8]);
+    const aim = new Vector3(0, 2.14, 1.8);
+    const expectedDirection = aim.sub(camera.position).normalize();
+    expect(camera.getWorldDirection(new Vector3()).distanceTo(expectedDirection)).toBeLessThan(
+      1e-12,
+    );
+
+    const before = camera.position.clone();
+    const movedTarget = { x: 10, y: 0.24, z: 7 };
+    followShip(camera, movedTarget, 0, 0.1, seaAtCamera);
+    expect(camera.position.x).toBeCloseTo(before.x + (12.3 - before.x) * 0.36, 12);
+    expect(camera.position.y).toBe(9.5);
   });
 });
