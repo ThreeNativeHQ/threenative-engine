@@ -236,7 +236,9 @@ describe("capability documentation gate", () => {
         }),
       ]),
     );
-  }, 15_000);
+    // Hang guard, not a speed budget: this parses every public export with the compiler and took
+    // 5 s on one tn-local slot but over 15 s on a loaded one (run 39066107986, test-unit 3/4).
+  }, 60_000);
 
   it("should scan a capability written as an arrow const, not only declaration forms", async () => {
     // The gate's job is to make an undocumented capability a release defect. It counted only
