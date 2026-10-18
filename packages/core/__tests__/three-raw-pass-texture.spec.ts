@@ -6,6 +6,8 @@ import Textures from "three/src/renderers/common/Textures.js";
 import { NodeSampledTexture } from "three/src/renderers/common/nodes/NodeSampledTexture.js";
 // @ts-expect-error Three does not declare its internal bind-group builder.
 import WebGPUBindingUtils from "three/src/renderers/webgpu/utils/WebGPUBindingUtils.js";
+// @ts-expect-error Three does not declare its internal WebGPU utility module.
+import WebGPUUtils from "three/src/renderers/webgpu/utils/WebGPUUtils.js";
 import { int, ivec2, pass, vec4 } from "three/tsl";
 import { WGSLNodeBuilder, WebGPURenderer } from "three/webgpu";
 import type { Node, PassNode, TextureNode } from "three/webgpu";
@@ -271,7 +273,7 @@ describe("stored raw pass attachments", () => {
     expect(bindingData.groups).toEqual([resizedResource]);
   });
 
-  it("tracks the first sampled binding so render-target destruction invalidates its group", () => {
+  it("rebuilds a sampled binding layout when a destroyed 4x target becomes single-sample", () => {
     const owner = scenePass();
     owner.setSize(1600, 900);
 
@@ -284,34 +286,47 @@ describe("stored raw pass attachments", () => {
       }
       return data;
     };
+    const layouts: Record<string, unknown>[][] = [];
     const backend = {
       get: backendData,
       has: (key: object) => backendEntries.has(key),
       delete: (key: object) => backendEntries.delete(key),
+      device: {
+        createBindGroupLayout: vi.fn((descriptor: { entries: Record<string, unknown>[] }) => {
+          layouts.push(descriptor.entries);
+          return {};
+        }),
+        createBindGroup: vi.fn((descriptor: unknown) => descriptor),
+      },
+      utils: undefined as unknown,
       createTexture: (texture: Texture, options: { width: number; height: number }) => {
-        backendData(texture).texture = {
+        const resource = {
           width: options.width,
           height: options.height,
+          mipLevelCount: 1,
           destroyed: false,
+          createView: vi.fn(() => ({ texture })),
         };
+        const data = backendData(texture);
+        data.texture = resource;
+        if (texture.renderTarget?.samples === 4) data.msaaTexture = resource;
       },
       destroyTexture: vi.fn((texture: Texture) => {
         const resource = backendData(texture).texture as { destroyed: boolean } | undefined;
         if (resource !== undefined) resource.destroyed = true;
       }),
-      createBindings: (group: { bindings: object[] }) => {
-        backendData(group).bindGroup = group;
-        backendData(group).groups = group.bindings.map(
-          (binding) => backendData((binding as { texture: Texture }).texture).texture,
-        );
-        backendData(group).versions = [];
-      },
-      updateBindings: vi.fn(),
+      createBindings: (group: object, bindings: object[], cacheIndex: number, version: number) =>
+        layoutUtils.createBindings(group, bindings, cacheIndex, version),
+      updateBindings: vi.fn(
+        (group: object, bindings: object[], cacheIndex: number, version: number) =>
+          layoutUtils.createBindings(group, bindings, cacheIndex, version),
+      ),
       deleteBindGroupData: (group: object) => {
         backendData(group).groups = [];
         backendData(group).versions = [];
       },
     };
+    backend.utils = new WebGPUUtils(backend);
     const info = {
       memory: { renderTargets: 0 },
       createTexture: vi.fn(),
@@ -321,26 +336,40 @@ describe("stored raw pass attachments", () => {
     textures.updateRenderTarget(owner.renderTarget);
 
     const texture = owner.renderTarget.texture;
-    const textureSource = { value: texture };
-    const binding = new NodeSampledTexture("output", textureSource as unknown as TextureNode, {});
+    const binding = new NodeSampledTexture("output", owner.getRawTextureNode(), {});
     const group = { name: "output", bindings: [binding] };
-    const nodes = { isSettled: () => false, updateGroup: () => true };
+    const layoutUtils = new WebGPUBindingUtils(backend);
+    const settled = { value: false };
+    const nodes = {
+      isSettled: () => settled.value,
+      updateGroup: (_binding: object, isSettled: boolean) => !isSettled,
+    };
     const bindings = new Bindings(backend, nodes, textures, {}, { bindings: undefined }, info);
     bindings.updateForRender({ getBindings: () => [group] });
+    settled.value = true;
     const textureData = textures.get(texture);
+    const firstLayoutKey = backendData(group).layoutKey;
+    expect(layouts).toHaveLength(1);
+    expect(layouts[0]?.[0]?.texture).toMatchObject({ multisampled: true });
 
-    // No manual `textureData.bindGroups.add(group)`: production must track its own first binding.
+    // No manual `textureData.bindGroups.add(group)`: production tracks the first binding itself.
     Reflect.get(textures, "_destroyTexture").call(textures, texture);
 
     expect(backendData(group).forceUpdate).toBe(true);
 
-    const alternateOwner = scenePass();
+    const alternateOwner = pass(new Scene(), new PerspectiveCamera(), { samples: 1 }) as IRawPass;
     alternateOwner.setSize(800, 600);
     textures.updateRenderTarget(alternateOwner.renderTarget);
     const alternateTexture = alternateOwner.renderTarget.texture;
     const alternateTextureData = textures.get(alternateTexture);
-    textureSource.value = alternateTexture;
+    group.bindings[0] = new NodeSampledTexture("output", alternateOwner.getTextureNode(), {});
     bindings.updateForRender({ getBindings: () => [group] });
+    expect(layouts).toHaveLength(2);
+    expect(layouts[1]?.[0]?.texture?.multisampled).toBeUndefined();
+    expect(backendData(group).layoutKey).not.toBe(firstLayoutKey);
+    expect(backend.updateBindings).toHaveBeenCalledTimes(1);
+    expect(group.bindings[0]?.texture).toBe(alternateTexture);
+    expect(backendData(group).forceUpdate).toBe(false);
     expect(textureData.bindGroups.has(group)).toBe(true);
     expect(alternateTextureData.bindGroups.has(group)).toBe(true);
     expect(backendData(group).trackedTextures).toEqual(
