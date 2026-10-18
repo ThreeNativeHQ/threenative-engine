@@ -1,6 +1,8 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  Group,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
@@ -11,6 +13,7 @@ import {
   DiscreteLodPlugin,
   TN_DISCRETE_LOD,
   baseGeometryOf,
+  lodBias,
   setLodBias,
   updateModelLods,
 } from "../src/model-lod.js";
@@ -76,6 +79,48 @@ afterEach(() => {
 });
 
 describe("DiscreteLodPlugin", () => {
+  it.each([
+    { name: "unit scale", scale: [1, 1, 1], bakedScale: 1, triangles: 4 },
+    {
+      name: "uniform world scale",
+      scale: [2.42232295, 2.42232295, 2.42232295],
+      bakedScale: 1,
+      triangles: 6,
+    },
+    { name: "maximum X world axis", scale: [2.42232295, 1, 1], bakedScale: 1, triangles: 6 },
+    { name: "maximum Y world axis", scale: [1, 2.42232295, 1], bakedScale: 1, triangles: 6 },
+    { name: "maximum Z world axis", scale: [1, 1, 2.42232295], bakedScale: 1, triangles: 6 },
+    { name: "geometry-baked scale counted once", scale: [1, 1, 1], bakedScale: 1.4, triangles: 4 },
+  ])("projects local error with $name", async ({ scale, bakedScale, triangles }) => {
+    const target = mesh();
+    const plugin = new DiscreteLodPlugin();
+    plugin.setParser(parserFor(target, definition({ absoluteErrors: [0.0604127214, 5] })) as never);
+    await plugin.afterRoot({ scene: target });
+    plugin.attach(target, { hysteresis: 0.15, maxPixelError: 1 });
+    if (bakedScale !== 1) {
+      target.geometry = target.geometry
+        .clone()
+        .applyMatrix4(new Matrix4().makeScale(bakedScale, bakedScale, bakedScale));
+    }
+    const parent = new Group();
+    parent.scale.fromArray(scale);
+    parent.add(target);
+    const scene = new Scene();
+    scene.add(parent);
+    scene.updateMatrixWorld(true);
+    const sphere = target.geometry.boundingSphere?.clone();
+    expect(sphere).toBeDefined();
+    if (sphere == null) throw new Error("Missing test bounds");
+    sphere.applyMatrix4(target.matrixWorld);
+    // F = 1000, physical nearest depth = 40, bias = 2.5: 0.6041 px local, 1.4634 px scaled.
+    const camera = new PerspectiveCamera(90, 1, 0.1, 1000);
+    camera.position.z = sphere.center.z + sphere.radius + 40;
+    camera.updateMatrixWorld(true);
+    setLodBias(2.5);
+    expect(updateModelLods(scene, camera, 2000)).toBe(triangles);
+    expect(target.geometry.index?.count).toBe(triangles * 3);
+  });
+
   it("builds index-only levels that share the base vertex attributes", async () => {
     const target = mesh();
     const plugin = new DiscreteLodPlugin();
@@ -222,6 +267,35 @@ describe("DiscreteLodPlugin", () => {
 });
 
 describe("adaptive LOD bias on the CPU path", () => {
+  it("shares adaptive LOD bias across duplicated entry modules", async () => {
+    const previous = lodBias();
+    vi.resetModules();
+    const main = await import("../src/model-lod.js");
+    vi.resetModules();
+    const world = await import("../src/model-lod.js");
+    try {
+      expect(main.setLodBias).not.toBe(world.setLodBias);
+      main.setLodBias(1);
+      expect(world.biasedLodDistance(46)).toBe(46);
+      world.setLodBias(2.5);
+      expect(main.lodBias()).toBe(2.5);
+      expect(main.biasedLodDistance(46)).toBe(115);
+      main.setLodBias(1.4);
+      expect(world.lodBias()).toBe(1.4);
+      expect(world.biasedLodDistance(46)).toBeCloseTo(64.4);
+      for (const invalid of [0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        world.setLodBias(2.5);
+        main.setLodBias(invalid);
+        expect(world.lodBias()).toBe(1);
+        expect(world.biasedLodDistance(46)).toBe(46);
+      }
+    } finally {
+      main.setLodBias(previous);
+      world.setLodBias(previous);
+      vi.resetModules();
+    }
+  });
+
   it("coarsens a fixed-distance selection and never refines it below what was authored", async () => {
     const target = mesh();
     const plugin = new DiscreteLodPlugin();

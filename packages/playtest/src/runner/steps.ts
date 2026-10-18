@@ -62,7 +62,7 @@ export function collectTrivialityOptOuts(assertions: readonly IPlaytestAssertion
   });
 }
 
-/** Capture the largest rendered canvas without composited DOM overlays. */
+/** Capture the largest rendered canvas bounds without waiting for locator screenshot stability. */
 export async function captureVisualSurface(
   page: Page,
   artifactPath?: string,
@@ -81,7 +81,15 @@ export async function captureVisualSurface(
     return largestIndex;
   });
   if (sourceIndex < 0) return undefined;
-  const content = await canvases.nth(sourceIndex).screenshot();
+  const canvas = canvases.nth(sourceIndex);
+  const bounds = await canvas.boundingBox();
+  if (
+    bounds === null
+    || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)
+    || bounds.width <= 0
+    || bounds.height <= 0
+  ) return undefined;
+  const content = await page.screenshot({ clip: bounds });
   if (artifactPath !== undefined) await writeFile(artifactPath, content);
   return content;
 }
@@ -334,10 +342,13 @@ export async function runStep(
     await waitFrames(page, 1);
     await samplePathPosition(bridge, pathEntity, pathPositions);
   } else if (ticks > 0 && fixedStep) {
-    // Path samples stay batched.
+    // Keep the virtual clock ahead of requestAnimationFrame while preserving a bounded
+    // path sample cadence. advanceFixedStep submits one tick per bridge request: a loaded visual
+    // scene can compile or stream enough work during one tick to exceed the request's bounded budget.
     const sampleTicks = 10;
     for (let index = 0; index < ticks; index += sampleTicks) {
-      await advanceFixedStep(page, bridge, Math.min(sampleTicks, ticks - index));
+      const batch = Math.min(sampleTicks, ticks - index);
+      await advanceFixedStep(page, bridge, batch);
       await samplePathPosition(bridge, pathEntity, pathPositions);
     }
   } else {
@@ -545,14 +556,15 @@ export async function advanceFixedStep(
 ): Promise<void> {
   if (!Number.isInteger(ticks) || ticks <= 0)
     throw new Error("advance ticks must be a positive integer.");
-  // A measurement that couples updates to world draws asks for one drawn frame per tick and lets
-  // the HUD paint between ticks. Every other step advances without drawing, in one call.
-  const batches = render ? ticks : 1;
-  for (let batch = 0; batch < batches; batch += 1) {
+  // Each tick is its own bridge request, because a loaded visual scene can compile or stream enough
+  // work during one tick to exceed a request's bounded budget. A measurement that couples updates
+  // to world draws also asks for a drawn frame per tick and lets the HUD paint between ticks.
+  // Every other step advances without drawing.
+  for (let tick = 0; tick < ticks; tick += 1) {
     for (let attempt = 0; ; attempt += 1) {
       try {
         if (render) await bridge.advance(1, { render: true });
-        else await bridge.advance(ticks);
+        else await bridge.advance(1);
         break;
       } catch (error) {
         if (
@@ -564,7 +576,7 @@ export async function advanceFixedStep(
         await waitFrames(page, 1);
       }
     }
-    if (render && batch + 1 < batches) await waitFrames(page, 1);
+    if (render && tick + 1 < ticks) await waitFrames(page, 1);
   }
 }
 

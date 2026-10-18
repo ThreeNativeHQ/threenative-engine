@@ -189,6 +189,8 @@ export interface IAssetSlot {
    * kernel both read it, so an impostor terminal and an authored one cannot be crossed differently.
    */
   readonly impostor?: boolean;
+  /** Derived LODs keep the last casting shape; authored LODs may opt out. Defaults to true. */
+  readonly shadowFallback?: boolean;
 }
 
 /** One key's region of the shared drawn buffer, and the args record that counts it. */
@@ -408,14 +410,14 @@ function drawableLevel(slot: Pick<IAssetSlot, "levels">, level: number): number 
 
 /**
  * The level a shadow map draws a placement at, or -1 when no level of its asset casts. A placement
- * whose main level casts nothing casts with the coarsest level at or below it that does: past
- * `castLevels` a tree keeps its shadow, drawn in the last shape that has a twin, rather than
+ * whose main level casts nothing falls back only when its asset permits it: derived chains past
+ * `castLevels` keep their shadow, drawn in the last shape that has a twin, rather than
  * leaving a hole in the map (PRD-541). The level is then floored at the map's base and clamped to
  * the last level that casts, so a coarse map draws the coarsest shape that has a twin. `base` past
  * the chain is clamped by the chain length first.
  */
 function shadowLevel(
-  slot: Pick<IAssetSlot, "levels">,
+  slot: Pick<IAssetSlot, "levels" | "shadowFallback">,
   regions: readonly IRegion[],
   drawn: number,
   base: number,
@@ -424,6 +426,7 @@ function shadowLevel(
     const gate = slot.levels[at];
     return gate !== undefined && gate.parts > 0 && regions[gate.firstKey]?.uncast !== true;
   };
+  if (slot.shadowFallback === false && casts(drawn) === false) return -1;
   // At or below `drawn` any casting level qualifies, above it only up to the map's base, so the
   // last casting level in `[0, max(drawn, base)]` is both rules at once.
   const last = Math.max(drawn, Math.min(base, slot.levels.length - 1));
@@ -697,6 +700,7 @@ const LIVE_MATRIX = new Float32Array(LOCAL_WORDS);
  */
 function sameGates(one: IAssetSlot, other: IAssetSlot): boolean {
   if (one.cull !== other.cull) return false;
+  if ((one.shadowFallback === false) !== (other.shadowFallback === false)) return false;
   if ((one.impostor === true) !== (other.impostor === true)) return false;
   if (one.distances.length !== other.distances.length) return false;
   for (const [index, distance] of one.distances.entries())
@@ -2986,7 +2990,9 @@ export class WorldGpuScene {
       gates[at] = first;
       gates[at + 1] = definition.levels.length;
       gates[at + 2] = definition.cull ?? 0;
-      gates[at + 3] = definition.cull === undefined ? 0 : 1;
+      // Bit 0: authored cull distance; bit 1: authored LODs must not fall back to a casting shape.
+      gates[at + 3] =
+        (definition.cull === undefined ? 0 : 1) + (definition.shadowFallback === false ? 2 : 0);
     }
     live.gates.needsUpdate = true;
     live.levels.needsUpdate = true;
@@ -3045,7 +3051,7 @@ export class WorldGpuScene {
         If(plane.dot(centre.xyz).lessThan(radius.negate()), () => Return());
       const gate = gates.element(slot);
       const distance = length(vec3(centre.x.sub(eye.x), 0.0, centre.z.sub(eye.z)));
-      If(gate.w.greaterThan(0.5).and(distance.greaterThan(gate.z)), () => Return());
+      If(gate.w.mod(2.0).greaterThan(0.5).and(distance.greaterThan(gate.z)), () => Return());
       // Cull above is the authored distance; the level below is the same distance scaled by the
       // adaptive bias, mirroring `cullAndSelect` and the CPU `model-lod` path.
       const lodDistance = nodes(distance).mul(bias as never);
@@ -3258,7 +3264,7 @@ export class WorldGpuScene {
       If(gate.greaterThan(0.0).and(radius.mul(2.0).lessThan(gate)), () => Return());
       const asset = gates.element(slot);
       const distance = length(vec3(centre.x.sub(eye.x), 0.0, centre.z.sub(eye.z)));
-      If(asset.w.greaterThan(0.5).and(distance.greaterThan(asset.z)), () => Return());
+      If(asset.w.mod(2.0).greaterThan(0.5).and(distance.greaterThan(asset.z)), () => Return());
       // The main pass's own biased distance and level; see `shadowLevel`, which the reference runs.
       const lodDistance = nodes(distance).mul(bias as never);
       const level = int(0).toVar();
@@ -3290,6 +3296,8 @@ export class WorldGpuScene {
         const entry = levels.element(asset.x.add(index as never));
         return nodes(entry.z.greaterThan(0.5)).and(keys.element(entry.y).w.greaterThan(0.5));
       };
+      // Authored LODs past castLevels cast nothing, matching WorldCells#castLevelOf.
+      If(asset.w.greaterThan(1.5).and(nodes(castsAt(level)).not()), () => Return());
       const shape = int(-1).toVar();
       Loop(
         {
