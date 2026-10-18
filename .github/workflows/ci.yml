@@ -718,6 +718,14 @@ jobs:
         run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:custom
       - name: Run strata static-world export
         run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:export
+      - name: Retain failed Strata playtest evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: strata-playtest-${{ github.run_id }}-${{ github.run_attempt }}-${{ needs.scope.outputs.candidate_sha }}
+          path: examples/strata-terrain-preview/artifacts/playtest/
+          if-no-files-found: ignore
+          retention-days: 7
 
   golden-path-template:
     needs: [scope, build-artifacts]
