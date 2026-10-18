@@ -1,5 +1,6 @@
 import {
   DataTexture,
+  DirectionalLight,
   EquirectangularReflectionMapping,
   Group,
   InstancedMesh,
@@ -16,6 +17,7 @@ import { type IGamePlatformSource, defineGame } from "../src/game.js";
 import { InputMap } from "../src/input.js";
 import { onLaunchFailure, resetLaunchFailures } from "../src/launch-diagnostics.js";
 import type { IRenderPerformanceSample } from "../src/loop.js";
+import { VirtualShadowNode } from "../src/render/virtual-shadow.js";
 import { type ICtx, Scene } from "../src/scene.js";
 import { SoftBody3D } from "../src/softbody.js";
 import { StartupReadiness } from "../src/startup-readiness.js";
@@ -939,49 +941,106 @@ describe("IGame", () => {
     },
   );
 
-  it("propagates final settlement failure without publishing readiness or lifting the cover", async () => {
-    let fail!: (error: Error) => void;
-    const pending = new Promise<void>((_resolve, reject) => {
-      fail = reject;
-    });
-    const readySpy = vi.spyOn(StartupReadiness.prototype, "whenReady").mockReturnValue(pending);
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    resetLaunchFailures();
-    const failure = vi.fn();
-    const off = onLaunchFailure(failure);
-    class CoveredScene extends Scene {
-      static override readonly initialState = {};
-      override enter(ctx: ICtx): void {
-        ctx.canvasLayer.opaque = true;
-      }
-    }
-    const game = defineGame({
-      renderer: renderer(testCanvas()),
-      scenes: { test: CoveredScene },
-      start: "test",
-    });
-    try {
-      await game.start();
-      const ctx = game.ctx;
-      if (ctx === undefined) throw new Error("Game did not start.");
-      const boom = new Error(
-        "TN_STARTUP_SETTLEMENT_TIMEOUT: required world/shadow settlement missing",
-      );
-      const rejected = expect(ctx.startup.whenReady()).rejects.toBe(boom);
-      fail(boom);
-      await rejected;
-      expect(failure).toHaveBeenCalledWith({ kind: "stalled", message: String(boom) });
-      expect(ctx.startup.timeline.readyMs).toBeUndefined();
-      expect(ctx.startup.phase).not.toBe("ready");
-      expect(ctx.canvasLayer.opaque).toBe(true);
-    } finally {
-      game.stop();
-      off();
+  it.each(["not-rendered", "pending", "unavailable"])(
+    "reports final settlement observations (%s) without publishing readiness or lifting the cover",
+    async (shadowState) => {
+      const renderWorld = shadowState !== "not-rendered";
+      const requestFrame = globalThis.requestAnimationFrame;
+      let frame!: (time: number) => void;
+      vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      });
+      const light = new DirectionalLight();
+      light.castShadow = true;
+      const shadow = new VirtualShadowNode(light, { marker: false });
+      light.shadow.shadowNode = shadow;
+      vi.spyOn(shadow, "stats", "get").mockReturnValue({ ...shadow.stats, frame: 7 });
+      vi.spyOn(shadow, "settled", "get").mockReturnValue(false);
+      let fail!: (error: Error) => void;
+      const pending = new Promise<void>((_resolve, reject) => {
+        fail = reject;
+      });
+      const readySpy = vi.spyOn(StartupReadiness.prototype, "whenReady").mockReturnValue(pending);
+      const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const infoLog = vi.spyOn(console, "info").mockImplementation(() => undefined);
       resetLaunchFailures();
-      readySpy.mockRestore();
-      errorLog.mockRestore();
-    }
-  });
+      const failure = vi.fn();
+      const off = onLaunchFailure(failure);
+      class CoveredScene extends Scene {
+        static override readonly initialState = {};
+        override enter(ctx: ICtx): void {
+          ctx.canvasLayer.opaque = true;
+          ctx.add(light);
+        }
+      }
+      const game = defineGame({
+        renderer: renderer(testCanvas()),
+        scenes: { test: CoveredScene },
+        start: "test",
+      });
+      try {
+        await game.start();
+        const ctx = game.ctx;
+        if (ctx === undefined) throw new Error("Game did not start.");
+        if (renderWorld) {
+          frame(16);
+          for (let index = 0; index < 4; index += 1) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          }
+          frame(32);
+        }
+        if (shadowState === "unavailable") {
+          vi.spyOn(shadow, "stats", "get").mockImplementation(() => {
+            throw new Error("Shadow observations unavailable after disposal");
+          });
+        }
+        const boom = new Error(
+          "TN_STARTUP_SETTLEMENT_TIMEOUT: required world/shadow settlement missing",
+        );
+        const rejected = expect(ctx.startup.whenReady()).rejects.toBe(boom);
+        fail(boom);
+        await rejected;
+        expect(failure).toHaveBeenCalledTimes(1);
+        expect(failure).toHaveBeenCalledWith({ kind: "stalled", message: String(boom) });
+        const markers = infoLog.mock.calls
+          .map(([message]) => message)
+          .filter(
+            (message) =>
+              typeof message === "string" && message.startsWith("TN_STARTUP_SETTLEMENT:"),
+          );
+        expect(markers).toHaveLength(1);
+        const observations = JSON.parse(markers[0].slice("TN_STARTUP_SETTLEMENT:".length));
+        expect(observations).toMatchObject({
+          worldRendered: renderWorld,
+          shadows: !renderWorld
+            ? []
+            : shadowState === "unavailable"
+              ? [{ frame: null, settled: null, pending: null, pendingInvalidations: null }]
+              : [{ frame: 7, settled: false, pending: true, pendingInvalidations: 0 }],
+          pendingHolds: [],
+          timeline: {
+            loadStartedMs: expect.any(Number),
+            enteredMs: expect.any(Number),
+            readyMs: null,
+          },
+          failedAtMs: expect.any(Number),
+        });
+        expect(ctx.startup.timeline.readyMs).toBeUndefined();
+        expect(ctx.startup.phase).not.toBe("ready");
+        expect(ctx.canvasLayer.opaque).toBe(true);
+      } finally {
+        game.stop();
+        off();
+        resetLaunchFailures();
+        readySpy.mockRestore();
+        errorLog.mockRestore();
+        vi.restoreAllMocks();
+        if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+        else vi.stubGlobal("requestAnimationFrame", requestFrame);
+      }
+    },
+  );
 
   it("does not resolve startup readiness before compile and sustained frames behind an opaque layer", async () => {
     const canvas = testCanvas();

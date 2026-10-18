@@ -1259,6 +1259,36 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         stopStallWatch();
         rejectProjection(error);
         reportLaunchFailure({ kind: "stalled", message: String(error) });
+        console.info(
+          `TN_STARTUP_SETTLEMENT:${JSON.stringify({
+            worldRendered,
+            shadows: [...startupShadows].map((node) => {
+              try {
+                const frame = node.stats.frame;
+                const settled = node.settled;
+                return {
+                  frame,
+                  settled,
+                  pending: frame !== 0 && !settled,
+                  pendingInvalidations: node.tracker.pending,
+                };
+              } catch {
+                return { frame: null, settled: null, pending: null, pendingInvalidations: null };
+              }
+            }),
+            pendingHolds: startupReadiness.pendingHolds,
+            compileSettled: startupReadiness.compileSettled,
+            frameworkReady: startupReadiness.frameworkReady,
+            timeline: {
+              loadStartedMs: timeline.loadStartedMs ?? null,
+              enteredMs: timeline.enteredMs ?? null,
+              compileSettledMs: timeline.compileSettledMs ?? null,
+              frameworkReadyMs: timeline.frameworkReadyMs ?? null,
+              readyMs: timeline.readyMs ?? null,
+            },
+            failedAtMs: now(),
+          })}`,
+        );
       },
     );
     const warmUp = async (marker: string, budgetMs: number, stamp: boolean): Promise<void> => {
