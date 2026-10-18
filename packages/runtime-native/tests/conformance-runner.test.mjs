@@ -1321,6 +1321,62 @@ test("parity lanes restore workspace imports before conformance bundling", () =>
   }
 });
 
+test("the emulator final logcat dump retains full output and diagnoses its exact failure", () => {
+  const workflow = readFileSync(join(root, "../../.github/workflows/native-platforms.yml"), "utf8");
+  const script = workflowBlockScalars(workflow, "script").find((value) => value.includes("run-conformance.mjs"));
+  const dump = script?.match(/(?:if )?adb (?:-s emulator-5554 )?logcat -d[\s\S]*$/u)?.[0];
+  assert.ok(dump, "the final emulator log dump must remain inside the live emulator action");
+  const temp = makeTempDirSync("tn-final-emulator-log-");
+  try {
+    const fullDump = "device-output\n".repeat(8192);
+    writeFileSync(join(temp, "dump"), fullDump);
+    writeFileSync(join(temp, "state"), "device-state\n".repeat(1024));
+    writeFileSync(join(temp, "adb"), `#!/bin/sh
+printf '%s\n' "$*" >> "$CALLS"
+case "$*" in
+  *"logcat -d") cat "$DUMP"; exit "$LOGCAT_EXIT" ;;
+  "-s emulator-5554 get-state"|"devices -l") cat "$STATE" ;;
+  *) exit 99 ;;
+esac
+`);
+    chmodSync(join(temp, "adb"), 0o755);
+    for (const conformanceStatus of [0, 2, 1]) {
+      for (const logcatExit of [37, 0]) {
+        writeFileSync(join(temp, "calls"), "");
+        const result = spawnSync("sh", ["-c", `status=$CONFORMANCE_STATUS; ${dump}`], {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${temp}${delimiter}${process.env.PATH}`,
+            RUNNER_TEMP: temp,
+            CONFORMANCE_STATUS: String(conformanceStatus),
+            LOGCAT_EXIT: String(logcatExit),
+            CALLS: join(temp, "calls"),
+            DUMP: join(temp, "dump"),
+            STATE: join(temp, "state"),
+          },
+        });
+        assert.equal(result.status, conformanceStatus === 1 ? 1 : 0);
+        assert.equal(readFileSync(join(temp, "emulator-logcat.txt"), "utf8"), fullDump);
+        const stderr = readFileSync(join(temp, "emulator-logcat.err"), "utf8");
+        const calls = readFileSync(join(temp, "calls"), "utf8").trim().split("\n");
+        if (logcatExit === 37) {
+          assert.match(stderr, /TN_ADB_LOGCAT_FAILED exitCode=37/u);
+          assert.ok(Buffer.byteLength(stderr) <= Buffer.byteLength("TN_ADB_LOGCAT_FAILED exitCode=37\n") + 2048);
+          assert.match(stderr, /get-state/u);
+          assert.match(stderr, /devices -l/u);
+          assert.deepEqual(calls, ["-s emulator-5554 logcat -d", "-s emulator-5554 get-state", "devices -l"]);
+        } else {
+          assert.equal(stderr, "");
+          assert.deepEqual(calls, ["-s emulator-5554 logcat -d"]);
+        }
+      }
+    }
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test("the parity registry binds the simultaneous stick-and-jump proof to Android injection", () => {
   const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
   const proof = registry.tests.find((entry) => entry.id === "90-multitouch-input");
