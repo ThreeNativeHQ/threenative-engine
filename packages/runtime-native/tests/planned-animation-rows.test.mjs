@@ -7,6 +7,7 @@ import { PerspectiveCamera, Scene } from "three/webgpu";
 
 import { createMixerAnimationProof } from "../conformance/scenes/shared/mixer-animation.js";
 import { createMorphTargetAnimationProof } from "../conformance/scenes/shared/morph-target-animation.js";
+import { THREE } from "../conformance/scenes/shared/scene-support.js";
 import {
   assertAnimatedGltf,
   assertPbrHelmet,
@@ -127,6 +128,63 @@ test("row 52 RAW fixture owns genuine players and independently retiring display
     scenePass.renderTarget.dispose();
     proof.dispose();
   }
+});
+
+test("row 52 distinguishes evaluated author updates from held retirement ticks", () => {
+  const phases = [];
+  for (let paddingCount = 0; paddingCount < 8; paddingCount += 1) {
+    const padding = Array.from({ length: paddingCount }, () => new THREE.Object3D());
+    const proof = createSkinnedMeshAnimationProof();
+    const raw = createRawSkinnedProof();
+    let retired = false;
+    let restored = false;
+    let calls = 0;
+    let heldCalls = 0;
+    let evaluatedCalls = 0;
+    let frameCalls = 0;
+    const override = function () {
+      calls += 1;
+      frameCalls += 1;
+      raw.stockUpdate.call(this);
+    };
+    try {
+      for (let tick = 0; tick < 12; tick += 1) {
+        frameCalls = 0;
+        raw.advance();
+        const metadata = raw.receipt();
+        const held = raw.players.map((player) => !player.updateRateReport.evaluated);
+        if (held[1]) heldCalls += frameCalls;
+        else evaluatedCalls += frameCalls;
+        if (retired && !restored && metadata.slots[1].retired && held[1]) {
+          raw.rigs[1].skeleton.update = raw.stockUpdate;
+          restored = true;
+        }
+        if (!retired && held.every(Boolean) && metadata.slots.every((slot) => slot.currentRaw)) {
+          raw.rigs[1].skeleton.update = override;
+          retired = true;
+        }
+      }
+      phases.push({ calls, heldCalls, evaluatedCalls, restored });
+    } finally {
+      raw.rigs[1].skeleton.update = raw.stockUpdate;
+      raw.dispose();
+      proof.mesh.geometry.dispose();
+      proof.mesh.material.dispose();
+      for (const object of padding) object.clear();
+    }
+  }
+  assert.ok(phases.some((phase) => phase.evaluatedCalls > 0));
+  assert.ok(phases.every((phase) => phase.restored));
+  assert.equal(
+    phases.reduce((total, phase) => total + phase.heldCalls, 0),
+    0,
+    "held retirement must not call author update",
+  );
+  assert.equal(
+    phases.reduce((total, phase) => total + phase.calls, 0),
+    phases.reduce((total, phase) => total + phase.evaluatedCalls, 0),
+    "evaluated refresh callbacks must be accounted separately",
+  );
 });
 
 test("all six rows are same-source, fail-closed, deterministic, and target-neutral", () => {

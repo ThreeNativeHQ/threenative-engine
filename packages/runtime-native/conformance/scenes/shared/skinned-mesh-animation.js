@@ -174,12 +174,16 @@ export async function startScene(canvas, dimensions) {
       let done = false;
       let stopped = false;
       let updateCalls = 0;
+      let heldUpdateCalls = 0;
+      let evaluatedUpdateCalls = 0;
+      let frameUpdateCalls = 0;
       let draws = 0;
       raw.batch.mesh.onAfterRender = () => {
         draws += 1;
       };
       const override = function () {
         updateCalls += 1;
+        frameUpdateCalls += 1;
         raw.stockUpdate.call(this);
       };
       const detail = {
@@ -191,6 +195,7 @@ export async function startScene(canvas, dimensions) {
       const render = async () => {
         if (stopped) return;
         try {
+          frameUpdateCalls = 0;
           if (!done) raw.advance();
           else {
             raw.batch.begin();
@@ -200,6 +205,8 @@ export async function startScene(canvas, dimensions) {
           }
           const metadata = raw.receipt();
           const held = raw.players.map((player) => !player.updateRateReport.evaluated);
+          if (held[1]) heldUpdateCalls += frameUpdateCalls;
+          else evaluatedUpdateCalls += frameUpdateCalls;
           if (restored && !held[1]) {
             assertCondition(
               metadata.slots[1].retired && !metadata.slots[1].currentRaw,
@@ -248,13 +255,15 @@ export async function startScene(canvas, dimensions) {
               right.expectedPixels === 0 && right.measuredPixels === 0,
               "consecutive held stock displays must consume zero velocity",
             );
-            assertCondition(updateCalls === 0, "held retirement must not call author update");
+            assertCondition(heldUpdateCalls === 0, "held retirement must not call author update");
             detail.rawVelocity = {
               frame,
               draws,
               samples,
               modes: metadata.slots,
               updateCalls,
+              heldUpdateCalls,
+              evaluatedUpdateCalls,
               restored,
               restoredRefresh,
               precisionPixels: REPROJECTION_PIXELS,
