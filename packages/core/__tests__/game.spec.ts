@@ -18,6 +18,7 @@ import { onLaunchFailure, resetLaunchFailures } from "../src/launch-diagnostics.
 import type { IRenderPerformanceSample } from "../src/loop.js";
 import { type ICtx, Scene } from "../src/scene.js";
 import { SoftBody3D } from "../src/softbody.js";
+import { StartupReadiness } from "../src/startup-readiness.js";
 import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";
 import { subscribeUiState } from "../src/ui-state.js";
 
@@ -899,6 +900,89 @@ describe("IGame", () => {
     }
   });
 
+  it.each([0, 10_000, 20_000])(
+    "does not report startup failure after stop at %ims",
+    async (stopAt) => {
+      vi.useFakeTimers();
+      const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const requestFrame = globalThis.requestAnimationFrame;
+      let frame!: (time: number) => void;
+      vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      });
+      resetLaunchFailures();
+      const failure = vi.fn();
+      const off = onLaunchFailure(failure);
+      const game = defineGame({
+        renderer: renderer(testCanvas()),
+        scenes: { test: EmptyScene },
+        start: "test",
+      });
+      try {
+        await game.start();
+        frame(16);
+        // Stop before queued rejection handlers run, including an already-expired settlement.
+        vi.advanceTimersByTime(stopAt);
+        game.stop();
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(failure).not.toHaveBeenCalled();
+      } finally {
+        game.stop();
+        off();
+        resetLaunchFailures();
+        if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+        else vi.stubGlobal("requestAnimationFrame", requestFrame);
+        errorLog.mockRestore();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("propagates final settlement failure without publishing readiness or lifting the cover", async () => {
+    let fail!: (error: Error) => void;
+    const pending = new Promise<void>((_resolve, reject) => {
+      fail = reject;
+    });
+    const readySpy = vi.spyOn(StartupReadiness.prototype, "whenReady").mockReturnValue(pending);
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    resetLaunchFailures();
+    const failure = vi.fn();
+    const off = onLaunchFailure(failure);
+    class CoveredScene extends Scene {
+      static override readonly initialState = {};
+      override enter(ctx: ICtx): void {
+        ctx.canvasLayer.opaque = true;
+      }
+    }
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { test: CoveredScene },
+      start: "test",
+    });
+    try {
+      await game.start();
+      const ctx = game.ctx;
+      if (ctx === undefined) throw new Error("Game did not start.");
+      const boom = new Error(
+        "TN_STARTUP_SETTLEMENT_TIMEOUT: required world/shadow settlement missing",
+      );
+      const rejected = expect(ctx.startup.whenReady()).rejects.toBe(boom);
+      fail(boom);
+      await rejected;
+      expect(failure).toHaveBeenCalledWith({ kind: "stalled", message: String(boom) });
+      expect(ctx.startup.timeline.readyMs).toBeUndefined();
+      expect(ctx.startup.phase).not.toBe("ready");
+      expect(ctx.canvasLayer.opaque).toBe(true);
+    } finally {
+      game.stop();
+      off();
+      resetLaunchFailures();
+      readySpy.mockRestore();
+      errorLog.mockRestore();
+    }
+  });
+
   it("does not resolve startup readiness before compile and sustained frames behind an opaque layer", async () => {
     const canvas = testCanvas();
     const events: string[] = [];
@@ -1000,12 +1084,19 @@ describe("IGame", () => {
       }
       frame(112);
       await Promise.resolve();
+      expect(ready).toBe(false);
+      // The sustained frame window is followed by two quiet rendered readiness polls.
+      frame(128);
+      await Promise.resolve();
+      expect(ready).toBe(false);
+      frame(144);
+      await Promise.resolve();
       await Promise.resolve();
       expect(ready).toBe(true);
       expect(ctx.startup.phase).toBe("ready");
       expect(ctx.startup.progress).toBe(1);
       expect(events.filter((event) => event === "world").length).toBe(
-        worldRendersBeforeStabilityWindow + 4,
+        worldRendersBeforeStabilityWindow + 6,
       );
       expect(events.slice(0, 5)).toEqual(["overlay", "compile", "overlay", "world", "scene"]);
     } finally {

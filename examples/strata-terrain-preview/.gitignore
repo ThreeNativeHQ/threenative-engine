@@ -4,3 +4,4 @@
 /assets/
 /src/world/*.placements.bin
 /src/world/*.splat.rgba8
+/assets.manifest.json

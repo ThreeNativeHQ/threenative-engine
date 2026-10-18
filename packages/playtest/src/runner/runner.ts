@@ -436,6 +436,9 @@ async function runStandalonePlaytestInternal(
       pageLifecycle.closed = true;
     });
     const activePage = page;
+    if (activeConfig.cpuProfilePath !== undefined) {
+      cpuProfile = await startBrowserCpuProfile(activePage, activeConfig.cpuProfilePath);
+    }
     const bridge = await openRunnerPage(page, browserConfig, scenario, options.remoteBrowser);
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
@@ -703,9 +706,6 @@ async function runStandalonePlaytestInternal(
           : {})
       : undefined;
     let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
-    if (activeConfig.cpuProfilePath !== undefined) {
-      cpuProfile = await startBrowserCpuProfile(activePage, activeConfig.cpuProfilePath);
-    }
     for (const [index, step] of scenario.steps.entries()) {
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
       if (framebufferAssertion !== undefined

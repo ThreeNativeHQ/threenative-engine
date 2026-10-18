@@ -105,14 +105,18 @@ it("the real Game keeps world callbacks progressing during a height hold with it
     expect(updates).toBe(heldUpdates);
     height = 0;
     await present(27);
+    // Readiness now requires two rendered quiet polls after the world has been admitted and the
+    // shadow maps have settled, so the released hold needs two presented frames to close the gate.
+    await present(28);
+    await present(29);
     await ctx?.startup.whenReady();
     expect(ctx?.startup.phase).toBe("ready");
     const finalSamples = samples;
-    await present(28);
+    await present(30);
     expect(samples).toBe(finalSamples);
     expect(dispatches).toBe(1);
     await game.goto("sea");
-    await present(29);
+    await present(31);
     expect(dispatches).toBe(1);
     expect(samples).toBe(finalSamples);
   } finally {

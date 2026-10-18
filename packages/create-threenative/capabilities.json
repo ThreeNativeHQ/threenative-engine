@@ -451,6 +451,22 @@
     {
       "aliases": [],
       "constraints": [
+        "mutates the supplied document; rejects unsupported MASK topology and invalid ratios"
+      ],
+      "example": "thinFoliageCards(document, 0.14);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function thinFoliageCards(document: Document, keepRatio: number): number { … }",
+      "situations": ["prepare a far foliage mesh by thinning whole cards instead of triangles"],
+      "summary": "Build a standalone card-thinned foliage mesh, preserving opaque parts and vertex attributes.",
+      "supersedes": [],
+      "symbol": "thinFoliageCards"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "reads geometry and materials only: no GPU, no runtime, no game",
         "a texture whose size the document does not state is reported excluded, never assumed square",
         "a model the reader cannot open is named, never skipped silently"

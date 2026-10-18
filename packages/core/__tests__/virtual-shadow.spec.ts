@@ -169,6 +169,33 @@ function settle(node: VirtualShadowNode, camera: PerspectiveCamera): number {
   return frames;
 }
 
+it("settles all covered levels immediately and restores uncovered delay and budget", () => {
+  const { camera, light } = world();
+  const node = setupNode(light, { clipExtents: [8, 32, 128], invalidationDelay: [10, 10, 10] });
+  expect(node.settled).toBe(false);
+  node.startupCovered = true;
+  node.updateBefore(frameFor(camera, 0));
+  expect(node.stats).toMatchObject({ rendered: 3, deferred: 0, held: 0 });
+  expect(node.settled).toBe(true);
+  node.invalidateAll();
+  expect(node.settled).toBe(false);
+  node.updateBefore(frameFor(camera, 0.01));
+  expect(node.stats).toMatchObject({ rendered: 3, deferred: 0, held: 0 });
+  expect(node.settled).toBe(true);
+  node.startupCovered = false;
+  node.invalidateAll();
+  node.updateBefore(frameFor(camera, 0.02));
+  expect(node.stats).toMatchObject({ rendered: 0, held: 3 });
+  expect(node.settled).toBe(false);
+  node.updateBefore(frameFor(camera, 11));
+  expect(node.stats).toMatchObject({ rendered: 1, deferred: 2 });
+  expect(node.settled).toBe(false);
+  node.updateBefore(frameFor(camera, 11.01));
+  node.updateBefore(frameFor(camera, 11.02));
+  expect(node.settled).toBe(true);
+  node.dispose();
+});
+
 interface IShaderGraphBuilder extends NodeBuilder {
   setShaderStage(shaderStage: "fragment"): void;
   flowStagesNode(node: Node, output: "vec4"): { code: string };

@@ -247,22 +247,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // only the copied patch changed in all thirteen trees.
   // PRD-619: all kits name interpolation; starter adds the live-clock motion proof.
   // Measured through createProject on the combined develop + PR483 merge tree.
-  "action-rpg": "151168c34f64f05898ce494346bf3808ad284c9ac019e79dcd91e15cf10888e5",
-  minimal: "32ee2d276ee7d525f26b2ebbdba30c4fe6320f4f70ffdaef5caae6472f7a8418",
-  platformer: "99eb2617845c96a8e5737d6b413916973291056b9fee4070e32d41e751f90cfc",
-  puzzle: "a8ee973940d744ef7a1b24cf00d275a86048d4c1a242efd9bb4dc6a86faae1b6",
-  racing: "5fd8b2d4f222ff3d8e7e44c02ff8998fd667154067331169573e6e609e8f8a0c",
-  rain: "4ba2932f59dce8cd8f7714599cf64b7e39e249864c5b7419d5a62ee8ff070268",
-  rts: "5265caab309631e46c82b8223e68e6d48f14cae3f516658220b53f992132b8d4",
-  runner: "32422c9774b0c0b47bd35f7af1164410721994d33d453d88ad3bfce8552a53cb",
+  "action-rpg": "34fa35cf62ffcfe72e5d4e05cf72c2f967684b70b8f80b3cce9edacc53344cab",
+  minimal: "f74b971643bda8a62764ffeeda6be930bfe0f2634c3dc38eef24ff3f134719ec",
+  platformer: "a33e05de32bd6be0dc508ccbee7d1e153b95ec05a0a25f5bb89ceb6410cc527c",
+  puzzle: "bfff0b95feaa7f0a423f5da027f02dd6f7bcdc5bef7848a1a5eeb24e7508311c",
+  racing: "9cb932136241dc12c1fcc9f348a720f9e61008aae719ab9e310d0c69f99d98a3",
+  rain: "77f0d35fbb74ff7ee74de76ece1b2f3c351e059511df1aeddd4647394ce0ebe6",
+  rts: "61f00457d73352a04cac2e6d3669a71e007ed9640d18ab6a1b9086cd032f6c0e",
+  runner: "760bb018f596d5737f071ba147c960565b70f563d81f498e27ee6f659abe2010",
 
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "5cafc786b09be04ab080772f5ca91f041f6208c39d5086245833cab2c9096a67",
-  shooter: "42166088960cd36e3c4fc6abac4f5415656a118a290d10217b9ee27ccb372ece",
-  snow: "a34293cf096b0976ec38304e5d5f88af1296beb60da7d4e947ae1d6d7389e183",
+  sailing: "41e46d6f34d1b4b25be213186f4274f434179cb14dc37e255c127dc678518e9c",
+  shooter: "7cb31923fe304831ebbf64e92e370a38c3c72b6359378ccb2907a17fa587358e",
+  snow: "9813575acca4e607d129c5eb2b524032eda0079dbbda035760b855cced6a2fd4",
   // Merged input heading, quaternion facing and progress import; measured through actual scaffold.
-  starter: "2939a6c9fd91d9852ecb3db8be3157caac77d7d29298f02c1993273dd07eeb52",
-  "tower-defense": "399d14dfd5b912defe6ced3f50bbea0ffb5341d559a5441647442a4db0bc6e39",
+  starter: "d653b67ab5ba81a572272e21bf0b6d77dd579fc628b4772366f3c88e35f55c1b",
+  "tower-defense": "9a3546d5e46533ddc81cc868efac5ec285dcbd7a148e1b2b2a2f241cb65c1c4c",
 
 };
 

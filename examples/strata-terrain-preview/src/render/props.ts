@@ -106,7 +106,7 @@ export type PropRole =
  *
  * The bands are the game's, because the triangle budget behind them is the game's: a prop is drawn
  * from its full prepared detail inside `near`, from the mid level past it, and from the far
- * cross-card past that. The hysteresis is a fifth of the band rather than a fixed number of
+ * engine impostor past that. The dither transition is a fifth of the band rather than a fixed number of
  * metres, so the same slack works for a two-metre rock, a fourteen-metre spruce and a
  * twenty-two-metre pine.
  */

@@ -19,7 +19,7 @@
     "test:terrain:custom": "node scripts/verify-custom-assets.mjs",
     "test:terrain:export": "node scripts/verify-world-export.mjs",
     "test:terrain:export:desktop": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/render/exportConsumer.ts --target desktop --output dist/strata-export-native.js && node ../../packages/playtest/dist/runner/cli.js playtests/export.playtest.json --target desktop --executable ../../packages/runtime-native/build/tn-linux/mystral --host-arg run --host-arg dist/strata-export-native.js --artifacts artifacts/playtest/world-export-native",
-    "test": "pnpm bake && vitest run --root ../.. examples/strata-terrain-preview/__tests__"
+    "test": "pnpm bake && vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@threenative/core": "workspace:*",

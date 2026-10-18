@@ -796,6 +796,114 @@ describe("scene warm-up", () => {
     expect(raw.shadowMap.needsUpdate).toBe(false);
     expect(scene.visible).toBe(false);
   });
+
+  test("should not expand a shared diamond DAG exponentially while reporting the same passes", async () => {
+    let calls = 0;
+    const leaf: { isNode: boolean; getChildren: () => unknown[] } = {
+      isNode: true,
+      getChildren: () => {
+        calls += 1;
+        return [];
+      },
+    };
+    let root: unknown = leaf;
+    const depth = 12;
+    for (let index = 0; index < depth; index += 1) {
+      const next: unknown = root;
+      const level: { isNode: boolean; getChildren: () => unknown[] } = {
+        isNode: true,
+        getChildren: () => {
+          calls += 1;
+          return [next, next];
+        },
+      };
+      root = level;
+    }
+    const material = { isNodeMaterial: true, a: root, b: root };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: vi.fn(),
+      raw: { shadowMap: { enabled: false } },
+    };
+    const scene = group("scene", [{ children: [], material, name: "water" }]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(report.passes).toEqual(["main"]);
+    expect(renderer.render).not.toHaveBeenCalled();
+    expect(calls).toBeLessThan(50);
+  });
+
+  test("should retain reflection when a shared node is first reached deep past the cutoff", async () => {
+    const reflectorNode = { isNode: true, _reflectorBaseNode: {}, getChildren: () => [] };
+    const chain = (length: number, leaf: unknown): unknown => {
+      let next: unknown = leaf;
+      for (let index = 0; index < length; index += 1) {
+        const current: unknown = next;
+        const level = {
+          isNode: true,
+          getChildren: () => [current],
+        };
+        next = level;
+      }
+      return next;
+    };
+    const tail = chain(4, reflectorNode);
+    const shared = { isNode: true, getChildren: () => [tail] };
+    const deepRoot = chain(60, shared);
+    const material = { isNodeMaterial: true, deep: deepRoot, shallow: shared };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => undefined,
+      raw: { shadowMap: { enabled: false } },
+    };
+    const scene = group("scene", [{ children: [], material, name: "water" }]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(report.passes).toEqual(["main", "reflection"]);
+  });
+
+  test("should discover a reflector added between two warm-ups", async () => {
+    const reflectorNode = { isNode: true, _reflectorBaseNode: {}, getChildren: () => [] };
+    const children: unknown[] = [];
+    const plain = { isNode: true, getChildren: () => children };
+    const material = { isNodeMaterial: true, colorNode: plain };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => undefined,
+      raw: { shadowMap: { enabled: false } },
+    };
+    const scene = group("scene", [{ children: [], material, name: "water" }]);
+    const first = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(first.passes).toEqual(["main"]);
+    children.push(reflectorNode);
+    const second = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(second.passes).toEqual(["main", "reflection"]);
+  });
+
+  test("should terminate on a node cycle without a reflector", async () => {
+    const cyclic: { isNode: boolean; getChildren: () => unknown[] } = {
+      isNode: true,
+      getChildren: () => [cyclic],
+    };
+    const material = { isNodeMaterial: true, colorNode: cyclic };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: vi.fn(),
+      raw: { shadowMap: { enabled: false } },
+    };
+    const scene = group("scene", [{ children: [], material, name: "water" }]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(report.passes).toEqual(["main"]);
+    expect(renderer.render).not.toHaveBeenCalled();
+  });
 });
 
 describe("warm-up absolute budget", () => {

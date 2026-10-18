@@ -447,6 +447,40 @@ it("releases its layer only after the combined spawn and startup promise resolve
   expect(source.canvasLayer.scene.children).toHaveLength(0);
 });
 
+it.each(["ready", "cleanup", "failed"] as const)(
+  "notifies reveal synchronously after removing the cover only for successful startup: %s",
+  async (outcome) => {
+    let resolve: () => void = () => undefined;
+    let reject: (reason: Error) => void = () => undefined;
+    const source = host(
+      new Promise<void>((done, fail) => {
+        resolve = done;
+        reject = fail;
+      }),
+    );
+    const observations: { opaque: boolean; meshes: number }[] = [];
+    const screen = createLoadingScreen({
+      ...source,
+      onReveal: () => {
+        observations.push({
+          opaque: source.canvasLayer.opaque,
+          meshes: source.canvasLayer.scene.children.length,
+        });
+      },
+    });
+    expect(observations).toEqual([]);
+    if (outcome === "cleanup") screen.finish();
+    if (outcome === "failed") reject(new Error("Spawn failed"));
+    else resolve();
+    await Promise.resolve();
+    expect(observations).toEqual(outcome === "ready" ? [{ opaque: false, meshes: 0 }] : []);
+    screen.finish();
+    screen.finish();
+    await Promise.resolve();
+    expect(observations).toHaveLength(outcome === "ready" ? 1 : 0);
+  },
+);
+
 it("latches playable coverage so later spawn eviction never disables controls", async () => {
   const gate = spawnGate();
   let settled = false;

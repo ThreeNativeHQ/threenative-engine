@@ -985,6 +985,51 @@ function appendCardCopies(primitive: Primitive, copies: readonly ICardCopies[]):
   }
 }
 
+/** Thin MASK card sets into a standalone mesh; opaque parts and every vertex attribute survive. */
+export function thinFoliageCards(document: Document, keepRatio: number): number {
+  if (!Number.isFinite(keepRatio) || keepRatio <= 0 || keepRatio >= 1)
+    throw new Error("thinFoliageCards keepRatio must be in (0, 1).");
+  let reduced = 0;
+  for (const mesh of document.getRoot().listMeshes())
+    for (const primitive of mesh.listPrimitives()) {
+      if (primitive.getMaterial()?.getAlphaMode() !== "MASK") continue;
+      if (
+        primitive.getMode() !== 4 ||
+        primitive.listTargets().length > 0 ||
+        primitive.getAttribute("JOINTS_0")
+      )
+        throw new Error("thinFoliageCards requires static triangle card sets.");
+      const positions = positionsOf(primitive);
+      if (positions === null) throw new Error("thinFoliageCards requires POSITION.");
+      const indices = sourceIndices(primitive, positions.length / 3);
+      const chain = generateCardChain(
+        positions,
+        indices,
+        2,
+        0,
+        1,
+        [keepRatio],
+        Math.ceil((indices.length / 3) * keepRatio),
+      );
+      if (chain === null)
+        throw new Error("thinFoliageCards cannot reduce this MASK primitive as whole cards.");
+      appendCardCopies(primitive, chain.copies);
+      primitive.setIndices(
+        (
+          primitive.getIndices() ??
+          document
+            .createAccessor()
+            .setType("SCALAR")
+            .setBuffer((primitive.getAttribute("POSITION") as Accessor).getBuffer())
+        )
+          .clone()
+          .setArray(chain.indices.at(-1) as Uint32Array),
+      );
+      reduced += 1;
+    }
+  return reduced;
+}
+
 function reachableNodes(document: Document): GltfNode[] {
   const visited = new Set<GltfNode>();
   const nodes: GltfNode[] = [];

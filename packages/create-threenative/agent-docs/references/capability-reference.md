@@ -354,6 +354,21 @@ export function texturePass(options: ITexturePassOptions = { … }
 const pass = texturePass({ quality: 150 });
 ```
 
+### `thinFoliageCards`
+
+`function` — Build a standalone card-thinned foliage mesh, preserving opaque parts and vertex attributes.
+
+```ts
+export function thinFoliageCards(document: Document, keepRatio: number): number { … }
+```
+
+- **Use when:** prepare a far foliage mesh by thinning whole cards instead of triangles
+- **Constraints:** mutates the supplied document; rejects unsupported MASK topology and invalid ratios
+
+```ts
+thinFoliageCards(document, 0.14);
+```
+
 ### `totalCensus`
 
 `function` — Census one glTF document, or a directory of them: the merge buckets a scene has now, and the buckets it would have once its atlasable textures shared pages.

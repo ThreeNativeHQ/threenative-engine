@@ -8,7 +8,7 @@ import {
   WorldCells,
 } from "@threenative/core/world";
 import type { IPlacement } from "@threenative/terrain";
-import { Box3, Group, InstancedMesh, Mesh, Quaternion, Vector3 } from "three";
+import { Box3, type Camera, Group, InstancedMesh, Mesh, Quaternion, Vector3 } from "three";
 import type { IPropPreparationProgress } from "./propProgress.js";
 import {
   DRAW_REACH,
@@ -40,6 +40,7 @@ interface IStreamOptions {
   readonly whileCurrent: () => boolean;
   readonly invalidateShadows?: (region?: IShadowRegion) => void;
   readonly onProgress?: (progress: IPropPreparationProgress) => void;
+  readonly onPublication?: (bounds: Box3) => void;
 }
 
 /** Keep WorldCells' changed caster bounds when forwarding to the existing shadow renderer. */
@@ -236,6 +237,9 @@ export async function createStreamedProps(options: IStreamOptions) {
           }
           definitions[record.key] = {
             glb: `${record.key}/0.glb`,
+            ...(record.key.startsWith("spruce:") && levels.length <= 2
+              ? { impostorDistance: LOD_BANDS.far }
+              : {}),
             bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() },
             lods: levels.slice(1).map((level, i) => ({
               glb: `${record.key}/${level}.glb`,
@@ -317,6 +321,8 @@ export async function createStreamedProps(options: IStreamOptions) {
         placementReach,
         gpuScene: false,
         bundles: options.bundles,
+        onPublication: options.onPublication,
+        impostors: true,
         adaptiveLod: false,
         preserveAuthoredParts: true,
         lodHysteresis: LOD_BANDS.hysteresis,
@@ -382,6 +388,7 @@ export async function createStreamedProps(options: IStreamOptions) {
         loadsInFlight: 0,
         loadsQueued: 0,
         pendingPrewarm: 0,
+        impostor: { pending: 0, drawn: 0 },
         admissionMs: 0,
         admissionBacklog: 0,
         admissionDeferred: 0,
@@ -393,6 +400,35 @@ export async function createStreamedProps(options: IStreamOptions) {
     byId,
     stats,
     compileSlices,
+    readinessAt(camera: Camera) {
+      const regions = worlds.map((world) => world.readinessAt(camera));
+      const required = regions.reduce((n, r) => n + r.requiredCells, 0);
+      const loaded = regions.reduce((n, r) => n + r.loadedCells, 0);
+      return {
+        required,
+        loaded,
+        failures: regions.reduce((n, r) => n + r.failures, 0),
+        ready:
+          warmed.size === worlds.length &&
+          regions.every((r) => r.ready) &&
+          worlds.every((world) => {
+            const state = world.stats();
+            return state.impostor.pending === 0 && state.pendingPrewarm === 0;
+          }),
+      };
+    },
+    get ready() {
+      const s = stats();
+      return (
+        warmed.size === worlds.length &&
+        s.loadsInFlight === 0 &&
+        s.loadsQueued === 0 &&
+        s.admissionBacklog === 0 &&
+        s.pendingPrewarm === 0 &&
+        s.impostor.pending === 0 &&
+        s.failures === 0
+      );
+    },
     get meshes() {
       const meshes: InstancedMesh[] = [];
       for (const world of worlds)

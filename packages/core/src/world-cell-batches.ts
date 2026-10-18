@@ -1,6 +1,7 @@
 import {
   Box3,
-  type BufferGeometry,
+  BufferGeometry,
+  DynamicDrawUsage,
   InstancedBufferAttribute,
   type InstancedMesh,
   type Material,
@@ -73,6 +74,14 @@ type ISquareSizes = Map<string, number>;
  * drawing at a time.
  */
 let regroupScratch = new Float32Array(0);
+let lodRangeScratch = new Float32Array(0);
+
+const LOD_RANGE_ATTRIBUTE = "tnPublishedLodRange";
+
+function lodScratchFor(floats: number): Float32Array {
+  if (lodRangeScratch.length < floats) lodRangeScratch = new Float32Array(floats * 2);
+  return lodRangeScratch;
+}
 
 /** A scratch with room for `floats`, kept between regroups so a walk allocates it once. */
 function scratchFor(floats: number): Float32Array {
@@ -95,6 +104,9 @@ export function sameSquares(next: Set<string>, was: Set<string> | undefined): bo
 
 export class SharedBatch {
   mesh: ICasterScaleMesh;
+  #sourceGeometry: BufferGeometry;
+  readonly #rangeLevel: number;
+  #rangeAware: boolean;
   /** The pass this batch draws in; see `#dressMesh`. Only `main` is clustered. */
   readonly role: "cluster" | "key" | "main" | "wide";
   /**
@@ -234,18 +246,23 @@ export class SharedBatch {
     name: string,
     bounds: Box3,
     role: "cluster" | "key" | "main" | "wide",
+    rangeLevel = 0,
   ) {
     this.role = role;
+    this.#sourceGeometry = geometry;
+    this.#rangeLevel = rangeLevel;
+    this.#rangeAware = material.userData.tnPublishedLodRange === true;
     this.#clustered = role === "main";
     this.#segmentSize = Math.max(1, segmentSize);
     this.#bounds = bounds;
     this.mesh = SharedBatch.#meshFor(
-      geometry,
+      this.#geometryFor(this.#segmentSize * segments),
       material,
       this.#segmentSize * segments,
       name,
       bounds,
     );
+    this.#setGeometry(this.mesh.geometry);
     this.#free = [[0, this.mesh.instanceMatrix.count]];
     this.#ceiling = this.mesh.instanceMatrix.count;
     this.#rebound();
@@ -256,6 +273,54 @@ export class SharedBatch {
 
   /** The package extent, the conservative fallback when a part's own box cannot be read. */
   readonly #bounds: Box3;
+
+  #geometryFor(capacity: number): BufferGeometry {
+    if (this.#rangeAware === false) return this.#sourceGeometry;
+    const source = this.#sourceGeometry;
+    const view = new BufferGeometry();
+    for (const [name, attribute] of Object.entries(source.attributes))
+      view.setAttribute(name, attribute);
+    view.setIndex(source.index);
+    view.morphAttributes = source.morphAttributes;
+    view.morphTargetsRelative = source.morphTargetsRelative;
+    for (const group of source.groups) view.addGroup(group.start, group.count, group.materialIndex);
+    view.boundingBox = source.boundingBox;
+    view.boundingSphere = source.boundingSphere;
+    view.setDrawRange(source.drawRange.start, source.drawRange.count);
+    view.userData.tnPublishedLodRangeView = true;
+    const ranges = new InstancedBufferAttribute(new Float32Array(capacity * 2), 2);
+    ranges.setUsage(DynamicDrawUsage);
+    view.setAttribute(LOD_RANGE_ATTRIBUTE, ranges);
+    return view;
+  }
+
+  #setGeometry(geometry: BufferGeometry): void {
+    const previous = this.mesh.geometry;
+    this.mesh.geometry = geometry;
+    if (geometry.userData.tnPublishedLodRangeView === true) {
+      let views = this.mesh.userData.tnPublishedLodRangeViews as Set<BufferGeometry> | undefined;
+      if (views === undefined) {
+        views = new Set();
+        this.mesh.userData.tnPublishedLodRangeViews = views;
+        this.mesh.addEventListener("dispose", () => {
+          for (const view of views ?? []) view.dispose();
+          views?.clear();
+        });
+      }
+      views.add(geometry);
+    }
+    if (previous !== geometry && previous.userData.tnPublishedLodRangeView === true) {
+      (this.mesh.userData.tnPublishedLodRangeViews as Set<BufferGeometry> | undefined)?.delete(
+        previous,
+      );
+      previous.dispose();
+    }
+  }
+
+  #lodRangeAttribute(): InstancedBufferAttribute | undefined {
+    const attribute = this.mesh.geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
+    return attribute instanceof InstancedBufferAttribute ? attribute : undefined;
+  }
 
   /**
    * Takes a pooled mesh with room for `capacity`, so a shared batch that outgrows its buffer keeps
@@ -296,8 +361,10 @@ export class SharedBatch {
 
   /** Point an empty batch at the parts a reload brought; see {@link rebind}. */
   rebind(geometry: BufferGeometry, material: Material): this {
-    this.mesh.geometry = geometry;
+    this.#sourceGeometry = geometry;
     this.mesh.material = material;
+    this.#rangeAware = material.userData.tnPublishedLodRange === true;
+    this.#setGeometry(this.#geometryFor(this.mesh.instanceMatrix.count));
     this.#localGeometry = undefined;
     // A new surface is the one thing a rebind can bring that a mesh swap cannot, so what can be
     // recorded has to be asked again: the answer cached for the old material is not this one's.
@@ -340,6 +407,7 @@ export class SharedBatch {
    */
   #resize(capacity: number): void {
     const mesh = this.mesh;
+    this.#setGeometry(this.#geometryFor(capacity));
     mesh.instanceMatrix = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
     this.#ceiling = capacity;
     this.#publish(0);
@@ -479,16 +547,26 @@ export class SharedBatch {
       return undefined;
     }
     const mesh = SharedBatch.#meshFor(
-      old.geometry,
+      this.#geometryFor(old.instanceMatrix.count * 2),
       old.material as Material,
       old.instanceMatrix.count * 2,
       old.name,
       this.#bounds,
     );
     (mesh.instanceMatrix.array as Float32Array).set(old.instanceMatrix.array as Float32Array);
+    const oldRanges = old.geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
+    const nextRanges = mesh.geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
+    if (
+      oldRanges instanceof InstancedBufferAttribute &&
+      nextRanges instanceof InstancedBufferAttribute
+    ) {
+      (nextRanges.array as Float32Array).set(oldRanges.array as Float32Array);
+      nextRanges.needsUpdate = true;
+    }
     mesh.castShadow = old.castShadow;
     mesh.receiveShadow = old.receiveShadow;
     this.mesh = mesh;
+    this.#setGeometry(mesh.geometry);
     this.#ceiling = mesh.instanceMatrix.count;
     this.#settle();
     // The whole drawn range, because this is a different buffer. `#meshFor` left the new
@@ -513,6 +591,7 @@ export class SharedBatch {
   replaceMesh(next: ICasterScaleMesh): ICasterScaleMesh {
     const old = this.mesh;
     this.mesh = next;
+    this.#setGeometry(next.geometry);
     this.mesh.boundingBox = this.mesh.boundingBox ?? new Box3();
     this.mesh.boundingSphere = this.mesh.boundingSphere ?? new Sphere();
     (next as { casterPrewarmOwed?: boolean }).casterPrewarmOwed = this.#awaitingPrewarm;
@@ -522,7 +601,7 @@ export class SharedBatch {
     return old;
   }
 
-  write(segment: number, batch: InstancedBatch): void {
+  write(segment: number, batch: InstancedBatch, lodRanges?: Float32Array): void {
     const start = this.#start.get(segment);
     const reserved = this.#size.get(segment);
     if (start === undefined || reserved === undefined) return;
@@ -538,6 +617,18 @@ export class SharedBatch {
     }
     const array = this.mesh.instanceMatrix.array as Float32Array;
     const written = batch.writeMatrices(array, start);
+    const ranges = this.#lodRangeAttribute();
+    if (ranges !== undefined) {
+      const values = ranges.array as Float32Array;
+      if (lodRanges !== undefined) values.set(lodRanges.subarray(0, written * 2), start * 2);
+      else
+        for (let index = 0; index < written; index += 1) {
+          values[(start + index) * 2] = this.#rangeLevel;
+          values[(start + index) * 2 + 1] = this.#rangeLevel;
+        }
+      values.fill(0, (start + written) * 2, (start + reserved) * 2);
+      ranges.needsUpdate = true;
+    }
     array.fill(0, (start + written) * 16, (start + reserved) * 16);
     if (written < reserved) this.#hole(start + written, start + reserved);
     this.#size.set(segment, written);
@@ -579,6 +670,11 @@ export class SharedBatch {
       return;
     }
     (this.mesh.instanceMatrix.array as Float32Array).fill(0, start * 16, (start + size) * 16);
+    const ranges = this.#lodRangeAttribute();
+    if (ranges !== undefined) {
+      (ranges.array as Float32Array).fill(0, start * 2, (start + size) * 2);
+      ranges.needsUpdate = true;
+    }
     this.#hole(start, start + size);
     this.#settle();
     // The drawn range, not nothing. `#compact` closed the hole by moving the topmost block down
@@ -647,6 +743,7 @@ export class SharedBatch {
       const size = this.#size.get(top) ?? 0;
       if (size <= holeEnd - holeStart) {
         array.copyWithin(holeStart * 16, topFrom * 16, drawn * 16);
+        this.#lodRangeAttribute()?.array.copyWithin(holeStart * 2, topFrom * 2, drawn * 2);
         this.#start.set(top, holeStart);
         if (holeEnd - holeStart > size) this.#free[0] = [holeStart + size, holeEnd];
         else this.#free.shift();
@@ -656,6 +753,7 @@ export class SharedBatch {
       } else {
         const shift = holeEnd - holeStart;
         array.copyWithin(holeStart * 16, holeEnd * 16, drawn * 16);
+        this.#lodRangeAttribute()?.array.copyWithin(holeStart * 2, holeEnd * 2, drawn * 2);
         this.#free.shift();
         for (const [handle, start] of this.#start) {
           if (start >= holeEnd) this.#start.set(handle, start - shift);
@@ -725,10 +823,13 @@ export class SharedBatch {
    */
   #regroup(visible = this.#visible): void {
     const array = this.mesh.instanceMatrix.array as Float32Array;
+    const rangeAttribute = this.#lodRangeAttribute();
+    const rangeArray = rangeAttribute?.array as Float32Array | undefined;
     const squares = this.#squares();
     let total = 0;
     for (const square of squares) total += sizeOf(square);
     const scratch = scratchFor(total * 16);
+    const rangeScratch = rangeArray === undefined ? undefined : lodScratchFor(total * 2);
     // The visible squares first. `filter` is stable, so both halves keep the order the buffer had
     // them in and a residency change lays out exactly what the last one did.
     const front = squares.filter((one) => visible?.has(one.cluster) ?? true);
@@ -744,6 +845,8 @@ export class SharedBatch {
       const union = new Box3();
       for (const [handle, start, count] of square.blocks) {
         scratch.set(array.subarray(start * 16, (start + count) * 16), written * 16);
+        if (rangeScratch !== undefined && rangeArray !== undefined)
+          rangeScratch.set(rangeArray.subarray(start * 2, (start + count) * 2), written * 2);
         // Read before it is overwritten: a block written back to its own offset is a record the GPU
         // already holds, and is the whole difference between a repack that costs nothing and one
         // that re-uploads the key.
@@ -761,6 +864,10 @@ export class SharedBatch {
       this.#squareSizes.set(square.cluster, sizeOf(square));
     }
     array.set(scratch.subarray(0, written * 16));
+    if (rangeArray !== undefined && rangeScratch !== undefined && rangeAttribute !== undefined) {
+      rangeArray.set(rangeScratch.subarray(0, written * 2));
+      rangeAttribute.needsUpdate = true;
+    }
     this.#drawn = written;
     const capacity = this.mesh.instanceMatrix.count;
     this.#free = written < capacity ? [[written, capacity]] : [];
@@ -940,6 +1047,12 @@ export class SharedBatch {
     matrix.clearUpdateRanges();
     if (high > low) matrix.addUpdateRange(low, high - low);
     matrix.needsUpdate = true;
+    const ranges = this.#lodRangeAttribute();
+    if (ranges !== undefined) {
+      ranges.clearUpdateRanges();
+      if (high > low) ranges.addUpdateRange((low / 16) * 2, ((high - low) / 16) * 2);
+      ranges.needsUpdate = true;
+    }
     this.#publish(this.#drawn);
     // Records are real, so the bounds are the ones `#rebound` just wrote and the mesh goes back to
     // being culled.

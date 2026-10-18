@@ -18,7 +18,9 @@ import {
 import {
   CapsuleGeometry,
   Float32BufferAttribute,
+  Frustum,
   InstancedMesh,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   OrthographicCamera,
@@ -27,6 +29,7 @@ import {
 } from "three";
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
+import { createGroundSampler } from "./render/groundSampler.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { type ICanopyComparison, loadPack, loadSkyLight } from "./render/pack.js";
@@ -182,6 +185,7 @@ const initialState = {
   compressedTexturesPrepared: 0,
   preparedLevelsWithoutSolid: 0,
   view: "player",
+  revealComplete: false,
   windowDrawCalls: 0,
   windowFrameMs: 0,
   currentViewWindows: 0,
@@ -288,6 +292,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       ctx.add(ctx.camera);
       const data = this.#data;
       if (!data) throw new Error(`World ${world} was not loaded`);
+      const sky = this.#sky;
+      if (!sky) throw new Error(`World ${world} sky was not loaded`);
       // ctx.goto carries state; camera names from the outgoing biome must not carry with it.
       ctx.state.set({
         view: "player",
@@ -297,8 +303,74 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         spawnCellsRequired: 0,
         spawnCellsLoaded: 0,
         compressedTexturesPrepared: 0,
+        revealComplete: false,
       });
       let released = false;
+      const reveal = {
+        startedMs: -1,
+        elapsedMs: 0,
+        complete: false,
+        samples: 0,
+        publishedBatchesInView: -1,
+        shadowInvalidated: -1,
+        impostorPendingPeak: -1,
+        pipelinesCreated: -1,
+        pipelineCensusAvailable: false,
+      };
+      let shadowAtReveal = -1;
+      let pipelinesAtReveal: number | undefined;
+      const revealFrustum = new Frustum();
+      const revealMatrix = new Matrix4();
+      const initializeRevealProbe = (): void => {
+        if (released || reveal.complete || reveal.startedMs >= 0) return;
+        if (ctx.canvasLayer.opaque || ctx.startup.phase !== "ready")
+          throw new Error("Reveal probe requires ready props and an uncovered world");
+        const shadows = this.#sky?.sun.shadow.shadowNode;
+        if (!(shadows instanceof VirtualShadowNode))
+          throw new Error("Reveal probe requires virtual shadows");
+        const creations = ctx.renderer.pipelineCensus?.()?.counts.deviceCreations;
+        reveal.startedMs = performance.now();
+        reveal.publishedBatchesInView = 0;
+        shadowAtReveal = shadows.stats.byInvalidation;
+        pipelinesAtReveal = creations;
+        ctx.camera.updateMatrixWorld(true);
+        revealFrustum.setFromProjectionMatrix(
+          revealMatrix.multiplyMatrices(ctx.camera.projectionMatrix, ctx.camera.matrixWorldInverse),
+          ctx.camera.coordinateSystem,
+        );
+      };
+      ctx.afterPhysics(() => {
+        if (
+          released ||
+          reveal.complete ||
+          reveal.startedMs < 0 ||
+          ctx.canvasLayer.opaque ||
+          ctx.startup.phase !== "ready"
+        )
+          return;
+        const shadows = this.#sky?.sun.shadow.shadowNode;
+        if (!(shadows instanceof VirtualShadowNode))
+          throw new Error("Reveal probe requires virtual shadows");
+        const census = ctx.renderer.pipelineCensus?.();
+        const creations = census?.counts.deviceCreations;
+        reveal.samples++;
+        reveal.elapsedMs = performance.now() - reveal.startedMs;
+        reveal.shadowInvalidated = shadows.stats.byInvalidation - shadowAtReveal;
+        reveal.impostorPendingPeak = Math.max(
+          reveal.impostorPendingPeak,
+          props?.worlds.reduce((sum, stream) => sum + stream.stats().impostor.pending, 0) ?? 0,
+        );
+        reveal.pipelineCensusAvailable =
+          census?.complete === true && creations !== undefined && pipelinesAtReveal !== undefined;
+        if (
+          reveal.pipelineCensusAvailable &&
+          creations !== undefined &&
+          pipelinesAtReveal !== undefined
+        )
+          reveal.pipelinesCreated = creations - pipelinesAtReveal;
+        reveal.complete = reveal.elapsedMs >= 3000;
+        if (reveal.complete) ctx.state.set({ revealComplete: true });
+      });
       const textureUploads = new AbortController();
       let propsStage = "waiting-for-physics";
       let preparation: IPropPreparationProgress | undefined;
@@ -369,6 +441,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         );
       const loading = createLoadingScreen({
         ...ctx,
+        onReveal: initializeRevealProbe,
         keepWorldRendering: false,
         startup: {
           get progress() {
@@ -423,8 +496,6 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       // far ridges fade into and the tone curve. It used to be a flat `Color` background, a
       // hand-set `FogExp2`, a sun with a five metre shadow box that missed everything, and no tone
       // mapping at all; the numbers behind all of that now live in `src/render/sky.ts`.
-      const sky = this.#sky;
-      if (!sky) throw new Error(`World ${world} sky was not loaded`);
       ctx.add(sky.daylight);
       ctx.add(sky.atmosphere);
       ctx.add(sky.sun);
@@ -675,19 +746,24 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         mesh.updateMatrixWorld(true);
         mesh.geometry.computeBoundingBox();
         const top = mesh.geometry.boundingBox?.max.y ?? 0;
+        const groundSample = createGroundSampler(field, mesh.geometry, mesh.matrixWorld);
         const groundAt: PropGroundQuery = (placement, at) => {
           const [x, , z] = at;
-          const visual = ctx.raycast({
-            direction: new Vector3(0, -1, 0),
-            origin: new Vector3(x, top + 2, z),
-            targets: [mesh],
-          });
+          let visual = groundSample(x, z);
+          if (visual === null) {
+            visual =
+              ctx.raycast({
+                direction: new Vector3(0, -1, 0),
+                origin: new Vector3(x, top + 2, z),
+                targets: [mesh],
+              })?.point.y ?? null;
+          }
           const physical = ctx.physics.directSpaceState.intersectRay({
             collisionMask: 4,
             from: { x, y: top + 2, z },
             to: { x, y: -100, z },
           });
-          let height = visual?.point.y ?? physical?.position.y ?? null;
+          let height = visual ?? physical?.position.y ?? null;
           if (
             height !== null &&
             (world === "forest" || world === "coastal") &&
@@ -710,12 +786,17 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
                 [0, -reach],
                 [0, reach],
               ]) {
-                const foot = ctx.raycast({
-                  direction: new Vector3(0, -1, 0),
-                  origin: new Vector3(x + (dx ?? 0), top + 2, z + (dz ?? 0)),
-                  targets: [mesh],
-                });
-                if (foot) height = Math.min(height, foot.point.y);
+                const footX = x + (dx ?? 0);
+                const footZ = z + (dz ?? 0);
+                const foot =
+                  groundSample(footX, footZ) ??
+                  ctx.raycast({
+                    direction: new Vector3(0, -1, 0),
+                    origin: new Vector3(footX, top + 2, footZ),
+                    targets: [mesh],
+                  })?.point.y ??
+                  null;
+                if (foot !== null) height = Math.min(height, foot);
               }
               height -= (box.max.y - box.min.y) * placement.scale * 0.12;
             }
@@ -805,6 +886,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
               completedPropsWork += Math.max(0, progress.added - previous);
               preparation = progress;
             },
+            onPublication: (bounds) => {
+              if (reveal.startedMs < 0 || reveal.complete) return;
+              if (revealFrustum.intersectsBox(bounds)) reveal.publishedBatchesInView++;
+            },
             invalidateShadows: (region) => {
               const shadows = sky.sun.shadow.shadowNode;
               if (shadows instanceof VirtualShadowNode) invalidatePropShadows(shadows, region);
@@ -855,6 +940,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           ctx.entities.add("props", {
             object: props.worlds[0],
             debug: () => ({
+              reveal,
               streaming: props?.stats(),
               boulders: scatter.counts.boulder,
               bushes: scatter.counts.bush,

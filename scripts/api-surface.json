@@ -26,6 +26,7 @@
         "@threenative/assets#rewriteUvs": "export function rewriteUvs(uv: Float32Array, transform: IAtlasTransform): Float32Array { … }",
         "@threenative/assets#runHealthReport": "export async function runHealthReport( inputs: readonly IAssetHealthInput[], targets: IAssetTargets = { … }",
         "@threenative/assets#texturePass": "export function texturePass(options: ITexturePassOptions = { … }",
+        "@threenative/assets#thinFoliageCards": "export function thinFoliageCards(document: Document, keepRatio: number): number { … }",
         "@threenative/assets#totalCensus": "export function totalCensus(entries: readonly IContentCensus[]): Omit<IContentCensus, \"model\"> { … }",
         "@threenative/assets#uvsTile": "export function uvsTile(uv: ArrayLike<number>): boolean { … }",
         "@threenative/assets#watchAssets": "export function watchAssets(options: IAssetWatchOptions = { … }",

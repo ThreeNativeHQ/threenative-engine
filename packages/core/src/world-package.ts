@@ -53,6 +53,8 @@ export interface IWorldAssetBounds {
 }
 
 export interface IWorldAsset {
+  /** Caller-owned terminal impostor distance in world metres; requires WorldCells impostors opt-in. */
+  readonly impostorDistance?: number;
   readonly glb: string;
   readonly lods?: readonly IWorldAssetLod[];
   readonly bounds: IWorldAssetBounds;
@@ -307,6 +309,13 @@ export function validateWorldPackage(
             );
         }
       }
+      if (
+        value.impostorDistance !== undefined &&
+        (typeof value.impostorDistance !== "number" ||
+          !Number.isFinite(value.impostorDistance) ||
+          value.impostorDistance <= 0)
+      )
+        malformed(`${path}.impostorDistance`, "impostorDistance must be positive finite.");
       if (value.lods !== undefined) {
         if (!Array.isArray(value.lods)) {
           malformed(`${path}.lods`, `${path}.lods must be an array.`);
@@ -319,6 +328,15 @@ export function validateWorldPackage(
             }
             text(lod.glb, `${lodPath}.glb`);
             finite(lod.distance, `${lodPath}.distance`);
+            if (
+              typeof value.impostorDistance === "number" &&
+              typeof lod.distance === "number" &&
+              value.impostorDistance <= lod.distance
+            )
+              malformed(
+                `${path}.impostorDistance`,
+                "impostorDistance must follow every authored LOD gate.",
+              );
           });
         }
       }

@@ -37,17 +37,11 @@ const STAGE = join(
 );
 const requireAssets = createRequire(join(REPO, "packages/assets/package.json"));
 const sharp = requireAssets("sharp");
-const { MeshoptSimplifier } = requireAssets("meshoptimizer");
-await MeshoptSimplifier.ready;
 const { NodeIO } = requireAssets("@gltf-transform/core");
-const {
-  dedup,
-  join: joinMeshes,
-  weld,
-  simplify,
-  normals,
-} = requireAssets("@gltf-transform/functions");
-const { compileAssets } = await import(pathToFileURL(join(REPO, "packages/assets/dist/index.js")));
+const { dedup, join: joinMeshes, weld, normals } = requireAssets("@gltf-transform/functions");
+const { compileAssets, thinFoliageCards } = await import(
+  pathToFileURL(join(REPO, "packages/assets/dist/index.js"))
+);
 const io = new NodeIO();
 const set = (albedo, normal, mask = null, channel = 0) => ({ albedo, normal, mask, channel });
 const atlases = {
@@ -349,7 +343,7 @@ for (const { pack, name, logical } of selected) {
   console.log(`[prep] ${logical}: ${name}`);
   if (logical.startsWith("spruce/")) {
     const low = await io.read(target);
-    await low.transform(simplify({ simplifier: MeshoptSimplifier, ratio: 0.14, error: 0.012 }));
+    if (thinFoliageCards(low, 0.14) === 0) throw new Error(`No spruce cards thinned: ${logical}`);
     await io.write(join(STAGE, `${logical}-far.glb`), low);
   }
 }

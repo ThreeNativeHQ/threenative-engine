@@ -1,31 +1,35 @@
-// The native host resolves a texture at `<path>` or `assets/<path>` beside the game; the web build
-// gets the ground's CC0 starter maps from Vite's publicDir. Mirror that root into `assets/` with hard
-// links so a desktop run reads the very bytes the browser does. The licensed `local-assets/` mounts
-// are not staged: their cooked KTX2 models load untextured on the native host today, which is worse
-// than the procedural fallback they leave in place, and the ground already falls back from
-// `temperate/` to these public maps by name.
 import {
   copyFileSync,
   existsSync,
   linkSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   statSync,
   unlinkSync,
+  writeFileSync,
 } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { starterAssetsDir } from "@threenative/terrain/kit";
 
 const here = dirname(dirname(fileURLToPath(import.meta.url)));
 const out = join(here, "assets");
-// vite.config.ts publicDir, served at the root.
+// Match Vite publicDir and preparedAssets mounts, including first-root-wins /basis.
 const roots = [
   { dir: await starterAssetsDir(), mount: "", required: true },
   { dir: join(here, "src/world"), mount: "world", required: true },
+  ...[
+    ["temperate", "temperate"],
+    ["temperate/basis", "basis"],
+    ["prepared", "prepared"],
+    ["landscape-pro", "landscape-pro"],
+    ["landscape-pro/basis", "basis"],
+  ].map(([dir, mount]) => ({ dir: join(here, "local-assets", dir), mount })),
 ];
 
 let linked = 0;
+const entries = {};
 function mirror(source, target) {
   for (const entry of readdirSync(source, { withFileTypes: true })) {
     if (
@@ -41,10 +45,11 @@ function mirror(source, target) {
       continue;
     }
     if (!entry.isFile()) continue;
-    if (existsSync(to)) {
-      if (statSync(to).ino === statSync(from).ino) continue;
-      unlinkSync(to);
-    }
+    const logical = relative(out, to).split(sep).join("/");
+    if (entries[logical]) continue;
+    entries[logical] = { output: logical, bytes: statSync(from).size };
+    if (existsSync(to) && statSync(to).ino === statSync(from).ino) continue;
+    if (existsSync(to)) unlinkSync(to);
     try {
       linkSync(from, to);
     } catch (error) {
@@ -65,5 +70,40 @@ for (const root of roots) {
   const target = join(out, root.mount);
   mkdirSync(target, { recursive: true });
   mirror(root.dir, target);
+}
+if (Object.keys(entries).length === 0) throw new Error("stage-native-assets: no staged assets");
+// A nonempty manifest skips bare-path probes and rejects absent optional assets before fetching.
+writeFileSync(
+  join(out, "assets.manifest.json"),
+  `${JSON.stringify({ version: 1, entries }, null, 2)}\n`,
+);
+// Remove only this script's old starter-only manifest, never a user-authored manifest.
+const legacy = join(here, "assets.manifest.json");
+if (existsSync(legacy)) {
+  const old = JSON.parse(readFileSync(legacy, "utf8"));
+  const starter = Object.fromEntries(
+    Object.entries(entries)
+      .filter(([key]) => existsSync(join(roots[0].dir, key)))
+      .map(([key, entry]) => [key, { ...entry, output: `assets/${key}` }]),
+  );
+  // Generated identity survives asset revisions; byte counts do not.
+  if (
+    old?.version === 1 &&
+    Object.keys(old).length === 2 &&
+    old.entries &&
+    !Array.isArray(old.entries) &&
+    Object.keys(old.entries).length === Object.keys(starter).length &&
+    Object.entries(starter).every(([key, entry]) => {
+      const previous = old.entries[key];
+      return (
+        previous &&
+        Object.keys(previous).length === 2 &&
+        previous.output === entry.output &&
+        Number.isSafeInteger(previous.bytes) &&
+        previous.bytes >= 0
+      );
+    })
+  )
+    unlinkSync(legacy);
 }
 console.log(`stage-native-assets: ${linked} file(s) linked into ${relative(here, out)}/`);

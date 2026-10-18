@@ -13,6 +13,7 @@
       "examples/strata-terrain-preview/src/world/*.json",
       "examples/strata-terrain-preview/assets/world/*.json",
       "examples/strata-terrain-preview/local-assets/**",
+      "examples/strata-terrain-preview/assets/**",
       "build/**",
       "release-native/**",
       ".linchpin/**",

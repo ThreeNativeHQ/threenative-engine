@@ -101,9 +101,19 @@ function attributeUploads(attribute: BufferAttribute | InterleavedBufferAttribut
 /** Build only the real surface's CPU column bindings, not a GPU shader or a mirrored usage branch. */
 function farMatrixRoute(mesh: InstancedMesh) {
   const material = mesh.material as NodeMaterial;
+  const AttributeBuilder = NodeBuilder as unknown as new (
+    object: InstancedMesh,
+    renderer: null,
+    parser: null,
+  ) => NodeBuilder;
+  const builder = new AttributeBuilder(mesh, null, null);
   const body = (
     material.positionNode as unknown as {
-      node: { shaderNode: { jsFunc: (inputs: unknown, builder: { object: Object3D }) => Node } };
+      node: {
+        shaderNode: {
+          jsFunc: (inputs: unknown, builder: NodeBuilder & { object: Object3D }) => Node;
+        };
+      };
     }
   ).node.shaderNode.jsFunc;
   const previous = getCurrentStack();
@@ -121,7 +131,7 @@ function farMatrixRoute(mesh: InstancedMesh) {
   };
   setCurrentStack(scope);
   try {
-    body([], { object: mesh }).traverse(collect);
+    body([], builder as NodeBuilder & { object: Object3D }).traverse(collect);
     scope.traverse(collect);
   } finally {
     setCurrentStack(previous);
@@ -129,12 +139,6 @@ function farMatrixRoute(mesh: InstancedMesh) {
   expect(columns.size).toBe(4);
   // The installed JS base implements attribute setup; its declarations require a shader subclass.
   // No shader generation or renderer/backend method is invoked by this CPU binding setup.
-  const AttributeBuilder = NodeBuilder as unknown as new (
-    object: InstancedMesh,
-    renderer: null,
-    parser: null,
-  ) => NodeBuilder;
-  const builder = new AttributeBuilder(mesh, null, null);
   for (const column of columns) column.setup(builder);
   const attribute = [...columns][0]?.attribute as InterleavedBufferAttribute;
   expect(attribute.data.array).toBe(mesh.instanceMatrix.array);
@@ -531,6 +535,139 @@ afterEach(() => {
 });
 
 describe("WorldCells automatic impostors", () => {
+  it("keeps CPU LOD batches visible until a refilter publishes their replacement ranges", async () => {
+    stubManifestFetch(pineOnly());
+    const follow = { position: { x: -84, z: -64 } };
+    let holdAdmission = false;
+    let clock = 0;
+    const world = await loadPine(treeLoader(), {
+      admissionBudgetMs: 2,
+      admissionNow: () => (holdAdmission ? ++clock : 0),
+      gpuScene: false,
+      lodHysteresis: 0.2,
+      follow,
+    });
+    const range = (level: number, instance = 0): number[] => {
+      const mesh = partsOf(world, "pine", level, 0).find((candidate) => candidate.count > 0);
+      const attribute = mesh?.geometry.getAttribute("tnPublishedLodRange");
+      expect(attribute).toBeDefined();
+      return Array.from((attribute?.array as Float32Array).slice(instance * 2, instance * 2 + 2));
+    };
+    const rootAt = (level: number, instance: number): Vector3 => {
+      const mesh = partsOf(world, "pine", level, 0).find((candidate) => candidate.count > 0);
+      const matrix = new Matrix4();
+      mesh?.getMatrixAt(instance, matrix);
+      return new Vector3().setFromMatrixPosition(matrix);
+    };
+    try {
+      await flushed(world);
+      for (let pass = 0; pass < 100; pass++) {
+        world.update();
+        await flush();
+      }
+      const nearMesh = partsOf(world, "pine", 0, 0).find((candidate) => candidate.count > 0);
+      expect(nearMesh).toBeDefined();
+      expect((nearMesh?.material as Material).userData.tnPublishedLodRange).toBe(true);
+      const published = nearMesh?.geometry.getAttribute("tnPublishedLodRange")?.array as
+        | Float32Array
+        | undefined;
+      expect(
+        Array.from({ length: nearMesh?.count ?? 0 }, (_, index) => [
+          published?.[index * 2],
+          published?.[index * 2 + 1],
+        ]).some(([min, max]) => min === 0 && max === 1),
+      ).toBe(true);
+      const nearIndex = Array.from({ length: nearMesh?.count ?? 0 }, (_, index) => index).find(
+        (index) => range(0, index)[0] === 0 && range(0, index)[1] === 0,
+      );
+      expect(nearIndex).toBeDefined();
+      const root = rootAt(0, nearIndex ?? 0);
+
+      follow.position.x = -150;
+      holdAdmission = true;
+      world.update();
+      expect(range(0, nearIndex ?? 0)).toEqual([0, 0]);
+      holdAdmission = false;
+      for (let pass = 0; pass < 100; pass++) {
+        world.update();
+        await flush();
+      }
+      const farMesh = partsOf(world, "pine", 1, 0).find((candidate) => candidate.count > 0);
+      expect(farMesh).toBeDefined();
+      const farIndex = Array.from({ length: farMesh?.count ?? 0 }, (_, index) => index).find(
+        (index) => rootAt(1, index).distanceTo(root) < 0.01,
+      );
+      expect(farIndex).toBeDefined();
+      expect(range(1, farIndex ?? 0)).toEqual([1, 1]);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("keeps authored parts and draws a terminal impostor at its authored distance", async () => {
+    const pkg = pineOnly();
+    const definition = pkg.assets.pine as IWorldAsset;
+    const data = { ...pkg, assets: { pine: { ...definition, impostorDistance: 150 } } };
+    const placements = new Float32Array([-32, 0, -32, 0, 0, 0, 1, 1]);
+    const one = {
+      ...data,
+      cells: [{ x: 1, z: 1, runs: [{ asset: "pine", offset: 0, count: 1 }] }],
+    };
+    stubPlacementFetch(one, placements);
+    const follow = { position: { x: -32, z: -32 } };
+    const world = await loadPine(treeLoader(), {
+      follow,
+      terrain: false,
+      ring: 10,
+      gpuScene: false,
+      preserveAuthoredParts: true,
+      impostors: true,
+      lodHysteresis: 0.2,
+      adaptiveLod: false,
+    });
+    try {
+      await flushed(world);
+      runBake(world, rendererStub());
+      await flushed(world);
+      expect(world.stats().impostor.assets).toBe(1);
+      expect(world.stats().impostor.pending).toBe(0);
+      follow.position.z = -232;
+      for (let i = 0; i < 100; i++) {
+        world.update();
+        await flush();
+      }
+      expect(world.stats().impostor.drawn).toBeGreaterThan(0);
+      expect(partsOf(world, "pine", 2, 0)[0]?.geometry.index?.count).toBe(6);
+      expect(partsOf(world, "pine", 2, 1)).toHaveLength(0);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it.each([false, true])(
+    "drains queued atlases while covered (in-flight: %s)",
+    async (inFlight) => {
+      stubManifestFetch(manyAlphaAssets(2));
+      const world = await loadPine(treeLoader());
+      try {
+        await flushed(world);
+        const renderer = rendererStub();
+        const capture = vi.spyOn(renderer.raw as IImpostorRawRenderer, "render");
+        if (inFlight) {
+          world.process(renderer, undefined, false);
+          expect(capture).toHaveBeenCalledTimes(1);
+        }
+        expect(world.stats().impostor.pending).toBe(2);
+        world.process(renderer, undefined, true);
+        expect(capture).toHaveBeenCalledTimes(32);
+        expect(world.stats().impostor.assets).toBe(2);
+        expect(world.stats().impostor.pending).toBe(0);
+      } finally {
+        world.dispose();
+      }
+    },
+  );
+
   it("bakes an alpha-cutout asset over the render cadence and appends a two-triangle terminal level", async () => {
     stubManifestFetch(pineOnly());
     const loader = treeLoader();

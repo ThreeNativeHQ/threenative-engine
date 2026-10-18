@@ -214,6 +214,19 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   };
 }
 
+export function createOutdoorTRAA(
+  input: Node,
+  depth: Parameters<typeof traa>[1],
+  velocityNode: Parameters<typeof traa>[2],
+  camera: ICtx["camera"],
+  renderer: Pick<ICtx["renderer"], "surface">,
+): Node {
+  const node = traa(input as Node<"vec4">, depth, velocityNode as never, camera) as unknown as Node;
+  const surface = renderer.surface();
+  Reflect.get(node, "beautyNode").setSize(surface.drawingBufferWidth, surface.drawingBufferHeight);
+  return node;
+}
+
 /** Contact-scale occlusion through the installed chain; daylight still owns exposure and tone. */
 export function installOutdoorOcclusion(
   ctx: Pick<ICtx, "renderer" | "scene" | "camera">,
@@ -323,13 +336,7 @@ export function installOutdoorOcclusion(
         name: "traa",
         minimumTier: "high",
         build: (input, context) =>
-          traa(
-            input as Node<"vec4">,
-            depth,
-            // The chain hands the scene-side velocity node; three's declaration asks for a texture node.
-            context.velocityNode as never,
-            camera,
-          ) as unknown as Node,
+          createOutdoorTRAA(input as Node, depth, context.velocityNode as never, camera, renderer),
       },
       {
         name: "grade",

@@ -27,7 +27,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { deflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 import { starterAssetsDir } from "@threenative/terrain/kit";
 import { createServer } from "vite";
 import {
@@ -39,6 +39,43 @@ import {
 
 const root = resolve(".");
 const PORT = 5185;
+
+// The seeded generator writes RGBA/filter-0 PNGs; whole-cell UVs need transparent borders.
+const atlas = readFileSync(
+  new URL("../../../packages/terrain/starter-assets/needle-atlas.png", import.meta.url),
+);
+assert.equal(atlas.readUInt32BE(16), 1024);
+assert.equal(atlas.readUInt32BE(20), 1024);
+const compressed = [];
+for (let offset = 8; offset < atlas.length; ) {
+  const length = atlas.readUInt32BE(offset);
+  if (atlas.toString("ascii", offset + 4, offset + 8) === "IDAT")
+    compressed.push(atlas.subarray(offset + 8, offset + 8 + length));
+  offset += length + 12;
+}
+const pixels = inflateSync(Buffer.concat(compressed));
+assert.equal(pixels.length, (1024 * 4 + 1) * 1024);
+for (let y = 0; y < 1024; y += 1) assert.equal(pixels[y * 4097], 0, "atlas PNG filter");
+for (const [name, column, row] of [
+  ["dense", 0, 0],
+  ["open", 1, 0],
+  ["tip", 0, 1],
+]) {
+  let covered = 0;
+  for (let y = 0; y < 512; y += 1) {
+    for (let x = 0; x < 512; x += 1) {
+      const alpha = pixels[(row * 512 + y) * 4097 + 1 + (column * 512 + x) * 4 + 3];
+      if (x === 0 || x === 511 || y === 0 || y === 511)
+        assert.equal(alpha, 0, `${name}: clipped needle at cell boundary (${x}, ${y})`);
+      if (alpha > 132) covered += 1;
+    }
+  }
+  assert(covered > 512, `${name}: empty needle silhouette`);
+}
+if (process.argv.includes("--needle-only")) {
+  console.log("Needle atlas: three nonempty silhouettes with transparent whole-cell borders");
+  process.exit(0);
+}
 
 /** Every path the stock mapping names. A request for any of them is a starter request. */
 const STARTER_PREFIXES = [

@@ -672,26 +672,27 @@ interface IReflectorNodeLike {
  * depth each node was reached at: a TSL graph shares subgraphs, and without it every path to a
  * shared node walks it again.
  */
-function nodeHasReflector(root: unknown, depth: number, seen: Map<object, number>): boolean {
+function nodeHasReflector(root: unknown, depth: number, seen: WeakMap<object, number>): boolean {
   if (depth > 64 || typeof root !== "object" || root === null) return false;
   const node = root as IReflectorNodeLike;
   if (node._reflectorBaseNode !== undefined) return true;
   if (node.isNode !== true || typeof node.getChildren !== "function") return false;
-  const reached = seen.get(node);
+  const reached = seen.get(root);
   if (reached !== undefined && reached <= depth) return false;
-  seen.set(node, depth);
+  seen.set(root, depth);
   try {
     for (const child of node.getChildren()) {
       if (nodeHasReflector(child, depth + 1, seen)) return true;
     }
   } catch {
+    seen.delete(root);
     return false;
   }
   return false;
 }
 
 function hasReflector(scene: Object3D): boolean {
-  const seen = new Map<object, number>();
+  const seen = new WeakMap<object, number>();
   const stack: Object3D[] = [scene];
   while (stack.length > 0) {
     const object = stack.pop() as Object3D & { material?: unknown };

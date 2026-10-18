@@ -81,6 +81,8 @@ export interface IWorldCellsLoadOptions {
   readonly createCollider?: IWorldTilesOptions["createCollider"];
   /** Read once per update; an `Object3D` works. */
   readonly follow: IWorldCellsFollow;
+  /** Called when a nonempty cell batch becomes visible to the renderer. */
+  readonly onPublication?: (bounds: Box3) => void;
   /** Chebyshev radius in cells to keep resident; a cell leaves only beyond `ring + 1`. */
   readonly ring: number;
   readonly budgets: IWorldCellsBudget;
@@ -95,10 +97,11 @@ export interface IWorldCellsLoadOptions {
    * Filtered by the existing admission/refilter budget, never by a separate culler.
    */
   readonly placementReach?: Float32Array;
-  /** Inward return margin for authored CPU LODs, in [0, 1). Requires gpuScene:false and impostors:false (the default).
+  /** Inward return margin for authored CPU LODs, in [0, 1). Requires gpuScene:false; when
+   * combined with automatic impostors, also requires preserveAuthoredParts and authored distances.
    * Omitted, selection uses the existing direct gates. State survives cell eviction/revisit. */
   readonly lodHysteresis?: number;
-  /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Requires impostors:false (the default).
+  /** Preserve supplied part/material identity and exact authored LOD membership, including shadow batches. Automatic impostors require each asset to author `impostorDistance`.
    * Default content sharing and missing-alpha-part coverage remain enabled when omitted. */
   readonly preserveAuthoredParts?: boolean;
   /** Already decoded immutable world-v1 data; URL still supplies the base for model paths. */
@@ -371,8 +374,8 @@ export interface IWorldCellsLoadOptions {
    * Bake a whole-asset octahedral impostor for every alpha-cutout foliage asset and append it as the
    * asset's terminal, two-triangle LOD. Default false: omission keeps the authored/generated source
    * levels, and `?tnImpostors=1` or `TN_IMPOSTORS=1` opts a launch in. It is opt-in until the judged
-   * Machinefall capture passes (PRD-473 AC-3); `preserveAuthoredParts` and `lodHysteresis` still
-   * require it to be off.
+   * Machinefall capture passes (PRD-473 AC-3). With `preserveAuthoredParts`, an asset must author
+   * `impostorDistance` to receive a terminal impostor.
    *
    * Set true to bake them, or leave it off to keep the source levels for a visual comparison.
    *
@@ -429,6 +432,8 @@ export interface ICellBatch {
    */
   readonly run: IWorldRun;
   readonly batch: InstancedBatch;
+  /** Published adjacent LOD interval per instance, present only on the CPU dither path. */
+  readonly lodRanges: Float32Array | undefined;
   readonly level: number;
   readonly part: number;
   /** How far the follow point has to move before this batch is refiltered, `undefined` never. */
@@ -634,6 +639,8 @@ export interface IBuildJob {
   /** Next placement to filter; the filter is complete when it reaches `run.count`. */
   next: number;
   batches: InstancedBatch[][] | undefined;
+  /** Two published LOD bounds per `(level, part)` instance, in matrix append order. */
+  lodRanges: number[][][] | undefined;
   /**
    * One root-matrix batch per level the filter reached, filled only when the asset can become a
    * whole-asset impostor: the placement transform with no part offset, which is what its far quad
@@ -717,6 +724,13 @@ export function cellKey(x: number, z: number): string {
   return `${String(x)}:${String(z)}`;
 }
 
+export function sameLodRanges(a: Float32Array | undefined, b: Float32Array | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) return false;
+  return true;
+}
+
 import type { IWorldGpuSceneReport } from "./world-gpu-scene.js";
 
 export interface IWorldCellsStats {
@@ -739,6 +753,8 @@ export interface IWorldCellsStats {
   readonly loadsInFlight: number;
   /** Model loads waiting for a free lane; served nearest-cell first, in admission order. */
   readonly loadsQueued: number;
+  /** Remaining placement slices and batch publications waiting for admission. */
+  readonly admissionBacklog: number;
   /**
    * Shared batches still to be minted, plus the ones minted and not yet drawn; `0` once
    * `prewarmed` has resolved.
@@ -859,6 +875,7 @@ export interface IWorldCellsStats {
   readonly impostor: {
     readonly assets: number;
     readonly pending: number;
+    readonly drawn: number;
     readonly atlasBytes: number;
     readonly budgetBytes: number;
     readonly terminalTriangles: number;

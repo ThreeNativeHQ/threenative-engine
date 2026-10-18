@@ -181,3 +181,28 @@ Complexity: 1 → LOW; risk override: none. Integration: unchanged — retain bo
 - [ ] Verify current-head required CI and mergeability. Proof: PR #483 checks and GitHub merge state.
 
 Owner steering: integrate PR #510 (`feat/prd618-complete-world`) into this Strata branch before final qualification. Its draft visual and performance criteria remain open; source integration does not establish acceptance. Local browser reproduction currently fails before assertions (network-changed module requests; scene doctor also reports nonfinite entity bounds). No runtime or CI acceptance box advanced.
+
+#### PR #510 integration plan (owner requested)
+
+Complexity: 7 → HIGH (11+ implementation files, world-cell ownership/concurrency and independent native boundary); risk override: none.
+- [ ] Preserve both core branch intents in game startup, warmup, world cells and their regression tests. proof: focused core contracts and typecheck.
+- [ ] Preserve preview startup/streaming, licensed assets and staging changes without losing existing terrain assertions. proof: affected example and staging contracts plus real reveal/terrain scenario.
+- [ ] Regenerate combined Three patches, lock metadata, capabilities and scaffold fingerprints; verify required CI against the final combined head. proof: existing generation and CI contracts, PR #483 current-head checks.
+
+PR #510 source: `50c3e3fee577b4fdf6ad58c2f2511b2f05e8ec0c`. Source PRD-618 remains PARTIAL, including recorded visual regression; merge does not waive those outcomes.
+
+Integration finding: develop extracted the world-cell monolith into owned `world-cell-*.ts` modules; PR510 features must be ported into those modules without reverting model/cache/disposal behavior. Three generated-only changes through local PR510 snapshot `55e3e4387` are now retained in canonical source delta: generator check matches and 57 focused velocity/patch/static-settled tests pass. Native coverage remains live in C++ test build/execution, not accepted yet.
+
+Combined native source qualification: `sh scripts/xvfb.sh node packages/runtime-native/scripts/measure-native-coverage.mjs` exit 0; 47 C++ contract targets executed, 78.42% coverage, existing generated report refreshed. Three configured targets remain blocked by disabled Metahuman/native-physics/video features; no unsupported-platform proof claimed. Source digest `b71a3030b463e0e2288fa81b1e556ab3fce303d3268ea3fc1786bdb9b8b316eb`.
+
+Example integration diagnostics (before combined build): prop streaming tests encounter stale `packages/core/dist` rejection of incoming authored-part impostor settings; source owner is porting that feature, so rerun after rebuild. Native staging fixture needs its required `src/world` source. Incoming needle-atlas dense-border validation currently fails and is retained, not waived; diagnose after latest PR510 preparation changes are integrated.
+
+Combined generated scaffold fingerprint check passes (13 measured trees; focused test 1 passed, 67 skipped) after canonical patch regeneration. Native staging fixture contract now passes with a real `src/world/forest.world.json` and exact staged starter inventory. Remaining atlas failure is `packages/terrain/starter-assets/needle-atlas.png`, dense border pixel (40,0), alpha 170 versus required 0; incoming validation remains enforced.
+
+Atlas repair acceptance: retain needle/twig artwork outside the required transparent outer border; existing `verify-custom-assets.mjs --needle-only` must pass. Final paired headed visual judgment must show no vegetation regression and restored distant crowns for the LOD fixes; shader/atlas unit checks alone do not establish that acceptance. Previous atlas PNG retained temporarily for paired proof.
+
+Atlas repair verified: generator now reserves the outer cell border; 1,152 changed diffuse texels are border-only and interior RGBA is byte-identical. Needle verifier passes; both complete starter-kit and kit-assets suites pass (31 tests). Existing distribution manifest and both credit manifests regenerated with preserved attribution; final visual acceptance remains open.
+
+Frozen dependency install passes. Installed-candidate checks pass: 78 tests across instance-velocity-upload, three-patch-upgrade, starter-kit and kit-assets; these cover the regenerated patch installation and atlas distribution. Core integration/runtime and current-head CI remain open.
+
+Remote PR510 integration core port: preserved develop extraction, ownership/cache/disposal paths and incoming authored impostors, camera readiness, publication notifications, shadow drain and published LOD ranges. Core typecheck passes; focused world-cell/impostor contracts pass (99 tests/3 files) and startup contracts pass (35 tests/4 files). Fresh review restored an incoming aborted-launch callback guard; renderer test mock now implements the production geometry-release API. Later local snapshot ancestry integration and runtime qualification remain pending.

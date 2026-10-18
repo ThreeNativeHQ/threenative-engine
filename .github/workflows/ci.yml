@@ -988,7 +988,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
+          ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -1010,6 +1010,32 @@ jobs:
       # `test:browser` is the test-browser job's gate; running it again here bought nothing but
       # a second copy of the slowest step in the workflow.
       - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
+      # Software startup regression contract only; hardware and visual acceptance remain separate.
+      - uses: actions/checkout@v7
+        with:
+          ref: 88b988cd70d5db7266eb0281e5f74bd0e030b3e7
+          path: .worktrees/strata-startup-baseline
+      - name: Build isolated reviewed Strata baseline
+        timeout-minutes: 5
+        working-directory: .worktrees/strata-startup-baseline
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm --filter strata-terrain-preview... build
+      - name: Build candidate Strata with restored candidate packages
+        timeout-minutes: 3
+        run: pnpm --filter strata-terrain-preview build
+      - name: Enforce Strata startup median
+        timeout-minutes: 9
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.scope.outputs.candidate_sha }}
+        run: timeout 9m pnpm tsx scripts/verify-strata-startup.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: strata-startup-${{ needs.scope.outputs.candidate_sha }}
+          path: artifacts/strata-startup/
+          if-no-files-found: warn
 
   # visuals is NOT a job here any more. It captures frames from a WebGPU canvas, and this runner
   # has no GPU — its first execution in the repository's history failed on

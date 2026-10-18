@@ -29,6 +29,7 @@ import {
   nonNegativeInteger,
   positiveInteger,
   positiveMetres,
+  sameLodRanges,
 } from "./world-cell-data.js";
 
 export type {
@@ -42,7 +43,16 @@ export type {
   IWorldCellsStats,
 } from "./world-cell-data.js";
 
-import { Box3, type Camera, Group, Matrix4, type Object3D, Quaternion, Vector3 } from "three";
+import {
+  Box3,
+  type Camera,
+  Frustum,
+  Group,
+  Matrix4,
+  type Object3D,
+  Quaternion,
+  Vector3,
+} from "three";
 
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
@@ -87,6 +97,10 @@ import {
   validateWorldPackage,
 } from "./world-package.js";
 import { type IAdmissionBudget, TerrainTileBudgetError, TerrainTiles } from "./world-tiles.js";
+
+const _readinessPosition = new Vector3();
+const _readinessBounds = new Box3();
+const LOD_RANGE_RECORD_BYTES = 8;
 
 export { bundleSafeMaterial } from "./world-bundle-safety.js";
 
@@ -552,6 +566,9 @@ export class WorldCells extends Group implements IComputeDriven {
   #lodBiasToldAt: number;
 
   readonly #render: CellRender;
+  readonly #onPublication: IWorldCellsInit["onPublication"];
+  readonly #readinessFrustum = new Frustum();
+  readonly #readinessProjection = new Matrix4();
   readonly #prewarm: CellPrewarm;
   readonly #chunks: CellChunks;
   readonly #impostorState: CellImpostors;
@@ -559,6 +576,7 @@ export class WorldCells extends Group implements IComputeDriven {
 
   private constructor(init: IWorldCellsInit) {
     super();
+    this.#onPublication = init.onPublication;
     this.#prewarm = new CellPrewarm({
       released: () => this.#released,
       parent: () => this.parent,
@@ -751,6 +769,8 @@ export class WorldCells extends Group implements IComputeDriven {
         castShadowLevels: this.#castShadowLevels,
         extentBounds: this.#extentBounds,
         preserveAuthoredParts: this.#preserveAuthoredParts,
+        lodHysteresis: this.#lodHysteresis,
+        lodSpatial: this.#placementReach !== undefined,
         cellsPerCluster: this.#cellsPerCluster,
         cellsPerCullCell: this.#cellsPerCullCell,
         smallCasterMetres: this.#smallCasterMetres,
@@ -842,6 +862,7 @@ export class WorldCells extends Group implements IComputeDriven {
           init.impostors ??
           (impostorsRequested() &&
             !(init.preserveAuthoredParts === true || init.lodHysteresis !== undefined)),
+        preserveAuthoredParts: this.#preserveAuthoredParts,
         receiveShadow: this.#receiveShadow,
         candidates: [...candidates],
         cells: this.#cells,
@@ -854,6 +875,7 @@ export class WorldCells extends Group implements IComputeDriven {
       },
       {
         released: () => this.#released,
+        covered: () => this.#covered,
         renderer: () => this.#chunks.renderer,
         asset: (id) => this.#models.asset(id),
         hasAsset: (id) => this.#models.hasAsset(id),
@@ -869,6 +891,8 @@ export class WorldCells extends Group implements IComputeDriven {
         noteGate: (gate) => this.#noteGate(gate),
         retargetWideCasters: (asset) => this.#render.retargetWideCasters(asset),
         terminalLevelReady: (asset) => {
+          this.#models.ditherGates(asset);
+          this.#render.refreshLodMaterials(asset);
           if (this.#render.gpuOn) {
             const level = asset.levels.length - 1;
             const part = asset.levels[level]?.[0];
@@ -886,6 +910,7 @@ export class WorldCells extends Group implements IComputeDriven {
                 key,
                 this.#extentBounds,
                 "main",
+                level,
               );
               shared.smallCaster = this.#render.smallCaster(asset.id);
               this.#render.dressMesh(shared, this.#receiveShadow);
@@ -925,6 +950,7 @@ export class WorldCells extends Group implements IComputeDriven {
         markReleasedPart: (part) => {
           this.#models.markReleasedPart(part);
         },
+        drawnImpostorInstances: () => this.#render.impostorDrawn(),
       },
     );
     if (init.terrain === false) return;
@@ -969,19 +995,15 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   static async load(options: IWorldCellsLoadOptions): Promise<WorldCells> {
-    if (options.preserveAuthoredParts && options.impostors)
-      throw new Error("WorldCells preserveAuthoredParts requires impostors:false.");
     if (
       options.lodHysteresis !== undefined &&
       (!Number.isFinite(options.lodHysteresis) ||
         options.lodHysteresis < 0 ||
         options.lodHysteresis >= 1 ||
         options.gpuScene !== false ||
-        options.impostors === true)
+        (options.impostors === true && options.preserveAuthoredParts !== true))
     )
-      throw new Error(
-        "WorldCells lodHysteresis must be in [0, 1) with gpuScene:false and impostors:false.",
-      );
+      throw new Error("WorldCells lodHysteresis must be in [0, 1) with gpuScene:false.");
     const assets = options.assets ?? createAssetLoader();
     const baseUrl = options.url.slice(0, options.url.lastIndexOf("/") + 1);
     // Logical paths, which is what the loader keys its manifest by: the authored name with no
@@ -995,6 +1017,14 @@ export class WorldCells extends Group implements IComputeDriven {
         manifestPath,
         async (url) => (await (await fetchOk(url)).json()) as IWorldPackage,
       ));
+    if (
+      options.preserveAuthoredParts &&
+      options.impostors &&
+      !Object.values(manifest.assets).some((asset) => asset.impostorDistance !== undefined)
+    )
+      throw new Error(
+        "WorldCells preserveAuthoredParts with impostors requires an authored impostorDistance.",
+      );
     const placements =
       options.data?.placements ??
       (await loadLogical(assets, resolveRelative(logicalBase, manifest.placements), async (url) =>
@@ -1175,6 +1205,7 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   update(renderer?: IRendererLike, camera?: Camera): void {
     if (this.#released) return;
+    this.#render.updateLodEye(this.#follow.position.x, this.#followY(), this.#follow.position.z);
     // Kept for the chunk warm-up below: a chunk is loaded asynchronously and compiled when it
     // arrives, which can be a frame or a loading screen after the frame that gave us these.
     if (renderer !== undefined) this.#chunks.renderer = renderer;
@@ -1577,6 +1608,7 @@ export class WorldCells extends Group implements IComputeDriven {
       instances: this.#instances,
       loadsInFlight: this.#models.loadsInFlight,
       loadsQueued: this.#models.loadsQueued,
+      admissionBacklog: this.#backlog(),
       mainCull: this.#render.mainCullStats(),
       // Minted meshes still owed a first draw, not minted meshes. The two used to be the same
       // number, so a loading bar read minting as the whole of the prewarm and then stood still for
@@ -1614,25 +1646,61 @@ export class WorldCells extends Group implements IComputeDriven {
 
   /** Completed content intersecting a square around a fixed spawn, in world metres. */
   readinessAt(
-    position: { readonly x: number; readonly z: number },
+    position: Camera | { readonly x: number; readonly z: number },
     radius = 0,
   ): IWorldRegionReadiness {
+    const camera = "isCamera" in position && position.isCamera ? position : undefined;
+    if (camera !== undefined) {
+      camera.updateMatrixWorld(true);
+      if (
+        ![...camera.projectionMatrix.elements, ...camera.matrixWorldInverse.elements].every(
+          Number.isFinite,
+        )
+      )
+        throw new Error("WorldCells readiness requires a finite camera projection and transform.");
+      this.#readinessFrustum.setFromProjectionMatrix(
+        this.#readinessProjection.multiplyMatrices(
+          camera.projectionMatrix,
+          camera.matrixWorldInverse,
+        ),
+        camera.coordinateSystem,
+      );
+    }
+    const point = camera
+      ? camera.getWorldPosition(_readinessPosition)
+      : (position as { readonly x: number; readonly z: number });
     if (
-      !Number.isFinite(position.x) ||
-      !Number.isFinite(position.z) ||
+      !Number.isFinite(point.x) ||
+      !Number.isFinite(point.z) ||
       !Number.isFinite(radius) ||
       radius < 0
     )
       throw new Error("WorldCells readiness requires finite coordinates and a nonnegative radius.");
-    const lowX = Math.floor((position.x - radius - this.#minX) / this.#cellSize);
-    const highX = Math.floor((position.x + radius - this.#minX) / this.#cellSize);
-    const lowZ = Math.floor((position.z - radius - this.#minZ) / this.#cellSize);
-    const highZ = Math.floor((position.z + radius - this.#minZ) / this.#cellSize);
+    const lowX = Math.floor((point.x - radius - this.#minX) / this.#cellSize);
+    const highX = Math.floor((point.x + radius - this.#minX) / this.#cellSize);
+    const lowZ = Math.floor((point.z - radius - this.#minZ) / this.#cellSize);
+    const highZ = Math.floor((point.z + radius - this.#minZ) / this.#cellSize);
     let requiredCells = 0;
     let loadedCells = 0;
     let failures = 0;
+    let requiredTerrainTiles = 0;
+    let loadedTerrainTiles = 0;
     for (const cell of this.#cells) {
-      if (cell.x < lowX || cell.x > highX || cell.z < lowZ || cell.z > highZ) continue;
+      if (camera === undefined) {
+        if (cell.x < lowX || cell.x > highX || cell.z < lowZ || cell.z > highZ) continue;
+      } else {
+        _readinessBounds.min.set(
+          this.#minX + cell.x * this.#cellSize,
+          this.#manifest.terrain.heightMin - 16,
+          this.#minZ + cell.z * this.#cellSize,
+        );
+        _readinessBounds.max.set(
+          this.#minX + (cell.x + 1) * this.#cellSize,
+          this.#manifest.terrain.heightMax + 64,
+          this.#minZ + (cell.z + 1) * this.#cellSize,
+        );
+        if (!this.#readinessFrustum.intersectsBox(_readinessBounds)) continue;
+      }
       requiredCells++;
       const resident = this.#resident.get(cellKey(cell.x, cell.z));
       if (resident && this.#cellLoaded(resident)) loadedCells++;
@@ -1640,19 +1708,30 @@ export class WorldCells extends Group implements IComputeDriven {
       for (const run of cell.runs)
         if (this.#models.asset(this.#canonical(run.asset))?.failed) failures++;
     }
-    const terrain = this.#terrain?.readinessAt(position, radius) ?? { required: 0, loaded: 0 };
+    if (camera !== undefined) {
+      const terrain = this.#terrain?.readinessInView(camera, [
+        this.#manifest.terrain.heightMin,
+        this.#manifest.terrain.heightMax,
+      ]) ?? { required: 0, loaded: 0 };
+      requiredTerrainTiles = terrain.required;
+      loadedTerrainTiles = terrain.loaded;
+    } else {
+      const terrain = this.#terrain?.readinessAt(point, radius) ?? { required: 0, loaded: 0 };
+      requiredTerrainTiles = terrain.required;
+      loadedTerrainTiles = terrain.loaded;
+    }
     return {
       requiredCells,
       loadedCells,
-      requiredTerrainTiles: terrain.required,
-      loadedTerrainTiles: terrain.loaded,
+      requiredTerrainTiles,
+      loadedTerrainTiles,
       failures,
       cancelled: this.#released,
       ready:
         !this.#released &&
         failures === 0 &&
         loadedCells === requiredCells &&
-        terrain.loaded === terrain.required,
+        loadedTerrainTiles === requiredTerrainTiles,
     };
   }
 
@@ -1771,6 +1850,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // The batches `#drainShared` just retired. Their geometry and material were released by the
     // refcount path above, which is why they are disposed and not reused.
     this.#render.releaseRetired();
+    this.#render.releaseLodMaterials();
     // A world torn down mid-prewarm must not leave a game awaiting its gate.
     this.#prewarm.settleDisposal();
     drainMeshPool();
@@ -1813,7 +1893,8 @@ export class WorldCells extends Group implements IComputeDriven {
       const key = cellKey(candidate.cell.x, candidate.cell.z);
       if (this.#resident.has(key)) continue;
       const instances = candidate.cell.runs.reduce((total, run) => total + run.count, 0);
-      const bytes = instances * PLACEMENT_RECORD_BYTES;
+      const rangeRoots = this.#lodHysteresis > 0 && !this.#render.gpuOn ? instances : 0;
+      const bytes = instances * PLACEMENT_RECORD_BYTES + rangeRoots * LOD_RANGE_RECORD_BYTES * 2;
       // After a jump, a cell the one-ring hysteresis above kept is not wanted, so it yields its share
       // of the budgets to one that is. Without this the budgets stayed full of the ring the camera
       // jumped from and the cells around it were refused until it moved again.
@@ -1945,6 +2026,7 @@ export class WorldCells extends Group implements IComputeDriven {
       asset,
       batches: undefined,
       boxes: undefined,
+      lodRanges: undefined,
       cell,
       force,
       gpuByLevel: undefined,
@@ -1993,6 +2075,9 @@ export class WorldCells extends Group implements IComputeDriven {
       if (this.#render.meshStalled) break;
       // A finished build leaves the queue at this index, so the next one is served without a skip.
       if (finished) {
+        for (const entry of job.fresh)
+          if (entry.batch.count > 0 && entry.shadowBounds !== undefined)
+            this.#onPublication?.(entry.shadowBounds);
         job.cell.completedRuns.add(job.run);
         this.#forget(index, job);
         // A camera that moved during this bounded build may already have consumed the global
@@ -2042,6 +2127,8 @@ export class WorldCells extends Group implements IComputeDriven {
     }
     if (job.next < job.run.count) {
       job.batches ??= newBatches(job.asset);
+      if (this.#lodHysteresis > 0 && job.asset.distances.length > 1)
+        job.lodRanges ??= job.batches.map((levels) => levels.map(() => []));
       // One box per `(level, part)` beside the batches it measures, so the swap that hands the
       // records to the renderer can name where they are; see `#addPlacements`.
       job.boxes ??= newBoxes(job.batches);
@@ -2131,6 +2218,21 @@ export class WorldCells extends Group implements IComputeDriven {
         level = previous;
         this.#placementLevels[record] = level;
       }
+      const selected = [level];
+      if (this.#lodHysteresis > 0) {
+        const d = biasedLodDistance(distance);
+        for (let adjacent = 0; adjacent < asset.levels.length; adjacent++) {
+          if (adjacent === level) continue;
+          const near = asset.distances[adjacent] ?? 0;
+          const far = asset.distances[adjacent + 1] ?? Number.POSITIVE_INFINITY;
+          const slack =
+            Math.max(near, Number.isFinite(far) ? far : near) * this.#lodHysteresis +
+            (asset.distances[1] ?? 6) / 8;
+          if (d >= near - slack && d <= far + slack) selected.push(adjacent);
+        }
+      }
+      const minPublished = Math.min(...selected);
+      const maxPublished = Math.max(...selected);
       // The record's own world bounds: the placement widened by the asset's authored bounds at the
       // scale it is drawn at. Read here because this loop already holds the placement and the scale,
       // and it is the one number the shadow levels' invalidation is tested against — the cell box is
@@ -2140,69 +2242,73 @@ export class WorldCells extends Group implements IComputeDriven {
       // at the placement root: the parts' own offsets are baked into the atlas, so composing a source
       // part's offset again would apply it twice. One root record per placement, beside the per-part
       // batches and read only by the wide half; see `ICellBatch.wideRoot`.
-      if (wantRoots) {
-        job.roots ??= [];
-        const roots = job.roots;
-        let root = roots[level];
-        if (root === undefined) {
-          const anchor = asset.levels[level]?.[0];
-          if (anchor !== undefined) {
-            root = new InstancedBatch({ geometry: anchor.geometry, material: anchor.material });
-            roots[level] = root;
+      for (level of selected) {
+        if (wantRoots) {
+          job.roots ??= [];
+          const roots = job.roots;
+          let root = roots[level];
+          if (root === undefined) {
+            const anchor = asset.levels[level]?.[0];
+            if (anchor !== undefined) {
+              root = new InstancedBatch({ geometry: anchor.geometry, material: anchor.material });
+              roots[level] = root;
+            }
           }
+          root?.add(this.#matrix);
         }
-        root?.add(this.#matrix);
-      }
-      // The GPU scene's source record for this placement: the placement's own transform, the level it
-      // reached, and a sphere the dispatch tests against the camera's planes. The part offset is the
-      // key's own, so one record serves every part of the level — see `#placeSources`.
-      if (this.#render.gpuOn) {
-        const list = job.sources ?? [];
-        job.sources = list;
-        // The sphere is the asset's authored bounds *as placed*, centred where the bounds' centre
-        // lands under the placement's own transform: a sphere at the placement instead is not a
-        // bound of the placement, and every prop whose model does not straddle the origin lost the
-        // half of itself that reaches away from it — a post, a stump, a fern, all of them culled at
-        // the edge of the view with their bases outside it. The CPU path's own gate is the cell's box
-        // over the same widened bounds, and it is conservative in exactly the way this is now. The
-        // centre is the matrix applied to the authored centre, so the placement's quaternion rotates
-        // it: composing the offsets by hand dropped the rotation and put a turned off-centre prop's
-        // sphere where the unturned one would be. The radius is rotation-invariant and takes the
-        // scale alone, which is uniform.
-        const centre = this.#sourceCentre
-          .set(
-            ((bounds.min[0] as number) + (bounds.max[0] as number)) * 0.5,
-            ((bounds.min[1] as number) + (bounds.max[1] as number)) * 0.5,
-            ((bounds.min[2] as number) + (bounds.max[2] as number)) * 0.5,
-          )
-          .applyMatrix4(this.#matrix);
-        list.push({
-          level,
-          matrix: this.#matrix.clone(),
-          // `boundsRadius` is already the asset's authored bounds radius (half the diagonal), so the
-          // placement's sphere radius is that times its own uniform scale — halving it again put the
-          // sphere inside the prop and culled the half of it that reaches away from the placement.
-          radius: boundsRadius * Math.abs(scale),
-          // The magnitude, finite-sanitised: the dispatch's impostor gate takes `|scale|` exactly as
-          // `levelAtGates` does, so a mirrored placement reaches the atlas the same way.
-          scale: Number.isFinite(scale) ? Math.abs(scale) : 1,
-          x: centre.x,
-          y: centre.y,
-          z: centre.z,
-        });
-      }
-      // Authored bounds include model-part offsets; apply the whole placement transform so
-      // rotated, mirrored and off-centre casters cannot fall outside visibility/shadow regions.
-      this.#boundsAt(bounds, this.#matrix);
-      const parts = asset.levels[level] as readonly IAssetPart[];
-      const levelBatches = job.batches?.[level] as InstancedBatch[];
-      const levelBoxes = job.boxes?.[level] as Box3[] | undefined;
-      for (const [part, entry] of parts.entries()) {
-        this.#instance.multiplyMatrices(this.#matrix, entry.local);
-        (levelBatches[part] as InstancedBatch).add(this.#instance);
-        const box = levelBoxes?.[part];
-        if (box === undefined) continue;
-        box.union(this.#recordBounds);
+        // The GPU scene's source record for this placement: the placement's own transform, the level it
+        // reached, and a sphere the dispatch tests against the camera's planes. The part offset is the
+        // key's own, so one record serves every part of the level — see `#placeSources`.
+        if (this.#render.gpuOn) {
+          const list = job.sources ?? [];
+          job.sources = list;
+          // The sphere is the asset's authored bounds *as placed*, centred where the bounds' centre
+          // lands under the placement's own transform: a sphere at the placement instead is not a
+          // bound of the placement, and every prop whose model does not straddle the origin lost the
+          // half of itself that reaches away from it — a post, a stump, a fern, all of them culled at
+          // the edge of the view with their bases outside it. The CPU path's own gate is the cell's box
+          // over the same widened bounds, and it is conservative in exactly the way this is now. The
+          // centre is the matrix applied to the authored centre, so the placement's quaternion rotates
+          // it: composing the offsets by hand dropped the rotation and put a turned off-centre prop's
+          // sphere where the unturned one would be. The radius is rotation-invariant and takes the
+          // scale alone, which is uniform.
+          const centre = this.#sourceCentre
+            .set(
+              ((bounds.min[0] as number) + (bounds.max[0] as number)) * 0.5,
+              ((bounds.min[1] as number) + (bounds.max[1] as number)) * 0.5,
+              ((bounds.min[2] as number) + (bounds.max[2] as number)) * 0.5,
+            )
+            .applyMatrix4(this.#matrix);
+          list.push({
+            level,
+            matrix: this.#matrix.clone(),
+            // `boundsRadius` is already the asset's authored bounds radius (half the diagonal), so the
+            // placement's sphere radius is that times its own uniform scale — halving it again put the
+            // sphere inside the prop and culled the half of it that reaches away from the placement.
+            radius: boundsRadius * Math.abs(scale),
+            // The magnitude, finite-sanitised: the dispatch's impostor gate takes `|scale|` exactly as
+            // `levelAtGates` does, so a mirrored placement reaches the atlas the same way.
+            scale: Number.isFinite(scale) ? Math.abs(scale) : 1,
+            x: centre.x,
+            y: centre.y,
+            z: centre.z,
+          });
+        }
+        // Authored bounds include model-part offsets; apply the whole placement transform so
+        // rotated, mirrored and off-centre casters cannot fall outside visibility/shadow regions.
+        this.#boundsAt(bounds, this.#matrix);
+        const parts = asset.levels[level] as readonly IAssetPart[];
+        const levelBatches = job.batches?.[level] as InstancedBatch[];
+        const levelBoxes = job.boxes?.[level] as Box3[] | undefined;
+        for (const [part, entry] of parts.entries()) {
+          this.#instance.multiplyMatrices(this.#matrix, entry.local);
+          (levelBatches[part] as InstancedBatch).add(this.#instance);
+          const range = job.lodRanges?.[level]?.[part];
+          if (range !== undefined) range.push(minPublished, maxPublished);
+          const box = levelBoxes?.[part];
+          if (box === undefined) continue;
+          box.union(this.#recordBounds);
+        }
       }
     }
   }
@@ -2251,6 +2357,9 @@ export class WorldCells extends Group implements IComputeDriven {
         lastFilterX: job.filterX,
         lastFilterZ: job.filterZ,
         level,
+        lodRanges: job.lodRanges?.[level]?.[part]?.length
+          ? Float32Array.from(job.lodRanges[level]?.[part] ?? [])
+          : undefined,
         part,
         run: job.run,
         segment: -1,

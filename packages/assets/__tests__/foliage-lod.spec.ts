@@ -465,3 +465,257 @@ function vertexAlphaDocument(alpha: number): Document {
     );
   return document;
 }
+
+it("writes a standalone far crown with whole cards and all authored attributes", async () => {
+  const { thinFoliageCards } = await import("../src/lod/generate.js");
+  const document = await readWithLod(await readFile(FIXTURE));
+  await convertFoliageCutout(document);
+  const before = document
+    .getRoot()
+    .listMeshes()
+    .flatMap((mesh) => mesh.listPrimitives())
+    .map((primitive) => ({
+      primitive,
+      count: primitive.getIndices()?.getCount(),
+      semantics: primitive.listSemantics(),
+      attributes: new Map(
+        primitive
+          .listSemantics()
+          .map((semantic) => [
+            semantic,
+            Array.from(primitive.getAttribute(semantic)?.getArray() ?? []),
+          ]),
+      ),
+    }));
+  const result = thinFoliageCards(document, 0.14);
+  expect(result).toBeGreaterThan(0);
+  for (const { primitive, count, semantics, attributes } of before) {
+    expect(primitive.listSemantics()).toEqual(semantics);
+    for (const semantic of semantics) {
+      const original = attributes.get(semantic) ?? [];
+      const accessor = primitive.getAttribute(semantic) as Accessor;
+      const current = Array.from(accessor.getArray() ?? []);
+      expect(current.slice(0, original.length)).toEqual(original);
+      if (semantic === "POSITION") continue;
+      const size = accessor.getElementSize();
+      for (let at = original.length; at < current.length; at += size) {
+        const copied = current.slice(at, at + size);
+        let matched = false;
+        for (let source = 0; source < original.length; source += size)
+          if (copied.every((value, i) => value === original[source + i])) {
+            matched = true;
+            break;
+          }
+        expect(matched).toBe(true);
+      }
+    }
+
+    if (primitive.getMaterial()?.getAlphaMode() !== "MASK")
+      expect(primitive.getIndices()?.getCount()).toBe(count);
+    else {
+      expect((primitive.getIndices() as Accessor).getCount() % 6).toBe(0);
+      expect((primitive.getIndices() as Accessor).getCount()).toBeLessThan(count as number);
+      const positionCount = (primitive.getAttribute("POSITION") as Accessor).getCount();
+      for (const semantic of semantics)
+        expect((primitive.getAttribute(semantic) as Accessor).getCount()).toBe(positionCount);
+    }
+  }
+});
+
+it.each([0, 1, -0.1, Number.NaN, Number.POSITIVE_INFINITY])(
+  "rejects invalid standalone card keep ratio %s",
+  async (ratio) => {
+    const { thinFoliageCards } = await import("../src/lod/generate.js");
+    expect(() => thinFoliageCards(new Document(), ratio)).toThrow(/keepRatio/);
+  },
+);
+
+/** A MASK card set: one ten-triangle fan too large to thin beside `cards` whole two-triangle quads. */
+function fanBesideCardsDocument(cards: number): Document {
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const positions: number[] = [0, 0, 0];
+  const normals: number[] = [0, 1, 0];
+  const rim = 11;
+  for (let vertex = 0; vertex < rim; vertex += 1) {
+    const angle = (vertex / rim) * Math.PI * 2;
+    positions.push(Math.cos(angle), 0, Math.sin(angle));
+    normals.push(0, 1, 0);
+  }
+  // Ten fan triangles over the card cap: one connected component that cannot be a card.
+  const indices: number[] = [];
+  for (let triangle = 0; triangle < 10; triangle += 1) indices.push(0, 1 + triangle, 2 + triangle);
+  // Separate quads, clustered so one grid cell holds them all.
+  for (let card = 0; card < cards; card += 1) {
+    const base = positions.length / 3;
+    const x = 2 + (card % 8) * 0.02;
+    const z = Math.floor(card / 8) * 0.02;
+    const size = 0.01;
+    positions.push(x, 0, z, x + size, 0, z, x + size, 0, z + size, x, 0, z + size);
+    for (let corner = 0; corner < 4; corner += 1) normals.push(0, 1, 0);
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  // Original vertex IDs, copied onto every appended card copy, so derived indices map back to source.
+  const source = Float32Array.from({ length: positions.length / 3 }, (_, vertex) => vertex);
+  const primitive = document
+    .createPrimitive()
+    .setAttribute(
+      "POSITION",
+      document
+        .createAccessor()
+        .setType("VEC3")
+        .setArray(Float32Array.from(positions))
+        .setBuffer(buffer),
+    )
+    .setAttribute(
+      "NORMAL",
+      document
+        .createAccessor()
+        .setType("VEC3")
+        .setArray(Float32Array.from(normals))
+        .setBuffer(buffer),
+    )
+    .setAttribute(
+      "_SOURCE_VERTEX",
+      document.createAccessor().setType("SCALAR").setArray(source).setBuffer(buffer),
+    )
+    .setIndices(
+      document
+        .createAccessor()
+        .setType("SCALAR")
+        .setArray(Uint32Array.from(indices))
+        .setBuffer(buffer),
+    )
+    .setMaterial(document.createMaterial("leaf").setAlphaMode("MASK").setAlphaCutoff(0.5));
+  document
+    .createScene()
+    .addChild(
+      document.createNode("leaves").setMesh(document.createMesh("leaves").addPrimitive(primitive)),
+    );
+  return document;
+}
+
+describe("whole-card thinning beside an unspendable component (PRD-618)", () => {
+  it("preserves an oversized component intact and still thins the eligible whole cards", async () => {
+    const { thinFoliageCards } = await import("../src/lod/generate.js");
+    const document = fanBesideCardsDocument(24);
+    const primitive = document.getRoot().listMeshes()[0]?.listPrimitives()[0];
+    if (primitive === undefined) throw new Error("no primitive");
+    const before = Array.from(primitive.getIndices()?.getArray() as ArrayLike<number>);
+    const lod0Vertices = (primitive.getAttribute("POSITION") as Accessor).getCount();
+    const normalsBefore = Array.from(
+      primitive.getAttribute("NORMAL")?.getArray() as ArrayLike<number>,
+    );
+    // The authored source IDs, before any copy is appended: appended copies never move these.
+    const sourceBefore = Array.from(
+      (primitive.getAttribute("_SOURCE_VERTEX") as Accessor).getArray() as ArrayLike<number>,
+    );
+
+    expect(thinFoliageCards(document, 0.14)).toBeGreaterThan(0);
+
+    const after = Array.from((primitive.getIndices() as Accessor).getArray() as ArrayLike<number>);
+    // A genuine saving: the derived level draws fewer triangles than LOD0.
+    expect(after.length).toBeLessThan(before.length);
+
+    // Map every derived index back to its source vertex ID, so a triangle is compared as authored.
+    const source = Array.from(
+      (primitive.getAttribute("_SOURCE_VERTEX") as Accessor).getArray() as ArrayLike<number>,
+    );
+    const drawn = new Set<string>();
+    for (let at = 0; at + 2 < after.length; at += 3)
+      drawn.add(
+        `${String(source[after[at] as number])},${String(source[after[at + 1] as number])},${String(source[after[at + 2] as number])}`,
+      );
+
+    // The oversized component survives verbatim, drawn from LOD0's own vertices, not a scaled copy.
+    for (let triangle = 0; triangle < 10; triangle += 1) {
+      const a = before[triangle * 3] as number;
+      const b = before[triangle * 3 + 1] as number;
+      const c = before[triangle * 3 + 2] as number;
+      expect(a).toBeLessThan(lod0Vertices);
+      expect(drawn.has(`${String(a)},${String(b)},${String(c)}`)).toBe(true);
+    }
+
+    // Each source quad contributes both its triangles or neither: no whole card is half-dropped.
+    const quads = (before.length / 3 - 10) / 2;
+    let whole = 0;
+    for (let quad = 0; quad < quads; quad += 1) {
+      const at = (10 + quad * 2) * 3;
+      const first = `${String(before[at])},${String(before[at + 1])},${String(before[at + 2])}`;
+      const second = `${String(before[at + 3])},${String(before[at + 4])},${String(before[at + 5])}`;
+      expect(drawn.has(first)).toBe(drawn.has(second));
+      if (drawn.has(first)) whole += 1;
+    }
+    expect(whole).toBeGreaterThan(0);
+    expect(whole).toBeLessThan(quads);
+
+    // Copies are only ever appended: the original attributes are untouched.
+    const normalsAfter = Array.from(
+      primitive.getAttribute("NORMAL")?.getArray() as ArrayLike<number>,
+    );
+    expect(normalsAfter.slice(0, normalsBefore.length)).toEqual(normalsBefore);
+    const sourceAfter = Array.from(
+      (primitive.getAttribute("_SOURCE_VERTEX") as Accessor).getArray() as ArrayLike<number>,
+    );
+    // The authored prefix is byte-for-byte the pre-thinning array; only copies follow it.
+    expect(sourceAfter.slice(0, sourceBefore.length)).toEqual(sourceBefore);
+  });
+
+  it("keeps preserved triangles on every rung and budgets the terminal target around them", async () => {
+    const { generateCardChain } = await import("../src/lod/cards.js");
+    const document = fanBesideCardsDocument(24);
+    const primitive = document.getRoot().listMeshes()[0]?.listPrimitives()[0];
+    if (primitive === undefined) throw new Error("no primitive");
+    const positions = Float32Array.from(
+      (primitive.getAttribute("POSITION") as Accessor).getArray() as ArrayLike<number>,
+    );
+    const indices = Uint32Array.from(
+      (primitive.getIndices() as Accessor).getArray() as ArrayLike<number>,
+    );
+    // The ten fan triangles verbatim: one component too large to be a card, so every rung must
+    // carry it unchanged at the front of its index buffer.
+    const fan = Array.from(indices.slice(0, 30));
+
+    // 24 cards clustered in one LOD0 cell: the ratio ladder floors at 6 cards (22 triangles with
+    // the preserved 10) and cannot reach 20, so only the terminal level can. It fits only when the
+    // preserved triangles are removed from its card budget.
+    const chain = generateCardChain(positions, indices, 4, 0, 1, [0.5, 0.25], 20);
+    expect(chain).not.toBeNull();
+    if (chain === null) return;
+    expect(chain.counts.length).toBeGreaterThanOrEqual(3);
+    for (const buffer of chain.indices)
+      expect(Array.from(buffer.slice(0, fan.length))).toEqual(fan);
+    expect(chain.counts.at(-1) as number).toBeLessThanOrEqual(20);
+
+    // A target the preserved component already exceeds yields no compliant rung at all: the chain
+    // is exactly the one with no terminal, never a level that silently overshoots the target.
+    const ladder = generateCardChain(positions, indices, 4, 0, 1, [0.5, 0.25]);
+    const exhausted = generateCardChain(positions, indices, 4, 0, 1, [0.5, 0.25], 6);
+    expect(exhausted?.counts).toEqual(ladder?.counts);
+  });
+
+  it("rejects when every component is too large to be a card", async () => {
+    const { thinFoliageCards } = await import("../src/lod/generate.js");
+    // The same fan with no eligible card beside it: nothing can be spent, so the primitive fails
+    // closed rather than pretending a level exists.
+    expect(() => thinFoliageCards(fanBesideCardsDocument(0), 0.14)).toThrow(/whole cards/);
+  });
+
+  it("still refuses a non-static card set", async () => {
+    const { thinFoliageCards } = await import("../src/lod/generate.js");
+    const document = fanBesideCardsDocument(24);
+    const primitive = document.getRoot().listMeshes()[0]?.listPrimitives()[0];
+    const position = primitive?.getAttribute("POSITION");
+    if (primitive === undefined || position === null || position === undefined)
+      throw new Error("no primitive");
+    primitive.setAttribute(
+      "JOINTS_0",
+      document
+        .createAccessor()
+        .setType("VEC4")
+        .setArray(new Float32Array(position.getCount() * 4))
+        .setBuffer(document.getRoot().listBuffers()[0] as ReturnType<Document["createBuffer"]>),
+    );
+    expect(() => thinFoliageCards(document, 0.14)).toThrow(/static triangle card sets/);
+  });
+});

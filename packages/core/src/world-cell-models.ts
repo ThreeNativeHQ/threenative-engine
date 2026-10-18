@@ -235,6 +235,7 @@ async function assetSignature(
       parts.push(`${await url(lod.glb)}@${String(lod.distance)}`);
     parts.push(
       definition.maxDistance === undefined ? "" : String(definition.maxDistance),
+      definition.impostorDistance === undefined ? "" : String(definition.impostorDistance),
       definition.bounds.min.join(","),
       definition.bounds.max.join(","),
     );
@@ -632,13 +633,7 @@ export class CellModels {
       resolvedGlb: "",
       spilled: [],
     };
-    if (this.#lodHysteresis > 0 && definition.lods !== undefined) {
-      asset.gates = [
-        ...asset.gates,
-        ...asset.distances.slice(1).map((gate) => gate * (1 - this.#lodHysteresis)),
-      ];
-      asset.threshold = Math.min(...asset.gates);
-    }
+    this.ditherGates(asset);
     this.#assets.set(id, asset);
     for (const gate of asset.gates) this.#host.noteGate(gate);
     return asset;
@@ -841,10 +836,27 @@ export class CellModels {
     if (chained === undefined) return levels;
     asset.distances = chained.distances;
     asset.gates = [...chained.distances.slice(1), ...asset.gates];
-    for (const gate of asset.gates) this.#host.noteGate(gate);
-    asset.threshold = asset.gates.length === 0 ? undefined : Math.min(...asset.gates);
+    this.ditherGates(asset);
     this.#reportChainLod(asset.id, chained);
     return chained.levels;
+  }
+
+  ditherGates(asset: IAssetState): void {
+    const gates = new Set(asset.gates);
+    if (this.#lodHysteresis > 0) {
+      for (let level = 0; level < asset.distances.length; level += 1) {
+        const near = asset.distances[level] ?? 0;
+        const far = asset.distances[level + 1] ?? Number.POSITIVE_INFINITY;
+        const slack =
+          Math.max(near, Number.isFinite(far) ? far : near) * this.#lodHysteresis +
+          (asset.distances[1] ?? 6) / 8;
+        if (near > slack) gates.add(near - slack);
+        if (Number.isFinite(far)) gates.add(far + slack);
+      }
+    }
+    asset.gates = [...gates];
+    asset.threshold = asset.gates.length === 0 ? undefined : Math.min(...asset.gates);
+    for (const gate of asset.gates) this.#host.noteGate(gate);
   }
 
   /**

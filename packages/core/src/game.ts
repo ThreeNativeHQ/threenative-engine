@@ -23,6 +23,7 @@ import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js
 import { PhysicsInterpolation } from "./interpolation.js";
 import {
   reportSceneLoadFailure,
+  reportLaunchFailure,
   watchDeviceLoss,
   watchStartupStall,
 } from "./launch-diagnostics.js";
@@ -73,6 +74,7 @@ import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
 import { RenderCameraCull } from "./render-camera-cull.js";
 import { RenderPassBudget } from "./render-pass-budget.js";
+import { VirtualShadowNode } from "./render/virtual-shadow.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import {
   resolveMatrixWorldMode,
@@ -1148,10 +1150,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     let worldRendered = false;
     let loadingFramePresented = false;
     let markProjectionSettled: () => void = () => undefined;
-    const projectionReady = new Promise<void>((resolve) => {
+    let rejectProjection: (error: unknown) => void = () => undefined;
+    const projectionReady = new Promise<void>((resolve, reject) => {
       markProjectionSettled = resolve;
+      rejectProjection = reject;
     });
+    void projectionReady.catch(() => undefined);
+    const startupShadows = new Set<VirtualShadowNode>();
     const startupReadiness = new StartupReadiness({
+      settled: () => worldRendered && [...startupShadows].every((node) => node.settled),
       /**
        * The second warm-up: everything a game attached while it held startup.
        *
@@ -1171,6 +1178,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         await warmUp("TN_STARTUP_WARMUP_HELD", Math.round(STARTUP_COMPILE_BUDGET_MS / 3), false);
       },
     });
+    this.#cleanup.push(() => startupReadiness.cancel());
     // Startup readiness does not wait on `ui-ready`, and cannot. The intent proves the page's
     // script ran, not that a pixel reached the screen, so waiting on it never closed the race it
     // was added for — it only made the losing side lose later, after up to 45 s of held frames.
@@ -1202,6 +1210,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       workProgress: () => assets.progress.settled + startupReadiness.workProgress,
       stallMs: STARTUP_STALL_MS,
     });
+    this.#cleanup.push(stopStallWatch);
     watchDeviceLoss(
       (
         renderer.raw as {
@@ -1214,28 +1223,40 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // framework cost" and "what the player waited for", and collapsing them is how a valley that
     // took 8.8 s to appear reported 1.5 s.
     void startupReadiness.whenFrameworkReady().then(() => {
+      if (this.#aborted) return;
       timeline.compileSettledMs ??= now();
       timeline.frameworkReadyMs ??= now();
     });
-    void startupReadiness.whenReady().then(() => {
-      stopStallWatch();
-      // A renderer without first-use compilation settles without running the compile closure
-      // below, so the settle stamp is guaranteed here at the latest.
-      timeline.compileSettledMs ??= now();
-      timeline.frameworkReadyMs ??= now();
-      timeline.readyMs ??= now();
-      projectionSettled = true;
-      markProjectionSettled();
-      // A host capturing a frame has no other way to know the world is on screen. Counting frames
-      // cannot express it: on a software rasteriser the gate resolves on its bounded window rather
-      // than on five in-budget frames, so a fast 300-frame run finishes before the world is shown
-      // and captures the loading state. The native screenshot path waits on this flag.
-      (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
-      // Again at ready: a world that streams its foliage in under `startup.hold` has none at entry.
-      const unlit = unlitFoliageWarning(threeScene);
-      if (unlit !== undefined)
-        console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
-    });
+    void startupReadiness.whenReady().then(
+      () => {
+        if (this.#aborted) return;
+        stopStallWatch();
+        // A renderer without first-use compilation settles without running the compile closure
+        // below, so the settle stamp is guaranteed here at the latest.
+        timeline.compileSettledMs ??= now();
+        timeline.frameworkReadyMs ??= now();
+        timeline.readyMs ??= now();
+        projectionSettled = true;
+        for (const node of startupShadows) node.startupCovered = false;
+        startupShadows.clear();
+        markProjectionSettled();
+        // A host capturing a frame has no other way to know the world is on screen. Counting frames
+        // cannot express it: on a software rasteriser the gate resolves on its bounded window rather
+        // than on five in-budget frames, so a fast 300-frame run finishes before the world is shown
+        // and captures the loading state. The native screenshot path waits on this flag.
+        (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
+        // Again at ready: a world that streams its foliage in under `startup.hold` has none at entry.
+        const unlit = unlitFoliageWarning(threeScene);
+        if (unlit !== undefined)
+          console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
+      },
+      (error: unknown) => {
+        if (this.#aborted) return;
+        stopStallWatch();
+        rejectProjection(error);
+        reportLaunchFailure({ kind: "stalled", message: String(error) });
+      },
+    );
     const warmUp = async (marker: string, budgetMs: number, stamp: boolean): Promise<void> => {
       if (this.#aborted || this.#renderer === undefined) return;
       let report: IWarmUpReport | undefined;
@@ -1676,6 +1697,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       },
       onRender: (alpha) => {
         observeCompilation();
+        if (!projectionSettled) {
+          for (const node of startupShadows) node.startupCovered = false;
+          startupShadows.clear();
+          threeScene.traverseVisible((object) => {
+            if (!object.castShadow || !object.visible) return;
+            const node: unknown = Reflect.get(object, "shadow")?.shadowNode;
+            if (node instanceof VirtualShadowNode) {
+              startupShadows.add(node);
+              node.startupCovered = startupCoverActive();
+            }
+          });
+        }
         renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately

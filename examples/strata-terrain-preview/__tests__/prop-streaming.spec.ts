@@ -323,10 +323,10 @@ it("retains every unlimited canopy placement and keeps prewarm pending until sce
   expect(streamed.worlds.every((world) => world.released)).toBe(true);
 });
 
-it("preserves authored LOD return hysteresis through an oscillating boundary walk and eviction/revisit", async () => {
+it("submits authored neighbor LODs with complementary masks through a boundary walk and eviction/revisit", async () => {
   const placement = {
-    id: "boulder:boundary",
-    asset: "boulder",
+    id: "cliff:boundary",
+    asset: "cliff",
     position: [0, 0, 0],
     rotation: 0,
     scale: 1,
@@ -341,7 +341,7 @@ it("preserves authored LOD return hysteresis through an oscillating boundary wal
     variant: 0,
     level,
   }));
-  const parts = new Map([[`boulder:${variantFor(placement, "boulder")}`, levels]]);
+  const parts = new Map([[`cliff:${variantFor(placement, "cliff")}`, levels]]);
   const materials = { bark: material } as never;
   const follow = { position: new Vector3() };
   const streamed = await createStreamedProps({
@@ -354,39 +354,53 @@ it("preserves authored LOD return hysteresis through an oscillating boundary wal
     whileCurrent: () => true,
   });
   if (!streamed) throw new Error("cancelled");
-  const active = (meshes: InstancedMesh[]) =>
-    meshes
-      .filter((mesh) => mesh.count > 0)
-      .map((mesh) => Array.from(mesh.geometry.getAttribute("position").array));
+
   try {
-    for (const [distance, level] of [
-      [0, 0],
-      [65, 1],
-      [500, null],
-      [55, 1],
-      [61, 1],
-      [59, 1],
-      [61, 1],
-      [59, 1],
-      [47, 0],
-      [155, 2],
-      [140, 2],
-      [151, 2],
-      [149, 2],
-      [119, 1],
-      [47, 0],
-    ] as const) {
+    for (const distance of [
+      0, 65, 500, 2000, 55, 61, 59, 61, 59, 47, 155, 140, 151, 149, 119, 47, 0, 220,
+    ]) {
       follow.position.x = distance;
       for (let frame = 0; frame < 100; frame++) {
         for (const world of streamed.worlds) world.update();
         await Promise.resolve();
       }
-      const chosen = level === null ? undefined : levels[level];
-      if (level !== null) assert(chosen);
-      expect(active(streamed.meshes), `distance ${distance}`).toEqual(
-        chosen ? [Array.from(chosen.geometry.getAttribute("position").array)] : [],
-      );
+      // CPU submission includes headroom beyond the shader fade; this is not pixel proof.
+      const submitted = streamed.meshes.filter((mesh) => mesh.count > 0);
+      const expected =
+        distance >= 500
+          ? []
+          : distance < 22.5
+            ? [0]
+            : distance <= 79.5
+              ? [0, 1]
+              : distance < 112.5
+                ? [1]
+                : distance <= 187.5
+                  ? [1, 2]
+                  : [2];
+      expect(
+        submitted.map((mesh) => levels.findIndex((part) => part.geometry === mesh.geometry)).sort(),
+        `submitted authored levels at ${distance}`,
+      ).toEqual(expected);
+      for (const mesh of submitted) {
+        expect(mesh.count).toBe(1);
+        const surface = mesh.material as import("three/webgpu").NodeMaterial;
+        expect(surface.maskShadowNode).toBe(surface.maskNode);
+        const comparisons: string[] = [];
+        const values: unknown[] = [];
+        surface.maskNode?.traverse((node) => {
+          const op = Reflect.get(node, "op");
+          if (op === "<" || op === ">=") comparisons.push(op);
+          if (Reflect.get(node, "isUniformNode")) values.push(Reflect.get(node, "value"));
+        });
+        const level = levels.findIndex((part) => part.geometry === mesh.geometry);
+        expect(comparisons).toEqual(level === 0 ? [">="] : level === 1 ? ["<", ">="] : ["<"]);
+        expect(values.some((value) => value instanceof Vector3 && value.x === distance)).toBe(true);
+        expect(values).toContain(1); // Unadapted distance bias.
+      }
     }
+    expect(streamed.stats().evictions).toBeGreaterThan(0);
+    expect(streamed.stats().failures).toBe(0);
   } finally {
     streamed.dispose();
   }
@@ -515,13 +529,44 @@ it("drains representative multi-part canopy cell admission without thousands of 
   });
   if (!streamed) throw new Error("cancelled");
   try {
-    for (let frame = 0; frame < 128; frame++) {
-      for (const world of streamed.worlds) world.update();
-      await Promise.resolve();
+    const cellSize = 128;
+    const cells = new Set(
+      placements.map(
+        (p) =>
+          `${Math.floor((p.position[0] + 256) / cellSize)},${Math.floor((p.position[2] + 256) / cellSize)}`,
+      ),
+    );
+    const levelRoles = parts.values().next().value?.length ?? 0;
+    const freshMeshes = cells.size * parts.size * levelRoles + 2 * parts.size * levelRoles;
+    expect(freshMeshes).toBeLessThanOrEqual(540);
+    // Two fresh meshes/update; allow eight microtask updates per cell for loading/publication.
+    const updateCap = Math.ceil(freshMeshes / 2) + cells.size * 8;
+    expect(updateCap).toBeLessThan(1000);
+    const timer = vi.spyOn(performance, "now").mockReturnValue(0);
+    try {
+      for (let frame = 0; frame < updateCap; frame++) {
+        for (const world of streamed.worlds) world.update();
+        await Promise.resolve();
+      }
+      expect(streamed.stats().admissionBacklog).toBe(0);
+      expect(streamed.stats().failures).toBe(0);
+      // Neighbor LOD submissions overlap. Count each authored placement/role once.
+      const instances = new Set<string>();
+      for (const mesh of streamed.meshes) {
+        const role = [...parts.values()]
+          .flat()
+          .find((part) => part.geometry === mesh.geometry)?.role;
+        expect(role).toBeDefined();
+        for (let i = 0; i < mesh.count; i++) {
+          const pose = new Matrix4();
+          mesh.getMatrixAt(i, pose);
+          instances.add(`${role}:${pose.elements.join(",")}`);
+        }
+      }
+      expect(instances.size).toBe(placements.length * 2);
+    } finally {
+      timer.mockRestore();
     }
-    expect(streamed.stats().admissionBacklog).toBe(0);
-    expect(streamed.stats().failures).toBe(0);
-    expect(streamed.meshes.reduce((n, m) => n + m.count, 0)).toBe(placements.length * 2);
   } finally {
     streamed.dispose();
   }
@@ -532,7 +577,10 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
   const { float } = await import("three/tsl");
   const materials = [0.2, 0.8, 0.5].map((opacity) => {
     const material = new MeshPhysicalNodeMaterial({ alphaTest: 0.4 });
+    material.color.setRGB(opacity, 0.3, 0.6);
     material.opacityNode = float(opacity);
+    material.maskNode = float(opacity).greaterThan(0.1);
+    material.maskShadowNode = float(opacity).greaterThan(0.15);
     return material;
   });
   const placements = [
@@ -587,7 +635,7 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
   if (!streamed) throw new Error("cancelled");
   new Group().add(...streamed.worlds);
   try {
-    for (const z of [0, 80, 0]) {
+    for (const z of [0, 60, 80, 0]) {
       follow.position.z = z;
       for (let i = 0; i < 200; i++) {
         for (const w of streamed.worlds) {
@@ -606,29 +654,49 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
         }
         await Promise.resolve();
       }
-      const active = (meshes: InstancedMesh[]) =>
-        meshes
-          .filter((m) => m.count > 0)
-          .map((m) => ({
-            material: (m.material as MeshBasicMaterial).uuid,
-            geometry: m.geometry.getAttribute("position").array.toString(),
-            count: m.count,
-          }));
-      const expected = (parts.values().next().value ?? [])
-        .filter((part) => part.level === (z > LOD_BANDS.mid ? 1 : 0))
-        .map((part) => ({
-          material: part.material?.uuid,
-          geometry: part.geometry.getAttribute("position").array.toString(),
-          count: placements.length,
-        }));
-      expect(active(streamed.meshes)).toEqual(expected);
+      const authored = parts.values().next().value;
+      if (!authored) throw new Error("Missing authored parts");
+      const expected = z === 0 ? authored.slice(0, 2) : z === 60 ? authored : authored.slice(2);
+      const active = (meshes: InstancedMesh[]) => meshes.filter((mesh) => mesh.count > 0);
+      const view = active(streamed.meshes);
+      expect(view.map((mesh) => mesh.geometry)).toEqual(expected.map((part) => part.geometry));
+      for (const mesh of view) {
+        const part = authored.find((part) => part.geometry === mesh.geometry);
+        if (!part?.material) throw new Error("Unauthored geometry");
+        const surface = mesh.material as typeof part.material;
+        expect(surface).not.toBe(part.material);
+        expect(surface.alphaTest).toBe(part.material.alphaTest);
+        expect(surface.color.equals(part.material.color)).toBe(true);
+        expect(surface.opacityNode).toBe(part.material.opacityNode);
+        expect(mesh.count).toBe(placements.length);
+        const viewMask = Reflect.get(surface.maskNode as object, "node");
+        const shadowMask = Reflect.get(surface.maskShadowNode as object, "node");
+        expect(Reflect.get(viewMask, "op")).toBe("&&");
+        expect(Reflect.get(viewMask, "aNode")).toBe(part.material.maskNode);
+        expect(Reflect.get(shadowMask, "op")).toBe("&&");
+        expect(Reflect.get(shadowMask, "aNode")).toBe(part.material.maskShadowNode);
+        expect(Reflect.get(viewMask, "bNode")).toBe(Reflect.get(shadowMask, "bNode"));
+      }
+      expect(new Set(view.map((mesh) => mesh.material)).size).toBe(expected.length);
       for (const layer of [28, 27]) {
         const casters: InstancedMesh[] = [];
         for (const world of streamed.worlds)
           world.traverse((node) => {
             if (node instanceof InstancedMesh && node.layers.isEnabled(layer)) casters.push(node);
           });
-        expect(active(casters)).toEqual(expected);
+        expect(
+          active(casters).map((mesh) => ({
+            geometry: mesh.geometry,
+            material: mesh.material,
+            count: mesh.count,
+          })),
+        ).toEqual(
+          view.map((mesh) => ({
+            geometry: mesh.geometry,
+            material: mesh.material,
+            count: mesh.count,
+          })),
+        );
       }
     }
   } finally {

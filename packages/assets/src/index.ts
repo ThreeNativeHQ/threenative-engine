@@ -275,3 +275,11 @@ export type {
   IWorldPackageAsset,
   IWorldPackageManifest,
 } from "./world/terrain-world.js";
+
+/**
+ * Build a standalone card-thinned foliage mesh, preserving opaque parts and vertex attributes.
+ * @situation prepare a far foliage mesh by thinning whole cards instead of triangles
+ * @constraint mutates the supplied document; rejects unsupported MASK topology and invalid ratios
+ * @example thinFoliageCards(document, 0.14);
+ */
+export { thinFoliageCards } from "./lod/generate.js";

@@ -15,7 +15,7 @@ import type {
 } from "./world-cell-data.js";
 import { PLACEMENT_RECORD_FLOATS, cullDistance, isAlphaFoliage } from "./world-cell-impostors.js";
 
-import { clusterOf } from "./world-cell-data.js";
+import { clusterOf, sameLodRanges } from "./world-cell-data.js";
 
 import {
   Box3,
@@ -30,12 +30,14 @@ import {
   Quaternion,
   Vector3,
 } from "three";
+import { renderGroup, uniform } from "three/tsl";
 import { BundleGroup } from "three/webgpu";
 
 import { lodChainOf, setLodBias } from "./model-lod.js";
 import type { OcclusionMode } from "./render/depth-pyramid.js";
 
 import { parkMesh } from "./render/mesh-pool.js";
+import { worldLodMaterial } from "./render/world-impostor-surface.js";
 import type { IRendererLike } from "./renderer.js";
 import { isStatic, markStatic } from "./static-transform.js";
 
@@ -289,6 +291,8 @@ interface ICellRenderSettings {
   readonly castShadowLevels: number;
   readonly extentBounds: Box3;
   readonly preserveAuthoredParts: boolean;
+  readonly lodHysteresis: number;
+  readonly lodSpatial: boolean;
   readonly cellsPerCluster: number;
   readonly cellsPerCullCell: number;
   readonly smallCasterMetres: number;
@@ -491,6 +495,15 @@ export class CellRender {
   readonly #bundleReason: string;
 
   readonly #preserveAuthoredParts: boolean;
+
+  readonly #lodHysteresis: number;
+  readonly #lodSpatial: boolean;
+
+  readonly #lodEye = uniform(new Vector3()).setGroup(renderGroup);
+
+  readonly #lodDistanceBias = uniform(1).setGroup(renderGroup);
+
+  readonly #lodMaterials = new Map<string, Material>();
 
   /** The resident ring has been handed to the scene once; see `#seedGpuSources`. */
   #gpuSeeded = false;
@@ -749,7 +762,10 @@ export class CellRender {
       const fresh = job.fresh[index] as ICellBatch;
       const at = job.replaced.findIndex(
         (old) =>
-          old.level === fresh.level && old.part === fresh.part && old.batch.equals(fresh.batch),
+          old.level === fresh.level &&
+          old.part === fresh.part &&
+          old.batch.equals(fresh.batch) &&
+          sameLodRanges(old.lodRanges, fresh.lodRanges),
       );
       if (at < 0) continue;
       const same = job.replaced.splice(at, 1)[0] as ICellBatch;
@@ -805,13 +821,15 @@ export class CellRender {
     }
     for (const entry of job.fresh) {
       cell.batches.push(entry);
-      if (entry.shared !== undefined) entry.shared.write(entry.segment, entry.batch);
+      if (entry.shared !== undefined)
+        entry.shared.write(entry.segment, entry.batch, entry.lodRanges);
       if (this.#gpuScene.on) entry.gpu = this.placeSources(job, entry);
-      if (entry.caster !== undefined) entry.caster.write(entry.casterSegment, entry.batch);
+      if (entry.caster !== undefined)
+        entry.caster.write(entry.casterSegment, entry.batch, entry.lodRanges);
       // The wide half draws the whole-asset impostor at the placement root when this entry kept one,
       // and the source part shape otherwise; see `ICellBatch.wideRoot`.
       if (entry.wide !== undefined)
-        entry.wide.write(entry.wideSegment, entry.wideRoot ?? entry.batch);
+        entry.wide.write(entry.wideSegment, entry.wideRoot ?? entry.batch, entry.lodRanges);
     }
     // A batch the walk just wrote to, cleared or compacted holds new records, so the shadow levels
     // that drew the old ones are stale. One flag, told at most once a second.
@@ -1277,6 +1295,7 @@ export class CellRender {
           name,
           this.#extentBounds,
           "key",
+          key.level,
         );
       }
       shared.rebind(part.geometry, part.material);
@@ -1406,12 +1425,80 @@ export class CellRender {
       level === entry.level
         ? { geometry: entry.batch.geometry, material: entry.batch.material }
         : (this.#host.asset(entry.asset)?.levels[level]?.[entry.part] as IAssetPart);
-    if (role === "wide")
-      return this.wideShape(this.#host.asset(entry.asset), level, entry.part, {
-        geometry: own.geometry,
-        material: own.material,
-      });
-    return { geometry: own.geometry, material: own.material };
+    const shape =
+      role === "wide"
+        ? this.wideShape(this.#host.asset(entry.asset), level, entry.part, {
+            geometry: own.geometry,
+            material: own.material,
+          })
+        : { geometry: own.geometry, material: own.material };
+    return {
+      ...shape,
+      material: this.#lodSurface(entry.asset, level, entry.part, shape.material),
+    };
+  }
+
+  #lodSurface(assetId: string, level: number, partIndex: number, source: Material): Material {
+    const asset = this.#host.asset(assetId);
+    const part = asset?.levels[level]?.[partIndex];
+    if (this.#lodHysteresis <= 0 || !asset || !part || asset.distances.length < 2) return source;
+    const publishedRanges = !this.#gpuScene.on;
+    const key = `${assetId}:${level}:${partIndex}:${asset.distances.length}:${publishedRanges ? 1 : 0}`;
+    let material = this.#lodMaterials.get(key);
+    if (material === undefined) {
+      material = worldLodMaterial(
+        source,
+        part.local,
+        asset.distances,
+        level,
+        this.#lodHysteresis,
+        this.#lodEye,
+        this.#lodDistanceBias,
+        this.#lodSpatial,
+        publishedRanges,
+      );
+      this.#lodMaterials.set(key, material);
+    }
+    return material;
+  }
+
+  updateLodEye(x: number, y: number, z: number): void {
+    this.#lodEye.value.set(x, y, z);
+  }
+
+  refreshLodMaterials(asset: IAssetState): void {
+    for (const shared of this.#shared.values()) {
+      if (!shared.mesh.name.startsWith(`${asset.id}:`)) continue;
+      const [levelText, partText] = shared.mesh.name.slice(asset.id.length + 1).split(":");
+      const level = Number(levelText);
+      const partIndex = Number(partText?.split("@")[0]);
+      const part = asset.levels[level]?.[partIndex];
+      if (part !== undefined) {
+        const material = this.#lodSurface(asset.id, level, partIndex, part.material);
+        if (
+          material.userData.tnPublishedLodRange === true &&
+          shared.mesh.geometry.getAttribute("tnPublishedLodRange") === undefined &&
+          shared.mesh.count === 0
+        )
+          shared.rebind(part.geometry, material);
+        else shared.mesh.material = material;
+        this.bundleOut(shared);
+        this.bundleIn(shared);
+      }
+    }
+  }
+
+  impostorDrawn(): number {
+    let drawn = 0;
+    for (const shared of this.#shared.values()) {
+      if (
+        shared.role === "main" &&
+        shared.mesh.visible &&
+        Reflect.get(shared.mesh.material, "userData")?.tnWholeAssetImpostor === true
+      )
+        drawn += shared.live;
+    }
+    return drawn;
   }
 
   /**
@@ -1462,8 +1549,20 @@ export class CellRender {
     level = entry.level,
   ): SharedBatch | undefined {
     const existing = this.#shared.get(key);
-    if (existing !== undefined) return existing;
+    if (existing !== undefined && this.#lodHysteresis === 0) return existing;
     const shape = this.shapeFor(entry, role, level);
+    if (existing !== undefined) {
+      if (
+        shape.material.userData.tnPublishedLodRange === true &&
+        existing.mesh.geometry.getAttribute("tnPublishedLodRange") === undefined &&
+        existing.mesh.count === 0
+      )
+        existing.rebind(shape.geometry, shape.material);
+      else existing.mesh.material = shape.material;
+      this.bundleOut(existing);
+      this.bundleIn(existing);
+      return existing;
+    }
     const smallCaster = this.smallCaster(assetId);
     // The batch released when this asset's last cell left the ring is the one to draw into again,
     // so the mesh keeps the uuid and the node three built for it. It costs no fresh allowance,
@@ -1498,6 +1597,7 @@ export class CellRender {
       key,
       this.#extentBounds,
       role,
+      level,
     );
     shared.smallCaster = smallCaster;
     this.dressMesh(shared, receiveShadow);
@@ -2391,6 +2491,8 @@ export class CellRender {
     this.#castShadowLevels = settings.castShadowLevels;
     this.#extentBounds = settings.extentBounds;
     this.#preserveAuthoredParts = settings.preserveAuthoredParts;
+    this.#lodHysteresis = settings.lodHysteresis;
+    this.#lodSpatial = settings.lodSpatial;
     this.#cellsPerCluster = settings.cellsPerCluster;
     this.#cellsPerCullCell = settings.cellsPerCullCell;
     this.#smallCasterMetres = settings.smallCasterMetres;
@@ -2459,6 +2561,10 @@ export class CellRender {
     this.#gpuLevelKeys.clear();
     this.#bundleSafety.clear();
     this.#gpuResident.clear();
+  }
+  releaseLodMaterials(): void {
+    for (const material of this.#lodMaterials.values()) material.dispose();
+    this.#lodMaterials.clear();
   }
   releaseRetired(): void {
     for (const shared of this.#retired.values()) shared.mesh.dispose();

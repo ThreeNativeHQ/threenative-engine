@@ -691,7 +691,10 @@
       "file": "fern_02/fern_02_alpha_512.png",
       "url": "https://polyhaven.com/a/fern_02",
       "bytes": 41735,
-      "dimensions": [512, 512],
+      "dimensions": [
+        512,
+        512
+      ],
       "sha256": "d3422b26b0f41a0be9d5e7d7878765da674ff173f4c5a0c47795364c8b954bb0"
     },
     {
@@ -703,7 +706,10 @@
       "file": "fern_02/fern_02_diff_512.jpg",
       "url": "https://polyhaven.com/a/fern_02",
       "bytes": 33569,
-      "dimensions": [512, 512],
+      "dimensions": [
+        512,
+        512
+      ],
       "sha256": "a6047726852171297213cb8063c1607856b0c414c579ff9d60a54262b925f78a"
     },
     {
@@ -715,7 +721,10 @@
       "file": "fern_02/fern_02_nor_gl_512.jpg",
       "url": "https://polyhaven.com/a/fern_02",
       "bytes": 35095,
-      "dimensions": [512, 512],
+      "dimensions": [
+        512,
+        512
+      ],
       "sha256": "72d64f5a9632cf5cc26969b8e60b1a5da5432bbde562b87a6fccef29949e28a8"
     },
     {
@@ -738,10 +747,10 @@
       "generator": "examples/strata-terrain-preview/scripts/make-needle-atlas.mjs",
       "seed": 466468,
       "command": "node scripts/make-needle-atlas.mjs",
-      "bytes": 321934,
+      "bytes": 320942,
       "dimensions": "1024x1024 (4 cells of 512x512)",
       "preprocessing": "none. Drawn from a seeded PRNG and deflated as PNG by the script itself: no image library, no upload, byte-identical on every run.",
-      "sha256": "d2f1fd6eb3f87083a1c72a07add0c485f477b7b5e64e1d9db0108298c75eae50",
+      "sha256": "f320c76ff8f07c053f7ff392f5fc792a00f4c2e176f022b2233685b3c6b7d363",
       "why": "A photograph of foliage does not give a card with the twig down the middle and needles fanning off both sides, which is what makes an alpha-cutout branch read as a branch from every angle."
     },
     "needle-surface.png": {
@@ -749,10 +758,10 @@
       "generator": "examples/strata-terrain-preview/scripts/make-needle-atlas.mjs",
       "seed": 466468,
       "command": "node scripts/make-needle-atlas.mjs",
-      "bytes": 1021932,
+      "bytes": 1024122,
       "dimensions": "1024x1024 (4 cells of 512x512)",
       "preprocessing": "none. Cooked from the coverage and ridge the same run recorded while drawing the albedo, and deflated as PNG by the script itself: no image library, byte-identical on every run.",
-      "sha256": "45d236f6b61f745753fd86b06b0c27d451ae118c9f0164ce44dda51f297ecbf5",
+      "sha256": "30bbf3302df729aaa8e13872bc04cea3e7c3c4139bcebcab171c17486ae31bd3",
       "why": "An alpha-tested quad has no thickness, so a crown built from cards had exactly one flat normal per card and read as stacked flat quads. A normal per needle plus the spray's own occlusion is what makes a card a mass of needles rather than a silhouette."
     }
   },

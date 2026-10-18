@@ -214,6 +214,12 @@ const ABORT_PREDECESSOR_BLOBS = {
   "src/renderers/webgpu/WebGPUBackend.js": "0fbcc307d39cbf6d74d9dbc5f199f2b0e4f58b33",
 };
 
+const INSTANCE_HISTORY_BLOBS = {
+  "build/three.webgpu.js": "f9ea33ac39db20e96822fda6b90e2bed02817435",
+  "build/three.webgpu.nodes.js": "93cedce745291edfbd333fb76d8154b8eff685bd",
+  "src/nodes/accessors/Instance.js": "18e2b7943393fd07b7989b1e3a5231a61ca24187",
+};
+
 const MATRIX_GUARD_BLOBS = {
   "build/three.webgpu.js": "2a70eb319b4235c958c7b5b1ede148c808d0b4b2",
   "build/three.webgpu.nodes.js": "bfa242835dfef49019dd368e3593a62a221dda3d",
@@ -282,6 +288,7 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
 }
 
 describe.each([
+  ["PRD618 instance-history predecessor", INSTANCE_HISTORY_BLOBS],
   ["PR486 matrix-guard predecessor", MATRIX_GUARD_BLOBS],
   ["PR486 abort predecessor", ABORT_PREDECESSOR_BLOBS],
   ["PR486 queue-order predecessor", QUEUE_ORDER_BLOBS],

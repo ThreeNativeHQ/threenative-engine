@@ -250,7 +250,7 @@ index 1f4c2546c..7e2cb9926 100644
  
  		const lightsData = this.getLights( renderObject.lightsNode, renderId );
 diff --git a/src/nodes/accessors/Batch.js b/src/nodes/accessors/Batch.js
-index ab62e98da..2cf4bb603 100644
+index ab62e98da..4a05be529 100644
 --- a/src/nodes/accessors/Batch.js
 +++ b/src/nodes/accessors/Batch.js
 @@ -1,6 +1,6 @@
@@ -289,14 +289,8 @@ index ab62e98da..2cf4bb603 100644
  
  	const transformedNormal = normalLocal.div( vec3( bm[ 0 ].dot( bm[ 0 ] ), bm[ 1 ].dot( bm[ 1 ] ), bm[ 2 ].dot( bm[ 2 ] ) ) );
  
-@@ -104,5 +118,3 @@ export const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
- 	}
- 
- }, 'void' );
--
--
 diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
-index b89834b91..3ff041a26 100644
+index b89834b91..faf500ca4 100644
 --- a/src/nodes/accessors/Instance.js
 +++ b/src/nodes/accessors/Instance.js
 @@ -1,6 +1,6 @@
@@ -336,19 +330,21 @@ index b89834b91..3ff041a26 100644
  
  			if ( interleavedMatrix !== null ) {
  
-@@ -216,11 +218,32 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
+@@ -216,11 +218,34 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
  
  		const instancedMesh = builder.object;
  
 -		OnObjectUpdate( ( { object } ) => {
-+		const updatePrevious = ( object, array ) => {
++		const updatePrevious = ( object, array, scheduled = false ) => {
 +
-+			const history = _previousInstanceMatrices.get( object );
-+			if ( array !== matrices.array && history.lastSource === array && history.lastVersion === matrices.version ) return;
-+			const { previousInstanceMatrix } = history;
++			const data = _previousInstanceMatrices.get( object );
++			if ( scheduled && data.scheduledPrevious === array ) return;
++			if ( array !== matrices.array && data.lastSource === array && data.lastVersion === matrices.version ) return;
++			const { previousInstanceMatrix } = data;
 +			previousInstanceMatrix.array.set( array );
-+			history.lastSource = array;
-+			history.lastVersion = matrices.version;
++			data.scheduledPrevious = scheduled ? array : undefined;
++			data.lastSource = array;
++			data.lastVersion = matrices.version;
 +			previousInstanceMatrix.needsUpdate = true;
 +			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
 +			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
@@ -360,7 +356,7 @@ index b89834b91..3ff041a26 100644
  
 -			const previousInstanceData = _previousInstanceMatrices.get( object );
 +			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
-+			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious, true );
 +
 +		} );
 +
@@ -770,10 +766,10 @@ index 5f3d213a0..a3cec4ed8 100644
  			// every uniforms group is a uniform buffer. So if no update is required,
  			// we move one with the next binding. Otherwise the next if block will update the group.
 diff --git a/src/renderers/common/Geometries.js b/src/renderers/common/Geometries.js
-index eb332c415..979da2ffc 100644
+index eb332c415..74100c31a 100644
 --- a/src/renderers/common/Geometries.js
 +++ b/src/renderers/common/Geometries.js
-@@ -139,6 +139,14 @@ class Geometries extends DataMap {
+@@ -139,6 +139,17 @@ class Geometries extends DataMap {
  		 */
  		this._geometryDisposeListeners = new Map();
  
@@ -784,14 +780,19 @@ index eb332c415..979da2ffc 100644
 +		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
 +		 */
 +		this._settledAttributes = new WeakMap();
++		this._geometryAttributeOwners = new WeakMap();
++		this._sharedAttributeOwners = new WeakMap();
++		this._renderObjectAttributeGeometry = new WeakMap();
 +
  	}
  
  	/**
-@@ -164,10 +172,69 @@ class Geometries extends DataMap {
+@@ -163,11 +174,173 @@ class Geometries extends DataMap {
+ 	updateForRender( renderObject ) {
  
  		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
- 
++		if ( this.geometryAttributesChanged( renderObject ) ) this.syncGeometryAttributes( renderObject );
++
 +		// A settled static object has no attribute that could have changed since the last refresh,
 +		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
 +		// this draw, and a BufferGeometry carries no version of its own to announce the write, so
@@ -800,7 +801,7 @@ index eb332c415..979da2ffc 100644
 +		const monitor = renderObject.getMonitor();
 +
 +		if ( monitor !== undefined && monitor.isSettled( renderObject ) === true && this.attributesChanged( renderObject ) === false ) return;
-+
+ 
  		this.updateAttributes( renderObject );
  
  	}
@@ -855,9 +856,133 @@ index eb332c415..979da2ffc 100644
 +
 +	}
 +
++	/** Compare the published attribute identities without allocating on settled frames. */
++	geometryAttributesChanged( renderObject ) {
++
++		const geometry = renderObject.geometry;
++		const owner = this._geometryAttributeOwners.get( geometry )?.get( renderObject );
++		if ( owner === undefined || owner.index !== geometry.index ) return true;
++
++		const attributes = renderObject.getAttributes();
++		if ( owner.attributes.length !== attributes.length ) return true;
++		for ( let i = 0; i < attributes.length; i ++ ) {
++			const attribute = attributes[ i ];
++			if ( owner.attributes[ i ] !== ( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) ) return true;
++		}
++
++		return false;
++
++	}
++
++	/** Add this render object's current geometry attributes to the renderer's shared-resource owners. */
++	syncGeometryAttributes( renderObject ) {
++
++		const { geometry } = renderObject;
++		const previousGeometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( previousGeometry !== undefined && previousGeometry !== geometry ) this.releaseRenderObject( renderObject );
++		this._renderObjectAttributeGeometry.set( renderObject, geometry );
++		let geometryOwners = this._geometryAttributeOwners.get( geometry );
++
++		if ( geometryOwners === undefined ) {
++			geometryOwners = new Map();
++			this._geometryAttributeOwners.set( geometry, geometryOwners );
++		}
++
++		const previous = geometryOwners.get( renderObject )?.keys ?? new Map();
++		const current = new Map();
++		const attributes = renderObject.getAttributes();
++		const attributeKeys = [];
++
++		for ( const attribute of attributes ) {
++			const key = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++			current.set( key, true );
++			attributeKeys.push( key );
++		}
++		const index = geometry.index;
++		if ( index !== null ) current.set( index, true );
++
++		for ( const key of current.keys() ) {
++			let record = this._sharedAttributeOwners.get( key );
++			if ( record === undefined ) record = { owners: new Set() };
++			if ( previous.has( key ) === false ) record.owners.add( renderObject );
++			this._sharedAttributeOwners.set( key, record );
++		}
++
++		for ( const key of previous.keys() ) {
++			if ( current.has( key ) === false ) this.releaseSharedAttribute( key, renderObject );
++		}
++
++		geometryOwners.set( renderObject, { keys: current, attributes: attributeKeys, index } );
++
++	}
++
++	/** Drop a render object from its geometry before its material-owned node attributes go stale. */
++	releaseRenderObject( renderObject ) {
++
++		const geometry = this._renderObjectAttributeGeometry.get( renderObject );
++		if ( geometry === undefined ) return;
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		const owned = geometryOwners?.get( renderObject )?.keys;
++		if ( owned !== undefined ) {
++			for ( const key of owned.keys() ) this.releaseSharedAttribute( key, renderObject );
++			geometryOwners.delete( renderObject );
++			if ( geometryOwners.size === 0 ) this._geometryAttributeOwners.delete( geometry );
++		}
++		this._renderObjectAttributeGeometry.delete( renderObject );
++
++	}
++
++	/** Release a shared GPU resource only after its last live geometry render object lets it go. */
++	releaseSharedAttribute( key, owner ) {
++
++		const record = this._sharedAttributeOwners.get( key );
++		if ( record === undefined ) return;
++		record.owners.delete( owner );
++		if ( record.owners.size !== 0 ) return;
++
++		this.attributes.delete( key );
++		this._sharedAttributeOwners.delete( key );
++
++	}
++
++	/** Release the recorded sets, not a potentially replaced render object's current attributes. */
++	releaseGeometryAttributes( geometry ) {
++
++		const geometryOwners = this._geometryAttributeOwners.get( geometry );
++		if ( geometryOwners === undefined ) return;
++		for ( const [ owner, attributes ] of geometryOwners ) {
++			for ( const key of attributes.keys.keys() ) this.releaseSharedAttribute( key, owner );
++			this._renderObjectAttributeGeometry.delete( owner );
++		}
++		this._geometryAttributeOwners.delete( geometry );
++
++	}
++
  	/**
  	 * Initializes the geometry of the given render object.
  	 *
+@@ -186,20 +359,7 @@ class Geometries extends DataMap {
+ 
+ 			this.info.memory.geometries --;
+ 
+-			const index = geometry.index;
+-			const geometryAttributes = renderObject.getAttributes();
+-
+-			if ( index !== null ) {
+-
+-				this.attributes.delete( index );
+-
+-			}
+-
+-			for ( const geometryAttribute of geometryAttributes ) {
+-
+-				this.attributes.delete( geometryAttribute );
+-
+-			}
++			this.releaseGeometryAttributes( geometry );
+ 
+ 			const wireframeAttribute = this.wireframes.get( geometry );
+ 
 diff --git a/src/renderers/common/RenderContexts.js b/src/renderers/common/RenderContexts.js
 index 64ecdeeea..7319e25e2 100644
 --- a/src/renderers/common/RenderContexts.js
@@ -938,7 +1063,7 @@ index c900fa4c9..4f8d58950 100644
  		return cacheKey;
  
 diff --git a/src/renderers/common/RenderObjects.js b/src/renderers/common/RenderObjects.js
-index 676cc2bd4..91fba38f3 100644
+index 676cc2bd4..d52f6a117 100644
 --- a/src/renderers/common/RenderObjects.js
 +++ b/src/renderers/common/RenderObjects.js
 @@ -97,6 +97,8 @@ class RenderObjects {
@@ -950,16 +1075,7 @@ index 676cc2bd4..91fba38f3 100644
  
  		//
  
-@@ -118,15 +120,26 @@ class RenderObjects {
- 
- 			renderObject.updateClipping( clippingContext );
- 
--			if ( renderObject.needsGeometryUpdate ) {
-+			const geometryChanged = renderObject.needsGeometryUpdate;
-+
-+			if ( geometryChanged ) {
- 
- 				renderObject.setGeometry( object.geometry );
+@@ -124,9 +126,18 @@ class RenderObjects {
  
  			}
  
@@ -967,20 +1083,20 @@ index 676cc2bd4..91fba38f3 100644
 +			// When the renderer is drawing through an override material, that material is shared by
 +			// the whole pass and mutated per object, so its `version` alone answers the wrong
 +			// question. The source material this object actually carries answers the right one.
-+
+ 
+-				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
 +			const sourceMaterial = this.renderer._currentSourceMaterial;
 +			const sourceTracked = sourceMaterial !== null && sourceMaterial !== undefined;
 +			const sourceReplaced = sourceTracked && renderObject._sourceMaterial !== sourceMaterial;
 +			const sourceChanged = sourceTracked && ( sourceReplaced || renderObject.sourceVersion !== sourceMaterial.version );
- 
--				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
-+			if ( geometryChanged || renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
++
++			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
 +
 +				if ( sourceReplaced || renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
  
  					renderObject.dispose();
  
-@@ -136,6 +149,8 @@ class RenderObjects {
+@@ -136,6 +147,8 @@ class RenderObjects {
  
  					renderObject.version = material.version;
  
@@ -989,13 +1105,21 @@ index 676cc2bd4..91fba38f3 100644
  				}
  
  			}
-@@ -148,6 +163,7 @@ class RenderObjects {
+@@ -148,6 +161,7 @@ class RenderObjects {
  		_chainKeys[ 1 ] = null;
  		_chainKeys[ 2 ] = null;
  		_chainKeys[ 3 ] = null;
 +		_chainKeys[ 4 ] = null;
  
  		//
+ 
+@@ -203,6 +217,7 @@ class RenderObjects {
+ 			this.pipelines.delete( renderObject );
+ 			this.bindings.deleteForRender( renderObject );
+ 			this.nodes.delete( renderObject );
++			this.geometries.releaseRenderObject( renderObject );
+ 
+ 			chainMap.delete( renderObject.getChainArray() );
  
 diff --git a/src/renderers/common/RenderPipeline.js b/src/renderers/common/RenderPipeline.js
 index ab3085cfd..94e54740e 100644
@@ -1024,7 +1148,7 @@ index ab3085cfd..94e54740e 100644
  		renderer.xr.enabled = currentXR;
  
 diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
-index 8dfc2ae05..f9903c26a 100644
+index 8dfc2ae05..bc495cb32 100644
 --- a/src/renderers/common/Renderer.js
 +++ b/src/renderers/common/Renderer.js
 @@ -1738,6 +1738,7 @@ class Renderer {
@@ -1048,15 +1172,15 @@ index 8dfc2ae05..f9903c26a 100644
  
 -		// finish render pass
 +		renderComplete = true;
-+
+ 
+-		this.backend.finishRender( renderContext );
 +		} finally {
 +
 +		try {
 +
 +			if ( renderComplete ) this.backend.finishRender( renderContext );
 +			else if ( this.backend.get( renderContext )._tnDepth ) this.backend._abortTransientDepth( renderContext );
- 
--		this.backend.finishRender( renderContext );
++
 +		} finally {
  
  		// restore render tree
@@ -1090,7 +1214,22 @@ index 8dfc2ae05..f9903c26a 100644
  	/**
  	 * Can be used to transfer buffer data from a storage buffer attribute
  	 * from the GPU to the CPU in context of compute shaders.
-@@ -3550,6 +3576,7 @@ class Renderer {
+@@ -2930,6 +2956,14 @@ class Renderer {
+ 
+ 	}
+ 
++	// Explicit cold compressed-texture gate; ordinary initTexture keeps its synchronous path.
++	async prepareTextureAsync( texture, options = {} ) {
++
++		if ( this._initialized === false ) throw new Error( 'Renderer must be initialized before texture preparation.' );
++		await this._textures.updateTextureAsync( texture, options );
++
++	}
++
+ 	/**
+ 	 * Initializes the given render target.
+ 	 *
+@@ -3550,6 +3584,7 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -1098,7 +1237,7 @@ index 8dfc2ae05..f9903c26a 100644
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -3575,6 +3602,7 @@ class Renderer {
+@@ -3575,6 +3610,7 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -1106,7 +1245,7 @@ index 8dfc2ae05..f9903c26a 100644
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -3582,7 +3610,15 @@ class Renderer {
+@@ -3582,7 +3618,15 @@ class Renderer {
  
  			}
  
@@ -1123,7 +1262,7 @@ index 8dfc2ae05..f9903c26a 100644
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -3644,6 +3680,7 @@ class Renderer {
+@@ -3644,6 +3688,7 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -1131,19 +1270,19 @@ index 8dfc2ae05..f9903c26a 100644
  
  		}
  
-@@ -3705,18 +3742,17 @@ class Renderer {
+@@ -3705,18 +3750,17 @@ class Renderer {
  
  		//
  
 -		const needsRefresh = this._nodes.needsRefresh( renderObject );
--
++		this._nodes.needsRefresh( renderObject );
+ 
 -		if ( needsRefresh ) {
 -
 -			this._nodes.updateBefore( renderObject );
 -
 -			this._geometries.updateForRender( renderObject );
-+		this._nodes.needsRefresh( renderObject );
- 
+-
 -			this._nodes.updateForRender( renderObject );
 -			this._bindings.updateForRender( renderObject );
 -
@@ -1160,7 +1299,7 @@ index 8dfc2ae05..f9903c26a 100644
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -3726,7 +3762,7 @@ class Renderer {
+@@ -3726,7 +3770,7 @@ class Renderer {
  
  			this.backend.draw( renderObject, this.info );
  
@@ -1170,10 +1309,38 @@ index 8dfc2ae05..f9903c26a 100644
  		}
  
 diff --git a/src/renderers/common/Textures.js b/src/renderers/common/Textures.js
-index f42b90eac..be47645f5 100644
+index f42b90eac..5b305173f 100644
 --- a/src/renderers/common/Textures.js
 +++ b/src/renderers/common/Textures.js
-@@ -215,6 +215,21 @@ class Textures extends DataMap {
+@@ -54,6 +54,10 @@ class Textures extends DataMap {
+ 		 * @type {Set<HTMLTexture>}
+ 		 */
+ 		this._htmlTextures = new Set();
++		this._pendingUploads = new Map();
++		this._uploadTail = Promise.resolve();
++		this._uploadSlice = { started: null };
++		this._uploadDisposed = false;
+ 
+ 	}
+ 
+@@ -203,7 +207,16 @@ class Textures extends DataMap {
+ 	 */
+ 	updateTexture( texture, options = {} ) {
+ 
++		if ( this._pendingUploads.has( texture ) ) throw new Error( 'Compressed texture preparation is pending.' );
++		if ( this.has( texture ) && this.get( texture ).uploadError ) throw this.get( texture ).uploadError;
++		return this._updateTexture( texture, options );
++
++	}
++
++	_updateTexture( texture, options = {}, upload = null ) {
++
+ 		const textureData = this.get( texture );
++		let uploadPromise;
+ 		if ( textureData.initialized === true && textureData.version === texture.version ) return;
+ 
+ 		const isRenderTarget = texture.isRenderTargetTexture || texture.isDepthTexture || texture.isFramebufferTexture;
+@@ -215,6 +228,21 @@ class Textures extends DataMap {
  
  			backend.destroyTexture( texture );
  
@@ -1195,6 +1362,197 @@ index f42b90eac..be47645f5 100644
  		}
  
  		//
+@@ -352,7 +380,16 @@ class Textures extends DataMap {
+ 
+ 					}
+ 
+-					if ( texture.source.dataReady === true ) backend.updateTexture( texture, options );
++					if ( texture.source.dataReady === true ) {
++
++						if ( upload ) {
++
++							this._initializeTexture( texture, textureData );
++							uploadPromise = upload( texture, options );
++
++						} else backend.updateTexture( texture, options );
++
++					}
+ 
+ 					const skipAutoGeneration = texture.isStorageTexture === true && texture.mipmapsAutoUpdate === false;
+ 
+@@ -362,7 +399,7 @@ class Textures extends DataMap {
+ 
+ 					}
+ 
+-					if ( texture.onUpdate ) texture.onUpdate( texture );
++					if ( ! upload && texture.onUpdate ) texture.onUpdate( texture );
+ 
+ 				}
+ 
+@@ -379,6 +416,17 @@ class Textures extends DataMap {
+ 
+ 		}
+ 
++		this._initializeTexture( texture, textureData );
++		if ( upload ) return uploadPromise;
++
++		//
++
++		textureData.version = texture.version;
++
++	}
++
++	_initializeTexture( texture, textureData ) {
++
+ 		// dispose handler
+ 
+ 		if ( textureData.initialized !== true ) {
+@@ -411,9 +459,134 @@ class Textures extends DataMap {
+ 
+ 		}
+ 
+-		//
+ 
+-		textureData.version = texture.version;
++	}
++
++	// A single preparation lane, keyed by Texture identity; Source clones own distinct GPU data.
++	updateTextureAsync( texture, options = {} ) {
++
++		if ( this._uploadDisposed ) return Promise.reject( new Error( 'Texture manager disposed.' ) );
++		if ( this._uploadDeviceLost ) return Promise.reject( this._uploadDeviceLost );
++		if ( ! this._uploadLossSubscribed && this.backend.device?.lost ) {
++
++			this._uploadLossSubscribed = true;
++			const lost = error => {
++
++				this._uploadDeviceLost = error instanceof Error ? error : new Error( 'Device lost during texture preparation.' );
++				for ( const job of this._pendingUploads.values() ) job.controller.abort( this._uploadDeviceLost );
++
++			};
++			this.backend.device.lost.then( lost, lost );
++
++		}
++		if ( options.signal?.aborted ) return Promise.reject( options.signal.reason );
++		const pending = this._pendingUploads.get( texture );
++		if ( pending ) {
++
++			if ( pending.version !== texture.version ) return Promise.reject( new Error( 'Texture changed during preparation.' ) );
++			return this._waitForUpload( pending, options.signal );
++
++		}
++		const data = this.get( texture );
++		if ( data.uploadError ) return Promise.reject( data.uploadError );
++		if ( ! ( texture.isCompressedTexture || texture.isCompressedArrayTexture ) || texture.isCubeTexture || texture.version <= 0 || texture.source.dataReady !== true || texture.mipmaps.length === 0 || typeof this.backend.updateTextureAsync !== 'function' ) return Promise.reject( new Error( 'Bounded texture preparation requires ready compressed mip data.' ) );
++		if ( data.initialized === true && data.version === texture.version ) {
++
++			if ( data.isDefaultTexture !== true && this.backend.has( texture ) && this.backend.get( texture ).texture && this.backend.get( texture ).version === texture.version ) return Promise.resolve();
++			return Promise.reject( new Error( 'Compressed texture content has not completed an upload.' ) );
++
++		}
++		if ( data.version !== undefined && data.isDefaultTexture !== true ) return Promise.reject( new Error( 'Bounded texture preparation requires a cold texture.' ) );
++		const controller = new AbortController();
++		const source = texture.source;
++		const mipmaps = texture.mipmaps;
++		const captured = mipmaps.map( mip => ( { mip, data: mip.data, width: mip.width, height: mip.height } ) );
++		const image = texture.image;
++		const size = { width: image?.width, height: image?.height, depth: image?.depth };
++		const layers = texture.isCompressedArrayTexture ? [ ...texture.layerUpdates ] : [];
++		const device = this.backend.device;
++		const job = { texture, data, version: texture.version, controller, users: 0, promise: null };
++		const checkQueued = () => {
++
++			if ( controller.signal.aborted ) throw controller.signal.reason;
++			if ( ! this.has( texture ) || this.get( texture ) !== data || texture.version !== job.version || texture.source !== source || source.dataReady !== true || texture.image !== image || image?.complete === false || image?.width !== size.width || image?.height !== size.height || image?.depth !== size.depth || texture.mipmaps !== mipmaps || mipmaps.length !== captured.length || captured.some( ( c, i ) => mipmaps[ i ] !== c.mip || c.mip.data !== c.data || c.mip.width !== c.width || c.mip.height !== c.height ) || this.backend.device !== device ) throw new Error( 'Compressed texture changed or invalidated before preparation.' );
++			if ( texture.isCompressedArrayTexture && ( texture.layerUpdates.size !== layers.length || layers.some( layer => ! texture.layerUpdates.has( layer ) ) ) ) throw new Error( 'Compressed texture layers changed before preparation.' );
++
++		};
++		let backendData, gpuTexture;
++		const onQueuedDispose = () => controller.abort( new Error( 'Texture disposed during preparation.' ) );
++		texture.addEventListener( 'dispose', onQueuedDispose );
++		this._pendingUploads.set( texture, job );
++		const cancelled = new Promise( ( resolve, reject ) => controller.signal.addEventListener( 'abort', () => reject( controller.signal.reason ), { once: true } ) );
++		const work = this._uploadTail.then( () => {
++
++			checkQueued();
++			const result = this._updateTexture( texture, {}, ( value, uploadOptions ) => this.backend.updateTextureAsync( value, { ...uploadOptions, budgetMs: options.budgetMs, maxBytesPerWrite: options.maxBytesPerWrite, signal: controller.signal, uploadSlice: this._uploadSlice } ) );
++			if ( ! result || typeof result.then !== 'function' || ! this.backend.has( texture ) ) throw new Error( 'Compressed texture upload did not start.' );
++			backendData = this.backend.get( texture );
++			gpuTexture = backendData.texture;
++			return result;
++
++		} );
++		job.promise = Promise.race( [ work, cancelled ] ).then( () => {
++
++			if ( controller.signal.aborted || ! this.has( texture ) || this.get( texture ) !== data || texture.version !== job.version || source.dataReady !== true || this.backend.device !== device || ! this.backend.has( texture ) || this.backend.get( texture ) !== backendData || backendData.texture !== gpuTexture || backendData.version !== job.version ) throw new Error( 'Texture preparation invalidated.' );
++			data.version = job.version;
++			delete data.uploadError;
++			if ( texture.onUpdate ) texture.onUpdate( texture );
++
++		} ).catch( error => {
++
++			if ( this.has( texture ) && this.get( texture ) === data ) data.uploadError = error;
++			throw error;
++
++		} ).finally( () => {
++
++			texture.removeEventListener( 'dispose', onQueuedDispose );
++			if ( this._pendingUploads.get( texture ) === job ) this._pendingUploads.delete( texture );
++
++		} );
++		// Caller cancellation is prompt; the backend lane stays owned until validation drains.
++		this._uploadTail = Promise.allSettled( [ work, job.promise ] ).then( () => {} );
++		return this._waitForUpload( job, options.signal );
++
++	}
++
++	_waitForUpload( job, signal ) {
++
++		job.users ++;
++		return new Promise( ( resolve, reject ) => {
++
++			let settled = false;
++			const finish = ( error ) => {
++
++				if ( settled ) return;
++				settled = true;
++				signal?.removeEventListener( 'abort', abort );
++				job.users --;
++				if ( error ) reject( error ); else resolve();
++				if ( job.users === 0 && ! job.controller.signal.aborted ) job.controller.abort( new Error( 'Texture preparation has no remaining caller.' ) );
++
++			};
++			const abort = () => finish( signal.reason || new Error( 'Texture preparation cancelled.' ) );
++			signal?.addEventListener( 'abort', abort, { once: true } );
++			job.promise.then( () => finish(), finish );
++
++		} );
++
++	}
++
++	dispose() {
++
++		this._uploadDisposed = true;
++		for ( const job of this._pendingUploads.values() ) {
++
++			job.controller.abort( new Error( 'Texture manager disposed.' ) );
++			if ( this.has( job.texture ) && this.get( job.texture ).initialized === true ) this._destroyTexture( job.texture );
++
++		}
++		this._pendingUploads.clear();
++		super.dispose();
+ 
+ 	}
+ 
+@@ -591,6 +764,8 @@ class Textures extends DataMap {
+ 	 */
+ 	_destroyTexture( texture ) {
+ 
++		this._pendingUploads.get( texture )?.controller.abort( new Error( 'Texture disposed during preparation.' ) );
++
+ 		if ( this.has( texture ) === true ) {
+ 
+ 			const textureData = this.get( texture );
 diff --git a/src/renderers/common/nodes/NodeManager.js b/src/renderers/common/nodes/NodeManager.js
 index f6d4f0b54..033128c39 100644
 --- a/src/renderers/common/nodes/NodeManager.js
@@ -1286,7 +1644,7 @@ index f6d4f0b54..033128c39 100644
  
  		}
 diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
-index 06e203693..1366ed87b 100644
+index 06e203693..add7f3284 100644
 --- a/src/renderers/webgpu/WebGPUBackend.js
 +++ b/src/renderers/webgpu/WebGPUBackend.js
 @@ -102,6 +102,27 @@ class WebGPUBackend extends Backend {
@@ -1658,7 +2016,20 @@ index 06e203693..1366ed87b 100644
  			renderObject.clippingContextCacheKey
  		].join();
  
-@@ -2305,6 +2521,8 @@ class WebGPUBackend extends Backend {
+@@ -2204,6 +2420,12 @@ class WebGPUBackend extends Backend {
+ 
+ 	}
+ 
++	updateTextureAsync( texture, options ) {
++
++		return this.textureUtils.updateTextureAsync( texture, options );
++
++	}
++
+ 	/**
+ 	 * Generates mipmaps for the given texture.
+ 	 *
+@@ -2305,6 +2527,8 @@ class WebGPUBackend extends Backend {
  		_shaderModuleDescriptor.label = program.stage + ( program.name !== '' ? `_${ program.name }` : '' );
  		_shaderModuleDescriptor.code = program.code;
  
@@ -1667,7 +2038,7 @@ index 06e203693..1366ed87b 100644
  		programGPU.module = {
  			module: this.device.createShaderModule( _shaderModuleDescriptor ),
  			entryPoint: 'main'
-@@ -2452,6 +2670,7 @@ class WebGPUBackend extends Backend {
+@@ -2452,6 +2676,7 @@ class WebGPUBackend extends Backend {
  			_bufferDescriptor.reset();
  
  			uniformBufferData.buffer = bufferGPU;
@@ -1675,7 +2046,7 @@ index 06e203693..1366ed87b 100644
  
  		}
  
-@@ -2718,6 +2937,7 @@ class WebGPUBackend extends Backend {
+@@ -2718,6 +2943,7 @@ class WebGPUBackend extends Backend {
  
  		submit( this.device, encoder.finish() );
  
@@ -1683,7 +2054,7 @@ index 06e203693..1366ed87b 100644
  		if ( dstLevel === 0 && dstTexture.generateMipmaps ) {
  
  			this.textureUtils.generateMipmaps( dstTexture );
-@@ -2735,6 +2955,8 @@ class WebGPUBackend extends Backend {
+@@ -2735,6 +2961,8 @@ class WebGPUBackend extends Backend {
  	 */
  	copyFramebufferToTexture( texture, renderContext, rectangle ) {
  
@@ -2050,7 +2421,7 @@ index 764267c51..d5872652c 100644
  					if ( errorScope !== null || asyncError !== null ) {
  
 diff --git a/src/renderers/webgpu/utils/WebGPUTextureUtils.js b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
-index ff8ee2dba..036202ae7 100644
+index ff8ee2dba..f6d510b59 100644
 --- a/src/renderers/webgpu/utils/WebGPUTextureUtils.js
 +++ b/src/renderers/webgpu/utils/WebGPUTextureUtils.js
 @@ -41,6 +41,7 @@ import {
@@ -2146,17 +2517,17 @@ index ff8ee2dba..036202ae7 100644
 -			depthTexture.stencil === stencil ) {
 -
 -			return backend.get( depthTexture ).texture;
-+		let cache = this._depthBuffers.get( depthTexture );
- 
+-
 -		}
 -
 -		//
+-
+-		const depthTextureGPU = backend.get( depthTexture ).texture;
++		let cache = this._depthBuffers.get( depthTexture );
+ 
+-		let format, type;
 +		if ( cache !== undefined && ( cache.width !== width || cache.height !== height || cache.format !== format || cache.type !== type ) ) {
  
--		const depthTextureGPU = backend.get( depthTexture ).texture;
--
--		let format, type;
--
 -		if ( stencil ) {
 +			this.destroyTexture( depthTexture );
 +			cache = undefined;
@@ -2179,15 +2550,15 @@ index ff8ee2dba..036202ae7 100644
  		}
  
 -		if ( depthTextureGPU !== undefined ) {
+-
+-			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
 +		// Output and direct overlay passes alternate effective samples 4 and 1.
 +		// Retain at most those two buffers for this canvas size and depth format.
 +		let buffer = cache.textures.get( sampleCount );
  
--			if ( depthTexture.image.width === width && depthTexture.image.height === height && depthTexture.format === format && depthTexture.type === type && depthTexture.samples === samples ) {
+-				return depthTextureGPU;
 +		if ( buffer === undefined ) {
  
--				return depthTextureGPU;
--
 -			}
 -
 -			this.destroyTexture( depthTexture );
@@ -2222,7 +2593,151 @@ index ff8ee2dba..036202ae7 100644
  	/**
  	 * Uploads the updated texture data to the GPU.
  	 *
-@@ -806,6 +827,8 @@ class WebGPUTextureUtils {
+@@ -733,6 +754,143 @@ class WebGPUTextureUtils {
+ 
+ 	}
+ 
++	// Opt-in preparation for cold compressed textures. The caller owns the visibility gate.
++	async updateTextureAsync( texture, options = {} ) {
++
++		const { budgetMs = 2, maxBytesPerWrite = 65536, signal } = options;
++		if ( ! Number.isFinite( budgetMs ) || budgetMs <= 0 || ! Number.isSafeInteger( maxBytesPerWrite ) ) throw new Error( 'Invalid compressed upload budget.' );
++		const backend = this.backend;
++		const device = backend.device;
++		if ( ! backend.has( texture ) ) throw new Error( 'Compressed texture allocation invalidated.' );
++		const textureData = backend.get( texture );
++		const gpuTexture = textureData.texture;
++		const descriptor = textureData.textureDescriptorGPU;
++		const block = descriptor && this._getBlockData( descriptor.format );
++		if ( ! block || ! gpuTexture || maxBytesPerWrite < block.byteLength ) throw new Error( 'Compressed texture allocation or block budget is unsupported.' );
++		const version = texture.version;
++		const source = texture.source;
++		const mipmaps = texture.mipmaps;
++		const captured = mipmaps.map( mip => ( { mip, data: mip.data, width: mip.width, height: mip.height } ) );
++		const updates = texture.isCompressedArrayTexture ? [ ...texture.layerUpdates ] : [];
++		const layers = updates.length > 0 ? updates : Array.from( { length: descriptor.size.depthOrArrayLayers }, ( _, i ) => i );
++		const check = () => {
++
++			if ( signal?.aborted ) throw signal.reason || new Error( 'Compressed texture upload cancelled.' );
++			if ( backend.device !== device || ! backend.has( texture ) || backend.get( texture ) !== textureData || textureData.texture !== gpuTexture || textureData.textureDescriptorGPU !== descriptor ) throw new Error( 'Compressed texture allocation invalidated.' );
++			if ( source.dataReady !== true || texture.version !== version || texture.source !== source || texture.mipmaps !== mipmaps || mipmaps.length !== captured.length || captured.some( ( c, i ) => mipmaps[ i ] !== c.mip || c.mip.data !== c.data || c.mip.width !== c.width || c.mip.height !== c.height ) ) throw new Error( 'Compressed texture changed during preparation.' );
++			if ( texture.isCompressedArrayTexture && ( texture.layerUpdates.size !== updates.length || updates.some( layer => ! texture.layerUpdates.has( layer ) ) ) ) throw new Error( 'Compressed texture layers changed during preparation.' );
++
++		};
++		function* tiles() {
++
++			for ( let mipLevel = 0; mipLevel < captured.length; mipLevel ++ ) {
++
++				const mip = captured[ mipLevel ];
++				const columns = Math.ceil( mip.width / block.width );
++				const rows = Math.ceil( mip.height / block.height );
++				const stride = columns * block.byteLength;
++				const imageBytes = stride * rows;
++				const bytes = new Uint8Array( mip.data.buffer, mip.data.byteOffset, mip.data.byteLength );
++				const tileColumns = Math.min( columns, Math.floor( maxBytesPerWrite / block.byteLength ) );
++				const tileRows = stride <= maxBytesPerWrite ? Math.max( 1, Math.floor( maxBytesPerWrite / stride ) ) : 1;
++				for ( const layer of layers ) {
++
++					if ( ! Number.isInteger( layer ) || layer < 0 || layer >= descriptor.size.depthOrArrayLayers || ( layer + 1 ) * imageBytes > bytes.byteLength ) throw new Error( 'Invalid compressed texture layer data.' );
++					for ( let y = 0; y < rows; y += tileRows ) {
++
++						for ( let x = 0; x < columns; x += tileColumns ) {
++
++							const width = Math.min( tileColumns, columns - x );
++							const height = Math.min( tileRows, rows - y );
++							const offset = layer * imageBytes + y * stride + x * block.byteLength;
++							const length = ( height - 1 ) * stride + width * block.byteLength;
++							yield { destination: { texture: gpuTexture, mipLevel, origin: { x: x * block.width, y: y * block.height, z: layer } }, data: bytes.subarray( offset, offset + length ), layout: { offset: 0, bytesPerRow: stride, rowsPerImage: rows }, extent: { width: width * block.width, height: height * block.height, depthOrArrayLayers: 1 } };
++
++						}
++
++					}
++
++				}
++
++			}
++
++		}
++		const slice = options.uploadSlice || { started: null };
++		const yieldHost = async () => {
++
++			await new Promise( resolve => setTimeout( resolve, 0 ) );
++			slice.started = performance.now();
++			check();
++
++		};
++		const iterator = tiles();
++		const validations = [];
++		const failures = [];
++		let next = iterator.next();
++		let uploadFailed = false;
++		let uploadError;
++		try {
++
++			while ( ! next.done && failures.length === 0 ) {
++
++				check();
++				if ( slice.started === null ) slice.started = performance.now();
++				if ( performance.now() - slice.started >= budgetMs ) await yieldHost();
++				if ( failures.length > 0 ) break;
++				const scoped = typeof device.pushErrorScope === 'function' && typeof device.popErrorScope === 'function';
++				if ( scoped ) { device.pushErrorScope( 'out-of-memory' ); device.pushErrorScope( 'validation' ); }
++				try {
++
++					do {
++
++						check();
++						const tile = next.value;
++						device.queue.writeTexture( tile.destination, tile.data, tile.layout, tile.extent );
++						next = iterator.next();
++
++					} while ( ! next.done && performance.now() - slice.started < budgetMs );
++
++				} finally {
++
++					// Pop synchronously: a loading-screen render must not enter our error scopes.
++					if ( scoped ) validations.push( Promise.allSettled( [ device.popErrorScope(), device.popErrorScope() ] ).then( results => {
++
++						for ( const result of results ) {
++
++							if ( result.status === 'rejected' ) failures.push( result.reason );
++							else if ( result.value !== null ) failures.push( new Error( result.value.message ) );
++
++						}
++
++					} ) );
++
++				}
++				// Bound validation latency without changing the host slice or byte budgets.
++				if ( validations.length === 4 ) await validations.shift();
++				check();
++				if ( ! next.done && failures.length === 0 ) await yieldHost();
++
++			}
++
++		} catch ( error ) {
++
++			uploadFailed = true;
++			uploadError = error;
++
++		} finally {
++
++			// Observe every issued scope, including after cancellation or a write failure.
++			await Promise.all( validations );
++
++		}
++		if ( uploadFailed ) throw uploadError;
++		if ( failures.length > 0 ) throw new AggregateError( failures, 'Compressed texture upload failed: ' + failures.map( error => error?.message || String( error ) ).join( '; ' ) );
++		check();
++		textureData.version = version;
++		if ( updates.length > 0 ) texture.clearLayerUpdates();
++
++	}
++
+ 	/**
+ 	 * Returns texture data as a typed array.
+ 	 *
+@@ -806,6 +964,8 @@ class WebGPUTextureUtils {
  	 */
  	dispose() {
  

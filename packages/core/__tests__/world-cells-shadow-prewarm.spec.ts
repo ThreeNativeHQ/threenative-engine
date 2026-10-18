@@ -264,7 +264,10 @@ describe("a streamed world's caster prewarm", () => {
     const objects = new RenderObjects(
       render,
       nodes,
-      { getIndex: (object: { geometry: BufferGeometry }) => object.geometry.index },
+      {
+        getIndex: (object: { geometry: BufferGeometry }) => object.geometry.index,
+        releaseRenderObject: vi.fn(),
+      },
       { delete: vi.fn() },
       { deleteForRender: vi.fn() },
       {},
