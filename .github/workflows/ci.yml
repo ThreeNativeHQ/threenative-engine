@@ -870,17 +870,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
-    # Racing can use the opt-in GPU pool; other legs use the shared CPU pool with hosted fallback.
+    # Racing and Rain can use the opt-in GPU pool; other legs use the shared CPU pool with hosted fallback.
     # Forks always stay hosted, and snapshot fallback is best-effort.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (matrix.template == 'racing' && ((!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || '')) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-nonvisual:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
-    # rain relaunches the page for each of its five GPU-free scenarios. On the hosted SwiftShader
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || ((matrix.template == 'racing' || matrix.template == 'rain') && ((!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || '')) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-nonvisual:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
+    # Rain relaunches the page for each of its five nonvisual scenarios. On the hosted SwiftShader
     # adapter each launch now takes about 7 minutes, against about 1 minute on develop (runs
     # 38818830914 and 38824021621), so five launches exceed the 30-minute cap. Only rain gets the
-    # larger cap until that software launch cost is reduced; every other leg keeps 30 minutes.
+    # larger cap for the existing software fallback; every other leg keeps 30 minutes.
     timeout-minutes: ${{ matrix.template == 'rain' && 60 || 30 }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
-      TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+      TN_PLAYTEST_ALLOW_SOFTWARE: ${{ (matrix.template == 'rain' && !github.event.pull_request.head.repo.fork && ((!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU) && '0') || '1' }}
     steps:
       - uses: actions/checkout@v7
         with:

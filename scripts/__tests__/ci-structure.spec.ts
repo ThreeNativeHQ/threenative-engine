@@ -1107,7 +1107,42 @@ describe("CI pipeline structure", () => {
   const gpuHeavy = (id: string, need = "scope") =>
     `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${gpuPinGuard}) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
   const gpuHeavyMatrix = (format: string, axis: string, need = "scope") =>
-    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${axis} == 'racing' && (${gpuPinGuard})) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || ((${axis} == 'racing' || ${axis} == 'rain') && (${gpuPinGuard})) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+  const workflowMatrixContext = (input: {
+    template: string;
+    fork?: boolean;
+    pin?: string;
+    gpu?: string;
+    runner?: string;
+    admitted?: boolean;
+  }) => ({
+    matrix: { template: input.template },
+    vars: {
+      TN_RUNNER_GPU_HEAD: input.pin ?? "",
+      TN_RUNNER_GPU: input.gpu ?? "",
+      TN_RUNNER: input.runner ?? "",
+    },
+    github: {
+      event_name: "pull_request",
+      event: {
+        pull_request: { head: { sha: "candidate-sha", repo: { fork: input.fork ?? false } } },
+        merge_group: { head_sha: "" },
+      },
+      sha: "",
+    },
+    needs: {
+      scope: {
+        outputs: {
+          runner_admission: JSON.stringify(
+            input.admitted === false ? [] : [`ci:template-nonvisual:${input.template}`],
+          ),
+        },
+      },
+    },
+    fromJSON: JSON.parse,
+    contains: (values: unknown[], value: unknown) => values.includes(value),
+    format: (pattern: string, value: unknown) => pattern.replace("{0}", String(value)),
+  });
 
   it("pins optional GPU routing to the exact supported event SHA without changing fallbacks", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
@@ -1117,7 +1152,7 @@ describe("CI pipeline structure", () => {
 
     const pinnedGpuHeavy = (id: string) =>
       `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${gpuPinGuard}) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
-    const pinnedGpuMatrix = `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (matrix.template == 'racing' && (${gpuPinGuard})) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-nonvisual:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+    const pinnedGpuMatrix = gpuHeavyMatrix("ci:template-nonvisual:{0}", "matrix.template");
     for (const [job, expected] of [
       ["strata", pinnedGpuHeavy("ci:strata")],
       ["benchmark", pinnedGpuHeavy("ci:benchmark")],
@@ -1218,6 +1253,86 @@ describe("CI pipeline structure", () => {
         "tn-gpu-pr483",
       );
     }
+  });
+
+  it("routes Rain to the pinned GPU only for eligible non-fork runs", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "template-nonvisual");
+    const matrixExpression = job.match(/^ {4}runs-on: \$\{\{ (.+) \}\}$/mu)?.[1] ?? "";
+    const softwareExpression =
+      job.match(/^ {6}TN_PLAYTEST_ALLOW_SOFTWARE: \$\{\{ (.+) \}\}$/mu)?.[1] ?? "";
+    const cases = [
+      { template: "rain", pin: "candidate-sha", gpu: "", expected: "ubuntu-24.04" },
+      {
+        template: "rain",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "tn-gpu-pr483",
+      },
+      {
+        template: "racing",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "tn-gpu-pr483",
+      },
+      {
+        template: "rain",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        admitted: false,
+        expected: "tn-gpu-pr483",
+      },
+      {
+        template: "rain",
+        fork: true,
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "ubuntu-24.04",
+      },
+      {
+        template: "rain",
+        pin: "different-sha",
+        gpu: "tn-gpu-pr483",
+        runner: "tn-local",
+        expected: "tn-local",
+      },
+      {
+        template: "starter",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        runner: "tn-local",
+        expected: "tn-local",
+      },
+      {
+        template: "rain",
+        pin: "different-sha",
+        gpu: "tn-gpu-pr483",
+        admitted: false,
+        expected: "ubuntu-24.04",
+      },
+    ];
+    for (const input of cases) {
+      const result = runInNewContext(matrixExpression, workflowMatrixContext(input));
+      expect(result, `${input.template} routes to ${input.expected}`).toBe(input.expected);
+    }
+
+    const softwareCases = [
+      { template: "rain", pin: "candidate-sha", gpu: "tn-gpu-pr483", expected: "0" },
+      {
+        template: "rain",
+        fork: true,
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "1",
+      },
+      { template: "rain", pin: "different-sha", gpu: "tn-gpu-pr483", expected: "1" },
+      { template: "rain", pin: "candidate-sha", gpu: "", expected: "1" },
+      { template: "starter", pin: "candidate-sha", gpu: "tn-gpu-pr483", expected: "1" },
+    ];
+    for (const input of softwareCases)
+      expect(runInNewContext(softwareExpression, workflowMatrixContext(input))).toBe(
+        input.expected,
+      );
   });
 
   // `starter-linux` resolves its per-row runner inside the scope job, so the admission output it
@@ -2103,7 +2218,9 @@ describe("CI pipeline structure", () => {
     // (PRD-480) reads `github.event.pull_request.head.repo.fork` in every routed job and gates
     // nothing on it. What this forbids is a gate that skips pull requests.
     expect(job).not.toMatch(/^\s+if:.*pull_request/mu);
-    expect(job).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
+    expect(job).toContain(
+      "TN_PLAYTEST_ALLOW_SOFTWARE: ${{ (matrix.template == 'rain' && !github.event.pull_request.head.repo.fork &&",
+    );
     expect(job).toContain("non-visual-scenarios.mjs");
     expect(job).toContain("threenative-playtest");
     expect(matrixTemplates(job)).toEqual([...expectedTemplates].sort());
