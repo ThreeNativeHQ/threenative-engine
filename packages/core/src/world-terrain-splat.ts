@@ -228,10 +228,23 @@ function packageAssetPath(directory: string, path: string): string {
 }
 
 async function fetchResolved(assets: IAssetLoader, path: string): Promise<Response> {
+  let attempted = false;
+  let everyFetchRejected = true;
+  let lastFetchError: unknown;
   for (const candidate of await assets.resolve(path)) {
-    const response = await fetch(candidate);
+    attempted = true;
+    let response: Response;
+    try {
+      response = await fetch(candidate);
+    } catch (error) {
+      lastFetchError = error;
+      continue;
+    }
+    everyFetchRejected = false;
     if (response.ok) return response;
   }
+  if (attempted && everyFetchRejected)
+    throw new Error(`loadTerrainSplat: '${path}' is not served.`, { cause: lastFetchError });
   throw new Error(`loadTerrainSplat: '${path}' is not served.`);
 }
 

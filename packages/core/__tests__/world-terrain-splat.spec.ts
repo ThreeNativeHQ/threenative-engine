@@ -299,6 +299,73 @@ describe("applyTerrainSurface", () => {
 });
 
 describe("loadTerrainSplat", () => {
+  it("continues to source assets when native fetch rejects a missing verbatim path", async () => {
+    const files: Record<string, unknown> = {
+      "assets/world/world.json": world({
+        splat: "terrain/splat.rgba8",
+        table: "terrain/layers.json",
+      }),
+      "assets/world/terrain/layers.json": table,
+      "assets/world/terrain/splat.rgba8": new Uint8Array(2 * 4 * 4 * 4),
+    };
+    const fetched: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        const url = String(input);
+        fetched.push(url);
+        if (url === "assets.manifest.json") throw new Error("File read error: manifest absent");
+        const body = files[url];
+        if (body === undefined) throw new Error(`File read error: Failed to open file: ${url}`);
+        return body instanceof Uint8Array
+          ? new Response(new Blob([body as BlobPart]))
+          : new Response(JSON.stringify(body));
+      }),
+    );
+    const requestedTextures: string[] = [];
+    const assets = createAssetLoader({
+      texture: async (url) => {
+        if (!url.startsWith("assets/"))
+          throw new Error(`File read error: Failed to open file: ${url}`);
+        requestedTextures.push(url);
+        return bitmap(4, 4);
+      },
+    });
+
+    const surface = await loadTerrainSplat({ assets, url: "world/world.json" });
+
+    expect(surface).toBeInstanceOf(MeshStandardNodeMaterial);
+    expect(fetched.filter((url) => url.includes("world/world.json"))).toEqual([
+      "world/world.json",
+      "assets/world/world.json",
+    ]);
+    expect(requestedTextures).toHaveLength(7);
+    expect(requestedTextures.every((url) => url.startsWith("assets/"))).toBe(true);
+    surface.dispose();
+  });
+
+  it("keeps the last native fetch error as the cause when every candidate rejects", async () => {
+    const lastError = new Error("File read error: Failed to open file: assets/world/world.json");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string) => {
+        if (String(input) === "assets.manifest.json") throw new Error("manifest absent");
+        if (String(input) === "world/world.json")
+          throw new Error("File read error: Failed to open file: world/world.json");
+        throw lastError;
+      }),
+    );
+    const assets = createAssetLoader();
+
+    const failure = await loadTerrainSplat({ assets, url: "world/world.json" }).catch(
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("loadTerrainSplat: 'world/world.json' is not served.");
+    expect((failure as Error & { cause?: unknown }).cause).toBe(lastError);
+  });
+
   it("builds the package's splat surface from its own table, planes and texture sets", async () => {
     const { assets, requested } = served({
       "world/world.json": world({ splat: "terrain/splat.rgba8", table: "terrain/layers.json" }),
