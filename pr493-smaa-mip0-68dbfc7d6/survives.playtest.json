@@ -1,0 +1,76 @@
+{
+  "name": "survives",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "move",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "allowTrivial": "GroundSnap settles the player before this movement observation; the finite near-zero clearance is the generated call-site proof.",
+        "component": "groundClearance",
+        "entity": "player",
+        "lte": 0.01
+      },
+      {
+        "allowTrivial": "The packaged mannequin is authored taller than the 1.545 m-to-Head convention it is normalised to, so the retained factor is below one; either side of one proves normaliseToMetres ran in the generated player.",
+        "component": "normaliseFactor",
+        "entity": "player",
+        "lte": 0.99
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.5
+    },
+    "visibility": [
+      {
+        "entity": "touch-controls",
+        "present": false,
+        "allowTrivial": "Desktop keyboard lanes intentionally omit touch controls while movement proves the scene is active."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}
