@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include "scenario.h"
 #include "engine/animation/skinning/skeleton.h"
@@ -245,7 +246,13 @@ void track_hot_fields() {
     CHECK(at(&track.cumulativeWeight) < 64);
     CHECK(at(&track.cumulativeWeightAdditive) < 128);
     // `path` is the binding's first cold member: the node, target and flags an apply reads precede it.
-    CHECK(at(&track.binding.path) - at(&track.binding) >= 32);
+    const std::size_t bindingPathOffset = at(&track.binding.path) - at(&track.binding);
+    // The hot prefix contains the weak node reference, both raw node pointers, bind flag and
+    // component index. State this lower bound in the active ABI's sizes: Wasm32's weak_ptr and
+    // pointers are narrower than the 64-bit desktop layout. Omit the implementation-sized enum.
+    const std::size_t hotBindingBytes = sizeof(std::weak_ptr<Object3D>) + 2 * sizeof(void*) + sizeof(bool) +
+                                        sizeof(int);
+    CHECK(bindingPathOffset >= hotBindingBytes);
     CHECK(at(&track.binding.path) < 128);
 }
 

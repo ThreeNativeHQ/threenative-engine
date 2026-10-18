@@ -681,6 +681,12 @@ tn_native_engine_test(tn-native-engine-animation-mixer-test tests/native-engine/
     native_engine_animation_track_hot_fields=track_hot_fields)
 target_link_libraries(tn-native-engine-animation-mixer-test PRIVATE tn_engine_animation)
 target_include_directories(tn-native-engine-animation-mixer-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/animation)
+if(EMSCRIPTEN)
+    # cpuTiming verifies that a listener exception unwinds through mixer.update() and is caught by
+    # the test. The engine itself does not throw, so enable Wasm EH on the test executable only.
+    target_compile_options(tn-native-engine-animation-mixer-test PRIVATE -fwasm-exceptions)
+    target_link_options(tn-native-engine-animation-mixer-test PRIVATE -fwasm-exceptions)
+endif()
 # PRD-517: property tracks on materials, lights, cameras and visibility.
 tn_native_engine_test(tn-native-engine-animation-property-tracks-test tests/native-engine/animation/property_tracks_test.cpp
     native_engine_animation_property_tracks=property_tracks)
