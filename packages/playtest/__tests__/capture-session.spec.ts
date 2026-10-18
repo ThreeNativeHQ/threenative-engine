@@ -40,6 +40,30 @@ test("borrows ready resources, verifies screenshots and cleans up in ownership o
   assert.equal(envelope.timingEvidence, "not-qualified");
 });
 
+test("custom captures retain a startup console error for parity checks after readiness recovers", async () => {
+  state.startupConsoleError = true;
+  const observed = await withBrowserCapture(captureConfig(directory), async (session) => {
+    assert.equal(state.startupConsoleError, false);
+    await session.screenshot("recovered");
+    return {
+      parityPasses: session.errors.length === 0,
+      errors: session.errors,
+      consoleEntries: session.consoleEntries,
+    };
+  });
+  assert.equal(observed.parityPasses, false);
+  assert.deepEqual(observed.errors, ["startup compile error, later recovered", "startup assertion failed"]);
+  assert.deepEqual(observed.consoleEntries, [{
+    source: "browser-console",
+    text: "startup compile error, later recovered",
+    type: "error",
+  }, {
+    source: "browser-console",
+    text: "startup assertion failed",
+    type: "assert",
+  }]);
+});
+
 test("a dead server keeps its diagnostic and does not launch a browser", async () => {
   const failure = new Error("managed server exited"); state.serverError = failure;
   await assert.rejects(withBrowserCapture(captureConfig(directory), async () => assert.fail("must not capture")), (error) => error === failure);
