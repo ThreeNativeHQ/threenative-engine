@@ -357,17 +357,25 @@ static void installDeviceCallbacks(WGPUDeviceDescriptor& deviceDesc, mystral::we
 #else
     (void)context;
 #endif
-#if defined(MYSTRAL_WEBGPU_DAWN) && defined(TN_ENGINE_HOST_SERVICES)
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    // Preserve FXC's error blob and generated HLSL instead of reporting only E_FAIL.
+    static const char* const enabled[] = {"dump_shaders_on_failure"};
+#if defined(TN_ENGINE_HOST_SERVICES)
     // Dawn rounds timestamp queries to a coarse step by default (a browser's fingerprinting guard),
     // so every pass of a small frame read the same time and the engine's GPU timer measured nothing.
     // Only the native engine's host-services build asks for full resolution; the legacy host is
     // compiled without TN_ENGINE_HOST_SERVICES and keeps Dawn's default.
     static const char* const disabled[] = {"timestamp_quantization"};
+#endif
     static WGPUDawnTogglesDescriptor toggles = [] {
         WGPUDawnTogglesDescriptor descriptor = {};
         descriptor.chain.sType = WGPUSType_DawnTogglesDescriptor;
+        descriptor.enabledToggleCount = 1;
+        descriptor.enabledToggles = enabled;
+#if defined(TN_ENGINE_HOST_SERVICES)
         descriptor.disabledToggleCount = 1;
         descriptor.disabledToggles = disabled;
+#endif
         return descriptor;
     }();
     deviceDesc.nextInChain = &toggles.chain;
