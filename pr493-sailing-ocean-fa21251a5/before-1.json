@@ -1,0 +1,49 @@
+{
+  "arm": "before",
+  "run": 1,
+  "label": "BEFORE · OLD NORMAL · RUN 1",
+  "engine": "threenative",
+  "rendererKind": "webgpu",
+  "headed": true,
+  "adapter": {
+    "vendor": "nvidia",
+    "architecture": "turing"
+  },
+  "viewport": {
+    "window": {
+      "width": 1904,
+      "height": 1060
+    },
+    "game": {
+      "x": 0,
+      "y": 100,
+      "width": 1904,
+      "height": 960
+    },
+    "canvases": [
+      {
+        "x": 0,
+        "y": 100,
+        "width": 1904,
+        "height": 960
+      }
+    ]
+  },
+  "sceneTime": {
+    "targetSeconds": 6,
+    "actualSeconds": 5.999999999999984,
+    "fixedStepTick": 360,
+    "clockMode": "fixed-step",
+    "startSeconds": 1.0000000000000013,
+    "startTick": 60,
+    "renderOnlyPreservedState": true
+  },
+  "sourceSha256": "6182a5f69cdfe714619877facec6ecef17d3d5625c53d101db63978072855a9f",
+  "runtimeWasm": {
+    "sha256": "ceb12a409916ad3aa9802b4a88e48a40d7cf464998b83280d94682bbd20cb1b2",
+    "responseStatus": 200,
+    "transferSize": 3602554,
+    "encodedBodySize": 3602254
+  },
+  "screenshotSha256": "3dbac805739201528465dee0984e6c0682538c47efca0ffb6ec3f801039112d3"
+}

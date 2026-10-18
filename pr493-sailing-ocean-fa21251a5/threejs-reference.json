@@ -1,0 +1,43 @@
+{
+  "arm": "threejs",
+  "run": 1,
+  "label": "THREE.JS REFERENCE · RUN 1",
+  "engine": "threejs",
+  "rendererKind": "webgpu",
+  "headed": true,
+  "adapter": {
+    "vendor": "nvidia",
+    "architecture": "turing"
+  },
+  "viewport": {
+    "window": {
+      "width": 1904,
+      "height": 1060
+    },
+    "game": {
+      "x": 0,
+      "y": 100,
+      "width": 1904,
+      "height": 960
+    },
+    "canvases": [
+      {
+        "x": 0,
+        "y": 100,
+        "width": 1904,
+        "height": 960
+      }
+    ]
+  },
+  "sceneTime": {
+    "targetSeconds": 6,
+    "actualSeconds": 5.999999999999984,
+    "fixedStepTick": 360,
+    "clockMode": "fixed-step",
+    "startSeconds": 1.0000000000000013,
+    "startTick": 60,
+    "renderOnlyPreservedState": true
+  },
+  "sourceSha256": "6182a5f69cdfe714619877facec6ecef17d3d5625c53d101db63978072855a9f",
+  "screenshotSha256": "2cd93d4151f1f11dc897819ac1ef209909f650f134ffdabc9f705c91a6bb9828"
+}
