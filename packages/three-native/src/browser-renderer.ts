@@ -395,10 +395,16 @@ export function defineWebRenderer(
     /**
      * Startup warm-up's native counterpart of three's PMREM preparer: the engine bakes an environment
      * a retained packet per render and skips every frame until it is done, so draw the held scene
-     * (behind the loading cover) until a render is no longer skipped for it. True when it drew.
+     * (behind the loading cover) until a render is no longer skipped for it. True when it drew;
+     * false at `deadlineMs` (a `performance.now()` time), so a bake that never finishes cannot
+     * hold the caller or keep drawing after it gave up.
      */
-    async prepareEnvironmentAsync(scene: unknown, camera: unknown): Promise<boolean> {
-      for (;;) {
+    async prepareEnvironmentAsync(
+      scene: unknown,
+      camera: unknown,
+      deadlineMs = Number.POSITIVE_INFINITY,
+    ): Promise<boolean> {
+      while (performance.now() < deadlineMs) {
         const gated = this.info.engine.frameGateSkips;
         this.render(scene, camera);
         if (this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0)
@@ -406,6 +412,7 @@ export function defineWebRenderer(
         // A macrotask, not a frame: the work-done callbacks that advance the bake arrive between tasks.
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
+      return false;
     }
 
     async resolveTimestampsAsync(type = "render"): Promise<number | undefined> {

@@ -331,6 +331,34 @@ describe("the Wasm engine's environment preparation", () => {
   });
 });
 
+describe("the Wasm engine's environment preparation deadline", () => {
+  it("gives up at the caller's deadline instead of drawing an unbaked environment forever", async () => {
+    let drawn = 0;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => (field === 12 ? 1 : 0),
+      () => {
+        drawn += 1;
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(
+        scene: unknown,
+        camera: unknown,
+        deadlineMs: number,
+      ): Promise<boolean>;
+    };
+    await renderer.init();
+    expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 20)).toBe(
+      false,
+    );
+    const after = drawn;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(drawn).toBe(after);
+  });
+});
+
 describe("the Wasm engine's WebGPURenderer across a hot update", () => {
   it("lets a renderer replace a disposed one on the engine's own canvas, and refuses a second live one", async () => {
     const { Renderer, canvas, scene, camera, state } = host();

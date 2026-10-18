@@ -111,9 +111,11 @@ describe("scene warm-up", () => {
     const events: string[] = [];
     let releaseBake: (() => void) | undefined;
     const raw = {
-      prepareEnvironmentAsync: vi.fn((target: unknown, view: unknown) => {
+      prepareEnvironmentAsync: vi.fn((target: unknown, view: unknown, deadlineMs: number) => {
         expect(target).toBe(scene);
         expect(view).toBe(camera);
+        // Bounded by the warm-up budget, so a bake that never finishes cannot hold startup.
+        expect(Number.isFinite(deadlineMs)).toBe(true);
         events.push("bake");
         return new Promise<boolean>((resolve) => {
           releaseBake = () => resolve(true);
