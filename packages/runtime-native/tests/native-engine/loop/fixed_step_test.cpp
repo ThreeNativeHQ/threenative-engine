@@ -54,9 +54,7 @@ void fixed_step() {
     }
     std::printf("fixed step: %zu cases, %zu frames, %zu differ\n", std::size(kCases), compared, mismatched);
     CHECK(compared > 0 && mismatched == 0);
-}
 
-void alphaNan() {
     FixedStepClock clock(1.0 / 60, 5);
     clock.start(0);
     clock.advance(std::numeric_limits<double>::quiet_NaN());
@@ -65,4 +63,4 @@ void alphaNan() {
 
 } // namespace
 
-TN_TEST_MAIN({"fixed_step", fixed_step}, {"alpha_nan", alphaNan})
+TN_TEST_MAIN({"fixed_step", fixed_step})
