@@ -23,6 +23,7 @@ export interface ICellPrewarmHost {
   setShared(key: string, shared: SharedBatch): void;
   attach(shared: SharedBatch): void;
   casts(level: number): boolean;
+  preserveAuthoredParts(): boolean;
   wideOwed(asset: string, part: number): boolean;
   followCluster(): string;
   wideShape(
@@ -425,8 +426,16 @@ export class CellPrewarm {
       for (const [part, entry] of parts.entries()) {
         const key = `${asset.id}:${String(level)}:${String(part)}`;
         for (const role of ["main", "cluster", "wide"] as const) {
+          const terminalImpostor =
+            asset.impostor !== undefined && level === asset.levels.length - 1;
+          const terminalFarCaster =
+            role === "wide" &&
+            terminalImpostor &&
+            this.#host.casts(0) &&
+            (!this.#host.preserveAuthoredParts() ||
+              asset.definition.impostorDistance !== undefined);
           // Only a level that casts has a caster half at all; see `#casts`.
-          if (role !== "main" && !this.#host.casts(level)) continue;
+          if (role !== "main" && !this.#host.casts(level) && !terminalFarCaster) continue;
           // One whole-asset representation covers the far shadow; see `#wideOwed`.
           if (role === "wide" && !this.#host.wideOwed(asset.id, part)) continue;
           // A baked impostor's far half is one mesh per asset, not one per level; prewarm the mesh the
@@ -434,7 +443,9 @@ export class CellPrewarm {
           const name =
             role === "main"
               ? key
-              : role === "wide" && asset.impostor !== undefined
+              : role === "wide" &&
+                  asset.impostor !== undefined &&
+                  !this.#host.preserveAuthoredParts()
                 ? wideKey
                 : `${key}@${role === "cluster" ? this.#host.followCluster() : WIDE_CLUSTER}`;
           // A retained key is already paid for; see `#mintPrewarm`.

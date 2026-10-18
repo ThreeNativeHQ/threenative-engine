@@ -261,6 +261,7 @@ export interface ICellImpostorsHost {
   release(id: string): void;
   noteGate(gate: number): void;
   retargetWideCasters(asset: IAssetState): void;
+  terminalPrewarm(asset: IAssetState): void;
   terminalLevelReady(asset: IAssetState): void;
   residentCell(key: string): IResidentCell | undefined;
   canonical(id: string): string;
@@ -742,6 +743,10 @@ export class CellImpostors {
     asset.threshold = asset.gates.length === 0 ? undefined : Math.min(...asset.gates);
     asset.impostor = { part, record, surface };
     record.users += 1;
+    // The terminal key is part of the same load-time prewarm as the authored levels. Do this before
+    // building the far aggregate and before a far-only source is released: either path can bypass
+    // `terminalLevelReady`, which owns only resident/GPU publication after this semantic prewarm.
+    this.#host.terminalPrewarm(asset);
     // The whole-map far aggregate for this atlas key, before the rebuild loop below: its segments
     // exist when the swaps land, and any run already near-ready is handed over immediately. A budget
     // refusal keeps only the far cohort's metadata and surface in `#farRetry`; see `#buildFar`.

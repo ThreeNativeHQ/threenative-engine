@@ -584,7 +584,7 @@ export class WorldCells extends Group implements IComputeDriven {
       released: () => this.#released,
       parent: () => this.parent,
       invalidateShadows: () => this.#invalidateShadows?.(),
-      backlog: () => this.#backlog(),
+      backlog: () => this.#backlog() + this.#impostorState.impostorStats().pending,
       keysForShadow: () => this.#render.keysForShadow(),
       hasShared: (key) => this.#render.hasShared(key),
       hasRetired: (key) => this.#render.hasRetired(key),
@@ -594,6 +594,7 @@ export class WorldCells extends Group implements IComputeDriven {
       smallCaster: (asset) => this.#render.smallCaster(asset),
       dressMesh: (shared, receiveShadow) => this.#render.dressMesh(shared, receiveShadow),
       receiveShadow: () => this.#receiveShadow,
+      preserveAuthoredParts: () => this.#preserveAuthoredParts,
       adoptGpu: (shared, asset, key, level, part) =>
         this.#render.adoptGpu(shared, asset, key, level, part),
       setShared: (key, shared) => this.#render.setShared(key, shared),
@@ -893,9 +894,12 @@ export class WorldCells extends Group implements IComputeDriven {
         release: (id) => this.#models.release(id),
         noteGate: (gate) => this.#noteGate(gate),
         retargetWideCasters: (asset) => this.#render.retargetWideCasters(asset),
-        terminalLevelReady: (asset) => {
+        terminalPrewarm: (asset) => {
           this.#models.ditherGates(asset);
+          this.#prewarm.queuePrewarm(asset);
           this.#render.refreshLodMaterials(asset);
+        },
+        terminalLevelReady: (asset) => {
           if (this.#render.gpuOn) {
             const level = asset.levels.length - 1;
             const part = asset.levels[level]?.[0];
@@ -926,7 +930,6 @@ export class WorldCells extends Group implements IComputeDriven {
             this.#prewarm.queuePrewarm(asset);
             return;
           }
-          this.#prewarm.queuePrewarm(asset);
           for (const cell of [...this.#resident.values()]) {
             for (const run of cell.cell.runs) {
               if (this.#canonical(run.asset) === asset.id) this.#queueBuild(asset, cell, run, true);
