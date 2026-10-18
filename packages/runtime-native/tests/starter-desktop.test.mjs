@@ -388,13 +388,19 @@ test('native workflow proves the Linux release container on x64 and arm64', () =
   // The arm64 leg is the point of the matrix: a free hosted ARM runner, the same release steps,
   // and the same scope selection as the x64 leg because it is the same job.
   // The rows are shaped by the scope job — a job's `if` cannot read `matrix` — and an ordinary
-  // pull request's reduced matrix (PRD-380 phase 2) keeps x64 alone. linux-x64 routes through the
-  // TN_RUNNER switch (PRD-480) and falls back to the same hosted image; arm64 stays hosted.
+  // pull request's reduced matrix (PRD-380 phase 2) keeps x64 alone. The scope job is light work and
+  // stays on the light runner (PRD-620). linux-x64 is heavy: it routes through the TN_RUNNER switch
+  // (PRD-480) only when the caller admitted this exact instance, and otherwise falls back to hosted;
+  // arm64 stays hosted.
   const rows = workflow.match(/ {2}scope:\n([\s\S]*?)\n {2}web-reference:/u)?.[1];
   assert.ok(rows);
   assert.match(
     rows,
-    /\{ platform: "linux-x64", runner: "\$\{\{ \(github\.event\.pull_request\.head\.repo\.fork \|\| !vars\.TN_RUNNER\) && 'ubuntu-24\.04' \|\| vars\.TN_RUNNER \}\}" \}/u,
+    /runs-on: \$\{\{ \(github\.event\.pull_request\.head\.repo\.fork \|\| !vars\.TN_RUNNER_LIGHT\) && 'ubuntu-24\.04' \|\| vars\.TN_RUNNER_LIGHT \}\}/u,
+  );
+  assert.match(
+    rows,
+    /\{ platform: "linux-x64", runner: "\$\{\{ \(github\.event\.pull_request\.head\.repo\.fork \|\| !vars\.TN_RUNNER \|\| !contains\(fromJSON\(steps\.admission\.outputs\.runner_admission \|\| '\[\]'\), 'native:starter-linux:linux-x64'\)\) && 'ubuntu-24\.04' \|\| vars\.TN_RUNNER \}\}" \}/u,
   );
   assert.match(rows, /\{ platform: "linux-arm64", runner: "ubuntu-24\.04-arm" \}/u);
   assert.match(rows, /rows\.slice\(0, 1\)/u);
