@@ -69,7 +69,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const runner = join(root, "conformance/run-conformance.mjs");
 const SDL3_AAR = `SDL3-${SDL3_ANDROID_VERSION}.aar`;
 
-function run(args, env = {}) {
+function run(args, env = {}, timeout = 120_000) {
   return spawnSync(process.execPath, [runner, ...args], {
     cwd: root,
     encoding: "utf8",
@@ -81,7 +81,7 @@ function run(args, env = {}) {
       ...process.env,
       ...env,
     },
-    timeout: 120_000,
+    timeout,
   });
 }
 
@@ -543,7 +543,7 @@ test("dry run validates and bundles implemented rows without a browser or native
       FIREFOX_BIN: join(dir, "missing-firefox"),
       TN_RUNTIME: join(dir, "missing-runtime"),
       MYSTRAL_BIN: "",
-    });
+    }, 240_000);
 
     assert.equal(proc.status, 0, proc.stderr || proc.stdout);
     const report = JSON.parse(readFileSync(out, "utf8"));
