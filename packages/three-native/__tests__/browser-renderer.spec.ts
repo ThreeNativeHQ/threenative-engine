@@ -299,6 +299,38 @@ describe("the Wasm engine's frame gate", () => {
   });
 });
 
+describe("the Wasm engine's environment preparation", () => {
+  it("draws the held scene until a render is neither gated nor skipped for an unbaked environment", async () => {
+    // Pending for two drawn renders, then gated once while two frames are on the GPU, then baked.
+    const pending = [1, 1, 0];
+    let gateOnce = false;
+    let drawn = 0;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => {
+        if (field === 11 && gateOnce) {
+          gateOnce = false;
+          return 1;
+        }
+        return field === 12 ? (pending[drawn - 1] ?? 0) : 0;
+      },
+      () => {
+        drawn += 1;
+        if (drawn === 2) gateOnce = true;
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      info: { engine: { frameGateSkips: number } };
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(scene: unknown, camera: unknown): Promise<boolean>;
+    };
+    await renderer.init();
+    expect(await renderer.prepareEnvironmentAsync(scene, camera)).toBe(true);
+    expect(drawn).toBe(3);
+    expect(renderer.info.engine.frameGateSkips).toBe(1);
+  });
+});
+
 describe("the Wasm engine's WebGPURenderer across a hot update", () => {
   it("lets a renderer replace a disposed one on the engine's own canvas, and refuses a second live one", async () => {
     const { Renderer, canvas, scene, camera, state } = host();

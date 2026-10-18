@@ -419,6 +419,8 @@ public:
      * RenderDatabase::render, so one mechanism serves both.
      */
     bool prepareEnvironments(std::span<const DrawItem> items);
+    /** True while the last render() skipped its frame for an environment that is not baked yet. */
+    bool environmentPending() const { return environmentPending_; }
     /**
      * Draws the last render() output into `target` and submits it, so a windowed player puts the
      * very same frame on the screen the render database just built. `format` is the target view's
@@ -710,6 +712,8 @@ private:
         uint64_t budget = 0;             // the costliest packet's cost: the per-call submission cap
     };
     std::optional<EnvironmentPreparation> envPrep_;
+    bool environmentPending_ = false;
+    bool advanceEnvironments(std::span<const DrawItem> items);
     void beginEnvironment(const Texture& equirect);
     bool pumpEnvironment();
     void abandonEnvironment();

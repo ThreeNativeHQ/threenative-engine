@@ -505,7 +505,8 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  * text-key lookups (3), bind groups created (4), graph keys serialized (5), programs built (6),
  * the last resolved GPU frame time in ms (7), how many GPU times have resolved (8), the caller
  * frame id that sample was submitted under (9), whether frames are timed at all (10), and 1 while
- * two drawn frames are still on the GPU, so the caller draws none (11).
+ * two drawn frames are still on the GPU, so the caller draws none (11), and 1 while the last render skipped
+ * its frame for an environment that is not baked yet (12).
  */
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
@@ -527,6 +528,7 @@ extern "C" double tnw_web_frame(int field) {
             tnw_web_poll();  // delivers the work-done callbacks that advance completedSerial
             while (!framesOnGpu.empty() && framesOnGpu.front() <= renderer->gpu().completedSerial()) framesOnGpu.pop_front();
             return framesOnGpu.size() >= kMaxFramesOnGpu ? 1 : 0;
+        case 12: return renderer->environmentPending() ? 1 : 0;
         default: return 0;
     }
 }

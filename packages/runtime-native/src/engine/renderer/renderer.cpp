@@ -1875,6 +1875,11 @@ bool Renderer::pumpEnvironment() {
 }
 
 bool Renderer::prepareEnvironments(std::span<const DrawItem> items) {
+    environmentPending_ = !advanceEnvironments(items);
+    return !environmentPending_;
+}
+
+bool Renderer::advanceEnvironments(std::span<const DrawItem> items) {
     sweepTextures();  // a retired source must not keep a preparation reading a dead view
     // The active bake advances on every call, sampled by this pass or not: a render-target or
     // secondary pass that does not sample it must not discard its progress. Only a version change

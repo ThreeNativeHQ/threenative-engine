@@ -228,12 +228,25 @@ interface IPMREMNodeClass {
   prepareTextureAsync?(renderer: unknown, texture: Texture): Promise<boolean>;
 }
 
+/** The native engine's facade bakes the environment itself; warm-up draws the held scene until it is done. */
+interface INativeEnvironmentPreparer {
+  prepareEnvironmentAsync(scene: Object3D, camera: Camera): Promise<boolean>;
+}
+
+function nativeEnvironmentPreparer(raw: unknown): INativeEnvironmentPreparer | undefined {
+  return typeof (raw as Partial<INativeEnvironmentPreparer> | null)?.prepareEnvironmentAsync ===
+    "function"
+    ? (raw as INativeEnvironmentPreparer)
+    : undefined;
+}
+
 function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Object3D): boolean {
   const environment = (scene as Object3D & { environment?: Texture }).environment;
   if (environment?.isTexture !== true) return false;
 
   const raw = renderer.raw;
   if (typeof raw !== "object" || raw === null) return false;
+  if (nativeEnvironmentPreparer(raw) !== undefined) return true;
   const backend = (raw as { backend?: { isWebGPUBackend?: boolean } }).backend;
   return backend?.isWebGPUBackend === true;
 }
@@ -241,12 +254,15 @@ function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Obje
 async function prepareSceneEnvironment(
   renderer: IWarmUpRenderer,
   scene: Object3D,
+  camera: Camera,
 ): Promise<boolean> {
   const environment = (scene as Object3D & { environment?: Texture }).environment;
   if (environment?.isTexture !== true) return true;
 
   const raw = renderer.raw;
   if (typeof raw !== "object" || raw === null) return true;
+  const native = nativeEnvironmentPreparer(raw);
+  if (native !== undefined) return native.prepareEnvironmentAsync(scene, camera);
   const backend = (raw as { backend?: { isWebGPUBackend?: boolean } }).backend;
   if (backend?.isWebGPUBackend !== true) return true;
 
@@ -914,14 +930,16 @@ export async function warmUpScene(
     if (!sceneNeedsEnvironmentPreparation(renderer, targetScene)) return undefined;
     if (environmentPreparation === undefined) {
       environmentPreparationStarted = true;
-      environmentPreparation = prepareSceneEnvironment(renderer, targetScene).then((prepared) => {
-        environmentPrepared = prepared;
-        if (!prepared) {
-          throw new Error(
-            "TN_PMREM_PREPARATION_INCOMPLETE: the scene environment was not prepared.",
-          );
-        }
-      });
+      environmentPreparation = prepareSceneEnvironment(renderer, targetScene, camera).then(
+        (prepared) => {
+          environmentPrepared = prepared;
+          if (!prepared) {
+            throw new Error(
+              "TN_PMREM_PREPARATION_INCOMPLETE: the scene environment was not prepared.",
+            );
+          }
+        },
+      );
     }
     return environmentPreparation;
   };

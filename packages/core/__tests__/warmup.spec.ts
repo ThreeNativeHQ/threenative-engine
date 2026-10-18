@@ -102,6 +102,46 @@ describe("scene warm-up", () => {
     }
   });
 
+  test("should wait for the native engine's environment bake before the covered world pass", async () => {
+    // The native engine skips every frame until its PMREM is baked; a warm-up that does not wait
+    // lets the pose capture a skipped, empty frame (platformer on SwiftShader, PRD-624).
+    const environment = { isTexture: true } as never;
+    const scene = { children: [], environment } as never;
+    const camera = {} as never;
+    const events: string[] = [];
+    let releaseBake: (() => void) | undefined;
+    const raw = {
+      prepareEnvironmentAsync: vi.fn((target: unknown, view: unknown) => {
+        expect(target).toBe(scene);
+        expect(view).toBe(camera);
+        events.push("bake");
+        return new Promise<boolean>((resolve) => {
+          releaseBake = () => resolve(true);
+        });
+      }),
+    };
+    const promise = warmUpScene(
+      {
+        raw,
+        compileAsync: vi.fn(async () => {
+          events.push("compile");
+        }),
+        warmUpWorldPass: vi.fn(() => {
+          events.push("covered-render");
+        }),
+      },
+      scene,
+      camera,
+      { granularity: "scene", yieldFrame: () => Promise.resolve() },
+    );
+
+    expect(events).toEqual(["bake"]);
+    releaseBake?.();
+    await promise;
+    expect(events).toEqual(["bake", "covered-render"]);
+    expect(raw.prepareEnvironmentAsync).toHaveBeenCalledTimes(1);
+  });
+
   test("should prepare the target scene environment used by object compilation", async () => {
     const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
     const environment = { isTexture: true } as never;
