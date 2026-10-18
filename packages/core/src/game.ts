@@ -1159,7 +1159,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     void projectionReady.catch(() => undefined);
     const startupShadows = new Set<VirtualShadowNode>();
     const startupReadiness = new StartupReadiness({
-      settled: () => worldRendered && [...startupShadows].every((node) => node.settled),
+      // An attached light with no shadow receiver never asks Three to update its maps.
+      settled: () =>
+        worldRendered &&
+        [...startupShadows].every((node) => node.stats.frame === 0 || node.settled),
       /**
        * The second warm-up: everything a game attached while it held startup.
        *
