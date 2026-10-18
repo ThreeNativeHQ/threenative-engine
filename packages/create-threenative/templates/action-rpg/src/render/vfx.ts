@@ -124,12 +124,24 @@ function spawnPosition(recipe: DonorRecipe, seed: number, key: Key) {
   );
 }
 
+/**
+ * The axis a burst's cone is built around `direction` with. It must not be parallel to `direction`:
+ * `cross(direction, tangent)` is then zero, its `normalize` is NaN, every launch velocity is NaN, and
+ * the three.js arm's GPU hangs on the first frame the NaN reaches a sprite (VK_ERROR_DEVICE_LOST).
+ * The test is on the *normalised* direction, so `[0, 0.2, 0]` is straight up like `[0, 1, 0]`.
+ */
+export function launchTangent(
+  direction: readonly [number, number, number],
+): readonly [number, number, number] {
+  return Math.abs(direction[1] / Math.hypot(...direction)) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+}
+
 function launch(recipe: DonorRecipe, seed: number, key: Key) {
   const speed = float(recipe.speed[0]).add(
     random(seed, 23, key).mul(recipe.speed[1] - recipe.speed[0]),
   );
   const direction = normalize(vec3(...recipe.direction));
-  const tangent = Math.abs(recipe.direction[1] ?? 1) > 0.9 ? vec3(1, 0, 0) : vec3(0, 1, 0);
+  const tangent = vec3(...launchTangent(recipe.direction));
   const bitangent = normalize(cross(direction, tangent));
   const cone = float(recipe.cone).mul(random(seed, 29, key).sqrt());
   const azimuth = random(seed, 31, key).mul(TAU);
