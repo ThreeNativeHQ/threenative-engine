@@ -6,6 +6,7 @@
 // is the fixture-built one; Texture is the empty base a loader fills. Header-only: the class carries
 // no engine algorithm a binding cannot inline.
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -20,6 +21,8 @@
 #include "engine/foundation/math/Vector.h"
 
 namespace tn::engine {
+
+class RetiredTextures;
 
 /** three's wrapping constants (three/src/constants.js), the values a fixture passes. */
 enum class TextureWrap : uint16_t { Repeat = 1000, ClampToEdge = 1001, MirroredRepeat = 1002 };
@@ -40,18 +43,17 @@ class TextureId {
     TextureId() : value_(next()) {}
     TextureId(const TextureId&) : value_(next()) {}
     TextureId& operator=(const TextureId&) { return *this; }
-    ~TextureId() {
-        std::lock_guard<std::mutex> lock(mutex());
-        retired().push_back(value_);
-    }
+    ~TextureId() { retire(value_); }
     [[nodiscard]] uint64_t value() const { return value_; }
-    /** The ids retired since the last call, for the renderer's cache sweep. */
-    static std::vector<uint64_t> takeRetired() {
-        std::lock_guard<std::mutex> lock(mutex());
-        return std::exchange(retired(), {});
-    }
+    /**
+     * A renderer's subscription to retirements. Every watcher sees every id: a texture can be cached
+     * by several renderers (the main one, a sibling pass, the probe capture renderer), and the first
+     * one to sweep must not consume the retirement the others still need. Destroying it unsubscribes.
+     */
+    static std::shared_ptr<RetiredTextures> watch();
 
   private:
+    friend class RetiredTextures;
     static uint64_t next() {
         static std::atomic<uint64_t> counter{1};
         return counter.fetch_add(1, std::memory_order_relaxed);
@@ -60,12 +62,51 @@ class TextureId {
         static std::mutex m;
         return m;
     }
-    static std::vector<uint64_t>& retired() {
-        static std::vector<uint64_t> ids;
-        return ids;
+    static std::vector<RetiredTextures*>& watchers() {
+        static std::vector<RetiredTextures*> all;
+        return all;
     }
+    static void retire(uint64_t value);
     uint64_t value_;
 };
+
+/** The ids retired since the last take(), delivered to one renderer. */
+class RetiredTextures {
+  public:
+    RetiredTextures(const RetiredTextures&) = delete;
+    RetiredTextures& operator=(const RetiredTextures&) = delete;
+    ~RetiredTextures() {
+        std::lock_guard<std::mutex> lock(TextureId::mutex());
+        auto& all = TextureId::watchers();
+        all.erase(std::remove(all.begin(), all.end(), this), all.end());
+    }
+    std::vector<uint64_t> take() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return std::exchange(pending_, {});
+    }
+
+  private:
+    friend class TextureId;
+    RetiredTextures() = default;
+    void push(uint64_t value) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pending_.push_back(value);
+    }
+    std::mutex mutex_;
+    std::vector<uint64_t> pending_;
+};
+
+inline std::shared_ptr<RetiredTextures> TextureId::watch() {
+    auto watcher = std::shared_ptr<RetiredTextures>(new RetiredTextures());
+    std::lock_guard<std::mutex> lock(mutex());
+    watchers().push_back(watcher.get());
+    return watcher;
+}
+
+inline void TextureId::retire(uint64_t value) {
+    std::lock_guard<std::mutex> lock(mutex());
+    for (RetiredTextures* watcher : watchers()) watcher->push(value);
+}
 
 /** three's ColorSpace: NoColorSpace (empty string) or an sRGB-encoded texture. */
 enum class TextureColorSpace : uint8_t { None, SRGB };

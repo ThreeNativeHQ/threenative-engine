@@ -457,7 +457,7 @@ struct Renderer::FrameJob {
 };
 
 Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
-    : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(std::make_shared<GeometryCopies>(instance, device, queue, events)), pipelines_(device) {
+    : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(std::make_shared<GeometryCopies>(instance, device, queue, events)), pipelines_(device), retired_(TextureId::watch()) {
     geometry_->gpu.shareSubmissions(gpu_);
     // The DFG lookup the standard BRDF samples: three's 16x16 RG half-float table, linear filtered.
     WGPUTextureDescriptor lutDesc = {};
@@ -1510,17 +1510,26 @@ Renderer::MaterialTextureStore::~MaterialTextureStore() {
 }
 
 void Renderer::sweepTextures() {
-    const auto retired = TextureId::takeRetired();
+    const auto retired = retired_->take();
     if (retired.empty()) return;
-    dropMapGroups();
+    // This renderer receives every texture retirement, including textures it never cached, so drop
+    // its groups only when it is about to release one it did cache.
+    bool groupsDropped = false;
+    const auto dropGroups = [&] {
+        if (groupsDropped) return;
+        groupsDropped = true;
+        dropMapGroups();
+    };
     for (const uint64_t id : retired) {
         if (const auto cube = backgroundCubes_.find(id); cube != backgroundCubes_.end()) {
+            dropGroups();
             if (cube->second.view) wgpuTextureViewRelease(cube->second.view);
             if (cube->second.texture) wgpuTextureRelease(cube->second.texture);
             if (cube->second.sampler) wgpuSamplerRelease(cube->second.sampler);
             backgroundCubes_.erase(cube);
         }
         if (const auto env = environments_.find(id); env != environments_.end()) {
+            dropGroups();
             if (envPrep_ && envPrep_->ident == id) abandonEnvironment();  // a disposed source never publishes
             EnvironmentGpu& e = env->second;
             if (e.view) wgpuTextureViewRelease(e.view);
@@ -1533,7 +1542,7 @@ void Renderer::sweepTextures() {
         if (const auto record = textures_->records.find(id); record != textures_->records.end()) {
             record->second.release();
             textures_->records.erase(record);
-            texturesChanged();
+            texturesChanged();  // drops the groups that bound the released view
         }
     }
 }

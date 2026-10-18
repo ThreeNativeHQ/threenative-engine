@@ -1,8 +1,10 @@
 #include "engine/renderer/probes/capture.h"
 #include "engine/renderer/render_database.h"
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <thread>
 
 namespace tn::engine::probes {
 namespace {
@@ -44,7 +46,21 @@ GpuStatus captureFace(Renderer& renderer, Object3D& scene, const ProbeVolume& vo
     capture.setSize(size, size);
     capture.setProbeVolume(name, volume, true);
     RenderDatabase database;
-    database.render(capture, scene, camera);
+    // Frame-pumped PMREM: render() returns 0 and draws nothing while the capture renderer's
+    // environment is still baking. A one-shot capture is not a frame loop, so pump completions here
+    // until the face is actually drawn rather than publishing the previous target as this face.
+    uint64_t frame = database.render(capture, scene, camera);
+    if (frame == 0) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (frame == 0 && std::chrono::steady_clock::now() < deadline) {
+            capture.poll();
+            capture.events().drain();
+            frame = database.render(capture, scene, camera);
+            if (frame == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+    if (frame == 0)
+        return GpuStatus::DeviceError;
     if (!database.diagnostics().empty())
         return GpuStatus::DeviceError;
     auto status = capture.readProbePixels([size, done = std::move(done)](GpuStatus status, std::vector<uint8_t> bytes) {

@@ -127,6 +127,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_alpha=traa_alpha
         native_engine_traa_reset_seed=traa_reset_seed)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
+
+    # A texture's retirement reaches every renderer that caches it, and a probe capture waits for a
+    # scene environment's frame-pumped PMREM before it reads a face.
+    tn_native_engine_test(tn-native-engine-renderer-lifetime-test tests/native-engine/renderer_lifetime_test.cpp
+        native_engine_renderer_shared_retired_sweep=shared_retired_sweep
+        native_engine_probe_capture_environment=probe_capture_environment)
+    target_link_libraries(tn-native-engine-renderer-lifetime-test PRIVATE tn_engine_renderer tn_host_services)
     if(TN_ENGINE_SANITIZE)
         # Like Gate E, exercise ASan/UBSan without judging the GPU driver's exit allocations.
         set_tests_properties(native_engine_traa_alpha PROPERTIES

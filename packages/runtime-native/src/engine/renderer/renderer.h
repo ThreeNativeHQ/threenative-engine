@@ -66,6 +66,7 @@ class PostEffects;
 struct TraaOptions;
 class Fog;
 class Texture;  // the material's diffuse `map` (engine/scene/texture.h)
+class RetiredTextures;  // this renderer's subscription to texture retirements
 
 /** Which program a draw uses; each kind reads the StandardMaterial fields it needs. */
 enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
@@ -802,6 +803,9 @@ private:
         ~MaterialTextureStore();
     };
     std::shared_ptr<MaterialTextureStore> textures_ = std::make_shared<MaterialTextureStore>();
+    // Every retirement, not the first sweeper's share: siblings and the probe capture renderer cache
+    // the same textures, so each renderer needs the whole stream.
+    std::shared_ptr<RetiredTextures> retired_;
     uint64_t texturesSeen_ = 0;
     /**
      * The GPU sampler for a full descriptor, created once and shared: three's one sampler per
