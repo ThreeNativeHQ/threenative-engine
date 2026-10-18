@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import {
   BASELINE_SHA,
   collectBundledThirdPartyPackages,
@@ -257,7 +257,7 @@ it("rejects Vite transitive compiler changes and missing compiler metadata", () 
 });
 
 it("collects emitted package versions and fails closed on missing package metadata", () => {
-  const root = mkdtempSync(path.join(tmpdir(), "strata-bundle-identity-"));
+  const root = makeTempDirSync("strata-bundle-identity-");
   try {
     const packageRoot = path.join(root, "node_modules", "sample-runtime");
     mkdirSync(packageRoot, { recursive: true });

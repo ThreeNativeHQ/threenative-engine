@@ -684,10 +684,10 @@ index 2ef7cb257..35cc0ffe8 100644
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/src/renderers/common/Bindings.js b/src/renderers/common/Bindings.js
-index 5f3d213a0..a3cec4ed8 100644
+index 5f3d213a01..ef3445890e 100644
 --- a/src/renderers/common/Bindings.js
 +++ b/src/renderers/common/Bindings.js
-@@ -145,7 +145,7 @@ class Bindings extends DataMap {
+@@ -145,7 +145,7 @@
  	 */
  	updateForRender( renderObject ) {
  
@@ -696,7 +696,7 @@ index 5f3d213a0..a3cec4ed8 100644
  
  	}
  
-@@ -206,10 +206,14 @@ class Bindings extends DataMap {
+@@ -206,10 +206,14 @@
  
  					} else if ( binding.isSampledTexture ) {
  
@@ -711,13 +711,35 @@ index 5f3d213a0..a3cec4ed8 100644
  						this.textures.updateSampler( binding );
  
  					} else if ( binding.isStorageBuffer ) {
-@@ -292,12 +296,13 @@ class Bindings extends DataMap {
+@@ -254,6 +258,20 @@
+ 
+ 			if ( groupData.usedTimes === 0 ) {
+ 
++				// Stop disposed bind groups from being invalidated by later texture disposal.
++				const bindingData = this.backend.get( bindGroup );
++				if ( bindingData.trackedTextures ) {
++
++					for ( const textureData of bindingData.trackedTextures ) {
++
++						textureData.bindGroups.delete( bindGroup );
++
++					}
++
++					bindingData.trackedTextures.clear();
++
++				}
++
+ 				for ( const binding of bindGroup.bindings ) {
+ 
+ 					if ( binding.isUniformBuffer ) {
+@@ -292,12 +310,13 @@
  	 * Updates the given array of bindings.
  	 *
  	 * @param {Array<BindGroup>} bindings - The bind groups.
-+	 * @param {boolean} [settled] - Whether the render object is a settled static object.
- 	 */
+-	 */
 -	_updateBindings( bindings ) {
++	 * @param {boolean} [settled] - Whether the render object is a settled static object.
++	 */
 +	_updateBindings( bindings, settled ) {
  
  		for ( const bindGroup of bindings ) {
@@ -727,17 +749,19 @@ index 5f3d213a0..a3cec4ed8 100644
  
  		}
  
-@@ -308,11 +313,30 @@ class Bindings extends DataMap {
+@@ -308,12 +327,31 @@
  	 *
  	 * @param {BindGroup} bindGroup - The bind group to update.
  	 * @param {Array<BindGroup>} bindings - The bind groups.
-+	 * @param {boolean} [settled] - Whether the render object is a settled static object.
- 	 */
+-	 */
 -	_update( bindGroup, bindings ) {
++	 * @param {boolean} [settled] - Whether the render object is a settled static object.
++	 */
 +	_update( bindGroup, bindings, settled ) {
  
  		const { backend } = this;
  
+-		let needsBindingsUpdate = false;
 +		// A group a node added after this object's first draw has no buffers and no layout yet, and
 +		// the pipeline reads that layout whatever this draw decides to do with it - so it is built
 +		// here, on every draw. A group that did not exist cannot have been written either, so it is
@@ -756,10 +780,11 @@ index 5f3d213a0..a3cec4ed8 100644
 +		const bindingsData = backend.get( bindGroup );
 +		const forceBindingsUpdate = bindingsData.forceUpdate === true;
 +
- 		let needsBindingsUpdate = false;
++		let needsBindingsUpdate = forceBindingsUpdate;
  		let cacheBindings = true;
  		let cacheIndex = 0;
-@@ -322,7 +343,7 @@ class Bindings extends DataMap {
+ 		let version = 0;
+@@ -322,7 +360,7 @@
  
  		for ( const binding of bindGroup.bindings ) {
  
@@ -768,14 +793,38 @@ index 5f3d213a0..a3cec4ed8 100644
  
  			// every uniforms group is a uniform buffer. So if no update is required,
  			// we move one with the next binding. Otherwise the next if block will update the group.
-@@ -460,5 +479,6 @@ class Bindings extends DataMap {
+@@ -385,11 +423,18 @@
+ 
+ 					}
+ 
+-					// keep track which bind groups refer to the current texture (this is needed for dispose)
+-
+-					texturesTextureData.bindGroups.add( bindGroup );
+-
+-				}
++				}
++
++				// keep track which bind groups refer to the current texture (this is needed for dispose)
++
++				texturesTextureData.bindGroups.add( bindGroup );
++				if ( bindingsData.trackedTextures === undefined ) {
++
++					bindingsData.trackedTextures = new Set();
++
++				}
++
++				bindingsData.trackedTextures.add( texturesTextureData );
+ 
+ 				const textureData = backend.get( texture );
+ 
+@@ -453,6 +498,7 @@
  		if ( needsBindingsUpdate === true ) {
  
  			this.backend.updateBindings( bindGroup, bindings, cacheBindings ? cacheIndex : 0, version );
 +			bindingsData.forceUpdate = false;
  
  		}
-
+ 
 diff --git a/src/renderers/common/Geometries.js b/src/renderers/common/Geometries.js
 index eb332c415..74100c31a 100644
 --- a/src/renderers/common/Geometries.js
