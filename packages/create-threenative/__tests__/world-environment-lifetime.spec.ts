@@ -486,6 +486,44 @@ it("retains every spatial intermediate target rather than only the scene pass", 
   }
 });
 
+it("sets up stock bloom at the macOS starter window without outgrowing its reserved mips", () => {
+  // The hosted macOS starter window is 1024x653, and the subrect runs at scale 1 there.
+  const controller = new ResolutionSubrect();
+  let effect: BloomNode | undefined;
+  const renderer: OutputRenderer = {
+    kind: "webgpu",
+    raw: {},
+    createResolutionSubrect: () => controller,
+    createRenderChain(options) {
+      const stage = options.stages?.find((entry) => entry.name === "bloom");
+      if (!stage) throw new Error("Missing bloom");
+      const graph = stage.build(options.input, { tier: "high" }) as Node;
+      graph.traverse((node) => {
+        if (node instanceof BloomNode) effect ??= node;
+      });
+      return {
+        applied: { stages: ["bloom"], dropped: [] },
+        dispose() {},
+      };
+    },
+  };
+  const graph = new WorldEnvironment({ bloomEnabled: true, screenSpaceAA: "disabled" }).apply(
+    renderer,
+    new Scene(),
+    new PerspectiveCamera(),
+  );
+  try {
+    if (!effect) throw new Error("Missing stock bloom");
+    controller.activate(1);
+    controller.setSize(1024, 653);
+    expect(() =>
+      effect?.setup({ getSharedContext: () => ({}) } as unknown as NodeBuilder),
+    ).not.toThrow();
+  } finally {
+    graph.dispose?.();
+  }
+});
+
 it("keeps lazy bloom mips valid at small viewports and releases retired bindings", () => {
   const controller = new ResolutionSubrect();
   let effect: BloomNode | undefined;
