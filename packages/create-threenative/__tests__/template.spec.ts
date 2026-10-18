@@ -201,6 +201,8 @@ if (delegatePristineTypechecks)
     "Pristine scaffold compiler proof is delegated to the complete required hosted matrix; ci-required verifies actual current-attempt compiler steps.",
   );
 
+const scaffoldTemplates = await templateNames();
+
 describe("template contracts", () => {
   it("documents the optional multiplayer transport contract in every template", async () => {
     const required = [
@@ -946,14 +948,15 @@ describe("template contracts", () => {
     }
   });
 
-  it("should scaffold flat agent docs without shared marker comments", async () => {
-    const root = await makeTempDir("threenative-shared-agent-scaffold-");
-    const skillPaths = authoringSkills.flatMap(([skill]) => [
-      `.agents/skills/${skill}/SKILL.md`,
-      `.claude/skills/${skill}/SKILL.md`,
-    ]);
-    try {
-      for (const template of await templateNames()) {
+  it.each(scaffoldTemplates)(
+    "%s should scaffold flat agent docs without shared marker comments",
+    async (template) => {
+      const root = await makeTempDir("threenative-shared-agent-scaffold-");
+      const skillPaths = authoringSkills.flatMap(([skill]) => [
+        `.agents/skills/${skill}/SKILL.md`,
+        `.claude/skills/${skill}/SKILL.md`,
+      ]);
+      try {
         const result = await createProject(
           { install: false, target: `generated-${template}`, template },
           root,
@@ -980,11 +983,12 @@ describe("template contracts", () => {
             expect(skill, `${template}/${relativePath}/PRD handoff`).toContain("`prd-creator`");
           }
         }
+      } finally {
+        await rm(root, { force: true, recursive: true });
       }
-    } finally {
-      await rm(root, { force: true, recursive: true });
-    }
-  }, 30_000);
+    },
+    30_000,
+  );
 
   it("should document only tools the pinned sculpt MCP serves", async () => {
     const surface = JSON.parse(

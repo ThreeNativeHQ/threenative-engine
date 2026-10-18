@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   findLiteralPackageEnumerationViolations,
@@ -10,6 +10,11 @@ import {
 } from "../workspace-packages.js";
 
 const temporaryRoots: string[] = [];
+let checkedInViolations: readonly string[] = [];
+
+beforeAll(() => {
+  checkedInViolations = findLiteralPackageEnumerationViolations(process.cwd());
+}, 30_000);
 
 afterEach(async () => {
   await Promise.all(
@@ -96,7 +101,7 @@ describe("workspace package derivation", () => {
     expect(scaffoldAction).toContain('find "$TN_SCAFFOLD_ARCHIVES" -name "${archive_prefix}*.tgz"');
     // The L1 scan still inspects the workflow; these assertions follow its composite action
     // to keep the package/archive stream tied to the derivation helper.
-    expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
+    expect(checkedInViolations).toEqual([]);
   }, 30_000);
 
   it("detects a literal multi-package enumeration at a reverted call site", async () => {
@@ -146,7 +151,7 @@ describe("workspace package derivation", () => {
   });
 
   it("keeps the checked-in call sites on derived package lists", async () => {
-    expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
+    expect(checkedInViolations).toEqual([]);
   }, 30_000);
 
   it("detects repeated literal package commands in a workflow inventory", async () => {
@@ -306,9 +311,7 @@ describe("workspace package derivation", () => {
   });
 
   it("keeps checked-in workflow package inventories on the derived stream", async () => {
-    expect(findLiteralPackageEnumerationViolations(process.cwd())).not.toContain(
-      ".github/workflows/native-platforms.yml",
-    );
+    expect(checkedInViolations).not.toContain(".github/workflows/native-platforms.yml");
     const workflow = await readFile(
       path.join(process.cwd(), ".github/workflows/native-platforms.yml"),
       "utf8",
