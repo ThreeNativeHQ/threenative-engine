@@ -7,6 +7,8 @@ using ProbeCaptureCallback = std::function<void(GpuStatus, std::vector<float>)>;
 /** One CubeCamera view of the real scene, linear HDR before any output transform.
  * Completion is asynchronous, delivered by the renderer's EventQueue. The caller advances the
  * existing scheduler after the face arrives; a light revision must discard an in-flight face.
+ * Returns GpuStatus::Pending, and submits nothing, while the scene environment is still baking:
+ * capture the face again on a later frame.
  */
 GpuStatus captureFace(Renderer& renderer, Object3D& scene, const ProbeVolume& volume, const std::string& name,
                       uint32_t probe, uint32_t face, double near, double far, ProbeCaptureCallback done);

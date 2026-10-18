@@ -5,8 +5,8 @@
 // event. A single global takeRetired() list let whichever renderer swept first consume the id, so a
 // second renderer kept an in-flight environment preparation reading a disposed source.
 // `probe_capture_environment`: captureFace draws one frame. While the capture renderer's
-// scene.environment is still baking, render() returns 0 and draws nothing, so the readback must not
-// publish the previous (or an undefined) target as a valid face.
+// scene.environment is still baking, render() returns 0 and draws nothing, so captureFace must
+// report Pending (and the caller retry) rather than publish the previous target as a valid face.
 
 #include "check.h"
 #include "engine/assets/probe_volume.h"
@@ -142,14 +142,23 @@ void probeCaptureDuringEnvironmentBake() {
     scene.updateMatrixWorld(true);
 
     bool faceDone = false;
+    bool sawPending = false;
     std::vector<float> face;
-    CHECK(probes::captureFace(renderer, scene, volume, "probe", 0, 0, 0.1, 20,
-                              [&](GpuStatus status, std::vector<float> rgb) {
-                                  CHECK(status == GpuStatus::Ok);
-                                  face = std::move(rgb);
-                                  faceDone = true;
-                              }) == GpuStatus::Ok);
-    CHECK(waitFor(renderer, [&] { return faceDone; }));
+    GpuStatus submitted = GpuStatus::Pending;
+    CHECK(waitFor(renderer, [&] {
+        if (submitted == GpuStatus::Pending) {
+            submitted = probes::captureFace(renderer, scene, volume, "probe", 0, 0, 0.1, 20,
+                                            [&](GpuStatus status, std::vector<float> rgb) {
+                                                CHECK(status == GpuStatus::Ok);
+                                                face = std::move(rgb);
+                                                faceDone = true;
+                                            });
+            sawPending = sawPending || submitted == GpuStatus::Pending;
+        }
+        return faceDone || (submitted != GpuStatus::Pending && submitted != GpuStatus::Ok);
+    }));
+    CHECK(submitted == GpuStatus::Ok);
+    CHECK(sawPending);  // the capture really raced the bake
     CHECK(face.size() == size_t(volume.cubemapSize()) * volume.cubemapSize() * 3);
     // A frame was actually drawn on the capture renderer: the bake finished instead of the capture
     // being skipped, and the face is the room's white rather than the previous black target.

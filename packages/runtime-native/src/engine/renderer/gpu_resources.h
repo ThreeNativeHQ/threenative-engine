@@ -74,6 +74,7 @@ enum class GpuStatus : uint8_t {
     WrongType,
     OutOfRange,
     DeviceError,
+    Pending,  // the work cannot start yet (an environment still baking); retry on a later frame
 };
 
 using ReadbackCallback = std::function<void(GpuStatus, std::vector<uint8_t>)>;
