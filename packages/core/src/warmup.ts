@@ -1,5 +1,5 @@
 import type { Camera, Object3D, Texture } from "three";
-import { PMREMNode } from "three/webgpu";
+import { pmremTexture } from "three/tsl";
 
 import type { IPipelineCensus } from "./pipeline-census.js";
 
@@ -223,9 +223,10 @@ export interface IWarmUpRenderer {
   raw?: unknown;
 }
 
-type PMREMNodeAsyncPreparer = typeof PMREMNode & {
-  prepareTextureAsync(renderer: unknown, texture: Texture): Promise<boolean>;
-};
+/** The patched static on PMREMNode, reached through a node instance because the native catalog binds no PMREMNode class. */
+interface IPMREMNodeClass {
+  prepareTextureAsync?(renderer: unknown, texture: Texture): Promise<boolean>;
+}
 
 function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Object3D): boolean {
   const environment = (scene as Object3D & { environment?: Texture }).environment;
@@ -249,7 +250,8 @@ async function prepareSceneEnvironment(
   const backend = (raw as { backend?: { isWebGPUBackend?: boolean } }).backend;
   if (backend?.isWebGPUBackend !== true) return true;
 
-  const prepare = (PMREMNode as PMREMNodeAsyncPreparer).prepareTextureAsync;
+  const PMREMNode = pmremTexture(environment).constructor as IPMREMNodeClass;
+  const prepare = PMREMNode.prepareTextureAsync;
   if (typeof prepare !== "function") {
     throw new Error(
       "TN_PMREM_ASYNC_PREPARER_UNAVAILABLE: patched Three.js has no PMREM cache preparer.",

@@ -14,6 +14,12 @@ import { applyThreePatch } from "../scripts/apply-three-patch.mjs";
 
 const roots: string[] = [];
 
+// three's declarations omit the members packages/core/patches/three@0.185.1.patch adds to PMREMNode.
+const PatchedPMREMNode = PMREMNode as typeof PMREMNode & {
+  prepareTextureAsync(renderer: unknown, texture: Texture): Promise<boolean>;
+};
+type PatchedPMREMNodeInstance = PMREMNode & { updateFromTexture(texture: Texture): void };
+
 it("preserves the async PMREM API's synchronous fallback on non-WebGPU backends", async () => {
   const syncTarget = {};
   const generator = Object.create(PMREMGenerator.prototype) as {
@@ -85,7 +91,7 @@ it("fences each PMREM cube face and restores renderer MRT and draw state before 
   const interveningTarget = {};
   const interveningMRT = {};
   const pmremTarget = {};
-  let currentTarget = originalTarget;
+  let currentTarget: unknown = originalTarget;
   let currentMRT: unknown = originalMRT;
   let draws = 0;
   const renderer = {
@@ -152,7 +158,7 @@ it("fences each PMREM cube face and restores renderer MRT and draw state before 
 it("restores renderer state when a PMREM face fence rejects", async () => {
   const originalTarget = {};
   const originalMRT = {};
-  let currentTarget = originalTarget;
+  let currentTarget: unknown = originalTarget;
   let currentMRT: unknown = originalMRT;
   const renderer = {
     autoClear: true,
@@ -212,11 +218,11 @@ it("reuses an asynchronously prepared PMREM from the same renderer cache", async
         }),
     );
   const generateSync = vi.spyOn(PMREMGenerator.prototype, "fromEquirectangular");
-  const node = new PMREMNode(source);
+  const node = new PMREMNode(source) as PatchedPMREMNodeInstance;
   const update = vi.spyOn(node, "updateFromTexture");
 
   try {
-    const preparation = PMREMNode.prepareTextureAsync(renderer, source);
+    const preparation = PatchedPMREMNode.prepareTextureAsync(renderer, source);
     await vi.waitFor(() => expect(generateAsync).toHaveBeenCalledOnce());
     expect(() =>
       node.setup({ renderer, context: { getUV: () => vec3(0, 1, 0) } } as never),
@@ -253,10 +259,10 @@ it("restarts an in-flight PMREM preparation when its source version changes", as
     .mockResolvedValueOnce(currentTarget as never);
 
   try {
-    const stale = PMREMNode.prepareTextureAsync(renderer, source);
+    const stale = PatchedPMREMNode.prepareTextureAsync(renderer, source);
     await vi.waitFor(() => expect(generateAsync).toHaveBeenCalledOnce());
     source.pmremVersion += 1;
-    const current = PMREMNode.prepareTextureAsync(renderer, source);
+    const current = PatchedPMREMNode.prepareTextureAsync(renderer, source);
     releaseStale?.(staleTarget as never);
 
     await expect(stale).resolves.toBe(false);
@@ -264,7 +270,7 @@ it("restarts an in-flight PMREM preparation when its source version changes", as
     expect(generateAsync).toHaveBeenCalledTimes(2);
     expect(staleTarget.dispose).toHaveBeenCalledOnce();
 
-    const node = new PMREMNode(source);
+    const node = new PMREMNode(source) as PatchedPMREMNodeInstance;
     const update = vi.spyOn(node, "updateFromTexture");
     node.updateBefore({ renderer } as never);
     expect(update).toHaveBeenCalledWith(currentTarget.texture);
@@ -286,7 +292,7 @@ it("does not cache a PMREM when its queue-fenced preparation fails", async () =>
     .mockReturnValue(syncTarget as never);
 
   try {
-    await expect(PMREMNode.prepareTextureAsync(renderer, source)).rejects.toThrow(
+    await expect(PatchedPMREMNode.prepareTextureAsync(renderer, source)).rejects.toThrow(
       "queue fence failed",
     );
 
@@ -322,7 +328,7 @@ it("disposes a PMREM generated after its source is disposed and does not cache i
     .mockReturnValue(syncTarget as never);
 
   try {
-    const preparation = PMREMNode.prepareTextureAsync(renderer, source);
+    const preparation = PatchedPMREMNode.prepareTextureAsync(renderer, source);
     await vi.waitFor(() => expect(generateAsync).toHaveBeenCalledOnce());
     source.dispose();
     releasePreparation?.(pendingTarget as never);
