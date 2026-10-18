@@ -427,8 +427,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
                                        shader::kPbrMapNames[k] + " needs a uv attribute (drawn without it)");
         r.buffers = {floatStore(*mesh.geometry, "position"), floatStore(*mesh.geometry, "normal"),
                      floatStore(*mesh.geometry, "uv"), mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};
-        // three's Normal.js fallback is (0, 1, 0); match it for a missing normal attribute. Flat shading derives
-        // normals from position derivatives, and a material that sets normalNode never reads this buffer.
+        // Match three's (0, 1, 0) fallback: geometry roughness still reads it when normalNode overrides lighting.
+        // Flat shading instead derives its normals from position derivatives.
         if (!r.buffers[1] && r.buffers[0] && !material->flatShading && !material->nodes.fragmentNode &&
             kindOf(material->type) != MaterialKind::Basic) {
             r.zeroNormals = std::make_shared<BufferStore>(Scalar::F32, r.buffers[0]->count());
