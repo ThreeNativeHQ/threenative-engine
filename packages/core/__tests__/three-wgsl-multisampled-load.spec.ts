@@ -101,7 +101,10 @@ describe("SMAA weights texture sampling", () => {
     try {
       effect.setup({ getSharedContext: () => ({}) } as never);
       const mesh = new Mesh(geometry, Reflect.get(effect, "_materialWeights"));
-      const builder = new WGSLNodeBuilder(mesh, renderer);
+      const builder = new WGSLNodeBuilder(mesh, renderer) as WGSLNodeBuilder & {
+        build(): void;
+        fragmentShader: string;
+      };
       Reflect.set(builder, "camera", new PerspectiveCamera());
       Reflect.set(builder, "scene", new Scene());
       builder.build();
