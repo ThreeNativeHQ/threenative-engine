@@ -166,6 +166,7 @@ export class Ship {
       body.castShadow = true;
       body.scale.setScalar(this.#normaliseFactor);
       ctx.add(body);
+      ctx.interpolate(body);
       this.#sails.push({
         anchor: new Vector3(sail.x, sail.y, sail.z),
         body,
@@ -190,6 +191,7 @@ export class Ship {
     this.visual.add(model);
     ctx.add(this.mesh);
     ctx.add(this.visual);
+    ctx.interpolate(this.visual);
 
     this.body = new RigidBody3D({
       collisionLayer: 1,
@@ -306,7 +308,6 @@ export class Ship {
     // off the canvas: the sails go slack, the ship loses way, and the two happen together — which
     // is the feedback that makes `S` read as spilling wind rather than as a brake pedal. A quarter
     // of the press stays because a square course does not vanish when it is not drawing.
-    this.#trimSails(press * (0.25 + 0.75 * Math.max(0, throttle)));
     // Hard over is about thirty-five degrees on a real ship, and the blade eases across rather
     // than snapping: a rudder that teleports between its stops is the tell that the helm is a
     // number rather than a thing hanging in the water.
@@ -315,6 +316,7 @@ export class Ship {
       this.#rudder.rotation.y += (blade - this.#rudder.rotation.y) * Math.min(1, deltaTime * 6);
     }
     this.#rideTheSwell(deltaTime);
+    this.#trimSails(press * (0.25 + 0.75 * Math.max(0, throttle)));
   }
 
   /**
@@ -328,12 +330,12 @@ export class Ship {
    * moving ship reads as a bug.
    */
   #trimSails(press: number): void {
+    this.visual.updateMatrixWorld(true);
     for (const sail of this.#sails) {
       // Through the **model's** matrix, not the visual's. The yard coordinates in `SHIP_SAILS`
       // are in the hull's own authored units, and the model sits inside `visual` carrying the
       // metre normalisation and the freeboard trim: read through `visual` alone, a yard at y=4.27
       // put the sail 4.27 *metres* above the sea with the masts bare underneath it.
-      this.#model.updateMatrixWorld(true);
       sail.body.position.copy(sail.anchor).applyMatrix4(this.#model.matrixWorld);
       sail.body.quaternion.copy(this.visual.quaternion).multiply(REST.setFromEuler(sail.rest));
       const gust = 1 + Math.sin(this.#elapsed * 1.7 + sail.anchor.z) * 0.16;

@@ -145,6 +145,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
       buoy.position.set(mark.x, 0, mark.z);
       marks.push(buoy);
       markReflected(ctx.add(buoy));
+      ctx.interpolate(buoy);
     }
 
     const ship = new Ship(ctx, ocean, shipModel);
