@@ -115,6 +115,21 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
     mkdirSync(path.join(root, "src/world"), { recursive: true });
     mkdirSync(path.join(root, "scripts"));
     mkdirSync(path.join(root, "starter"));
+    mkdirSync(path.join(root, "local-assets/temperate/basis"), { recursive: true });
+    mkdirSync(path.join(root, "local-assets/landscape-pro/basis"), { recursive: true });
+    writeFileSync(path.join(root, "local-assets/temperate/basis/basis_transcoder.js"), "first-js");
+    writeFileSync(
+      path.join(root, "local-assets/temperate/basis/basis_transcoder.wasm"),
+      "first-wasm",
+    );
+    writeFileSync(
+      path.join(root, "local-assets/landscape-pro/basis/basis_transcoder.js"),
+      "later-js",
+    );
+    writeFileSync(
+      path.join(root, "local-assets/landscape-pro/basis/basis_transcoder.wasm"),
+      "later-wasm",
+    );
     const files = ["forest", "coastal", "alpine", "desert", "tundra"].flatMap((world) =>
       ["world.json", "layers.json", "splat.rgba8", "placements.bin"].map(
         (suffix) => `${world}.${suffix}`,
@@ -161,6 +176,14 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
     );
     for (const file of emitted) expect(file.source.toString()).toBe(path.basename(file.fileName));
     await execute("scripts/stage-native-assets.mjs");
+    for (const [name, content] of [
+      ["basis_transcoder.js", "first-js"],
+      ["basis_transcoder.wasm", "first-wasm"],
+    ]) {
+      const staged = readFileSync(path.join(root, "assets/basis", name), "utf8");
+      expect(staged).toBe(content);
+      expect(readFileSync(path.join(root, "basis", name), "utf8")).toBe(staged);
+    }
     expect(fs.readdirSync(path.join(root, "assets/world")).sort()).toEqual(files.sort());
     for (const name of files)
       expect(readFileSync(path.join(root, "assets/world", name), "utf8")).toBe(name);

@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,7 +28,8 @@ try {
     "scripts",
     "src/world",
     "terrain",
-    "local-assets/temperate",
+    "local-assets/temperate/basis",
+    "local-assets/landscape-pro/basis",
     "local-assets/prepared",
   ])
     mkdirSync(join(game, dir), { recursive: true });
@@ -39,6 +41,10 @@ try {
   writeFileSync(join(starter, "starter.bin"), "starter");
   for (const mount of ["temperate", "prepared"])
     writeFileSync(join(game, `local-assets/${mount}/licensed.bin`), mount);
+  writeFileSync(join(game, "local-assets/temperate/basis/basis_transcoder.js"), "first-js");
+  writeFileSync(join(game, "local-assets/temperate/basis/basis_transcoder.wasm"), "first-wasm");
+  writeFileSync(join(game, "local-assets/landscape-pro/basis/basis_transcoder.js"), "later-js");
+  writeFileSync(join(game, "local-assets/landscape-pro/basis/basis_transcoder.wasm"), "later-wasm");
   copyFileSync(
     join(example, "scripts/stage-native-assets.mjs"),
     join(game, "scripts/stage-native-assets.mjs"),
@@ -47,6 +53,14 @@ try {
   copyFileSync(join(example, "vite.config.ts"), join(game, "vite.config.ts"));
   execFileSync(process.execPath, [join(game, "scripts/stage-native-assets.mjs")]);
   assert.equal(readFileSync(join(game, "assets/world/forest.world.json"), "utf8"), "world");
+  for (const [name, content] of [
+    ["basis_transcoder.js", "first-js"],
+    ["basis_transcoder.wasm", "first-wasm"],
+  ]) {
+    const staged = readFileSync(join(game, "assets/basis", name), "utf8");
+    assert.equal(staged, content, `${name} keeps the first-root /basis precedence`);
+    assert.equal(readFileSync(join(game, "basis", name), "utf8"), staged);
+  }
   const starterDir = await starterAssetsDir();
   const staged = JSON.parse(readFileSync(join(game, "assets/assets.manifest.json"), "utf8"));
   const starterEntries = Object.fromEntries(
@@ -104,11 +118,50 @@ try {
   await assert.rejects(native.resolve("temperate/absent.glb"), /not listed/);
   assert.equal(requests.length, before, "missing optional art must fail before IO");
   assert.equal(requests.filter((url) => url === "assets.manifest.json").length, 1);
+  const authoredDecoder = join(game, "basis/basis_transcoder.js");
+  unlinkSync(authoredDecoder);
+  writeFileSync(authoredDecoder, "user-authored");
+  let collision;
+  try {
+    execFileSync(process.execPath, [join(game, "scripts/stage-native-assets.mjs")], {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+  } catch (error) {
+    collision = error;
+  }
+  assert.match(
+    String(collision?.stderr),
+    /refusing to overwrite existing game-root basis\/basis_transcoder\.js/u,
+  );
+  assert.equal(readFileSync(authoredDecoder, "utf8"), "user-authored");
+  unlinkSync(authoredDecoder);
+  copyFileSync(join(game, "assets/basis/basis_transcoder.js"), authoredDecoder);
+
+  const removedSourceWasm = join(game, "local-assets/temperate/basis/basis_transcoder.wasm");
+  unlinkSync(removedSourceWasm);
+  rmSync(join(game, "local-assets/landscape-pro/basis"), { recursive: true, force: true });
+  let incompletePair;
+  try {
+    execFileSync(process.execPath, [join(game, "scripts/stage-native-assets.mjs")], {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+  } catch (error) {
+    incompletePair = error;
+  }
+  assert.match(String(incompletePair?.stderr), /incomplete Basis transcoder pair/u);
+  assert.equal(
+    readFileSync(join(game, "assets/basis/basis_transcoder.wasm"), "utf8"),
+    "first-wasm",
+    "a stale staged pair cannot hide a missing current source member",
+  );
+
   rmSync(join(game, "local-assets"), { recursive: true });
   execFileSync(process.execPath, [join(game, "scripts/stage-native-assets.mjs")]);
   await assert.rejects(createAssetLoader().resolve("temperate/licensed.bin"), /not listed/);
   console.log(
-    "PASS: stage then web/native preserve licensed bytes; absent optional art rejects without IO",
+    "PASS: stage then web/native preserve licensed bytes; root Basis pair keeps first-mount precedence, detects incomplete current inputs, and refuses authored-file overwrite",
   );
 } finally {
   globalThis.fetch = originalFetch;

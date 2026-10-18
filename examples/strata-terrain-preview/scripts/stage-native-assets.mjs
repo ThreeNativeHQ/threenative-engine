@@ -71,6 +71,38 @@ for (const root of roots) {
   mkdirSync(target, { recursive: true });
   mirror(root.dir, target);
 }
+
+// The engine's KTX2Loader resolves its Basis pair beside the game, not under its `assets/` root.
+// Keep the web-visible `assets/basis/` copy above and stage the same selected pair at `basis/` for
+// native. Existing root files are user-owned unless their bytes already match; never replace them.
+const stagedBasis = join(out, "basis");
+const basisNames = ["basis_transcoder.js", "basis_transcoder.wasm"];
+const presentBasis = basisNames.filter((name) => entries[`basis/${name}`] !== undefined);
+if (presentBasis.length > 0 && presentBasis.length !== basisNames.length) {
+  throw new Error(
+    `stage-native-assets: incomplete Basis transcoder pair under ${relative(here, stagedBasis)}/`,
+  );
+}
+if (presentBasis.length === basisNames.length) {
+  const rootBasis = join(here, "basis");
+  mkdirSync(rootBasis, { recursive: true });
+  for (const name of basisNames) {
+    const source = join(stagedBasis, name);
+    const target = join(rootBasis, name);
+    if (existsSync(target)) {
+      if (readFileSync(source).equals(readFileSync(target))) continue;
+      throw new Error(
+        `stage-native-assets: refusing to overwrite existing game-root basis/${name}`,
+      );
+    }
+    try {
+      linkSync(source, target);
+    } catch (error) {
+      if (error.code !== "EXDEV") throw error;
+      copyFileSync(source, target);
+    }
+  }
+}
 if (Object.keys(entries).length === 0) throw new Error("stage-native-assets: no staged assets");
 // A nonempty manifest skips bare-path probes and rejects absent optional assets before fetching.
 writeFileSync(
