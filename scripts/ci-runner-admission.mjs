@@ -159,13 +159,11 @@ export function admissionPlan(selected, slots, { fork = false, prefix = "CI_ADMI
   return Object.freeze(selectedInstances.slice(0, count));
 }
 
-// The parent's selection puts required hardware Strata first, then uses CPU-heavy order. Only
-// instances whose owning job the plan requires are listed, so no slot goes to an unselected job.
+// The parent's selection, in the inventory's CPU-heavy-first order. Only instances whose owning
+// job the plan requires are listed, so a capacity slot is never spent on a job that will not run.
 export function selectInstances(plan, integrationLanes = {}) {
   const job = plan?.jobs ?? {};
   const ids = [];
-  // Strata is a hardware WebGPU gate; admit it before CPU-heavy work that can fall back hosted.
-  if (job.strata?.required) ids.push("ci:strata");
   if (job["test-unit"]?.required)
     for (const leg of plan?.unitMatrix?.shard ?? [])
       if (INVENTORY.ci["test-unit"].includes(leg)) ids.push(`ci:test-unit:${leg}`);
@@ -179,6 +177,7 @@ export function selectInstances(plan, integrationLanes = {}) {
   if (job.budgets?.required) ids.push("ci:budgets");
   if (job["test-browser"]?.required) ids.push("ci:test-browser");
   if (job["test-playtest"]?.required) ids.push("ci:test-playtest");
+  if (job.strata?.required) ids.push("ci:strata");
   if (job["golden-path-template"]?.required)
     for (const template of plan?.goldenMatrix?.template ?? [])
       if (INVENTORY.ci["golden-path-template"].includes(template))
