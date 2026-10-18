@@ -1,5 +1,6 @@
 import { ReadbackBuffer } from "three/webgpu";
 import { WorldCells } from "../../../../core/src/world-cells.ts";
+import { WorldGpuScene } from "../../../../core/src/world-gpu-scene.ts";
 import { assertCondition, startVisualScene, THREE } from "./scene-support.js";
 
 const MANIFEST = {
@@ -129,12 +130,72 @@ function reportFinalMarker(frame, detail) {
   detail.finalMarkerReported = true;
 }
 
+async function assertAuthoredShadowFallback(renderer) {
+  const gpu = new WorldGpuScene();
+  const adapter = {
+    kind: "webgpu",
+    raw: renderer,
+    compute: (nodes) => renderer.compute(nodes),
+  };
+  const previous = globalThis.__tnShadowGpuKeys;
+  globalThis.__tnShadowGpuKeys = true;
+  try {
+    gpu.enable(adapter, true);
+    assertCondition(gpu.on, "Shadow LOD proof requires the GPU scene backend.");
+    const local = Float32Array.from(new THREE.Matrix4().elements);
+    for (const level of [0, 1]) {
+      const key = `rock:${String(level)}:0`;
+      gpu.key(key, local, 2, { group: `rock:${String(level)}`, part: 0, parts: 1 });
+      gpu.indexCount(key, 3);
+    }
+    const levels = [0, 1].map((level) => gpu.levelKeys(`rock:${String(level)}`));
+    assertCondition(levels.every(Boolean), "Shadow LOD proof did not mint both levels.");
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.lookAt(0, 0, -1);
+    camera.updateMatrixWorld(true);
+    const planes = new THREE.Frustum().setFromProjectionMatrix(
+      new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    ).planes.flatMap((plane) => [...plane.normal.toArray(), plane.constant]);
+    gpu.shadowKeysFrom(() => ["rock:0:0"]);
+    gpu.shadowKey("rock:0:0");
+    for (const z of [-10, -80])
+      gpu.place(0, new THREE.Matrix4().makeTranslation(0, 0, z), 0, 0, z, 1);
+    const shadow = { planes: Float32Array.from(planes), gate: 0, base: 0 };
+    for (const [shadowFallback, cull, expected] of [[false, undefined, 1], [true, undefined, 2], [true, 20, 1]]) {
+      gpu.slot("rock", { distances: [0, 60], levels, cull, shadowFallback });
+      gpu.dispatch(adapter, camera);
+      gpu.dispatchShadow(adapter, shadow);
+      assertCondition(gpu.shadowArgs !== undefined && gpu.args !== undefined,
+        "Shadow LOD proof has no indirect buffers.");
+      const [shadowBytes, mainBytes] = await Promise.all([
+        renderer.getArrayBufferAsync(gpu.shadowArgs), renderer.getArrayBufferAsync(gpu.args),
+      ]);
+      const words = new Uint32Array(shadowBytes);
+      const mainWords = new Uint32Array(mainBytes);
+      const mainCount = gpu.regions.reduce((count, region) => count + mainWords[region.argsIndex * 5 + 1], 0);
+      assertCondition(mainCount === (cull === undefined ? 2 : 1),
+        "Shadow fallback metadata changed main-pass distance culling.");
+      const region = gpu.shadowRegionOf("rock:0:0");
+      assertCondition(region !== undefined && words.length >= region.argsIndex * 5 + 5,
+        "Shadow LOD proof readback is missing its complete record.");
+      assertCondition(words[region.argsIndex * 5 + 1] === expected,
+        `Shadow LOD fallback=${String(shadowFallback)} cull=${String(cull)} expected ${String(expected)} GPU instances.`);
+    }
+    console.info("TN_WORLD_GPU_SHADOW_LOD authored=1 derived=2 culled=1");
+  } finally {
+    gpu.dispose();
+    if (previous === undefined) delete globalThis.__tnShadowGpuKeys;
+    else globalThis.__tnShadowGpuKeys = previous;
+  }
+}
+
 export async function startScene(canvas, dimensions) {
   return startVisualScene(
     canvas,
     dimensions,
     "world-gpu-scene-readback",
     async ({ camera, renderer, scene }) => {
+      await assertAuthoredShadowFallback(renderer);
       const detail = {
         censuses: 0,
         disposeEvents: 0,

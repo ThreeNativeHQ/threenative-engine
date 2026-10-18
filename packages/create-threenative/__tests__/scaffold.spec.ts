@@ -261,25 +261,26 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
   // Recomputed 2026-10-15: puzzle drops its legacy pin and its Engine paragraph (PRD-617); the other twelve are unchanged.
   // Recomputed 2026-10-15 through createProject after recovery: all kits now share the decoder-aware asset watch.
+  // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "85514130e9b0317726cbf977c6f66803f4001825f6adb8c79a49cd2cfc7a036c",
-  minimal: "c55aab4a693c78b55b3dcba755929ce17709ae2894261c20e975e6362df0fe4b",
-  platformer: "fdba30c7921fa1851e2f919222fc4ef377a8b69dbe0335e3d4eb72d7f1cea99f",
-  puzzle: "7d92b088033372cb03fcb8a97485e57a0854e7763f21f46de001882085f515ae",
-  racing: "da42bfbf2deed049c5a87e4daaa004feff318b659a61cc74f0b4dbc397898dc9",
-  rain: "82524f6d78ca1f7e61a0a45f1b1603732c3c86e12adb9e77c3fcfdc1f771a02b",
-  rts: "e1902b819917e9635b107bf44919e0089f65f88643177b704efea97133cacb49",
-  runner: "9ed00b78735a1f871af72ef979b14c91bb300ff5f12ed48a8b3842e123129a3a",
+  "action-rpg": "280932ee9cd44e45c6a7a086267baf57259822b4ca7537262d2cc70f40a5dd24",
+  minimal: "5dec5f67266db9b9a772ce3654e2b8abf1006df0c6cdab04d495da9a457127c8",
+  platformer: "f0583eb4f476cdec60b2269edf378c55a2948c13efcc67fd4233a99e9d7cb3ed",
+  puzzle: "a462685c417d8ce721cda2493820a26e4716b5d1577729365895b302a535e4c9",
+  racing: "1c66d01ec4e137d1b9847e9503163198f75b5beee4342c1d0f8f913c5b2537d9",
+  rain: "ee68ad51b313610b852e5b7093c314c00f3c32b9d9742e240b4dbcf468637c36",
+  rts: "2a83722d121b0261e203ae48762a4c7f3b8e609ff19d2b309f0c25c40695a6c0",
+  runner: "5671bf107d79b7babdd342495ba240f2c782aa4cc88be2d2eafa279a36448953",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "b20a70f1fb93807e7d1bc231375a773b22faa322d458369e723a5e7bf5dd7609",
-  shooter: "a0829ee41f58717fe62ce9ba9dd80a9915df87dd8a02aec49f89206811c8a237",
-  snow: "f6f9b88566fde0131276bda41df48285e241dadb1dbe630b2741a4c37bce8cb8",
+  sailing: "dfd750a997201a2525e694ea41d79392d58238146d0440df16b28eb67567d42d",
+  shooter: "5a26387276f1d9f6a2ce95198121f9c6df84b73e250d27960d193982d2928fee",
+  snow: "8d89a3fa863a7728ea23b0aaf2dcc836106f1283765a3428dd4d0177381fe941",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "c0bb9f2c6502a07e0c0d2200d81a38d760d4c34bae91355ff49a96c8bbff57cd",
-  "tower-defense": "f1fc08e2d6b2283469459cb2e2532abe9d6af82f62bfcee536825ec9d8138614",
+  starter: "34bb3c60ac175b6fcac1100bff81e77d9aa30a9a166031facdbabbad0822e92d",
+  "tower-defense": "779fd3e96343fbcaec553df8f680a42d75728cfbae156b68bf2fb1af764f86e4",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

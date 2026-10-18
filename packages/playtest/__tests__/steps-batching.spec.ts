@@ -5,8 +5,8 @@ import type { Page } from "playwright";
 import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, runStep } from "../src/runner/steps.js";
 import type { IPlaytestBridgeClient } from "../src/runner/bridgeClient.js";
 
-describe("steps fixed-step accounting", () => {
-  it("advances the requested number of fixed-step ticks", async () => {
+describe("fixed-step request scheduling", () => {
+  it("submits one tick per bridge request while retaining the 10-tick sample cadence", async () => {
     const advances: number[] = [];
     const bridge = {
       advance: vi.fn(async (ticks: number) => {
@@ -19,7 +19,11 @@ describe("steps fixed-step accounting", () => {
         name: "test-bridge",
         protocolVersion: "0.1.0",
       },
-      sample: vi.fn(async () => ({ clock: { mode: "fixed-step", tick: 0 }, diagnostics: [] })),
+      sample: vi.fn(async () => ({
+        clock: { mode: "fixed-step", tick: 0 },
+        diagnostics: [],
+        entities: [{ id: "player", transform: { position: [0, 0, 0] } }],
+      })),
     } as unknown as IPlaytestBridgeClient;
 
     const page = { evaluate: vi.fn(async () => undefined) } as unknown as Page;
@@ -29,14 +33,16 @@ describe("steps fixed-step accounting", () => {
       bridge,
       { kind: "wait", release: false, waitTicks: 25 },
       { height: 100, width: 100 },
-      undefined,
+      "player",
       [],
       { heldKeys: new Set(), pointerButtons: 0, pointers: new Map() },
       undefined,
       false,
     );
 
+    expect(advances).toEqual(Array.from({ length: 25 }, () => 1));
     expect(advances.reduce((total, ticks) => total + ticks, 0)).toBe(25);
+    expect(bridge.sample).toHaveBeenCalledTimes(3);
   });
 });
 

@@ -191,6 +191,8 @@ export class ResolutionSubrect implements IResolutionSubrect {
         }
         this.#reserving = true;
         try {
+          // Reserve for the quantized size the viewport can reach at scale 1. A node that floors
+          // each mip of a halving chain can otherwise leave a capacity one texel short of it.
           original.call(node, quantize(width), quantize(height));
         } finally {
           this.#reserving = false;
