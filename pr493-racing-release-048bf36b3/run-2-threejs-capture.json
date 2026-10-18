@@ -1,0 +1,164 @@
+{
+  "adapter": {
+    "architecture": "turing",
+    "vendor": "nvidia",
+    "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+    "limit.maxBindGroups": "4",
+    "limit.maxTextureDimension2D": "16384",
+    "limit.maxStorageBufferBindingSize": "2147483644"
+  },
+  "browserArgs": [
+    "--ozone-platform=x11",
+    "--enable-unsafe-webgpu",
+    "--disable-gpu-sandbox",
+    "--ignore-gpu-blocklist",
+    "--enable-features=Vulkan"
+  ],
+  "captureMethod": "page.screenshot",
+  "rendererKind": "webgpu",
+  "target": "web",
+  "viewport": {
+    "height": 540,
+    "width": 960
+  },
+  "softwareAdapter": null,
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true
+  },
+  "captureExclusions": [
+    {
+      "selector": ".tn-dev-scene-warning",
+      "reason": "Hide only the framework scene-shape diagnostic output; game HUD and rendered game pixels remain unchanged."
+    }
+  ],
+  "diagnosticPanel": {
+    "text": "the GPU used 2% of the frame while the render phase took 27.79 ms against a 16.667 ms display period; objectsConsidered is the largest term at 495 triangles per draw",
+    "displayBeforeExclusion": "block"
+  },
+  "diagnosticDisplayAfterExclusion": "none",
+  "pose": {
+    "before": {
+      "mode": "fixed-step",
+      "tick": 60
+    },
+    "after": {
+      "mode": "fixed-step",
+      "tick": 360
+    },
+    "elapsedSeconds": 5,
+    "sceneElapsedSeconds": 6,
+    "waitTicks": 300
+  },
+  "visual": {
+    "darkPixelRatio": 0.07578510802469136,
+    "nonblankPixelRatio": 1
+  },
+  "publishedDiagnostics": [],
+  "observedErrorsAfterStartup": [],
+  "observedConsoleEntries": [
+    {
+      "source": "browser-console",
+      "text": "[vite] connecting...",
+      "type": "debug"
+    },
+    {
+      "source": "browser-console",
+      "text": "[vite] connected.",
+      "type": "debug"
+    },
+    {
+      "source": "browser-console",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"\",\"device\":\"\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_PHYSICS_INTERPOLATION:{\"enabled\":true,\"overrideSource\":\"default\",\"trackedObjects\":1}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0,\"path\":\"js\"}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_QUALITY_TIER high mobile=false software=false source=platform",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_RESOLUTION_SUBRECT {\"applied\":[\"ambientOcclusion\",\"bloom\",\"vignette\",\"antialias\"],\"refused\":[]}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_RENDER_CHAIN:{\"applied\":{\"contributions\":[{\"graphOutputChanged\":true,\"name\":\"ambientOcclusion\"},{\"graphOutputChanged\":true,\"name\":\"bloom\"},{\"graphOutputChanged\":true,\"name\":\"vignette\"},{\"graphOutputChanged\":true,\"name\":\"antialias\"}],\"dropped\":[],\"requested\":[\"ambientOcclusion\",\"bloom\",\"vignette\",\"antialias\"],\"source\":\"pinned\",\"stages\":[\"ambientOcclusion\",\"bloom\",\"vignette\",\"antialias\"],\"tier\":\"high\",\"velocity\":{\"provisioned\":false,\"required\":false,\"source\":null}},\"marker\":\"TN_RENDER_CHAIN\"}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_WORLD_ENVIRONMENT:{\"denoise\":true,\"exposure\":0.66,\"marker\":\"TN_WORLD_ENVIRONMENT\",\"screenSpaceAA\":\"smaa\",\"ssgiQuality\":\"medium\",\"stages\":[{\"applied\":true,\"name\":\"ambientOcclusion\"},{\"applied\":true,\"name\":\"antialias\"},{\"applied\":true,\"name\":\"bloom\"},{\"applied\":false,\"name\":\"godRays\",\"reason\":\"godraysEnabled is false\"},{\"applied\":false,\"name\":\"kuwahara\",\"reason\":\"kuwaharaEnabled is false\"},{\"applied\":false,\"name\":\"outline\",\"reason\":\"outlineEnabled is false\"},{\"applied\":false,\"name\":\"sharpen\",\"reason\":\"sharpenEnabled is false\"},{\"applied\":false,\"name\":\"ssgi\",\"reason\":\"ssgiEnabled is false\"},{\"applied\":false,\"name\":\"ssr\",\"reason\":\"ssrEnabled is false\"},{\"applied\":true,\"name\":\"vignette\"},{\"applied\":false,\"name\":\"watercolor\",\"reason\":\"watercolorEnabled is false\"}],\"tonemapMode\":\"aces\"}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_ENVIRONMENT_CONTRIBUTION:{\"status\":\"measured\",\"meanRadiance\":0,\"meanRGB\":[0,0,0],\"reason\":\"No environment is bound.\",\"scope\":\"scene environment source availability; not material-specific reflected contribution\",\"environmentState\":\"missing\",\"ibl\":\"non-contributing\",\"analyticFill\":{\"requestedGain\":1,\"admitted\":true,\"effectiveGain\":1,\"color\":[0.13286832154414627,0.19806931954941637,0.3371636150376657],\"blackColorOverride\":false,\"reason\":\"analytic fill enabled by caller; contribution still needs pixel qualification\"},\"rimGain\":0.12,\"fillGain\":1,\"darkThreshold\":0.001}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":119,\"resultDrawCandidates\":119,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0,\"path\":\"js\"}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_STARTUP_WARMUP:{\"compiled\":1,\"pipelines\":119,\"candidates\":119,\"attempted\":0,\"observed\":{\"created\":34,\"failed\":0,\"pending\":0,\"uniquePrograms\":28,\"uniquePipelines\":34,\"status\":\"complete\"},\"slices\":1,\"elapsedMs\":1858,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false,\"passes\":[\"main\",\"shadow\"],\"passPipelines\":33,\"cullingForced\":145,\"visibilityForced\":0,\"cache\":\"disabled\"}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_PHYSICS_INTERPOLATION:{\"enabled\":true,\"overrideSource\":\"default\",\"trackedObjects\":16}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "THREE.WebGPURenderer: Timestamp tracking is disabled.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_ENVIRONMENT_CONTRIBUTION:{\"status\":\"measured\",\"meanRGB\":[0.5206451431242238,0.5474004674843607,0.6322482181794397],\"meanRadiance\":0.5478382931255803,\"reason\":\"Estimated linear scene-environment source radiance from 64x32 GPU samples, spherical row weighting and active intensity; not material-specific BRDF contribution.\",\"scope\":\"scene environment source availability; not material-specific reflected contribution\",\"environmentState\":\"bright\",\"ibl\":\"contributing\",\"analyticFill\":{\"requestedGain\":1,\"admitted\":false,\"effectiveGain\":0,\"color\":[0.13286832154414627,0.19806931954941637,0.3371636150376657],\"blackColorOverride\":false,\"reason\":\"not admitted by this qualification\"},\"rimGain\":0.12,\"fillGain\":1,\"darkThreshold\":0.001}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_ALPHA_ANTIALIASING:{\"applied\":false,\"marker\":\"TN_ALPHA_ANTIALIASING\",\"materials\":0,\"reason\":\"no cutout material has been drawn; nothing in this scene carves its silhouette with an alpha test\",\"sampleCount\":4}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_FRAME_BUDGET:{\"longTasks\":{\"available\":true,\"count\":5,\"longestMs\":960,\"afterFirstFrameMs\":960},\"fps\":9.12,\"frame\":{\"max\":690.2,\"mean\":31.66,\"p50\":9,\"p95\":131.5,\"p99\":690.2,\"samples\":39},\"frames\":39,\"simulatedSeconds\":6,\"hitches\":0,\"phases\":{\"hostGap\":{\"max\":836.7,\"mean\":84.07,\"p50\":29.7,\"p95\":322,\"p99\":836.7,\"samples\":38},\"overlay\":{\"max\":29.4,\"mean\":0.93,\"p50\":0,\"p95\":1.6,\"p99\":29.4,\"samples\":39},\"render\":{\"max\":685.2,\"mean\":27.79,\"p50\":8.6,\"p95\":42.5,\"p99\":685.2,\"samples\":39},\"residual\":{\"max\":4,\"mean\":0.32,\"p50\":0.1,\"p95\":2.1,\"p99\":4,\"samples\":39},\"ui\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":39},\"update\":{\"max\":184.2,\"mean\":7.17,\"p50\":0,\"p95\":0.3,\"p99\":184.2,\"samples\":40}},\"presented\":{\"max\":1166.6,\"mean\":109.64,\"p50\":50,\"p95\":683.4,\"p99\":1166.6,\"samples\":38},\"shares\":{\"hostGap\":0.767,\"overlay\":0.008,\"render\":0.253,\"residual\":0.003,\"ui\":0,\"update\":0.065},\"substeps\":{\"max\":300,\"mean\":9,\"p50\":0,\"p95\":0,\"p99\":300,\"samples\":40},\"passes\":{\"main\":{\"draws\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":36},\"drawsBySource\":{\"other\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":36}},\"frames\":36,\"triangles\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":36}},\"shadow\":{\"draws\":{\"max\":53,\"mean\":52.43,\"p50\":53,\"p95\":53,\"p99\":53,\"samples\":35},\"frames\":35,\"triangles\":{\"max\":25786,\"mean\":25716.17,\"p50\":25786,\"p95\":25786,\"p99\":25786,\"samples\":35}},\"nested\":{\"draws\":{\"max\":90,\"mean\":5.26,\"p50\":1,\"p95\":1,\"p99\":90,\"samples\":731},\"frames\":731,\"triangles\":{\"max\":69214,\"mean\":3315.36,\"p50\":1,\"p95\":12,\"p99\":69214,\"samples\":731}}},\"gpu\":{\"max\":4.31,\"mean\":1.9,\"p50\":1.72,\"p95\":4.31,\"p99\":4.31,\"samples\":5},\"gpuStale\":31,\"gpuMs\":1.9,\"gpuFrames\":{\"first\":0,\"last\":32},\"gpuAgeFrames\":6,\"targetFps\":60,\"targetSource\":\"fallback\",\"surface\":{\"atFloor\":false,\"compiling\":true,\"drawingBufferHeight\":540,\"drawingBufferWidth\":960,\"resolutionSubrect\":true,\"resolutionScale\":1,\"sampleCount\":4,\"scaleSource\":\"auto\"},\"counters\":{\"simulationTick\":360},\"window\":1,\"gpuMain\":0.1,\"gpuShadow\":0.1,\"gpuOther\":1.7,\"gpuShadowP95\":0.2,\"gpuShadowSamples\":3,\"gpuShadowRendered\":{\"max\":0.21,\"mean\":0.11,\"p50\":0.07,\"p95\":0.21,\"p99\":0.21,\"samples\":4}}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_PROJECTION:{\"drawsActual\":143,\"cull\":{\"enabled\":true,\"cameraResolved\":true,\"thresholdPixels\":0.5,\"considered\":118,\"culled\":0,\"exemptCameraAttached\":0,\"exemptMarked\":0,\"exemptShadowCasters\":19,\"exemptWithoutBounds\":0,\"exemptDynamicBounds\":0,\"exemptFrustumCulled\":0},\"drawsPlanned\":119,\"exact\":{},\"exactObjects\":0,\"matrixWorld\":{\"mode\":\"visible\",\"visited\":145},\"path\":\"js\",\"projecting\":false,\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"reasonCode\":\"belowMeshFloor\",\"sourceRenderables\":119,\"timings\":{\"compileMs\":0,\"reconcileMs\":1.8999999165534973,\"lastReconcileMs\":1.2999999523162842,\"maxReconcileMs\":1.2999999523162842},\"window\":1}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_SCENE_WARNING:{\"displayPeriodMs\":16.667,\"displaySource\":\"declared-target\",\"dominantShare\":0.69,\"dominantTerm\":\"objectsConsidered\",\"gpuShare\":0.017,\"renderMs\":27.79,\"shape\":{\"culled\":0,\"draws\":{\"main\":1,\"shadow\":52,\"nested\":5},\"objectsConsidered\":118,\"shadowExemptCasters\":19,\"trianglesPerDraw\":495},\"window\":1}",
+      "type": "warning"
+    }
+  ],
+  "observedNetworkEntries": [],
+  "screenshot": "/home/joao/projects/threenative/threenative-engine/.worktrees/pr493/artifacts/engine-parity/release/racing-2/threejs/pose.png"
+}
