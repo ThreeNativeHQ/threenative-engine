@@ -62,7 +62,7 @@ describe.skipIf(process.platform !== "linux")("local runner physical core alloca
       lscpu: `cat <<'DATA'\n${topology.join("\n")}\nDATA`,
       nproc: "echo 24",
       docker: "exit 0",
-      gh: 'case "$*" in *"repo view"*) echo test/repo;; *offline*) ;; *runners*) echo 3;; esac',
+      gh: 'case "$*" in *"repos/{owner}/{repo}"*) echo test/repo;; *offline*) ;; *runners*) echo 3;; esac',
       setsid: `printf '%s\n' "\${9:-balancer}" >> '${shapes}'`,
     };
     for (const [name, body] of Object.entries(commands)) {
@@ -155,6 +155,8 @@ function runBalance(
     readonly stopDuringVarReadAt?: number;
     readonly initialVars?: string;
     readonly idle?: string;
+    readonly idleOnTick?: Readonly<Record<number, string>>;
+    readonly downAfterStop?: boolean;
   } = {},
 ) {
   const fixture = makeTempDirSync("runner-balance-");
@@ -182,7 +184,7 @@ function runBalance(
   const gh = `#!/bin/sh
 printf '%s\\n' "$*" >> '${callsFile}'
 case "$*" in
-  *"repo view"*) printf 'test/repo\\n'; exit 0 ;;
+  *"repos/{owner}/{repo}"*) printf 'test/repo\\n'; exit 0 ;;
 esac
 if [ "$1" = "variable" ]; then
   shift
@@ -212,16 +214,28 @@ if [ "$1" = "api" ]; then
       [ -e '${failFile}' ] && exit 1
       # Same shape as the real --jq filter: the name, or NAME:invalid for a wrong label; never the value.
       awk -F= '$1 == "TN_RUNNER" { print ($2 == "tn-local") ? "TN_RUNNER" : "TN_RUNNER:invalid" }
-               $1 == "TN_RUNNER_LIGHT" { print ($2 == "tn-local-light") ? "TN_RUNNER_LIGHT" : "TN_RUNNER_LIGHT:invalid" }' '${varsFile}' 2>/dev/null
+               $1 == "TN_RUNNER_LIGHT" { print ($2 == "tn-local-light") ? "TN_RUNNER_LIGHT" : "TN_RUNNER_LIGHT:invalid" }
+               $1 == "TN_RUNNER_SLOTS" { print "TN_RUNNER_SLOTS=" $2 }' '${varsFile}' 2>/dev/null
       exit 0 ;;
     *"actions/runners"*)
-      cat '${idleFile}' 2>/dev/null; exit 0 ;;
+      # Installed gh rejects --slurp together with --jq, so the publisher must never combine them.
+      case "$*" in
+        *--slurp*--jq*|*--jq*--slurp*) printf '%s\\n' "--slurp option not supported with --jq or --template" >&2; exit 1 ;;
+      esac
+      # Production shape: one idle matching label per line, no count prefix.
+      for label in $(cat '${idleFile}' 2>/dev/null); do
+        case "$label" in tn-local|tn-local-light) printf '%s\\n' "$label" ;; esac
+      done
+      exit 0 ;;
   esac
 fi
 exit 0
 `;
 
   const mutations: string[] = [];
+  for (const [tick, content] of Object.entries(options.idleOnTick ?? {})) {
+    mutations.push(`[ "$ticks" -eq ${tick} ] && printf '%s\\n' '${content}' > '${idleFile}'`);
+  }
   if (options.deleteHeavyOnTick !== undefined) {
     mutations.push(
       `[ "$ticks" -eq ${options.deleteHeavyOnTick} ] && {\n  ${dropVar("TN_RUNNER")}\n}`,
@@ -240,6 +254,7 @@ exit 0
   for (const [name, body] of [
     ["gh", gh],
     ["sleep", sleep],
+    ["docker", "#!/bin/sh\nexit 0\n"],
   ] as const) {
     const command = path.join(bin, name);
     writeFileSync(command, body);
@@ -258,8 +273,22 @@ exit 0
       TN_RUNNERS_ENV: path.join(fixture, "missing-env"),
     },
   });
+  let status = result.status;
+  if (options.downAfterStop) {
+    status = spawnSync("bash", [script, "down"], {
+      encoding: "utf8",
+      cwd: fixture,
+      timeout: 20_000,
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        XDG_STATE_HOME: fixture,
+        TN_RUNNERS_ENV: path.join(fixture, "missing-env"),
+      },
+    }).status;
+  }
   return {
-    status: result.status,
+    status,
     calls: readFileSync(callsFile, "utf8"),
     vars: readFileSync(varsFile, "utf8"),
   };
@@ -323,5 +352,41 @@ describe.skipIf(process.platform !== "linux")("local runner balancer routing", (
     const { status, calls } = runBalance({ stopDuringVarReadAt: 2, stopOnTick: 5 });
     expect(status).toBe(0);
     expect(calls).not.toContain("variable set");
+  });
+
+  it("tracks the idle heavy TN_RUNNER_SLOTS count and clears it on busy and down", () => {
+    // Two idle heavy and one light runner: the count must be the heavy total, and the label must
+    // never appear before the count it promises.
+    const tracked = runBalance({
+      idle: "tn-local tn-local tn-local-light\n",
+      initialVars: "TN_RUNNER_SLOTS=9\n",
+      idleOnTick: { 3: "tn-local tn-local tn-local tn-local-light", 4: "tn-local-light" },
+      stopOnTick: 5,
+    });
+    expect(tracked.status).toBe(0);
+    const lines = tracked.calls.split("\n");
+    expect(lines.findIndex((line) => line.includes("variable set TN_RUNNER_SLOTS"))).toBeLessThan(
+      lines.findIndex((line) => line.includes("variable set TN_RUNNER ")),
+    );
+    expect(lines.some((line) => line.includes("variable set TN_RUNNER_SLOTS --body 2 "))).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.includes("variable set TN_RUNNER_SLOTS --body 3 "))).toBe(
+      true,
+    );
+    // A busy pool withdraws the count with the label; the light lane never gets a count.
+    expect(tracked.vars).not.toContain("TN_RUNNER=");
+    expect(tracked.vars).not.toContain("TN_RUNNER_SLOTS=");
+    expect(tracked.calls).not.toContain("TN_RUNNER_LIGHT_SLOTS");
+
+    // down clears a count still advertised, not only the label.
+    const torn = runBalance({
+      idle: "tn-local tn-local-light\n",
+      stopOnTick: 2,
+      downAfterStop: true,
+    });
+    expect(torn.status).toBe(0);
+    expect(torn.vars).not.toContain("TN_RUNNER=");
+    expect(torn.vars).not.toContain("TN_RUNNER_SLOTS=");
   });
 });
