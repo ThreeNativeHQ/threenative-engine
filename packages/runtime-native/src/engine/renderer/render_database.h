@@ -159,6 +159,7 @@ class RenderDatabase {
         // On the record, not its draw: a batched mesh's draw is rebuilt every frame but the record is not.
         DrawCache cache;
         GeometryKey buffers{};
+        std::shared_ptr<BufferStore> zeroNormals;  // buffers[1] when the geometry has none (see record())
         struct Draw {
             shader::StandardMaterial params;
             DrawItem item;
