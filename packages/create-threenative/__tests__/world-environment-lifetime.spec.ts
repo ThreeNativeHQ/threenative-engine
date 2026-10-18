@@ -525,6 +525,7 @@ it("keeps lazy bloom mips valid at small viewports and releases retired bindings
     const retained = effect as unknown as {
       _renderTargetBright: import("three").RenderTarget;
       _renderTargetsHorizontal: import("three").RenderTarget[];
+      _renderTargetsVertical: import("three").RenderTarget[];
       _separableBlurMaterials: { invSize: { value: import("three").Vector2 } }[];
     };
     for (const target of retained._renderTargetsHorizontal) {
@@ -533,6 +534,12 @@ it("keeps lazy bloom mips valid at small viewports and releases retired bindings
     }
     for (const material of retained._separableBlurMaterials)
       expect(material.invSize.value.toArray().every(Number.isFinite)).toBe(true);
+    controller.setSize(960, 540);
+    controller.setScale(0.72);
+    expect(() => controller.setScale(1)).not.toThrow();
+    const lastMip = retained._renderTargetsVertical.at(-1);
+    expect(lastMip?.viewport.toArray().slice(2)).toEqual([30, 17]);
+    expect([lastMip?.width, lastMip?.height]).toEqual([32, 24]);
     stageDispose?.();
     expect(controller.textureView(retained._renderTargetBright.texture)).toBeUndefined();
     const resize = vi.spyOn(retained._renderTargetBright, "setSize");

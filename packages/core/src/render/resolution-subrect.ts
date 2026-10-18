@@ -191,7 +191,7 @@ export class ResolutionSubrect implements IResolutionSubrect {
         }
         this.#reserving = true;
         try {
-          original.call(node, width, height);
+          original.call(node, quantize(width), quantize(height));
         } finally {
           this.#reserving = false;
         }
