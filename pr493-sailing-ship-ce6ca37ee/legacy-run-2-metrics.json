@@ -1,0 +1,102 @@
+{
+  "run": 2,
+  "captureMetadata": {
+    "path": "/tmp/pr493-sailing-ship-visual-clean/after/run-2.json",
+    "screenshotSha256": "c2b8f8fdb8ca93ca2c72515970f010964307a8de177ac5dd5b79aa782a33caff",
+    "wasmSha256": "dc43d01b49bd967200fa3adf47921a2a43cdcc293b75b3e31c6c90c84f881c79",
+    "sourceSha256": "c67e2803df7dce96de9a795a859795a7f3d7c53b5ecfd1ba207430843e910867",
+    "capture": {
+      "elapsed": 5.999999999999984,
+      "tick": 360,
+      "clock": {
+        "mode": "fixed-step",
+        "tick": 360
+      }
+    },
+    "afterRenderOnly": {
+      "elapsed": 5.999999999999984,
+      "tick": 360,
+      "clock": {
+        "mode": "fixed-step",
+        "tick": 360
+      }
+    },
+    "viewport": {
+      "window": {
+        "width": 1904,
+        "height": 1060
+      },
+      "game": {
+        "x": 0,
+        "y": 100,
+        "width": 1904,
+        "height": 960
+      },
+      "canvases": [
+        {
+          "x": 0,
+          "y": 100,
+          "width": 1904,
+          "height": 960
+        }
+      ]
+    },
+    "adapter": {
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
+    },
+    "rendererKind": "webgpu",
+    "observedErrorsAfterStartup": [],
+    "captureExclusions": [
+      {
+        "selector": ".tn-dev-scene-warning",
+        "reason": "Hide only the framework scene-shape diagnostic output; no game HUD or pixels were altered."
+      }
+    ],
+    "diagnosticPanel": null
+  },
+  "legacy": {
+    "path": "/home/joao/Downloads/parity-sailing/1-LEGACY-reference-run2.png",
+    "sha256": "021332c0cb3ad92dd0216b8700684aea19e26d74dd0f2eb5e23971e8a79bf250",
+    "caption": "legacy Three.js reference"
+  },
+  "fixed": {
+    "path": "/tmp/pr493-sailing-ship-visual-clean/after/run-2.png",
+    "sha256": "c2b8f8fdb8ca93ca2c72515970f010964307a8de177ac5dd5b79aa782a33caff",
+    "caption": "fresh clean Ship-fix AFTER capture"
+  },
+  "dimensions": {
+    "width": 1904,
+    "height": 1060,
+    "gameCrop": {
+      "x": 0,
+      "y": 100,
+      "width": 1904,
+      "height": 960
+    }
+  },
+  "metrics": {
+    "region": {
+      "x": 0,
+      "y": 100,
+      "width": 1904,
+      "height": 960
+    },
+    "rgbRms": 5.052180830154561,
+    "rgbMeanAbs": 1.4205486621732026,
+    "pixelChangedMaxChannelGt8": 0.04194951418067227,
+    "pixelChangedMaxChannelGt16": 0.018388370973389356,
+    "pixelChangedMaxChannelGt32": 0.006605063900560224
+  },
+  "artifacts": {
+    "sideBySide": "legacy-run-2-side-by-side.png",
+    "sideBySideSha256": "e1480cf8b6f3e01048452055b154a212dc894c499f2302363b16661a7f47c30d",
+    "metrics": "legacy-run-2-metrics.json"
+  },
+  "captureMetadataFile": "after-2.json",
+  "reviewScope": "CPU diagnostic comparison only; 100px annotation banner excluded; no alignment or rescaling."
+}

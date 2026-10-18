@@ -1,0 +1,86 @@
+{
+  "arm": "after-ship-fix-source",
+  "run": 1,
+  "image": {
+    "file": "after-1.png",
+    "sha256": "b5fbeb40f64009aa77796b76662d31efd024e6edf21780a523063cd310da68ef",
+    "dimensions": {
+      "width": 1904,
+      "height": 1060
+    }
+  },
+  "source": {
+    "Ship.ts": {
+      "path": "packages/create-threenative/templates/sailing/src/entities/Ship.ts",
+      "sha256": "fa590ecea8f0cc2cbd86eb8d4a782395f4c038d00012cc7fcf545987caf8bc9d"
+    },
+    "Sailing.ts": {
+      "path": "packages/create-threenative/templates/sailing/src/scenes/Sailing.ts",
+      "sha256": "a38d20cb9c5eaf826041d2dd24f06a500ee7cc7e5b853b5507bfdebdea7e9bc3"
+    },
+    "sourceSha256": "c67e2803df7dce96de9a795a859795a7f3d7c53b5ecfd1ba207430843e910867"
+  },
+  "runtime": {
+    "engine": "threenative",
+    "rendererKind": "webgpu",
+    "wasmSha256": "dc43d01b49bd967200fa3adf47921a2a43cdcc293b75b3e31c6c90c84f881c79",
+    "wasmResources": [
+      {
+        "name": "http://127.0.0.1:40295/node_modules/.pnpm/@threenative+runtime-native@file+..+pr493-rts-after+packages+threenative-runtime-native_fbd4e261c33dd4b6cdec92e580294ea2/node_modules/@threenative/runtime-native/build/web/tn-native-engine-web.wasm",
+        "duration": 59.39999997615814,
+        "transferSize": 3603107,
+        "encodedBodySize": 3602807,
+        "responseStatus": 200
+      }
+    ]
+  },
+  "capture": {
+    "sceneElapsedSeconds": 5.999999999999984,
+    "tick": 360,
+    "afterRenderOnly": {
+      "elapsed": 5.999999999999984,
+      "tick": 360,
+      "clock": {
+        "mode": "fixed-step",
+        "tick": 360
+      }
+    },
+    "viewport": {
+      "window": {
+        "width": 1904,
+        "height": 1060
+      },
+      "game": {
+        "x": 0,
+        "y": 100,
+        "width": 1904,
+        "height": 960
+      },
+      "canvases": [
+        {
+          "x": 0,
+          "y": 100,
+          "width": 1904,
+          "height": 960
+        }
+      ]
+    },
+    "adapter": {
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
+    },
+    "observedErrorsAfterStartup": [],
+    "captureExclusions": [
+      {
+        "selector": ".tn-dev-scene-warning",
+        "reason": "Hide only the framework scene-shape diagnostic output; no game HUD or pixels were altered."
+      }
+    ],
+    "diagnosticPanelAtCapture": null
+  },
+  "reviewScope": "Accepted clean retake. The previous first AFTER set failed review because a framework scene diagnostic obstructed the NEXT MARK/WIND HUD; this capture hides only .tn-dev-scene-warning via capture CSS."
+}

@@ -1,0 +1,87 @@
+{
+  "arm": "before-ship-fix-source",
+  "run": 1,
+  "caption": "BEFORE \u00b7 SHIP FIX \u00b7 RUN 1",
+  "derivedCaption": {
+    "applied": true,
+    "region": {
+      "x": 0,
+      "y": 0,
+      "width": 1904,
+      "height": 100
+    },
+    "gameViewportPreservedPixelIdentically": true
+  },
+  "image": {
+    "file": "before-1.png",
+    "sha256": "fe7354dfa862b87d4878e2965a145c3f00a32dbd6728c244ae0813383b979671",
+    "dimensions": {
+      "width": 1904,
+      "height": 1060
+    }
+  },
+  "originalCapture": {
+    "file": "/tmp/pr493-sailing-ab/captures-final/after/run-1.png",
+    "sha256": "1488ff0a018c889303570a5af483f481072f54dc9bfb7da461b6a70f4682c05e",
+    "metadataSha256": "188e7bde62743ce0e25662c91dabb164ce99a141747d4fe12cacb20bb213ede4"
+  },
+  "source": {
+    "Ship.ts": {
+      "path": "packages/create-threenative/templates/sailing/src/entities/Ship.ts",
+      "sha256": "ec164504d3b5dd612474703f0f42677bfafbbdeb6892ca1f11fc06e2e1ba8916"
+    },
+    "Sailing.ts": {
+      "path": "packages/create-threenative/templates/sailing/src/scenes/Sailing.ts",
+      "sha256": "8794943b2ae54c0fd764002f4495a1f7322532e87919e83fbfbb2ba185f52f53"
+    },
+    "sourceBundleSha256": "6182a5f69cdfe714619877facec6ecef17d3d5625c53d101db63978072855a9f"
+  },
+  "runtime": {
+    "engine": "threenative",
+    "rendererKind": "webgpu",
+    "wasmSha256": "dc43d01b49bd967200fa3adf47921a2a43cdcc293b75b3e31c6c90c84f881c79"
+  },
+  "capture": {
+    "sceneElapsedSeconds": 5.999999999999984,
+    "tick": 360,
+    "afterRenderOnly": {
+      "elapsed": 5.999999999999984,
+      "tick": 360,
+      "clock": {
+        "mode": "fixed-step",
+        "tick": 360
+      }
+    },
+    "viewport": {
+      "window": {
+        "width": 1904,
+        "height": 1060
+      },
+      "game": {
+        "x": 0,
+        "y": 100,
+        "width": 1904,
+        "height": 960
+      },
+      "canvases": [
+        {
+          "x": 0,
+          "y": 100,
+          "width": 1904,
+          "height": 960
+        }
+      ]
+    },
+    "adapter": {
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
+    },
+    "observedErrorsAfterStartup": []
+  },
+  "reviewScope": "Both Ship arms use the fixed dc43d01 Wasm; this BEFORE image is the original Ship/Sailing source with a derived banner only. Earlier blocked/diagnostic-overlay AFTER capture is excluded from this accepted pair.",
+  "sourceComparison": "BEFORE and AFTER both use fixed Wasm dc43d01b49bd967200fa3adf47921a2a43cdcc293b75b3e31c6c90c84f881c79; only the Sailing Ship/Sailing source changes."
+}
