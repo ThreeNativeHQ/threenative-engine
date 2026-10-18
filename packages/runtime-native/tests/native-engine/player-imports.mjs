@@ -587,6 +587,7 @@ const scene = new Scene(); const camera = new PerspectiveCamera(); camera.positi
 const player = new Mesh(new BoxGeometry(), new MeshBasicMaterial()); scene.add(player);
 scene.updateMatrixWorld(true); camera.updateMatrixWorld(true);
 const renderer = new WebGPURenderer({ canvas: { width: 1280, height: 720 } });
+check(renderer.supportsRetainedTargetSubrect === false, "surface-owned renderer declines retained target subrects");
 check(renderer.toneMapping === 0 && renderer.outputColorSpace === "srgb" && !renderer.shadowMap.enabled, "renderer defaults");
 renderer.toneMapping = 4; renderer.toneMappingExposure = 0.62; renderer.shadowMap.enabled = true; renderer.shadowMap.type = 2;
 renderer.render(scene, camera);

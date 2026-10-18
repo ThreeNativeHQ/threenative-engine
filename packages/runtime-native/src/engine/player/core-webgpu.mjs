@@ -41,6 +41,8 @@ function drawSecondaryPasses(renderer) {
 }
 
 export class WebGPURenderer {
+  // The native scene pass draws to the player-owned surface, not a retained frame target.
+  supportsRetainedTargetSubrect = false;
   constructor({ canvas, antialias = false } = {}) {
     this.domElement = canvas;
     this.samples = antialias ? 4 : 0;

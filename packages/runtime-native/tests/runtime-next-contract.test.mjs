@@ -1192,6 +1192,12 @@ test('native DOM creates namespaced elements through the active element factory'
     'the native DOM setup must load the extracted element factory');
 });
 
+test('native surface renderer declines retained target subrect capability', () => {
+  const renderer = read('src/engine/player/core-webgpu.mjs');
+  assert.match(renderer, /supportsRetainedTargetSubrect\s*=\s*false;/u,
+    'core must not create retained-target subrects for the native surface-owned scene pass');
+});
+
 test('QuickJS native callback results have independent engine ownership', () => {
   const quickjs = read('src/js/quickjs_engine.cpp');
   assert.match(quickjs, /if \(result\.ptr\)[\s\S]*return JS_DupValue\(ctx, \*val\)/,
