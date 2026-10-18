@@ -947,38 +947,46 @@ it("provides deterministic reduced fallback crowns with unchanged trunks and sca
       assert(near);
       expect(far, `${key} ${role} needs authored far level`).toBeDefined();
       assert(far);
-      expect(far.geometry.index?.count).toBe(
+      assert.equal(
+        far.geometry.index?.count,
         (near.geometry.index?.count ?? 0) * (role === "crown" ? 2 / 3 : 1),
+        `${key} ${role} index count`,
       );
-      expect(Object.keys(far.geometry.attributes).sort()).toEqual(
+      assert.deepEqual(
+        Object.keys(far.geometry.attributes).sort(),
         Object.keys(near.geometry.attributes).sort(),
+        `${key} ${role} attributes`,
       );
-      expect(far.geometry).not.toBe(near.geometry);
+      assert.notEqual(far.geometry, near.geometry, `${key} ${role} geometry is independent`);
       for (const name of Object.keys(near.geometry.attributes)) {
         const farArray = far.geometry.getAttribute(name).array;
         const nearArray = near.geometry.getAttribute(name).array;
-        expect(farArray).not.toBe(nearArray);
-        expect(
+        assert.notEqual(farArray, nearArray, `${key} ${role} ${name} storage is independent`);
+        assert.ok(
           Buffer.from(farArray.buffer, farArray.byteOffset, farArray.byteLength).equals(
             Buffer.from(nearArray.buffer, nearArray.byteOffset, nearArray.byteLength),
           ),
-        ).toBe(true);
+          `${key} ${role} ${name} bytes`,
+        );
       }
       if (role === "bark") {
         const farPosition = far.geometry.getAttribute("position").array;
         const nearPosition = near.geometry.getAttribute("position").array;
-        expect(
+        assert.ok(
           Buffer.from(farPosition.buffer, farPosition.byteOffset, farPosition.byteLength).equals(
             Buffer.from(nearPosition.buffer, nearPosition.byteOffset, nearPosition.byteLength),
           ),
-        ).toBe(true);
+          `${key} trunk positions`,
+        );
       }
     }
   }
-  expect(fallbackDigest(parts, "sapling", 1)).toBe(
+  assert.equal(
+    fallbackDigest(parts, "sapling", 1),
     "39e49536171b33103b47ed39d79cc972778c787c5862edbe57fb1979dce7406f",
   );
-  expect(fallbackDigest(parts, "spruce", 1)).toBe(
+  assert.equal(
+    fallbackDigest(parts, "spruce", 1),
     "2e3a43820448d03ee349b90d1dda31a1af11bc4a8ccf3dae682db67fd8716c26",
   );
 });
