@@ -173,7 +173,12 @@ export async function withBrowserCapture<T>(
     const startupBudget = Math.min(2_147_483_647, PLAYTEST_STARTUP_READY_TIMEOUT_MS + active.timeoutMs);
     const bridge = await stage("navigation and bridge handshake", () => openRunnerPage(activePage, active, scenario, undefined), startupBudget);
     if (bridge === undefined || !bridge.description.capabilities.includes("runtime.startup")) {
-      throw new Error("TN_CAPTURE_SESSION_READINESS_REQUIRED: the page must report runtime.startup");
+      throw new Error(`TN_CAPTURE_SESSION_READINESS_REQUIRED: the page must report runtime.startup; observations=${JSON.stringify({
+        capabilities: bridge?.description.capabilities ?? null,
+        errors,
+        consoleEntries,
+        networkEntries,
+      })}`);
     }
     await stage("warmup", () => waitFrames(activePage, scenario.warmupFrames), startupBudget);
     const startup = await stage("engine startup readiness", () => waitForStartupReady({
