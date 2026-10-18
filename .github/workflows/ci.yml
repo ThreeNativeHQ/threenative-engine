@@ -48,6 +48,9 @@ jobs:
       reason: ${{ steps.classify.outputs.reason }}
       plan: ${{ steps.classify.outputs.plan }}
       candidate_sha: ${{ steps.classify.outputs.candidate_sha }}
+      # PRD-620: the one admitted slice of eligible HEAVY instances across all three workflows,
+      # at most `TN_RUNNER_SLOTS`. Empty for a fork, a missing count or no advertised runner.
+      runner_admission: ${{ steps.admission.outputs.runner_admission }}
     # PRD-481 tree reuse: the classification asks the Actions API which successful run tested this
     # exact tree. Read-only, and nothing else in the workflow gains from it.
     permissions:
@@ -56,7 +59,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          # Manual full qualification does not consult history; automatic scope selection does.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 1 || 0 }}
           # Until protected develop exists, retain the qualified-main scheduled flow.
           ref: ${{ github.event_name == 'schedule' && vars.TN_DEVELOP_CI_ENABLED == 'true' && 'develop' || github.sha }}
       - id: classify
@@ -84,6 +88,18 @@ jobs:
             --format github | tee "$RUNNER_TEMP/ci-scope.outputs"
           cat "$RUNNER_TEMP/ci-scope.outputs" >> "$GITHUB_OUTPUT"
           printf 'Candidate checked out once: `%s`\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      # PRD-620: one shared admission budget for every workflow. The count comes from the publisher's
+      # observed idle-heavy count; a missing count or an unset runner leaves every lane hosted. The
+      # selected instances are the plan's required jobs in the inventory's CPU-heavy order.
+      - id: admission
+        name: Admit the eligible heavy instances to the idle pool
+        env:
+          TN_CI_PLAN: ${{ steps.classify.outputs.plan }}
+          TN_CI_FORK: ${{ github.event.pull_request.head.repo.fork }}
+          TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
+          TN_RUNNER: ${{ vars.TN_RUNNER }}
+          TN_RUNNER_SLOTS: ${{ vars.TN_RUNNER_SLOTS }}
+        run: node scripts/ci-runner-admission.mjs --admit
 
   # A red job no longer stops the rest of the run, and that is deliberate. The fail-fast this
   # replaces cancelled the whole run through the Actions API from inside the job that failed —
@@ -101,7 +117,7 @@ jobs:
   typecheck:
     needs: [scope, build-artifacts]
     if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:typecheck')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -133,7 +149,7 @@ jobs:
     # tree skips it too — every gate it would run here already passed in the run that tested this
     # exact tree, and `!= 'prose'` would otherwise have bought a second full lint.
     if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'native-engine'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:lint')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -190,7 +206,7 @@ jobs:
   test:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 45
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -239,7 +255,7 @@ jobs:
   test-unit:
     needs: [scope, build-artifacts]
     if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:test-unit:{0}', matrix.shard))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -299,7 +315,7 @@ jobs:
     # cache action's post step, which is the product every pull request into develop reads. No step
     # below is gated on a full selection, so a develop push warms them.
     if: ${{ (needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs['test-native'].required) || needs.scope.outputs.selection == 'warm' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test-native')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -588,7 +604,7 @@ jobs:
   test-browser:
     needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test-browser')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -642,7 +658,7 @@ jobs:
   test-playtest:
     needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test-playtest')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -680,10 +696,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).goldenMatrix }}
-    # Hosted on purpose: selected template legs share GitHub's hosted capacity while builds and
-    # tests hold the local pool. On 5 local slots these legs waited 17-25 min for a runner (run
-    # 37070815769); sharing the board across both pools is what shortens wall time.
-    runs-on: ubuntu-24.04
+    # Routes through the idle-pool switch with hosted fallback: forks fall through to hosted and
+    # snapshot fallback is best-effort, so queued legs may remain local. Sharing the board across
+    # both pools is what shortens wall time (on 5 local slots these legs waited 17-25 min, run 37070815769).
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:golden-path-template:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     # The scenario arithmetic this number came from moved out to `template-nonvisual`, which now
     # owns the non-visual sweep for every selected kit. What is left is `verify:golden-path` —
     # pack, scaffold, install, dev, test, build, assert, once per matrix leg — which measured 309s
@@ -815,13 +831,13 @@ jobs:
     needs: [scope, build-artifacts]
     if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
     # One scaffold/install/typecheck/cook per selected kit; every nonvisual scenario still executes.
-    # GitHub's shared hosted quota schedules these independent VMs without a second workflow cap.
+    # Each leg routes to idle tn-local first with hosted fallback; no second workflow cap holds kits back.
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
-    # Hosted on purpose: template legs use hosted while the balancer routes builds and tests
-    # to the local pool, avoiding one routing variable sending the whole burst to a single pool.
-    runs-on: ubuntu-24.04
+    # Routes through the idle-pool switch with hosted fallback: forks fall through to hosted and
+    # snapshot fallback is best-effort, so queued legs may remain local.
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-nonvisual:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     # rain relaunches the page for each of its five GPU-free scenarios. On the hosted SwiftShader
     # adapter each launch now takes about 7 minutes, against about 1 minute on develop (runs
     # 38818830914 and 38824021621), so five launches exceed the 30-minute cap. Only rain gets the
@@ -957,7 +973,7 @@ jobs:
   benchmark:
     needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:benchmark')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 25
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1035,7 +1051,7 @@ jobs:
     # `warm` too: this job runs the shared workspace-dist action as the run's only saver, and the
     # `workspace-dist-*` entry it publishes is what every pull request into develop restores.
     if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'warm' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:build-artifacts')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1083,7 +1099,7 @@ jobs:
   performance-contracts:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' && !cancelled() }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:performance-contracts')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 2
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1149,7 +1165,7 @@ jobs:
   budgets:
     needs: [scope, build-artifacts]
     if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:budgets')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1202,6 +1218,7 @@ jobs:
     with:
       selection_plan: ${{ needs.scope.outputs.plan }}
       candidate_sha: ${{ needs.scope.outputs.candidate_sha }}
+      runner_admission: ${{ needs.scope.outputs.runner_admission }}
 
   # PRD-573 slice 0b. A pull request that touches only the native engine's own tree
   # (`NATIVE_ENGINE_PATHS` in scripts/ci-change-scope.mjs) skips the 75-minute native-platforms
@@ -1214,7 +1231,7 @@ jobs:
   native-engine:
     needs: scope
     if: ${{ (needs.scope.outputs.selection == 'native-engine' || needs.scope.outputs.selection == 'full') && fromJSON(needs.scope.outputs.plan).jobs['native-engine'].required }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:native-engine')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1300,6 +1317,7 @@ jobs:
     with:
       selection_plan: ${{ needs.scope.outputs.plan }}
       candidate_sha: ${{ needs.scope.outputs.candidate_sha }}
+      runner_admission: ${{ needs.scope.outputs.runner_admission }}
       base_sha: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
 
   supply-chain:

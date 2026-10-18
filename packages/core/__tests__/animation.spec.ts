@@ -886,6 +886,9 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
       new QuaternionKeyframeTrack("Foot.quaternion", [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]),
       new VectorKeyframeTrack("Foot.scale", [0, 1], [1, 1, 1, 2, 2, 2]),
     );
+    const player = new AnimationPlayer({ root, clips: [clip] });
+    player.play("walk");
+    player.mixer.update(0.2);
     const originals = [root, foot].map((object) => ({
       object,
       position: object.position,
@@ -904,8 +907,6 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
       vi.spyOn(scale, "clone"),
     ]);
     try {
-      const player = new AnimationPlayer({ root, clips: [clip] });
-      player.play("walk");
       expect(player.stride.clipGroundSpeed).toBeCloseTo(1, 1);
       for (const copy of copies) expect(copy).toHaveBeenCalledTimes(65);
       for (const clone of clones) expect(clone).not.toHaveBeenCalled();
