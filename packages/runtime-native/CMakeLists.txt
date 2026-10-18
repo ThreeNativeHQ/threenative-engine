@@ -2333,17 +2333,19 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/physics_actuation_bindings_test.cpp)
     target_link_libraries(threenative-physics-actuation-bindings-test PRIVATE mystral-runtime)
 
-    # The synthetic DNA and its reference vectors live in the package that owns the ABI
-    # contract; the path is compiled in so the executable needs no working directory.
-    add_executable(threenative-metahuman-bindings-test EXCLUDE_FROM_ALL
-        tests/metahuman_bindings_test.cpp)
-    target_link_libraries(threenative-metahuman-bindings-test PRIVATE mystral-runtime)
-    target_include_directories(threenative-metahuman-bindings-test PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_compile_definitions(threenative-metahuman-bindings-test PRIVATE
-        THREENATIVE_METAHUMAN_DNA="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.dna"
-        THREENATIVE_METAHUMAN_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.vectors.json"
-        THREENATIVE_METAHUMAN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.reference.json")
+    if(TN_ENABLE_METAHUMAN)
+        # The synthetic DNA and its reference vectors live in the package that owns the ABI
+        # contract; the path is compiled in so the executable needs no working directory.
+        add_executable(threenative-metahuman-bindings-test EXCLUDE_FROM_ALL
+            tests/metahuman_bindings_test.cpp)
+        target_link_libraries(threenative-metahuman-bindings-test PRIVATE mystral-runtime)
+        target_include_directories(threenative-metahuman-bindings-test PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_compile_definitions(threenative-metahuman-bindings-test PRIVATE
+            THREENATIVE_METAHUMAN_DNA="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.dna"
+            THREENATIVE_METAHUMAN_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.vectors.json"
+            THREENATIVE_METAHUMAN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.reference.json")
+    endif()
 
     add_executable(threenative-dom-dispatch-lifetime-test EXCLUDE_FROM_ALL
         tests/dom_dispatch_lifetime_test.cpp)
@@ -2838,9 +2840,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_mark_sanitizer_contract_test(threenative-dom-dispatch-lifetime-test)
     tn_mark_sanitizer_contract_test(threenative-frame-op-stream-replay-test)
     tn_mark_sanitizer_contract_test(threenative-handle-lifetime-test)
-    # The facial rig is the one contract that parses untrusted bytes into the C ABI, so it runs
-    # instrumented too: a leak or a bad free in the DNA reader is invisible without it.
-    tn_mark_sanitizer_contract_test(threenative-metahuman-bindings-test)
+    if(TN_ENABLE_METAHUMAN)
+        # The facial rig is the one contract that parses untrusted bytes into the C ABI, so it runs
+        # instrumented too: a leak or a bad free in the DNA reader is invisible without it.
+        tn_mark_sanitizer_contract_test(threenative-metahuman-bindings-test)
+    endif()
     tn_mark_sanitizer_contract_test(threenative-shutdown-lifetime-test)
     tn_mark_sanitizer_contract_test(threenative-webgpu-bindings-reentrancy-test)
     get_property(TN_NATIVE_SANITIZER_TARGETS GLOBAL PROPERTY TN_NATIVE_SANITIZER_TARGETS)
