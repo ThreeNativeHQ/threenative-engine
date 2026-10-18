@@ -9,7 +9,7 @@ import {
 import { Euler, Group, MathUtils, type Object3D, Quaternion, Vector3 } from "three";
 import { measureHull, prepareShipConventions } from "../conventions.js";
 import { createMaterials } from "../render/materials.js";
-import { surfaceHeight } from "../render/ocean.js";
+import { createHeightReconciler, surfaceHeight } from "../render/ocean.js";
 import { SHIP_SAILS, createSails, createShipModel } from "../render/props.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
@@ -110,6 +110,9 @@ export class Ship {
   #elapsed = 0;
   #immersion = 0.5;
   #seaHeight = 0;
+  readonly #readHeight = createHeightReconciler();
+  #heightCorrection = 0;
+  #maxHeightCorrection = 0;
   #staleFrames = -1;
   readonly #ocean: SpectralOcean;
   /** Half the hull's length and beam, measured off `ship.glb` rather than assumed. */
@@ -371,13 +374,9 @@ export class Ship {
     // sea level for those frames is the whole handling this needs — a boat sitting flat at y = 0
     // for the first fraction of a second is invisible, and throwing is not.
     //
-    // Every probe is taken **upwind** by however far the swell will have run during the copy's
-    // age. `sampleHeight` hands back a height from a GPU copy that is `staleFrames` old, and a
-    // hull floated straight onto that number rides water the renderer stopped drawing several
-    // frames ago: the ship visibly cut down through a crest and hung above the following trough,
-    // and the waterline reading swung between a third and two thirds of the hull between two
-    // captures a second apart. Deep-water waves travel, so reading the stale field a little
-    // upwind reads what this patch of sea is about to become.
+    // Each copy carries the vertical velocity measured at the same grid point. Predict in time,
+    // not by shifting along one wind speed: the cascades contain waves with different speeds,
+    // so that spatial guess jumped whenever a newer GPU copy replaced it.
     const heightAt = (sampleX: number, sampleZ: number): number =>
       surfaceHeight(this.#ocean, sampleX, sampleZ, deltaTime) ?? 0;
     // Sampled across the hull's real length and beam, not a token metre. The height copy is a
@@ -404,7 +403,15 @@ export class Ship {
       z + starboard.z * this.#halfBeam,
     );
     const portHeight = heightAt(x - starboard.x * this.#halfBeam, z - starboard.z * this.#halfBeam);
-    const hereHeight = heightAt(x, z);
+    const sample = this.#ocean.sampleHeight(x, z);
+    const here =
+      sample === undefined ? undefined : this.#readHeight(sample, this.#ocean.steps, deltaTime);
+    const hereHeight = here?.height ?? 0;
+    this.#heightCorrection = here?.correction ?? 0;
+    this.#maxHeightCorrection = Math.max(
+      this.#maxHeightCorrection,
+      Math.abs(this.#heightCorrection),
+    );
     this.#seaHeight = hereHeight;
     this.#staleFrames = this.#ocean.sampleHeight(x, z)?.staleFrames ?? -1;
     // The ship's bow is at **-Z**, so a positive `rotation.x` lifts it — which means the pitch is
@@ -439,13 +446,10 @@ export class Ship {
     const blend = Math.min(1, Math.max(0, deltaTime) * 3.2);
     this.visual.position.x = this.mesh.position.x;
     this.visual.position.z = this.mesh.position.z;
-    // The design waterline sits **on** the surface, not eased towards it.
-    //
-    // Easing at 3.2 per second is a third of a second of lag, and against a sea whose surface
-    // rises at three metres a second that is nearly half a metre of hull hanging in the air over
-    // its own trough — most of this ship's draught. A boat this size has no such lag: it is a
-    // float, and a float is wherever the water is. The inertia that *is* real lives in the
-    // attitude below, where a hull's mass genuinely resists being rolled.
+    // The design waterline follows the reconciled surface prediction. Each new GPU copy's
+    // height/velocity correction completes over its measured copy interval; the wave keeps its
+    // measured velocity. The correction's size is reported in debug so a smooth-looking hull
+    // cannot hide a large waterline error. The hull's attitude retains its own inertia below.
     this.visual.position.y = hereHeight;
     // `YXZ`: yaw, then pitch and roll about the ship's **own** axes. In the default `XYZ` order
     // the pitch is applied in world space and the heel goes wherever the heading happens to point
@@ -556,6 +560,8 @@ export class Ship {
       // arithmetic, and a screenshot cannot tell a canvas that was never sampled from a still one.
       sailSamples: this.sailSamples,
       floatGap: this.visual.position.y - this.#seaHeight,
+      surfacePredictionCorrection: this.#heightCorrection,
+      maxSurfacePredictionCorrection: this.#maxHeightCorrection,
       readbackStaleFrames: this.#staleFrames,
       oceanSteps: this.#ocean.steps,
       submergedFraction: this.buoyancy.submergedFraction,

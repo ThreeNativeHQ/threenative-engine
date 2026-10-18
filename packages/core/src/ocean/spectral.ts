@@ -1,5 +1,5 @@
 import { Object3D } from "three";
-import { Fn, float, instanceIndex, instancedArray, uniform, vec4 } from "three/tsl";
+import { Fn, float, instanceIndex, instancedArray, uniform, vec2, vec4 } from "three/tsl";
 import type { ComputeNode, StorageBufferNode } from "three/webgpu";
 import type { IComputeDriven } from "../compute-driven.js";
 import { GPUReadback } from "../gpu-readback.js";
@@ -55,7 +55,7 @@ export interface ISpectralOceanOptions {
    *
    * This is not the simulation resolution. It is the size of the only thing copied back off the
    * GPU, so it is the whole cost of being able to float something: `readbackResolution` squared
-   * floats, every `readbackEveryFrames` frames.
+   * pairs of height and vertical-velocity floats, every `readbackEveryFrames` frames.
    */
   readonly readbackResolution: number;
   /** Frames between height copies. Ignored when `readbackResolution` is zero. */
@@ -65,6 +65,8 @@ export interface ISpectralOceanOptions {
 /** A height read from the CPU copy, with the age of the frame that produced it. */
 export interface ISpectralOceanHeight {
   readonly height: number;
+  /** Metres per second at this same point and sample time, for temporal age correction. */
+  readonly verticalVelocity: number;
   /**
    * Frames between the GPU state this height came from and now.
    *
@@ -253,6 +255,8 @@ export function sampleGrid(
   patchSize: number,
   x: number,
   z: number,
+  stride = 1,
+  offset = 0,
 ): number {
   const scale = resolution / patchSize;
   const u = x * scale;
@@ -266,10 +270,10 @@ export function sampleGrid(
   const xb = wrap(x0 + 1);
   const za = wrap(v0);
   const zb = wrap(v0 + 1);
-  const topLeft = grid[za * resolution + xa] as number;
-  const topRight = grid[za * resolution + xb] as number;
-  const bottomLeft = grid[zb * resolution + xa] as number;
-  const bottomRight = grid[zb * resolution + xb] as number;
+  const topLeft = grid[(za * resolution + xa) * stride + offset] as number;
+  const topRight = grid[(za * resolution + xb) * stride + offset] as number;
+  const bottomLeft = grid[(zb * resolution + xa) * stride + offset] as number;
+  const bottomRight = grid[(zb * resolution + xb) * stride + offset] as number;
   const top = topLeft + (topRight - topLeft) * fx;
   const bottom = bottomLeft + (bottomRight - bottomLeft) * fx;
   return top + (bottom - top) * fz;
@@ -297,8 +301,10 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
   readonly readbackFloats: number;
 
   #time = uniform(0);
+  #heightDelta = uniform(0);
+  #heightTime: number | undefined;
   #cascadeStates: ICascadeState[] = [];
-  #heightField: StorageBufferNode<"float"> | undefined;
+  #heightField: StorageBufferNode<"vec2"> | undefined;
   #heightPass: ComputeNode | undefined;
   #readback: GPUReadback | undefined;
   #readbackResolution: number;
@@ -349,7 +355,7 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
     this.resolution = resolution;
     this.cascades = [...options.cascades];
     this.#readbackResolution = options.readbackResolution;
-    this.readbackFloats = options.readbackResolution * options.readbackResolution;
+    this.readbackFloats = options.readbackResolution * options.readbackResolution * 2;
 
     const bands = cascadeBands(resolution, this.cascades);
     const warmup: ComputeNode[] = [];
@@ -432,7 +438,8 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
     if (sample === undefined) return undefined;
     const patch = (this.#cascadeStates[0] as ICascadeState).patchSize;
     return {
-      height: sampleGrid(sample.data, this.#readbackResolution, patch, x, z),
+      height: sampleGrid(sample.data, this.#readbackResolution, patch, x, z, 2),
+      verticalVelocity: sampleGrid(sample.data, this.#readbackResolution, patch, x, z, 2, 1),
       staleFrames: sample.staleFrames,
     };
   }
@@ -450,7 +457,13 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
     // makes the renderer wait: 60 submits a frame with a 70 ms stall every few dozen of them.
     // An array runs in one compute pass in order, which is all a ping-pong transform needs.
     const passes = this.#cascadeStates.flatMap((state) => state.passes);
-    if (this.#heightPass !== undefined) passes.push(this.#heightPass);
+    if (this.#heightPass !== undefined) {
+      const now = this.#time.value;
+      const delta = now - (this.#heightTime ?? now);
+      this.#heightDelta.value = Number.isFinite(delta) && delta > 0 ? delta : 0;
+      this.#heightTime = now;
+      passes.push(this.#heightPass);
+    }
     renderer.compute(passes);
     if (this.#heightPass !== undefined) this.#readback?.request(renderer);
     this.#steps += 1;
@@ -680,11 +693,11 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
    * asked for.
    */
   #buildHeightPass(readbackResolution: number): {
-    field: StorageBufferNode<"float">;
+    field: StorageBufferNode<"vec2">;
     pass: ComputeNode;
   } {
     const count = readbackResolution * readbackResolution;
-    const field = instancedArray(count, "float") as StorageBufferNode<"float">;
+    const field = instancedArray(count, "vec2") as StorageBufferNode<"vec2">;
     const states = this.#cascadeStates;
     const basePatch = (states[0] as ICascadeState).patchSize;
     const simulationSize = this.resolution;
@@ -703,7 +716,12 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
         const offset = sampleZ.mul(float(simulationSize)).add(sampleX);
         total.addAssign(state.displacement.element(offset.toUint()).y);
       }
-      field.element(instanceIndex).assign(total);
+      const previous = field.element(instanceIndex).x.toVar();
+      const delta = this.#heightDelta;
+      const velocity = delta
+        .greaterThan(0)
+        .select(total.sub(previous).div(delta.max(1e-6)), float(0));
+      field.element(instanceIndex).assign(vec2(total, velocity));
     })().compute(count);
     return { field, pass };
   }
