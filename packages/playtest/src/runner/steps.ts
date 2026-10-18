@@ -62,7 +62,7 @@ export function collectTrivialityOptOuts(assertions: readonly IPlaytestAssertion
   });
 }
 
-/** Capture the largest rendered canvas without composited DOM overlays. */
+/** Capture the largest rendered canvas bounds without waiting for locator screenshot stability. */
 export async function captureVisualSurface(
   page: Page,
   artifactPath?: string,
@@ -81,7 +81,15 @@ export async function captureVisualSurface(
     return largestIndex;
   });
   if (sourceIndex < 0) return undefined;
-  const content = await canvases.nth(sourceIndex).screenshot();
+  const canvas = canvases.nth(sourceIndex);
+  const bounds = await canvas.boundingBox();
+  if (
+    bounds === null
+    || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)
+    || bounds.width <= 0
+    || bounds.height <= 0
+  ) return undefined;
+  const content = await page.screenshot({ clip: bounds });
   if (artifactPath !== undefined) await writeFile(artifactPath, content);
   return content;
 }
@@ -322,11 +330,12 @@ export async function runStep(
   }
   if (ticks > 0 && fixedStep) {
     // Keep the virtual clock ahead of requestAnimationFrame while preserving a bounded
-    // path sample cadence. One browser round-trip per tick lets live frames race the
-    // deterministic clock on loaded runners and makes long recordings nondeterministic.
+    // path sample cadence. Submit one tick per bridge request: a loaded visual scene can
+    // compile or stream enough work during one tick to exceed the request's bounded budget.
     const sampleTicks = 10;
     for (let index = 0; index < ticks; index += sampleTicks) {
-      await advanceFixedStep(page, bridge, Math.min(sampleTicks, ticks - index));
+      const batch = Math.min(sampleTicks, ticks - index);
+      await advanceFixedStep(page, bridge, batch);
       await samplePathPosition(bridge, pathEntity, pathPositions);
     }
   } else {
@@ -531,20 +540,27 @@ export async function advanceFixedStep(
   bridge: Pick<IPlaytestBridgeClient, "advance">,
   ticks: number,
 ): Promise<void> {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      await bridge.advance(ticks);
-      return;
-    } catch (error) {
-      if (
-        !(error instanceof Error)
-        || !error.message.includes(STOPPED_LOOP_ERROR)
-        || attempt >= MAX_FIXED_STEP_STARTUP_RETRIES
-      )
-        throw error;
-      await waitFrames(page, 1);
+  const advanceOne = async (requestedTicks: number): Promise<void> => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await bridge.advance(requestedTicks);
+        return;
+      } catch (error) {
+        if (
+          !(error instanceof Error)
+          || !error.message.includes(STOPPED_LOOP_ERROR)
+          || attempt >= MAX_FIXED_STEP_STARTUP_RETRIES
+        )
+          throw error;
+        await waitFrames(page, 1);
+      }
     }
+  };
+  if (!Number.isInteger(ticks) || ticks <= 0) {
+    await advanceOne(ticks);
+    return;
   }
+  for (let tick = 0; tick < ticks; tick += 1) await advanceOne(1);
 }
 
 export type StepInputState = {

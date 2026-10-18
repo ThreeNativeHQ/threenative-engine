@@ -4,7 +4,7 @@
 **Priority:** P2 — Foliage is static; shared world origin across batches and a native row are unbuilt.
 **Complexity:** 4 (MEDIUM) — 6–10 files (+2: `render/world-impostor-surface.ts`, `world-gpu-scene.ts`, one exported core node, a conformance case, the shooter's `palm.ts` and a new `wind.ts`); engine and Machinefall release separately (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-478](PRD-478-open-world-frame-architecture.md) (shadow levels re-render only when the camera moves; its map-walk timing method is reused here). Related: [PRD-475](PRD-475-open-world-120-fps-without-visual-loss.md) (the 120 fps / no-visual-loss bar), [PRD-487](../Unreal/assets/PRD-487-imported-materials-keep-their-detail.md) (Unreal `T_WindNoise` reaches `userData` there)
+**Depends on:** [PRD-478](../done/open-world/PRD-478-open-world-frame-architecture.md) (shadow levels re-render only when the camera moves; its map-walk timing method is reused here). Related: [PRD-475](PRD-475-open-world-120-fps-without-visual-loss.md) (the 120 fps / no-visual-loss bar), [PRD-487](../Unreal/assets/PRD-487-imported-materials-keep-their-detail.md) (Unreal `T_WindNoise` reaches `userData` there)
 
 ## Context
 

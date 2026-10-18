@@ -18,10 +18,9 @@ import { isStatic } from "./static-transform.js";
  *
  * The pass mirrors three exactly for a visible node: `matrixAutoUpdate` -> `updateMatrix()`, then
  * the `matrixWorldNeedsUpdate || force` recompute honouring `matrixWorldAutoUpdate` and a null
- * parent, then force the children. A node with `visible === false` still composes its **own**
- * matrix — that is what makes the next part cheap — and is not recursed into; when it was forced
- * (or carried a dirty flag) it is remembered, so the first frame it is visible again its whole
- * subtree is recomputed with `force = true`.
+ * parent, then force the children. A node with `visible === false` defers its own compose and its
+ * subtree's walk. Every skipped root is remembered, so the first frame it is visible again both
+ * its own world matrix and its descendants are recomputed with `force = true`.
  *
  * Two things are never dropped by the pruning, because both are read while nothing above them is
  * visible:
@@ -196,16 +195,15 @@ export class MatrixWorldPass {
       root.updateMatrixWorld(force || stale);
       return;
     }
-    if (root.matrixAutoUpdate) root.updateMatrix();
-    let childForce = composeWorld(root, force) || force;
-    // The recompose cleared the flag, so `childForce` is now true exactly when this node's own
-    // world matrix changed — and therefore when its subtree is dirty. Nothing under a hidden node
-    // can draw, so defer the recursion; the node itself is already correct for the frame it shows.
+    // Nothing here can draw. Remember even a clean root: local or ancestor transforms can change
+    // while it is hidden without leaving a world-matrix dirty flag on this node.
     if (prune && root.visible === false && !this.#holdsBones(root)) {
-      if (childForce) this.#stale.add(root);
+      this.#stale.add(root);
       return;
     }
-    if (this.#stale.delete(root)) childForce = true;
+    const stale = this.#stale.delete(root);
+    if (root.matrixAutoUpdate) root.updateMatrix();
+    const childForce = composeWorld(root, force || stale) || force || stale;
     // The frozen subtree's world matrices were composed when the engine placed it, and only a write
     // to something in it can change them: `refreshStaticTransforms` re-arms a frozen root whose own
     // transform moved, and `invalidateStatic` re-arms one something wrote inside. Both compose the
