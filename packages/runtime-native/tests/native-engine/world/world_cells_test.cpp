@@ -269,7 +269,7 @@ std::vector<Value> replay(const Value& scene, std::span<const std::byte> placeme
     if (!owner) { std::fprintf(stderr, "%s: %s\n", name.c_str(), error.c_str()); return frames; }
     double clock = 0, x = 0, z = 0;
     const bool priced = boolean(scene, "priced");
-    const bool highResolutionAdmission = name == "tinyTerrainAdmission";
+    const bool highResolutionAdmission = name == "tinyTerrainAdmission" || name == "sharedTerrainAdmission";
     auto now = [&] { if (priced) clock += 1; return clock; };
     std::size_t index = 0, count = 0;
     std::string stepDigests;
@@ -378,25 +378,58 @@ void worldCells(bool admission = false) {
     CHECK(!member(table, "coverage").items().empty());
     CHECK(!member(table, "scenes").items().empty());
     CHECK(!member(table, "chunks").items().empty());
-    std::vector<std::string> admissionScenes;
+    const std::vector<std::string> expectedAdmissionScenes{
+        "boundedAdmission", "boundedColliders", "jump1", "jump2", "queuedEviction",
+        "refusals", "replacement", "tinyTerrainAdmission", "unboundedAdmission"};
+    const std::vector<std::string> expectedExclusions{
+        "admits more fresh batches per update behind the startup cover",
+        "admits up to one 60 Hz frame per update behind the startup cover, and 2 ms after it",
+        "keeps a failed spawn pending and reports its model failure by region",
+        "keeps a named covered budget behind the startup cover",
+        "reports completed spawn coverage separately from reserved cells and distant work",
+        "scales a game's own budget behind the startup cover"};
+    std::vector<std::string> admissionScenes, exclusions, titles;
     std::size_t cases = 0;
-    if (admission) for (const auto& row : member(table, "coverage").items()) {
-        if (member(row, "file").string() != "world-cells-admission.spec.ts") continue;
-        ++cases;
-        CHECK(!member(row, "reproduced").items().empty());
-        for (const auto& lane : member(row, "reproduced").items())
-            if (std::find(admissionScenes.begin(), admissionScenes.end(), lane.string()) == admissionScenes.end())
-                admissionScenes.push_back(lane.string());
+    if (admission) {
+        for (const auto& row : member(table, "coverage").items()) {
+            if (member(row, "file").string() != "world-cells-admission.spec.ts") continue;
+            const auto& title = member(row, "test");
+            CHECK(title.isString() && !title.string().empty());
+            CHECK(std::find(titles.begin(), titles.end(), title.string()) == titles.end());
+            titles.push_back(title.string());
+            const auto& reproduced = member(row, "reproduced");
+            const auto& scope = member(row, "scope");
+            CHECK(reproduced.isArray());
+            CHECK(scope.isString() && !scope.string().empty());
+            if (reproduced.items().empty()) {
+                exclusions.push_back(title.string());
+                continue;
+            }
+            ++cases;
+            for (const auto& lane : reproduced.items()) {
+                CHECK(lane.isString() && !lane.string().empty());
+                if (std::find(admissionScenes.begin(), admissionScenes.end(), lane.string()) == admissionScenes.end())
+                    admissionScenes.push_back(lane.string());
+            }
+        }
+        std::sort(admissionScenes.begin(), admissionScenes.end());
+        std::sort(exclusions.begin(), exclusions.end());
+        CHECK(titles.size() == 15 && cases == 9);
+        CHECK(exclusions == expectedExclusions);
+        CHECK(admissionScenes == expectedAdmissionScenes);
     }
     std::map<std::string, std::vector<Value>> traces;
     for (const auto& scene : member(table, "scenes").items()) {
         const auto& name = member(scene, "name").string();
-        if (admission && std::find(admissionScenes.begin(), admissionScenes.end(), name) == admissionScenes.end()) continue;
+        if (admission && name != "sharedTerrainAdmission" && std::find(admissionScenes.begin(), admissionScenes.end(), name) == admissionScenes.end()) continue;
         auto frames = replay(scene, placements, heights, admission);
         if (admission) traces.emplace(name, std::move(frames));
     }
     if (admission) {
-        CHECK(cases == 9 && traces.size() == 8);
+        CHECK(traces.size() == 9);
+        for (const auto& name : expectedAdmissionScenes)
+            if (name != "refusals") CHECK(traces.contains(name));
+        CHECK(traces.contains("sharedTerrainAdmission"));
         const auto count = [](const Value& frame, const char* key) { return member(member(frame, "admission"), key).number(); };
         for (const auto& name : {"boundedAdmission", "boundedColliders"}) {
             const auto& frames = traces.at(name);
@@ -421,24 +454,18 @@ void worldCells(bool admission = false) {
         CHECK(member(member(tiny.front(), "terrain"), "residentKeys").items().empty());
         CHECK(member(member(tiny.front(), "terrain"), "deferred").number() > 0);
         std::size_t lastResidentTiles = 0;
-        std::size_t sharedProgress = 0;
         std::size_t terrainResumeProgress = 0;
         std::size_t firstPublication = tiny.size();
-        double previousBacklog = count(tiny.front(), "backlog");
         for (std::size_t index = 0; index < tiny.size(); ++index) {
             const auto& frame = tiny[index];
             const auto residentTiles = member(member(frame, "terrain"), "residentKeys").items().size();
-            CHECK(count(frame, "spentMs") <= 1.05);
+            CHECK(count(frame, "spentMs") <= 1);
             CHECK(residentTiles >= lastResidentTiles);
             const bool terrainDeferred = member(member(frame, "terrain"), "deferred").number() > 0;
             if (residentTiles > 0 && firstPublication == tiny.size()) firstPublication = index;
             if (terrainDeferred && residentTiles > lastResidentTiles) ++terrainResumeProgress;
-            if (terrainDeferred && count(frame, "backlog") < previousBacklog)
-                ++sharedProgress;
-            previousBacklog = count(frame, "backlog");
             lastResidentTiles = residentTiles;
         }
-        CHECK(sharedProgress > 0);
         CHECK(terrainResumeProgress > 0);
         CHECK(firstPublication > 1);
         CHECK(lastResidentTiles == 9);
@@ -446,7 +473,23 @@ void worldCells(bool admission = false) {
         CHECK(count(tiny.back(), "deferred") == 0);
         CHECK(member(member(tiny.back(), "terrain"), "colliderKeys").items().size() == 9);
         CHECK(member(member(tiny.back(), "terrain"), "deferred").number() == 0);
-        CHECK(!member(tiny.back(), "draws").items().empty());
+        CHECK(member(tiny.back(), "draws").items().empty());
+        const auto& sharedTerrain = traces.at("sharedTerrainAdmission");
+        CHECK(sharedTerrain.size() > 100);
+        std::size_t sharedProgress = 0;
+        double previousBacklog = count(sharedTerrain.front(), "backlog");
+        for (const auto& frame : sharedTerrain) {
+            CHECK(count(frame, "spentMs") <= 3); // 2 ms budget + one 1 ms unit.
+            if (member(member(frame, "terrain"), "deferred").number() > 0 &&
+                count(frame, "backlog") < previousBacklog) ++sharedProgress;
+            previousBacklog = count(frame, "backlog");
+        }
+        CHECK(sharedProgress > 0);
+        CHECK(!member(sharedTerrain.back(), "draws").items().empty());
+        CHECK(count(sharedTerrain.back(), "backlog") == 0 && count(sharedTerrain.back(), "deferred") == 0);
+        CHECK(member(member(sharedTerrain.back(), "terrain"), "residentKeys").items().size() == 9);
+        CHECK(member(member(sharedTerrain.back(), "terrain"), "colliderKeys").items().size() == 9);
+        CHECK(member(member(sharedTerrain.back(), "terrain"), "deferred").number() == 0);
         for (const auto& name : {"jump1", "jump2"}) {
             const auto& frames = traces.at(name);
             CHECK(member(frames.front(), "residentKeys").items().size() == 4);
@@ -485,10 +528,12 @@ void worldCells(bool admission = false) {
             member(scene, "expected"), member(scene, "name").string());
     }
     const auto& manifest = member(member(table, "scenes").items()[0], "manifest");
+    size_t selectedRefusals = 0;
     for (const auto& refusal : member(table, "refusals").items()) {
         IWorldCellsOptions o;
         const auto option = member(refusal, "option").string();
         if (admission && option != "admissionBudgetMs") continue;
+        ++selectedRefusals;
         const double value = decoded(member(refusal, "value"));
         if (option == "concurrency") o.concurrency = value;
         if (option == "rebuildsPerUpdate") o.rebuildsPerUpdate = value;
@@ -500,6 +545,7 @@ void worldCells(bool admission = false) {
         if (owner) differ("refused option accepted: " + option);
         compare(string(error), member(refusal, "expected"), "refusal." + option);
     }
+    CHECK(!admission || selectedRefusals == 2);
     std::printf("%s: %zu observations, %zu differ\n", admission ? "admission budget (9 spec cases)" : "world cells", compared, mismatched);
     CHECK(compared > 0 && mismatched == 0);
 }

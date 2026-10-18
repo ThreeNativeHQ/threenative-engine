@@ -6,9 +6,11 @@
 #include "engine/world/loop/fixed_step.h"
 
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <iterator>
+#include <limits>
 
 using namespace tn::engine::world;
 
@@ -36,7 +38,10 @@ void fixed_step() {
             const double now = std::bit_cast<double>(c.times[i]);
             const uint32_t updates = clock.advance(now);
             const uint64_t tick = clock.tick();
-            const uint64_t alpha = std::bit_cast<uint64_t>(clock.interpolationAlpha());
+            const double observedAlpha = clock.interpolationAlpha();
+            CHECK(std::isfinite(observedAlpha));
+            CHECK(std::isfinite(std::bit_cast<double>(c.alphas[i])));
+            const uint64_t alpha = std::bit_cast<uint64_t>(observedAlpha);
             if (updates != c.updates[i] || tick != c.ticks[i] || alpha != c.alphas[i]) {
                 if (mismatched++ < 8)
                     std::fprintf(
@@ -51,6 +56,13 @@ void fixed_step() {
     CHECK(compared > 0 && mismatched == 0);
 }
 
+void alphaNan() {
+    FixedStepClock clock(1.0 / 60, 5);
+    clock.start(0);
+    clock.advance(std::numeric_limits<double>::quiet_NaN());
+    CHECK(std::isnan(clock.interpolationAlpha()));
+}
+
 } // namespace
 
-TN_TEST_MAIN({"fixed_step", fixed_step})
+TN_TEST_MAIN({"fixed_step", fixed_step}, {"alpha_nan", alphaNan})

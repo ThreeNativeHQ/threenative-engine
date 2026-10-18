@@ -46,6 +46,9 @@ uint32_t FixedStepClock::advance(double nowMs) {
 
 uint64_t FixedStepClock::tick() const { return tick_; }
 
-double FixedStepClock::interpolationAlpha() const { return accumulator_ / step_; }
+double FixedStepClock::interpolationAlpha() const {
+    // -Math.max(-a, -b) has Math.min's NaN and signed-zero semantics.
+    return jsMax(0.0, -jsMax(-(1.0 - DBL_EPSILON), -(accumulator_ / step_)));
+}
 
 } // namespace tn::engine::world

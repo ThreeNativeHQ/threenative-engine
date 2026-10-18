@@ -5,7 +5,7 @@
  * `FixedStepLoop` is driven through its own `requestFrame` seam: the callback is stored, then called
  * with each recorded frame time, exactly as a host would. The held and frozen branches are out of
  * scope -- the native clock does not port them. After every frame the table records the update
- * count, `tick()` and `interpolationAlpha` for the same frame times.
+ * count, `tick()` and `alpha` for the same frame times.
  *
  *   pnpm --workspace-root exec tsx packages/runtime-native/tests/native-engine/loop/loop-reference.ts
  *   ... -- --check   (fails when a committed table is not what loop.ts produces)
@@ -100,7 +100,9 @@ function record(c: ICase) {
     callback(time);
     updates.push(updatesThisFrame);
     ticks.push(loop.tick());
-    alphas.push(f64(loop.interpolationAlpha));
+    const alpha = loop.alpha;
+    if (!Number.isFinite(alpha)) throw new Error(`non-finite alpha in ${c.name} at ${time}`);
+    alphas.push(f64(alpha));
   }
   return { alphas, ticks, updates };
 }

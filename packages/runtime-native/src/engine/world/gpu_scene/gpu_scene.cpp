@@ -65,8 +65,8 @@ void compose(const float* out, const float* into, float* target, std::size_t at)
 // planes, eye, no gate and no base, exactly the reference's `shadow === undefined` case.
 GpuSceneResult select(const GpuSceneInput& input, const GpuSceneShadowLevel* shadow) {
     const float* planes = shadow != nullptr ? shadow->planes.data() : input.camera.planes.data();
-    const double eyeX = shadow != nullptr ? shadow->centreX : input.camera.x;
-    const double eyeZ = shadow != nullptr ? shadow->centreZ : input.camera.z;
+    const double eyeX = input.camera.x;
+    const double eyeZ = input.camera.z;
     const double metres = shadow != nullptr ? shadow->gate : 0;
     const int32_t base = shadow != nullptr ? shadow->base : 0;
 
@@ -114,8 +114,8 @@ GpuSceneResult select(const GpuSceneInput& input, const GpuSceneShadowLevel* sha
         const double distance = jsHypot(static_cast<double>(at[0]) - eyeX, static_cast<double>(at[2]) - eyeZ);
         if (slot.hasCull && distance > slot.cull)
             continue;
-        // Cull above is the authored distance; the level below is the biased one for the main pass.
-        const double lodDistance = shadow == nullptr ? lod::biasedLodDistance(distance) : distance;
+        // Shadows select the main camera's biased level, just as the reference does.
+        const double lodDistance = lod::biasedLodDistance(distance);
         const int32_t selected = levelAtGates(slot, lodDistance, placement.scale);
         const double lastLevel = static_cast<double>(slot.levels.size()) - 1;
         const int32_t level = drawableLevel(slot, static_cast<int32_t>(jsMax(selected, jsMin(base, lastLevel))));

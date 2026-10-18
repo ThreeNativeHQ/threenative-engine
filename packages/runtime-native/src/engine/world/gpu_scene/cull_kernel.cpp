@@ -41,8 +41,8 @@ GpuSceneTables packGpuScene(const GpuSceneInput& input, const GpuSceneShadowLeve
                 static_cast<float>(input.slots.size()),
                 static_cast<float>(input.regionCount),
                 static_cast<float>(bias),
-                static_cast<float>(shadow != nullptr ? shadow->centreX : input.camera.x),
-                static_cast<float>(shadow != nullptr ? shadow->centreZ : input.camera.z),
+                static_cast<float>(input.camera.x),
+                static_cast<float>(input.camera.z),
                 static_cast<float>(shadow != nullptr ? shadow->gate : 0),
                 static_cast<float>(shadow != nullptr ? shadow->base : 0)};
     t.params.insert(t.params.end(), planes, planes + kGpuScenePlaneWords);
@@ -170,9 +170,8 @@ Program gpuSceneCullKernel(bool shadow) {
                         p.If(p.less(k.lane(asset, "z"), distance), [&] { p.assign(kept, p.constant(false)); });
                     });
                     p.If(p.load(kept), [&] {
-                        // Cull above is the authored distance; the main pass's level reads it scaled
-                        // by the adaptive LOD bias, the shadow pass's does not.
-                        const ExprId lodDistance = shadow ? distance : p.mul(distance, k.lane(head, "w"));
+                        // Both passes select the main camera's biased LOD distance.
+                        const ExprId lodDistance = p.mul(distance, k.lane(head, "w"));
                         const shader::VarId level = p.var(Type::i32(), p.constant(int32_t{0}));
                         const ExprId scale = p.call("abs", {k.lane(record, "y")});
                         const ExprId first = k.lane(asset, "x");
@@ -197,7 +196,7 @@ Program gpuSceneCullKernel(bool shadow) {
                         if (shadow) {
                             // `drawableLevel(max(selected, min(base, last)))`: a base naming a level
                             // with no keys walks down to the last one that has keys, as the oracle
-                            // does. The TS shadow kernel skips this walk and draws nothing there.
+                            // does.
                             const ExprId base = p.call("min", {k.lane(eye, "w"), p.sub(k.lane(asset, "y"), p.constant(1.0f))});
                             const ExprId top = k.toI32(p.call("max", {chosen, base}));
                             const shader::VarId drawable = p.var(Type::i32(), p.constant(int32_t{0}));

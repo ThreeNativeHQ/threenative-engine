@@ -335,13 +335,25 @@ const scenes: IScene[] = [
     actions: [...settle(center(1, 1), 240), ...settle(center(3, 3), 240)],
   },
   {
-    // High-resolution terrain stays unpublished while it constructs in bounded source/LOD work,
-    // while the same 50-us budget continues to admit the cell's prop batches.
+    // Match the core tiny-budget spec: synchronous terrain construction before model IO resolves.
     name: "tinyTerrainAdmission",
     pkg: onePine(),
     options: {
       ring: 0,
       admissionBudgetMs: 0.05,
+      terrain: { tileResolution: 65, streamRadius: 1, colliderRadius: 1 },
+    },
+    collider: true,
+    priced: true,
+    actions: Array.from({ length: 4000 }, () => ({ at: center(1, 1) })),
+  },
+  {
+    // Separately exercise decoded props and high-resolution terrain sharing the real 2 ms budget.
+    name: "sharedTerrainAdmission",
+    pkg: onePine(),
+    options: {
+      ring: 0,
+      admissionBudgetMs: 2,
       terrain: { tileResolution: 65, streamRadius: 1, colliderRadius: 1 },
     },
     collider: true,
@@ -663,6 +675,8 @@ async function runScene(scene: IScene): Promise<unknown> {
     followTerrain(...args);
     terrainSpent = (args[1] as { spentMs?: number } | undefined)?.spentMs ?? 0;
   };
+  let sharedTerrainPropProgress = 0;
+  let previousTerrainBacklog = 0;
   const steps = [];
   const digests: string[] = [];
   // `--dump=<scene>` prints the full canonical stream of one scene; the table keeps only digests.
@@ -680,6 +694,18 @@ async function runScene(scene: IScene): Promise<unknown> {
       const stats = world.stats();
       const terrain = world.children.find((node) => node instanceof TerrainTiles);
       const currentDraws = drawn(world);
+      if (scene.name === "tinyTerrainAdmission" && stats.admission.spentMs > 1)
+        throw new Error("tinyTerrainAdmission exceeded one 1 ms terrain construction unit.");
+      if (scene.name === "sharedTerrainAdmission") {
+        if (stats.admission.spentMs > 3)
+          throw new Error("sharedTerrainAdmission exceeded its 2 ms budget plus one 1 ms unit.");
+        if (
+          observedTerrain.deferredAdmissions > 0 &&
+          stats.admission.backlog < previousTerrainBacklog
+        )
+          sharedTerrainPropProgress += 1;
+        previousTerrainBacklog = stats.admission.backlog;
+      }
       const refs = world.assetRefCounts();
       const recorded = {
         residentKeys: stats.residentKeys,
@@ -781,7 +807,7 @@ async function runScene(scene: IScene): Promise<unknown> {
         digest,
       });
       if (
-        scene.name === "tinyTerrainAdmission" &&
+        (scene.name === "tinyTerrainAdmission" || scene.name === "sharedTerrainAdmission") &&
         terrain?.residentTileCount === 9 &&
         terrain.deferredAdmissions === 0 &&
         stats.admission.backlog === 0 &&
@@ -790,7 +816,7 @@ async function runScene(scene: IScene): Promise<unknown> {
         break;
     }
     if (dump) console.log(dumped.join("\n"));
-    if (scene.name === "tinyTerrainAdmission") {
+    if (scene.name === "tinyTerrainAdmission" || scene.name === "sharedTerrainAdmission") {
       const expectedKeys = ["-1:-1", "-1:0", "-1:1", "0:-1", "0:0", "0:1", "1:-1", "1:0", "1:1"];
       const finalStats = world.stats();
       if (
@@ -801,10 +827,19 @@ async function runScene(scene: IScene): Promise<unknown> {
         JSON.stringify(observedTerrain.residentKeys) !== JSON.stringify(expectedKeys) ||
         JSON.stringify(observedTerrain.residentColliderKeys) !== JSON.stringify(expectedKeys)
       )
-        throw new Error("tinyTerrainAdmission did not finish the full selected 65x65 ring.");
+        throw new Error(`${scene.name} did not finish the full selected 65x65 ring.`);
     }
+    if (scene.name === "tinyTerrainAdmission" && drawn(world).length !== 0)
+      throw new Error("tinyTerrainAdmission resolved props before the synchronous terrain proof.");
+    if (
+      scene.name === "sharedTerrainAdmission" &&
+      (sharedTerrainPropProgress === 0 || drawn(world).length === 0)
+    )
+      throw new Error(
+        "sharedTerrainAdmission did not admit props while terrain remained deferred.",
+      );
     const terrainDetails =
-      scene.name !== "tinyTerrainAdmission"
+      scene.name !== "tinyTerrainAdmission" && scene.name !== "sharedTerrainAdmission"
         ? undefined
         : {
             residentKeys: [...observedTerrain.residentKeys],

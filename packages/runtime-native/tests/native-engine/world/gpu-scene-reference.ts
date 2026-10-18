@@ -85,7 +85,7 @@ interface IShadowSpec {
 interface IStepSpec {
   camera: ICameraSpec;
   shadow?: IShadowSpec;
-  /** The adaptive LOD bias during the step (1 when absent); the main pass reads it, shadows never. */
+  /** The adaptive LOD bias during the step (1 when absent); both passes read it from the main camera. */
   bias?: number;
 }
 interface ISceneSpec {
@@ -254,7 +254,7 @@ function gateScene(): ISceneSpec {
     camera: { planes: shadowCamera, x: 0, y: 0, z: 80 },
     shadow: { base: 0, centreX: 0, centreZ: 80, gate: 0, planes: shadowCamera },
   });
-  // The shadow pass selects on the unbiased distance whatever the bias.
+  // The shadow pass selects the main camera's biased LOD distance.
   steps.push({
     bias: 1.75,
     camera: { planes: shadowCamera, x: 0, y: 0, z: 80 },
@@ -269,6 +269,12 @@ function gateScene(): ISceneSpec {
       gate: 1.5,
       planes: shadowCamera,
     },
+  });
+  // Shadow frustum and centre can differ from the eye that selects LOD and cull distance.
+  steps.push({
+    bias: 1.75,
+    camera: { planes: cameraAt(0, 10), x: 0, y: 0, z: 10 },
+    shadow: { base: 0, centreX: 0, centreZ: 200, gate: 0, planes: shadowCamera },
   });
   return { placements, regions, slots, steps };
 }
