@@ -22134,3 +22134,171 @@ index b344d27b52f8be09a0e6c7fef999c87b16377c9c..ad2210c276c42058f24c1ae2002272bb
  			? materialEnvRotation.mul( vec3( uvNode.x, uvNode.y.negate(), uvNode.z ) )
  			: materialEnvRotation.mul( uvNode );
  
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 624ce7e2f438ff46459626317222273910602182..864d4cec8c57038d11d9202c5b81f4e0313cea86 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -26437,8 +26437,13 @@ class PMREMGenerator {
+ 		try {
+ 
+ 			this._init( cubeUVRenderTarget );
++			// One fence covers as much queued work as the heaviest single face (the first GGX filter pass).
++			this._fenceBudget = this._sizeLods[ 1 ] * this._sizeLods[ 1 ] * GGX_SAMPLES;
++			this._fencePending = 0;
+ 			await this._textureToCubeUVAsync( texture, cubeUVRenderTarget );
+ 			await this._applyPMREMAsync( cubeUVRenderTarget );
++			// Publication follows completed GPU work, including the faces the last fence did not cover.
++			await this._renderer.backend.device.queue.onSubmittedWorkDone();
+ 			complete = true;
+ 			return cubeUVRenderTarget;
+ 
+@@ -26464,11 +26469,21 @@ class PMREMGenerator {
+ 		}
+ 
+ 		const { start, count } = mesh.geometry.drawRange;
++		const uniforms = _uniformsMap.get( mesh.material );
++		const faceCost = ( width / 3 ) * ( height / 2 ) * ( uniforms !== undefined && mesh.material === this._ggxMaterial && uniforms.roughness.value > 0 ? GGX_SAMPLES : 1 );
++		const budget = this._fenceBudget || 0;
+ 
+ 		try {
+ 
+ 			for ( let face = 0; face < 6; face ++ ) {
+ 
++				if ( this._fencePending > 0 && this._fencePending + faceCost > budget ) {
++
++					await queue.onSubmittedWorkDone();
++					this._fencePending = 0;
++
++				}
++
+ 				const oldTarget = renderer.getRenderTarget();
+ 				const oldActiveCubeFace = renderer.getActiveCubeFace();
+ 				const oldActiveMipmapLevel = renderer.getActiveMipmapLevel();
+@@ -26493,7 +26508,14 @@ class PMREMGenerator {
+ 
+ 				}
+ 
+-				await queue.onSubmittedWorkDone();
++				this._fencePending = ( this._fencePending || 0 ) + faceCost;
++
++				if ( this._fencePending + faceCost > budget ) {
++
++					await queue.onSubmittedWorkDone();
++					this._fencePending = 0;
++
++				}
+ 
+ 			}
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index ad2210c276c42058f24c1ae2002272bbfc1ee9ac..90139888908b6214b4e6b5d563c81a4cb8bdad72 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -26421,8 +26421,13 @@ class PMREMGenerator {
+ 		try {
+ 
+ 			this._init( cubeUVRenderTarget );
++			// One fence covers as much queued work as the heaviest single face (the first GGX filter pass).
++			this._fenceBudget = this._sizeLods[ 1 ] * this._sizeLods[ 1 ] * GGX_SAMPLES;
++			this._fencePending = 0;
+ 			await this._textureToCubeUVAsync( texture, cubeUVRenderTarget );
+ 			await this._applyPMREMAsync( cubeUVRenderTarget );
++			// Publication follows completed GPU work, including the faces the last fence did not cover.
++			await this._renderer.backend.device.queue.onSubmittedWorkDone();
+ 			complete = true;
+ 			return cubeUVRenderTarget;
+ 
+@@ -26448,11 +26453,21 @@ class PMREMGenerator {
+ 		}
+ 
+ 		const { start, count } = mesh.geometry.drawRange;
++		const uniforms = _uniformsMap.get( mesh.material );
++		const faceCost = ( width / 3 ) * ( height / 2 ) * ( uniforms !== undefined && mesh.material === this._ggxMaterial && uniforms.roughness.value > 0 ? GGX_SAMPLES : 1 );
++		const budget = this._fenceBudget || 0;
+ 
+ 		try {
+ 
+ 			for ( let face = 0; face < 6; face ++ ) {
+ 
++				if ( this._fencePending > 0 && this._fencePending + faceCost > budget ) {
++
++					await queue.onSubmittedWorkDone();
++					this._fencePending = 0;
++
++				}
++
+ 				const oldTarget = renderer.getRenderTarget();
+ 				const oldActiveCubeFace = renderer.getActiveCubeFace();
+ 				const oldActiveMipmapLevel = renderer.getActiveMipmapLevel();
+@@ -26477,7 +26492,14 @@ class PMREMGenerator {
+ 
+ 				}
+ 
+-				await queue.onSubmittedWorkDone();
++				this._fencePending = ( this._fencePending || 0 ) + faceCost;
++
++				if ( this._fencePending + faceCost > budget ) {
++
++					await queue.onSubmittedWorkDone();
++					this._fencePending = 0;
++
++				}
+ 
+ 			}
+ 
+diff --git a/src/renderers/common/extras/PMREMGenerator.js b/src/renderers/common/extras/PMREMGenerator.js
+index abf70ebd31e68675de93ef368a814789ccc84d70..ace19db76fab3f08ed4d581d1e272066a24c34aa 100644
+--- a/src/renderers/common/extras/PMREMGenerator.js
++++ b/src/renderers/common/extras/PMREMGenerator.js
+@@ -419,8 +419,13 @@ class PMREMGenerator {
+ 		try {
+ 
+ 			this._init( cubeUVRenderTarget );
++			// One fence covers as much queued work as the heaviest single face (the first GGX filter pass).
++			this._fenceBudget = this._sizeLods[ 1 ] * this._sizeLods[ 1 ] * GGX_SAMPLES;
++			this._fencePending = 0;
+ 			await this._textureToCubeUVAsync( texture, cubeUVRenderTarget );
+ 			await this._applyPMREMAsync( cubeUVRenderTarget );
++			// Publication follows completed GPU work, including the faces the last fence did not cover.
++			await this._renderer.backend.device.queue.onSubmittedWorkDone();
+ 			complete = true;
+ 			return cubeUVRenderTarget;
+ 
+@@ -446,11 +451,21 @@ class PMREMGenerator {
+ 		}
+ 
+ 		const { start, count } = mesh.geometry.drawRange;
++		const uniforms = _uniformsMap.get( mesh.material );
++		const faceCost = ( width / 3 ) * ( height / 2 ) * ( uniforms !== undefined && mesh.material === this._ggxMaterial && uniforms.roughness.value > 0 ? GGX_SAMPLES : 1 );
++		const budget = this._fenceBudget || 0;
+ 
+ 		try {
+ 
+ 			for ( let face = 0; face < 6; face ++ ) {
+ 
++				if ( this._fencePending > 0 && this._fencePending + faceCost > budget ) {
++
++					await queue.onSubmittedWorkDone();
++					this._fencePending = 0;
++
++				}
++
+ 				const oldTarget = renderer.getRenderTarget();
+ 				const oldActiveCubeFace = renderer.getActiveCubeFace();
+ 				const oldActiveMipmapLevel = renderer.getActiveMipmapLevel();
+@@ -475,7 +490,14 @@ class PMREMGenerator {
+ 
+ 				}
+ 
+-				await queue.onSubmittedWorkDone();
++				this._fencePending = ( this._fencePending || 0 ) + faceCost;
++
++				if ( this._fencePending + faceCost > budget ) {
++
++					await queue.onSubmittedWorkDone();
++					this._fencePending = 0;
++
++				}
+ 
+ 			}
+ 

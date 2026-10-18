@@ -203,6 +203,43 @@ it("restores renderer state when a PMREM face fence rejects", async () => {
   expect(geometry.drawRange).toEqual({ start: 4, count: 12 });
 });
 
+it("fences groups of PMREM faces by GPU cost and fences once more before publishing", async () => {
+  const events: string[] = [];
+  const renderer = {
+    autoClear: true,
+    backend: {
+      device: { queue: { onSubmittedWorkDone: vi.fn(async () => void events.push("fence")) } },
+    },
+    getRenderTarget: () => null,
+    getActiveCubeFace: () => 0,
+    getActiveMipmapLevel: () => 0,
+    getMRT: () => null,
+    setMRT: () => undefined,
+    setRenderTarget: () => undefined,
+    render: vi.fn(() => void events.push("draw")),
+  };
+  const generator = new PMREMGenerator(renderer as never);
+  const source = new Texture({ height: 8, width: 8 } as never);
+  Object.assign(source, { image: { height: 2048, width: 4096 }, mapping: 303 });
+
+  const target = (await (
+    generator as unknown as {
+      _fromTextureAsync: (texture: Texture, target: null) => Promise<{ dispose: () => void }>;
+    }
+  )._fromTextureAsync(source, null)) as { dispose: () => void };
+
+  const draws = events.filter((event) => event === "draw").length;
+  const fences = events.filter((event) => event === "fence").length;
+  // A 4096-wide equirect bakes 150 faces; one fence per face used to cost 150 queue round trips.
+  expect(draws).toBe(150);
+  expect(fences).toBe(10);
+  // The first GGX filter pass is the heaviest face: its six faces cannot share a fence.
+  expect(fences).toBeGreaterThanOrEqual(6);
+  expect(events.at(-1)).toBe("fence");
+  target.dispose();
+  source.dispose();
+});
+
 it("reuses an asynchronously prepared PMREM from the same renderer cache", async () => {
   const renderer = {};
   const source = new Texture({ height: 8 } as never);
