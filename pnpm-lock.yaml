@@ -1081,8 +1081,8 @@ importers:
         specifier: 0.14.0
         version: 0.14.0(@types/node@20.19.43)
       threenative-sculpt-mcp:
-        specifier: 0.2.1
-        version: 0.2.1(@types/node@20.19.43)
+        specifier: 0.2.2
+        version: 0.2.2(@types/node@20.19.43)
       zustand:
         specifier: 'catalog:'
         version: 5.0.14(@types/react@19.2.0)(react@19.2.0)
@@ -2252,8 +2252,8 @@ packages:
     resolution: {integrity: sha512-pJCEwGG7Lfr/+PQp9ZTwKXNeO5wzbfKL7H3MYpCorM4oFBoQrdjnBgEoqG+RjhsvS1FKrDbKux+M1HhlnGWqcA==}
     engines: {node: '>=20'}
 
-  '@modelcontextprotocol/sdk@1.30.0':
-    resolution: {integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==}
+  '@modelcontextprotocol/sdk@1.31.0':
+    resolution: {integrity: sha512-UvTMgnNlnIBO/22ob2RcVGDlcvOslQs8T59+FTGdA0L27a39fdGF/EDETNtDVK4DZGpwomlsYpRdA8UXcVL/pw==}
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
@@ -3834,8 +3834,8 @@ packages:
     engines: {node: '>=20.19.0'}
     hasBin: true
 
-  threenative-sculpt-mcp@0.2.1:
-    resolution: {integrity: sha512-5zlpInhWpqBDzMrcKgbQUSjxV2gWO3PciSBUkBqA7SHwTLsST/tBxaiIRu5oE/jw1locpl5gpzIQikspI0dMdg==}
+  threenative-sculpt-mcp@0.2.2:
+    resolution: {integrity: sha512-oxJ2EOp9Gj5zp+l9o/iSvOcRDPiwKgBgS1VcJwk7RNk8SEqS9f390pUuQAg5s3A4RppITylpaNUpVIJjiSE77A==}
     engines: {node: '>=20.0.0'}
     hasBin: true
 
@@ -4556,7 +4556,7 @@ snapshots:
     dependencies:
       zod: 4.4.3
 
-  '@modelcontextprotocol/sdk@1.30.0(zod@4.3.6)':
+  '@modelcontextprotocol/sdk@1.31.0(zod@4.3.6)':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.5)
       ajv: 8.20.0
@@ -6065,9 +6065,9 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
-  threenative-sculpt-mcp@0.2.1(@types/node@20.19.43):
+  threenative-sculpt-mcp@0.2.2(@types/node@20.19.43):
     dependencies:
-      '@modelcontextprotocol/sdk': 1.30.0(zod@4.3.6)
+      '@modelcontextprotocol/sdk': 1.31.0(zod@4.3.6)
       sharp: 0.35.4(@types/node@20.19.43)
       zod: 4.3.6
     transitivePeerDependencies:
