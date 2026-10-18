@@ -215,6 +215,7 @@ async function main(argv: string[]): Promise<number> {
     for (const engine of ENGINES) {
       writeFileSync(configFile, withEngine(original, engine));
       const artifacts = path.join(out, engine);
+      mkdirSync(artifacts, { recursive: true });
       const captureConfig = {
         projectPath: project,
         scenarioPath: scenario,
@@ -230,7 +231,11 @@ async function main(argv: string[]): Promise<number> {
         headless: false,
         timeoutMs: 120_000,
         trace: false,
-        browserArgs: WEBGPU_BROWSER_ARGS,
+        browserArgs: [
+          ...WEBGPU_BROWSER_ARGS,
+          "--enable-logging",
+          `--log-file=${path.join(artifacts, "browser.log")}`,
+        ],
         allowSoftwareAdapter: process.env.TN_PLAYTEST_ALLOW_SOFTWARE === "1",
       };
       try {
