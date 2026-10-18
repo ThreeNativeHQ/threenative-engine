@@ -1493,6 +1493,33 @@ function bundleFixture(body = "export const choice = import.meta.env?.DEV;") {
   return { dir, entry, out, compiler: join(root, "node_modules/.bin/esbuild") };
 }
 
+test("resolution-subrect conformance bundles the shipped controller through down/up/down transitions", async () => {
+  const dir = makeTempDirSync("threenative-resolution-subrect-");
+  const scene = "conformance/scenes/shared/resolution-subrect.js";
+  try {
+    const entry = makeEntry(
+      { captureFrames: 2, id: "resolution-subrect-contract", scene },
+      "browser",
+      1234,
+      dir,
+    );
+    const output = join(dir, "resolution-subrect.js");
+    const result = {};
+    assert.equal(
+      await bundle(entry, output, result, "browser", join(root, "node_modules/.bin/esbuild"), true),
+      true,
+      result.browser?.stderr,
+    );
+    assert.match(
+      readFileSync(output, "utf8"),
+      /TN_RESOLUTION_SUBRECT: viewport exceeds retained capacity/u,
+      "the conformance bundle must contain the shipped controller, not a hand-written substitute",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("conformance API preserves changing NODE_PATH lookup, bytes and maps", async () => {
   const fixture = bundleFixture('export { choice } from "conformance-node-path-only";');
   try {

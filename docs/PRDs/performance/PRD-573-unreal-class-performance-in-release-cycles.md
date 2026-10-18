@@ -342,3 +342,11 @@ PRD-553 on F (JS-to-Wasm calls, upload bytes);
 [PRD-368](../assets/PRD-368-compiled-pipelines-survive-a-relaunch.md) (legacy pipelines);
 [PRD-222](./critical/PRD-222-performance-targets-per-platform.md) (frame-rate floors);
 [PRD-533](../native-engine/PRD-533-n20-platform-qualification-performance-default-promotion.md) (default promotion).
+
+## PR #493 merge and CI repair — 2026-10-17
+
+Integration repair uses the existing v1 stability gates; later release cycles remain open.
+
+1. Merge current develop, preserving interpolation, retained resolution targets and native capture/frame accounting. Verified locally: core typecheck and build; 258 focused core tests; all thirteen generated scaffold tree fingerprints.
+2. Review and integrate existing CI repairs, then repair remaining failed jobs without weakening their checks. Pending.
+3. Run affected local checks and fresh hosted CI on the final candidate. Pending; the PR stays draft and is not merged by this task.

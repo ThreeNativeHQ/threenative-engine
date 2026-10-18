@@ -278,34 +278,69 @@ describe("bake receipt", () => {
     );
   });
 
-  it.each([false, true])(
-    "should throw when a pass writes a file under the output root it did not declare (preserved old timestamp: %s)",
-    async (preserveTimestamp) => {
-      const root = await makeTempDir("threenative-receipt-stray-");
-      await mkdir(path.join(root, "assets"));
-      await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
+  it.each([
+    ["ordinary", false],
+    ["backdated", true],
+  ])("should throw when a pass writes an undeclared file (%s)", async (_label, backdate) => {
+    const root = await makeTempDir("threenative-receipt-stray-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
 
-      await expect(
-        compileAssets({
-          cwd: root,
-          transcoder: TRANSCODER,
-          passes: [
-            {
-              name: "stray-writer",
-              apply: async (input: Buffer) => {
-                await mkdir(path.join(root, "public"), { recursive: true });
-                const strayPath = path.join(root, "public", "stray.bin");
-                await writeFile(strayPath, "undeclared");
-                // A copied output can retain its source's timestamp despite being new to public/.
-                if (preserveTimestamp) await utimes(strayPath, new Date(0), new Date(0));
-                return input;
-              },
+    await expect(
+      compileAssets({
+        cwd: root,
+        transcoder: TRANSCODER,
+        passes: [
+          {
+            name: "stray-writer",
+            apply: async (input: Buffer) => {
+              await mkdir(path.join(root, "public"), { recursive: true });
+              await writeFile(path.join(root, "public", "stray.bin"), "undeclared");
+              if (backdate) {
+                await utimes(
+                  path.join(root, "public", "stray.bin"),
+                  new Date("2000-01-01T00:00:00Z"),
+                  new Date("2000-01-01T00:00:00Z"),
+                );
+              }
+              return input;
             },
-          ],
-        }),
-      ).rejects.toThrow(/TN_ASSETS_UNDECLARED_OUTPUT.*stray\.bin/su);
-    },
-  );
+          },
+        ],
+      }),
+    ).rejects.toThrow(/TN_ASSETS_UNDECLARED_OUTPUT.*stray\.bin/su);
+  });
+
+  it("should throw when a pass overwrites a pre-existing undeclared file", async () => {
+    const root = await makeTempDir("threenative-receipt-stray-overwrite-");
+    await mkdir(path.join(root, "assets"));
+    await mkdir(path.join(root, "public"));
+    await writeFile(path.join(root, "public", "stray.bin"), "old");
+    await utimes(
+      path.join(root, "public", "stray.bin"),
+      new Date("2000-01-01T00:00:00Z"),
+      new Date("2000-01-01T00:00:00Z"),
+    );
+    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
+
+    await expect(
+      compileAssets({
+        cwd: root,
+        transcoder: TRANSCODER,
+        passes: [
+          {
+            name: "stray-writer",
+            apply: async (input: Buffer) => {
+              await writeFile(path.join(root, "public", "stray.bin"), "undeclared");
+              const future = new Date(Date.now() + 1000);
+              await utimes(path.join(root, "public", "stray.bin"), future, future);
+              return input;
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/TN_ASSETS_UNDECLARED_OUTPUT.*stray\.bin/su);
+  });
 
   it("should leave a static file the project authored alone", async () => {
     const root = await makeTempDir("threenative-receipt-static-");

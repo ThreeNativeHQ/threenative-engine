@@ -1,4 +1,5 @@
 import type { FrameBudget, IFramePhaseSample } from "./frame-budget.js";
+import type { PhysicsInterpolation } from "./interpolation.js";
 import type { SpanRecorder } from "./profiling/Spans.js";
 import type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
 
@@ -62,6 +63,7 @@ export function afterPhysics(
 }
 
 export interface IFixedStepLoopOptions {
+  readonly interpolation?: PhysicsInterpolation;
   readonly step?: number;
   readonly maxSteps?: number;
   /** Collect per-frame render samples for diagnostics consumers. Default false. */
@@ -71,7 +73,7 @@ export interface IFixedStepLoopOptions {
   readonly onUpdate: (dt: number) => void;
   /** Runs after `onUpdate` has completed and before `onRender` starts. */
   readonly onAfterPhysics?: (dt: number) => void;
-  readonly onRender?: () => undefined | IRenderPerformanceMetrics;
+  readonly onRender?: (alpha: number) => undefined | IRenderPerformanceMetrics;
   /** Actual wall time spent in one simulation+render callback, for startup gates and diagnostics. */
   readonly onFrame?: (frameMs: number) => void;
   readonly requestFrame?: (callback: (time: number) => void) => number;
@@ -156,12 +158,14 @@ export class FixedStepLoop {
   #onBeginFrame: (() => void) | undefined;
   #onUpdate: (dt: number) => void;
   #onAfterPhysics: (dt: number) => void;
-  #onRender: () => undefined | IRenderPerformanceMetrics;
+  #onRender: (alpha: number) => undefined | IRenderPerformanceMetrics;
   #onFrame: (frameMs: number) => void;
   #requestFrame: (callback: (time: number) => void) => number;
   #cancelFrame: (handle: number) => void;
+  readonly #interpolation: PhysicsInterpolation | undefined;
   #accumulator = 0;
   #lastTime: number | undefined;
+  #frameTime = 0;
   #frameHandle: number | undefined;
   #running = false;
   #held = false;
@@ -190,6 +194,7 @@ export class FixedStepLoop {
       );
     }
     this.step = step;
+    this.#interpolation = options.interpolation;
     // A maxSteps below one passed the while-loop bound `updates < maxSteps` zero
     // times per frame: the game rendered but never simulated, silently.
     const maxSteps = options.maxSteps ?? 5;
@@ -221,6 +226,16 @@ export class FixedStepLoop {
           globalThis.cancelAnimationFrame(handle);
       });
     this.#frameCallback = (time) => this.#frame(time);
+  }
+
+  /** Frame callback timestamp in milliseconds. */
+  get frameTime(): number {
+    return this.#frameTime;
+  }
+
+  /** Fraction of the next fixed step accumulated for this presented frame. */
+  get alpha(): number {
+    return Math.max(0, Math.min(1 - Number.EPSILON, this.#accumulator / this.step));
   }
 
   get running(): boolean {
@@ -360,8 +375,10 @@ export class FixedStepLoop {
     this.#accumulator += elapsed;
     let updates = 0;
     while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
+      this.#interpolation?.beginTick();
       this.#onUpdate(this.step);
       this.#onAfterPhysics(this.step);
+      this.#interpolation?.endTick();
       this.#tick += 1;
       this.#accumulator -= this.step;
       updates += 1;
@@ -405,6 +422,7 @@ export class FixedStepLoop {
   }
 
   stepFrame(now: number, driven: boolean | "render-only" = false): number {
+    this.#frameTime = now;
     const callbackStartedAt = this.#now();
     const budget = this.#budget;
     budget?.beginFrame(now, this.#now());
@@ -425,7 +443,7 @@ export class FixedStepLoop {
       budget?.markSimulationEnd(this.#now(), updates);
       frameMs = this.#recordFrameTiming(now);
       // onRender does the rendering itself; only its metrics return value is optional.
-      metrics = this.#onRender();
+      metrics = this.#onRender(this.alpha);
     } finally {
       // A renderer can throw before it returns (for example, when SwiftShader rejects a buffer).
       // Close the budget before propagating that error so later frames report the real failure
@@ -505,8 +523,10 @@ export class FixedStepLoop {
     // from inside a live frame — the frozen prime's settle — is charged there exactly once.
     const startedAt = this.#now();
     for (let index = 0; index < ticks; index += 1) {
+      this.#interpolation?.beginTick();
       this.#onUpdate(this.step);
       this.#onAfterPhysics(this.step);
+      this.#interpolation?.endTick();
       this.#tick += 1;
     }
     const finishedAt = this.#now();

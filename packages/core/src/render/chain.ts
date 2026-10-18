@@ -8,6 +8,7 @@ import type {
   RenderOutputSetter,
   RendererKind,
 } from "../renderer.js";
+import type { IResolutionSubrect, IResolutionTextureView } from "./resolution-subrect.js";
 import { VELOCITY_OUTPUT_NAME, mrtVelocity } from "./velocity.js";
 import type { IVelocityProvision, IVelocityRenderPass } from "./velocity.js";
 
@@ -130,12 +131,15 @@ export interface IRenderChainRequest {
 export interface IRenderChainStageContext {
   readonly tier: RenderChainTier;
   readonly velocity: IRenderChainVelocityReport;
+  /** Mutable target fractions supplied to generated stages for sub-rectangle sampling. */
+  readonly resolutionSubrect?: IResolutionTextureView;
   /** TSL source handed to temporal stages when the request owns a scene pass. */
   readonly velocityNode?: Node;
   readonly quality: (typeof RENDER_CHAIN_TIERS)[RenderChainTier];
 }
 
 export interface IRenderChainStage {
+  readonly supportsResolutionSubrect?: boolean;
   readonly name: RenderChainStageId;
   /** Place an authored stage immediately before this built-in or supplied stage. */
   readonly before?: RenderChainStageId;
@@ -207,6 +211,7 @@ export interface IRenderChainBudgetWindow {
 }
 
 export interface IRenderChainOptions {
+  readonly resolutionSubrect?: IResolutionSubrect;
   readonly renderer: IRenderChainRenderer;
   readonly input?: unknown;
   /** Explicit scene pass for output retargeting; avoids traversing a composed graph to find it. */
@@ -280,6 +285,7 @@ export class RenderChain {
   readonly #renderer: IRenderChainRenderer;
   readonly #input: unknown;
   readonly #worldPass: unknown;
+  readonly #resolutionSubrect: IResolutionSubrect | undefined;
   readonly #report: (line: string) => void;
   readonly #stageDefinitions: ReadonlyMap<RenderChainStageId, IRenderChainStage>;
   readonly #requested: readonly RenderChainStageId[];
@@ -317,6 +323,7 @@ export class RenderChain {
     this.#renderer = options.renderer;
     this.#input = options.input;
     this.#worldPass = options.worldPass;
+    this.#resolutionSubrect = options.resolutionSubrect;
     this.#report = options.report ?? ((line) => console.log(line));
     this.#stageDefinitions = createStageDefinitions(options.stages ?? []);
     this.#requested = normalizeRequestedStages(
@@ -404,7 +411,12 @@ export class RenderChain {
         dropped.push({ name, reason: "velocity:missing" });
         continue;
       }
-      const context = stageContext(this.#tier, velocity, velocityNode);
+      const context = stageContext(
+        this.#tier,
+        velocity,
+        velocityNode,
+        this.#resolutionSubrect?.view,
+      );
       const availability = definition.available?.(context);
       if (availability === false) {
         dropped.push({ name, reason: `unavailable:${this.#renderer.kind}` });
@@ -434,7 +446,12 @@ export class RenderChain {
                 texture.name === VELOCITY_OUTPUT_NAME && !priorTextures.includes(texture),
             );
         }
-        const buildContext = stageContext(this.#tier, velocity, velocityNode);
+        const buildContext = stageContext(
+          this.#tier,
+          velocity,
+          velocityNode,
+          this.#resolutionSubrect?.view,
+        );
         const next = definition.build(node, buildContext);
         if (next === undefined || next === null) throw new Error("stage returned no node");
         contributions.push({ graphOutputChanged: next !== node, name });
@@ -470,6 +487,23 @@ export class RenderChain {
         )
           ? [{ outputColorTransform: false }]
           : [];
+        if (this.#resolutionSubrect !== undefined) {
+          const refused = builtStageDefinitions
+            .filter((stage) => stage.supportsResolutionSubrect !== true)
+            .map((stage) => stage.name);
+          this.#report(
+            `TN_RESOLUTION_SUBRECT ${JSON.stringify({ applied: refused.length === 0 ? stages : [], refused: refused.map((name) => ({ name, reason: "sampling support not declared" })) })}`,
+          );
+          if (refused.length === 0) {
+            if (outputOptions.length === 0)
+              outputOptions.push({ resolutionSubrect: this.#resolutionSubrect });
+            else
+              outputOptions[0] = {
+                ...outputOptions[0],
+                resolutionSubrect: this.#resolutionSubrect,
+              };
+          }
+        }
         const installation = this.#renderer.setOutputNode(
           node,
           this.#worldPass ?? this.#requestVelocity.pass,
@@ -844,12 +878,14 @@ function stageContext(
   tier: RenderChainTier,
   velocity: IRenderChainVelocityReport,
   velocityNode: Node | undefined,
+  resolutionSubrect: IResolutionTextureView | undefined,
 ): IRenderChainStageContext {
   return {
     quality: RENDER_CHAIN_TIERS[tier],
     tier,
     velocity,
     ...(velocityNode === undefined ? {} : { velocityNode }),
+    ...(resolutionSubrect === undefined ? {} : { resolutionSubrect }),
   };
 }
 

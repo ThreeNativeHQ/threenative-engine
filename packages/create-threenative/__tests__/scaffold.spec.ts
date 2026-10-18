@@ -191,6 +191,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // package patch embedded by every scaffold. No template, capability or appearance change.
 // Recomputed 2026-10-15 for the native engine default (PRD-573): every template AGENTS.md/CLAUDE.md pair gains
 // an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
+// Recomputed 2026-10-17 through createProject after merging develop interpolation and retained targets.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-17 for the engine rename ("native" -> "threenative", "legacy" -> "threejs"):
   // every template's AGENTS/CLAUDE engine section and the pinned configs. Measured by this test.
@@ -261,23 +262,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-15 through createProject after recovery: all kits now share the decoder-aware asset watch.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "a4371f8b226277550bd9f38f8b39a946a41369f94d630e0499a6bb3091426978",
-  minimal: "150739cb7dd941528dddd0c1f88f92d29476b6de2edf171505b1ca12989fa01f",
-  platformer: "4d1e02fdec237ac98de469b8636f9d9f021f87212103fb7b81479fb9be8f4615",
-  puzzle: "6bc58670d7cb83a39a48cff172cd486b44a83a02596921d88986141cb0a3ca37",
-  racing: "bccc38d43ba4c2afe253f822797a4be4ef39bb287b3729be88d9e99a28ac4546",
-  rain: "28359abd931075edda716c5e3d611058d0df4ad61e2d8ff1e5598b1452287b02",
-  rts: "331abb1167b45b9e9cffb951f4bb7fe92e8b2d1b6b8c578c5607b644ae488caf",
-  runner: "faec0fe70824e46531d80ce70a670f4446bdabe4e1cc5999d57408b9234b53f5",
+  "action-rpg": "2a35acfc0176cadeb5cf1f31754e8dfbeddbc22c17e25a207dd3d18d447edd96",
+  minimal: "58b5078eeb08b314a498ce2c63a188f771ba5860f9a268b2f297a156c3a24cdd",
+  platformer: "9dd99850b55265aa27cf56097c3a38b8c124b067ea95d4f471d8168d04097380",
+  puzzle: "187dcfa17cf733554651b7ef9a48a8237501b28981002bf5ea66e326638d84ca",
+  racing: "abc6b6a00d759d82cbabd5dba73d77f7f33f9900d1229d8833b7f884bf0de6d4",
+  rain: "6df3e5376d722203243b80788f0300463976206d62c94423a6a44f3a1e724c93",
+  rts: "cecbf59ce4d26fdfdc65ddd2345573410d1799e43d7fcab1b5efbb2f5aae77df",
+  runner: "8e1aeb28aa139da115d8518d06d1b5e6ab2cd033d0c227a54079780b09d564c6",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "b9eae5186eb06c4efdac43ce4072a91773f3f5a057b3950d4df6a9d177c57b80",
-  shooter: "003d7e405432a801dbd00d42a6269f5a87f9b6003a34a6f3500300e35959168a",
-  snow: "87d6517d948436ff9aa74bd2e6bb54719b8c968353c61256f7b467bd50bacc0d",
+  sailing: "43a5d7f687b0d64a314a54a06a3df8051e37ca9865d031f5d0768ceffae46b94",
+  shooter: "135ca8732f6bf10bddc5a8aaa021ef2ff9fc860ebcfa6fea1147dd67c53446f6",
+  snow: "312217a14072be8324668469ecfd802b20d61382ab1b2d76875567ff2606689c",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "dfa9d0d17802823810d9b82db5b5dc00b30234064d22aacdd6ce32d9ece6e414",
-  "tower-defense": "8f23078da208ad0dfc04ef5f53a0c32871c56337a48222b664573dfe89095a58",
+  starter: "04432968ff118f4db1f9f365979d1771233a37ea37a9d8801963ede67b1e5bfb",
+  "tower-defense": "3ecdb0676e7765a8426da1a8a0b8a0ceeae8e454d920805123ea098869500ceb",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -417,6 +418,8 @@ const STARTER_PATHS = [
   // `packages/create-threenative/template-playtests/starter/`, copied by `pnpm test:templates`.
   "playtests/survives.playtest.json",
   "playtests/movement.playtest.json",
+  "playtests/live/smooth-motion.playtest.json",
+  "native-playtests/smooth-motion.playtest.json",
   "playtests/play.playtest.json",
   "native-playtests/react-hud.playtest.json",
   "playtests/production-readiness.playtest.json",

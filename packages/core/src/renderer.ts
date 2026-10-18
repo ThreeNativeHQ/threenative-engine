@@ -34,6 +34,7 @@ import {
   type IRenderChainOptions,
   RenderChain,
 } from "./render/chain.js";
+import { type IResolutionSubrect, ResolutionSubrect } from "./render/resolution-subrect.js";
 
 import {
   type IStorageBufferLease,
@@ -55,6 +56,7 @@ export interface IRenderOutputInstallation {
  */
 export interface IRenderOutputOptions {
   readonly outputColorTransform?: boolean;
+  readonly resolutionSubrect?: IResolutionSubrect;
 }
 
 /** Union of callbacks preserves TypeScript's legacy void-callback return-value compatibility. */
@@ -314,6 +316,7 @@ export interface IRendererLike {
   // The owned renderer returns a unique receipt. Legacy adapters may return void, without
   // installation-level replacement safety; callers still own graph dependency disposal.
   setOutputNode: RenderOutputSetter;
+  createResolutionSubrect?: () => IResolutionSubrect;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   /**
    * The GPU time the last resolved frame actually cost, in milliseconds, or `undefined` when the
@@ -938,6 +941,7 @@ function wrapRenderer(
       drawingBufferHeight: applied.height,
       drawingBufferWidth: applied.width,
       resolutionScale: state.resolutionScale,
+      ...(state.resolutionSubrect?.active === true ? { resolutionSubrect: true } : {}),
       // Three reports 0 for a single sample per pixel; a sample count of zero would describe no
       // image at all.
       sampleCount: resolveSampleCount(raw),
@@ -1242,6 +1246,8 @@ function wrapRenderer(
         return;
       }
       disposed = true;
+      state.resolutionSubrect?.deactivate?.();
+      state.resolutionSubrect = undefined;
       for (const preparation of texturePreparations)
         preparation.abort(new Error("Renderer disposed during texture preparation."));
       texturePreparations.clear();
@@ -1284,6 +1290,7 @@ function wrapRenderer(
         renderingFrame -= 1;
       }
     },
+    createResolutionSubrect: () => new ResolutionSubrect(),
     setOutputNode: (node, worldPass, options) => {
       if (kind !== "webgpu")
         throw new Error(`setOutputNode is unavailable on the ${kind} renderer.`);
@@ -1297,11 +1304,16 @@ function wrapRenderer(
       if (options?.outputColorTransform !== undefined) {
         nextPipeline.outputColorTransform = options.outputColorTransform;
       }
+      if (state.resolutionSubrect !== options?.resolutionSubrect)
+        state.resolutionSubrect?.deactivate?.();
+      state.resolutionSubrect = options?.resolutionSubrect;
+      state.resolutionSubrect?.activate?.(state.resolutionScale);
       outputPipeline?.dispose();
       pendingWorldPassRefresh = false;
       outputPass = nextOutputPass;
       outputPipeline = nextPipeline;
       outputInput = node;
+      reapply.resize?.();
       return {
         isCurrent: () => outputPipeline === nextPipeline,
         dispose: () => {
@@ -1311,6 +1323,9 @@ function wrapRenderer(
           outputInput = undefined;
           outputPass = undefined;
           nextPipeline.dispose();
+          state.resolutionSubrect?.deactivate?.();
+          state.resolutionSubrect = undefined;
+          reapply.resize?.();
         },
       };
     },
@@ -1321,6 +1336,9 @@ function wrapRenderer(
       outputPipeline = undefined;
       outputInput = undefined;
       outputPass = undefined;
+      state.resolutionSubrect?.deactivate?.();
+      state.resolutionSubrect = undefined;
+      reapply.resize?.();
     },
     renderChainUsesPerObjectVelocity: () => renderChainUsesPerObjectVelocity,
     setRenderChainVelocityEnabled: (enabled) => {
@@ -1459,11 +1477,21 @@ function addResizeHandling(
     // Recorded as it is applied rather than read back off the canvas: the canvas dimensions are
     // the host's to define and on native they have been the physical surface, which is exactly
     // the number this scale exists to stop a game from paying by hand.
-    applied = [
-      Math.max(1, Math.round(width * pixelRatio * state.resolutionScale)),
-      Math.max(1, Math.round(height * pixelRatio * state.resolutionScale)),
-    ];
-    renderer.setSize(applied[0], applied[1], false);
+    const subrect = state.resolutionSubrect;
+    const scale = subrect?.active ? 1 : state.resolutionScale;
+    const physicalWidth = Math.max(1, Math.round(width * pixelRatio * scale));
+    const physicalHeight = Math.max(1, Math.round(height * pixelRatio * scale));
+    applied = [physicalWidth, physicalHeight];
+    const surface = renderer.surface();
+    if (
+      surface.drawingBufferWidth !== physicalWidth ||
+      surface.drawingBufferHeight !== physicalHeight
+    )
+      renderer.setSize(physicalWidth, physicalHeight, false);
+    if (subrect?.active) {
+      subrect.setScale?.(state.resolutionScale);
+      subrect.setSize?.(physicalWidth, physicalHeight);
+    }
   };
   resize();
   const stop =
@@ -1474,6 +1502,7 @@ function addResizeHandling(
 
 /** The live scale, mutated only by `setResolutionScale`, read by every window report. */
 interface ISurfaceState {
+  resolutionSubrect?: IResolutionSubrect | undefined;
   resolutionScale: number;
   scaleSource: "pinned" | "auto" | "auto-pinned";
 }

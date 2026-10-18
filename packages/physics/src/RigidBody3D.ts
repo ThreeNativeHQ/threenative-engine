@@ -53,6 +53,19 @@ export class RigidBody3D {
   readonly #motion = { x: 0, y: 0, z: 0 };
   readonly #zeroMotion: { readonly x: 0; readonly y: 0; readonly z: 0 } = { x: 0, y: 0, z: 0 };
   #disposed = false;
+  #interpolate = true;
+
+  /** Draw between solved ticks; false presents this body at its true tick pose. */
+  get interpolate(): boolean {
+    return this.#interpolate;
+  }
+  set interpolate(enabled: boolean) {
+    this.#requireLive("interpolate");
+    if (typeof enabled !== "boolean") throw new Error("interpolate must be a boolean.");
+    if (enabled === this.#interpolate) return;
+    this.#interpolate = enabled;
+    this.#physics?.updateInterpolation?.(this);
+  }
 
   constructor(options: IRigidBody3DOptions) {
     const initial = resolveInitialTransform(options);
@@ -128,6 +141,26 @@ export class RigidBody3D {
     this.#motion.y = object.position.y - this.#lastPosition.y;
     this.#motion.z = object.position.z - this.#lastPosition.z;
     return this.#motion;
+  }
+
+  /** Assign a world position to teleport; mutate object.position for ordinary kinematic motion. */
+  get position(): Pick<Vector3, "x" | "y" | "z"> {
+    const position =
+      this.#object?.position ?? this.#simulation.readBodyTransform?.(this.body.id)?.position;
+    if (position === undefined) throw new Error("RigidBody3D position is unavailable.");
+    return position;
+  }
+
+  set position(position: Pick<Vector3, "x" | "y" | "z">) {
+    this.#requireLive("position");
+    this.#simulation.setBodyTransform(this.body.id, position);
+    this.#lastPosition.x = position.x;
+    this.#lastPosition.y = position.y;
+    this.#lastPosition.z = position.z;
+    if (this.#object !== undefined) {
+      this.#object.position.set(position.x, position.y, position.z);
+      this.#physics?.resetInterpolation?.(this.#object);
+    }
   }
 
   syncToPhysics(): void {
