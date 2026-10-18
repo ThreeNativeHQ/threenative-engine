@@ -108,6 +108,8 @@ export function defineWebRenderer(
 
   const Renderer = class WebGPURenderer {
     readonly isWebGPURenderer = true;
+    /** The native scene pass draws to the surface; there is no frame RenderTarget to retain. */
+    readonly supportsRetainedTargetSubrect = false;
     readonly domElement: HTMLCanvasElement;
     readonly info = {
       autoReset: true,

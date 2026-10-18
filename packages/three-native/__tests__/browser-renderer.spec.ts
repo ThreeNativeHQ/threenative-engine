@@ -88,6 +88,14 @@ async function drawn(parameters: Record<string, unknown>) {
 }
 
 describe("the Wasm engine's WebGPURenderer sample count", () => {
+  it("declares that its surface-owned frame pass cannot retain a target sub-rectangle", () => {
+    const { Renderer, canvas } = host();
+    const renderer = new Renderer({ canvas }) as {
+      supportsRetainedTargetSubrect: boolean;
+    };
+    expect(renderer.supportsRetainedTargetSubrect).toBe(false);
+  });
+
   it("is 4x MSAA for antialias, as three's WebGPURenderer, and the engine is told", async () => {
     expect(await drawn({ antialias: true })).toEqual({ samples: 4, handed: 4 });
   });

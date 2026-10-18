@@ -478,6 +478,8 @@ type RendererInstance = IStorageBufferSource & {
   resolveTimestampsAsync?: (type?: string) => Promise<number | undefined>;
   /** Three answers an `antialias` request with a sample count; 0 means one sample per pixel. */
   samples?: number;
+  /** Whether the backend owns resizable render targets for retained sub-rectangle rendering. */
+  supportsRetainedTargetSubrect?: boolean;
   domElement: HTMLCanvasElement;
   init?: () => Promise<void>;
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
@@ -941,7 +943,11 @@ function wrapRenderer(
       drawingBufferHeight: applied.height,
       drawingBufferWidth: applied.width,
       resolutionScale: state.resolutionScale,
-      ...(state.resolutionSubrect?.active === true ? { resolutionSubrect: true } : {}),
+      ...(raw.supportsRetainedTargetSubrect === false
+        ? { resolutionSubrect: false }
+        : state.resolutionSubrect?.active === true
+          ? { resolutionSubrect: true }
+          : {}),
       // Three reports 0 for a single sample per pixel; a sample count of zero would describe no
       // image at all.
       sampleCount: resolveSampleCount(raw),
@@ -1290,7 +1296,9 @@ function wrapRenderer(
         renderingFrame -= 1;
       }
     },
-    createResolutionSubrect: () => new ResolutionSubrect(),
+    ...(raw.supportsRetainedTargetSubrect === false
+      ? {}
+      : { createResolutionSubrect: () => new ResolutionSubrect() }),
     setOutputNode: (node, worldPass, options) => {
       if (kind !== "webgpu")
         throw new Error(`setOutputNode is unavailable on the ${kind} renderer.`);
