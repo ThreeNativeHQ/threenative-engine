@@ -67,6 +67,13 @@ const FREEBOARD_TRIM = 0;
 const SAIL_PRESS = 12;
 
 export class Ship {
+  readonly renderMotion = {
+    frames: 0,
+    fractionalFrames: 0,
+    readbacks: 0,
+    maxJitterPixels: 0,
+    verticalRange: 0,
+  };
   /** The physics body's transform. Heave comes from here; attitude does not. */
   readonly mesh = new Group();
   /** What the player sees: the body's position, with an attitude taken from the swell. */
@@ -527,6 +534,11 @@ export class Ship {
   debug(): Record<string, unknown> {
     const velocity = this.body.linearVelocity;
     return {
+      renderFrames: this.renderMotion.frames,
+      fractionalRenderFrames: this.renderMotion.fractionalFrames,
+      renderedReadbacks: this.renderMotion.readbacks,
+      maxRenderJitterPixels: this.renderMotion.maxJitterPixels,
+      renderedHullVerticalRange: this.renderMotion.verticalRange,
       capsized: this.#capsized,
       linearVelocity: [velocity.x, velocity.y, velocity.z],
       normaliseFactor: this.#normaliseFactor,

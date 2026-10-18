@@ -1,0 +1,30 @@
+{
+  "name": "sailing-rendered-hull-motion",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 40,
+  "subject": "player",
+  "steps": [{ "kind": "wait", "label": "live-swell", "waitTicks": 2400, "release": true }],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "components": [
+      { "entity": "player", "component": "renderFrames", "gte": 600, "changed": true },
+      { "entity": "player", "component": "fractionalRenderFrames", "gte": 300, "changed": true },
+      { "entity": "player", "component": "renderedReadbacks", "gte": 100, "changed": true },
+      { "entity": "player", "component": "renderedHullVerticalRange", "gte": 0.2, "changed": true },
+      {
+        "entity": "player",
+        "component": "seaHeight",
+        "changed": true,
+        "allowTrivial": "The sampled ocean must evolve while the actually rendered hull travels vertically; frozen water or a frozen hull cannot satisfy the motion proof."
+      },
+      {
+        "entity": "player",
+        "component": "maxRenderJitterPixels",
+        "lte": 1,
+        "allowTrivial": "One pixel of unexplained projected velocity change per 60 Hz frame is the visible-shake limit. This measures the actually drawn hull and camera inside Scene.render; separate frame, fractional-alpha and landed-readback floors reject frozen or counted-clock runs."
+      }
+    ]
+  }
+}
