@@ -1,6 +1,12 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { type IWarmUpProgress, warmUpComputeNodes, warmUpScene } from "../src/warmup.js";
+import { StartupReadiness } from "../src/startup-readiness.js";
+import {
+  type IWarmUpProgress,
+  warmUpComputeNodes,
+  warmUpScene,
+  warmUpSceneWithCompletion,
+} from "../src/warmup.js";
 
 /**
  * The launch this exists to fix: a Pixel 8 spent 24.5 seconds across 107 pipeline compiles inside
@@ -55,6 +61,93 @@ const run = (renderer: any, scene: any, options: any = {}) =>
   warmUpScene(renderer, scene, {} as never, { granularity: "object", ...options });
 
 describe("scene warm-up", () => {
+  test("keeps the original timed-out compile observable to a launch gate", async () => {
+    let resolveCompile: () => void = () => undefined;
+    let compileCalls = 0;
+    const renderer = {
+      compileAsync: () => {
+        compileCalls += 1;
+        return new Promise<void>((resolve) => {
+          resolveCompile = resolve;
+        });
+      },
+    };
+    const resultPromise = warmUpSceneWithCompletion(renderer, sceneOf(1) as never, {} as never, {
+      budgetMs: 10,
+      compileTimeoutMs: 5,
+      granularity: "scene",
+      yieldFrame: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+    });
+    const result = await resultPromise;
+
+    expect(result.report.timedOut).toBe(true);
+    expect(compileCalls).toBe(1);
+    const readiness = new StartupReadiness({
+      afterHolds: () => result.completion,
+      settled: () => true,
+      stableFrames: 1,
+    });
+    const ready = readiness.whenReady();
+    readiness.hold("streamed-world", Promise.resolve());
+    readiness.start();
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    readiness.observe(1);
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    expect(readiness.ready).toBe(false);
+
+    resolveCompile();
+    await result.completion;
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    readiness.observe(1);
+    readiness.observe(1);
+    await ready;
+    expect(readiness.ready).toBe(true);
+    expect(compileCalls).toBe(1);
+  }, 10_000);
+
+  test("preserves a timed-out compile rejection for the held startup gate", async () => {
+    let rejectCompile: (error: Error) => void = () => undefined;
+    let compileCalls = 0;
+    const failure = new Error("pipeline creation failed");
+    const result = await warmUpSceneWithCompletion(
+      {
+        compileAsync: () => {
+          compileCalls += 1;
+          return new Promise<void>((_resolve, reject) => {
+            rejectCompile = reject;
+          });
+        },
+      },
+      sceneOf(1) as never,
+      {} as never,
+      {
+        budgetMs: 10,
+        compileTimeoutMs: 5,
+        granularity: "scene",
+        yieldFrame: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+      },
+    );
+
+    expect(result.report.timedOut).toBe(true);
+    const readiness = new StartupReadiness({
+      afterHolds: () => result.completion,
+      settled: () => true,
+      stableFrames: 1,
+    });
+    const ready = readiness.whenReady();
+    readiness.hold("streamed-world", Promise.resolve());
+    readiness.start();
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    readiness.observe(1);
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+
+    const rejected = expect(ready).rejects.toBe(failure);
+    rejectCompile(failure);
+    await rejected;
+    expect(readiness.ready).toBe(false);
+    expect(compileCalls).toBe(1);
+  }, 10_000);
+
   test("should compile every renderable and yield a frame between slices", async () => {
     const renderer = fakeRenderer();
     const yields = vi.fn(() => Promise.resolve());

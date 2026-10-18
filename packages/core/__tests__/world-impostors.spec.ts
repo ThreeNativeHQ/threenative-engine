@@ -1,3 +1,4 @@
+import { ok } from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +21,13 @@ import {
   Texture,
   Vector3,
 } from "three";
+import ThreeNodeFrame from "three/src/nodes/core/NodeFrame.js";
+// @ts-expect-error Three's private chain map has no public declarations.
+import ChainMap from "three/src/renderers/common/ChainMap.js";
+// @ts-expect-error Three's node manager has no public declarations.
+import NodeManager from "three/src/renderers/common/nodes/NodeManager.js";
 import { getCurrentStack, setCurrentStack, stack } from "three/tsl";
+import { renderGroup } from "three/tsl";
 import {
   BufferAttributeNode,
   EventNode,
@@ -28,6 +35,7 @@ import {
   NodeBuilder,
   type NodeMaterial,
   NodeUpdateType,
+  WGSLNodeBuilder,
 } from "three/webgpu";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -47,6 +55,7 @@ vi.mock("../src/assets.js", async (importOriginal) => {
 });
 
 import { type IAssetLoader, createAssetLoader } from "../src/assets.js";
+import { setLodBias } from "../src/model-lod.js";
 import { RenderCameraCull } from "../src/render-camera-cull.js";
 import {
   IMPOSTOR_FAR_CULL_ATTRIBUTE,
@@ -535,6 +544,166 @@ afterEach(() => {
 });
 
 describe("WorldCells automatic impostors", () => {
+  it("uploads the emitted LOD eye and bias for settled batches while keeping object uniforms static", async () => {
+    const pkg = pineOnly();
+    stubManifestFetch(pkg);
+    const follow = { position: { x: -84, z: -64 } };
+    let clock = 0;
+    let holdAdmission = false;
+    const world = await loadPine(treeLoader(), {
+      adaptiveLod: true,
+      admissionBudgetMs: 2,
+      admissionNow: () => (holdAdmission ? ++clock : clock),
+      gpuScene: false,
+      lodHysteresis: 0.2,
+      mainGpuShare: 0.1,
+      preserveAuthoredParts: true,
+      follow,
+    });
+    try {
+      await flushed(world);
+      for (let pass = 0; pass < 100; pass += 1) {
+        world.update();
+        await flush();
+      }
+      const mesh = partsOf(world, "pine", 0, 0).find((candidate) => candidate.count > 0);
+      ok(mesh, "the settled pine LOD batch was emitted");
+      const material = mesh.material as NodeMaterial;
+      const maskNode = material.maskNode;
+      ok(maskNode, "the emitted WorldCells LOD material has a mask node");
+
+      const emittedUniforms: Node[] = [];
+      maskNode.traverse((node) => {
+        if (Reflect.get(node, "isUniformNode") === true) emittedUniforms.push(node);
+      });
+      const eye = emittedUniforms.find((node) => Reflect.get(node, "value") instanceof Vector3);
+      const bias = emittedUniforms.find(
+        (node) =>
+          Reflect.get(node, "value") === 1 && typeof Reflect.get(node, "value") === "number",
+      );
+      ok(eye, "the emitted WorldCells mask has an eye uniform");
+      ok(bias, "the emitted WorldCells mask has a bias uniform");
+
+      const system = {
+        backend: {
+          isWebGPUBackend: true,
+          utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+        },
+        hasCompatibility: () => true,
+        hasFeature: () => false,
+        library: { fromMaterial: () => null },
+        reversedDepthBuffer: false,
+        shadowMap: { enabled: true, type: 1 },
+      };
+      const builder = new WGSLNodeBuilder(mesh, system as never) as unknown as {
+        setShaderStage(stage: "fragment"): void;
+        setActiveStack(stack: Node): void;
+        removeActiveStack(stack: Node): void;
+        flowStagesNode(node: Node, output: "bool"): { code: string };
+        buildUpdateNodes(): void;
+        updateNodes: Node[];
+        getBindings(): Array<{ bindings: Array<Record<string, unknown>> }>;
+      };
+      builder.setShaderStage("fragment");
+      const baseStack = Reflect.get(builder, "stack") as Node;
+      builder.setActiveStack(baseStack);
+      try {
+        builder.flowStagesNode(maskNode, "bool");
+      } finally {
+        builder.removeActiveStack(baseStack);
+      }
+      builder.buildUpdateNodes();
+      const groups = builder.getBindings().flatMap((group) => group.bindings);
+      const eyeGroup = Reflect.get(eye, "groupNode");
+      const lodBinding = groups.find(
+        (binding) =>
+          Reflect.get(binding, "isNodeUniformsGroup") === true &&
+          Reflect.get(binding, "groupNode") === eyeGroup,
+      ) as
+        | {
+            readonly groupNode: object;
+            readonly buffer: Float32Array;
+            update(): boolean;
+          }
+        | undefined;
+      ok(lodBinding, "the compiled shader bound the actual LOD uniforms");
+
+      const nodeManager = Object.create(NodeManager.prototype) as {
+        groupsData: InstanceType<typeof ChainMap>;
+        updateGroup(binding: unknown, settled: boolean): boolean;
+      };
+      nodeManager.groupsData = new ChainMap();
+      expect(
+        nodeManager.updateGroup(lodBinding, false),
+        "seed the initial uploaded eye and bias",
+      ).toBe(true);
+      lodBinding.update();
+      const oldEye = (Reflect.get(eye, "value") as Vector3).clone();
+      const oldBias = Reflect.get(bias, "value") as number;
+
+      follow.position.x += 3;
+      follow.position.z += 4;
+      holdAdmission = true;
+      world.update();
+      expect(
+        mesh?.parent,
+        "the old batch remains resident while replacement admission is held",
+      ).not.toBeNull();
+      const newEye = Reflect.get(eye, "value") as Vector3;
+      // Model the adaptive controller's write to the emitted uniform, then prove its renderGroup
+      // upload refreshes even after the batch's object group has settled.
+      Reflect.set(bias, "value", 1.25);
+      const newBias = Reflect.get(bias, "value") as number;
+      expect(newEye.equals(oldEye)).toBe(false);
+      expect(newBias).toBeGreaterThan(oldBias);
+
+      // Three's real NodeFrame updates the renderGroup registered by the material builder, which
+      // bumps that group's version exactly as it does before a render.
+      const groupUpdate = builder.updateNodes.find((node) => node === renderGroup);
+      ok(groupUpdate, "the emitted shader registers renderGroup as an update node");
+      expect(groupUpdate.getUpdateType()).toBe(NodeUpdateType.RENDER);
+      const nodeFrame = new ThreeNodeFrame() as unknown as {
+        renderId: number;
+        updateNode(node: Node): void;
+      };
+      const previousGroupVersion = renderGroup.version;
+      nodeFrame.renderId += 1;
+      nodeFrame.updateNode(groupUpdate);
+      expect(renderGroup.version).toBeGreaterThan(previousGroupVersion);
+
+      // The settled static draw still refreshes this changed binding; a normal object-group
+      // control remains skipped.
+      const shouldRefresh = nodeManager.updateGroup(lodBinding, true);
+      expect(
+        shouldRefresh,
+        "the settled LOD binding must observe moved eye and adaptive bias",
+      ).toBe(true);
+      if (shouldRefresh) lodBinding.update();
+      expect(Array.from(lodBinding.buffer)).toContain(newEye.x);
+      expect(Array.from(lodBinding.buffer)).toContain(newEye.z);
+      expect(Array.from(lodBinding.buffer).some((value) => Math.abs(value - newBias) < 1e-5)).toBe(
+        true,
+      );
+
+      const objectBinding = groups.find(
+        (binding) =>
+          Reflect.get(binding, "isNodeUniformsGroup") === true &&
+          Reflect.get(binding, "groupNode") !== eyeGroup,
+      );
+      expect(
+        objectBinding,
+        "the emitted material retains ordinary per-object uniforms",
+      ).toBeDefined();
+      expect(
+        nodeManager.updateGroup(objectBinding, true),
+        "settled per-object control stays skipped",
+      ).toBe(false);
+    } finally {
+      setLodBias(1);
+      world.dispose();
+    }
+  });
+
   it("keeps CPU LOD batches visible until a refilter publishes their replacement ranges", async () => {
     stubManifestFetch(pineOnly());
     const follow = { position: { x: -84, z: -64 } };
@@ -599,6 +768,63 @@ describe("WorldCells automatic impostors", () => {
       );
       expect(farIndex).toBeDefined();
       expect(range(1, farIndex ?? 0)).toEqual([1, 1]);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("rebuilds cached LOD surfaces when a streamed asset reloads with new source materials", async () => {
+    stubManifestFetch(pineOnly());
+    let sourceColor = 0xff0000;
+    const loader = treeLoader();
+    const changingLoader: ITreeLoader = {
+      ...loader,
+      load: async (url) => {
+        const model = await loader.load(url);
+        model.traverse((object: Object3D) => {
+          if (object instanceof Mesh)
+            (object.material as MeshBasicMaterial).color.setHex(sourceColor);
+        });
+        return model;
+      },
+    };
+    const follow = { position: { x: -32, z: -32 } };
+    const world = await loadPine(changingLoader, {
+      follow,
+      gpuScene: false,
+      impostors: false,
+      lodHysteresis: 0.2,
+      preserveAuthoredParts: true,
+      ring: 0,
+    });
+    const nearMaterial = (): MeshBasicMaterial | undefined => {
+      const mesh = partsOf(world, "pine", 0, 0).find((candidate) => candidate.count > 0);
+      return mesh?.material as MeshBasicMaterial | undefined;
+    };
+    try {
+      await flushed(world);
+      for (let pass = 0; pass < 20; pass += 1) world.update();
+      expect(nearMaterial()?.color.getHex()).toBe(0xff0000);
+      const oldLodMaterial = nearMaterial();
+      let oldLodDisposed = false;
+      oldLodMaterial?.addEventListener("dispose", () => {
+        oldLodDisposed = true;
+      });
+
+      follow.position.x = 100_000;
+      follow.position.z = 100_000;
+      world.update();
+      await flushed(world);
+      expect(world.stats().residentCells).toBe(0);
+
+      sourceColor = 0x0000ff;
+      follow.position.x = -32;
+      follow.position.z = -32;
+      world.update();
+      await flushed(world);
+      for (let pass = 0; pass < 20; pass += 1) world.update();
+      expect(nearMaterial()?.color.getHex()).toBe(0x0000ff);
+      expect(oldLodDisposed).toBe(true);
     } finally {
       world.dispose();
     }
@@ -1438,12 +1664,12 @@ describe("WorldCells automatic impostors", () => {
  */
 describe("WorldCells far impostor residency", () => {
   /** The committed package with every cell's pine run, so the near ring is a strict subset. */
-  function pineEverywhere(): IWorldPackage {
+  function pineEverywhere(impostorDistance?: number): IWorldPackage {
     const pine = manifest.assets.pine;
     if (pine === undefined) throw new Error("the committed package has no pine asset.");
     return {
       ...manifest,
-      assets: { pine },
+      assets: { pine: impostorDistance === undefined ? pine : { ...pine, impostorDistance } },
       cells: manifest.cells.map((cell) => ({
         ...cell,
         chunks: [],
@@ -1518,11 +1744,38 @@ describe("WorldCells far impostor residency", () => {
     return live;
   }
 
-  async function loadPineEverywhere(follow: {
-    position: { x: number; z: number };
-  }): Promise<WorldCells> {
-    stubManifestFetch(pineEverywhere());
-    const world = await loadPine(treeLoader(), { follow });
+  /** Unique original roots in authored part-0 meshes, deduplicating overlapping authored LODs. */
+  function nearPineRoots(world: WorldCells): number {
+    return instanceRootKeys(world, (name) => /^pine:\d+:0$/u.test(name), false).size;
+  }
+
+  function instanceRootKeys(
+    world: WorldCells,
+    accepts: (name: string) => boolean,
+    far: boolean,
+  ): Set<string> {
+    const roots = new Set<string>();
+    world.traverse((object: Object3D) => {
+      if (!(object instanceof InstancedMesh) || !accepts(object.name)) return;
+      const array = object.instanceMatrix.array as Float32Array;
+      for (let index = 0; index < object.count; index += 1) {
+        const base = index * 16;
+        if (far ? !farRecordLive(array, index) : array[base + 15] === 0) continue;
+        roots.add(`${array[base + 12]},${array[base + 13]},${array[base + 14]}`);
+      }
+    });
+    return roots;
+  }
+
+  async function loadPineEverywhere(
+    follow: {
+      position: { x: number; z: number };
+    },
+    options: Partial<Parameters<typeof WorldCells.load>[0]> = {},
+    pkg = pineEverywhere(),
+  ): Promise<WorldCells> {
+    stubManifestFetch(pkg);
+    const world = await loadPine(treeLoader(), { follow, ...options });
     await flushed(world);
     runBake(world, rendererStub());
     await flushed(world);
@@ -1570,6 +1823,75 @@ describe("WorldCells far impostor residency", () => {
     expect(stats.far.bytes).toBe(799 * 68);
     expect(stats.far.uploads).toBeGreaterThan(0);
     world.dispose();
+  });
+
+  it("hands preserved authored parts to and from the whole-map far aggregate without a gap or double draw", async () => {
+    const follow = { position: { x: -32, z: -32 } };
+    const world = await loadPineEverywhere(
+      follow,
+      {
+        adaptiveLod: false,
+        gpuScene: false,
+        impostors: true,
+        lodHysteresis: 0.2,
+        preserveAuthoredParts: true,
+        shadows: { cast: true, castLevels: 3 },
+        terrain: false,
+      },
+      pineEverywhere(150),
+    );
+    try {
+      expect(world.stats().impostor.assets).toBe(1);
+      expect(world.stats().impostor.pending).toBe(0);
+      expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
+      expect(partsOf(world, "pine", 0, 1).length).toBeGreaterThan(0);
+
+      const resident = farMeshes(world)[0];
+      expect(resident).toBeDefined();
+      const residentFar = resident as InstancedMesh;
+      expect(residentFar.castShadow).toBe(true);
+      expect(residentFar.layers.isEnabled(27)).toBe(true);
+      const residentFarRoots = instanceRootKeys(world, (name) => name === "tn-far:pine", true);
+      const residentNearRoots = instanceRootKeys(
+        world,
+        (name) => /^pine:\d+:0@\*$/u.test(name),
+        false,
+      );
+      expect(residentFarRoots.size).toBe(263);
+      expect(residentNearRoots.size).toBe(536);
+      expect([...residentFarRoots].filter((root) => residentNearRoots.has(root))).toHaveLength(0);
+      expect(nearPineRoots(world)).toBe(536);
+      expect(residentFarRoots.size + residentNearRoots.size).toBe(799);
+
+      follow.position.x = 100_000;
+      follow.position.z = 100_000;
+      world.update();
+      await flushed(world);
+      for (let pass = 0; pass < 32; pass += 1) world.update();
+      const away = farMeshes(world)[0] as InstancedMesh;
+      expect(nearPineRoots(world)).toBe(0);
+      expect(farLive(away)).toBe(799);
+      expect(instanceRootKeys(world, (name) => /^pine:\d+:0@\*$/u.test(name), false).size).toBe(0);
+
+      follow.position.x = -32;
+      follow.position.z = -32;
+      world.update();
+      await flushed(world);
+      for (let pass = 0; pass < 32; pass += 1) world.update();
+      const restored = farMeshes(world)[0] as InstancedMesh;
+      const restoredFarRoots = instanceRootKeys(world, (name) => name === "tn-far:pine", true);
+      const restoredNearRoots = instanceRootKeys(
+        world,
+        (name) => /^pine:\d+:0@\*$/u.test(name),
+        false,
+      );
+      expect(restoredNearRoots.size).toBe(536);
+      expect([...restoredFarRoots].filter((root) => restoredNearRoots.has(root))).toHaveLength(0);
+      expect(farLive(restored)).toBe(263);
+      expect(restoredFarRoots.size + restoredNearRoots.size).toBe(799);
+    } finally {
+      world.dispose();
+    }
   });
 
   it("hands each run between the near ring and the far mesh with no double and no hole", async () => {
@@ -2015,6 +2337,84 @@ describe("WorldCells far impostor residency", () => {
     // Its temporary source is released the moment the retried aggregate lands.
     expect(world.stats().impostor.atlasBytes).toBe(2 * atlasBytes);
     world.dispose();
+  });
+
+  it("budgets the retained whole-map far buffer alongside the resident placement allowance", async () => {
+    const pkg = pineEverywhere(150);
+    const placements = pkg.cells.reduce(
+      (total, cell) => total + cell.runs.reduce((count, run) => count + run.count, 0),
+      0,
+    );
+    const follow = { position: { x: -32, z: -32 } };
+
+    stubManifestFetch(pkg);
+    const undersized = await loadPine(treeLoader(), {
+      follow,
+      gpuScene: false,
+      impostors: true,
+      preserveAuthoredParts: true,
+      budgets: { bytes: placements * 32, instances: placements, residentCells: 25 },
+    });
+    try {
+      await flushed(undersized);
+      runBake(undersized, rendererStub());
+      await flushed(undersized);
+      expect(undersized.stats().impostor.far.aggregates).toBe(0);
+    } finally {
+      undersized.dispose();
+    }
+
+    stubManifestFetch(pkg);
+    const priorRange = await loadPine(treeLoader(), {
+      follow: { position: { ...follow.position } },
+      gpuScene: false,
+      impostors: true,
+      preserveAuthoredParts: true,
+      lodHysteresis: 0.2,
+      budgets: {
+        bytes: placements * (32 + 16 * 4 + 4),
+        instances: placements * 2,
+        residentCells: 25,
+      },
+    });
+    try {
+      await flushed(priorRange);
+      runBake(priorRange, rendererStub());
+      await flushed(priorRange);
+      expect(priorRange.stats().impostor.far.aggregates).toBe(0);
+    } finally {
+      priorRange.dispose();
+    }
+
+    stubManifestFetch(pkg);
+    const world = await loadPine(treeLoader(), {
+      follow: { position: { ...follow.position } },
+      gpuScene: false,
+      impostors: true,
+      preserveAuthoredParts: true,
+      lodHysteresis: 0.2,
+      budgets: {
+        bytes: placements * (32 + 16 + 16 * 4 + 4),
+        instances: placements * 2,
+        residentCells: 25,
+      },
+    });
+    try {
+      await flushed(world);
+      runBake(world, rendererStub());
+      await flushed(world);
+
+      const stats = world.stats();
+      expect(stats.instances).toBeGreaterThan(0);
+      expect(stats.impostor.far.instances).toBe(placements);
+      expect(stats.impostor.far.live).toBeGreaterThan(0);
+      expect(stats.impostor.far.nearOwned).toBeGreaterThan(0);
+      expect(stats.impostor.far.live + stats.impostor.far.nearOwned).toBe(placements);
+      expect(stats.pressure.instances).toBe(0);
+      expect(stats.pressure.bytes).toBe(0);
+    } finally {
+      world.dispose();
+    }
   });
 
   it("lets the far half receive shadows when the world is configured to receive them", async () => {

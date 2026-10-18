@@ -210,6 +210,19 @@ export interface IWarmUpReport {
   readonly visibilityForced?: number;
 }
 
+const warmUpCompletions = new WeakMap<IWarmUpReport, Promise<void>>();
+
+/** Internal launch-gate result. The live compiler promise stays out of the serializable report. */
+export async function warmUpSceneWithCompletion(
+  renderer: IWarmUpRenderer,
+  scene: Object3D,
+  camera: Camera,
+  options: IWarmUpOptions = {},
+): Promise<{ readonly report: IWarmUpReport; readonly completion: Promise<void> }> {
+  const report = await warmUpScene(renderer, scene, camera, options);
+  return { report, completion: warmUpCompletions.get(report) ?? Promise.resolve() };
+}
+
 /** The narrow slice of the renderer this needs. Structural so a test needs no renderer. */
 export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
@@ -944,6 +957,7 @@ export async function warmUpScene(
   }
   const compileAsync = renderer.compileAsync.bind(renderer);
   let attempted = 0;
+  const pendingCompiles: Promise<void>[] = [];
   const invokeCompile = (object: Object3D, targetScene?: Object3D): Promise<void> => {
     attempted += 1;
     try {
@@ -965,6 +979,16 @@ export async function warmUpScene(
   };
 
   let gpuDrainSettled = true;
+  const compileWithinDeadline = async (
+    deadline: number,
+    work: Promise<void>,
+    yieldFrame: () => Promise<void>,
+    now: () => number,
+  ): Promise<boolean> => {
+    const finished = await withinDeadline(deadline, work, yieldFrame, now);
+    if (!finished) pendingCompiles.push(work);
+    return finished;
+  };
   const finish = (report: IWarmUpReport): IWarmUpReport => {
     const coveredPassIncomplete =
       renderer.warmUpWorldPass !== undefined && passResult === undefined;
@@ -993,7 +1017,13 @@ export async function warmUpScene(
       complete && cacheIdentity !== undefined
         ? storeWarmUpCache(cacheIdentity, candidates, computeNodes.length)
         : cacheStatus;
-    return reconcileWarmUpObservation({ ...normalized, cache: finalCache });
+    const finishedReport = reconcileWarmUpObservation({ ...normalized, cache: finalCache });
+    if (pendingCompiles.length > 0) {
+      const completion = Promise.all(pendingCompiles).then(() => undefined);
+      void completion.catch(() => undefined);
+      warmUpCompletions.set(finishedReport, completion);
+    }
+    return finishedReport;
   };
 
   // The hidden pass render runs once, after the compile and before the ending census snapshot, so
@@ -1057,7 +1087,7 @@ export async function warmUpScene(
       const deadline = startedAt + budgetMs;
       const finished =
         now() < deadline
-          ? await withinDeadline(deadline, invokeSceneCompile(), yieldFrame, now)
+          ? await compileWithinDeadline(deadline, invokeSceneCompile(), yieldFrame, now)
           : false;
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
       renderWarmPassesOnce();
@@ -1080,7 +1110,7 @@ export async function warmUpScene(
     const remaining = Math.max(0, startedAt + budgetMs - now());
     const finished =
       remaining > 0
-        ? await withinDeadline(startedAt + budgetMs, invokeSceneCompile(), yieldFrame, now)
+        ? await compileWithinDeadline(startedAt + budgetMs, invokeSceneCompile(), yieldFrame, now)
         : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
     renderWarmPassesOnce();
@@ -1143,7 +1173,7 @@ export async function warmUpScene(
     // identity; this layer must not guess which objects are safe to drop before it observes them.
     //
     // Bounded, because an unbounded await here is what held a real launch open forever.
-    const finished = await withinDeadline(
+    const finished = await compileWithinDeadline(
       Math.min(deadline, now() + compileTimeoutMs),
       invokeCompile(renderables[index] as Object3D, options.targetScene ?? scene),
       yieldFrame,

@@ -21,7 +21,7 @@ const { default: Attributes } = (await import(`${privateThree}Attributes.js`)) a
   ) => { update(attribute: BufferAttribute, type: number): void };
 };
 const { default: Geometries } = (await import(`${privateThree}Geometries.js`)) as {
-  default: new (attributes: object, info: Info) => { initGeometry(renderObject: object): void };
+  default: new (attributes: object, info: Info) => { updateForRender(renderObject: object): void };
 };
 const { default: RenderObject } = (await import(`${privateThree}RenderObject.js`)) as {
   default: { prototype: { getAttributes(this: object): BufferAttribute[] } };
@@ -205,34 +205,51 @@ describe("animal qualification scene acquisition and cleanup", () => {
     builder.build();
     const renderObject = {
       geometry: probe.geometry,
-      attributes: null,
+      material: probe.material,
+      attributes: null as BufferAttribute[] | null,
       getNodeBuilderState: () => ({ nodeAttributes: builder.getAttributesArray() }),
+      getAttributes() {
+        return RenderObject.prototype.getAttributes.call(this as never);
+      },
+      getMonitor: () => undefined,
     };
-    const attributes = RenderObject.prototype.getAttributes.call(renderObject as never);
+    const attributes = renderObject.getAttributes();
     expect(
       attributes.filter((item) => Reflect.get(item, "isStorageInstancedBufferAttribute") === true),
     ).toHaveLength(5);
     const live = new Set<object>();
     const backend = {
+      createAttribute: () => {},
       createStorageAttribute: (item: object) => live.add(item),
-      destroyAttribute: (item: object) => live.delete(item),
+      destroyAttribute: (item: object) => {
+        if (Reflect.get(item, "isStorageInstancedBufferAttribute") === true) live.delete(item);
+      },
     };
     const info = new Info();
     const destroyed = vi.spyOn(info, "destroyAttribute");
     const manager = new Attributes(backend as never, info as never);
-    for (const item of attributes.filter(
-      (item) => Reflect.get(item, "isStorageInstancedBufferAttribute") === true,
-    ))
-      manager.update(item, AttributeType.STORAGE);
     const geometries = new Geometries(manager, info as never);
-    geometries.initGeometry({ geometry: probe.geometry, getAttributes: () => attributes } as never);
+    geometries.updateForRender(renderObject as never);
+    expect(info.memory.storageAttributes).toBe(5);
+    expect(
+      attributes.filter((item) => Reflect.get(item, "isStorageInstancedBufferAttribute") === true),
+    ).toHaveLength(5);
     expect(live.size).toBe(5);
     expect(info.memory.geometries).toBe(1);
     probe.detach();
     expect(live.size).toBe(0);
+    expect(info.memory.storageAttributes).toBe(0);
     expect(info.memory.geometries).toBe(0);
-    expect(destroyed).toHaveBeenCalledTimes(5);
+    expect(
+      destroyed.mock.calls.filter(
+        ([item]) => Reflect.get(item, "isStorageInstancedBufferAttribute") === true,
+      ),
+    ).toHaveLength(5);
     probe.detach();
-    expect(destroyed).toHaveBeenCalledTimes(5);
+    expect(
+      destroyed.mock.calls.filter(
+        ([item]) => Reflect.get(item, "isStorageInstancedBufferAttribute") === true,
+      ),
+    ).toHaveLength(5);
   });
 });

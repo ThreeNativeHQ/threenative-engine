@@ -27,8 +27,9 @@ import { type Plugin, defineConfig } from "vite";
  * per-segment test rather than "no separator anywhere".
  */
 function preparedAssets(): Plugin {
-  const roots: { mount: string; dir: string; flat: boolean }[] = [
+  const roots: { mount: string; dir: string; flat: boolean; file?: string }[] = [
     { dir: "./src/world", flat: true, mount: "/world" },
+    { dir: "./assets/assets.manifest.json", flat: true, mount: "/", file: "assets.manifest.json" },
     { dir: "./local-assets/temperate", flat: false, mount: "/temperate" },
     { dir: "./local-assets/temperate/basis", flat: true, mount: "/basis" },
     { dir: "./local-assets/prepared", flat: true, mount: "/prepared" },
@@ -66,7 +67,13 @@ function preparedAssets(): Plugin {
         // resolver only ever asks for a name; the pack root keeps them,
         // because a cooked GLB resolves its own images through them.
         const bad = name === "" || name.includes("..") || (!entry.flat && name.endsWith("/"));
-        const path = bad || (entry.flat && name.includes("/")) ? undefined : `${entry.dir}/${name}`;
+        const fileMismatch = entry.file !== undefined && name !== entry.file;
+        const path =
+          bad || fileMismatch || (entry.flat && name.includes("/"))
+            ? undefined
+            : entry.file === undefined
+              ? `${entry.dir}/${name}`
+              : entry.dir;
         if (path === undefined || !existsSync(path) || !statSync(path).isFile()) {
           next();
           return;

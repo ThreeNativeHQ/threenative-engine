@@ -430,12 +430,11 @@ export class CellImpostors {
   }
 
   /**
-   * Whether this asset can append a whole-asset impostor, so its builds keep the placement-root
-   * records the far quad draws from. The same test `#maybeQueueImpostor` makes, minus the cache: an
-   * asset with no alpha-cutout LOD0 part never bakes, so it never needs the extra records.
+   * Whether this asset needs extra placement-root records for the generated wide impostor. Preserved
+   * authored parts keep their own wide casters, so they use each part's regular instance records.
    */
   rootsNeeded(asset: IAssetState): boolean {
-    if (this.#impostors === false) return false;
+    if (this.#impostors === false || this.#preserveAuthoredParts) return false;
     const parts = asset.levels[0];
     return parts !== undefined && this.#impostorSource(parts) !== undefined;
   }
@@ -746,7 +745,8 @@ export class CellImpostors {
     // The whole-map far aggregate for this atlas key, before the rebuild loop below: its segments
     // exist when the swaps land, and any run already near-ready is handed over immediately. A budget
     // refusal keeps only the far cohort's metadata and surface in `#farRetry`; see `#buildFar`.
-    if (!this.#preserveAuthoredParts) this.#buildFar(asset, record);
+    if (!this.#preserveAuthoredParts || asset.definition.impostorDistance !== undefined)
+      this.#buildFar(asset, record);
     this.#reportImpostor(asset, "ready");
     // A far-only asset has no near batches or casters to hand over; once its aggregate is up its
     // temporary source has done its job and goes, while the atlas the aggregate borrows stays. A

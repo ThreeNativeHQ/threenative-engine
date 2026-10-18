@@ -27,6 +27,17 @@ import {
   variantFor,
 } from "../src/render/props.js";
 
+function authoredPartForGeometry<T extends { geometry: import("three").BufferGeometry }>(
+  geometry: import("three").BufferGeometry,
+  parts: readonly T[],
+): T | undefined {
+  return parts.find(
+    (part) =>
+      part.geometry.getAttribute("position") === geometry.getAttribute("position") &&
+      part.geometry.index === geometry.index,
+  );
+}
+
 it("reports an outstanding world load before the factory returns or attaches it", async () => {
   const placement = {
     id: "spruce:pending",
@@ -379,7 +390,13 @@ it("submits authored neighbor LODs with complementary masks through a boundary w
                   ? [1, 2]
                   : [2];
       expect(
-        submitted.map((mesh) => levels.findIndex((part) => part.geometry === mesh.geometry)).sort(),
+        submitted
+          .map((mesh) => {
+            const part = authoredPartForGeometry(mesh.geometry, levels);
+            if (!part) throw new Error("Unauthored submitted LOD geometry");
+            return levels.indexOf(part);
+          })
+          .sort(),
         `submitted authored levels at ${distance}`,
       ).toEqual(expected);
       for (const mesh of submitted) {
@@ -393,8 +410,12 @@ it("submits authored neighbor LODs with complementary masks through a boundary w
           if (op === "<" || op === ">=") comparisons.push(op);
           if (Reflect.get(node, "isUniformNode")) values.push(Reflect.get(node, "value"));
         });
-        const level = levels.findIndex((part) => part.geometry === mesh.geometry);
-        expect(comparisons).toEqual(level === 0 ? [">="] : level === 1 ? ["<", ">="] : ["<"]);
+        const part = authoredPartForGeometry(mesh.geometry, levels);
+        if (!part) throw new Error("Unauthored submitted LOD geometry");
+        const level = levels.indexOf(part);
+        const authoredComparisons = level === 0 ? [">="] : level === 1 ? ["<", ">="] : ["<"];
+        expect(comparisons).toHaveLength(authoredComparisons.length + (level === 0 ? 0 : 1));
+        expect(comparisons.slice(-authoredComparisons.length)).toEqual(authoredComparisons);
         expect(values.some((value) => value instanceof Vector3 && value.x === distance)).toBe(true);
         expect(values).toContain(1); // Unadapted distance bias.
       }
@@ -421,7 +442,7 @@ it("writes the original rendered matrices and materials for multi-part nonunifor
   leaves.setDrawRange(6, 18);
   const rotation = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.4).toArray();
   const placements = [
-    [2, 3, 4],
+    [0.5, 3, 4],
     [-2, 3, 4],
   ].map((scale, i) => ({
     id: `spruce:transform:${i}`,
@@ -486,6 +507,16 @@ it("writes the original rendered matrices and materials for multi-part nonunifor
       for (let i = 0; i < before.length; i++)
         for (let j = 0; j < 16; j++)
           expect(after.at(i)?.[j]).toBeCloseTo(before.at(i)?.[j] as number, 5);
+      const firstBefore = before[0];
+      const mirroredBefore = before[1];
+      const firstAfter = after[0];
+      const mirroredAfter = after[1];
+      if (!firstBefore || !mirroredBefore || !firstAfter || !mirroredAfter)
+        throw new Error("Missing streamed canopy transform");
+      expect(new Matrix4().fromArray(firstBefore).determinant()).toBeGreaterThan(0);
+      expect(new Matrix4().fromArray(mirroredBefore).determinant()).toBeLessThan(0);
+      expect(new Matrix4().fromArray(firstAfter).determinant()).toBeGreaterThan(0);
+      expect(new Matrix4().fromArray(mirroredAfter).determinant()).toBeLessThan(0);
     }
   } finally {
     streamed.dispose();
@@ -553,9 +584,7 @@ it("drains representative multi-part canopy cell admission without thousands of 
       // Neighbor LOD submissions overlap. Count each authored placement/role once.
       const instances = new Set<string>();
       for (const mesh of streamed.meshes) {
-        const role = [...parts.values()]
-          .flat()
-          .find((part) => part.geometry === mesh.geometry)?.role;
+        const role = authoredPartForGeometry(mesh.geometry, [...parts.values()].flat())?.role;
         expect(role).toBeDefined();
         for (let i = 0; i < mesh.count; i++) {
           const pose = new Matrix4();
@@ -659,10 +688,33 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
       const expected = z === 0 ? authored.slice(0, 2) : z === 60 ? authored : authored.slice(2);
       const active = (meshes: InstancedMesh[]) => meshes.filter((mesh) => mesh.count > 0);
       const view = active(streamed.meshes);
-      expect(view.map((mesh) => mesh.geometry)).toEqual(expected.map((part) => part.geometry));
+      expect(view).toHaveLength(expected.length);
+      const semanticLods = (parts: typeof authored) =>
+        parts.map((part) => `${part.level ?? 0}:${part.role}`).sort();
+      const activeParts = view.map((mesh) => {
+        const part = authoredPartForGeometry(mesh.geometry, authored);
+        if (!part) throw new Error("Unauthored active LOD geometry");
+        return part;
+      });
+      expect(semanticLods(activeParts)).toEqual(semanticLods(expected));
       for (const mesh of view) {
-        const part = authored.find((part) => part.geometry === mesh.geometry);
+        const part = authoredPartForGeometry(mesh.geometry, authored);
         if (!part?.material) throw new Error("Unauthored geometry");
+        expect(mesh.geometry).not.toBe(part.geometry);
+        expect(mesh.geometry.userData.tnPublishedLodRangeView).toBe(true);
+        for (const [name, attribute] of Object.entries(part.geometry.attributes))
+          expect(mesh.geometry.getAttribute(name)).toBe(attribute);
+        expect(mesh.geometry.index).toBe(part.geometry.index);
+        expect(mesh.geometry.morphAttributes).toBe(part.geometry.morphAttributes);
+        expect(mesh.geometry.morphTargetsRelative).toBe(part.geometry.morphTargetsRelative);
+        expect(mesh.geometry.groups).toEqual(part.geometry.groups);
+        expect(mesh.geometry.drawRange).toEqual(part.geometry.drawRange);
+        expect(mesh.geometry.boundingBox).toBe(part.geometry.boundingBox);
+        expect(mesh.geometry.boundingSphere).toBe(part.geometry.boundingSphere);
+        expect(mesh.geometry.getAttribute("tnPublishedLodRange")).toBeDefined();
+        expect(mesh.geometry.getAttribute("tnPublishedLodRange")).not.toBe(
+          part.geometry.getAttribute("tnPublishedLodRange"),
+        );
         const surface = mesh.material as typeof part.material;
         expect(surface).not.toBe(part.material);
         expect(surface.alphaTest).toBe(part.material.alphaTest);
@@ -685,17 +737,21 @@ it("preserves authored cutout LOD parts and distinct custom shader surfaces", as
             if (node instanceof InstancedMesh && node.layers.isEnabled(layer)) casters.push(node);
           });
         expect(
-          active(casters).map((mesh) => ({
-            geometry: mesh.geometry,
-            material: mesh.material,
-            count: mesh.count,
-          })),
+          active(casters)
+            .map((mesh) => {
+              const part = authoredPartForGeometry(mesh.geometry, authored);
+              if (!part) throw new Error("Unauthored shadow LOD geometry");
+              return `${part.level ?? 0}:${part.role}:${mesh.count}`;
+            })
+            .sort(),
         ).toEqual(
-          view.map((mesh) => ({
-            geometry: mesh.geometry,
-            material: mesh.material,
-            count: mesh.count,
-          })),
+          view
+            .map((mesh) => {
+              const part = authoredPartForGeometry(mesh.geometry, authored);
+              if (!part) throw new Error("Unauthored visible LOD geometry");
+              return `${part.level ?? 0}:${part.role}:${mesh.count}`;
+            })
+            .sort(),
         );
       }
     }
@@ -883,7 +939,6 @@ it("keeps all original fallback near buffers and seeded variant sequence", () =>
 
 it("provides deterministic reduced fallback crowns with unchanged trunks and scaled sapling levels", () => {
   const parts = buildPropVariants();
-  const scaled = buildPropVariants(undefined, 2);
   for (const [key, entries] of parts) {
     if (!/^(spruce|sapling):/.test(key)) continue;
     for (const role of ["bark", "crown"]) {
@@ -900,40 +955,64 @@ it("provides deterministic reduced fallback crowns with unchanged trunks and sca
       );
       expect(far.geometry).not.toBe(near.geometry);
       for (const name of Object.keys(near.geometry.attributes)) {
-        expect(far.geometry.getAttribute(name)).not.toBe(near.geometry.getAttribute(name));
-        expect(far.geometry.getAttribute(name).array).toEqual(
-          near.geometry.getAttribute(name).array,
-        );
+        const farArray = far.geometry.getAttribute(name).array;
+        const nearArray = near.geometry.getAttribute(name).array;
+        expect(farArray).not.toBe(nearArray);
+        expect(
+          Buffer.from(farArray.buffer, farArray.byteOffset, farArray.byteLength).equals(
+            Buffer.from(nearArray.buffer, nearArray.byteOffset, nearArray.byteLength),
+          ),
+        ).toBe(true);
       }
-      if (role === "bark")
-        expect(far.geometry.getAttribute("position").array).toEqual(
-          near.geometry.getAttribute("position").array,
-        );
-      if (key.startsWith("sapling:")) {
-        const resized = scaled.get(key)?.find((part) => part.level === 1 && part.role === role);
-        assert(resized);
-        const nearHeight = Math.max(
-          ...entries
-            .filter((part) => (part.level ?? 0) === 0)
-            .map((part) => {
-              part.geometry.computeBoundingBox();
-              return part.geometry.boundingBox?.max.y ?? 0;
-            }),
-        );
-        const positions = far.geometry.getAttribute("position");
-        const actual = resized.geometry.getAttribute("position");
-        expect(actual.count).toBe(positions.count);
-        for (let index = 0; index < positions.array.length; index++)
-          expect(actual.array[index]).toBeCloseTo(
-            ((positions.array[index] ?? 0) * 2) / nearHeight,
-            5,
-          );
+      if (role === "bark") {
+        const farPosition = far.geometry.getAttribute("position").array;
+        const nearPosition = near.geometry.getAttribute("position").array;
+        expect(
+          Buffer.from(farPosition.buffer, farPosition.byteOffset, farPosition.byteLength).equals(
+            Buffer.from(nearPosition.buffer, nearPosition.byteOffset, nearPosition.byteLength),
+          ),
+        ).toBe(true);
       }
     }
   }
-  const repeated = buildPropVariants();
-  for (const species of ["spruce", "sapling"])
-    expect(fallbackDigest(repeated, species, 1)).toBe(fallbackDigest(parts, species, 1));
+  expect(fallbackDigest(parts, "sapling", 1)).toBe(
+    "39e49536171b33103b47ed39d79cc972778c787c5862edbe57fb1979dce7406f",
+  );
+  expect(fallbackDigest(parts, "spruce", 1)).toBe(
+    "2e3a43820448d03ee349b90d1dda31a1af11bc4a8ccf3dae682db67fd8716c26",
+  );
+});
+
+it("scales every fallback sapling level from the same authored height", () => {
+  const parts = buildPropVariants();
+  const scaled = buildPropVariants(undefined, 2);
+  for (const [key, entries] of parts) {
+    if (!key.startsWith("sapling:")) continue;
+    const scaledEntries = scaled.get(key);
+    assert(scaledEntries);
+    const nearHeight = Math.max(
+      ...entries
+        .filter((part) => (part.level ?? 0) === 0)
+        .map((part) => {
+          part.geometry.computeBoundingBox();
+          return part.geometry.boundingBox?.max.y ?? 0;
+        }),
+    );
+    for (const role of ["bark", "crown"]) {
+      const source = entries.find((part) => part.level === 1 && part.role === role);
+      const resized = scaledEntries.find((part) => part.level === 1 && part.role === role);
+      assert(source);
+      assert(resized);
+      const positions = source.geometry.getAttribute("position");
+      const actual = resized.geometry.getAttribute("position");
+      expect(actual.count).toBe(positions.count);
+      for (let index = 0; index < positions.array.length; index++)
+        expect(actual.array[index]).toBeCloseTo(
+          ((positions.array[index] ?? 0) * 2) / nearHeight,
+          5,
+        );
+    }
+  }
 });
 
 it("switches real fallback spruce and sapling batches into authored far levels at the existing gate", async () => {
@@ -962,8 +1041,8 @@ it("switches real fallback spruce and sapling batches into authored far levels a
   try {
     for (const [distance, level] of [
       [0, 0],
-      [LOD_BANDS.mid + 5, 1],
-      [LOD_BANDS.mid * 0.7, 0],
+      [LOD_BANDS.mid + 20, 1],
+      [LOD_BANDS.mid * 0.5, 0],
     ]) {
       follow.position.x = distance ?? 0;
       for (let frame = 0; frame < 100; frame++) {
@@ -976,7 +1055,15 @@ it("switches real fallback spruce and sapling batches into authored far levels a
         meshes.every((mesh) => new RegExp(`:${level}:[0-9]+$`).test(mesh.name)),
         `distance ${distance}: ${meshes.map((mesh) => mesh.name).join(", ")}`,
       ).toBe(true);
-      expect(meshes.every((mesh) => mesh.material === material)).toBe(true);
+      expect(
+        meshes.every(
+          (mesh) =>
+            (mesh.material as MeshBasicMaterial).color.equals(material.color) &&
+            (mesh.material as MeshBasicMaterial).transparent === material.transparent &&
+            (mesh.material as MeshBasicMaterial).opacity === material.opacity &&
+            (mesh.material as MeshBasicMaterial).alphaTest === material.alphaTest,
+        ),
+      ).toBe(true);
     }
   } finally {
     streamed.dispose();

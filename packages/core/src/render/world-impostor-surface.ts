@@ -592,8 +592,9 @@ function buildFragmentNodes(
       .mul(grid)
       .add(cellX[index] as Node<"float">)
       .toInt();
-    // A crossing must remain covered throughout refinement; alpha holes and depth jumps
-    // cannot create an interior surface. One march step per baked texel, eight refinements.
+    // Positive baked coverage owns ray/depth geometry; the authored cutoff is applied once by the
+    // final mip-aware fragment threshold. Alpha holes and depth jumps cannot create an interior
+    // surface. One march step per baked texel, eight refinements.
     const hit = Fn(() => {
       const found = float(0).toVar();
       const hitUv = vec2(2).toVar();
@@ -621,8 +622,8 @@ function buildFragmentNodes(
         If(
           found
             .equal(0)
-            .and(previousAlpha.greaterThan(cutoff))
-            .and(c.a.greaterThan(cutoff))
+            .and(previousAlpha.greaterThan(0))
+            .and(c.a.greaterThan(0))
             .and(previousGap.greaterThan(0))
             .and(gap.lessThanEqual(0)),
           () => {
@@ -647,7 +648,7 @@ function buildFragmentNodes(
                 )
                 .mul(radiusUniform);
               const mg = dot(p, direction).sub(md);
-              If(mc.a.lessThanEqual(cutoff), () => {
+              If(mc.a.lessThanEqual(0), () => {
                 valid.assign(0);
               });
               If(mg.greaterThan(0), () => {
@@ -674,7 +675,7 @@ function buildFragmentNodes(
             If(
               valid
                 .equal(1)
-                .and(hc.a.greaterThan(cutoff))
+                .and(hc.a.greaterThan(0))
                 .and(
                   abs(dot(p, direction).sub(hd)).lessThanEqual(
                     radiusUniform.mul(2 / 255).div(max(hc.a, float(0.001))),
@@ -778,6 +779,9 @@ export function worldLodMaterial(
   );
   const random = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))).mul(43758.5453));
   const noise = fract(sin(dot(floor(screenCoordinate.xy), vec2(12.9898, 78.233))).mul(43758.5453));
+  // CPU-admitted batches publish the levels their instance currently has beside its matrix. During
+  // a queued refilter, an old level outside that set remains whole until the replacement is swapped.
+  // LOD indices are categorical; interpolating 2 below 2 can clip an otherwise whole tree.
   const published = publishedRanges
     ? varying(attribute("tnPublishedLodRange", "vec2") as Node<"vec2">).setInterpolation("flat")
     : undefined;

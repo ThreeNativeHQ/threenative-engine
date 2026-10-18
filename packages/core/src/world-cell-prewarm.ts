@@ -296,6 +296,7 @@ export class CellPrewarm {
       entry.key,
       this.#host.extentBounds(),
       entry.role,
+      entry.level,
     );
     shared.smallCaster = this.#host.smallCaster(entry.asset);
     this.#host.dressMesh(shared, entry.role === "main" && this.#host.receiveShadow());

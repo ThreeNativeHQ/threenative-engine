@@ -400,6 +400,8 @@ it.each([MeshStandardMaterial, MeshStandardNodeMaterial])(
     };
     expect(comparisons(near)).toEqual([">="]);
     expect(comparisons(far)).toEqual(["<"]);
+    expect(near.userData.tnPublishedLodRange).toBeUndefined();
+    expect(far.userData.tnPublishedLodRange).toBeUndefined();
     expect(near.maskShadowNode).toBe(near.maskNode);
     expect(far.maskShadowNode).toBe(far.maskNode);
     // Includes the exact equality boundary: using <= on either side would double one pixel.
@@ -414,6 +416,42 @@ it.each([MeshStandardMaterial, MeshStandardNodeMaterial])(
     source.dispose();
   },
 );
+
+it("opts CPU LOD masks into published per-instance ranges", () => {
+  const source = new MeshStandardMaterial();
+  const material = worldLodMaterial(
+    source,
+    new Matrix4(),
+    [0, 60],
+    0,
+    0.2,
+    uniform(new Vector3()),
+    uniform(1),
+    false,
+    true,
+  );
+  expect(material.userData.tnPublishedLodRange).toBe(true);
+  expect(material.maskNode).toBeDefined();
+  const publishedRangeInterpolations: unknown[] = [];
+  material.maskNode?.traverse((node) => {
+    if (Reflect.get(node, "isVaryingNode") !== true) return;
+    const varyingSource = Reflect.get(node, "node");
+    if (varyingSource === null || typeof varyingSource !== "object") return;
+    const attributeSource = Reflect.get(varyingSource, "node");
+    if (attributeSource === null || typeof attributeSource !== "object") return;
+    const getAttributeName = Reflect.get(attributeSource, "getAttributeName");
+    if (
+      typeof getAttributeName === "function" &&
+      getAttributeName.call(attributeSource) === "tnPublishedLodRange"
+    ) {
+      publishedRangeInterpolations.push(Reflect.get(node, "interpolationType"));
+    }
+  });
+  expect(publishedRangeInterpolations).toEqual(["flat"]);
+  expect(material.maskShadowNode).toBe(material.maskNode);
+  material.dispose();
+  source.dispose();
+});
 
 it("Strata shadow cutout uses the view sampled alpha and mip-adjusted threshold", async () => {
   const { loadPack } = await import("../../../examples/strata-terrain-preview/src/render/pack.js");

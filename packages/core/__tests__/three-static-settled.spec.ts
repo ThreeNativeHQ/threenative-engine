@@ -175,31 +175,30 @@ function draw(mesh: InstancedMesh, observer: ReturnType<typeof observerFor>, app
 
   let manager = geometries.get(mesh);
   if (manager === undefined) {
-    manager = {
-      attributeCall: new WeakMap(),
-      wireframes: new WeakMap(),
-      _settledAttributes: new WeakMap(),
-      has: () => true,
-      updateAttributes(this: object, target: unknown) {
-        liveCounts().attributeScans += 1;
-        return Geometries.prototype.updateAttributes.call(this, target);
-      },
-      updateAttribute: Geometries.prototype.updateAttribute,
-      getIndex: Geometries.prototype.getIndex,
-      attributesChanged: Geometries.prototype.attributesChanged,
-      attributes: {
-        update: (attribute: object) => {
-          liveCounts().uploads.push(attribute);
+    manager = Object.assign(
+      new Geometries(
+        {
+          update: (attribute: object) => {
+            liveCounts().uploads.push(attribute);
+          },
+          delete: () => undefined,
         },
-      },
-      info: {
-        render: {
-          get calls() {
-            return currentCall.id;
+        {
+          memory: { geometries: 0 },
+          render: {
+            get calls() {
+              return currentCall.id;
+            },
           },
         },
+      ),
+      {
+        updateAttributes(this: object, target: unknown) {
+          liveCounts().attributeScans += 1;
+          return Geometries.prototype.updateAttributes.call(this, target);
+        },
       },
-    };
+    );
     geometries.set(mesh, manager);
   }
   // One manager per mesh, not per draw: the settled snapshot it keeps is the whole point, and a

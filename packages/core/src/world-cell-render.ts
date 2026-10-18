@@ -503,7 +503,10 @@ export class CellRender {
 
   readonly #lodDistanceBias = uniform(1).setGroup(renderGroup);
 
-  readonly #lodMaterials = new Map<string, Material>();
+  readonly #lodMaterials = new Map<
+    string,
+    { readonly source: Material; readonly material: Material }
+  >();
 
   /** The resident ring has been handed to the scene once; see `#seedGpuSources`. */
   #gpuSeeded = false;
@@ -1212,10 +1215,10 @@ export class CellRender {
   wideFor(assetId: string, entry: ICellBatch, level = entry.level): SharedBatch | undefined {
     // As `#casterFor`: the key twin replaces both halves, so neither is minted.
     if (!this.casts(level) || this.keysForShadow()) return undefined;
-    // A whole-asset impostor is one shape for every part and level, so its far shadow is ONE mesh per
-    // asset holding one root record per placement, not one mesh per level whose records a source part
-    // offset would then double. Every other asset keeps the per-key mesh its per-part shapes need.
-    const impostor = this.#host.asset(assetId)?.impostor !== undefined;
+    // A generated whole-asset impostor is one shape for every part and level, so its far shadow is
+    // ONE mesh per asset holding root records. Preserved authored parts keep per-key wide casters.
+    const impostor =
+      !this.#preserveAuthoredParts && this.#host.asset(assetId)?.impostor !== undefined;
     const key = impostor
       ? `${assetId}:*@${WIDE_CLUSTER}`
       : `${this.keyOf(entry, level)}@${WIDE_CLUSTER}`;
@@ -1444,9 +1447,14 @@ export class CellRender {
     if (this.#lodHysteresis <= 0 || !asset || !part || asset.distances.length < 2) return source;
     const publishedRanges = !this.#gpuScene.on;
     const key = `${assetId}:${level}:${partIndex}:${asset.distances.length}:${publishedRanges ? 1 : 0}`;
-    let material = this.#lodMaterials.get(key);
-    if (material === undefined) {
-      material = worldLodMaterial(
+    let cached = this.#lodMaterials.get(key);
+    if (cached !== undefined && cached.source !== source) {
+      cached.material.dispose();
+      this.#lodMaterials.delete(key);
+      cached = undefined;
+    }
+    if (cached === undefined) {
+      const material = worldLodMaterial(
         source,
         part.local,
         asset.distances,
@@ -1457,9 +1465,10 @@ export class CellRender {
         this.#lodSpatial,
         publishedRanges,
       );
-      this.#lodMaterials.set(key, material);
+      cached = { source, material };
+      this.#lodMaterials.set(key, cached);
     }
-    return material;
+    return cached.material;
   }
 
   updateLodEye(x: number, y: number, z: number): void {
@@ -1502,13 +1511,12 @@ export class CellRender {
   }
 
   /**
-   * Whether this entry still owes a wide caster. A terminal whole-asset impostor is one part, and one
-   * wide mesh per level already holds every placement: only part 0 opens it, so a walk pays one quad
-   * per placement on the far shadow instead of one per bark/needle part.
+   * Whether this entry owes a wide caster. Generated whole-asset impostors use only part 0; preserved
+   * authored parts retain each part's own caster and transform.
    */
   wideOwed(assetId: string, part: number): boolean {
     if (part === 0) return true;
-    return this.#host.asset(assetId)?.impostor === undefined;
+    return this.#preserveAuthoredParts || this.#host.asset(assetId)?.impostor === undefined;
   }
 
   /** The `@x,z` half of a caster cluster key, for a resident cell. */
@@ -2106,9 +2114,9 @@ export class CellRender {
     return {
       cull: cullDistance(asset.definition.maxDistance),
       distances: asset.distances,
-      // The dispatch scales the whole-asset impostor's terminal gate by each placement's own scale;
-      // the same flag the live-state reference reads, so the two cannot cross it differently.
-      impostor: asset.impostor !== undefined,
+      // A generated terminal gate is based on the unit asset sphere and scales per placement. An
+      // authored impostorDistance is already a world-metre cutoff and stays fixed across scales.
+      impostor: asset.impostor !== undefined && asset.definition.impostorDistance === undefined,
       levels: gates,
     };
   }
@@ -2539,6 +2547,7 @@ export class CellRender {
     this.#gpuScene.dispatchShadow(renderer, level);
   }
   setLodBias(bias: number): void {
+    this.#lodDistanceBias.value = Number.isFinite(bias) && bias >= 1 ? bias : 1;
     this.#gpuScene.setLodBias(bias);
   }
   report(): ReturnType<WorldGpuScene["report"]> {
@@ -2563,7 +2572,7 @@ export class CellRender {
     this.#gpuResident.clear();
   }
   releaseLodMaterials(): void {
-    for (const material of this.#lodMaterials.values()) material.dispose();
+    for (const { material } of this.#lodMaterials.values()) material.dispose();
     this.#lodMaterials.clear();
   }
   releaseRetired(): void {

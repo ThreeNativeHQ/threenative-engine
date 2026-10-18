@@ -66,6 +66,13 @@ interface IRecord {
 // Geometry, per-placement reach and LOD selection are independent of this export grouping.
 const CELL_SIZE = 128;
 
+/** Keep the terminal gate beyond the last authored step and the scaled 150 m canopy band. */
+export function impostorDistanceForScale(minScale: number, lastLodDistance: number): number {
+  if (!Number.isFinite(minScale) || minScale === 0)
+    throw new Error("Spruce terminal distance requires a positive finite placement scale.");
+  return Math.max(LOD_BANDS.far / Math.abs(minScale), lastLodDistance * (1 + Number.EPSILON));
+}
+
 /** Compile the game's poses/appearance into world-v1 records; WorldCells owns every streaming step. */
 export async function createStreamedProps(options: IStreamOptions) {
   if (!options.whileCurrent()) return undefined;
@@ -104,6 +111,7 @@ export async function createStreamedProps(options: IStreamOptions) {
   const records: IRecord[] = [];
   const byId = new Map<string, IPropInstance>();
   const variantIndices = new Map<string, number>();
+  const minSpruceScaleByVariant = new Map<string, number>();
   const shapes = new Map<string, { parts: IPropPart[]; ratio: Vector3 }>();
   startPhase("grounding", "", options.placements.length);
   const report = await addInSlices(
@@ -141,6 +149,14 @@ export async function createStreamedProps(options: IStreamOptions) {
         reach = 28 + (reach - 28) * (1 - Math.sqrt(seed));
       }
       records.push({ key, placement, pose, reach, ratio, position, quaternion, scale: scalar });
+      if (placement.asset === "spruce")
+        minSpruceScaleByVariant.set(
+          variant,
+          Math.min(
+            minSpruceScaleByVariant.get(variant) ?? Number.POSITIVE_INFINITY,
+            Math.abs(scalar),
+          ),
+        );
       byId.set(placement.id, {
         ...pose,
         pose: pose.matrix,
@@ -223,6 +239,10 @@ export async function createStreamedProps(options: IStreamOptions) {
           const levels = [...new Set(shape.parts.map((part) => part.level ?? 0))].sort(
             (a, b) => a - b,
           );
+          const lods = levels.slice(1).map((level, i) => ({
+            glb: `${record.key}/${level}.glb`,
+            distance: i === 0 ? LOD_BANDS.mid : LOD_BANDS.far,
+          }));
           const bounds = new Box3();
           for (const level of levels) {
             const group = new Group();
@@ -237,14 +257,18 @@ export async function createStreamedProps(options: IStreamOptions) {
           }
           definitions[record.key] = {
             glb: `${record.key}/0.glb`,
-            ...(record.key.startsWith("spruce:") && levels.length <= 2
-              ? { impostorDistance: LOD_BANDS.far }
+            ...(record.key.startsWith("spruce:")
+              ? {
+                  impostorDistance: impostorDistanceForScale(
+                    minSpruceScaleByVariant.get(
+                      `${record.placement.asset}:${variantFor(record.placement, record.placement.asset)}`,
+                    ) ?? record.scale,
+                    lods.at(-1)?.distance ?? 0,
+                  ),
+                }
               : {}),
             bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() },
-            lods: levels.slice(1).map((level, i) => ({
-              glb: `${record.key}/${level}.glb`,
-              distance: i === 0 ? LOD_BANDS.mid : LOD_BANDS.far,
-            })),
+            lods,
           };
         }))
       ) {
@@ -301,6 +325,14 @@ export async function createStreamedProps(options: IStreamOptions) {
           heightMax: maxY,
         },
       };
+      const farInstances = list.reduce(
+        (total, record) =>
+          total + (definitions[record.key]?.impostorDistance === undefined ? 0 : 1),
+        0,
+      );
+      // Two CPU-admitted levels need at most 16 bytes of published-range bounds per root.
+      const rangeRoots = LOD_BANDS.hysteresis > 0 ? list.length : 0;
+
       const ring = Number.isFinite(maxReach)
         ? Math.ceil(maxReach / CELL_SIZE) + 1
         : Math.ceil(
@@ -322,7 +354,9 @@ export async function createStreamedProps(options: IStreamOptions) {
         gpuScene: false,
         bundles: options.bundles,
         onPublication: options.onPublication,
-        impostors: true,
+        // A whole-asset impostor is only authored for spruce. Other buckets retain their
+        // authored scatter LODs without asking WorldCells to build a terminal atlas.
+        impostors: farInstances > 0,
         adaptiveLod: false,
         preserveAuthoredParts: true,
         lodHysteresis: LOD_BANDS.hysteresis,
@@ -330,8 +364,11 @@ export async function createStreamedProps(options: IStreamOptions) {
         admissionBudgetMs: 2 / Math.max(1, buckets.size),
         budgets: {
           residentCells: Math.max(1, cells.length),
-          instances: Math.max(1, list.length),
-          bytes: Math.max(32, placements.byteLength),
+          instances: Math.max(1, list.length + farInstances),
+          bytes: Math.max(
+            32,
+            placements.byteLength + rangeRoots * 16 + farInstances * (16 * 4 + 4),
+          ),
         },
         shadows: {
           cast: bucket.endsWith(":true") && options.castShadows !== false,
@@ -374,6 +411,10 @@ export async function createStreamedProps(options: IStreamOptions) {
           loadsInFlight: sum.loadsInFlight + s.loadsInFlight,
           loadsQueued: sum.loadsQueued + s.loadsQueued,
           pendingPrewarm: sum.pendingPrewarm + s.pendingPrewarm,
+          impostor: {
+            pending: sum.impostor.pending + s.impostor.pending,
+            drawn: sum.impostor.drawn + s.impostor.drawn,
+          },
           admissionMs: sum.admissionMs + s.admission.spentMs,
           admissionBacklog: sum.admissionBacklog + s.admission.backlog,
           admissionDeferred: sum.admissionDeferred + s.admission.deferred,

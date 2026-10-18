@@ -22,8 +22,8 @@ import {
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import { PhysicsInterpolation } from "./interpolation.js";
 import {
-  reportSceneLoadFailure,
   reportLaunchFailure,
+  reportSceneLoadFailure,
   watchDeviceLoss,
   watchStartupStall,
 } from "./launch-diagnostics.js";
@@ -126,6 +126,7 @@ import {
   type IWarmUpReport,
   warmUpComputeNodes,
   warmUpScene,
+  warmUpSceneWithCompletion,
 } from "./warmup.js";
 
 export type PluginCleanup = () => void;
@@ -1169,10 +1170,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
        * waiting. Measured on a 46,190-instance forest: 8 pipelines warmed, then 28 main-thread
        * tasks over 40 ms in a minute of play, the worst 267 ms.
        *
-       * A third of the compile budget, not the whole of it, because this one is spent with the
-       * player already waiting behind a curtain that has been up for seconds. Whatever does not
-       * fit still compiles lazily — the same as before — so the ceiling on the wait is bounded and
-       * the worst case is the behaviour we already had.
+       * The report budget is a third of the compile budget because this pass runs after the player
+       * has already waited behind a curtain. If a compile has started when that budget expires,
+       * the readiness gate still joins that original operation within its existing bounded window;
+       * work that never started remains lazy.
        */
       afterHolds: async () => {
         await warmUp("TN_STARTUP_WARMUP_HELD", Math.round(STARTUP_COMPILE_BUDGET_MS / 3), false);
@@ -1260,7 +1261,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const warmUp = async (marker: string, budgetMs: number, stamp: boolean): Promise<void> => {
       if (this.#aborted || this.#renderer === undefined) return;
       let report: IWarmUpReport | undefined;
+      let heldCompletion: Promise<void> | undefined;
       let failure: string | undefined;
+      let heldFailure: unknown;
+      let heldFailed = false;
       try {
         projection.reconcile();
         // The frame loop's own walk, run here too because the warm-up draws before that loop does.
@@ -1269,14 +1273,22 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // compiles every pipeline against stale world matrices and the real frames then build the
         // rest synchronously -- tens of seconds each on a software adapter, which loses the device.
         this.#matrixWorld?.apply(projection.root);
-        report = await warmUpScene(renderer, projection.root, camera, {
+        const options = this.#warmUpOptions();
+        const result = await warmUpSceneWithCompletion(renderer, projection.root, camera, {
           budgetMs,
           computeNodes: this.#computeDriven.warmupNodes,
-          renderPasses: this.#warmUpOptions().renderPasses,
-          includeHidden: this.#warmUpOptions().includeHidden,
+          renderPasses: options.renderPasses,
+          includeHidden: options.includeHidden,
+          yieldFrame: options.yieldFrame,
         });
+        report = result.report;
+        if (!stamp) heldCompletion = result.completion;
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
+        if (!stamp) {
+          heldFailure = error;
+          heldFailed = true;
+        }
       }
       // With an explicit warm-up, this held pass is only the first half of startup. Stamp after
       // the explicit pass so its own pipelines remain inside the settled boundary; without one,
@@ -1319,6 +1331,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               },
         )}`,
       );
+      if (heldFailed) throw heldFailure;
+      if (heldCompletion !== undefined) await heldCompletion;
     };
     const startupCompile: StartupCompile = async (): Promise<void> => {
       await warmUp("TN_STARTUP_WARMUP", STARTUP_COMPILE_BUDGET_MS, true);

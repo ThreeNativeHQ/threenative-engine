@@ -46,6 +46,7 @@ export type {
 import {
   Box3,
   type Camera,
+  DynamicDrawUsage,
   Frustum,
   Group,
   Matrix4,
@@ -2200,7 +2201,10 @@ export class WorldCells extends Group implements IComputeDriven {
       // whole-asset impostor's terminal gate scaled by this placement's own scale. The bias is the
       // same adaptive multiplier the dispatch carries, so a biased walk crosses a switch here too.
       let level = levelAtGates(
-        { distances: asset.distances, impostor: asset.impostor !== undefined },
+        {
+          distances: asset.distances,
+          impostor: asset.impostor !== undefined && asset.definition.impostorDistance === undefined,
+        },
         biasedLodDistance(distance),
         scale,
       );

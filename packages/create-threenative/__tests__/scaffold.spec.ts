@@ -197,7 +197,6 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed after adaeb514f: overlaying only its parent Three patch in generated scratch trees
 // recovers all thirteen prior fingerprints; current trees retain the geometry-cache fix.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
   // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
@@ -263,7 +262,6 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Merged input heading, quaternion facing and progress import; measured through actual scaffold.
   starter: "d653b67ab5ba81a572272e21bf0b6d77dd579fc628b4772366f3c88e35f55c1b",
   "tower-defense": "9a3546d5e46533ddc81cc868efac5ec285dcbd7a148e1b2b2a2f241cb65c1c4c",
-
 };
 
 const GENERATED_SCAFFOLD_METADATA =

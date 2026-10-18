@@ -691,10 +691,7 @@
       "file": "fern_02/fern_02_alpha_512.png",
       "url": "https://polyhaven.com/a/fern_02",
       "bytes": 41735,
-      "dimensions": [
-        512,
-        512
-      ],
+      "dimensions": [512, 512],
       "sha256": "d3422b26b0f41a0be9d5e7d7878765da674ff173f4c5a0c47795364c8b954bb0"
     },
     {
@@ -706,10 +703,7 @@
       "file": "fern_02/fern_02_diff_512.jpg",
       "url": "https://polyhaven.com/a/fern_02",
       "bytes": 33569,
-      "dimensions": [
-        512,
-        512
-      ],
+      "dimensions": [512, 512],
       "sha256": "a6047726852171297213cb8063c1607856b0c414c579ff9d60a54262b925f78a"
     },
     {
@@ -721,10 +715,7 @@
       "file": "fern_02/fern_02_nor_gl_512.jpg",
       "url": "https://polyhaven.com/a/fern_02",
       "bytes": 35095,
-      "dimensions": [
-        512,
-        512
-      ],
+      "dimensions": [512, 512],
       "sha256": "72d64f5a9632cf5cc26969b8e60b1a5da5432bbde562b87a6fccef29949e28a8"
     },
     {

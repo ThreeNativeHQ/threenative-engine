@@ -479,24 +479,44 @@ describe("StartupReadiness holds", () => {
     expect(order).toEqual(["warm-started", "warm-finished", "ready"]);
   });
 
-  it("resolves anyway when the second warm-up throws", async () => {
+  it("rejects readiness when the second warm-up fails", async () => {
     const readiness = new StartupReadiness({
       afterHolds: () => {
         throw new Error("no renderer");
       },
       stableFrames: 3,
     });
-    let ready = false;
-    void readiness.whenReady().then(() => {
-      ready = true;
-    });
+    const rejected = expect(readiness.whenReady()).rejects.toThrow("no renderer");
     readiness.hold("detail-tier", Promise.resolve());
     readiness.start();
     for (let index = 0; index < 6; index += 1) await Promise.resolve();
     for (let index = 0; index < 3; index += 1) readiness.observe(1);
     for (let index = 0; index < 8; index += 1) await Promise.resolve();
-    // A warm-up that fails costs hitches, never a game that will not start.
-    expect(ready).toBe(true);
+    await rejected;
+  });
+
+  it("bounds a held warm-up that never settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const readiness = new StartupReadiness({
+        afterHolds: () => new Promise<void>(() => undefined),
+        settled: () => false,
+        stableFrames: 1,
+        stableWindowMs: 20,
+      });
+      const ready = readiness.whenReady();
+      readiness.hold("detail-tier", Promise.resolve());
+      readiness.start();
+      for (let index = 0; index < 6; index += 1) await Promise.resolve();
+      readiness.observe(1);
+      for (let index = 0; index < 6; index += 1) await Promise.resolve();
+
+      const rejected = expect(ready).rejects.toThrow("TN_STARTUP_SETTLEMENT_TIMEOUT");
+      await vi.advanceTimersByTimeAsync(20);
+      await rejected;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not warm a second time for a game that never held startup", async () => {

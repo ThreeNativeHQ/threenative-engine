@@ -1,13 +1,23 @@
-import { DynamicDrawUsage, InterleavedBuffer, InterleavedBufferAttribute } from "three";
+import {
+  BufferGeometry,
+  DynamicDrawUsage,
+  Float32BufferAttribute,
+  InterleavedBuffer,
+  InterleavedBufferAttribute,
+  MeshBasicMaterial,
+  Uint16BufferAttribute,
+} from "three";
 import Attributes from "three/src/renderers/common/Attributes.js";
 import Bindings from "three/src/renderers/common/Bindings.js";
 import { AttributeType } from "three/src/renderers/common/Constants.js";
 import Geometries from "three/src/renderers/common/Geometries.js";
+// @ts-expect-error Three's private renderer module has no public declaration; this test exercises its real disposal path.
+import RenderObjects from "three/src/renderers/common/RenderObjects.js";
 import StorageBuffer from "three/src/renderers/common/StorageBuffer.js";
 import StorageBufferAttribute from "three/src/renderers/common/StorageBufferAttribute.js";
 // @ts-expect-error Three's private renderer module has no public declaration; this test must exercise it directly.
 import WebGPUAttributeUtils from "three/src/renderers/webgpu/utils/WebGPUAttributeUtils.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 /**
  * Disposing a geometry whose attributes are interleaved — every cooked world GLB is — must forget
@@ -67,6 +77,175 @@ describe("WebGPUAttributeUtils interleaved dispose", () => {
       backend.get(interleaved).buffer,
       "the destroyed buffer is still in the backend",
     ).toBeUndefined();
+  });
+});
+
+describe("shared geometry attribute disposal", () => {
+  it("retains a shared position/index buffer until the last geometry releases it", () => {
+    const buffers = new Map<object, object>();
+    const destroyed: object[] = [];
+    const keyOf = (
+      attribute: object & { isInterleavedBufferAttribute?: boolean; data?: object },
+    ) => (attribute.isInterleavedBufferAttribute ? (attribute.data as object) : attribute);
+    const attributes = {
+      update: (attribute: object & { isInterleavedBufferAttribute?: boolean; data?: object }) => {
+        const key = keyOf(attribute);
+        if (!buffers.has(key)) buffers.set(key, {});
+      },
+      delete: (attribute: object & { isInterleavedBufferAttribute?: boolean; data?: object }) => {
+        const key = keyOf(attribute);
+        if (buffers.delete(key)) destroyed.push(key);
+      },
+    };
+    const info = { memory: { geometries: 0 }, render: { calls: 1 } };
+    const geometries = new Geometries(attributes as never, info as never);
+    const position = new Float32BufferAttribute([0, 0, 0], 3);
+    const index = new Uint16BufferAttribute([0], 1);
+    const morph = new Float32BufferAttribute([0, 1, 0], 3);
+    const node = new Float32BufferAttribute([1, 0, 0], 3);
+    const first = new BufferGeometry();
+    const second = new BufferGeometry();
+    for (const geometry of [first, second]) {
+      geometry.setAttribute("position", position);
+      geometry.setIndex(index);
+      geometry.morphAttributes.position = [morph];
+    }
+    const renderObject = (geometry: BufferGeometry) => ({
+      geometry,
+      material: { wireframe: false },
+      getAttributes: () => [...Object.values(geometry.attributes), morph, node],
+      getMonitor: () => undefined,
+    });
+    const firstObject = renderObject(first);
+    const nodes = { getCacheKey: () => 0, delete: () => undefined };
+    const renderer = { contextNode: { id: 1, version: 1 }, _currentSourceMaterial: null };
+    const renderObjects = new RenderObjects(
+      renderer as never,
+      nodes as never,
+      geometries as never,
+      { delete: () => undefined } as never,
+      { deleteForRender: () => undefined } as never,
+      {} as never,
+    );
+    const secondObject = renderObjects.createRenderObject(
+      nodes as never,
+      geometries as never,
+      renderer as never,
+      { geometry: second, receiveShadow: false } as never,
+      new MeshBasicMaterial(),
+      {} as never,
+      { isArrayCamera: false } as never,
+      {} as never,
+      { sampleCount: 1 } as never,
+      null as never,
+    );
+    Object.assign(secondObject, {
+      attributes: [...Object.values(second.attributes), morph, node],
+      _monitor: { isSettled: () => false },
+    });
+
+    geometries.updateForRender(firstObject as never);
+    geometries.updateForRender(secondObject as never);
+    const positionBuffer = buffers.get(position);
+    const indexBuffer = buffers.get(index);
+    const morphBuffer = buffers.get(morph);
+    const nodeBuffer = buffers.get(node);
+    if (!positionBuffer || !indexBuffer || !morphBuffer || !nodeBuffer)
+      throw new Error("Missing uploaded shared buffers");
+
+    first.dispose();
+    expect(buffers.get(position)).toBe(positionBuffer);
+    expect(buffers.get(index)).toBe(indexBuffer);
+    expect(buffers.get(morph)).toBe(morphBuffer);
+    expect(buffers.get(node)).toBe(nodeBuffer);
+    expect(destroyed).toEqual([]);
+
+    const replacement = new Float32BufferAttribute([0, 0, 1], 3);
+    second.setAttribute("position", replacement);
+    secondObject.setGeometry(second);
+    Object.assign(secondObject, {
+      attributes: [...Object.values(second.attributes), morph, node],
+    });
+    info.render.calls++;
+    geometries.updateForRender(secondObject as never);
+    expect(buffers.has(position)).toBe(false);
+    expect(buffers.has(replacement)).toBe(true);
+    expect(buffers.get(index)).toBe(indexBuffer);
+    expect(destroyed.filter((key) => key === position)).toHaveLength(1);
+
+    const third = new BufferGeometry().setAttribute("position", replacement).setIndex(index);
+    const thirdObject = {
+      geometry: third,
+      material: { wireframe: false },
+      getAttributes: () => Object.values(third.attributes),
+      getMonitor: () => undefined,
+    };
+    geometries.updateForRender(thirdObject as never);
+    secondObject.dispose();
+    expect(buffers.has(node)).toBe(false);
+    expect(buffers.has(replacement)).toBe(true);
+    expect(buffers.has(index)).toBe(true);
+
+    second.dispose();
+    third.dispose();
+    expect(destroyed.filter((key) => key === replacement)).toHaveLength(1);
+    expect(destroyed.filter((key) => key === index)).toHaveLength(1);
+    expect(destroyed.filter((key) => key === morph)).toHaveLength(1);
+    expect(destroyed.filter((key) => key === node)).toHaveLength(1);
+  });
+
+  it("deduplicates distinct interleaved attribute handles by their shared backing buffer", () => {
+    const buffers = new Map<object, object>();
+    const destroyed: object[] = [];
+    const keyOf = (
+      attribute: object & { isInterleavedBufferAttribute?: boolean; data?: object },
+    ) => (attribute.isInterleavedBufferAttribute ? (attribute.data as object) : attribute);
+    const attributes = {
+      update: (attribute: object & { isInterleavedBufferAttribute?: boolean; data?: object }) => {
+        const key = keyOf(attribute);
+        if (!buffers.has(key)) buffers.set(key, {});
+      },
+      delete: (attribute: object & { isInterleavedBufferAttribute?: boolean; data?: object }) => {
+        const key = keyOf(attribute);
+        if (buffers.delete(key)) destroyed.push(key);
+      },
+    };
+    const info = { memory: { geometries: 0 }, render: { calls: 1 } };
+    const geometries = new Geometries(attributes as never, info as never);
+    const interleaved = new InterleavedBuffer(new Float32Array(6), 6);
+    const position = new InterleavedBufferAttribute(interleaved, 3, 0);
+    const normal = new InterleavedBufferAttribute(interleaved, 3, 3);
+    const first = new BufferGeometry().setAttribute("position", position);
+    const second = new BufferGeometry().setAttribute("normal", normal);
+    const renderObject = (geometry: BufferGeometry) => ({
+      geometry,
+      material: { wireframe: false },
+      getAttributes: () => Object.values(geometry.attributes),
+      getMonitor: () => undefined,
+    });
+    const firstObject = renderObject(first);
+    const secondObject = renderObject(second);
+    const sync = vi.spyOn(
+      geometries as unknown as { syncGeometryAttributes: (renderObject: unknown) => void },
+      "syncGeometryAttributes",
+    );
+    geometries.updateForRender(firstObject as never);
+    geometries.updateForRender(secondObject as never);
+    expect(sync).toHaveBeenCalledTimes(2);
+    const buffer = buffers.get(interleaved);
+    if (!buffer) throw new Error("Missing uploaded interleaved buffer");
+
+    first.dispose();
+    expect(buffers.get(interleaved)).toBe(buffer);
+    for (let i = 0; i < 50; i++) {
+      second.setAttribute("normal", new InterleavedBufferAttribute(interleaved, 3, 3));
+      info.render.calls++;
+      geometries.updateForRender(secondObject as never);
+    }
+    expect(sync).toHaveBeenCalledTimes(2);
+    expect(destroyed).toEqual([]);
+    second.dispose();
+    expect(destroyed).toEqual([interleaved]);
   });
 });
 
