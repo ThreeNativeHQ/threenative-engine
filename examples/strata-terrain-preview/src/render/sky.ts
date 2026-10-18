@@ -15,6 +15,7 @@ import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import {
+  PCFSoftShadowFilter,
   abs,
   cameraPosition,
   dot,
@@ -126,6 +127,10 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   sun.name = "temperate-sun";
   sun.castShadow = true;
   sun.shadow.radius = biome?.sun.shadowRadius ?? BIOMES.forest.sun.shadowRadius;
+  if ((biome ?? BIOMES.forest).world === "forest") {
+    // The deterministic tent filter avoids the forest's fine screen-space PCF rotation hatching.
+    (sun.shadow as typeof sun.shadow & { filterNode?: unknown }).filterNode = PCFSoftShadowFilter;
+  }
   if (omitted.has("sun")) sun.intensity = 0;
   const farShadows = biome?.world === "alpine" || biome?.world === "desert";
   const mapSize = farShadows ? 4096 : 2048;
