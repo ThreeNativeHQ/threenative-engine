@@ -10,11 +10,16 @@
  * Usage: tsx scripts/engine-parity.ts --project <scaffold> --template <name> --out <dir>
  * Exit 0 parity or a listed known gap, 1 a parity failure, 2 a capture that never happened.
  */
-import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
+import {
+  WEBGPU_BROWSER_ARGS,
+  softwareAdapterName,
+  withBrowserCapture,
+} from "../packages/playtest/dist/runner/index.js";
+import { regionMetrics } from "../packages/playtest/src/runner/steps.js";
 
 export const ENGINE_PARITY_THRESHOLD = 0.12;
 export const ENGINES = ["threejs", "threenative"] as const;
@@ -22,6 +27,49 @@ export const ENGINES = ["threejs", "threenative"] as const;
 /** Templates whose engines still differ, each with the open box that tracks it. A gap that closes fails until it leaves this list. */
 // Empty since 2026-10-17: sailing (fc56ef24d, lit mesh without normals) and action-rpg (5bb12e56c, NaN launch cone) closed.
 export const KNOWN_GAPS: Readonly<Record<string, string>> = {};
+const POSE_WAIT_TICKS = 300;
+const FIXED_STEP_SECONDS = 1 / 60;
+const POSE_VISUAL_REGION = {
+  x: 0,
+  y: 0,
+  width: 960,
+  height: 540,
+  minNonblankPixelRatio: 0.01,
+};
+
+/** Seconds represented by a pair of actual fixed-step bridge observations. */
+export function observedFixedStepSeconds(
+  before: { mode: string; tick?: number },
+  after: { mode: string; tick?: number },
+): number | null {
+  if (
+    before.mode !== "fixed-step" ||
+    after.mode !== "fixed-step" ||
+    typeof before.tick !== "number" ||
+    !Number.isFinite(before.tick) ||
+    typeof after.tick !== "number" ||
+    !Number.isFinite(after.tick)
+  )
+    return null;
+  const seconds = (after.tick - before.tick) * FIXED_STEP_SECONDS;
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
+/** Whether two captures end at the same absolute simulation pose. */
+export function sameFixedStepPose(
+  a: { mode: string; tick?: number },
+  b: { mode: string; tick?: number },
+): boolean {
+  return (
+    a.mode === "fixed-step" &&
+    b.mode === "fixed-step" &&
+    typeof a.tick === "number" &&
+    Number.isFinite(a.tick) &&
+    typeof b.tick === "number" &&
+    Number.isFinite(b.tick) &&
+    a.tick === b.tick
+  );
+}
 
 const POSE = {
   name: "engine-parity-pose",
@@ -30,11 +78,32 @@ const POSE = {
   viewport: { width: 960, height: 540 },
   warmupFrames: 30,
   artifacts: { screenshots: "before-after" },
-  steps: [{ kind: "wait", label: "pose", waitTicks: 300, screenshot: "pose", release: true }],
-  assert: {
-    visual: [{ region: { x: 0, y: 0, width: 960, height: 540, minNonblankPixelRatio: 0.01 } }],
-  },
+  steps: [
+    { kind: "wait", label: "pose", waitTicks: POSE_WAIT_TICKS, screenshot: "pose", release: true },
+  ],
+  assert: { visual: [{ region: POSE_VISUAL_REGION }] },
 };
+
+const CAPTURE_CSS = ".tn-dev-scene-warning { display: none !important; }";
+const CAPTURE_EXCLUSION = {
+  selector: ".tn-dev-scene-warning",
+  reason:
+    "Hide only the framework scene-shape diagnostic output; game HUD and rendered game pixels remain unchanged.",
+};
+
+function isRuntimeReadout(entry: unknown): boolean {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
+  const record = entry as Record<string, unknown>;
+  if (record.severity === "error" || record.error !== undefined) return false;
+  if (typeof record.type === "string" && ["assert", "error", "pageerror"].includes(record.type))
+    return false;
+  return (
+    typeof record.label === "string" &&
+    (typeof record.value === "string" ||
+      typeof record.value === "number" ||
+      typeof record.value === "boolean")
+  );
+}
 
 /** Luminance and RGB means of a 4x4 tile grid, each in 0..1. */
 export function tileMeans(image: PNG): number[] {
@@ -117,7 +186,7 @@ function posePng(dir: string): string {
   return file;
 }
 
-function main(argv: string[]): number {
+async function main(argv: string[]): Promise<number> {
   const arg = (name: string): string => {
     const value = argv[argv.indexOf(name) + 1];
     if (!argv.includes(name) || value === undefined) throw new Error(`missing ${name}`);
@@ -132,34 +201,155 @@ function main(argv: string[]): number {
   const configFile = path.join(project, "threenative.config.ts");
   const original = readFileSync(configFile, "utf8");
   const frames: PNG[] = [];
+  const observations: Partial<
+    Record<
+      (typeof ENGINES)[number],
+      {
+        adapter: Readonly<Record<string, string>> | undefined;
+        elapsed: number | null;
+        finalTick: number | null;
+      }
+    >
+  > = {};
   try {
     for (const engine of ENGINES) {
       writeFileSync(configFile, withEngine(original, engine));
       const artifacts = path.join(out, engine);
+      const captureConfig = {
+        projectPath: project,
+        scenarioPath: scenario,
+        artifactDirectory: artifacts,
+        target: "browser" as const,
+        url: "http://127.0.0.1:5173",
+        server: {
+          command: "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
+          cwd: project,
+          timeoutMs: 120_000,
+        },
+        port: 0,
+        headless: false,
+        timeoutMs: 120_000,
+        trace: false,
+        browserArgs: WEBGPU_BROWSER_ARGS,
+        allowSoftwareAdapter: process.env.TN_PLAYTEST_ALLOW_SOFTWARE === "1",
+      };
       try {
-        execFileSync(
-          "pnpm",
-          [
-            "--dir",
-            project,
-            "exec",
-            "threenative-playtest",
-            "--scenario",
-            scenario,
-            "--browser-recipe",
-            "webgpu",
-            "--headed",
-            "--artifacts",
-            artifacts,
-            "--timeout",
-            "120000",
-            "--server-timeout",
-            "120000",
-            "--server-command",
-            "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
-          ],
-          { stdio: "inherit" },
-        );
+        await withBrowserCapture(captureConfig, async (session) => {
+          const adapter = session.provenance.adapter;
+          if (adapter === undefined || Object.keys(adapter).length === 0) {
+            throw new Error("TN_ENGINE_PARITY_ADAPTER: capture did not report adapter.info");
+          }
+          observations[engine] = { adapter, elapsed: null, finalTick: null };
+          const readPose = async () => {
+            const snapshot = await session.bridge.sample({
+              entities: [],
+              include: ["diagnostics"],
+            });
+            return {
+              clock: snapshot.clock,
+              diagnostics: snapshot.diagnostics ?? [],
+            };
+          };
+          const before = await readPose();
+          if (
+            before.clock.mode !== "fixed-step" ||
+            typeof before.clock.tick !== "number" ||
+            !Number.isFinite(before.clock.tick)
+          ) {
+            throw new Error("TN_ENGINE_PARITY_POSE: bridge did not publish an initial clock tick");
+          }
+          await session.bridge.advance(POSE_WAIT_TICKS);
+          const after = await readPose();
+          if (
+            after.clock.mode !== "fixed-step" ||
+            typeof after.clock.tick !== "number" ||
+            !Number.isFinite(after.clock.tick) ||
+            after.clock.tick - before.clock.tick !== POSE_WAIT_TICKS
+          ) {
+            throw new Error(
+              `TN_ENGINE_PARITY_POSE: expected ${POSE_WAIT_TICKS} fixed-step ticks, observed ${JSON.stringify({ before: before.clock, after: after.clock })}`,
+            );
+          }
+          const expectedElapsedDelta = POSE_WAIT_TICKS / 60;
+          const elapsed = observedFixedStepSeconds(before.clock, after.clock);
+          if (
+            elapsed === null ||
+            !Number.isFinite(elapsed) ||
+            Math.abs(elapsed - expectedElapsedDelta) > FIXED_STEP_SECONDS
+          ) {
+            throw new Error(
+              `TN_ENGINE_PARITY_POSE: expected ${expectedElapsedDelta}s from the observed fixed-step clock, received ${JSON.stringify({ before: before.clock, after: after.clock, elapsed })}`,
+            );
+          }
+          observations[engine] = { adapter, elapsed, finalTick: after.clock.tick };
+          const runtimeErrors = after.diagnostics.filter((entry) => !isRuntimeReadout(entry));
+          const diagnostic = await session.page.evaluate(() => {
+            const element = document.querySelector<HTMLElement>(".tn-dev-scene-warning");
+            return element === null
+              ? null
+              : {
+                  text: element.textContent?.trim() ?? "",
+                  displayBeforeExclusion: getComputedStyle(element).display,
+                };
+          });
+          await session.page.addStyleTag({ content: CAPTURE_CSS });
+          const exclusionState = await session.page.evaluate(() => {
+            const element = document.querySelector<HTMLElement>(".tn-dev-scene-warning");
+            return element === null ? null : getComputedStyle(element).display;
+          });
+          if (exclusionState !== null && exclusionState !== "none") {
+            throw new Error(
+              `TN_ENGINE_PARITY_CAPTURE_CSS: diagnostic remained visible (${exclusionState})`,
+            );
+          }
+          const screenshot = await session.screenshot("pose");
+          const errors = session.errors;
+          const consoleEntries = session.consoleEntries;
+          const networkEntries = session.networkEntries;
+          const visual = regionMetrics(PNG.sync.read(readFileSync(screenshot)), POSE_VISUAL_REGION);
+          if (visual.nonblankPixelRatio < POSE_VISUAL_REGION.minNonblankPixelRatio) {
+            throw new Error(
+              `TN_ENGINE_PARITY_VISUAL: expected at least ${POSE_VISUAL_REGION.minNonblankPixelRatio} nonblank pixels, observed ${visual.nonblankPixelRatio}`,
+            );
+          }
+          if (errors.length > 0 || networkEntries.length > 0 || runtimeErrors.length > 0) {
+            throw new Error(
+              `TN_ENGINE_PARITY_DIAGNOSTICS: ${JSON.stringify({ errors, consoleEntries, networkEntries, runtimeErrors })}`,
+            );
+          }
+          writeFileSync(
+            path.join(artifacts, "capture.json"),
+            `${JSON.stringify(
+              {
+                ...session.provenance,
+                softwareAdapter: softwareAdapterName(adapter) ?? null,
+                diagnosticsPolicy: {
+                  noConsoleErrors: true,
+                  noNetworkErrors: true,
+                  noRuntimeDiagnostics: true,
+                },
+                captureExclusions: [CAPTURE_EXCLUSION],
+                diagnosticPanel: diagnostic,
+                diagnosticDisplayAfterExclusion: exclusionState,
+                pose: {
+                  before: before.clock,
+                  after: after.clock,
+                  elapsedSeconds: elapsed,
+                  sceneElapsedSeconds: after.clock.tick * FIXED_STEP_SECONDS,
+                  waitTicks: POSE_WAIT_TICKS,
+                },
+                visual,
+                publishedDiagnostics: after.diagnostics,
+                observedErrorsAfterStartup: errors,
+                observedConsoleEntries: consoleEntries,
+                observedNetworkEntries: networkEntries,
+                screenshot,
+              },
+              null,
+              2,
+            )}\n`,
+          );
+        });
       } catch (error) {
         // A known gap may fail on its own arm (action-rpg's threejs console errors); anything else may not.
         if (KNOWN_GAPS[template] === undefined) {
@@ -173,6 +363,45 @@ function main(argv: string[]): number {
     }
   } finally {
     writeFileSync(configFile, original);
+  }
+  const [threejsObservation, threenativeObservation] = [
+    observations.threejs,
+    observations.threenative,
+  ];
+  if (threejsObservation !== undefined && threenativeObservation !== undefined) {
+    const normalizeAdapter = (adapter: Readonly<Record<string, string>> | undefined) =>
+      JSON.stringify(
+        Object.entries(adapter ?? {}).sort(([left], [right]) => left.localeCompare(right)),
+      );
+    if (
+      normalizeAdapter(threejsObservation.adapter) !==
+      normalizeAdapter(threenativeObservation.adapter)
+    ) {
+      throw new Error(
+        `TN_ENGINE_PARITY_ADAPTER: arms used different adapters (${JSON.stringify({ threejs: threejsObservation.adapter, threenative: threenativeObservation.adapter })})`,
+      );
+    }
+    if (
+      threejsObservation.elapsed === null ||
+      threenativeObservation.elapsed === null ||
+      Math.abs(threejsObservation.elapsed - threenativeObservation.elapsed) > 1 / 60
+    ) {
+      throw new Error(
+        `TN_ENGINE_PARITY_POSE: arms did not reach the same observed scene elapsed (${JSON.stringify({ threejs: threejsObservation.elapsed, threenative: threenativeObservation.elapsed })})`,
+      );
+    }
+    if (
+      threejsObservation.finalTick === null ||
+      threenativeObservation.finalTick === null ||
+      !sameFixedStepPose(
+        { mode: "fixed-step", tick: threejsObservation.finalTick },
+        { mode: "fixed-step", tick: threenativeObservation.finalTick },
+      )
+    ) {
+      throw new Error(
+        `TN_ENGINE_PARITY_POSE: arms ended at different observed scene ticks (${JSON.stringify({ threejs: threejsObservation.finalTick, threenative: threenativeObservation.finalTick })})`,
+      );
+    }
   }
   const [threejs, threenative] = frames as [PNG, PNG];
   writeFileSync(
@@ -189,5 +418,13 @@ function main(argv: string[]): number {
   return result.ok ? 0 : 1;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url))
-  process.exitCode = main(process.argv.slice(2));
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  void main(process.argv.slice(2))
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((error: unknown) => {
+      console.error(`TN_ENGINE_PARITY_CAPTURE: ${String(error)}`);
+      process.exitCode = 2;
+    });
+}

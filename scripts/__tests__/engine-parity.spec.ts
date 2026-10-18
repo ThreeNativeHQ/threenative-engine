@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   ENGINE_PARITY_THRESHOLD,
   KNOWN_GAPS,
+  observedFixedStepSeconds,
   parityScore,
+  sameFixedStepPose,
   sideBySide,
   verdict,
   withEngine,
@@ -24,6 +26,28 @@ function frame(width: number, height: number, paint: (x: number, y: number) => n
 }
 
 describe("engine parity guard", () => {
+  it("measures the pose interval from the bridge's fixed-step clock", () => {
+    // This is the public sample clock emitted by a fixed-step Three bridge: no resources clock
+    // is required for the elapsed simulation interval.
+    const before = { mode: "fixed-step" as const, tick: 60 };
+    const after = { mode: "fixed-step" as const, tick: 360 };
+    expect(observedFixedStepSeconds(before, after)).toBe(5);
+    expect(observedFixedStepSeconds(before, { ...after, tick: Number.NaN })).toBeNull();
+    expect(observedFixedStepSeconds(before, { mode: "wall-clock", tick: 360 })).toBeNull();
+    expect(observedFixedStepSeconds(before, { mode: "fixed-step" })).toBeNull();
+  });
+
+  it("rejects equal intervals that end at different observed scene ticks", () => {
+    const firstBefore = { mode: "fixed-step" as const, tick: 60 };
+    const firstAfter = { mode: "fixed-step" as const, tick: 360 };
+    const secondBefore = { mode: "fixed-step" as const, tick: 120 };
+    const secondAfter = { mode: "fixed-step" as const, tick: 420 };
+    expect(observedFixedStepSeconds(firstBefore, firstAfter)).toBe(5);
+    expect(observedFixedStepSeconds(secondBefore, secondAfter)).toBe(5);
+    expect(sameFixedStepPose(firstAfter, secondAfter)).toBe(false);
+    expect(sameFixedStepPose(firstAfter, { ...firstAfter })).toBe(true);
+  });
+
   it("passes matching frames and fails sailing's measured brightness gap", () => {
     const threejs = frame(64, 32, () => 137);
     expect(
