@@ -1,0 +1,381 @@
+{
+  "adapter": {
+    "architecture": "turing",
+    "vendor": "nvidia",
+    "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+    "limit.maxBindGroups": "4",
+    "limit.maxTextureDimension2D": "16384",
+    "limit.maxStorageBufferBindingSize": "2147483644"
+  },
+  "browserArgs": [
+    "--ozone-platform=x11",
+    "--enable-unsafe-webgpu",
+    "--disable-gpu-sandbox",
+    "--ignore-gpu-blocklist",
+    "--enable-features=Vulkan"
+  ],
+  "captureMethod": "page.screenshot",
+  "rendererKind": "webgpu",
+  "target": "web",
+  "viewport": {
+    "height": 540,
+    "width": 960
+  },
+  "softwareAdapter": null,
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true
+  },
+  "captureExclusions": [
+    {
+      "selector": ".tn-dev-scene-warning",
+      "reason": "Hide only the framework scene-shape diagnostic output; game HUD and rendered game pixels remain unchanged."
+    }
+  ],
+  "diagnosticPanel": null,
+  "diagnosticDisplayAfterExclusion": null,
+  "pose": {
+    "before": {
+      "mode": "fixed-step",
+      "tick": 60
+    },
+    "after": {
+      "mode": "fixed-step",
+      "tick": 360
+    },
+    "elapsedSeconds": 5,
+    "sceneElapsedSeconds": 6,
+    "waitTicks": 300
+  },
+  "visual": {
+    "darkPixelRatio": 0.1566820987654321,
+    "nonblankPixelRatio": 1
+  },
+  "publishedDiagnostics": [],
+  "observedErrorsAfterStartup": [],
+  "observedConsoleEntries": [
+    {
+      "source": "browser-console",
+      "text": "[vite] connecting...",
+      "type": "debug"
+    },
+    {
+      "source": "browser-console",
+      "text": "[vite] connected.",
+      "type": "debug"
+    },
+    {
+      "source": "browser-console",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"\",\"device\":\"\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_PHYSICS_INTERPOLATION:{\"enabled\":true,\"overrideSource\":\"default\",\"trackedObjects\":1}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0,\"path\":\"js\"}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "THREE.WebGPURenderer: Timestamp tracking is disabled.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_QUALITY_TIER high mobile=false software=false source=platform",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_RESOLUTION_SUBRECT {\"applied\":[\"bloom\",\"antialias\"],\"refused\":[]}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_RENDER_CHAIN:{\"applied\":{\"contributions\":[{\"graphOutputChanged\":true,\"name\":\"bloom\"},{\"graphOutputChanged\":true,\"name\":\"antialias\"}],\"dropped\":[],\"requested\":[\"bloom\",\"antialias\"],\"source\":\"pinned\",\"stages\":[\"bloom\",\"antialias\"],\"tier\":\"high\",\"velocity\":{\"provisioned\":false,\"required\":false,\"source\":null}},\"marker\":\"TN_RENDER_CHAIN\"}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_WORLD_ENVIRONMENT:{\"denoise\":false,\"exposure\":0.9,\"marker\":\"TN_WORLD_ENVIRONMENT\",\"screenSpaceAA\":\"smaa\",\"ssgiQuality\":\"medium\",\"stages\":[{\"applied\":false,\"name\":\"ambientOcclusion\",\"reason\":\"gtaoEnabled is false\"},{\"applied\":true,\"name\":\"antialias\"},{\"applied\":true,\"name\":\"bloom\"},{\"applied\":false,\"name\":\"godRays\",\"reason\":\"godraysEnabled is false\"},{\"applied\":false,\"name\":\"kuwahara\",\"reason\":\"kuwaharaEnabled is false\"},{\"applied\":false,\"name\":\"outline\",\"reason\":\"outlineEnabled is false\"},{\"applied\":false,\"name\":\"sharpen\",\"reason\":\"sharpenEnabled is false\"},{\"applied\":false,\"name\":\"ssgi\",\"reason\":\"ssgiEnabled is false\"},{\"applied\":false,\"name\":\"ssr\",\"reason\":\"ssrEnabled is false\"},{\"applied\":false,\"name\":\"vignette\",\"reason\":\"vignetteAmount is 0\"},{\"applied\":false,\"name\":\"watercolor\",\"reason\":\"watercolorEnabled is false\"}],\"tonemapMode\":\"aces\"}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_ENVIRONMENT_CONTRIBUTION:{\"status\":\"unknown\",\"meanRadiance\":null,\"meanRGB\":null,\"reason\":\"Environment source pixels are not CPU-readable; no radiance was inferred.\",\"scope\":\"scene environment source availability; not material-specific reflected contribution\",\"environmentState\":\"unknown\",\"ibl\":\"unknown\",\"analyticFill\":{\"requestedGain\":1,\"admitted\":false,\"effectiveGain\":0,\"color\":[0.13286832154414627,0.19806931954941637,0.3371636150376657],\"blackColorOverride\":false,\"reason\":\"not admitted by this qualification\"},\"rimGain\":0.12,\"fillGain\":1,\"darkThreshold\":0.001}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_ENVIRONMENT_CONTRIBUTION:{\"status\":\"measured\",\"meanRGB\":[0.18743225152472057,0.19706416829436985,0.22760935854459827],\"meanRadiance\":0.19722178552520891,\"reason\":\"Estimated linear scene-environment source radiance from 64x32 GPU samples, spherical row weighting and active intensity; not material-specific BRDF contribution.\",\"scope\":\"scene environment source availability; not material-specific reflected contribution\",\"environmentState\":\"bright\",\"ibl\":\"contributing\",\"analyticFill\":{\"requestedGain\":1,\"admitted\":false,\"effectiveGain\":0,\"color\":[0.13286832154414627,0.19806931954941637,0.3371636150376657],\"blackColorOverride\":false,\"reason\":\"not admitted by this qualification\"},\"rimGain\":0.12,\"fillGain\":1,\"darkThreshold\":0.001}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_TRANSITION_COMPUTE_WARMUP:{\"compiled\":43,\"abandoned\":0,\"unsupported\":false,\"timedOut\":false}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":24,\"resultDrawCandidates\":24,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0,\"path\":\"js\"}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1597\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1604\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1611\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1618\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1625\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1632\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1639\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1646\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1653\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1660\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1667\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1674\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1681\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1688\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1695\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1702\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1709\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1714\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1726\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1733\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1740\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1747\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1754\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1761\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1768\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1775\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1782\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1789\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1796\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1803\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1810\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1817\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1824\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1831\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1838\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1843\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_1849\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_2369\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_2374\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_2393\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_2398\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_2417\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "Calling [ComputePassEncoder \"computeGroup_2422\"].DispatchWorkgroups with a workgroup count of 0 is unusual.",
+      "type": "warning"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_STARTUP_WARMUP:{\"compiled\":1,\"pipelines\":24,\"candidates\":24,\"attempted\":0,\"observed\":{\"created\":27,\"failed\":0,\"pending\":0,\"uniquePrograms\":25,\"uniquePipelines\":27,\"status\":\"complete\"},\"slices\":1,\"elapsedMs\":648,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false,\"computeCompiled\":43,\"computeAbandoned\":0,\"computeUnsupported\":false,\"computeTimedOut\":false,\"passes\":[\"main\",\"shadow\"],\"passPipelines\":27,\"cullingForced\":33,\"visibilityForced\":0,\"cache\":\"disabled\"}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_PHYSICS_INTERPOLATION:{\"enabled\":true,\"overrideSource\":\"default\",\"trackedObjects\":10}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_STARTUP_WARMUP_HELD:{\"compiled\":1,\"pipelines\":24,\"candidates\":24,\"attempted\":0,\"observed\":{\"created\":0,\"failed\":0,\"pending\":0,\"uniquePrograms\":0,\"uniquePipelines\":0,\"status\":\"complete\"},\"slices\":1,\"elapsedMs\":58,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false,\"computeCompiled\":43,\"computeAbandoned\":0,\"computeUnsupported\":false,\"computeTimedOut\":false,\"passes\":[\"main\",\"shadow\"],\"passPipelines\":0,\"cullingForced\":33,\"visibilityForced\":0,\"cache\":\"disabled\"}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_ALPHA_ANTIALIASING:{\"applied\":false,\"marker\":\"TN_ALPHA_ANTIALIASING\",\"materials\":0,\"reason\":\"no cutout material has been drawn; nothing in this scene carves its silhouette with an alpha test\",\"sampleCount\":4}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_FRAME_BUDGET:{\"longTasks\":{\"available\":true,\"count\":3,\"longestMs\":310,\"afterFirstFrameMs\":310},\"fps\":24.55,\"frame\":{\"max\":53.8,\"mean\":6.32,\"p50\":4.1,\"p95\":27.7,\"p99\":53.8,\"samples\":46},\"frames\":46,\"simulatedSeconds\":6,\"hitches\":0,\"phases\":{\"hostGap\":{\"max\":271.7,\"mean\":37.66,\"p50\":25.7,\"p95\":147.5,\"p99\":271.7,\"samples\":45},\"overlay\":{\"max\":6.7,\"mean\":0.27,\"p50\":0,\"p95\":0.9,\"p99\":6.7,\"samples\":46},\"render\":{\"max\":53.6,\"mean\":5.03,\"p50\":3.9,\"p95\":12.4,\"p99\":53.6,\"samples\":46},\"residual\":{\"max\":3.3,\"mean\":0.18,\"p50\":0.1,\"p95\":0.3,\"p99\":3.3,\"samples\":46},\"ui\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":46},\"update\":{\"max\":102.9,\"mean\":3.01,\"p50\":0,\"p95\":0.2,\"p99\":102.9,\"samples\":47}},\"presented\":{\"max\":533.3,\"mean\":40.74,\"p50\":33.3,\"p95\":33.4,\"p99\":533.3,\"samples\":45},\"shares\":{\"hostGap\":0.924,\"overlay\":0.007,\"render\":0.123,\"residual\":0.004,\"ui\":0,\"update\":0.074},\"substeps\":{\"max\":300,\"mean\":7.66,\"p50\":0,\"p95\":0,\"p99\":300,\"samples\":47},\"passes\":{\"main\":{\"draws\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":41},\"drawsBySource\":{\"other\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":41}},\"frames\":41,\"triangles\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":41}},\"shadow\":{\"draws\":{\"max\":7,\"mean\":6.97,\"p50\":7,\"p95\":7,\"p99\":7,\"samples\":32},\"frames\":32,\"triangles\":{\"max\":19459,\"mean\":19458.25,\"p50\":19459,\"p95\":19459,\"p99\":19459,\"samples\":32}},\"reflection\":{\"draws\":{\"max\":14,\"mean\":14,\"p50\":14,\"p95\":14,\"p99\":14,\"samples\":32},\"frames\":32,\"triangles\":{\"max\":2372,\"mean\":2372,\"p50\":2372,\"p95\":2372,\"p99\":2372,\"samples\":32}},\"nested\":{\"draws\":{\"max\":21,\"mean\":2.05,\"p50\":1,\"p95\":21,\"p99\":21,\"samples\":608},\"frames\":608,\"triangles\":{\"max\":53439,\"mean\":2813.53,\"p50\":1,\"p95\":53439,\"p99\":53439,\"samples\":608}}},\"gpu\":{\"max\":0.64,\"mean\":0.44,\"p50\":0.64,\"p95\":0.64,\"p99\":0.64,\"samples\":6},\"gpuStale\":35,\"gpuMs\":0.44,\"gpuFrames\":{\"first\":0,\"last\":40},\"gpuAgeFrames\":5,\"targetFps\":60,\"targetSource\":\"fallback\",\"surface\":{\"atFloor\":false,\"compiling\":true,\"drawingBufferHeight\":540,\"drawingBufferWidth\":960,\"resolutionSubrect\":true,\"resolutionScale\":1,\"sampleCount\":4,\"scaleSource\":\"auto\"},\"counters\":{\"simulationTick\":360},\"window\":1,\"gpuMain\":0,\"gpuShadow\":0,\"gpuOther\":0.6,\"gpuCompute\":0.1,\"gpuShadowP95\":0,\"gpuShadowSamples\":4,\"gpuShadowRendered\":{\"max\":0.02,\"mean\":0.02,\"p50\":0.02,\"p95\":0.02,\"p99\":0.02,\"samples\":4}}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_PROJECTION:{\"drawsActual\":60,\"cull\":{\"enabled\":true,\"cameraResolved\":true,\"thresholdPixels\":0.5,\"considered\":24,\"culled\":0,\"exemptCameraAttached\":0,\"exemptMarked\":0,\"exemptShadowCasters\":3,\"exemptWithoutBounds\":0,\"exemptDynamicBounds\":0,\"exemptFrustumCulled\":5},\"drawsPlanned\":24,\"exact\":{},\"exactObjects\":0,\"matrixWorld\":{\"mode\":\"visible\",\"visited\":38},\"path\":\"js\",\"projecting\":false,\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"reasonCode\":\"belowMeshFloor\",\"sourceRenderables\":24,\"timings\":{\"compileMs\":0,\"reconcileMs\":1.199999988079071,\"lastReconcileMs\":0.5,\"maxReconcileMs\":0.5},\"window\":1}",
+      "type": "info"
+    }
+  ],
+  "observedNetworkEntries": [],
+  "screenshot": "/tmp/pr493-sailing-camera-after/run1/threejs/pose.png"
+}

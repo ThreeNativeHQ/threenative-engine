@@ -1,0 +1,35 @@
+{
+  "name": "engine-parity-pose",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 960,
+    "height": 540
+  },
+  "warmupFrames": 30,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "pose",
+      "waitTicks": 300,
+      "screenshot": "pose",
+      "release": true
+    }
+  ],
+  "assert": {
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 960,
+          "height": 540,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

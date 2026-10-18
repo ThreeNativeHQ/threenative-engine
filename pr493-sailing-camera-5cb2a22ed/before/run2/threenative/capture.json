@@ -1,0 +1,156 @@
+{
+  "adapter": {
+    "architecture": "turing",
+    "vendor": "nvidia",
+    "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+    "limit.maxBindGroups": "4",
+    "limit.maxTextureDimension2D": "16384",
+    "limit.maxStorageBufferBindingSize": "2147483644"
+  },
+  "browserArgs": [
+    "--ozone-platform=x11",
+    "--enable-unsafe-webgpu",
+    "--disable-gpu-sandbox",
+    "--ignore-gpu-blocklist",
+    "--enable-features=Vulkan"
+  ],
+  "captureMethod": "page.screenshot",
+  "rendererKind": "webgpu",
+  "target": "web",
+  "viewport": {
+    "height": 540,
+    "width": 960
+  },
+  "softwareAdapter": null,
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true
+  },
+  "captureExclusions": [
+    {
+      "selector": ".tn-dev-scene-warning",
+      "reason": "Hide only the framework scene-shape diagnostic output; game HUD and rendered game pixels remain unchanged."
+    }
+  ],
+  "diagnosticPanel": null,
+  "diagnosticDisplayAfterExclusion": null,
+  "pose": {
+    "before": {
+      "mode": "fixed-step",
+      "tick": 60
+    },
+    "after": {
+      "mode": "fixed-step",
+      "tick": 360
+    },
+    "elapsedSeconds": 5,
+    "sceneElapsedSeconds": 6,
+    "waitTicks": 300
+  },
+  "visual": {
+    "darkPixelRatio": 0.15154128086419752,
+    "nonblankPixelRatio": 1
+  },
+  "publishedDiagnostics": [],
+  "observedErrorsAfterStartup": [],
+  "observedConsoleEntries": [
+    {
+      "source": "browser-console",
+      "text": "[vite] connecting...",
+      "type": "debug"
+    },
+    {
+      "source": "browser-console",
+      "text": "[vite] connected.",
+      "type": "debug"
+    },
+    {
+      "source": "browser-console",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"\",\"device\":\"\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_PHYSICS_INTERPOLATION:{\"enabled\":true,\"overrideSource\":\"default\",\"trackedObjects\":1}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"the host renderer declined this scene (belowMeshFloor)\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":0,\"materialCheckStaleFrames\":0,\"path\":\"host\"}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_FRAME_HITCH:{\"gapMs\":4616.6,\"uptimeMs\":6103.7,\"wallClock\":1792316553692}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_QUALITY_TIER high mobile=false software=false source=platform",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_RENDER_CHAIN:{\"applied\":{\"contributions\":[{\"graphOutputChanged\":true,\"name\":\"bloom\"},{\"graphOutputChanged\":true,\"name\":\"antialias\"}],\"dropped\":[],\"requested\":[\"bloom\",\"antialias\"],\"source\":\"pinned\",\"stages\":[\"bloom\",\"antialias\"],\"tier\":\"high\",\"velocity\":{\"provisioned\":false,\"required\":false,\"source\":null}},\"marker\":\"TN_RENDER_CHAIN\"}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_WORLD_ENVIRONMENT:{\"denoise\":false,\"exposure\":0.9,\"marker\":\"TN_WORLD_ENVIRONMENT\",\"screenSpaceAA\":\"smaa\",\"ssgiQuality\":\"medium\",\"stages\":[{\"applied\":false,\"name\":\"ambientOcclusion\",\"reason\":\"gtaoEnabled is false\"},{\"applied\":true,\"name\":\"antialias\"},{\"applied\":true,\"name\":\"bloom\"},{\"applied\":false,\"name\":\"godRays\",\"reason\":\"godraysEnabled is false\"},{\"applied\":false,\"name\":\"kuwahara\",\"reason\":\"kuwaharaEnabled is false\"},{\"applied\":false,\"name\":\"outline\",\"reason\":\"outlineEnabled is false\"},{\"applied\":false,\"name\":\"sharpen\",\"reason\":\"sharpenEnabled is false\"},{\"applied\":false,\"name\":\"ssgi\",\"reason\":\"ssgiEnabled is false\"},{\"applied\":false,\"name\":\"ssr\",\"reason\":\"ssrEnabled is false\"},{\"applied\":false,\"name\":\"vignette\",\"reason\":\"vignetteAmount is 0\"},{\"applied\":false,\"name\":\"watercolor\",\"reason\":\"watercolorEnabled is false\"}],\"tonemapMode\":\"aces\"}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_ENVIRONMENT_CONTRIBUTION:{\"status\":\"unknown\",\"meanRadiance\":null,\"meanRGB\":null,\"reason\":\"Environment source pixels are not CPU-readable; no radiance was inferred.\",\"scope\":\"scene environment source availability; not material-specific reflected contribution\",\"environmentState\":\"unknown\",\"ibl\":\"unknown\",\"analyticFill\":{\"requestedGain\":1,\"admitted\":false,\"effectiveGain\":0,\"color\":[0.13286832154414627,0.19806931954941637,0.3371636150376657],\"blackColorOverride\":false,\"reason\":\"not admitted by this qualification\"},\"rimGain\":0.12,\"fillGain\":1,\"darkThreshold\":0.001}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_TRANSITION_COMPUTE_WARMUP:{\"compiled\":43,\"abandoned\":0,\"unsupported\":false,\"timedOut\":false}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"the host renderer declined this scene (belowMeshFloor)\",\"sourceRenderables\":24,\"resultDrawCandidates\":24,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":0,\"materialCheckStaleFrames\":0,\"path\":\"host\"}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_STARTUP_WARMUP:{\"compiled\":0,\"pipelines\":24,\"candidates\":24,\"attempted\":0,\"observed\":{\"created\":0,\"failed\":0,\"pending\":0,\"uniquePrograms\":0,\"uniquePipelines\":0,\"status\":\"unavailable\"},\"slices\":1,\"elapsedMs\":10,\"unsupported\":false,\"abandoned\":1,\"timedOut\":false,\"computeCompiled\":43,\"computeAbandoned\":0,\"computeUnsupported\":false,\"computeTimedOut\":false,\"cache\":\"disabled\"}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_PHYSICS_INTERPOLATION:{\"enabled\":true,\"overrideSource\":\"default\",\"trackedObjects\":10}",
+      "type": "info"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_STARTUP_WARMUP_HELD:{\"compiled\":0,\"pipelines\":24,\"candidates\":24,\"attempted\":0,\"observed\":{\"created\":0,\"failed\":0,\"pending\":0,\"uniquePrograms\":0,\"uniquePipelines\":0,\"status\":\"unavailable\"},\"slices\":1,\"elapsedMs\":8,\"unsupported\":false,\"abandoned\":1,\"timedOut\":false,\"computeCompiled\":43,\"computeAbandoned\":0,\"computeUnsupported\":false,\"computeTimedOut\":false,\"cache\":\"disabled\"}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_ALPHA_ANTIALIASING:{\"applied\":false,\"marker\":\"TN_ALPHA_ANTIALIASING\",\"materials\":0,\"reason\":\"no cutout material has been drawn; nothing in this scene carves its silhouette with an alpha test\",\"sampleCount\":4}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_FRAME_BUDGET:{\"longTasks\":{\"available\":true,\"count\":6,\"longestMs\":4627,\"afterFirstFrameMs\":4627},\"fps\":20.46,\"frame\":{\"max\":297.5,\"mean\":12.59,\"p50\":2.3,\"p95\":39.2,\"p99\":297.5,\"samples\":46},\"frames\":46,\"simulatedSeconds\":6,\"hitches\":1,\"phases\":{\"hostGap\":{\"max\":4628.1,\"mean\":147.73,\"p50\":24.4,\"p95\":421.3,\"p99\":4628.1,\"samples\":45},\"overlay\":{\"max\":2.1,\"mean\":0.05,\"p50\":0,\"p95\":0,\"p99\":2.1,\"samples\":46},\"render\":{\"max\":295.1,\"mean\":8.97,\"p50\":2.1,\"p95\":5.5,\"p99\":295.1,\"samples\":46},\"residual\":{\"max\":0.9,\"mean\":0.15,\"p50\":0.1,\"p95\":0.4,\"p99\":0.9,\"samples\":46},\"ui\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":46},\"update\":{\"max\":415.9,\"mean\":12.2,\"p50\":0,\"p95\":0.2,\"p99\":415.9,\"samples\":47}},\"presented\":{\"max\":566.7,\"mean\":48.88,\"p50\":16.7,\"p95\":283.3,\"p99\":566.7,\"samples\":45},\"shares\":{\"hostGap\":3.022,\"overlay\":0.001,\"render\":0.184,\"residual\":0.003,\"ui\":0,\"update\":0.25},\"substeps\":{\"max\":300,\"mean\":7.66,\"p50\":0,\"p95\":0,\"p99\":300,\"samples\":47},\"passes\":{\"main\":{\"draws\":{\"max\":46,\"mean\":1.6,\"p50\":0,\"p95\":1,\"p99\":46,\"samples\":45},\"frames\":45,\"triangles\":{\"max\":72916,\"mean\":3240.2,\"p50\":0,\"p95\":1,\"p99\":72916,\"samples\":45}}},\"gpu\":{\"max\":1.77,\"mean\":0.65,\"p50\":0.63,\"p95\":1.77,\"p99\":1.77,\"samples\":15},\"gpuStale\":30,\"renderSkips\":19,\"gpuMs\":0.65,\"gpuFrames\":{\"first\":0,\"last\":42},\"gpuAgeFrames\":4,\"targetFps\":60,\"targetSource\":\"fallback\",\"surface\":{\"atFloor\":false,\"compiling\":true,\"drawingBufferHeight\":540,\"drawingBufferWidth\":960,\"resolutionSubrect\":false,\"resolutionScale\":1,\"sampleCount\":4,\"scaleSource\":\"auto\"},\"counters\":{\"simulationTick\":360},\"window\":1}",
+      "type": "log"
+    },
+    {
+      "source": "browser-console",
+      "text": "TN_PROJECTION:{\"drawsActual\":47,\"cull\":{\"enabled\":true,\"cameraResolved\":true,\"thresholdPixels\":0.5,\"considered\":24,\"culled\":0,\"exemptCameraAttached\":0,\"exemptMarked\":0,\"exemptShadowCasters\":3,\"exemptWithoutBounds\":0,\"exemptDynamicBounds\":0,\"exemptFrustumCulled\":5},\"drawsPlanned\":24,\"exact\":{},\"exactObjects\":0,\"matrixWorld\":{\"mode\":\"visible\",\"visited\":38},\"path\":\"host\",\"projecting\":false,\"reason\":\"the host renderer declined this scene (belowMeshFloor)\",\"reasonCode\":\"belowMeshFloor\",\"sourceRenderables\":24,\"timings\":{\"compileMs\":0,\"reconcileMs\":7.300000250339508,\"lastReconcileMs\":0.10000002384185791,\"maxReconcileMs\":2.399999976158142},\"window\":1}",
+      "type": "info"
+    }
+  ],
+  "observedNetworkEntries": [],
+  "screenshot": "/tmp/pr493-sailing-camera-before/run2/threenative/pose.png"
+}
