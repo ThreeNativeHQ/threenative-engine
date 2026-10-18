@@ -1,3 +1,4 @@
+import { PMREMNode } from "three/webgpu";
 import { describe, expect, test, vi } from "vitest";
 
 import { type IWarmUpProgress, warmUpComputeNodes, warmUpScene } from "../src/warmup.js";
@@ -55,6 +56,213 @@ const run = (renderer: any, scene: any, options: any = {}) =>
   warmUpScene(renderer, scene, {} as never, { granularity: "object", ...options });
 
 describe("scene warm-up", () => {
+  test("should prepare the scene PMREM on the raw renderer before the covered world pass", async () => {
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    const environment = { isTexture: true } as never;
+    const raw = { backend: { isWebGPUBackend: true } };
+    const events: string[] = [];
+    let releasePreparation: (() => void) | undefined;
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", {
+      configurable: true,
+      value: vi.fn((renderer: unknown, texture: unknown) => {
+        expect(renderer).toBe(raw);
+        expect(texture).toBe(environment);
+        events.push("prepare");
+        return new Promise<boolean>((resolve) => {
+          releasePreparation = () => resolve(true);
+        });
+      }),
+    });
+    try {
+      const scene = { children: [], environment } as never;
+      const camera = {} as never;
+      const promise = warmUpScene(
+        {
+          raw,
+          compileAsync: vi.fn(async () => {
+            events.push("compile");
+          }),
+          warmUpWorldPass: vi.fn(() => {
+            events.push("covered-render");
+          }),
+        },
+        scene,
+        camera,
+        { granularity: "scene", yieldFrame: () => Promise.resolve() },
+      );
+
+      expect(events).toEqual(["prepare"]);
+      releasePreparation?.();
+      const report = await promise;
+      expect(events).toEqual(["prepare", "covered-render"]);
+      expect(report.passes).toEqual(["main"]);
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+    }
+  });
+
+  test("should prepare the target scene environment used by object compilation", async () => {
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    const environment = { isTexture: true } as never;
+    const raw = { backend: { isWebGPUBackend: true } };
+    const targetScene = { children: [], environment } as never;
+    const scene = { ...sceneOf(1), environment: undefined } as never;
+    const prepare = vi.fn((renderer: unknown, texture: unknown) => {
+      expect(renderer).toBe(raw);
+      expect(texture).toBe(environment);
+      return Promise.resolve(true);
+    });
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", { configurable: true, value: prepare });
+    try {
+      const report = await warmUpScene(
+        { raw, compileAsync: vi.fn(async () => undefined) },
+        scene,
+        {} as never,
+        { granularity: "object", targetScene, yieldFrame: () => Promise.resolve() },
+      );
+      expect(report.compiled).toBe(1);
+      expect(prepare).toHaveBeenCalledOnce();
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+    }
+  });
+
+  test("should prepare the raw renderer environment even when the pipeline cache hits", async () => {
+    const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          values.set(key, value);
+        },
+        removeItem: (key: string) => {
+          values.delete(key);
+        },
+      },
+    });
+    const raw = { backend: { isWebGPUBackend: true } };
+    const environment = { isTexture: true } as never;
+    const scene = { ...sceneOf(1), environment } as never;
+    const prepare = vi.fn(async () => true);
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", { configurable: true, value: prepare });
+    try {
+      const firstRenderer = fakeRenderer();
+      const cache = { key: "warmup-with-pmrem" };
+      await warmUpScene(firstRenderer, sceneOf(1) as never, {} as never, {
+        granularity: "object",
+        cache,
+        yieldFrame: () => Promise.resolve(),
+      });
+      const secondRenderer = { raw, compileAsync: vi.fn(async () => undefined) };
+      const report = await warmUpScene(secondRenderer, scene, {} as never, {
+        cache,
+        yieldFrame: () => Promise.resolve(),
+      });
+      expect(report.cache).toBe("hit");
+      expect(report.compiled).toBe(0);
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(prepare).toHaveBeenCalledWith(raw, environment);
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+      if (previousStorage) Object.defineProperty(globalThis, "localStorage", previousStorage);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  });
+
+  test("should mark a timed-out cache-hit environment preparation incomplete", async () => {
+    const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          values.set(key, value);
+        },
+        removeItem: (key: string) => {
+          values.delete(key);
+        },
+      },
+    });
+    const census = {
+      complete: true,
+      unsupported: false,
+      counts: {
+        creations: 0,
+        failures: 0,
+        pending: 0,
+        uniquePrograms: 0,
+        uniquePipelines: 0,
+      },
+    } as never;
+    const cache = { key: "cache-hit-pmrem-timeout" };
+    const firstRenderer = { ...fakeRenderer(), pipelineCensus: () => census };
+    const environment = { isTexture: true } as never;
+    const raw = { backend: { isWebGPUBackend: true } };
+    const prepare = vi.fn(
+      () => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 20)),
+    );
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", { configurable: true, value: prepare });
+    try {
+      await warmUpScene(firstRenderer, sceneOf(1) as never, {} as never, {
+        cache,
+        yieldFrame: () => Promise.resolve(),
+      });
+      const report = await warmUpScene(
+        { ...fakeRenderer(), raw, pipelineCensus: () => census },
+        { ...sceneOf(1), environment } as never,
+        {} as never,
+        { cache, budgetMs: 5, yieldFrame: () => Promise.resolve() },
+      );
+
+      expect(report.cache).toBe("hit");
+      expect(report.abandoned).toBe(1);
+      expect(report.observed.status).toBe("incomplete");
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+      if (previousStorage) Object.defineProperty(globalThis, "localStorage", previousStorage);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  });
+
+  test("should not start compile after environment preparation exceeds its compile deadline", async () => {
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    const environment = { isTexture: true } as never;
+    const raw = { backend: { isWebGPUBackend: true } };
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", {
+      configurable: true,
+      value: () => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 20)),
+    });
+    const compileAsync = vi.fn(async () => undefined);
+    try {
+      const report = await warmUpScene(
+        { raw, compileAsync },
+        { ...sceneOf(1), environment } as never,
+        {} as never,
+        {
+          granularity: "object",
+          compileTimeoutMs: 5,
+          budgetMs: 100,
+          yieldFrame: () => Promise.resolve(),
+        },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(report.abandoned).toBe(1);
+      expect(compileAsync).not.toHaveBeenCalled();
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+    }
+  });
+
   test("should compile every renderable and yield a frame between slices", async () => {
     const renderer = fakeRenderer();
     const yields = vi.fn(() => Promise.resolve());

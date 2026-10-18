@@ -178,12 +178,35 @@ void traaValidation() {
         auto material = std::make_shared<Material>(MaterialType::Standard);
         Mesh sphere(makeSphereGeometry(), material); scene.add(sphere);
         RenderDatabase database;
-        database.render(renderer, scene, camera, {0, 0, 0, 0});
+        // Frame-pumped PMREM (PRD-573): the first render starts the full-quality bake and publishes
+        // nothing; the frame is skipped, so no draw reaches it and no partial target is exposed.
+        CHECK(database.render(renderer, scene, camera, {0, 0, 0, 0}) == 0);
+        CHECK(renderer.lastFrame().draws == 0);
+        // Without a poll/drain the previous submission's completion is not observed, so a second
+        // frame advances nothing either: the completion serial, not queue order, is the gate.
+        CHECK(database.render(renderer, scene, camera, {0, 0, 0, 0}) == 0);
+        CHECK(renderer.lastFrame().draws == 0);
+        // Drain completions and pump one packet per frame until the bake publishes.
+        const auto pumpUntilDrawn = [&]() {
+            for (int i = 0; i < 800; ++i) {
+                renderer.poll();
+                events.drain();
+                if (database.render(renderer, scene, camera, {0, 0, 0, 0}) != 0) return true;
+            }
+            return false;
+        };
+        CHECK(pumpUntilDrawn());
         CHECK(database.diagnostics().empty());
         CHECK(renderer.lastFrame().draws == 3 && renderer.lastFrame().triangles > 0); // sky, sphere, output
+        // A source version change invalidates the published cache: the stale target is withheld and
+        // the scene draws again only after a fresh full-quality bake completes.
+        sky->needsUpdate();
+        CHECK(database.render(renderer, scene, camera, {0, 0, 0, 0}) == 0);
+        CHECK(pumpUntilDrawn());
+        CHECK(renderer.lastFrame().draws == 3);
         // Removing only the background must remove the sky draw even with environment retained.
         scene.backgroundTexture.reset();
-        database.render(renderer, scene, camera, {0, 0, 0, 0});
+        CHECK(database.render(renderer, scene, camera, {0, 0, 0, 0}) != 0);
         CHECK(renderer.lastFrame().draws == 2); // sphere and output
         // A post graph's fullscreen effect passes are draws too: three's Info counts each as one draw of
         // one triangle, so a bloom chain is not invisible to the draw and triangle counters.

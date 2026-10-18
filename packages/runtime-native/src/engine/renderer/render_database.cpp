@@ -1584,6 +1584,13 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     try { prepare(scene, camera, lights_, nullptr, renderer.hasVirtualShadows()); } catch (...) { gpuPreparing_ = false; throw; }
     gpuPreparing_ = false;
     const auto preparedScene = profiling ? Clock::now() : Clock::time_point{};
+    // Frame-pumped PMREM (PRD-573): until every environment this frame samples is fully baked,
+    // advance one retained packet and skip the frame. No partial target is published and the covered
+    // scene is not drawn. The native player and the WASM host both reach this through render().
+    if (!renderer.prepareEnvironments(items_)) {
+        if (!reflecting_ && Object3D::poseObservationReport) Object3D::poseObservationReport();
+        return 0;
+    }
     if (!reflecting_) renderReflections(renderer, scene, camera, items_, clear);
     if (profiling) renderPhaseMs_ = {std::chrono::duration<double, std::milli>(jointsDone - start).count(),
                                     std::chrono::duration<double, std::milli>(preparedScene - jointsDone).count(),

@@ -412,6 +412,14 @@ public:
     std::vector<std::shared_ptr<PipelineCompilation>> compileAsync(std::span<const DrawItem> items,
         const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat = WGPUTextureFormat_RGBA8Unorm);
     /**
+     * Frame-pumped PMREM (PRD-573): submits at most one retained full-quality packet of the single
+     * in-flight environment preparation and reports whether every environment the frame samples is
+     * fully baked. False means the render entry must skip this frame: no partial target is published
+     * and the covered scene is not drawn. Both the native player and the WASM host call this through
+     * RenderDatabase::render, so one mechanism serves both.
+     */
+    bool prepareEnvironments(std::span<const DrawItem> items);
+    /**
      * Draws the last render() output into `target` and submits it, so a windowed player puts the
      * very same frame on the screen the render database just built. `format` is the target view's
      * format. Returns false when the program for it is refused; the frame stays readable either way.
@@ -623,7 +631,7 @@ private:
     /** Submits the mip passes of every texture uploaded since the last submit, as one command buffer. */
     void flushMipmaps();
     /** Every frame, readback and pass submit goes through here so a sampled texture's mips exist first. */
-    void submit(WGPUCommandBuffer commands);
+    uint64_t submit(WGPUCommandBuffer commands);
     WGPUBindGroup bindGroup(WGPUBindGroupLayout layout, const shader::StageModule& stage, Handle uniforms,
                             WGPUTextureView view, WGPUSampler sampler,
                             WGPUTextureView mapView = nullptr, WGPUSampler mapSampler = nullptr,
@@ -659,10 +667,13 @@ private:
     /**
      * The PMREM cubeUV form of an equirectangular (or PMREM) environment, built on first use and
      * rebuilt when the source texture's version moves (three's PMREMGenerator.fromEquirectangular).
+     * The full-quality bake is frame-pumped: `ready` turns on only after every retained packet has
+     * been submitted and its completion observed, so no caller can read a partial target.
      */
     struct EnvironmentGpu {
         const Texture* source = nullptr;
         uint32_t version = 0;
+        bool ready = false;              // all packets submitted and the last completion observed
         WGPUTexture texture = nullptr;   // the cubeUV render target, sampled by the material
         WGPUTextureView view = nullptr;
         WGPUTexture pingpong = nullptr;
@@ -672,6 +683,33 @@ private:
         uint32_t lodMax = 0, lods = 0;
         float texelWidth = 0, texelHeight = 0, maxMip = 0;
     };
+    /** One retained PMREM packet: one full-quality pass drawn for one cube face. */
+    struct PmremPacket {
+        WGPUTextureView target = nullptr;
+        WGPUTextureView source = nullptr;
+        WGPUSampler sampler = nullptr;
+        WGPURenderPipeline pipeline = nullptr;
+        float x = 0, y = 0, w = 0, h = 0, roughness = 0, mipInt = 0;
+        uint64_t vertexOffset = 0;
+        uint32_t pass = 0, face = 0;     // the pass's uniform slice and the vertex's face span
+        bool clear = false;
+    };
+    // The single in-flight preparation: envUniforms_ is one shared buffer, so only one bakes at a time.
+    struct EnvironmentPreparation {
+        uint64_t ident = 0;
+        uint32_t version = 0;
+        const Texture* source = nullptr;
+        std::vector<PmremPacket> packets;
+        std::size_t next = 0;
+        uint64_t awaitSerial = 0;        // the last submitted packet's serial, awaited before the next
+        WGPUBindGroup group = nullptr;   // the current pass's bind group, rebuilt per pass
+        std::size_t groupPass = SIZE_MAX;
+        uint64_t stride = 0;
+    };
+    std::optional<EnvironmentPreparation> envPrep_;
+    void beginEnvironment(const Texture& equirect);
+    bool pumpEnvironment();
+    void abandonEnvironment();
     EnvironmentGpu& environment(const Texture& equirect);
     void buildEnvironmentPipelines();
     void releaseEnvironments();

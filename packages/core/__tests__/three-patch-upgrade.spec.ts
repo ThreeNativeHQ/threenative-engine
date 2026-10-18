@@ -3,13 +3,41 @@ import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { Texture } from "three";
+import { vec3 } from "three/tsl";
+import { PMREMGenerator, PMREMNode } from "three/webgpu";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 // @ts-expect-error -- the postinstall helper is plain ESM with no type declarations.
 import { applyThreePatch } from "../scripts/apply-three-patch.mjs";
 
 const roots: string[] = [];
+
+it("preserves the async PMREM API's synchronous fallback on non-WebGPU backends", async () => {
+  const syncTarget = {};
+  const generator = Object.create(PMREMGenerator.prototype) as {
+    _renderer: { backend: { isWebGPUBackend?: boolean }; init: () => Promise<void> };
+    _fromTexture: (...args: unknown[]) => unknown;
+    _fromTextureAsync: (...args: unknown[]) => Promise<unknown>;
+    fromEquirectangularAsync: (...args: unknown[]) => Promise<unknown>;
+    fromCubemapAsync: (...args: unknown[]) => Promise<unknown>;
+  };
+  generator._renderer = {
+    backend: { isWebGLBackend: true } as never,
+    init: vi.fn(async () => undefined),
+  };
+  generator._fromTexture = vi.fn(() => syncTarget);
+  generator._fromTextureAsync = vi.fn(async () => {
+    throw new Error("WebGPU-only async path must not run on WebGL");
+  });
+
+  await expect(generator.fromEquirectangularAsync({} as never)).resolves.toBe(syncTarget);
+  await expect(generator.fromCubemapAsync({} as never)).resolves.toBe(syncTarget);
+  expect(generator._renderer.init).toHaveBeenCalledTimes(2);
+  expect(generator._fromTexture).toHaveBeenCalledTimes(2);
+  expect(generator._fromTextureAsync).not.toHaveBeenCalled();
+});
 
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { force: true, recursive: true });
@@ -49,6 +77,268 @@ const FULLY_PATCHED = [
   "const epsilon = 5;",
   "",
 ];
+
+it("fences each PMREM cube face and restores renderer MRT and draw state before awaiting", async () => {
+  const events: string[] = [];
+  const originalTarget = {};
+  const originalMRT = {};
+  const interveningTarget = {};
+  const interveningMRT = {};
+  const pmremTarget = {};
+  let currentTarget = originalTarget;
+  let currentMRT: unknown = originalMRT;
+  let draws = 0;
+  const renderer = {
+    autoClear: true,
+    backend: {
+      device: {
+        queue: {
+          onSubmittedWorkDone: vi.fn(async () => {
+            events.push("fence");
+            if (draws === 1) {
+              currentTarget = interveningTarget;
+              currentMRT = interveningMRT;
+              renderer.autoClear = false;
+            }
+          }),
+        },
+      },
+    },
+    getRenderTarget: () => currentTarget,
+    getActiveCubeFace: () => 2,
+    getActiveMipmapLevel: () => 3,
+    getMRT: () => currentMRT,
+    setMRT: (value: unknown) => {
+      currentMRT = value;
+    },
+    setRenderTarget: (value: unknown) => {
+      currentTarget = value;
+    },
+    render: (mesh: { geometry: { drawRange: { start: number; count: number } } }) => {
+      events.push(
+        `draw:${mesh.geometry.drawRange.start}:${mesh.geometry.drawRange.count}:${renderer.autoClear}:${currentMRT === null}:${currentTarget === pmremTarget}`,
+      );
+      draws += 1;
+    },
+  };
+  const geometry = {
+    drawRange: { start: 0, count: 36 },
+    setDrawRange(start: number, count: number) {
+      this.drawRange = { start, count };
+    },
+  };
+  const generator = Object.create(PMREMGenerator.prototype) as {
+    _renderer: typeof renderer;
+    _setViewport: () => void;
+    _renderFacesAsync: (...args: unknown[]) => Promise<void>;
+  };
+  generator._renderer = renderer;
+  generator._setViewport = () => undefined;
+
+  await generator._renderFacesAsync({ geometry }, pmremTarget, 0, 0, 32, 32);
+
+  expect(events).toEqual(
+    Array.from({ length: 6 }, (_unused, face) => [
+      `draw:${face * 6}:6:${face === 0}:true:true`,
+      "fence",
+    ]).flat(),
+  );
+  expect(geometry.drawRange).toEqual({ start: 0, count: 36 });
+  expect(renderer.autoClear).toBe(false);
+  expect(currentMRT).toBe(interveningMRT);
+  expect(currentTarget).toBe(interveningTarget);
+});
+
+it("restores renderer state when a PMREM face fence rejects", async () => {
+  const originalTarget = {};
+  const originalMRT = {};
+  let currentTarget = originalTarget;
+  let currentMRT: unknown = originalMRT;
+  const renderer = {
+    autoClear: true,
+    backend: {
+      device: {
+        queue: { onSubmittedWorkDone: vi.fn().mockRejectedValue(new Error("fence failed")) },
+      },
+    },
+    getRenderTarget: () => currentTarget,
+    getActiveCubeFace: () => 2,
+    getActiveMipmapLevel: () => 3,
+    getMRT: () => currentMRT,
+    setMRT: (value: unknown) => {
+      currentMRT = value;
+    },
+    setRenderTarget: (value: unknown) => {
+      currentTarget = value;
+    },
+    render: vi.fn(),
+  };
+  const geometry = {
+    drawRange: { start: 4, count: 12 },
+    setDrawRange(start: number, count: number) {
+      this.drawRange = { start, count };
+    },
+  };
+  const generator = Object.create(PMREMGenerator.prototype) as {
+    _renderer: typeof renderer;
+    _setViewport: () => void;
+    _renderFacesAsync: (...args: unknown[]) => Promise<void>;
+  };
+  generator._renderer = renderer;
+  generator._setViewport = () => undefined;
+
+  await expect(generator._renderFacesAsync({ geometry }, {}, 0, 0, 16, 16)).rejects.toThrow(
+    "fence failed",
+  );
+  expect(renderer.render).toHaveBeenCalledOnce();
+  expect(renderer.autoClear).toBe(true);
+  expect(currentMRT).toBe(originalMRT);
+  expect(currentTarget).toBe(originalTarget);
+  expect(geometry.drawRange).toEqual({ start: 4, count: 12 });
+});
+
+it("reuses an asynchronously prepared PMREM from the same renderer cache", async () => {
+  const renderer = {};
+  const source = new Texture({ height: 8 } as never);
+  const generatedTexture = new Texture({ height: 16 } as never);
+  const target = { texture: generatedTexture, dispose: vi.fn() };
+  let releasePreparation: ((target: never) => void) | undefined;
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releasePreparation = resolve;
+        }),
+    );
+  const generateSync = vi.spyOn(PMREMGenerator.prototype, "fromEquirectangular");
+  const node = new PMREMNode(source);
+  const update = vi.spyOn(node, "updateFromTexture");
+
+  try {
+    const preparation = PMREMNode.prepareTextureAsync(renderer, source);
+    await vi.waitFor(() => expect(generateAsync).toHaveBeenCalledOnce());
+    expect(() =>
+      node.setup({ renderer, context: { getUV: () => vec3(0, 1, 0) } } as never),
+    ).not.toThrow();
+    releasePreparation?.(target as never);
+    await expect(preparation).resolves.toBe(true);
+    node.updateBefore({ renderer } as never);
+
+    expect(generateAsync).toHaveBeenCalledOnce();
+    expect(generateSync).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(generatedTexture);
+    source.dispose();
+    expect(target.dispose).toHaveBeenCalledOnce();
+  } finally {
+    generateAsync.mockRestore();
+    generateSync.mockRestore();
+  }
+});
+
+it("restarts an in-flight PMREM preparation when its source version changes", async () => {
+  const renderer = {};
+  const source = new Texture({ height: 8 } as never);
+  const staleTarget = { texture: new Texture({ height: 16 } as never), dispose: vi.fn() };
+  const currentTarget = { texture: new Texture({ height: 16 } as never), dispose: vi.fn() };
+  let releaseStale: ((target: never) => void) | undefined;
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseStale = resolve;
+        }),
+    )
+    .mockResolvedValueOnce(currentTarget as never);
+
+  try {
+    const stale = PMREMNode.prepareTextureAsync(renderer, source);
+    await vi.waitFor(() => expect(generateAsync).toHaveBeenCalledOnce());
+    source.pmremVersion += 1;
+    const current = PMREMNode.prepareTextureAsync(renderer, source);
+    releaseStale?.(staleTarget as never);
+
+    await expect(stale).resolves.toBe(false);
+    await expect(current).resolves.toBe(true);
+    expect(generateAsync).toHaveBeenCalledTimes(2);
+    expect(staleTarget.dispose).toHaveBeenCalledOnce();
+
+    const node = new PMREMNode(source);
+    const update = vi.spyOn(node, "updateFromTexture");
+    node.updateBefore({ renderer } as never);
+    expect(update).toHaveBeenCalledWith(currentTarget.texture);
+  } finally {
+    generateAsync.mockRestore();
+  }
+});
+
+it("does not cache a PMREM when its queue-fenced preparation fails", async () => {
+  const renderer = {};
+  const source = new Texture({ height: 8 } as never);
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockRejectedValue(new Error("queue fence failed"));
+  const generatedTexture = new Texture({ height: 16 } as never);
+  const syncTarget = { texture: generatedTexture, dispose: vi.fn() };
+  const generateSync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangular")
+    .mockReturnValue(syncTarget as never);
+
+  try {
+    await expect(PMREMNode.prepareTextureAsync(renderer, source)).rejects.toThrow(
+      "queue fence failed",
+    );
+
+    const node = new PMREMNode(source);
+    node.setup({ renderer, context: { getUV: () => vec3(0, 1, 0) } } as never);
+    node.updateBefore({ renderer } as never);
+
+    expect(generateSync).toHaveBeenCalledOnce();
+    expect(generateAsync).toHaveBeenCalledOnce();
+  } finally {
+    generateAsync.mockRestore();
+    generateSync.mockRestore();
+  }
+});
+
+it("disposes a PMREM generated after its source is disposed and does not cache it", async () => {
+  const renderer = {};
+  const source = new Texture({ height: 8 } as never);
+  const generatedTexture = new Texture({ height: 16 } as never);
+  const pendingTarget = { texture: generatedTexture, dispose: vi.fn() };
+  let releasePreparation: ((target: never) => void) | undefined;
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releasePreparation = resolve;
+        }),
+    );
+  const syncTarget = { texture: new Texture({ height: 16 } as never), dispose: vi.fn() };
+  const generateSync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangular")
+    .mockReturnValue(syncTarget as never);
+
+  try {
+    const preparation = PMREMNode.prepareTextureAsync(renderer, source);
+    await vi.waitFor(() => expect(generateAsync).toHaveBeenCalledOnce());
+    source.dispose();
+    releasePreparation?.(pendingTarget as never);
+
+    await expect(preparation).resolves.toBe(false);
+    expect(pendingTarget.dispose).toHaveBeenCalledOnce();
+
+    const node = new PMREMNode(source);
+    node.setup({ renderer, context: { getUV: () => vec3(0, 1, 0) } } as never);
+    node.updateBefore({ renderer } as never);
+    expect(generateSync).toHaveBeenCalledOnce();
+  } finally {
+    generateAsync.mockRestore();
+    generateSync.mockRestore();
+  }
+});
 
 /** The candidate release's patch: the previous hunk plus one this release adds. */
 const CANDIDATE_PATCH = `diff --git a/src/thing.js b/src/thing.js

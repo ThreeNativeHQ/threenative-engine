@@ -1521,6 +1521,7 @@ void Renderer::sweepTextures() {
             backgroundCubes_.erase(cube);
         }
         if (const auto env = environments_.find(id); env != environments_.end()) {
+            if (envPrep_ && envPrep_->ident == id) abandonEnvironment();  // a disposed source never publishes
             EnvironmentGpu& e = env->second;
             if (e.view) wgpuTextureViewRelease(e.view);
             if (e.pingView) wgpuTextureViewRelease(e.pingView);
@@ -1538,6 +1539,7 @@ void Renderer::sweepTextures() {
 }
 
 void Renderer::releaseEnvironments() {
+    abandonEnvironment();  // release the in-flight packet's bind group before the shared buffers go
     for (auto& [texture, env] : environments_) {
         if (env.view) wgpuTextureViewRelease(env.view);
         if (env.pingView) wgpuTextureViewRelease(env.pingView);
@@ -1629,15 +1631,15 @@ void Renderer::buildEnvironmentPipelines() {
     envGgxPipeline_ = pipeline(kPmremGgx);
 }
 
-Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
+void Renderer::beginEnvironment(const Texture& equirect) {
     if (equirect.mapping != 303)
         throw std::runtime_error("TN_NATIVE_ENVIRONMENT_UNSUPPORTED: requires EquirectangularReflectionMapping");
     if (equirect.width < 64 || !equirect.hasImage() || equirect.format != kTextureRGBAFormat ||
         (equirect.type != kTextureFloatType && equirect.type != kTextureHalfFloatType && equirect.type != kTextureUnsignedByteType) ||
         uint64_t(equirect.width) * equirect.height * equirect.bytesPerTexel() != equirect.data.size())
         throw std::runtime_error("TN_NATIVE_ENVIRONMENT_INVALID: requires decoded RGBA equirectangular pixels, width >= 64");
+    abandonEnvironment();  // one active preparation globally: envUniforms_ is shared
     EnvironmentGpu& env = environments_[equirect.ident.value()];
-    if (env.view != nullptr && env.version == equirect.version()) return env;
     if (env.view) wgpuTextureViewRelease(env.view);
     if (env.pingView) wgpuTextureViewRelease(env.pingView);
     if (env.texture) wgpuTextureRelease(env.texture);
@@ -1763,50 +1765,135 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
     }
     gpu_.writeBuffer(envUniforms_, 0, uniforms.data(), uniforms.size() * 4);
 
-    WGPUCommandEncoderDescriptor encoderDesc = {};
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
-    for (std::size_t p = 0; p < passes.size(); ++p) {
+    // Retain every full-quality pass/face packet; pumpEnvironment submits them one at a time, each
+    // only after the previous submission's completion serial is observed. Never enqueue them all.
+    EnvironmentPreparation prep;
+    prep.ident = equirect.ident.value();
+    prep.version = env.version;
+    prep.source = &equirect;
+    prep.stride = stride;
+    prep.packets.reserve(passes.size() * 6);
+    for (std::size_t p = 0; p < passes.size(); ++p)
+        for (uint32_t face = 0; face < 6; ++face)
+            prep.packets.push_back({passes[p].target, passes[p].source, passes[p].sampler, passes[p].pipeline,
+                                    passes[p].x, passes[p].y, passes[p].w, passes[p].h, passes[p].roughness,
+                                    passes[p].mipInt, passes[p].vertexOffset, uint32_t(p), face, p == 0 && face == 0});
+    envPrep_ = std::move(prep);
+}
+
+void Renderer::abandonEnvironment() {
+    if (!envPrep_) return;
+    if (envPrep_->group) wgpuBindGroupRelease(envPrep_->group);
+    envPrep_.reset();
+}
+
+bool Renderer::pumpEnvironment() {
+    if (!envPrep_) return true;
+    EnvironmentPreparation& prep = *envPrep_;
+    const Texture* source = prep.source;
+    // A version change or a disposal must never publish a stale or partial target: abandon and let
+    // the next frame re-prepare from the live source.
+    if (source == nullptr || source->version() != prep.version) {
+        abandonEnvironment();
+        return false;
+    }
+    // Advance one packet only once the previous submission's completion is observed.
+    if (prep.next > 0 && gpu_.completedSerial() < prep.awaitSerial) return false;
+    if (prep.next >= prep.packets.size()) {
+        if (const auto found = environments_.find(prep.ident);
+            found != environments_.end() && found->second.version == prep.version)
+            found->second.ready = true;
+        abandonEnvironment();
+        return true;
+    }
+    const PmremPacket& packet = prep.packets[prep.next];
+    if (prep.groupPass != packet.pass) {
+        if (prep.group) wgpuBindGroupRelease(prep.group);
         WGPUBindGroupEntry entries[3] = {};
         entries[0].binding = 0;
         entries[0].buffer = gpu_.buffer(envUniforms_);
-        entries[0].offset = p * stride;
+        entries[0].offset = packet.pass * prep.stride;
         entries[0].size = 32;
         entries[1].binding = 1;
-        entries[1].textureView = passes[p].source;
+        entries[1].textureView = packet.source;
         entries[2].binding = 2;
-        entries[2].sampler = passes[p].sampler;
+        entries[2].sampler = packet.sampler;
         WGPUBindGroupDescriptor groupDesc = {};
         groupDesc.layout = envLayout_;
         groupDesc.entryCount = 3;
         groupDesc.entries = entries;
-        WGPUBindGroup group = createBindGroup(device_, &groupDesc);
-        WGPURenderPassColorAttachment color = {};
-        color.view = passes[p].target;
-        color.loadOp = p == 0 ? WGPULoadOp_Clear : WGPULoadOp_Load;
-        color.storeOp = WGPUStoreOp_Store;
-        color.clearValue = {0, 0, 0, 1};
-#if defined(MYSTRAL_WEBGPU_DAWN)
-        color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-#endif
-        WGPURenderPassDescriptor passDesc = {};
-        passDesc.colorAttachmentCount = 1;
-        passDesc.colorAttachments = &color;
-        WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc);
-        wgpuRenderPassEncoderSetViewport(pass, passes[p].x, passes[p].y, passes[p].w, passes[p].h, 0.0f, 1.0f);
-        wgpuRenderPassEncoderSetScissorRect(pass, uint32_t(passes[p].x), uint32_t(passes[p].y), uint32_t(passes[p].w),
-                                            uint32_t(passes[p].h));
-        wgpuRenderPassEncoderSetPipeline(pass, passes[p].pipeline);
-        wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
-        wgpuRenderPassEncoderSetVertexBuffer(pass, 0, gpu_.buffer(envVertex_), passes[p].vertexOffset, 36 * 24);
-        wgpuRenderPassEncoderDraw(pass, 36, 1, 0, 0);
-        wgpuRenderPassEncoderEnd(pass);
-        wgpuRenderPassEncoderRelease(pass);
-        wgpuBindGroupRelease(group);
+        prep.group = createBindGroup(device_, &groupDesc);
+        prep.groupPass = packet.pass;
     }
+    WGPUCommandEncoderDescriptor encoderDesc = {};
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
+    WGPURenderPassColorAttachment color = {};
+    color.view = packet.target;
+    color.loadOp = packet.clear ? WGPULoadOp_Clear : WGPULoadOp_Load;
+    color.storeOp = WGPUStoreOp_Store;
+    color.clearValue = {0, 0, 0, 1};
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+    WGPURenderPassDescriptor passDesc = {};
+    passDesc.colorAttachmentCount = 1;
+    passDesc.colorAttachments = &color;
+    WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc);
+    wgpuRenderPassEncoderSetViewport(pass, packet.x, packet.y, packet.w, packet.h, 0.0f, 1.0f);
+    wgpuRenderPassEncoderSetScissorRect(pass, uint32_t(packet.x), uint32_t(packet.y), uint32_t(packet.w), uint32_t(packet.h));
+    wgpuRenderPassEncoderSetPipeline(pass, packet.pipeline);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, prep.group, 0, nullptr);
+    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, gpu_.buffer(envVertex_), packet.vertexOffset, 36 * 24);
+    wgpuRenderPassEncoderDraw(pass, 6, 1, packet.face * 6, 0);
+    wgpuRenderPassEncoderEnd(pass);
+    wgpuRenderPassEncoderRelease(pass);
     WGPUCommandBufferDescriptor commandDesc = {};
-    submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+    prep.awaitSerial = submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
-    return env;
+    ++prep.next;
+    if (prep.next >= prep.packets.size() && gpu_.completedSerial() >= prep.awaitSerial) {
+        if (const auto found = environments_.find(prep.ident);
+            found != environments_.end() && found->second.version == prep.version)
+            found->second.ready = true;
+        abandonEnvironment();
+        return true;
+    }
+    return false;
+}
+
+bool Renderer::prepareEnvironments(std::span<const DrawItem> items) {
+    sweepTextures();  // a retired source must not keep a preparation reading a dead view
+    if (envPrep_) {
+        // An environment the frame no longer samples must not stall it: abandon and re-scan.
+        const uint64_t active = envPrep_->ident;
+        const bool sampled = std::any_of(items.begin(), items.end(), [active](const DrawItem& item) {
+            return (item.envMap && item.envMap->ident.value() == active) ||
+                   (item.pmremMap && item.pmremMap->ident.value() == active);
+        });
+        if (sampled) {
+            if (!pumpEnvironment()) return false;  // still pending, or this frame's one packet went out
+        } else {
+            abandonEnvironment();
+        }
+    }
+    for (const DrawItem& item : items) {
+        for (const Texture* texture : {item.envMap, item.pmremMap}) {
+            if (texture == nullptr) continue;
+            EnvironmentGpu& env = environments_[texture->ident.value()];
+            if (env.ready && env.version == texture->version()) continue;
+            beginEnvironment(*texture);
+            return pumpEnvironment();
+        }
+    }
+    return true;
+}
+
+Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
+    // Ready-only accessor: prepareEnvironments must have baked and published this environment.
+    if (const auto found = environments_.find(equirect.ident.value());
+        found != environments_.end() && found->second.ready && found->second.version == equirect.version())
+        return found->second;
+    throw std::runtime_error("TN_NATIVE_ENVIRONMENT_NOT_READY");
 }
 
 // Each stage's layout from the bindings its package declares, the uniform block with a dynamic
@@ -3673,9 +3760,9 @@ GpuStatus Renderer::readStorage(const BufferAttribute& attribute, ReadbackCallba
 
 void Renderer::releaseStorage(const BufferAttribute& attribute) { geometry_->cache.forget(*attribute.store); }
 
-void Renderer::submit(WGPUCommandBuffer commands) {
+uint64_t Renderer::submit(WGPUCommandBuffer commands) {
     flushMipmaps();
-    gpu_.submit(commands);
+    return gpu_.submit(commands);
 }
 
 bool Renderer::blitTo(WGPUQueue, WGPUTextureView target, WGPUTextureFormat format) {
