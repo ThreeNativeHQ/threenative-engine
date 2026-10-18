@@ -390,7 +390,7 @@ describe("loadTerrainSplat", () => {
       vi.fn(async (url: string) => {
         const body = responses[url];
         if (body === undefined) return new Response(null, { status: 404 });
-        return new Response(body instanceof Uint8Array ? new Blob([body]) : body);
+        return new Response(body instanceof Uint8Array ? new Blob([new Uint8Array(body)]) : body);
       }),
     );
     const requested: string[] = [];
@@ -433,7 +433,7 @@ describe("loadTerrainSplat", () => {
       vi.fn(async (path: string) => {
         const body = responses[path];
         if (body === undefined) return new Response(null, { status: 404 });
-        return new Response(body instanceof Uint8Array ? new Blob([body]) : body);
+        return new Response(body instanceof Uint8Array ? new Blob([new Uint8Array(body)]) : body);
       }),
     );
     const requested: string[] = [];

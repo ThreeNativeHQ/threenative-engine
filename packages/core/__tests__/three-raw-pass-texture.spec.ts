@@ -1,5 +1,4 @@
 import { FloatType, Mesh, PerspectiveCamera, Scene, type Texture } from "three";
-// @ts-expect-error Three does not declare its internal binding manager.
 import Bindings from "three/src/renderers/common/Bindings.js";
 // @ts-expect-error Three does not declare its internal texture manager.
 import Textures from "three/src/renderers/common/Textures.js";
@@ -344,8 +343,9 @@ describe("stored raw pass attachments", () => {
     bindings.updateForRender({ getBindings: () => [group] });
     expect(textureData.bindGroups.has(group)).toBe(true);
     expect(alternateTextureData.bindGroups.has(group)).toBe(true);
-    expect(backendData(group).trackedTextures.has(textureData)).toBe(true);
-    expect(backendData(group).trackedTextures.has(alternateTextureData)).toBe(true);
+    expect(backendData(group).trackedTextures).toEqual(
+      new Set([textureData, alternateTextureData]),
+    );
 
     // Two render objects acquired this group through updateForRender. Releasing one keeps both
     // historical texture registrations until the final owner releases the group.

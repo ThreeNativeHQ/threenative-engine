@@ -17,6 +17,7 @@ function host(built: (key: string) => boolean): ICellPrewarmHost {
   const parent = new Object3D();
   return {
     released: () => false,
+    preserveAuthoredParts: () => false,
     parent: () => parent,
     invalidateShadows: () => undefined,
     backlog: () => 0,

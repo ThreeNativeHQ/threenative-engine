@@ -1,7 +1,7 @@
 import { DepthTexture, RenderTarget, Texture, Vector2 } from "three";
 import { PerspectiveCamera, Scene } from "three";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
-import { float, pass } from "three/tsl";
+import { pass, vec4 } from "three/tsl";
 import { describe, expect, it, vi } from "vitest";
 import { readRenderChainObservation } from "../src/render/chain.js";
 import { ResolutionSubrect } from "../src/render/resolution-subrect.js";
@@ -392,7 +392,7 @@ it("sizes targets registered after lazy shader setup at the current scale", () =
 });
 
 it("reserves rounded BloomNode mip sizes before flooring each level", () => {
-  const retained = bloom(float(1)) as unknown as {
+  const retained = bloom(vec4(1)) as unknown as {
     setSize(width: number, height: number): void;
     _renderTargetBright: RenderTarget;
     _renderTargetsHorizontal: RenderTarget[];
@@ -412,8 +412,8 @@ it("reserves rounded BloomNode mip sizes before flooring each level", () => {
   controller.activate(0.993);
 
   expect(() => controller.setSize(1024, 653)).not.toThrow();
-  expect(targets[4].viewport.toArray()).toEqual([0, 0, 64, 41]);
-  expect(targets[4].height).toBe(48);
+  expect(targets[4]?.viewport.toArray()).toEqual([0, 0, 64, 41]);
+  expect(targets[4]?.height).toBe(48);
 
   controller.dispose();
   for (const target of targets) target.dispose();
