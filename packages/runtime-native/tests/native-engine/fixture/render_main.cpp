@@ -19,6 +19,7 @@
 #include <iostream>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 
 #include <unistd.h>
@@ -74,6 +75,18 @@ void countVisible(const Object3D& object, Census& census) {
     for (const Object3D* child : object.children) countVisible(*child, census);
 }
 
+// Frame-pumped PMREM skips frames (render returns 0) until the environment is fully baked; a
+// single-shot capture keeps pumping completions until the frame is actually drawn.
+uint64_t renderDrawn(Gpu& gpu, Renderer& renderer, Object3D& scene, Camera& camera, const std::array<double, 4>& clear) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (const uint64_t frame = gpu.database.render(renderer, scene, camera, clear)) return frame;
+        renderer.poll();
+        gpu.events.drain();
+    }
+    throw std::runtime_error("TN_FIXTURE_ENVIRONMENT_NOT_READY: the frame never drew");
+}
+
 std::string meterFrames(Gpu& gpu, Renderer& renderer, Scene& scene, Camera& camera, const std::array<double, 4>& clear,
                         unsigned long count, uint32_t width, uint32_t height, const char* reportFile) {
     using Clock = std::chrono::steady_clock;
@@ -81,6 +94,7 @@ std::string meterFrames(Gpu& gpu, Renderer& renderer, Scene& scene, Camera& came
     std::vector<double> submit, frame, gpuMs;
     renderer.setGpuTimer(true);
     const unsigned long warmup = std::min<unsigned long>(count / 4, 30);
+    renderDrawn(gpu, renderer, scene, camera, clear);
     for (unsigned long i = 0; i < count + warmup; ++i) {
         const uint64_t seen = renderer.gpuSamples();
         const auto t0 = Clock::now();
@@ -154,7 +168,7 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
     };
     const auto renderAt = [&](uint32_t width, uint32_t height) -> std::string {
         renderer.setSize(width, height);
-        gpu.database.render(renderer, scene, *camera, clear);
+        renderDrawn(gpu, renderer, scene, *camera, clear);
         renderer.setSize(r.width, r.height);
         if (const auto error = finishDump(false); !error.empty()) return error;
         return gpu.database.diagnostics().empty() ? "" : gpu.database.diagnostics().front();
@@ -164,7 +178,7 @@ std::string draw(Gpu& gpu, tn::binding::Object& sceneObject, tn::binding::Object
                 tn::fixture::applyTslProgram(program, object, renderer, gpu.context.getDevice(), renderAt, gpu.fixtureResources, camera);
             !failed.empty())
             return failed;
-    gpu.database.render(renderer, scene, *camera, clear);
+    renderDrawn(gpu, renderer, scene, *camera, clear);
     if (!gpu.database.diagnostics().empty()) return gpu.database.diagnostics().front();
     if (const auto error = finishDump(true); !error.empty()) return error;
     for (const std::string& note : renderer.diagnostics()) std::fprintf(stderr, "%s\n", note.c_str());

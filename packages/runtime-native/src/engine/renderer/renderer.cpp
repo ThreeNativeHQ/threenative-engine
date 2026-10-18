@@ -1631,6 +1631,11 @@ void Renderer::buildEnvironmentPipelines() {
     envGgxPipeline_ = pipeline(kPmremGgx);
 }
 
+// One face of a pass: its viewport spans the 3x2 face layout; the GGX filter takes 512 samples.
+uint64_t Renderer::pmremPacketCost(const PmremPacket& packet) {
+    return uint64_t(packet.w / 3.0f) * uint64_t(packet.h / 2.0f) * (packet.roughness > 0.0f ? 512u : 1u);
+}
+
 void Renderer::beginEnvironment(const Texture& equirect) {
     if (equirect.mapping != 303)
         throw std::runtime_error("TN_NATIVE_ENVIRONMENT_UNSUPPORTED: requires EquirectangularReflectionMapping");
@@ -1765,8 +1770,8 @@ void Renderer::beginEnvironment(const Texture& equirect) {
     }
     gpu_.writeBuffer(envUniforms_, 0, uniforms.data(), uniforms.size() * 4);
 
-    // Retain every full-quality pass/face packet; pumpEnvironment submits them one at a time, each
-    // only after the previous submission's completion serial is observed. Never enqueue them all.
+    // Retain every full-quality pass/face packet; pumpEnvironment submits one cost-bounded group per
+    // call, only after the previous group's completion serial is observed. Never enqueue them all.
     EnvironmentPreparation prep;
     prep.ident = equirect.ident.value();
     prep.version = env.version;
@@ -1778,6 +1783,7 @@ void Renderer::beginEnvironment(const Texture& equirect) {
             prep.packets.push_back({passes[p].target, passes[p].source, passes[p].sampler, passes[p].pipeline,
                                     passes[p].x, passes[p].y, passes[p].w, passes[p].h, passes[p].roughness,
                                     passes[p].mipInt, passes[p].vertexOffset, uint32_t(p), face, p == 0 && face == 0});
+    for (const PmremPacket& packet : prep.packets) prep.budget = std::max(prep.budget, pmremPacketCost(packet));
     envPrep_ = std::move(prep);
 }
 
@@ -1806,7 +1812,12 @@ bool Renderer::pumpEnvironment() {
         abandonEnvironment();
         return true;
     }
+    // One frame carries packets up to the cost of the heaviest single packet (fragments x samples),
+    // so the cheap low-LOD packets share frames while no submission outgrows the costliest one.
+    uint64_t spent = 0;
+    do {
     const PmremPacket& packet = prep.packets[prep.next];
+    spent += pmremPacketCost(packet);
     if (prep.groupPass != packet.pass) {
         if (prep.group) wgpuBindGroupRelease(prep.group);
         WGPUBindGroupEntry entries[3] = {};
@@ -1851,6 +1862,7 @@ bool Renderer::pumpEnvironment() {
     prep.awaitSerial = submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
     ++prep.next;
+    } while (prep.next < prep.packets.size() && spent + pmremPacketCost(prep.packets[prep.next]) <= prep.budget);
     if (prep.next >= prep.packets.size() && gpu_.completedSerial() >= prep.awaitSerial) {
         if (const auto found = environments_.find(prep.ident);
             found != environments_.end() && found->second.version == prep.version)

@@ -694,6 +694,8 @@ private:
         uint32_t pass = 0, face = 0;     // the pass's uniform slice and the vertex's face span
         bool clear = false;
     };
+    /** One face of one pass in fragment samples: the per-call submission cost. */
+    static uint64_t pmremPacketCost(const PmremPacket& packet);
     // The single in-flight preparation: envUniforms_ is one shared buffer, so only one bakes at a time.
     struct EnvironmentPreparation {
         uint64_t ident = 0;
@@ -705,6 +707,7 @@ private:
         WGPUBindGroup group = nullptr;   // the current pass's bind group, rebuilt per pass
         std::size_t groupPass = SIZE_MAX;
         uint64_t stride = 0;
+        uint64_t budget = 0;             // the costliest packet's cost: the per-call submission cap
     };
     std::optional<EnvironmentPreparation> envPrep_;
     void beginEnvironment(const Texture& equirect);
