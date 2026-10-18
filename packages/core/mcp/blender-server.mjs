@@ -439,7 +439,7 @@ async function runRecipe(name, request, options = {}) {
 
 // src/index.ts
 var SERVER_NAME = "threenative-blender-mcp";
-var SERVER_VERSION = "0.1.4";
+var SERVER_VERSION = "0.1.5";
 var AUTHORING_INSTRUCTIONS = "Call blender_status before anything else: it answers whether this machine can convert models at all, and when it cannot it names the install command rather than failing. Blender is never installed for the user \u2014 ask first, then let them run the command. An .fbx, .blend, .obj or .dae placed in a game's assets directory is converted by the build itself; these tools are for inspecting a source before committing it and for operations the build does not perform. For anything no named tool covers, read a shipped recipe with blender_recipes and adapt it, then run it with blender_run_python.";
 var TOOL_DEFINITIONS = [
   {

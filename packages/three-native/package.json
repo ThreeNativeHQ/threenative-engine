@@ -1,6 +1,6 @@
 {
   "name": "@threenative/three-native",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "license": "MIT",
   "description": "The native engine's machine-readable compatibility catalog and the generators that adapt it to TypeScript declarations and the C binding ABI.",
   "keywords": ["threenative", "three", "native", "abi", "gamedev"],
