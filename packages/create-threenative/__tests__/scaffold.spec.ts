@@ -271,7 +271,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   rts: "b50c914cd21061ce8a38415fffa4b8af06c4dab69e090c961944798d4f74d229",
   runner: "c10859f6db5f06bf37a19b4341ba42e92f856721850f866d51f219992515b46d",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "efe83ad0e305fcf3d6ecd67daafc8cf0b57cb35b6d9133ccfda82e8cd9bdc1d6",
+  sailing: "bcc476114df75abfb70c8f1443d6e532f9ae5132b9e005c1ccaf579be396c066",
   shooter: "3eed554d9ce298edf4ae7b9c0a9085c620458ec175f4811073e2d2a76c556081",
   snow: "9f8b34938be8fd51a46d034194c84dfff0b4a5c7eac5f859212bb6f5a10eb8af",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
