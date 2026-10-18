@@ -1000,9 +1000,8 @@ void sceneFogNode() {
     CHECK(!draws[0].nodes.fogNode && draws[0].fog == scene.fog.get());
 }
 
-// three draws a lit mesh whose geometry has no `normal` attribute: the shader's normal reads the constant zero
-// (AttributeNode, "Vertex attribute not found on geometry"), and a material that sets `normalNode` never reads
-// it. The draw item carries a zero normal per vertex, so the mesh is drawn, not skipped (the sailing sea).
+// three draws a lit mesh whose geometry has no `normal` attribute: Normal.js supplies (0, 1, 0), and
+// getGeometryRoughness returns zero. The draw item carries that fallback per vertex, including for the sailing sea.
 void litMeshWithoutNormals() {
     RenderDatabase database;
     Scene scene; PerspectiveCamera camera(55, 4.0 / 3, 0.1, 100); camera.position.set(1, 2, 6);
@@ -1018,9 +1017,11 @@ void litMeshWithoutNormals() {
     if (draws[0].normals == nullptr) return;
     CHECK(draws[0].normals->scalar() == Scalar::F32);
     CHECK(draws[0].normals->count() == vertices * 3);
-    float first = 1;
-    draws[0].normals->read(0, &first, sizeof first);
-    CHECK(first == 0);
+    std::array<float, 3> normal{};
+    for (uint64_t vertex = 0; vertex < vertices; ++vertex) {
+        draws[0].normals->read(vertex * 3 * sizeof(float), normal.data(), sizeof normal);
+        CHECK(normal[0] == 0 && normal[1] == 1 && normal[2] == 0);
+    }
 }
 
 void invalidation() {
