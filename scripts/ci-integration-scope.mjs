@@ -224,9 +224,11 @@ export function integrationSelection({ files, before, after }) {
     .split("\n")
     .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
     .filter((line) => {
-      if (!/^ {6}(?:candidate_sha|required_jobs): /u.test(line)) return true;
+      // Non-lane metadata outputs (`candidate_sha`, `required_jobs`, PRD-620's `runner_admission`)
+      // ride the paths job but are not lane selectors; the CLI emits them from the same step.
+      if (!/^ {6}(?:candidate_sha|required_jobs|runner_admission): /u.test(line)) return true;
       const metadata =
-        /^ {6}(candidate_sha|required_jobs): \$\{\{ steps\.filter\.outputs\.(candidate_sha|required_jobs) \}\}$/u.exec(
+        /^ {6}(candidate_sha|required_jobs|runner_admission): \$\{\{ steps\.filter\.outputs\.(candidate_sha|required_jobs|runner_admission) \}\}$/u.exec(
           line,
         );
       if (!metadata || metadata[1] !== metadata[2])

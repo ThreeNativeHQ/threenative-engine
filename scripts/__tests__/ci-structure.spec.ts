@@ -720,7 +720,9 @@ describe("CI pipeline structure", () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const scope = requiredJob(ci, "scope");
     expect(scope).toContain("scripts/ci-change-scope.mjs");
-    expect(scope).toContain("fetch-depth: 0");
+    expect(scope).toContain(
+      "fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 1 || 0 }}",
+    );
     expect(scope).toContain("scope: ${{ steps.classify.outputs.scope }}");
     expect(scope).toContain("selection: ${{ steps.classify.outputs.selection }}");
     expect(scope).toContain("reason: ${{ steps.classify.outputs.reason }}");
@@ -1092,69 +1094,87 @@ describe("CI pipeline structure", () => {
     "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}";
   const lightRouting =
     "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}";
+  // PRD-620: a heavy lane is admitted to the idle pool only when its canonical id is in the one
+  // plan the parent scope published. The fork and missing-runner guards stay, so a malicious or
+  // stale plan can never route fork code or a withdrawn pool onto the owner's machine.
+  const heavy = (id: string, need = "scope") =>
+    `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
+  const heavyMatrix = (format: string, axis: string, need = "scope") =>
+    `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
+  // `starter-linux` resolves its per-row runner inside the scope job, so the admission output it
+  // reads is a step output there, not a `needs` one.
+  const heavyStep = (id: string) =>
+    `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(steps.admission.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
+  // The canonical id each heavy job gates on. A matrix job carries its leg; `starter-linux` is
+  // routed per shaped row, named `job/platform` the same way the matrix allow-list reads it.
+  const heavyByJob = new Map<string, string>([
+    ["ci.yml:typecheck", heavy("ci:typecheck")],
+    ["ci.yml:lint", heavy("ci:lint")],
+    ["ci.yml:test", heavy("ci:test")],
+    ["ci.yml:test-native", heavy("ci:test-native")],
+    ["ci.yml:test-browser", heavy("ci:test-browser")],
+    ["ci.yml:test-playtest", heavy("ci:test-playtest")],
+    ["ci.yml:strata", heavy("ci:strata")],
+    ["ci.yml:benchmark", heavy("ci:benchmark")],
+    ["ci.yml:build-artifacts", heavy("ci:build-artifacts")],
+    ["ci.yml:performance-contracts", heavy("ci:performance-contracts")],
+    ["ci.yml:budgets", heavy("ci:budgets")],
+    ["ci.yml:test-unit", heavyMatrix("ci:test-unit:{0}", "matrix.shard")],
+    ["ci.yml:golden-path-template", heavyMatrix("ci:golden-path-template:{0}", "matrix.template")],
+    ["ci.yml:template-nonvisual", heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
+    ["integration.yml:animation", heavy("integration:animation", "paths")],
+    ["integration.yml:capture", heavy("integration:capture", "paths")],
+    ["integration.yml:cold-boot", heavy("integration:cold-boot", "paths")],
+    ["integration.yml:csg", heavy("integration:csg", "paths")],
+    ["integration.yml:decals", heavy("integration:decals", "paths")],
+    ["integration.yml:exposure", heavy("integration:exposure", "paths")],
+    ["integration.yml:fluid-collision", heavy("integration:fluid-collision", "paths")],
+    ["integration.yml:fog", heavy("integration:fog", "paths")],
+    ["integration.yml:ik", heavy("integration:ik", "paths")],
+    ["integration.yml:temporal", heavy("integration:temporal", "paths")],
+    ["integration.yml:tone", heavy("integration:tone", "paths")],
+    ["integration.yml:vegetation", heavy("integration:vegetation", "paths")],
+    ["integration.yml:velocity", heavy("integration:velocity", "paths")],
+    ["native-platforms.yml:web-reference", heavy("native:web-reference")],
+    ["native-platforms.yml:android-v8-source", heavy("native:android-v8-source")],
+    ["native-platforms.yml:desktop-parity", heavy("native:desktop-parity")],
+    ["native-platforms.yml:starter-linux/linux-x64", heavyStep("native:starter-linux:linux-x64")],
+  ]);
+  const expectedHeavy = (relative: string, name: string): string | undefined =>
+    heavyByJob.get(`${relative.split("/").pop() ?? relative}:${name}`);
   // The hosted jobs that stay hosted, per workflow. `supply-chain` runs gitleaks through
   // `docker run`; a self-hosted container would need the host Docker socket mounted to do that,
   // which would hand every job root on the owner's machine. `publish-android-v8` is the release
   // publish itself — `permissions: contents: write` and a `gh release upload` — and PRD-480 keeps
   // release writes on GitHub's own machines.
   const hosted = new Map<string, ReadonlySet<string>>([
-    // golden-path-template runs hosted: its dev server twice failed to answer on a local slot (run 37089715252).
-    [
-      ".github/workflows/ci.yml",
-      new Set([
-        "golden-path-template",
-        "lint",
-        "performance-contracts",
-        "supply-chain",
-        "template-nonvisual",
-      ]),
-    ],
+    [".github/workflows/ci.yml", new Set(["supply-chain"])],
     [
       ".github/workflows/native-platforms.yml",
       // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
       // overran its 45-minute budget on a pinned 4-thread slot (run 37082733117).
-      new Set([
-        "android-emulator-parity",
-        "publish-android-v8",
-        "publish-linux-arm64-v8",
-        "web-reference",
-        "android-v8-source",
-      ]),
+      new Set(["android-emulator-parity", "publish-android-v8", "publish-linux-arm64-v8"]),
     ],
     [
       ".github/workflows/integration.yml",
-      // PRD-550: these generic lanes run hosted so they do not queue behind the local build/test pool.
-      new Set([
-        "animation",
-        "capture",
-        "cold-boot",
-        "csg",
-        "decals",
-        "exposure",
-        "fluid-collision",
-        "fog",
-        "ik",
-        "temporal",
-        "tone",
-        "vegetation",
-        "velocity",
-      ]),
+      // PRD-620: every generic Linux lane routes to idle tn-local with hosted fallback.
+      new Set([]),
     ],
   ]);
   it.each([
     ["web-reference", "native-web-reference-${{ needs.scope.outputs.candidate_sha }}"],
     ["android-v8-source", "android-v8-${{ needs.scope.outputs.candidate_sha }}"],
   ])(
-    "keeps native platform prerequisite %s hosted with exact candidate artifacts",
+    "routes native platform prerequisite %s to idle tn-local with exact candidate artifacts",
     async (job, artifact) => {
       const native = await readFile(
         path.join(repo, ".github/workflows/native-platforms.yml"),
         "utf8",
       );
       const section = requiredJob(native, job);
-      // An idle-pool variable is not a reservation. These producers must remain hosted even
-      // when both CI and Integration select the same advertised local capacity in a burst.
-      expect(section.match(/^ {4}runs-on: (.+)$/mu)?.[1]).toBe("ubuntu-24.04");
+      // PRD-620: these producers ride the same idle-pool switch with hosted fallback; the
+      // snapshot fallback is best-effort and queued jobs may remain local.
+      expect(section.match(/^ {4}runs-on: (.+)$/mu)?.[1]).toBe(heavy(`native:${job}`));
       expect(declaredNeeds(section)).toEqual(["scope"]);
       expect(section).toContain("TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}");
       expect(section).toContain("ref: ${{ needs.scope.outputs.candidate_sha }}");
@@ -1338,7 +1358,8 @@ describe("CI pipeline structure", () => {
             expect(runner, `${target} is not Linux`).not.toContain(lightRouting);
             continue;
           }
-          const onHeavy = runner === routing;
+          const expected = expectedHeavy(relative, name);
+          const onHeavy = expected !== undefined && runner === expected;
           const onLight = runner === lightRouting;
           if (keepHosted.has(name)) {
             expect(
@@ -1360,8 +1381,8 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  // PRD-550: pin the generic lanes hosted to split the pool; the light switch and native ARM labels stay.
-  it("pins generic Integration lanes to hosted while the light and native legs keep their routing", async () => {
+  // PRD-620: the generic lanes route to idle tn-local with hosted fallback; the light switch and native ARM labels stay.
+  it("routes generic Integration lanes to idle tn-local while the light and native legs keep their routing", async () => {
     const source = await readFile(path.join(repo, ".github/workflows/integration.yml"), "utf8");
     const runsOn = (job: string) => requiredJob(source, job).match(/^ {4}runs-on: (.+)$/mu)?.[1];
     for (const job of [
@@ -1379,8 +1400,8 @@ describe("CI pipeline structure", () => {
       "vegetation",
       "velocity",
     ] as const) {
-      expect(runsOn(job), `integration ${job} must not share the local build/test pool`).toBe(
-        "ubuntu-24.04",
+      expect(runsOn(job), `integration ${job} routes to idle tn-local first`).toBe(
+        heavy(`integration:${job}`, "paths"),
       );
     }
     for (const job of ["paths", "completion"] as const) {
@@ -1394,6 +1415,38 @@ describe("CI pipeline structure", () => {
       "packaged-quickjs",
     ] as const) {
       expect(runsOn(job), `integration ${job} keeps its native ARM label`).toBe("ubuntu-24.04-arm");
+    }
+  });
+
+  // PRD-620: one parent scope decides the single admitted slice from the count the publisher
+  // advertises and forwards that one plan to both reusable workflows; every heavy selector keeps
+  // its fork/missing-runner guard and adds the membership test beside it.
+  it("publishes one admission budget from the parent and forwards it to both reusable workflows", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const scope = requiredJob(ci, "scope");
+    expect(scope).toContain("runner_admission: ${{ steps.admission.outputs.runner_admission }}");
+    expect(scope).toContain("node scripts/ci-runner-admission.mjs --admit");
+    expect(scope).toContain("TN_RUNNER_SLOTS: ${{ vars.TN_RUNNER_SLOTS }}");
+    const forwarded =
+      ci.match(/runner_admission: \$\{\{ needs\.scope\.outputs\.runner_admission \}\}/gu) ?? [];
+    expect(forwarded, "one plan reaches both reusable workflows").toHaveLength(2);
+    for (const relative of [
+      ".github/workflows/integration.yml",
+      ".github/workflows/native-platforms.yml",
+    ]) {
+      const source = await readFile(path.join(repo, relative), "utf8");
+      expect(source, `${relative} declares the admission input`).toContain("runner_admission:");
+      expect(source, `${relative} validates the supplied plan`).toContain(
+        "node scripts/ci-runner-admission.mjs --validate-admission",
+      );
+      expect(source).toContain("TN_RUNNER_ADMISSION: ${{ inputs.runner_admission }}");
+      // No platform or receipt weakening: the coverage receipt the verdict reads is unchanged.
+      expect(source).toContain("coverage_receipt:");
+    }
+    // The admission test is added to the fork and missing-runner guards, never swapped in.
+    for (const expression of heavyByJob.values()) {
+      expect(expression).toContain("github.event.pull_request.head.repo.fork");
+      expect(expression).toContain("!vars.TN_RUNNER");
     }
   });
 
@@ -1958,10 +2011,12 @@ describe("CI pipeline structure", () => {
     expect(lane).toContain('for scenario in "${scenarios[@]}"');
     expect(lane).toContain('test "${#scenarios[@]}" -gt 0');
     expect(lane).not.toContain("SHARD");
-    // GitHub's shared hosted quota owns capacity; the workflow must not hold selected kits back.
+    // Both pools own capacity; the workflow must not hold selected kits back.
     expect(lane).not.toMatch(/^\s+max-parallel:/mu);
     expect(lane).toContain("fail-fast: false");
-    expect(lane).toContain("runs-on: ubuntu-24.04");
+    expect(lane).toContain(
+      `runs-on: ${heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")}`,
+    );
   });
 
   it("preserves platformer's unique production artifact in its installed scenario job", async () => {
