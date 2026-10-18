@@ -588,6 +588,19 @@ engine.collect();
   action.setLoop(web.LoopOnce, 1);
   action.clampWhenFinished = true;
   action.play();
+  // three's `mixer.stats`: one cached action, running, over one bound property.
+  const { stats } = mixer as unknown as {
+    stats: Record<"actions" | "bindings" | "controlInterpolants", { total: number; inUse: number }>;
+  };
+  check(
+    stats.actions.total === 1 &&
+      stats.actions.inUse === 1 &&
+      stats.bindings.total === 1 &&
+      stats.bindings.inUse === 1 &&
+      stats.controlInterpolants.total === 0 &&
+      stats.controlInterpolants.inUse === 0,
+    "mixer.stats counts the action and its binding",
+  );
   const events: Record<string, unknown>[] = [];
   const onFinished = (event: Record<string, unknown>) => events.push({ ...event });
   mixer.addEventListener("finished", onFinished);

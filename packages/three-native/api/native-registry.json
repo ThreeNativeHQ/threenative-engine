@@ -253,7 +253,7 @@
         "uncacheRoot",
         "update"
       ],
-      "getters": ["__address", "time", "timeScale"],
+      "getters": ["__address", "stats", "time", "timeScale"],
       "setters": ["timeScale"],
       "members": [],
       "callbacks": [],

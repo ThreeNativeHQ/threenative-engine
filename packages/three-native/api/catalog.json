@@ -287,6 +287,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "stats",
+          "type": "{ actions: { total: number; inUse: number }; bindings: { total: number; inUse: number }; controlInterpolants: { total: number; inUse: number } }",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [

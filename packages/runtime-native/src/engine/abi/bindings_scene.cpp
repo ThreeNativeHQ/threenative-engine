@@ -1389,6 +1389,17 @@ void registerAnimationMixer(ClassBinding& b) {
     };
     b.getters["time"] = [](void* self) { return Value::of(as<AnimationMixer>(self)->time); };
     b.getters["timeScale"] = [](void* self) { return Value::of(as<AnimationMixer>(self)->timeScale); };
+    // three's `mixer.stats`: a fresh record each read, as three builds one each read.
+    b.getters["stats"] = [](void* self) {
+        const auto* mixer = as<AnimationMixer>(self);
+        const auto count = [](std::size_t total, std::size_t inUse) {
+            return Value::record({{"total", Value::of(double(total))}, {"inUse", Value::of(double(inUse))}});
+        };
+        return Value::record({{"actions", count(mixer->actionsTotal(), mixer->actionsInUse())},
+                              {"bindings", count(mixer->bindingsTotal(), mixer->bindingsInUse())},
+                              {"controlInterpolants",
+                               count(mixer->controlInterpolantsTotal(), mixer->controlInterpolantsInUse())}});
+    };
     b.setters["timeScale"] = [](void* self, const Value& v) { as<AnimationMixer>(self)->timeScale = number(v); };
     // A game reads `time` every frame (Midway: 71 a frame); the Wasm back end reads it in place.
     static const AnimationMixer probe(std::make_shared<Object3D>());
