@@ -349,4 +349,44 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     return pipeline;
 }
 
+PipelineLayoutCache::~PipelineLayoutCache() {
+    for (auto& [key, layout] : pipelines_)
+        if (layout) wgpuPipelineLayoutRelease(layout);
+    for (auto& [key, layout] : bindGroups_)
+        if (layout) wgpuBindGroupLayoutRelease(layout);
+}
+
+WGPUBindGroupLayout PipelineLayoutCache::bindGroup(const std::string& key,
+                                                   const std::vector<WGPUBindGroupLayoutEntry>& entries) {
+    if (const auto found = bindGroups_.find(key); found != bindGroups_.end()) {
+        wgpuBindGroupLayoutAddRef(found->second);
+        return found->second;
+    }
+    WGPUBindGroupLayoutDescriptor descriptor = {};
+    descriptor.entryCount = entries.size();
+    descriptor.entries = entries.data();
+    WGPUBindGroupLayout layout = wgpuDeviceCreateBindGroupLayout(device_, &descriptor);
+    if (!layout) return nullptr;
+    bindGroups_.emplace(key, layout);  // the cache owns the creation reference
+    wgpuBindGroupLayoutAddRef(layout);  // and the caller owns the one it asked for
+    return layout;
+}
+
+WGPUPipelineLayout PipelineLayoutCache::pipeline(const std::string& key, WGPUBindGroupLayout first,
+                                                 WGPUBindGroupLayout second) {
+    if (const auto found = pipelines_.find(key); found != pipelines_.end()) {
+        wgpuPipelineLayoutAddRef(found->second);
+        return found->second;
+    }
+    WGPUBindGroupLayout layouts[2] = {first, second};
+    WGPUPipelineLayoutDescriptor descriptor = {};
+    descriptor.bindGroupLayoutCount = 2;
+    descriptor.bindGroupLayouts = layouts;
+    WGPUPipelineLayout layout = wgpuDeviceCreatePipelineLayout(device_, &descriptor);
+    if (!layout) return nullptr;
+    pipelines_.emplace(key, layout);
+    wgpuPipelineLayoutAddRef(layout);
+    return layout;
+}
+
 }  // namespace tn::engine

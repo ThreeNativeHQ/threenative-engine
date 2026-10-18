@@ -332,7 +332,8 @@ public:
     /** Separate capture targets: probe work never resizes the presented frame or its post history. */
     Renderer& probeCaptureRenderer();
     /** Another renderer on this device, with its own targets: a reflection pass draws into one. */
-    /** A renderer on the same device for a render target or a reflection: it shares this one's map textures. */
+    /** A renderer on the same device for a render target or a reflection: it shares this one's map
+     *  textures, geometry copies, and layout and pipeline caches, as three's one renderer does. */
     std::unique_ptr<Renderer> sibling() {
         auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_);
         child->textures_ = textures_;
@@ -340,6 +341,8 @@ public:
         child->ownsPassTimer_ = false;
         child->gpu_.shareSubmissions(gpu_);
         child->geometry_ = geometry_;
+        child->layouts_ = layouts_;
+        child->pipelines_ = pipelines_;
         return child;
     }
     /** The last render's linear HDR scene target (RGBA16Float), before post and the output transform. */
@@ -560,7 +563,7 @@ public:
     }
     GpuResources& gpu() { return gpu_; }
     const GeometryCache& geometry() const { return geometry_->cache; }
-    const PipelineCache& pipelines() const { return pipelines_; }
+    const PipelineCache& pipelines() const { return *pipelines_; }
     /** Material programs built or refused so far; a steady frame adds none. */
     size_t programCount() const { return programs_.size(); }
     /** Program key strings built and Program* lookups done so far; a steady frame adds none. */
@@ -616,7 +619,7 @@ private:
         const shader::UniformField* fragmentSlots[kSlotCount] = {};
         std::vector<std::array<const shader::UniformField*, kLightFieldCount>> lightSlots;
     };
-    void buildLayouts(Program& program);
+    void buildLayouts(Program& program, const std::string& key);
     /** The program for a material kind, vertex variant and light layout, built on first use; null
      *  when its WGSL is invalid, which is reported once in diagnostics() and its draws are skipped,
      *  as three logs a shader error and draws the rest of the scene. */
@@ -749,7 +752,10 @@ private:
         GeometryCache cache;
     };
     std::shared_ptr<GeometryCopies> geometry_;
-    PipelineCache pipelines_;
+    // Shared with every sibling(): a render target's renderer draws the same programs, and a pipeline
+    // compiled for one layout serves them all only if the layout handles are the same too.
+    std::shared_ptr<PipelineCache> pipelines_;
+    std::shared_ptr<PipelineLayoutCache> layouts_;
     // By MaterialKind, vertex variant (0 plain, 1 instanced, 2 instanced with instanceColor) and light
     // layout; held by pointer so a frame's plan keeps its addresses while new programs are added.
     std::map<std::string, std::unique_ptr<Program>> programs_;  // a null entry: refused, never retried

@@ -317,6 +317,36 @@ void compileScene(Database& database, Renderer& renderer, Object3D& root, Camera
     }
 }
 
+// A render target draws on a sibling renderer. It shares the device's pipeline and layout caches, so
+// the same program there is a lookup, never a second compile (a second WGPUPipelineLayout would key
+// every material pipeline differently and recompile it once per target).
+void siblingSharesPipelines() {
+    CompileDevice d;
+    CHECK(d.device != nullptr);
+    if (!d.device) return;
+    Renderer renderer(d.instance, d.device, d.queue, d.events);
+    renderer.setSize(32, 32);
+    RenderDatabase database;
+    Scene scene;
+    PerspectiveCamera camera;
+    camera.position.z = 8;
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    Mesh mesh(makeBoxGeometry(), material);
+    scene.add(mesh);
+
+    database.render(renderer, scene, camera);
+    const uint64_t compiled = renderer.pipelines().compiles();
+    CHECK(compiled > 0);
+
+    auto sibling = renderer.sibling();
+    sibling->setSize(32, 32);
+    RenderDatabase siblingDatabase;
+    const uint64_t inherited = sibling->pipelines().compiles();
+    siblingDatabase.render(*sibling, scene, camera);
+    CHECK(sibling->pipelines().compiles() == inherited);  // the shared cache answered every pipeline
+    CHECK(renderer.pipelines().compiles() == compiled);
+}
+
 void compileBeforeRender() {
     CompileDevice d;
     CHECK(d.device != nullptr);
@@ -542,7 +572,7 @@ void initializeTexture() {
 
 }  // namespace
 
-TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}
+TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}
 #ifdef TN_TEST_PIPELINE_WORKERS
     , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
     {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException}

@@ -314,6 +314,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_native_engine_test(tn-native-engine-renderer-caches-test tests/native-engine/renderer_caches_test.cpp
         native_engine_renderer_geometry_cache=geometry
         native_engine_renderer_pipeline_cache=pipelines
+        native_engine_renderer_sibling_pipelines=sibling_pipelines
         native_engine_renderer_pipeline_compile_async=compile_before_render
         native_engine_renderer_init_texture=init_texture)
     target_link_libraries(tn-native-engine-renderer-caches-test PRIVATE tn_engine_renderer tn_host_services)

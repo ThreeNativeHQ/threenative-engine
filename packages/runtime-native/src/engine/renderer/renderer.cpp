@@ -457,7 +457,7 @@ struct Renderer::FrameJob {
 };
 
 Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
-    : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(std::make_shared<GeometryCopies>(instance, device, queue, events)), pipelines_(device), retired_(TextureId::watch()) {
+    : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(std::make_shared<GeometryCopies>(instance, device, queue, events)), pipelines_(std::make_shared<PipelineCache>(device)), layouts_(std::make_shared<PipelineLayoutCache>(device)), retired_(TextureId::watch()) {
     geometry_->gpu.shareSubmissions(gpu_);
     // The DFG lookup the standard BRDF samples: three's 16x16 RG half-float table, linear filtered.
     WGPUTextureDescriptor lutDesc = {};
@@ -525,6 +525,8 @@ Renderer& Renderer::probeCaptureRenderer() {
         probeCapture_ = std::make_unique<Renderer>(instance_, device_, queue_, events_);
         probeCapture_->passTimer_ = passTimer_;
         probeCapture_->ownsPassTimer_ = false;
+        probeCapture_->layouts_ = layouts_;
+        probeCapture_->pipelines_ = pipelines_;
     }
     return *probeCapture_;
 }
@@ -1408,7 +1410,7 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
     const auto vs = shader::buildStage(conversion.vertex, 0), fs = shader::buildStage(conversion.fragment, 0);
     if (!vs.wgsl.ok() || !fs.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: equirectangular cube conversion");
     PipelineTarget target{format, WGPUTextureFormat_Undefined, WGPUCullMode_None};
-    const auto pipeline = pipelines_.get(vs, &fs, target);
+    const auto pipeline = pipelines_->get(vs, &fs, target);
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: background cube conversion");
     const auto layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
     const Vector3 directions[6] = {{-1,0,0}, {1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
@@ -1925,7 +1927,7 @@ Renderer::EnvironmentGpu& Renderer::environment(const Texture& equirect) {
 
 // Each stage's layout from the bindings its package declares, the uniform block with a dynamic
 // offset; the uniform slots resolved to fields once, so a draw never looks a name up.
-void Renderer::buildLayouts(Program& program) {
+void Renderer::buildLayouts(Program& program, const std::string& key) {
     const shader::StageModule* stages[2] = {&program.vertex, &program.fragment};
     for (int g = 0; g < 2; ++g) {
         std::vector<WGPUBindGroupLayoutEntry> entries;
@@ -1951,15 +1953,9 @@ void Renderer::buildLayouts(Program& program) {
             }
             entries.push_back(e);
         }
-        WGPUBindGroupLayoutDescriptor desc = {};
-        desc.entryCount = entries.size();
-        desc.entries = entries.data();
-        program.layouts[g] = wgpuDeviceCreateBindGroupLayout(device_, &desc);
+        program.layouts[g] = layouts_->bindGroup(key + "\x1f" + (g == 0 ? "vs" : "fs"), entries);
     }
-    WGPUPipelineLayoutDescriptor desc = {};
-    desc.bindGroupLayoutCount = 2;
-    desc.bindGroupLayouts = program.layouts;
-    program.pipelineLayout = wgpuDeviceCreatePipelineLayout(device_, &desc);
+    program.pipelineLayout = layouts_->pipeline(key, program.layouts[0], program.layouts[1]);
     for (int s = 0; s < kSlotCount; ++s) {
         for (const shader::UniformField& f : program.vertex.uniforms)
             if (f.name == kSlotNames[s]) program.vertexSlots[s] = &f;
@@ -2049,7 +2045,7 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
     auto built = std::make_unique<Program>();
     built->vertex = std::move(vertex);
     built->fragment = std::move(fragment);
-    buildLayouts(*built);
+    buildLayouts(*built, key);
     if (uniformCapacity_ != 0) {
         for (int g = 0; g < 2; ++g) {
             if (g == 1 && perDrawFragment(built->fragment)) continue;  // per-draw groups instead
@@ -2616,7 +2612,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         target.instanceStepMask = instanceStepMask(program.vertex, item);
         lineTopology(target, item);
         if (compilation) {
-            compilation->push_back(pipelines_.getAsync(program.vertex, &program.fragment, target));
+            compilation->push_back(pipelines_->getAsync(program.vertex, &program.fragment, target));
             plan.push_back({&item, &program, nullptr, 0, 0});
             continue;
         }
@@ -2625,7 +2621,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (cache && cache->pipeline && cache->targetKey == targetKey) {
             pipeline = static_cast<WGPURenderPipeline>(cache->pipeline);
         } else {
-            pipeline = pipelines_.get(program.vertex, &program.fragment, target);
+            pipeline = pipelines_->get(program.vertex, &program.fragment, target);
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
             if (cache) { cache->targetKey = targetKey; cache->pipeline = pipeline; }
         }
@@ -2790,7 +2786,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             target.skinIndex = skinIndexFormat(item);
             target.instanceStepMask = instanceStepMask(program.vertex, item);
             if (compilation) {
-                compilation->push_back(pipelines_.getAsync(program.vertex, nullptr, target));
+                compilation->push_back(pipelines_->getAsync(program.vertex, nullptr, target));
                 continue;
             }
             const uint64_t depthTargetKey = drawTargetKey(item, program.vertex);
@@ -2798,7 +2794,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (cache && cache->depthPipeline && cache->depthTargetKey == depthTargetKey) {
                 pipeline = static_cast<WGPURenderPipeline>(cache->depthPipeline);
             } else {
-                pipeline = pipelines_.get(program.vertex, nullptr, target);
+                pipeline = pipelines_->get(program.vertex, nullptr, target);
                 if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
                 if (cache) { cache->depthTargetKey = depthTargetKey; cache->depthPipeline = pipeline; }
             }
@@ -2848,10 +2844,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             lineTopology(target, item);
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
             if (compilation) {
-                compilation->push_back(pipelines_.getAsync(velocity.vertex, &velocity.fragment, target));
+                compilation->push_back(pipelines_->getAsync(velocity.vertex, &velocity.fragment, target));
                 continue;
             }
-            const auto pipeline = pipelines_.get(velocity.vertex, &velocity.fragment, target);
+            const auto pipeline = pipelines_->get(velocity.vertex, &velocity.fragment, target);
             if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
             const uint32_t offset = frameUniforms_.size();
             frameUniforms_.resize(offset + aligned(velocity.vertex.uniformBlockSize), 0);
@@ -2907,10 +2903,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 target.skinIndex = skinIndexFormat(item);
                 target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
                 if (compilation) {
-                    compilation->push_back(pipelines_.getAsync(draw.program->vertex, &normalFragment_, target));
+                    compilation->push_back(pipelines_->getAsync(draw.program->vertex, &normalFragment_, target));
                     continue;
                 }
-                const auto pipeline = pipelines_.get(draw.program->vertex, &normalFragment_, target);
+                const auto pipeline = pipelines_->get(draw.program->vertex, &normalFragment_, target);
                 if (!pipeline) throw std::runtime_error("TN_POST_NORMAL_PIPELINE_REFUSED");
                 Planned normal = draw;
                 normal.pipeline = pipeline;
@@ -2938,9 +2934,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const auto vertex = shader::buildStage(clear, 0);
         PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, WGPUCullMode_None};
         target.depthCompare = WGPUCompareFunction_Always;
-        if (compilation) compilation->push_back(pipelines_.getAsync(vertex, nullptr, target));
+        if (compilation) compilation->push_back(pipelines_->getAsync(vertex, nullptr, target));
         else {
-            pageClear = pipelines_.get(vertex, nullptr, target);
+            pageClear = pipelines_->get(vertex, nullptr, target);
             if (!pageClear) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: virtual page clear");
         }
     }
@@ -2948,7 +2944,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         planNormals();
         PipelineTarget target{outputFormat, WGPUTextureFormat_Undefined, WGPUCullMode_None};
         target.layout = outputPipelineLayout_;
-        compilation->push_back(pipelines_.getAsync(outputVertex_, &outputFragment_, target));
+        compilation->push_back(pipelines_->getAsync(outputVertex_, &outputFragment_, target));
         const auto texture = [&](const Texture* map) {
             if (map && !map->volume && map->hasImage() && map->generateMipmaps && map->bytesPerTexel() == 4 &&
                 std::max(map->width, map->height) > 1)
@@ -2962,7 +2958,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const auto conversion = shader::buildEquirectangularCube();
                 const auto vs = shader::buildStage(conversion.vertex, 0), fs = shader::buildStage(conversion.fragment, 0);
                 PipelineTarget cube{textureFormat(*item.map), WGPUTextureFormat_Undefined, WGPUCullMode_None};
-                compilation->push_back(pipelines_.getAsync(vs, &fs, cube));
+                compilation->push_back(pipelines_->getAsync(vs, &fs, cube));
             }
         }
         return id;
@@ -3572,7 +3568,7 @@ void Renderer::encodeFrame(FrameJob& job) {
 void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat) {
     PipelineTarget outputTarget{present ? presentFormat : WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None};
     outputTarget.layout = outputPipelineLayout_;
-    WGPURenderPipeline pipeline = pipelines_.get(outputVertex_, &outputFragment_, outputTarget);
+    WGPURenderPipeline pipeline = pipelines_->get(outputVertex_, &outputFragment_, outputTarget);
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: output program");
     std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
     // post_->live was copied into postUniforms_ while the frame was planned: the game writes those nodes.
@@ -3676,10 +3672,10 @@ WGPURenderPipeline Renderer::copyPipeline(WGPUTextureFormat format, uint8_t blen
     }
     const PipelineTarget target{format, WGPUTextureFormat_Undefined, WGPUCullMode_None, blend};
     if (compilation) {
-        compilation->push_back(pipelines_.getAsync(blitVertex_, &blitFragment_, target));
+        compilation->push_back(pipelines_->getAsync(blitVertex_, &blitFragment_, target));
         return nullptr;
     }
-    return pipelines_.get(blitVertex_, &blitFragment_, target);
+    return pipelines_->get(blitVertex_, &blitFragment_, target);
 }
 
 // WebGPUTextureUtils.generateMipmaps: each level is drawn from a one-level view of the level above,

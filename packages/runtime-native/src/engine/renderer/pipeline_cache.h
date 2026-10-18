@@ -129,4 +129,27 @@ private:
     uint64_t textLookups_ = 0;
 };
 
+/**
+ * Bind-group and pipeline layouts interned per device. A render target draws on a sibling renderer,
+ * and the same program there must land on the same WGPUPipelineLayout the first renderer made: two
+ * structurally equal layouts are different pipeline-cache keys, so a private layout per renderer
+ * would recompile every material pipeline for every target. The cache owns one reference to each
+ * layout and hands the caller its own.
+ */
+class PipelineLayoutCache {
+public:
+    explicit PipelineLayoutCache(WGPUDevice device) : device_(device) {}
+    ~PipelineLayoutCache();
+    PipelineLayoutCache(const PipelineLayoutCache&) = delete;
+    PipelineLayoutCache& operator=(const PipelineLayoutCache&) = delete;
+
+    WGPUBindGroupLayout bindGroup(const std::string& key, const std::vector<WGPUBindGroupLayoutEntry>& entries);
+    WGPUPipelineLayout pipeline(const std::string& key, WGPUBindGroupLayout first, WGPUBindGroupLayout second);
+
+private:
+    WGPUDevice device_;
+    std::unordered_map<std::string, WGPUBindGroupLayout> bindGroups_;
+    std::unordered_map<std::string, WGPUPipelineLayout> pipelines_;
+};
+
 }  // namespace tn::engine
