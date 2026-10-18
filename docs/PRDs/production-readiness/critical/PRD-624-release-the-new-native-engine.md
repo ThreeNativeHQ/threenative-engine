@@ -1,6 +1,6 @@
 # PRD-624 — Release the new native engine
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Priority:** P0 — Native Runner still loses its GPU, startup preparation is incomplete, and PR #493 has merge conflicts.
 **Complexity:** 6 → HIGH; security-boundary override for the public dependency chain.
 **Owner:** ThreeNative engine/release agent; João owns merge and publication approval.
@@ -30,7 +30,7 @@ The seven phase boxes below are the complete agent-executable acceptance checkli
 
 ### Phase 1 — Finish startup readiness
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (1/2; box 2 needs the owner threshold call)
 **Files:** Existing native renderer/render-database preparation and tests; existing core warmup and Three patch paths. Review interrupted edits before choosing what to keep.
 
 - [x] [local] **Native PMREM becomes fully ready before covered rendering.** Through the unchanged WASM render entry, complete the original full-quality target without GPU loss or a placeholder capture. Preserve resource identity, version/disposal safety, shader math, sample counts, formats and deadlines. Private completion-gated preparation must advance only after prior GPU work completes and must not interleave the shared environment uniform buffer. Prove the shared mechanism on native too. proof: focused existing renderer/resource CTest cases, unchanged strict stock Runner via `scripts/engine-parity.ts`, and the affected native conformance case.
@@ -42,20 +42,23 @@ Verification: extend the existing real renderer/completion tests rather than add
 
 ### Phase 2 — Freeze a clean, installable candidate
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** PR #493 integration, existing release preparation/package manifests, Three patch mirrors and lockfile, existing template consumer checks.
 
 - [x] [local] **Resolve PR #493 against current `origin/develop`.** Preserve the CI improvements and engine fixes, resolve the complete candidate diff, and make the PR mergeable without rewriting another owner's worktree. proof: conflict-free integration checkout, affected checks and `gh pr view 493 --json mergeable,headRefOid` after the authorized source push.
   - Result 2026-10-18: develop merged in bc64a2505 (8 conflicts, three patch rebuilt 3-way, 13 scaffold fingerprints re-measured); `gh pr view 493 --json mergeable,mergeStateStatus,headRefOid` = MERGEABLE / CLEAN at pushed head e5ec2c179, 0 commits behind origin/develop; affected checks: three-patch-upgrade, warmup, scaffold and engine-parity specs 166/166, `pnpm typecheck` exit 0.
-- [ ] [local] **The fresh core consumer resolves the repaired public dependency chain.** After the sculpt maintainer publishes its fix, update the real dependency floor and prove a normal fresh install resolves the patched SDK/transitives. A workspace override or local manifest patch does not close this. proof: packed core manifest, resolved installed versions, frozen consumer install and existing MCP/package contracts.
-- [ ] [local] **All candidate packages come from one frozen source and install normally.** Select cohort versions before final qualification, use `pnpm release:prepare` and the ordinary pack/build paths, refresh changed patch hashes/mirrors and all 13 affected template fingerprints, and scaffold/install the candidate outside the workspace. Verify all 15 package identities and the installed WASM binary; do not reuse stale `node_modules` or treat old platform artifacts as current. proof: existing release/package/scaffolder contracts, immutable archive hashes and clean consumer build/playtest results.
-- [ ] [local] **Sailing passes its original performance gate on the final cohort.** Measure the unchanged 33 ms gate in a legitimately quiet window on the real adapter, retaining load/adapter metadata. Preserve the already-fixed ocean and rerun rendered-motion regression when the final engine changes invalidate its evidence. proof: installed Sailing `playtests/performance.playtest.json` and `playtests/live/render-motion.playtest.json`, using the shipped runner and `--browser-recipe webgpu`.
+- [x] [local] **The fresh core consumer resolves the repaired public dependency chain.** After the sculpt maintainer publishes its fix, update the real dependency floor and prove a normal fresh install resolves the patched SDK/transitives. A workspace override or local manifest patch does not close this. proof: packed core manifest, resolved installed versions, frozen consumer install and existing MCP/package contracts.
+  - Result 2026-10-18 at 386e7fbcf: `threenative-sculpt-mcp` 0.2.2 is published (source jonit-dev/threenative-sculpt-mcp `fix/sdk-1.31` 2a3732c, 62/62 tests). The core floor is 0.2.2 in 386e7fbcf, and the packed core manifest reads `"threenative-sculpt-mcp": "0.2.2"`. In fresh frozen starter and sailing consumers on two machines, `pnpm why` resolves `@modelcontextprotocol/sdk` 1.31.0, `proxy-addr` 2.0.8 (express 5.3.0) and `fast-uri` 3.1.8 (ajv 8.20.0), all through core → sculpt 0.2.2. MCP, scaffold and budgets contracts: 127 passed, with the sculpt tool surface recaptured from the published tarball (12 tools).
+- [x] [local] **All candidate packages come from one frozen source and install normally.** Select cohort versions before final qualification, use `pnpm release:prepare` and the ordinary pack/build paths, refresh changed patch hashes/mirrors and all 13 affected template fingerprints, and scaffold/install the candidate outside the workspace. Verify all 15 package identities and the installed WASM binary; do not reuse stale `node_modules` or treat old platform artifacts as current. proof: existing release/package/scaffolder contracts, immutable archive hashes and clean consumer build/playtest results.
+  - Result 2026-10-18 at 386e7fbcf: `pnpm release:prepare` passed (15 packages at current versions, nothing published). The one acknowledged finding is the missing `runtime-native-v0.3.5` prebuilt release. One `pnpm sandbox` pack gave 15 archives, sha256 prefixes 73239509 a6fbabcc f6404638 f475a230 9a4a240b f5e577c8 2da72253 16bb1b4f 19eb63e4 34e5449e fc042093 0b7ce35e fa3dc12c a58d0829 895ed3e2, byte-identical on both machines. Fresh frozen installs outside the workspace on desktop and laptop match all 15 identities to those archives. The installed `tn-native-engine-web.wasm` cd16636b… equals a clean rebuild. Starter `build:web` passes, and the shipped playtests pass 4/4 with `--browser-recipe webgpu` on Intel gen-12lp hardware. Finding, not fixed: repacking the same head reorders workspace-dependency keys in some manifests, so archive bytes are immutable per pack, not reproducible across packs.
+- [x] [local] **Sailing passes its original performance gate on the final cohort.** Measure the unchanged 33 ms gate in a legitimately quiet window on the real adapter, retaining load/adapter metadata. Preserve the already-fixed ocean and rerun rendered-motion regression when the final engine changes invalidate its evidence. proof: installed Sailing `playtests/performance.playtest.json` and `playtests/live/render-motion.playtest.json`, using the shipped runner and `--browser-recipe webgpu`.
+  - Result 2026-10-18 at 386e7fbcf: installed Sailing from the same archive set, shipped runner, `--browser-recipe webgpu`, on the Debian laptop's Intel gen-12lp (adapterClass hardware). `performance.playtest.json` ×2 gave `maxFrameMsP95` 15.3 / 15.1 ms against the unchanged 33 ms, `minFps` 100 / 103.1, 62 draws and 75505 triangles. `live/render-motion.playtest.json --live-clock` passed: 2533 rendered frames, hull range 1.58, max jitter 0.094 px against 1. Load was 1.4–2.9 with no CI worker; package temperature 79–97 °C. Earlier passes: 12.9 / 14.0 ms at 5cbeadeab and 15.1 / 14.8 ms at a069e1450. Sailing pins `engine: "threejs"`.
 
 Verification: use fresh normally generated consumers and the shipped scenarios. Fingerprint and archive checks follow final patch bytes. Build long jobs on the laptop when suitable; native-host/NVIDIA-specific proof stays on its required machine. Never reduce quality, timing thresholds or assertions to obtain green results.
 
 ### Phase 3 — Qualify the exact release source
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** Existing qualification workflows and release-candidate PR metadata; no workflow per feature.
 
 - [ ] [shared] **The frozen candidate passes the complete required qualification.** Run required local checks, then one fresh full exact-source CI board under runner admission. Require actual successful executions of all seven previously failing parity jobs, `ci-required`/Integration, the full unit suite, shipped-template/golden journeys and supported native/platform lanes. The host-projection check retains its 120-second watchdog; investigate recurring failures instead of rerunning blindly. Any later source change invalidates the affected proof. proof: `pnpm typecheck`, `pnpm lint`, `pnpm test`, and completed exact-head full qualification jobs/receipts linked on the release PR.
