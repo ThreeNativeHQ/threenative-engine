@@ -157,6 +157,8 @@ export class ResolutionSubrect implements IResolutionSubrect {
             capacityChanged = widthCapacity !== binding.width || heightCapacity !== binding.height;
             binding.width = widthCapacity;
             binding.height = heightCapacity;
+            binding.viewWidth = Math.max(1, Math.round(width));
+            binding.viewHeight = Math.max(1, Math.round(height));
           } else {
             if (binding.width === 0 || binding.height === 0)
               throw new Error("TN_RESOLUTION_SUBRECT: target capacity not reserved");
@@ -192,10 +194,12 @@ export class ResolutionSubrect implements IResolutionSubrect {
         this.#reserving = true;
         try {
           original.call(node, width, height);
+          // Reserve the scaled pass too: rounding the outer view up to the allocation quantum
+          // can make a floored inner mip one pixel larger than the corresponding full-size mip.
+          original.call(node, quantize(width * this.#scale), quantize(height * this.#scale));
         } finally {
           this.#reserving = false;
         }
-        original.call(node, quantize(width * this.#scale), quantize(height * this.#scale));
         // PassNode copies its own viewport/scissor after target.setSize().
         for (const target of retained) this.#applyViewport(target);
       },
