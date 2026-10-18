@@ -3,7 +3,7 @@ import type { IToneRegion } from "../tone.js";
 import type { IPlaytestToneAssertion } from "./schema-base.js";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
-import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
+import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validatePipelineCensusAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestGeometryCaptureRequest } from "../protocol.js";
 import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
@@ -19,6 +19,7 @@ export const PLAYTEST_ROOT_KEYS = [
   "reducedMotion",
   "schemaVersion",
   "setup",
+  "startTick",
   "steps",
   "subject",
   "target",
@@ -43,6 +44,9 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   }
   if (value.awaitStartup !== undefined && typeof value.awaitStartup !== "boolean") {
     throw invalidScenario(scenarioPath, "Scenario awaitStartup must be a boolean when present.");
+  }
+  if (value.startTick !== undefined && (!Number.isSafeInteger(value.startTick) || (value.startTick as number) < 0)) {
+    throw invalidScenario(scenarioPath, "Scenario startTick must be a nonnegative safe integer when present.");
   }
   if (value.bootFailure !== undefined && value.bootFailure !== "renderer-no-adapter") {
     throw invalidScenario(scenarioPath, "Scenario bootFailure must be 'renderer-no-adapter' when present.");
@@ -102,6 +106,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
       ? {}
       : { setup: validateSetup(requireRecord(value.setup, scenarioPath, "setup"), scenarioPath, subject) }),
     ...(absolutePath === undefined ? {} : { sourcePath: absolutePath }),
+    ...(value.startTick === undefined ? {} : { startTick: value.startTick as number }),
     steps,
     ...(subject === undefined ? {} : { subject }),
     target,
@@ -1011,6 +1016,9 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
   const startup = value.startup === undefined
     ? undefined
     : validateStartupAssertion(value.startup, scenarioPath, "assert.startup");
+  const pipelineCensus = value.pipelineCensus === undefined
+    ? undefined
+    : validatePipelineCensusAssertion(value.pipelineCensus, scenarioPath, "assert.pipelineCensus");
   const scene = value.scene === undefined
     ? undefined
     : validateSceneAssertion(value.scene, scenarioPath, "assert.scene");
@@ -1076,6 +1084,7 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
     ...(performance === undefined ? {} : { performance }),
     ...(renderChain === undefined ? {} : { renderChain }),
     ...(startup === undefined ? {} : { startup }),
+    ...(pipelineCensus === undefined ? {} : { pipelineCensus }),
     ...(scene === undefined ? {} : { scene }),
     ...(geometry === undefined ? {} : { geometry }),
     ...(hasKey(value, "causedBy")

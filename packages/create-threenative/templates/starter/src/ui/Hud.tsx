@@ -16,7 +16,7 @@ export function Hud() {
   // Nothing to draw until the game publishes its first snapshot, a few milliseconds in. Rendering
   // zeroes instead would put a wrong score on screen and then correct it.
   if (state === undefined) return null;
-  const position = Math.max(0, Math.min(100, Math.abs(state.playerX) * 10));
+  const position = state.progress;
   const won = state.status === "won";
 
   return (

@@ -475,6 +475,15 @@ export interface IPlaytestStartupAssertion {
   maxReadyMs?: number;
 }
 
+/** Ceilings on work observed after the runtime's explicit shader warm-up settled. */
+export interface IPlaytestPipelineCensusAssertion {
+  maxNodeBuildsAfterWarmUpSettled?: number;
+  maxRenderPipelineCreationsAfterWarmUpSettled?: number;
+  warmUpScope?: string;
+  maxNodeBuildsAfterWarmUpScope?: number;
+  maxRenderPipelineCreationsAfterWarmUpScope?: number;
+}
+
 export interface IPlaytestFramebufferCoverageAssertion {
   backdrop: [number, number, number];
   grid?: {
@@ -628,6 +637,7 @@ export interface IPlaytestScenarioAssertions {
   overlayNodes?: IPlaytestOverlayNodeAssertion[];
   parity?: IPlaytestParityAssertion;
   performance?: IPlaytestPerformanceAssertion;
+  pipelineCensus?: IPlaytestPipelineCensusAssertion;
   renderChain?: IPlaytestRenderChainAssertion;
   reachability?: IPlaytestReachabilityAssertion;
   resources?: IPlaytestResourceAssertion[];
@@ -769,6 +779,8 @@ export interface IPlaytestScenario {
   schemaVersion: 1;
   setup?: IPlaytestScenarioSetup;
   sourcePath?: string;
+  /** Absolute fixed-step tick reached after startup and warmup, before baseline and input. */
+  startTick?: number;
   steps: IPlaytestStep[];
   subject?: string;
   target: PlaytestTarget;

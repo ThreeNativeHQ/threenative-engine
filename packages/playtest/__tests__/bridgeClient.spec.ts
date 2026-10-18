@@ -277,3 +277,23 @@ test("routes bulk advance and ordinary bridge calls through their intended timeo
     { method: "ready", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
   ]);
 });
+
+
+test("startTick alone requires the fixed-step provider during the handshake", async () => {
+  const description: IPlaytestBridgeDescription = {
+    capabilities: [], limits: PLAYTEST_PROTOCOL_LIMITS, name: "anchor", protocolVersion: PLAYTEST_PROTOCOL_VERSION,
+  };
+  const transport: IBridgeTransport = {
+    capabilities: [],
+    call: async <T>(method: string) => (method === "describe" ? description : { ready: true }) as T,
+    close: async () => undefined,
+    waitForBridge: async () => true,
+  };
+  const scenario: IPlaytestScenario = {
+    artifacts: { screenshots: false }, name: "anchor", schemaVersion: 1, startTick: 0,
+    steps: [{ release: true, waitFrames: 1 }], target: "web", viewport: { height: 180, width: 320 }, warmupFrames: 0,
+  };
+  await expect(connectPlaytestBridgeTransport(transport, scenario)).rejects.toThrow("runtime.fixedStep");
+  description.capabilities = ["runtime.fixedStep"];
+  await expect(connectPlaytestBridgeTransport(transport, scenario)).resolves.toBeDefined();
+});

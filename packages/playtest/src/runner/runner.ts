@@ -3,7 +3,7 @@ import type { IPlaytestToneCaptureObservation } from "../tone.js";
 import { waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
-import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
+import { alignScenarioStartTick, preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
 import type { IPageLifecycle } from "./server.js";
 import { stopManagedServer, boundedTeardownStep, settledTeardownValue, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, pageLifecycleDiagnostic, findFreePort, withPort } from "./server.js";
 import { sampleHud } from "./sampling.js";
@@ -474,6 +474,7 @@ async function runStandalonePlaytestInternal(
           warmup: (remainingMs?: number) => waitFrames(activePage, scenario.warmupFrames, remainingMs),
           pump: (remainingMs?: number) => waitFrames(activePage, 1, remainingMs),
         });
+    await alignScenarioStartTick(bridge, scenario.startTick, activeConfig.liveClock === true);
     const runtimeReady = await page.evaluate(() =>
       document.readyState !== "loading" && document.querySelector("canvas") !== null,
     ).catch(() => false);

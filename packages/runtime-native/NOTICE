@@ -3,7 +3,7 @@ ThreeNative Native Runtime
 This package is a maintained fork of MystralNative, originally published by Mystral
 Engine under the MIT License: https://github.com/mystralengine/mystralnative
 
-Upstream provenance baseline: 841fe379ca1ab23c87c99fac3b901e37487ce8f2 (v0.1.5)
+Upstream provenance baseline: bafab09d599bd55aeb7433ba7131c3f320334c99 (v0.1.6)
 Imported maintained-fork state: c705b16eef02bc49e68fe6c9b4114698aa6b3d7f
 
 The upstream license is preserved in LICENSE. Third-party dependencies are not vendored;

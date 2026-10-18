@@ -1,10 +1,10 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, request } from "node:http";
 import { join } from "node:path";
 import { Terrain } from "@threenative/terrain";
 import { TerrainEditorDocument, terrainEditor } from "@threenative/terrain/editor/server";
 import { type ViteDevServer, createServer } from "vite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 const servers: ViteDevServer[] = [];
@@ -190,44 +190,133 @@ describe("project terrain editor document", () => {
     expect(() => new TerrainEditorDocument("relative.json")).toThrow("absolute");
   });
   it("streams accepted revisions and observes complete external file saves", async () => {
-    const { path, base, get, post, server } = await api();
-    const before = await get();
+    const originalInterval = globalThis.setInterval;
+    let heartbeat: (() => void) | undefined;
+    const intervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation((callback, delay, ...args) => {
+        if (delay === 15000 && typeof callback === "function") heartbeat = () => callback(...args);
+        return originalInterval(callback, delay, ...args);
+      });
     const cancellation = new AbortController();
-    const stream = await fetch(`${base}events`, { signal: cancellation.signal });
-    const reader = stream.body?.getReader();
-    expect(reader).toBeTruthy();
-    const initial = new TextDecoder().decode((await reader?.read())?.value);
-    expect(initial).toContain(before.revision);
-    // Observe the API save before the next complete external save; adjacent writes
-    // must not rely on a later unrelated filesystem event to refresh the document.
-    const committed = new Promise<void>((resolve) => {
-      const changed = (changedPath: string) => {
-        if (changedPath !== path) return;
-        server.watcher.off("change", changed);
-        resolve();
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    try {
+      const { path, base, get, post, server } = await api();
+      const before = await get();
+      const stream = await fetch(`${base}events`, { signal: cancellation.signal });
+      reader = stream.body?.getReader();
+      if (!reader) throw new Error("Missing editor event stream");
+      const eventReader = reader;
+      const decoder = new TextDecoder();
+      let buffered = "";
+      let heartbeatSeen: (() => void) | undefined;
+      const nextDocument = async (): Promise<string> => {
+        const timeout = setTimeout(
+          () => cancellation.abort(new Error("Editor event deadline")),
+          5000,
+        );
+        try {
+          for (;;) {
+            const end = buffered.indexOf("\n\n");
+            if (end < 0) {
+              const chunk = await eventReader.read();
+              if (chunk.done) throw new Error("Editor event stream ended before a document");
+              buffered += decoder.decode(chunk.value, { stream: true });
+              continue;
+            }
+            const frame = buffered.slice(0, end);
+            buffered = buffered.slice(end + 2);
+            const fields = frame.split("\n").filter((line) => line !== "" && !line.startsWith(":"));
+            if (fields.length === 0) {
+              if (frame === ": keepalive") heartbeatSeen?.();
+              continue;
+            }
+            expect(fields).toHaveLength(1);
+            const data = fields[0];
+            if (!data?.startsWith("data: ")) throw new Error("Expected editor document data event");
+            const snapshot = JSON.parse(data.slice(6));
+            expect(snapshot.document).toBeTruthy();
+            expect(snapshot.revision).toBeTypeOf("string");
+            return JSON.stringify(snapshot);
+          }
+        } finally {
+          clearTimeout(timeout);
+        }
       };
-      server.watcher.on("change", changed);
-    });
-    const edit = await post({
-      baseRevision: before.revision,
-      commands: [{ op: "update", id: "hills", patch: { params: { amplitude: 7 } } }],
-    });
-    const next = await edit.json();
-    expect(new TextDecoder().decode((await reader?.read())?.value)).toContain(next.revision);
-    await committed;
-    writeFileSync(
-      path,
-      JSON.stringify({
-        ...next.document,
-        recipe: Terrain.fromJSON(next.document.recipe)
-          .noise({ id: "hills", amplitude: 13 })
-          .toJSON(),
-      }),
-    );
-    const changed = new TextDecoder().decode((await reader?.read())?.value);
-    expect(changed).toContain('"amplitude":13');
-    cancellation.abort();
-    await reader?.cancel().catch(() => {});
+      const initial = await nextDocument();
+      expect(initial).toContain(before.revision);
+      const committed = new Promise<void>((resolve) => {
+        const changed = (changedPath: string) => {
+          if (changedPath !== path) return;
+          server.watcher.off("change", changed);
+          resolve();
+        };
+        server.watcher.on("change", changed);
+      });
+      const edit = await post({
+        baseRevision: before.revision,
+        commands: [{ op: "update", id: "hills", patch: { params: { amplitude: 7 } } }],
+      });
+      const next = await edit.json();
+      expect(await nextDocument()).toContain(next.revision);
+      // The API save must be observed before the next complete external save.
+      await committed;
+      expect(heartbeat).toBeTypeOf("function");
+      const sawHeartbeat = new Promise<void>((resolve) => {
+        heartbeatSeen = resolve;
+      });
+      const changed = nextDocument();
+      heartbeat?.();
+      await Promise.race([
+        sawHeartbeat,
+        changed.then(() => {
+          throw new Error("Document preceded heartbeat");
+        }),
+      ]);
+      intervalSpy.mockRestore();
+      const externalSave = `${path}.external.tmp`;
+      writeFileSync(
+        externalSave,
+        JSON.stringify({
+          ...next.document,
+          recipe: Terrain.fromJSON(next.document.recipe)
+            .noise({ id: "hills", amplitude: 13 })
+            .toJSON(),
+        }),
+      );
+      renameSync(externalSave, path);
+      expect(await changed).toContain('"amplitude":13');
+    } finally {
+      intervalSpy.mockRestore();
+      cancellation.abort();
+      await reader?.cancel().catch(() => {});
+    }
+  });
+  it("refreshes only the configured document for raw watcher path forms", async () => {
+    const { path, root, server } = await api();
+    const refresh = vi.spyOn(TerrainEditorDocument.prototype, "refresh");
+    try {
+      server.watcher.emit("raw", "change", path, {});
+      server.watcher.emit("raw", "rename", "world.json", { watchedPath: root });
+      server.watcher.emit("raw", "change", "world.json", { watchedPath: path });
+      expect(refresh).toHaveBeenCalledTimes(3);
+      server.watcher.emit("raw", "change", join(root, "other.json"), {});
+      server.watcher.emit("raw", "rename", "other.json", { watchedPath: root });
+      server.watcher.emit("raw", "change", "world.json", { watchedPath: 1 });
+      server.watcher.emit("raw", "change", "world.json");
+      expect(() => {
+        server.watcher.emit("raw", "change");
+        server.watcher.emit("raw", "change", undefined, { watchedPath: path });
+        server.watcher.emit("raw", "change", 1, { watchedPath: path });
+        server.watcher.emit("raw", "change", null, { watchedPath: path });
+      }).not.toThrow();
+      expect(refresh).toHaveBeenCalledTimes(3);
+      await server.close();
+      server.watcher.emit("raw", "change", path, {});
+      expect(refresh).toHaveBeenCalledTimes(3);
+    } finally {
+      refresh.mockRestore();
+    }
   });
   it("uses an explicitly configured private forward and rejects a failed forward", async () => {
     let target: string | undefined;

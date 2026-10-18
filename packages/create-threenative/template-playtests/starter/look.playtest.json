@@ -22,7 +22,7 @@
       "kind": "input",
       "label": "move-across-the-platform",
       "press": "ArrowRight",
-      "holdTicks": 140,
+      "holdTicks": 196,
       "release": true
     },
     {
@@ -86,7 +86,9 @@
           "tier": "medium"
         },
         "mobile-low": {
-          "contributions": { "graphOutputChanged": ["bloom", "vignette", "antialias"] },
+          "contributions": {
+            "graphOutputChanged": ["bloom", "vignette", "antialias"]
+          },
           "stages": {
             "includes": ["bloom", "vignette", "antialias", "grade"],
             "excludes": ["grain"],
@@ -95,7 +97,9 @@
           "tier": "low"
         },
         "mobile-mid": {
-          "contributions": { "graphOutputChanged": ["bloom", "vignette", "antialias"] },
+          "contributions": {
+            "graphOutputChanged": ["bloom", "vignette", "antialias"]
+          },
           "stages": {
             "includes": ["bloom", "vignette", "antialias", "grade"],
             "excludes": ["grain"],
@@ -104,7 +108,9 @@
           "tier": "low"
         },
         "software": {
-          "contributions": { "graphOutputChanged": ["bloom", "vignette", "antialias"] },
+          "contributions": {
+            "graphOutputChanged": ["bloom", "vignette", "antialias"]
+          },
           "stages": {
             "includes": ["bloom", "vignette", "antialias", "grade"],
             "excludes": ["grain"],

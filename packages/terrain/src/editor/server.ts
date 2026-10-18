@@ -358,11 +358,30 @@ export function terrainEditor(options: {
       const refresh = (path: string): void => {
         if (resolve(path) === document.path) document.refresh();
       };
-      vite.watcher.on("add", refresh).on("change", refresh).on("unlink", refresh);
+      const refreshRaw = (
+        _event: string,
+        path: string,
+        details?: { watchedPath?: unknown },
+      ): void => {
+        if (typeof path !== "string") return;
+        const watchedPath = details?.watchedPath;
+        if (
+          (isAbsolute(path) && resolve(path) === document.path) ||
+          (typeof watchedPath === "string" &&
+            (resolve(watchedPath) === document.path ||
+              resolve(watchedPath, path) === document.path))
+        )
+          refresh(document.path);
+      };
       // Vite coalesces rapid same-path changes. Reconcile completed external saves
       // independently so a save immediately after our atomic commit is not lost.
       const refreshFile = () => document.refresh();
       watchFile(document.path, { interval: 100, persistent: false }, refreshFile);
+      vite.watcher
+        .on("add", refresh)
+        .on("change", refresh)
+        .on("unlink", refresh)
+        .on("raw", refreshRaw);
       const heartbeat = setInterval(() => {
         for (const response of clients) if (!response.write(": keepalive\n\n")) response.end();
       }, 15000);
@@ -372,7 +391,11 @@ export function terrainEditor(options: {
         unsubscribe();
         unwatchFile(document.path, refreshFile);
         for (const response of clients) response.end();
-        vite.watcher.off("add", refresh).off("change", refresh).off("unlink", refresh);
+        vite.watcher
+          .off("add", refresh)
+          .off("change", refresh)
+          .off("unlink", refresh)
+          .off("raw", refreshRaw);
       });
       vite.middlewares.use((request, response, next) => {
         const path = request.url?.split("?")[0];

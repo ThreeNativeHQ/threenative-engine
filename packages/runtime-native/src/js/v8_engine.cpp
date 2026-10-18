@@ -1707,13 +1707,20 @@ private:
                     line += (*str ? *str : "");
                     if (i < info.Length() - 1) line += " ";
                 }
-                std::cout << "[" << *prefixUtf8 << "] " << line << std::endl;
+                std::string full = std::string("[") + *prefixUtf8 + "] " + line;
 #if defined(__ANDROID__)
                 // __android_log_write, not __android_log_print: the print formatter caps at
                 // LOG_BUF_SIZE 1024 (1023 bytes), which truncated TN_FRAME_BUDGET windows.
-                const std::string full = std::string("[") + *prefixUtf8 + "] " + line;
                 __android_log_write(ANDROID_LOG_INFO, "MystralJS", full.c_str());
 #endif
+                full += '\n';
+                const size_t written = std::fwrite(full.data(), 1, full.size(), stdout);
+                const int flushed = std::fflush(stdout);
+                if (written != full.size() || flushed != 0) {
+                    isolate->ThrowException(v8::Exception::Error(
+                        v8::String::NewFromUtf8(isolate, "Console stdout write failed").ToLocalChecked()));
+                    return;
+                }
             }, v8::String::NewFromUtf8(isolate_, prefix).ToLocalChecked())->GetFunction(context).ToLocalChecked();
         };
 

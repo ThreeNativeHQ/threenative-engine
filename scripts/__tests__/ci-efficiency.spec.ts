@@ -262,8 +262,8 @@ describe("PRD-380 an ordinary pull request owes only the Linux native rows", () 
       .filter(([name, section]) => name !== "scope" && /^ {4}if: .*native_tier/mu.test(section))
       .map(([name]) => name)
       .sort();
-    // Only the macOS, Windows and iOS legs are not Linux rows.
-    expect(gated).toEqual(["desktop", "ios-simulator"]);
+    // Platform legs and the opt-in cache producer skip reduced runs.
+    expect(gated).toEqual(["desktop", "ios-simulator", "linux-arm64-v8-source"]);
     expect(executable.get("desktop")).toContain("needs.scope.outputs.native_tier == 'full'");
     expect(executable.get("ios-simulator")).toContain("needs.scope.outputs.native_tier == 'full'");
     // A job's `if` cannot read `matrix`, so the arm64 row drops through the matrix itself, shaped
@@ -273,7 +273,7 @@ describe("PRD-380 an ordinary pull request owes only the Linux native rows", () 
     expect(scope).toContain("native_tier: ${{ steps.classify.outputs.native_tier }}");
     expect(scope).toContain("starter_rows: ${{ steps.rows.outputs.starter_rows }}");
     expect(scope).toContain(
-      '{ platform: "linux-x64", runner: "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && \'ubuntu-24.04\' || vars.TN_RUNNER }}"',
+      "{ platform: \"linux-x64\", runner: \"${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(steps.admission.outputs.runner_admission || '[]'), 'native:starter-linux:linux-x64')) && 'ubuntu-24.04' || vars.TN_RUNNER }}\"",
     );
     expect(scope).toContain('{ platform: "linux-arm64", runner: "ubuntu-24.04-arm" }');
     expect(scope).toContain("rows.slice(0, 1)");
@@ -342,7 +342,7 @@ describe("PRD-380 an ordinary pull request owes only the Linux native rows", () 
     // The routing expression is the x64 runner's value; the substitution above is only so the step
     // parses as JavaScript outside Actions.
     expect(scope).toContain(
-      '{ platform: "linux-x64", runner: "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && \'ubuntu-24.04\' || vars.TN_RUNNER }}"',
+      "{ platform: \"linux-x64\", runner: \"${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(steps.admission.outputs.runner_admission || '[]'), 'native:starter-linux:linux-x64')) && 'ubuntu-24.04' || vars.TN_RUNNER }}\"",
     );
     // Reduced: x64 alone, on the runner the expression resolves. Full: both rows, arm64 hosted.
     expect(rows("reduced")).toEqual([{ platform: "linux-x64", runner: "tn-local" }]);
@@ -542,7 +542,11 @@ describe("PRD-373 fail-closed required verdict", () => {
 
   it("classifies the generated speed-loop record as prose, not a full board", () => {
     // Only scripts/ci-speed-loop.mjs reads these files, and no CI job runs that script.
-    for (const file of ["docs/ci-speed/ledger.json", "docs/ci-speed/index.html"]) {
+    for (const file of [
+      "docs/ci-speed/ledger.json",
+      "docs/ci-speed/index.html",
+      "docs/ci-speed/runs/39070176677.jobs.json",
+    ]) {
       expect(prosePlan(file).selection).toBe("prose");
     }
   });

@@ -2021,6 +2021,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   #construction: { key: string; work: Generator<void, IResidentTile> } | undefined;
   #focus: IWorldTilesFollowPosition | undefined;
   #lodView: IWorldTilesLodView | undefined;
+  readonly #lodErrors: number[] = [];
   #peakBytes = 0;
   #peakTiles = 0;
   #lodTransitions = 0;
@@ -2981,13 +2982,13 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       (view.camera as Camera & { near?: number }).near ?? 0,
     );
     const scale = finest.mesh.matrixWorld.getMaxScaleOnAxis();
-    return selectLodLevel(
-      tile.levels.slice(0, floor + 1).map((level) => level.surfaceError * scale),
-      tile.lodLevel,
-      view.maxPixelError,
-      view.hysteresis,
-      [{ ...view, ...depth }],
-    );
+    // Selection is synchronous; overwrite and truncate before another tile or view reuses these.
+    for (let index = 0; index <= floor; index += 1)
+      this.#lodErrors[index] = (tile.levels[index] as ILevelGeometry).surfaceError * scale;
+    this.#lodErrors.length = floor + 1;
+    return selectLodLevel(this.#lodErrors, tile.lodLevel, view.maxPixelError, view.hysteresis, [
+      { ...view, ...depth },
+    ]);
   }
 
   #syncMorphEdges(): void {

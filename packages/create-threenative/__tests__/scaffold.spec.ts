@@ -190,6 +190,10 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PR489: all thirteen createProject trees change only by the four-line AA dispose closure;
+  // removing that closure from each generated tree recovers its previous fingerprint.
+  // PRD-564: measured all thirteen trees after retained-target sampling changes in
+  // worldEnvironment.ts and starter's grade/grain support declarations.
   // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
@@ -249,21 +253,28 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
   // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
   // createProject on the merged tree.
-  // PRD-570 + PRD-565: all thirteen measured trees combine animation guidance and the canonical Three patch.
-  "action-rpg": "3c9e98d1ded0b7b1fd908b6b0ebe3fcb52a2b6bdf6bacbf5a1dcb02db191afc8",
-  minimal: "e21ddfb6359cdf4f0b3c52613d44c37ba53b7bf5157e36de2a5c5671da60ef8b",
-  platformer: "88718002367665831dce314b53d1e25e5222712e9dfc87c4fdd09c9728a71d4c",
-  puzzle: "e33b07123c243c5e8f12ad012558cc4a8513a4355d85502aaea362f3af9412c4",
-  racing: "efc2f465899f1b119fe0d1bbc47eebef59a2cde5d350fed10df57cec0549dbf2",
-  rain: "75e267e10af895474649fb9e19c5f71d2def556089814f0d2e0c0904fb10a93a",
-  rts: "fc2c9401fc6c40801a7b43e05ddbdd85ba7b489b96f7d1a27dde1dc4101d0c4c",
-  runner: "266f26349f6ba763f25b58ac496df7c9b3e751fd0ce862cc9c5cc6ca7226c17b",
+  // PRD-566/569/609 merge: measured all thirteen trees; action-rpg carries emitParticle bursts and onCull instructions.
+  // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
+  // 2026-10-17 merged develop (PRD-619 interpolation) into PRD-564: all thirteen trees re-measured through
+  // createProject on the merged tree.
+  // Merged develop 1d056cec3 into PRD-564: AA disposal and the PR486 Three patch ship, so all thirteen
+  // trees are measured through createProject on this combined worktree, not either side's value.
+  // 2026-10-17 merged develop d27bad825 (PRD-564) into PRD-478: the only scaffold input that differs from
+  // develop is the three patch (settled-texture and alphaTestNode fixes), so all thirteen trees are re-measured.
+  "action-rpg": "a64c833d089be87641030b376ff3c61503e8a820bc24e4670a229d280586912d",
+  minimal: "5e4a83941abbec399dbc69cd20b05d0cf571cb79cbda494322f5c3c17e865d51",
+  platformer: "0dd6c253e0e849ef7fad8bd0b2113f05e73f099042595af6e73b19b97de4e00b",
+  puzzle: "73c59fbe3aeaf0f5f69e52ec7ff8772abc1d379361e132adb14de1d600804c05",
+  racing: "285b78ea904a68b3f799b593d64daf4a16340c471360865882132bf3d4ba4af5",
+  rain: "37d4f9e13df9797fcbaccd716ae09067e09bc982897ecda3260b0c0054e1e473",
+  rts: "667142725f61a73250f51890a8030410db1c135a4a99b762f3b871cb75573776",
+  runner: "a7d63eedf92c3c9aae5c4e38ba9cef8cc8e9f3eec152bbba2bfa8bdaaa196f3c",
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "16498c84b1114d84b2a992e25511072ed63a4a8d1d670f244b7af92851e4d0a9",
-  shooter: "377d02a8f5d7f3c14e5959aa031d835e7d7f031c6bfd6af691cdcfd8abfda42f",
-  snow: "9a6c5f9b287e52e6b03fd5801b497a58bb72c150d7ef565515430244af504e49",
-  starter: "8089e83fa57cb18b990f9806d02d517d0e50765918207697981545be51ebd8da",
-  "tower-defense": "061e7f4efadfaee981bed31998de689de449b2afb4e614362b9d5d061712d5f2",
+  sailing: "803d03d01a452e4c5cae4116b0c89630ff76e1c9e3baeb8258e6120333fab229",
+  shooter: "f3dac4ad06d4711e80dbbac65fdfcc4abc1362a9444c66cefdc52d25277a9e4a",
+  snow: "e49397ea569472f2105b789463db09313e90b854523e891d1ad3a5152bd05621",
+  starter: "80242c25786059c80a489846e1c2ed487601c9fa012a7734e9c3039093689e1e",
+  "tower-defense": "621e7fc3d101d24153662fec11dc9573a76098c6f7a72e84e6f83197ded446f4",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -398,10 +409,12 @@ const STARTER_PATHS = [
   "src/ui/main.tsx",
   "src/ui/App.tsx",
   "src/state.ts",
-  // PRD-449: three, and only the three that prove a new game works. The other 21 are engine
-  // guards in `packages/create-threenative/template-playtests/starter/`, which `pnpm test:templates`
-  // copies into the scaffold; the "exactly three" assertion below is what keeps them out.
+  // Ship the starter smoke, outcome, readiness and movement scenarios. Engine guards stay in
+  // `packages/create-threenative/template-playtests/starter/`, copied by `pnpm test:templates`.
   "playtests/survives.playtest.json",
+  "playtests/movement.playtest.json",
+  "playtests/live/smooth-motion.playtest.json",
+  "native-playtests/smooth-motion.playtest.json",
   "playtests/play.playtest.json",
   "native-playtests/react-hud.playtest.json",
   "playtests/production-readiness.playtest.json",
@@ -935,7 +948,7 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
-      // The whole point of the cut (PRD-449): a new game proves itself with three scenarios, and
+      // The whole point of the cut (PRD-449): a new game proves itself with four scenarios, and
       // the engine's own guards live outside the template. `readdir` rather than the STARTER_PATHS
       // membership, so a file nobody added to the list still fails here.
       expect(
@@ -943,6 +956,7 @@ describe("create-threenative", () => {
           name.endsWith(".playtest.json"),
         ),
       ).toEqual([
+        "movement.playtest.json",
         "play.playtest.json",
         "production-readiness.playtest.json",
         "survives.playtest.json",

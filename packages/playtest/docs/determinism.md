@@ -68,10 +68,10 @@ were already identical in the runs that disagreed.
 ## `--live-clock`: the one wall clock a measurement may ask for
 
 **A standing scene is not measurable on counted ticks, and that is not the game's defect.** The
-runner turns `waitTicks` — and, under `runtime.fixedStep`, `waitFrames` — into batches of ten
-`advance()` calls, and a counted batch presents no frame: a game standing still while a scenario
-watches it reports one boot window and nothing after it, because there was no second frame to close
-a window on.
+browser runner sends each fixed-step tick through its own bounded `advance(1)` request, while recording
+path samples in groups of ten ticks. A counted group presents no extra observation frame: a game
+standing still while a scenario watches it reports one boot window and nothing after it, because
+there was no second frame to close a window on.
 
 Browser assertions containing `maxFrameMsP95` or `minFps` select this live clock automatically:
 forced simulation batches do not measure normal frame pacing. An explicit `liveClock: false`

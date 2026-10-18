@@ -124,6 +124,8 @@ export interface IWarmUpOptions {
    * `visibilityForced`, so a game can see how much of its scene the render had to un-hide.
    */
   readonly includeHidden?: boolean;
+  /** The scene that supplies lights and environment when `scene` is an unattached object. */
+  readonly targetScene?: Object3D;
 }
 
 /** What the warm-up did, so a caller can report it rather than assume it. */
@@ -213,6 +215,8 @@ export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
   computeAsync?: (node: unknown) => Promise<void>;
   pipelineCensus?: () => IPipelineCensus;
+  /** Performs one covered output-pipeline render without marking first present. */
+  warmUpWorldPass?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => void;
   /** The renderer's own render path, used to build every pass's pipelines once. */
   render?: (scene: Object3D, camera: Camera) => void;
   raw?: unknown;
@@ -322,12 +326,17 @@ export interface IComputeWarmUpReport {
 }
 
 function computeAsyncOf(renderer: IWarmUpRenderer): ((node: unknown) => Promise<void>) | undefined {
-  if (typeof renderer.computeAsync === "function") return renderer.computeAsync.bind(renderer);
-  const raw = renderer.raw;
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const computeAsync = (raw as { computeAsync?: unknown }).computeAsync;
+  const receiver = typeof renderer.computeAsync === "function" ? renderer : renderer.raw;
+  if (typeof receiver !== "object" || receiver === null) return undefined;
+  const { backend, computeAsync } = receiver as {
+    backend?: { isWebGPUBackend?: boolean };
+    computeAsync?: (node: unknown, dispatchSize?: number) => Promise<void>;
+  };
   if (typeof computeAsync !== "function") return undefined;
-  return computeAsync.bind(raw) as (node: unknown) => Promise<void>;
+  // WebGPU compiles zero workgroups without running a solver against its live storage buffers.
+  return backend?.isWebGPUBackend === true
+    ? (node) => computeAsync.call(receiver, node, 0)
+    : computeAsync.bind(receiver);
 }
 
 /**
@@ -720,9 +729,16 @@ function renderWarmPasses(
   camera: Camera,
   enabled: boolean,
   includeHidden: boolean,
+  targetScene?: Object3D,
 ): IWarmPassRender | undefined {
-  const render = renderer.render;
-  if (typeof render !== "function") return undefined;
+  const coveredWorldPass = renderer.warmUpWorldPass;
+  const render =
+    coveredWorldPass === undefined
+      ? renderer.render === undefined
+        ? undefined
+        : () => renderer.render?.(scene, camera)
+      : () => coveredWorldPass(scene, camera, targetScene);
+  if (render === undefined) return undefined;
   const skipped: IWarmPassRender = {
     passes: [],
     created: 0,
@@ -730,19 +746,21 @@ function renderWarmPasses(
     cullingForced: 0,
     visibilityForced: 0,
   };
-  if (!enabled) return skipped;
+  // `renderPasses: false` disables optional shadow/reflection work, but an output pipeline's world
+  // pass is the shared fallback for a chunk/cell compile and must still be covered once.
+  if (!enabled && coveredWorldPass === undefined) return skipped;
   const raw =
     typeof renderer.raw === "object" && renderer.raw !== null
       ? (renderer.raw as IWarmRenderHost)
       : undefined;
   const shadowMap = raw?.shadowMap;
   const passes: string[] = ["main"];
-  if (shadowMap?.enabled !== false && hasShadowCaster(scene)) passes.push("shadow");
-  if (hasReflector(scene)) passes.push("reflection");
+  if (enabled && shadowMap?.enabled !== false && hasShadowCaster(scene)) passes.push("shadow");
+  if (enabled && hasReflector(scene)) passes.push("reflection");
   // `compileAsync` already built the main pass. A scene with neither a shadow map nor a reflection
   // has no second pass to build, so rendering it again would only draw a frame the cover hides for
   // nothing. Skip the draw and report the one pass that was compiled.
-  if (passes.length === 1) return { ...skipped, passes };
+  if (passes.length === 1 && renderer.warmUpWorldPass === undefined) return { ...skipped, passes };
 
   const censusBefore = readPipelineCensus(renderer);
   const sceneVisible = (scene as IWarmVisibilityHost).visible;
@@ -783,7 +801,7 @@ function renderWarmPasses(
     if (sceneVisible === false) (scene as IWarmVisibilityHost).visible = true;
     if (raw !== undefined) raw.autoClear = false;
     if (shadowMap !== undefined) shadowMap.needsUpdate = true;
-    render(scene, camera);
+    render();
   } finally {
     if (raw !== undefined) {
       if (hadOwnAutoClear) raw.autoClear = autoClear;
@@ -927,20 +945,48 @@ export async function warmUpScene(
       return Promise.reject(error);
     }
   };
+  const invokeSceneCompile = (): Promise<void> => {
+    // Stock Three compileAsync has no render-depth input, so an output pipeline's covered render
+    // is the only path that can build the world graph against the target the first frame draws.
+    if (renderer.warmUpWorldPass !== undefined) {
+      const pass = renderWarmPassesOnce();
+      return pass === undefined
+        ? Promise.reject(passError ?? new Error("covered world warm render did not settle"))
+        : Promise.resolve();
+    }
+    return invokeCompile(scene, options.targetScene);
+  };
 
+  let gpuDrainSettled = true;
   const finish = (report: IWarmUpReport): IWarmUpReport => {
+    const coveredPassIncomplete =
+      renderer.warmUpWorldPass !== undefined && passResult === undefined;
+    const drainNormalized = gpuDrainSettled
+      ? report
+      : {
+          ...report,
+          timedOut: true,
+        };
+    const normalized = coveredPassIncomplete
+      ? {
+          ...drainNormalized,
+          abandoned: Math.max(1, drainNormalized.abandoned),
+          timedOut: drainNormalized.timedOut || now() >= startedAt + budgetMs,
+        }
+      : drainNormalized;
     const complete =
-      !report.unsupported &&
-      !report.timedOut &&
-      report.abandoned === 0 &&
-      report.computeUnsupported !== true &&
-      report.computeTimedOut !== true &&
-      (report.computeAbandoned ?? 0) === 0;
+      gpuDrainSettled &&
+      !normalized.unsupported &&
+      !normalized.timedOut &&
+      normalized.abandoned === 0 &&
+      normalized.computeUnsupported !== true &&
+      normalized.computeTimedOut !== true &&
+      (normalized.computeAbandoned ?? 0) === 0;
     const finalCache =
       complete && cacheIdentity !== undefined
         ? storeWarmUpCache(cacheIdentity, candidates, computeNodes.length)
         : cacheStatus;
-    return reconcileWarmUpObservation({ ...report, cache: finalCache });
+    return reconcileWarmUpObservation({ ...normalized, cache: finalCache });
   };
 
   // The hidden pass render runs once, after the compile and before the ending census snapshot, so
@@ -949,6 +995,7 @@ export async function warmUpScene(
   // be worse than the stall it exists to prevent.
   let passResult: IWarmPassRender | undefined;
   let passRendered = false;
+  let passError: unknown;
   const renderWarmPassesOnce = (): IWarmPassRender | undefined => {
     if (passRendered) return passResult;
     passRendered = true;
@@ -960,8 +1007,10 @@ export async function warmUpScene(
         camera,
         options.renderPasses !== false,
         options.includeHidden === true,
+        options.targetScene,
       );
-    } catch {
+    } catch (error) {
+      passError = error;
       passResult = undefined;
     }
     return passResult;
@@ -978,7 +1027,7 @@ export async function warmUpScene(
     )?.backend?.device?.queue;
     if (typeof queue?.onSubmittedWorkDone !== "function") return;
     const drained = Promise.resolve().then(() => queue.onSubmittedWorkDone?.());
-    await withinDeadline(startedAt + budgetMs, drained, yieldFrame, now);
+    gpuDrainSettled = await withinDeadline(startedAt + budgetMs, drained, yieldFrame, now);
   };
   const withPasses = (report: IWarmUpReport): IWarmUpReport =>
     passResult === undefined
@@ -1001,7 +1050,7 @@ export async function warmUpScene(
       const deadline = startedAt + budgetMs;
       const finished =
         now() < deadline
-          ? await withinDeadline(deadline, invokeCompile(scene), yieldFrame, now)
+          ? await withinDeadline(deadline, invokeSceneCompile(), yieldFrame, now)
           : false;
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
       renderWarmPassesOnce();
@@ -1017,14 +1066,14 @@ export async function warmUpScene(
           elapsedMs: now() - startedAt,
           unsupported: false,
           abandoned: finished ? 0 : 1,
-          timedOut: !finished,
+          timedOut: !finished && (passError === undefined || now() >= deadline),
         }),
       );
     }
     const remaining = Math.max(0, startedAt + budgetMs - now());
     const finished =
       remaining > 0
-        ? await withinDeadline(startedAt + budgetMs, invokeCompile(scene), yieldFrame, now)
+        ? await withinDeadline(startedAt + budgetMs, invokeSceneCompile(), yieldFrame, now)
         : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
     renderWarmPassesOnce();
@@ -1089,7 +1138,7 @@ export async function warmUpScene(
     // Bounded, because an unbounded await here is what held a real launch open forever.
     const finished = await withinDeadline(
       Math.min(deadline, now() + compileTimeoutMs),
-      invokeCompile(renderables[index] as Object3D, scene),
+      invokeCompile(renderables[index] as Object3D, options.targetScene ?? scene),
       yieldFrame,
       now,
     );

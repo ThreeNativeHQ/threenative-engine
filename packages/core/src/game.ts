@@ -20,6 +20,7 @@ import {
   rendererBackendIdentity,
 } from "./geometry-capture.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
+import { PhysicsInterpolation } from "./interpolation.js";
 import { watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
 import {
   FixedStepLoop,
@@ -391,6 +392,8 @@ export interface IGameConfig<
    * Maximum simulation steps per rendered frame. Default 5. Caps the catch-up burst after a
    * stall so a slow frame cannot cascade into a spiral of longer frames.
    */
+  /** Smooth physics objects and the camera between fixed ticks. Default true. */
+  readonly physicsInterpolation?: boolean;
   readonly maxSteps?: number;
   readonly platform?: IGamePlatformSource;
   readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
@@ -688,6 +691,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #state: GameStore<TState>;
   #initialState: TState;
   #loop: FixedStepLoop | undefined;
+  #interpolation: PhysicsInterpolation | undefined;
   #projection: SceneRenderProjection | undefined;
   #cameraCull: RenderCameraCull | undefined;
   #matrixWorld: MatrixWorldPass | undefined;
@@ -851,6 +855,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#sceneFrame = undefined;
     this.#afterPhysicsPhase?.clear();
     this.#beforeRenderCallbacks.clear();
+    this.#interpolation?.clear();
+    this.#interpolation?.track(ctx.camera);
     this.#scene?.exit(ctx);
     this.#pointerEvents?.clear();
     this.#sceneEntered = false;
@@ -1024,6 +1030,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#state.start();
     const threeScene = new ThreeScene();
     const camera = createCamera(this.#config.camera);
+    const interpolation = new PhysicsInterpolation(this.#config.physicsInterpolation);
+    this.#interpolation = interpolation;
+    interpolation.track(camera);
     const viewport = new Viewport({ camera, renderer: this.#renderer, source: platform?.viewport });
     const canvasLayer = new CanvasLayer(viewport);
     this.#viewport = viewport;
@@ -1235,6 +1244,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
+      // With an explicit warm-up, this held pass is only the first half of startup. Stamp after
+      // the explicit pass so its own pipelines remain inside the settled boundary; without one,
+      // this is the only warm-up completion.
+      if (stamp || !this.#warmUpConfiguredExplicitly()) renderer.warmUpSettled?.();
       warmUpStatus =
         report === undefined
           ? { status: "unavailable" }
@@ -1283,6 +1296,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       | (() => { readonly instances: number; readonly triangles: number } | undefined)
       | undefined;
     const ctx: ICtx<TState, TPhysics> = {
+      get frameTime() {
+        return loopState.current?.frameTime ?? 0;
+      },
+      get alpha() {
+        return loopState.current?.alpha ?? 0;
+      },
+      interpolate: (object) => interpolation.track(object),
+      resetInterpolation: (object) => interpolation.reset(object),
       add: (object) => {
         // Narrowed through a plain `Object3D` rather than the type parameter: a type guard applied
         // to `T` yields `T & IComputeDriven`, which TypeScript will not carry to the registry's
@@ -1576,7 +1597,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               return {
                 ...renderer.surface(),
                 ...(scaler === undefined ? {} : { atFloor: scaler.atFloor }),
-                ...(compilingInWindow ? { compiling: true } : {}),
+                compiling: compilingInWindow,
               };
             },
           });
@@ -1625,6 +1646,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const devMetricsEnabled = isDevLaunch();
     let postedVerdict: string | undefined;
     const gameLoop: FixedStepLoop = new FixedStepLoop({
+      interpolation,
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
       maxSteps: this.#config.maxSteps,
@@ -1636,7 +1658,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         resetRendererPerformanceMetrics(renderer.raw);
         renderer.beginFrame?.();
       },
-      onRender: () => {
+      onRender: (alpha) => {
         observeCompilation();
         renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
@@ -1743,189 +1765,196 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               this.#beforeRenderDepth -= 1;
             }
           }
-          // Let a depth-coupled scene update its output node while the scene pass is still the
-          // next render. Ordinary scenes keep the historical hook order and timing.
-          const depthCoupledOutput = this.#hasDepthCoupledOutput;
-          if (depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
-          // The engine's own walk owns the frame's world matrices, so the count starts here and
-          // covers both applications below: the authored scene the projection reconciles from and
-          // the root the renderer is actually handed.
-          this.#matrixWorld?.beginFrame();
-          if (this.#projection !== undefined) {
-            beginSpan(SPANS.reconcile);
-            try {
-              this.#projection.reconcile();
-            } finally {
-              endSpan(SPANS.reconcile);
+          interpolation.render(gameLoop.clockFrozen || this.#paused ? 1 : alpha, () => {
+            // Let a depth-coupled scene update its output node while the scene pass is still the
+            // next render. Ordinary scenes keep the historical hook order and timing.
+            const depthCoupledOutput = this.#hasDepthCoupledOutput;
+            if (depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
+            // The engine's own walk owns the frame's world matrices, so the count starts here and
+            // covers both applications below: the authored scene the projection reconciles from and
+            // the root the renderer is actually handed.
+            this.#matrixWorld?.beginFrame();
+            if (this.#projection !== undefined) {
+              beginSpan(SPANS.reconcile);
+              try {
+                this.#projection.reconcile();
+              } finally {
+                endSpan(SPANS.reconcile);
+              }
             }
-          }
-          // Virtual geometry ships on by default, so the engine takes the cut rather than waiting
-          // for a game to know it should. It runs here, before the render and after the reconcile,
-          // because an empty cut has to skip its draw rather than submit a zero-count one — and a
-          // scene holding no clustered mesh pays no traversal at all, only the tracked set.
-          beginSpan(SPANS.clustered);
-          try {
-            updateClusteredMeshes(
+            // Virtual geometry ships on by default, so the engine takes the cut rather than waiting
+            // for a game to know it should. It runs here, before the render and after the reconcile,
+            // because an empty cut has to skip its draw rather than submit a zero-count one — and a
+            // scene holding no clustered mesh pays no traversal at all, only the tracked set.
+            beginSpan(SPANS.clustered);
+            try {
+              updateClusteredMeshes(
+                this.#projection?.root ?? threeScene,
+                camera,
+                renderer.surfaceDrawingBufferHeight?.() ?? renderer.surface().drawingBufferHeight,
+              );
+            } finally {
+              endSpan(SPANS.clustered);
+            }
+            // Automatic discrete LOD ships on with the pipeline, so the engine takes the selection
+            // too. It shares the render root and the same drawing-buffer height, and a scene with no
+            // managed mesh pays only the tracked-set walk.
+            beginSpan(SPANS.lod);
+            try {
+              updateModelLods(
+                this.#projection?.root ?? threeScene,
+                camera,
+                renderer.surface().drawingBufferHeight,
+              );
+            } finally {
+              endSpan(SPANS.lod);
+            }
+            const renderRoot = this.#projection?.root ?? threeScene;
+            // The cull reads the matrices the renderer will draw. Projection exact proxies carry the
+            // authored world matrix in their local matrix, so their own world walk must precede both
+            // the cull and the render rather than following the cull.
+            renderRoot.matrixWorldAutoUpdate = false;
+            this.#matrixWorld?.apply(renderRoot);
+            // Projected-size cull, per render camera, default on. It writes only `object.visible` —
+            // the one per-frame flag the projection's batch key ignores — and restores what it hid
+            // immediately after the draw, so the authored scene is untouched between frames. The
+            // renderer walks the same root the projection is about to draw, so a declined projection
+            // and an active one both get the gate.
+            const cullApplyStart = spans === undefined ? 0 : spanNow();
+            this.#cameraCull?.apply(
               this.#projection?.root ?? threeScene,
               camera,
-              renderer.surfaceDrawingBufferHeight?.() ?? renderer.surface().drawingBufferHeight,
+              drawingBufferHeight,
             );
-          } finally {
-            endSpan(SPANS.clustered);
-          }
-          // Automatic discrete LOD ships on with the pipeline, so the engine takes the selection
-          // too. It shares the render root and the same drawing-buffer height, and a scene with no
-          // managed mesh pays only the tracked-set walk.
-          beginSpan(SPANS.lod);
-          try {
-            updateModelLods(
-              this.#projection?.root ?? threeScene,
-              camera,
-              renderer.surface().drawingBufferHeight,
+            // Added, not bracketed: the render call sits between the apply and the restore, and a
+            // span that contained it would report the world pass as cull work.
+            if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullApplyStart);
+            const capturing = geometryCapture.armed();
+            if (capturing) {
+              // The mirror is what the renderer sees; arming the authored scene would attribute the
+              // frame to objects that were never submitted.
+              geometryCapture.beginFrame({
+                camera,
+                generation: this.#sceneGeneration,
+                root: this.#projection?.root ?? threeScene,
+                tick: gameLoop.tick(),
+                viewportHeight: renderer.surface().drawingBufferHeight,
+                viewportWidth: renderer.surface().drawingBufferWidth,
+                ...(renderPassBudget === undefined
+                  ? {}
+                  : { activePassKind: () => renderPassBudget.activeKind() }),
+                ...(this.#projection === undefined
+                  ? {}
+                  : { ownership: this.#projection.describeOwnership() }),
+                ...(rendererBackendIdentity(renderer.raw) === undefined
+                  ? {}
+                  : { backend: rendererBackendIdentity(renderer.raw) as string }),
+              });
+            }
+            renderer.render(renderRoot, camera);
+            // *After* the render, because that is where the draw happened. The matrices read here are
+            // the ones drawn: the walk above refreshed them and `render()` did not touch them. The
+            // frozen roots are passed because the draw root is the projection's mirror when the
+            // engine is collapsing, and validating only that reassured about a scene it never
+            // looked at. `?.` short-circuits before the spread, so `staticRoots()` is not called
+            // at all on a frame without the flag — verified, a million optional calls evaluate the
+            // argument zero times — and this stays a single undefined check in a shipped game.
+            renderListValidator?.frame(renderRoot, ...staticRoots());
+            const cullRestoreStart = spans === undefined ? 0 : spanNow();
+            this.#cameraCull?.restore();
+            if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullRestoreStart);
+            this.#projection?.commit();
+            renderer.observeRenderChainFrame?.();
+            frameBudget?.addRender(budgetNow() - renderStart);
+            // Read the split before the overlay renders: the overlay is its own draw, not part of the
+            // world pass, and the budget window already accounts for it in its own phase.
+            worldPasses = renderPassBudget?.passes();
+            if (worldPasses !== undefined && worldPasses.length > 0)
+              frameBudget?.addRenderPasses(worldPasses);
+            // After the passes are read, so the rows reconcile against this frame's own totals.
+            if (capturing) geometryCapture.finishFrame(worldPasses ?? []);
+            // Resolve the GPU timestamps every frame, not once per reported window.
+            //
+            // `trackTimestamp` spends two queries per render pass, and three's pool holds 2048.
+            // A scene with a post-processing chain runs tens of passes per frame — a cathedral
+            // with SSGI, denoise, godrays, SSR and bloom measured 27 — so the pool fills in
+            // 2048 / (2 x 27) = 38 frames. The resolve used to be wired to the frame-budget
+            // window boundary, 300 frames by default, which is eight times too slow: three
+            // warned `Maximum number of queries exceeded`, stopped recording, and every window
+            // after the first reported `gpuMs: undefined`. The one instrument that exists so the
+            // GPU record is not wall-clock algebra was reading nothing.
+            //
+            // This does not put the GPU on the frame path. `resolveTimestampsAsync` is
+            // fire-and-forget and already catch-guarded, which was the original cadence's only
+            // stated concern.
+            // Deliberately unspanned. The resolve runs *after* `addRender` closed the render phase,
+            // so its milliseconds are in the frame's `residual`, not in `render`. A span for it was
+            // measured on the native smoke game at 0.18 ms and showed up as exactly that much
+            // negative residual — the tree reporting, correctly, that it had been handed a term from
+            // outside the phase it is dividing up. The frame budget already carries this cost.
+            renderer.resolveGpuFrame();
+            frameBudget?.addGpuPyramidMs(renderer.gpuPyramidMs?.());
+            // The budget's GPU series is fed every frame, not read once per reported window. A
+            // single window-close read is one instantaneous, lagged `info.render.timestamp` — the
+            // sample that made a 17.6 ms frame read as 2.98–10.40 ms. The sample carries the
+            // resolved frame id so a resolve still in flight is counted stale, not measured twice.
+            //
+            // The reading is the frame's own passes out of three's per-pass map, handed out one
+            // resolved frame per presented frame. Three's resolve answers with one number for the
+            // batch — the last frame in it — so reading that instead dropped every frame a batch
+            // caught up on, and because the resolve is asked for on the same 1-in-8 stride the
+            // sampler uses, how many frames a batch caught up on was a function of frame rate.
+            // The pass recorder is what reads three's per-pass map back into per-frame numbers; a
+            // renderer it cannot instrument falls back to the batch's own single number, which is the
+            // reading there was before — one sample per resolve rather than one per sampled frame.
+            const gpuFrame = renderPassBudget?.nextGpuFrame();
+            const gpuSample = gpuFrame === undefined ? renderer.gpuFrameSample?.() : undefined;
+            frameBudget?.addGpuMs(
+              gpuFrame?.total ?? gpuSample?.ms,
+              gpuFrame?.frame ?? gpuSample?.frame,
             );
-          } finally {
-            endSpan(SPANS.lod);
-          }
-          const renderRoot = this.#projection?.root ?? threeScene;
-          // The cull reads the matrices the renderer will draw. Projection exact proxies carry the
-          // authored world matrix in their local matrix, so their own world walk must precede both
-          // the cull and the render rather than following the cull.
-          renderRoot.matrixWorldAutoUpdate = false;
-          this.#matrixWorld?.apply(renderRoot);
-          // Visibility is decided against the transforms and LOD selection that will actually be
-          // drawn. The earlier animation-only pass has already published the rate for this frame.
-          const cullApplyStart = spans === undefined ? 0 : spanNow();
-          this.#cameraCull?.apply(
-            this.#projection?.root ?? threeScene,
-            camera,
-            drawingBufferHeight,
-          );
-          if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullApplyStart);
-          const capturing = geometryCapture.armed();
-          if (capturing) {
-            // The mirror is what the renderer sees; arming the authored scene would attribute the
-            // frame to objects that were never submitted.
-            geometryCapture.beginFrame({
-              camera,
-              generation: this.#sceneGeneration,
-              root: this.#projection?.root ?? threeScene,
-              tick: gameLoop.tick(),
-              viewportHeight: renderer.surface().drawingBufferHeight,
-              viewportWidth: renderer.surface().drawingBufferWidth,
-              ...(renderPassBudget === undefined
-                ? {}
-                : { activePassKind: () => renderPassBudget.activeKind() }),
-              ...(this.#projection === undefined
-                ? {}
-                : { ownership: this.#projection.describeOwnership() }),
-              ...(rendererBackendIdentity(renderer.raw) === undefined
-                ? {}
-                : { backend: rendererBackendIdentity(renderer.raw) as string }),
-            });
-          }
-          renderer.render(renderRoot, camera);
-          // *After* the render, because that is where the draw happened. The matrices read here are
-          // the ones drawn: the walk above refreshed them and `render()` did not touch them. The
-          // frozen roots are passed because the draw root is the projection's mirror when the
-          // engine is collapsing, and validating only that reassured about a scene it never
-          // looked at. `?.` short-circuits before the spread, so `staticRoots()` is not called
-          // at all on a frame without the flag — verified, a million optional calls evaluate the
-          // argument zero times — and this stays a single undefined check in a shipped game.
-          renderListValidator?.frame(renderRoot, ...staticRoots());
-          const cullRestoreStart = spans === undefined ? 0 : spanNow();
-          this.#cameraCull?.restore();
-          if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullRestoreStart);
-          this.#projection?.commit();
-          renderer.observeRenderChainFrame?.();
-          frameBudget?.addRender(budgetNow() - renderStart);
-          // Read the split before the overlay renders: the overlay is its own draw, not part of the
-          // world pass, and the budget window already accounts for it in its own phase.
-          worldPasses = renderPassBudget?.passes();
-          if (worldPasses !== undefined && worldPasses.length > 0)
-            frameBudget?.addRenderPasses(worldPasses);
-          // After the passes are read, so the rows reconcile against this frame's own totals.
-          if (capturing) geometryCapture.finishFrame(worldPasses ?? []);
-          // Resolve the GPU timestamps every frame, not once per reported window.
-          //
-          // `trackTimestamp` spends two queries per render pass, and three's pool holds 2048.
-          // A scene with a post-processing chain runs tens of passes per frame — a cathedral
-          // with SSGI, denoise, godrays, SSR and bloom measured 27 — so the pool fills in
-          // 2048 / (2 x 27) = 38 frames. The resolve used to be wired to the frame-budget
-          // window boundary, 300 frames by default, which is eight times too slow: three
-          // warned `Maximum number of queries exceeded`, stopped recording, and every window
-          // after the first reported `gpuMs: undefined`. The one instrument that exists so the
-          // GPU record is not wall-clock algebra was reading nothing.
-          //
-          // This does not put the GPU on the frame path. `resolveTimestampsAsync` is
-          // fire-and-forget and already catch-guarded, which was the original cadence's only
-          // stated concern.
-          // Deliberately unspanned. The resolve runs *after* `addRender` closed the render phase,
-          // so its milliseconds are in the frame's `residual`, not in `render`. A span for it was
-          // measured on the native smoke game at 0.18 ms and showed up as exactly that much
-          // negative residual — the tree reporting, correctly, that it had been handed a term from
-          // outside the phase it is dividing up. The frame budget already carries this cost.
-          renderer.resolveGpuFrame();
-          frameBudget?.addGpuPyramidMs(renderer.gpuPyramidMs?.());
-          // The budget's GPU series is fed every frame, not read once per reported window. A
-          // single window-close read is one instantaneous, lagged `info.render.timestamp` — the
-          // sample that made a 17.6 ms frame read as 2.98–10.40 ms. The sample carries the
-          // resolved frame id so a resolve still in flight is counted stale, not measured twice.
-          //
-          // The reading is the frame's own passes out of three's per-pass map, handed out one
-          // resolved frame per presented frame. Three's resolve answers with one number for the
-          // batch — the last frame in it — so reading that instead dropped every frame a batch
-          // caught up on, and because the resolve is asked for on the same 1-in-8 stride the
-          // sampler uses, how many frames a batch caught up on was a function of frame rate.
-          // The pass recorder is what reads three's per-pass map back into per-frame numbers; a
-          // renderer it cannot instrument falls back to the batch's own single number, which is the
-          // reading there was before — one sample per resolve rather than one per sampled frame.
-          const gpuFrame = renderPassBudget?.nextGpuFrame();
-          const gpuSample = gpuFrame === undefined ? renderer.gpuFrameSample?.() : undefined;
-          frameBudget?.addGpuMs(
-            gpuFrame?.total ?? gpuSample?.ms,
-            gpuFrame?.frame ?? gpuSample?.frame,
-          );
-          // Where one resolved frame's GPU time went: main and shadow come from the pass
-          // recorder's per-uid query results, and everything else in that pool (post chain,
-          // reflections, HUD) is the remainder. Compute is its own pool.
-          if (gpuFrame !== undefined) {
-            const computeMs = renderer.gpuComputeMs?.();
-            // The recorder hands out a frame only when every pass it recorded resolved, so `total`
-            // is the whole frame and never a partial sum; `main` and `shadow` are whole or zero.
-            // `other` is the remainder of the frame (post chain, reflection, HUD). `shadowPasses`
-            // rides along so a consumer can tell a frame that rendered a shadow from one that drew
-            // none, since a real render can resolve to 0 ms.
-            frameBudget?.addGpuBucketMs({
-              main: gpuFrame.main,
-              shadow: gpuFrame.shadow,
-              shadowPasses: gpuFrame.shadowPasses,
-              other: Math.max(0, gpuFrame.total - gpuFrame.main - gpuFrame.shadow),
-              ...(computeMs === undefined ? {} : { compute: computeMs }),
-            });
-            // The main pass's own GPU series, for the adaptive LOD control loop: the frame
-            // budget's `gpuMain` bucket is the record, and this is the same number smoothed on the
-            // renderer so a world holding only the renderer can read it. Fed per delivered frame,
-            // fresh or not.
-            renderer.noteGpuMainMs?.(gpuFrame.main, gpuFrame.frame);
-          } else {
-            renderer.noteGpuMainMs?.(undefined);
-          }
-          if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
-          if (this.#sceneEntered) {
-            if (!worldRendered) gameLoop.clearRuntimeDiagnostics();
-            worldRendered = true;
-          }
-          if (this.#renderMetricsEnabled) {
-            const metrics = rendererPerformanceMetrics(renderer.raw);
-            worldMetrics =
-              worldPasses === undefined || worldPasses.length === 0
-                ? metrics
-                : { ...metrics, passes: worldPasses.map((pass) => ({ ...pass })) };
-          }
-          // Read whether or not the game asked for render metrics: the projection line reports
-          // the measured draw count, and a convention's measurement does not switch off with the
-          // convention that happens to sit beside it.
-          lastWorldDrawCalls = rendererDrawCallCount(renderer.raw);
+            // Where one resolved frame's GPU time went: main and shadow come from the pass
+            // recorder's per-uid query results, and everything else in that pool (post chain,
+            // reflections, HUD) is the remainder. Compute is its own pool.
+            if (gpuFrame !== undefined) {
+              const computeMs = renderer.gpuComputeMs?.();
+              // The recorder hands out a frame only when every pass it recorded resolved, so `total`
+              // is the whole frame and never a partial sum; `main` and `shadow` are whole or zero.
+              // `other` is the remainder of the frame (post chain, reflection, HUD). `shadowPasses`
+              // rides along so a consumer can tell a frame that rendered a shadow from one that drew
+              // none, since a real render can resolve to 0 ms.
+              frameBudget?.addGpuBucketMs({
+                main: gpuFrame.main,
+                shadow: gpuFrame.shadow,
+                shadowPasses: gpuFrame.shadowPasses,
+                other: Math.max(0, gpuFrame.total - gpuFrame.main - gpuFrame.shadow),
+                ...(computeMs === undefined ? {} : { compute: computeMs }),
+              });
+              // The main pass's own GPU series, for the adaptive LOD control loop: the frame
+              // budget's `gpuMain` bucket is the record, and this is the same number smoothed on the
+              // renderer so a world holding only the renderer can read it. Fed per delivered frame,
+              // fresh or not.
+              renderer.noteGpuMainMs?.(gpuFrame.main, gpuFrame.frame);
+            } else {
+              renderer.noteGpuMainMs?.(undefined);
+            }
+            if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
+            if (this.#sceneEntered) {
+              if (!worldRendered) gameLoop.clearRuntimeDiagnostics();
+              worldRendered = true;
+            }
+            if (this.#renderMetricsEnabled) {
+              const metrics = rendererPerformanceMetrics(renderer.raw);
+              worldMetrics =
+                worldPasses === undefined || worldPasses.length === 0
+                  ? metrics
+                  : { ...metrics, passes: worldPasses.map((pass) => ({ ...pass })) };
+            }
+            // Read whether or not the game asked for render metrics: the projection line reports
+            // the measured draw count, and a convention's measurement does not switch off with the
+            // convention that happens to sit beside it.
+            lastWorldDrawCalls = rendererDrawCallCount(renderer.raw);
+          });
         }
         if (mustPresentLoader) loadingFramePresented = true;
         // Include state written by beforeRender and Scene.render in this frame's UI snapshot.
@@ -1989,11 +2018,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (this.#scene !== scene || this.#sceneFrame !== frame) return;
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
-        const computeBlockedByStartup =
-          !worldRendered &&
-          ((this.#warmUpConfiguredExplicitly() && !explicitWarmUpSettled) ||
-            (startupCoverActive() && !this.#warmUpConfiguredExplicitly()));
-        if (this.#renderer !== undefined && this.#sceneEntered && !computeBlockedByStartup)
+        if (this.#renderer !== undefined && this.#sceneEntered)
           this.#computeDriven.process(this.#renderer);
       },
       onFrame: (frameMs) => startupReadiness.observe(frameMs),
@@ -2150,6 +2175,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
+      this.#renderer.warmUpSettled?.();
       warmUpStatus =
         report === undefined
           ? { status: "unavailable" }
@@ -2232,6 +2258,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#frameBudget?.dispose();
     this.#afterPhysicsPhase?.clear();
     this.#beforeRenderCallbacks.clear();
+    this.#interpolation?.clear();
+    this.#interpolation = undefined;
     if (this.#sceneEntered && ctx !== undefined) {
       try {
         this.#scene?.exit(ctx);

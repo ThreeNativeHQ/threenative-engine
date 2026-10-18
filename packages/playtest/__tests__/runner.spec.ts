@@ -74,25 +74,28 @@ function targetPaintScreenshot(hidden: boolean): Buffer {
   return PNG.sync.write(png);
 }
 
-test("visual capture reads the largest canvas instead of composited page UI", async () => {
+test("visual capture clips the largest canvas without waiting for locator stability", async () => {
   const smallCanvas = { height: 1, width: 1 } as HTMLCanvasElement;
   const renderCanvas = { height: 2, width: 4 } as HTMLCanvasElement;
-  const screenshot = vi.fn(async () => Buffer.from("canvas"));
-  const nth = vi.fn(() => ({ screenshot }));
+  const locatorScreenshot = vi.fn(async () => Buffer.from("locator-canvas"));
+  const boundingBox = vi.fn(async () => ({ height: 360, width: 640, x: 12, y: 24 }));
+  const nth = vi.fn(() => ({ boundingBox, screenshot: locatorScreenshot }));
   const evaluateAll = vi.fn(async (callback: (elements: HTMLCanvasElement[]) => unknown) =>
     callback([smallCanvas, renderCanvas]),
   );
   const locator = { evaluateAll, nth };
+  const pageScreenshot = vi.fn(async () => Buffer.from("canvas"));
   const page = {
     locator: vi.fn(() => locator),
-    screenshot: vi.fn(async () => Buffer.from("dom-overlay")),
+    screenshot: pageScreenshot,
   } as unknown as Page;
 
   await expect(captureVisualSurface(page)).resolves.toEqual(Buffer.from("canvas"));
   expect(page.locator).toHaveBeenCalledWith("canvas");
   expect(nth).toHaveBeenCalledWith(1);
-  expect(screenshot).toHaveBeenCalledWith();
-  expect(page.screenshot).not.toHaveBeenCalled();
+  expect(boundingBox).toHaveBeenCalledWith();
+  expect(locatorScreenshot).not.toHaveBeenCalled();
+  expect(pageScreenshot).toHaveBeenCalledWith({ clip: { height: 360, width: 640, x: 12, y: 24 } });
 });
 
 test("visual observations rasterize an element-bound region captured beside the screenshot", () => {
@@ -338,7 +341,8 @@ test("fixed-step startup races retry without hiding a stopped loop", async () =>
 
   await advanceFixedStep(page, bridge, 10);
 
-  expect(attempts).toBe(2);
+  // The first one-tick request retries once; the remaining nine ticks each use one bounded request.
+  expect(attempts).toBe(11);
   expect(page.evaluate).toHaveBeenCalledTimes(1);
 });
 
@@ -1079,7 +1083,7 @@ test("buttonless pointer movement drives anonymous movement through the browser 
   }
 }, 60_000);
 
-test("browser runner samples only after the advertised startup phase is ready", async () => {
+test.each([undefined, 10])("browser runner samples after startup and optional startTick %s", async (startTick) => {
   const fixtureHtml = await readFile(new URL("./fixtures/app.html", import.meta.url), "utf8");
   const server = createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -1094,6 +1098,7 @@ test("browser runner samples only after the advertised startup phase is ready", 
     JSON.stringify({
       artifacts: { screenshots: false },
       assert: { movement: { entity: "player", minDistance: 0.2 } },
+      ...(startTick === undefined ? {} : { startTick }),
       name: "runner-startup",
       schemaVersion: 1,
       steps: [{ holdFrames: 10, press: "KeyW", release: true }],
@@ -1112,10 +1117,15 @@ test("browser runner samples only after the advertised startup phase is ready", 
       scenarioPath: "scenario.json",
       timeoutMs: 15_000,
       trace: false,
-      url: `http://127.0.0.1:${address.port}/?mode=startup-delayed`,
+      url: `http://127.0.0.1:${address.port}/?mode=startup-delayed${startTick === undefined ? "" : "&clock=fixed-step"}`,
     });
 
-    expect(report.pass).toBe(true);
+    expect(report.pass, JSON.stringify(report.diagnostics)).toBe(true);
+    if (startTick !== undefined) {
+      expect(report.before?.tick).toBe(startTick);
+      expect(report.after?.tick).toBe(startTick + 10);
+    }
+    expect(report.frames).toBe(10);
     expect(report.startup).toMatchObject({ phase: "ready", rule: "sustained-frames" });
     expect(report.observations?.resources.startup).toEqual({
       before: { sampledBeforeReady: false },

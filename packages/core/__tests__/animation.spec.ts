@@ -869,6 +869,20 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
       ),
     ]);
 
+  it("preserves the root's exact Euler while measuring a foot-plant stride", () => {
+    const root = new Object3D();
+    const foot = new Object3D();
+    foot.name = "Foot";
+    root.add(foot);
+    root.rotation.set(0, Math.PI, 0);
+    const player = new AnimationPlayer({ root, clips: [plantedWalk()] });
+    player.play("walk");
+    player.update(1 / 60);
+
+    expect(player.stride.clipGroundSpeed).toBeGreaterThan(0);
+    expect(root.rotation.toArray()).toEqual([0, Math.PI, 0, "XYZ"]);
+  });
+
   it("matches an in-place walk cycle from the ground its planted foot sweeps", () => {
     const { body, player } = character({ clips: [plantedWalk()] });
     player.play("walk");
@@ -1110,5 +1124,52 @@ describe("SkeletalMesh3D shared preparation reuse", () => {
     expect(
       () => new SkeletalMesh3D({ source: root, clips: [alien], requiredClips: ["alien"] }),
     ).toThrow(/binds 0 tracks/);
+  });
+});
+
+describe("AnimationPlayer starting pose", () => {
+  function riggedPlayer(): { bone: Bone; player: AnimationPlayer } {
+    const root = new Group();
+    const bone = new Bone();
+    bone.name = "arm";
+    bone.position.set(0, 0, 0);
+    root.add(bone);
+    // The clip's first key is not the bind pose, so a skeleton still at bind is observable.
+    const idle = new AnimationClip("idle", 1, [
+      new VectorKeyframeTrack("arm.position", [0, 1], [1, 2, 3, 1, 2, 3]),
+    ]);
+    return { bone, player: new AnimationPlayer({ clips: [idle], root }) };
+  }
+
+  it("should pose the skeleton from the clip as soon as the clip starts, before any update", () => {
+    const { bone, player } = riggedPlayer();
+
+    player.play("idle");
+
+    expect(bone.position.toArray()).toEqual([1, 2, 3]);
+    expect(player.posed).toBe(true);
+  });
+
+  it("should pose from a weighted blend before any update", () => {
+    const { bone, player } = riggedPlayer();
+
+    player.playWeighted([{ clip: "idle", weight: 1 }]);
+
+    expect(bone.position.toArray()).toEqual([1, 2, 3]);
+  });
+
+  it("should leave the bind pose, and say so, when no clip has played", () => {
+    const { bone, player } = riggedPlayer();
+
+    expect(bone.position.toArray()).toEqual([0, 0, 0]);
+    expect(player.posed).toBe(false);
+  });
+
+  it("should not advance the clip while posing it", () => {
+    const { player } = riggedPlayer();
+
+    player.play("idle");
+
+    expect(player.mixer.time).toBe(0);
   });
 });

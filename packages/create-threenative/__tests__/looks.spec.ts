@@ -277,7 +277,7 @@ describe("starter visual floor", () => {
     ]);
     expect(scenario.warmupFrames).toBe(1);
     expect(scenario.steps[1]).toMatchObject({
-      holdTicks: 140,
+      holdTicks: 196,
       kind: "input",
       press: "ArrowRight",
     });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   type IRenderChainStage,
+  RENDER_CHAIN_STAGE_ORDER,
   RenderChain,
   readRenderChainObservation,
 } from "../src/render/chain.js";
@@ -894,5 +895,42 @@ describe("RenderChain", () => {
           request: { stages: ["bloom", "grade"], tier: "high" },
         }),
     ).toThrow(/afterOutputTransform/u);
+  });
+});
+
+describe("subrect stage admission", () => {
+  it.each(RENDER_CHAIN_STAGE_ORDER)("requires explicit sampling support for %s", (name) => {
+    for (const supported of [false, true]) {
+      const adapter = renderer("webgpu");
+      const install = vi.fn();
+      adapter.setOutputNode = install;
+      const handle = {} as import("../src/render/resolution-subrect.js").ResolutionSubrect;
+      const report = vi.fn();
+      const chain = new RenderChain({
+        renderer: adapter,
+        input: {},
+        resolutionSubrect: handle,
+        report,
+        request: { stages: [name], tier: "high" },
+        stages: [
+          {
+            name,
+            requiresVelocity: false,
+            supportsResolutionSubrect: supported,
+            build: (input) => input,
+          },
+        ],
+      });
+      expect(install.mock.calls[0]?.[2]?.resolutionSubrect).toBe(supported ? handle : undefined);
+      expect(
+        report.mock.calls.some(
+          ([line]) =>
+            line.includes("TN_RESOLUTION_SUBRECT") &&
+            line.includes(supported ? "applied" : "refused") &&
+            line.includes(name),
+        ),
+      ).toBe(true);
+      chain.dispose();
+    }
   });
 });

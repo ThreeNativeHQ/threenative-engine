@@ -445,6 +445,186 @@ describe("pipeline timing capture", () => {
     expect(summary.warmup.beforeFirstPresent).toBe(1);
   });
 
+  it("reports node builds and render creations after the warm-up boundary", () => {
+    const events = [
+      browserEvent({ nodeBuilds: 3, beforeWarmUpSettled: true }),
+      browserEvent({
+        beforeFirstPresent: false,
+        beforeWarmUpSettled: false,
+        pipelineIdentity: "backend-pipeline-2",
+        sequence: 2,
+        settledMs: 5,
+        nodeBuilds: 1,
+      }),
+      browserEvent({
+        beforeFirstPresent: false,
+        beforeWarmUpSettled: false,
+        provenance: { material: { name: "bloom" }, unknown: false },
+        pipelineIdentity: "backend-pipeline-3",
+        sequence: 3,
+        settledMs: 6,
+      }),
+    ];
+    const capture = parsePipelineCapture(browserCapture(events, {
+      counts: {
+        lookups: 3,
+        creations: 3,
+        failures: 0,
+        pending: 0,
+        uniquePrograms: 1,
+        uniquePipelines: 3,
+        recordedEvents: 3,
+        droppedEvents: 0,
+        nodeBuilds: 4,
+      },
+      firstPresent: { boundaryMs: 4, eventsSettled: 1 },
+      warmUpSettled: {
+        boundaryMs: 4,
+        eventsSettled: 1,
+        nodeBuilds: 3,
+        renderPipelineCreations: 1,
+      },
+    }));
+    const summary = summarizePipelineCapture(capture);
+
+    expect(summary.warmup).toMatchObject({
+      afterWarmUpSettled: 2,
+      nodeBuildsAfterWarmUpSettled: 1,
+      renderPipelineCreationsAfterWarmUpSettled: 2,
+      warmedNodeBuildsAfterWarmUpSettled: 1,
+      warmedRenderPipelineCreationsAfterWarmUpSettled: 1,
+    });
+  });
+
+  it("summarizes repeatable streamed warm-up scopes", () => {
+    const capture = parsePipelineCapture(browserCapture([
+      browserEvent({ nodeBuilds: 1, beforeWarmUpSettled: true }),
+      browserEvent({
+        beforeFirstPresent: false,
+        beforeWarmUpSettled: false,
+        afterWarmUpScope: "chunk:0",
+        sequence: 2,
+        settledMs: 5,
+        nodeBuilds: 0,
+      }),
+    ], {
+      counts: {
+        lookups: 2,
+        creations: 2,
+        failures: 0,
+        pending: 0,
+        uniquePrograms: 1,
+        uniquePipelines: 2,
+        recordedEvents: 2,
+        droppedEvents: 0,
+        nodeBuilds: 1,
+      },
+      firstPresent: { boundaryMs: 4, eventsSettled: 1 },
+      warmUpSettled: { boundaryMs: 1, eventsSettled: 1, nodeBuilds: 1, renderPipelineCreations: 1 },
+      warmUpScopes: [{ label: "chunk:0", boundaryMs: 4, eventsSettled: 1, nodeBuilds: 1, renderPipelineCreations: 1 }],
+    }));
+    expect(summarizePipelineCapture(capture).warmup.scopes).toEqual([
+      { label: "chunk:0", nodeBuilds: 0, renderPipelineCreations: 1 },
+    ]);
+  });
+
+  it.each([
+    ["keeps the maximum for each metric", [
+      { nodeBuilds: 2, renderPipelineCreations: 0 },
+      { nodeBuilds: 0, renderPipelineCreations: 3 },
+      { nodeBuilds: 0, renderPipelineCreations: 0 },
+    ], { nodeBuilds: 2, renderPipelineCreations: 3, observed: true }],
+    ["does not hide a missing later draw", [
+      { nodeBuilds: 2, renderPipelineCreations: 1 }, undefined,
+    ], { nodeBuilds: 2, renderPipelineCreations: 1 }],
+    ["does not hide a missing earlier draw", [
+      undefined, { nodeBuilds: 2, renderPipelineCreations: 1 },
+    ], { nodeBuilds: 2, renderPipelineCreations: 1 }],
+  ])("repeated warm-up label %s", (_name, draws, expected) => {
+    const capture = parsePipelineCapture(browserCapture([browserEvent()], {
+      warmUpScopes: draws.map((firstDraw, index) => ({
+        label: "chunk:0",
+        boundaryMs: 4 + index,
+        eventsSettled: 1,
+        nodeBuilds: 0,
+        renderPipelineCreations: 1,
+        ...(firstDraw === undefined ? {} : { firstDraw }),
+      })),
+    }));
+    expect(capture.complete).toBe(true);
+    expect(summarizePipelineCapture(capture).warmup.scopes).toEqual([
+      { label: "chunk:0", ...expected },
+    ]);
+  });
+
+  it("attributes node-build records when the later render reuses its cached pipeline", () => {
+    const capture = parsePipelineCapture(
+      browserCapture(
+        [
+          browserEvent({
+            beforeFirstPresent: false,
+            beforeWarmUpSettled: false,
+            afterWarmUpScope: "chunk:0",
+            settledMs: 5,
+            nodeBuilds: 0,
+          }),
+        ],
+        {
+          counts: {
+            lookups: 1,
+            creations: 1,
+            failures: 0,
+            pending: 0,
+            uniquePrograms: 1,
+            uniquePipelines: 1,
+            recordedEvents: 1,
+            droppedEvents: 0,
+            nodeBuilds: 2,
+          },
+          warmUpSettled: {
+            boundaryMs: 1,
+            eventsSettled: 0,
+            nodeBuilds: 1,
+            renderPipelineCreations: 0,
+          },
+          warmUpScopes: [
+            {
+              label: "chunk:0",
+              boundaryMs: 2,
+              eventsSettled: 0,
+              nodeBuilds: 1,
+              renderPipelineCreations: 0,
+              firstDraw: { nodeBuilds: 1, renderPipelineCreations: 0 },
+            },
+          ],
+          nodeBuilds: [
+            {
+              provenance: { material: { name: "brick" }, unknown: false },
+              startedMs: 0,
+              beforeFirstPresent: true,
+              beforeWarmUpSettled: true,
+            },
+            {
+              provenance: { material: { name: "brick" }, unknown: false },
+              startedMs: 2,
+              beforeFirstPresent: true,
+              beforeWarmUpSettled: false,
+              afterWarmUpScope: "chunk:0",
+            },
+          ],
+        },
+      ),
+    );
+    const summary = summarizePipelineCapture(capture);
+    expect(summary.warmup.warmedNodeBuildsAfterWarmUpSettled).toBe(1);
+    expect(summary.warmup.scopes).toEqual([
+      { label: "chunk:0", nodeBuilds: 1, renderPipelineCreations: 0, observed: true },
+    ]);
+    expect(summary.contributors.find(({ label }) => label === "material:brick")).toMatchObject({
+      nodeBuilds: 2,
+    });
+  });
+
   it("requires a version before treating an events object as a browser capture", () => {
     expect(() => parsePipelineCapture({ events: [browserEvent()] })).toThrow(/missing its version/u);
   });
