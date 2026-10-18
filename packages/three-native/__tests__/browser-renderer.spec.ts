@@ -294,7 +294,12 @@ describe("the Wasm engine's frame gate", () => {
 describe("the Wasm engine's WebGPURenderer across a hot update", () => {
   it("lets a renderer replace a disposed one on the engine's own canvas, and refuses a second live one", async () => {
     const { Renderer, canvas, scene, camera, state } = host();
-    type Wasm = { domElement: object; init(): Promise<unknown>; dispose(): void; render(a: unknown, b: unknown): void };
+    type Wasm = {
+      domElement: object;
+      init(): Promise<unknown>;
+      dispose(): void;
+      render(a: unknown, b: unknown): void;
+    };
     const first = new Renderer({ canvas }) as Wasm;
     await first.init();
     expect(() => new Renderer({ canvas })).toThrow(/TN_WASM_RENDERER_SINGLE/u);
