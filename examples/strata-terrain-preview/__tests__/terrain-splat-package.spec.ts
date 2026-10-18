@@ -179,7 +179,7 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
     for (const [name, content] of [
       ["basis_transcoder.js", "first-js"],
       ["basis_transcoder.wasm", "first-wasm"],
-    ]) {
+    ] as const) {
       const staged = readFileSync(path.join(root, "assets/basis", name), "utf8");
       expect(staged).toBe(content);
       expect(readFileSync(path.join(root, "basis", name), "utf8")).toBe(staged);
