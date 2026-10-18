@@ -43,6 +43,12 @@ const GEOMETRY_CACHE_PREDECESSORS = JSON.parse(
   ).toString("utf8"),
 ) as Record<string, string>;
 
+const RESOURCE_LIFETIME_PREDECESSORS = JSON.parse(
+  brotliDecompressSync(
+    readFileSync(join(testDir, "fixtures", "resource-lifetime-predecessors.json.br")),
+  ).toString("utf8"),
+) as Record<string, string>;
+
 const run = promisify(execFile);
 const roots: string[] = [];
 
@@ -95,6 +101,10 @@ async function installedTree(): Promise<{
 async function legacyPredecessor(path: string, oldHash: string): Promise<string> {
   const recorded = GEOMETRY_CACHE_PREDECESSORS[path];
   if (recorded !== undefined && blobHash(recorded) === oldHash) return recorded;
+  const resourceLifetime = RESOURCE_LIFETIME_PREDECESSORS[path];
+  if (resourceLifetime !== undefined && blobHash(resourceLifetime) === oldHash) {
+    return resourceLifetime;
+  }
   const root = await tempRoot();
   const file = join(root, path);
   await mkdir(dirname(file), { recursive: true });

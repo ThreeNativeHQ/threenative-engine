@@ -32,6 +32,11 @@
       "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
     },
     {
+      "path": "build/three.webgpu.js",
+      "oldHash": "1071a6d91ee953f1fcc6769d0b6ba5230b67bfa1",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
       "path": "build/three.webgpu.nodes.js",
       "oldHash": "1245f0da9bb6a0f731b8c75a64490d7c91238700",
       "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
@@ -325,6 +330,26 @@
       "path": "src/renderers/webgpu/WebGPUBackend.js",
       "oldHash": "0fbcc307d39cbf6d74d9dbc5f199f2b0e4f58b33",
       "newHash": "5636b40e6708a490e926e5f590675834d23bf326"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "f656265a47ffb6034da0c6ce768264762096b197",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "src/nodes/accessors/Batch.js",
+      "oldHash": "2cf4bb6039853d5c922e89041419250b243694ef",
+      "newHash": "2cf4bb6039853d5c922e89041419250b243694ef"
+    },
+    {
+      "path": "src/renderers/common/Geometries.js",
+      "oldHash": "979da2ffc4d0dcda6fdd72747a7e7125e3f8a3a3",
+      "newHash": "979da2ffc4d0dcda6fdd72747a7e7125e3f8a3a3"
+    },
+    {
+      "path": "src/renderers/common/RenderObjects.js",
+      "oldHash": "72569d0339314d26eb7a35ff2a8462a803c852a6",
+      "newHash": "72569d0339314d26eb7a35ff2a8462a803c852a6"
     }
   ],
   "baseFinalHashes": {

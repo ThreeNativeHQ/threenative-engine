@@ -27,6 +27,12 @@ const FIXTURE = JSON.parse(
   targetTexts: Record<string, string>;
 };
 
+const RESOURCE_LIFETIME_PREDECESSORS = JSON.parse(
+  brotliDecompressSync(
+    readFileSync(join(testDir, "fixtures", "resource-lifetime-predecessors.json.br")),
+  ).toString("utf8"),
+) as Record<string, string>;
+
 const GENERATED_FINAL_HASHES = (
   JSON.parse(
     readFileSync(
@@ -262,6 +268,18 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
   for (const [file, contents] of Object.entries(FIXTURE.targetTexts)) {
     await mkdir(dirname(join(threeRoot, file)), { recursive: true });
     await writeFile(join(threeRoot, file), contents, "utf8");
+  }
+  if (
+    Object.keys(priorBlobs).length > 0 &&
+    Object.entries(priorBlobs).every(
+      ([file, hash]) => blobHash(RESOURCE_LIFETIME_PREDECESSORS[file] ?? "") === hash,
+    )
+  ) {
+    for (const [file, contents] of Object.entries(RESOURCE_LIFETIME_PREDECESSORS)) {
+      await mkdir(dirname(join(threeRoot, file)), { recursive: true });
+      await writeFile(join(threeRoot, file), contents, "utf8");
+    }
+    return { packageRoot, threeRoot };
   }
   // Invert the frozen legacy hunks to reach the older state this group represents.
   const migration = FIXTURE.originalUpgradePatch;

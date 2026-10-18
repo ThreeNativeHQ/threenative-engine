@@ -165,6 +165,7 @@ it("invalidates every cached bind group before recreating a destroyed render-tar
   backend.createTexture.mockImplementation(() => {
     for (const group of groups)
       expect(backend.get(group)).toEqual({
+        forceUpdate: true,
         groups: undefined,
         versions: undefined,
         unrelated: "keep",
