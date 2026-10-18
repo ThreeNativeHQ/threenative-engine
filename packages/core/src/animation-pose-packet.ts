@@ -113,6 +113,11 @@ function same(a: unknown, b: unknown): boolean {
     keys.length === Object.keys(b).length && keys.every((key) => same(field(a, key), field(b, key)))
   );
 }
+function sameNumbers(a: readonly number[], b: ArrayLike<number>): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) return false;
+  return true;
+}
 function finiteRaw(value: unknown): boolean {
   if (typeof value === "number") return Number.isFinite(F(value));
   return !object(value) || Object.keys(value).every((key) => finiteRaw(field(value, key)));
@@ -164,9 +169,9 @@ function validTransform(
     new Quaternion(q[0], q[1], q[2], q[3]),
     { x: scale[0], y: scale[1], z: scale[2] } as Vector3,
   );
-  if (!same(local, scratch.elements)) return undefined;
+  if (!sameNumbers(local, scratch.elements)) return undefined;
   product.call(scratch, { elements: parentWorld } as Matrix4, { elements: local } as Matrix4);
-  return same(world, scratch.elements) ? { local, world, position, scale } : undefined;
+  return sameNumbers(world, scratch.elements) ? { local, world, position, scale } : undefined;
 }
 
 /** Pure read/capture only. Every source component is revalidated, including on held ticks.
@@ -355,6 +360,9 @@ export function readAnimationPosePacket(rig: SkinnedMesh): IAnimationPosePacket 
   const previous = cache.get(rig);
   const owned =
     previous &&
+    previous.version.duration === version.duration &&
+    previous.version.time === version.time &&
+    previous.version.evaluation === version.evaluation &&
     previous.sources.length === sources.length &&
     sources.every((value, i) => value === previous.sources[i]) &&
     same(previous.version, version)
