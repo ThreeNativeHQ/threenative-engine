@@ -678,12 +678,14 @@ test.skipIf(process.platform === "win32")("desktop screenshot outlives the unpic
   await writeFile(executable, `#!/usr/bin/env node
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { env } from "node:process";
+await new Promise(resolve => setTimeout(resolve, 300));
 const request = \`\${env.TN_PLAYTEST_MAILBOX_ROOT}/tn-playtest-screenshot-request.txt\`;
 setInterval(() => {
   if (!existsSync(request)) return;
   unlinkSync(request);
   setTimeout(() => writeFileSync(env.TN_PLAYTEST_CAPTURE, Buffer.from("${nonBlankPngBase64()}", "base64")), 800);
 }, 5);
+console.log("fixture ready");
 `);
   await chmod(executable, 0o755);
   const driver = new DesktopPlaytestDriver({
@@ -694,6 +696,8 @@ setInterval(() => {
   });
   try {
     await driver.prepare("unused");
+    await expect.poll(async () => (await driver.captureConsole()).some((entry) => entry.text === "fixture ready"))
+      .toBe(true);
     await driver.screenshot(join(root, "capture.png"));
   } finally {
     await driver.stop();
