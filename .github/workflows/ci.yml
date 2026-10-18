@@ -935,7 +935,15 @@ jobs:
           # assertion, frame bound and budget is unchanged, and an ordinary CLI run keeps 15 s.
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots --server-timeout 120000 \
+            --artifacts "$GITHUB_WORKSPACE/artifacts/template-nonvisual/${{ matrix.template }}" \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
+      - name: Retain failed template observations
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: template-nonvisual-${{ matrix.template }}-failure
+          path: artifacts/template-nonvisual/${{ matrix.template }}/
+          retention-days: 7
       # The former second golden leg uniquely built platformer's production artifact. Retain that
       # proof on its already-installed scaffold, without repeating the generic install/dev journey.
       - name: Verify the platformer production artifact
