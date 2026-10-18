@@ -9,6 +9,7 @@
 #include "check.h"
 #include "engine/world/tiles/terrain_tiles.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -156,6 +157,13 @@ void worldTiles() {
     for (const RefScene& scene : kWorldTileScenes) {
         RecordedHeights heights(scene.grids, scene.gridCount);
         const ITerrainTilesOptions options = buildOptions(scene.options);
+        const bool boundedSourceScene = std::string(scene.name) == "sampleReadChunk65";
+        const bool validateCapScene = std::string(scene.name) == "validatedBaseTileCap";
+        if (validateCapScene) {
+            CHECK(options.validate);
+            CHECK(!options.mergeTiles);
+            CHECK(options.residentByteBudget == 10'000);
+        }
         std::string error;
         std::optional<TerrainTiles> owner = TerrainTiles::create(options, heights, error);
         if (scene.refusal != 0) {
@@ -178,17 +186,34 @@ void worldTiles() {
             // A step with an allowance is the frame's admission budget; a step without one spends
             // nothing and admits as freely as it wants, exactly as `follow(undefined)` does.
             uint32_t spent = 0;
+            uint64_t callbackReads = 0;
             const TerrainTileAdmission admission =
-                step.units == 0 ? TerrainTileAdmission{}
-                                : TerrainTileAdmission{[&](const std::function<void()>& work) {
-                                      if (spent >= step.units) return false;
-                                      spent += 1;
-                                      work();
-                                      return true;
-                                  }};
+                !step.budgeted ? TerrainTileAdmission{}
+                               : TerrainTileAdmission{[&](const std::function<void()>& work) {
+                                     if (spent >= step.units) return false;
+                                     const uint64_t before = heights.tileSampleReads();
+                                     spent += 1;
+                                     work();
+                                     callbackReads = std::max(callbackReads, heights.tileSampleReads() - before);
+                                     return true;
+                                 }};
             TerrainTileBudgetReason reason = TerrainTileBudgetReason::kNone;
+            const uint64_t beforeFollow = heights.tileSampleReads();
             const bool followOk =
                 owner->follow(doubleFromBits(step.x), doubleFromBits(step.z), admission, error, reason);
+            const uint64_t followReads = heights.tileSampleReads() - beforeFollow;
+            if (boundedSourceScene) {
+                CHECK(followReads <= 256);
+                if (index == 0) {
+                    CHECK(step.budgeted && step.units == 0);
+                    CHECK(followReads > 0);
+                    CHECK(owner->residentTileCount() == 0);
+                    CHECK(owner->deferredAdmissions() > 0);
+                } else {
+                    CHECK(step.budgeted && step.units == 1);
+                    CHECK(callbackReads > 0 && callbackReads <= 256);
+                }
+            }
             if (!outcomeMatches(step.outcome, followOk, reason)) {
                 std::fprintf(stderr, "%s step %u: outcome %d, recorded %u (reason %u)\n", scene.name,
                              index, followOk ? 0 : static_cast<int>(reason), step.outcome,
@@ -197,6 +222,12 @@ void worldTiles() {
             }
             ++compared;
             for (uint32_t frame = 0; frame < step.processes; frame += 1) owner->process();
+            if (validateCapScene) {
+                CHECK(followOk);
+                const ITerrainTileInfo* tile = owner->tile("0:0");
+                CHECK(tile != nullptr);
+                if (tile != nullptr) CHECK(tile->bytes == 8'672);
+            }
             // A refused follow leaves the ring as the core left it; the next recorded step then
             // replays onto the same ring, so nothing is skipped.
             if (!followOk && refusedAt == scene.stepCount) refusedAt = index;

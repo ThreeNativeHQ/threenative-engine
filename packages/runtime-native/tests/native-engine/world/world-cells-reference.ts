@@ -210,6 +210,7 @@ interface IScene {
   name: string;
   pkg?: IWorldPackage;
   options?: Record<string, unknown>;
+  defaultBudget?: boolean;
   priced?: boolean;
   chain?: typeof singleChain;
   collider?: boolean;
@@ -334,13 +335,85 @@ const scenes: IScene[] = [
     actions: [...settle(center(1, 1), 240), ...settle(center(3, 3), 240)],
   },
   {
-    // The spec's 50-us allowance, priced deterministically: the forced first tile is uncharged,
-    // then one priced tile fits. Do not flush loads, so this isolates terrain's shared budget.
+    // High-resolution terrain stays unpublished while it constructs in bounded source/LOD work,
+    // while the same 50-us budget continues to admit the cell's prop batches.
     name: "tinyTerrainAdmission",
-    options: { admissionBudgetMs: 0.05 },
+    pkg: onePine(),
+    options: {
+      ring: 0,
+      admissionBudgetMs: 0.05,
+      terrain: { tileResolution: 65, streamRadius: 1, colliderRadius: 1 },
+    },
     collider: true,
     priced: true,
-    actions: [{ at: center(1, 1) }, ...Array.from({ length: 8 }, () => ({}))],
+    actions: [
+      { at: center(1, 1), flush: true },
+      ...Array.from({ length: 4000 }, () => ({ at: center(1, 1) })),
+    ],
+  },
+  {
+    name: "defaultAdmission",
+    pkg: onePine(),
+    defaultBudget: true,
+    priced: true,
+    actions: [...settle(center(1, 1), 120), ...settle([-14, -16], 120)],
+  },
+  {
+    name: "queuedCurrentPose",
+    pkg: onePine(),
+    options: { ring: 0 },
+    priced: true,
+    actions: [{ at: center(1, 1), flush: true }, ...settle([-1, -1], 100)],
+  },
+  {
+    name: "cameraSnapshotSlices",
+    pkg: onePine(),
+    options: { ring: 0, admissionBudgetMs: 0.1 },
+    priced: true,
+    actions: [
+      { at: center(1, 1), flush: true },
+      { at: center(1, 1) },
+      ...Array.from({ length: 100 }, (_, i) => ({
+        at: i < 50 ? ([-14, -16] as [number, number]) : ([-16, -16] as [number, number]),
+      })),
+    ],
+  },
+  {
+    name: "multiRunSnapshots",
+    pkg: (() => {
+      const pkg = onePine();
+      const cell = pkg.cells.find((at) => at.x === 1 && at.z === 1);
+      const run = cell?.runs[0];
+      if (!cell || !run || run.count < 2) throw new Error("missing split pine run");
+      const first = Math.floor(run.count / 2);
+      cell.runs = [
+        { ...run, count: first },
+        { ...run, offset: run.offset + first, count: run.count - first },
+      ];
+      return pkg;
+    })(),
+    options: { ring: 0, admissionBudgetMs: 0.1 },
+    priced: true,
+    actions: [
+      { at: center(1, 1), flush: true },
+      ...Array.from({ length: 100 }, (_, i) => ({
+        at: i < 50 ? ([-14, -16] as [number, number]) : ([-16, -16] as [number, number]),
+      })),
+    ],
+  },
+  {
+    name: "stationaryOwedRefilter",
+    pkg: onePine(),
+    options: { ring: 0, admissionBudgetMs: 0.1 },
+    priced: true,
+    chain: singleChain,
+    actions: [
+      ...settle([-16, -16], 100),
+      { at: [-14, -16] },
+      ...Array.from({ length: 100 }, () => ({ at: [-14, -16] })),
+      { at: [-16, -16] },
+      ...Array.from({ length: 100 }, () => ({ at: [-16, -16] })),
+    ],
   },
   {
     name: "largeRefilterCap",
@@ -434,12 +507,13 @@ scenes.push(
   },
   {
     name: "terrainWide",
-    options: { ring: 2, terrain: { tileResolution: 9, streamRadius: 4 } },
+    options: { ring: 2, terrain: { tileResolution: 9, streamRadius: 3, colliderRadius: 1 } },
+    collider: true,
     actions: pathActions([center(1, 1)]),
   },
   {
     name: "terrainColliders",
-    options: { ring: 1, terrain: { tileResolution: 9, colliderRadius: 0 } },
+    options: { ring: 2, terrain: { tileResolution: 9, streamRadius: 3, colliderRadius: 1 } },
     collider: true,
     actions: pathActions([center(1, 1), center(2, 1)]),
   },
@@ -558,7 +632,7 @@ async function runScene(scene: IScene): Promise<unknown> {
     if (text.startsWith("TN_WORLD_LOD_CHAIN")) markers.push(text);
   };
   const options: Parameters<typeof WorldCells.load>[0] = {
-    admissionBudgetMs: Number.POSITIVE_INFINITY,
+    ...(scene.defaultBudget ? {} : { admissionBudgetMs: Number.POSITIVE_INFINITY }),
     budgets,
     bundles: false,
     concurrency: 12,
@@ -573,6 +647,10 @@ async function runScene(scene: IScene): Promise<unknown> {
     surface: new MeshBasicMaterial(),
     url: "/world/world.json",
     ...scene.options,
+    terrain: {
+      tileResolution: 9,
+      ...((scene.options?.terrain ?? {}) as object),
+    },
     ...(scene.collider ? { createCollider: () => ({ dispose() {} }) } : {}),
     admissionNow: now,
   };
@@ -702,8 +780,61 @@ async function runScene(scene: IScene): Promise<unknown> {
         observations: observed.count - before,
         digest,
       });
+      if (
+        scene.name === "tinyTerrainAdmission" &&
+        terrain?.residentTileCount === 9 &&
+        terrain.deferredAdmissions === 0 &&
+        stats.admission.backlog === 0 &&
+        stats.admission.deferred === 0
+      )
+        break;
     }
     if (dump) console.log(dumped.join("\n"));
+    if (scene.name === "tinyTerrainAdmission") {
+      const expectedKeys = ["-1:-1", "-1:0", "-1:1", "0:-1", "0:0", "0:1", "1:-1", "1:0", "1:1"];
+      const finalStats = world.stats();
+      if (
+        observedTerrain.residentTileCount !== expectedKeys.length ||
+        observedTerrain.deferredAdmissions !== 0 ||
+        finalStats.admission.backlog !== 0 ||
+        finalStats.admission.deferred !== 0 ||
+        JSON.stringify(observedTerrain.residentKeys) !== JSON.stringify(expectedKeys) ||
+        JSON.stringify(observedTerrain.residentColliderKeys) !== JSON.stringify(expectedKeys)
+      )
+        throw new Error("tinyTerrainAdmission did not finish the full selected 65x65 ring.");
+    }
+    const terrainDetails =
+      scene.name !== "tinyTerrainAdmission"
+        ? undefined
+        : {
+            residentKeys: [...observedTerrain.residentKeys],
+            colliderKeys: [...observedTerrain.residentColliderKeys],
+            tiles: observedTerrain.residentKeys.map((key) => {
+              const tile = observedTerrain.getTile(key);
+              if (tile === undefined) throw new Error(`Missing final terrain tile '${key}'.`);
+              const maxLodLevel = (
+                observedTerrain.debug().lodDecisions as { key: string; maxLodLevel: number }[]
+              ).find((decision) => decision.key === key)?.maxLodLevel;
+              if (maxLodLevel === undefined) throw new Error(`Missing LOD decision for '${key}'.`);
+              return {
+                key,
+                bytes: tile.bytes,
+                lodLevel: tile.lodLevel,
+                maxLodLevel,
+                columns: tile.field.columns,
+                rows: tile.field.rows,
+                resolutions: tile.lod.levels.map((level) => {
+                  const geometry = level.object as Mesh;
+                  return Math.round(
+                    Math.sqrt(geometry.geometry.getAttribute("position").count + 4) - 2,
+                  );
+                }),
+                fieldHeights: Array.from(tile.field.heights),
+                colliderHeights:
+                  tile.collider === undefined ? [] : Array.from(tile.field.toColliderHeights()),
+              };
+            }),
+          };
     return {
       name: scene.name,
       digest: sha256(`${digests.join("\n")}\n`),
@@ -730,6 +861,7 @@ async function runScene(scene: IScene): Promise<unknown> {
       },
       priced: scene.priced ?? false,
       steps,
+      ...(terrainDetails === undefined ? {} : { terrainDetails }),
     };
   } finally {
     world.dispose();
@@ -993,12 +1125,35 @@ const covered: Record<string, string[]> = {
     "boundedColliders",
     "tinyTerrainAdmission",
   ],
+  "keeps decoded prop admission within the default 2ms budget plus one final unit": [
+    "defaultAdmission",
+  ],
+  "admits a queued run for the current camera rather than its obsolete enqueue position": [
+    "queuedCurrentPose",
+  ],
+  "keeps one camera snapshot across an admitted run's slices before refiltering its next pose": [
+    "cameraSnapshotSlices",
+  ],
+  "converges every run of one asset after independently deferred camera snapshots": [
+    "multiRunSnapshots",
+  ],
+  "runs an owed stationary-camera refilter after the last byte-identical publication": [
+    "stationaryOwedRefilter",
+  ],
+  "streams terrain to its own radius: 25 cells, 49 tiles and 9 bodies for the recipe": [
+    "terrainWide",
+  ],
+  "control: the ring-derived terrain radius gives the props' 25 tiles, every one collidered": [
+    "terrainRadius",
+  ],
+  "moves the bodies with the follow point while the terrain keeps drawing": ["terrainColliders"],
   "keeps a refiltered cell drawing what it had until the replacement is ready": ["replacement"],
   "drops the queued work of a cell that left, instead of resuming it into a dead graph": [
     "queuedEviction",
   ],
   "refuses a budget that would never admit anything": ["refusals"],
   "draws the chain's levels at the distances their errors project to": ["chain"],
+  "draws compatible baked levels with authored metadata %j": ["chain"],
   "keeps every level of the deepest part's chain when a sibling's chain is shallower": [
     "deepChain",
   ],
@@ -1018,12 +1173,138 @@ const covered: Record<string, string[]> = {
   "leaves a chained or morphed mesh exactly where the package put it": ["chunkExcluded"],
 };
 const excluded: Record<string, string> = {
+  "admits up to one 60 Hz frame per update behind the startup cover, and 2 ms after it":
+    "Startup-cover budget scaling is a frontend policy input absent from the C++ decision kernel; the post-cover/default admission path is exercised separately.",
+  "scales a game's own budget behind the startup cover":
+    "Startup-cover budget scaling is a frontend policy input absent from the C++ decision kernel; the post-cover/default admission path is exercised separately.",
+  "admits more fresh batches per update behind the startup cover":
+    "Fresh Three mesh creation limits and startup-cover policy are frontend inputs absent from the C++ decision kernel.",
+  "keeps a named covered budget behind the startup cover":
+    "Named startup-cover budget scaling is a frontend policy input absent from the C++ decision kernel.",
+  "retains prepared source detail for incompatible empty-LOD %s":
+    "Empty-LOD geometry compatibility checks inspect Three geometry attributes, draw ranges, wind and alpha; native part-count decisions do not receive those model objects.",
+  "casts the placements past castLevels with the level-0 casters, minting none for them":
+    "Shadow caster level selection and caster Object3D creation are renderer behavior outside the C++ residency/LOD decision kernel.",
+  "clones with fresh streaming ownership and authored children":
+    "Three Object3D clone identity, child transforms and resource ownership are frontend scene-graph behavior; no clone objects cross the C++ decision API.",
+  "streams already decoded placements without fetching or duplicating the caller's terrain":
+    "Decoded-data loader bypass and caller-owned TerrainTiles identity are core API/lifetime behavior, not C++ cell decisions.",
+  "rejects malformed decoded runs before loading a model":
+    "Malformed decoded-run validation happens at the TypeScript WorldCells input boundary; C++ receives validated package records.",
+  "refilters placement-specific 3D reach from fully culled to visible and back without leaving the cell":
+    "Placement-specific reach uses decoded Three model bounds and per-placement reach absent from the C++ WorldCells API.",
+  "rejects malformed placement reach before loading models: %s":
+    "Malformed placement-reach validation is a TypeScript decoded-input contract; the C++ decision API has no reach-array input.",
+  "yields to host while validating and indexing decoded reach records before load resolves":
+    "Host yielding while TypeScript validates/indexes decoded reach arrays is JS scheduling behavior outside the C++ decision kernel.",
+  "separates the validation and indexing budgets with a host turn":
+    "Validation/indexing budget boundaries and host-turn scheduling belong to the TypeScript decoded-data API, not C++ decisions.",
+  "does not spend one host turn per decoded reach chunk when preparation stays below its time budget":
+    "Chunked decoded-reach preparation and host-turn pacing are TypeScript scheduling behavior without a C++ API counterpart.",
+  "rejects unsupported authored CPU hysteresis settings before model work: %j":
+    "CPU hysteresis option validation is TypeScript AutoLOD configuration behavior; the C++ WorldCells options expose no authored hysteresis policy.",
+  "submits a rotated offset model when its actual geometry intersects the camera outside its source cell":
+    "Rotated model-bound intersection and camera submission use Three geometry and renderer visibility, neither supplied to C++ WorldCells.",
+  "rejects exact authored parts combined with whole-asset impostors before model admission":
+    "Impostor eligibility depends on exact authored model parts and frontend policy absent from the C++ package/decision inputs.",
+  "retains source detail for a custom instanced joined rung without attachment provenance":
+    "Custom instanced HLOD source provenance is Three mesh/material state, not a WorldCells residency or baked-part LOD input.",
+  "restores detail when an owned chunk instance changes its %s":
+    "Owned chunk instance mutation and HLOD restoration are renderer object-state transitions outside the C++ decision API.",
+  "keeps AutoLOD joins and source shadows owned across repeated HLOD far/near handoffs with bundles:%s":
+    "AutoLOD join composition, shadow ownership and bundle handoffs operate on Three objects and renderer resources absent from C++ WorldCells.",
+  "admits chunk-only proxies with GPU scatter and retains casting sources through repeated far frames":
+    "GPU scatter proxy creation and shadow-source retention are renderer lifecycle behavior; C++ WorldCells has no proxy or GPU inputs.",
+  "keeps detail until compilation and actual main-context observation, swaps atomically and restores near detail immediately":
+    "Shader compilation and main-render observation gate HLOD substitution; those GPU observations are not C++ decision inputs.",
+  "does not substitute a proxy when the backend skipped its zero-count submission":
+    "Backend zero-count submission observation controls renderer proxy substitution and has no C++ WorldCells input.",
+  "retains existing off-frustum culling instead of adding a proxy draw":
+    "Off-frustum visibility is a camera/render decision absent from the C++ cell admission kernel.",
+  "honors the error bound when an ancestor scales the entire world":
+    "World-transform scaling changes HLOD screen-space error through Three scene-graph/camera state unavailable to C++ WorldCells.",
+  "retains detail while a valid ancestor transform is collapsed and resumes after growth":
+    "Collapsed ancestor transforms and HLOD draw eligibility depend on frontend scene-graph state, not C++ residency/LOD records.",
+  "reports proxy draws and replaced source meshes only after observation":
+    "Observed proxy draw and replaced-mesh counters are renderer telemetry requiring GPU traversal, outside the C++ decision API.",
+  "admits a measured small proxy below the worst-case reservation":
+    "Measured proxy reservation accounts for generated Three geometry absent from C++ WorldCells admission inputs.",
+  "rejects measured source plus copies before allocating private geometry":
+    "Proxy source-plus-copy measurement and private geometry allocation are frontend HLOD decisions, not authored cell-run admission.",
+  "serializes concurrent proxy reservations within remaining resident headroom":
+    "Concurrent HLOD proxy reservations use measured generated geometry and async frontend state absent from C++ WorldCells.",
+  "defers proxy IO when placement records leave no resident headroom":
+    "Proxy IO scheduling and generated proxy headroom are HLOD loader policy; the C++ kernel has no proxy-load operation.",
+  "invalidates both mixed source bundle groups on substitution and restoration":
+    "HLOD source-bundle invalidation is Three GPU buffer cache behavior outside the C++ residency/LOD contract.",
+  "keeps an off-frustum chunk from gaining a proxy with bundles:%s":
+    "Camera-frustum culling and bundle proxy substitution are renderer behavior without C++ camera or bundle inputs.",
+  "returns source safely when attribute upload refuses after compilation":
+    "GPU attribute-upload failure and HLOD source restoration are renderer resource-lifetime behavior absent from C++ WorldCells.",
+  "does not count compilation's render hooks as main traversal and retains detail on compile rejection":
+    "Renderer compilation hooks, main traversal observations and shader rejection are GPU lifecycle behavior outside the C++ kernel.",
+  "preserves source fallback for deferred loads and discards late generations":
+    "Asynchronous HLOD proxy load generation and fallback are frontend loader lifecycle behavior; C++ has no proxy IO API.",
+  "keeps bytes and cache holders through an evicted compile until its original promise settles":
+    "HLOD compile promise and source-cache lifetime are frontend asynchronous resource ownership, not native decision state.",
+  "retains detail for unsupported %s":
+    "Unsupported HLOD source geometry/material eligibility is determined from Three attributes and renderer state absent from C++ inputs.",
+  "declines shared batches retained by a neighboring cell and honors the off switch":
+    "HLOD shared-batch object ownership and its renderer opt-out do not alter the C++ cell-run admission contract.",
+  "does not read a raster viewport for a world without terrain":
+    "Raster viewport reads are frontend terrain-render setup; C++ WorldCells has no viewport provider.",
+  "passes the resolved props pixel policy and current raster view to settled terrain":
+    "Raster view and resolved terrain pixel policy are frontend renderer inputs absent from the C++ WorldCells API.",
+  "draws only the square the camera is in, and exactly its instances":
+    "Camera-frustum instance culling and shared-buffer visibility are renderer decisions; C++ WorldCells has no view or visibility input.",
+  "regroups when the camera turns and writes nothing when it does not":
+    "Camera-turn buffer regrouping is frontend renderer work outside C++ cell admission and per-placement LOD decisions.",
+  "never repacks for a shadow level's camera":
+    "Shadow-camera culling/repack suppression depends on renderer pass identity, absent from C++ WorldCells inputs.",
+  "takes a sub-square out of a caster square the frustum straddles":
+    "Frustum-to-caster-sub-square selection is a renderer visibility decision; C++ has no camera frustum input.",
+  "keeps a sub-square whose ground is under the view and whose trees reach into it":
+    "Ground and tree render-bound intersection with a camera frustum is frontend visibility logic, absent from C++ inputs.",
+  "regroups a visible square after residency changes under it":
+    "The renderer regrouping of visible instances after residency changes is a camera/buffer mechanism not implemented by the C++ decision kernel.",
+  "derives the window once a frame, and re-derives nothing while the camera is still":
+    "Per-frame raster-window derivation is frontend camera work; C++ WorldCells receives only the follow-point coordinates.",
+  "hides a batch the camera culled to nothing, and shows it again when it turns back":
+    "Empty camera-frustum batch visibility and restoration are render submissions, not C++ residency/LOD decisions.",
+  "hides an emptied caster and shows the same mesh again when the walk comes back":
+    "Shadow caster mesh visibility after frustum culling is a renderer state transition outside the C++ API.",
+  "draws an empty prewarmed batch once to build its node, then hides it":
+    "Three batch-node creation and empty-draw visibility are frontend render-object lifecycle behavior.",
+  "freezes every main batch, caster cluster and key-wide caster after admission":
+    "Static Three matrix/attribute flags after admission are object-state assertions, not C++ residency or placement decisions.",
+  "freezes a loaded chunk":
+    "Loaded chunk Three transform/attribute freeze flags have no C++ WorldCells object counterpart.",
+  "keeps a written batch settled, and the write announces itself as an attribute version":
+    "Three attribute-version notifications and settled batch mutation are frontend buffer behavior, absent from C++ inputs.",
+  "draws every prewarmed caster in a shadow render before the gate settles, and never builds one on the walk":
+    "Shadow-pass draw readiness and caster mesh creation are GPU/render lifecycle behavior outside the C++ decision API.",
+  "settles the gate on the shadow keys' own draws when a level renders them instead of the caster halves":
+    "Shadow render-key observations and gate settlement require renderer draw callbacks unavailable to C++ WorldCells.",
+  "keeps settled prewarm counters at zero when an initial main batch first draws late":
+    "Late main-render observation and prewarm counters are renderer telemetry, not native cell decisions.",
+  "keeps late initial draws separate from newly streamed prewarm work":
+    "Separating initial and streamed GPU prewarm draw events is frontend renderer scheduling behavior.",
+  "is compiled before it is attached, with the world's lights as its target scene":
+    "Shader compilation target scene and light setup are Three renderer inputs absent from C++ WorldCells.",
+  "gives every chunk's shadow proxies the world's one material per side":
+    "Shadow proxy material identity and world lighting are frontend renderer composition, outside native chunk admission.",
+  "uploads only the records a reordering moved, and regrows a key at most logarithmically":
+    "GPU buffer upload ranges and key-tree growth are frontend renderer data-structure behavior outside C++ decision outputs.",
   "creates at most freshMeshesPerUpdate new meshes a frame, and still builds them all":
     "Three mesh/pipeline allocation ceiling; decision traces remove that ceiling, retaining the admission time budget.",
   "draws every cell of an asset part and level through one mesh, whatever the ring":
     "Shared Three mesh identity/count, not residency or per-placement LOD selection.",
   "drops a chunk load whose cell left range before it resolved":
     "Asynchronous loader cancellation and late Object3D attachment; cell/queued-decision eviction is reproduced, no native Object3D loader is ported here.",
+  "reports completed spawn coverage separately from reserved cells and distant work":
+    "Portable core WorldCells readiness/loader reporting, tested directly in core; the C++ reference covers residency/admission decisions, not TS asset-load completion.",
+  "keeps a failed spawn pending and reports its model failure by region":
+    "Portable core WorldCells asynchronous load-failure reporting, tested directly in core; the C++ decision kernel has no loader-failure API.",
   "rethrows a game's terrain error instead of reporting it as byte pressure":
     "Game callback exception identity/propagation, not a residency/merge/LOD decision.",
   "rethrows a game error that borrows the terrain budget error's name":
@@ -1119,27 +1400,34 @@ function coverage(): unknown[] {
         if (simple || each) {
           const title = node.arguments[0].text;
           const lanes = covered[title];
-          const fileReason = file.includes("main-cull")
-            ? "Render-camera frustum/shared-buffer repacking/visibility; resident cells remain admitted, so these are rendering assertions, not residency decisions."
-            : file.includes("static")
-              ? "Three static-transform/attribute-version flags, not residency/merge/LOD decisions."
-              : file.includes("shadow-prewarm")
-                ? "Shadow draw hooks and shader-prewarm readiness, not residency/merge/LOD decisions."
-                : file.includes("streamed-warmup")
-                  ? "Renderer compilation, shadow material pooling, or GPU buffer upload ranges, not residency/merge/LOD decisions."
-                  : undefined;
-          const reason = lanes ? undefined : (excluded[title] ?? fileReason);
+          const reason = lanes ? undefined : excluded[title];
           if (!lanes && !reason) throw new Error(`unaccounted spec: ${file}: ${title}`);
           let cases = [title];
-          if (each && ts.isCallExpression(expression)) {
+          if (
+            each &&
+            ts.isCallExpression(expression) &&
+            title !== "rejects malformed placement reach before loading models: %s" &&
+            title !== "rejects unsupported authored CPU hysteresis settings before model work: %j"
+          ) {
             let data = expression.arguments[0];
             if (data && ts.isAsExpression(data)) data = data.expression;
             if (!data || !ts.isArrayLiteralExpression(data))
               throw new Error(`nonliteral cases: ${title}`);
-            const literal = (value: ts.Expression): string | boolean => {
+            const literal = (value: ts.Expression): unknown => {
               if (ts.isStringLiteral(value)) return value.text;
+              if (ts.isNumericLiteral(value)) return Number(value.text);
               if (value.kind === ts.SyntaxKind.TrueKeyword) return true;
               if (value.kind === ts.SyntaxKind.FalseKeyword) return false;
+              if (ts.isIdentifier(value) && value.text === "undefined") return undefined;
+              if (ts.isArrayLiteralExpression(value)) return value.elements.map(literal);
+              if (ts.isObjectLiteralExpression(value))
+                return Object.fromEntries(
+                  value.properties.map((property) => {
+                    if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name))
+                      throw new Error(`nonliteral parameter: ${property.getText(source)}`);
+                    return [property.name.text, literal(property.initializer)];
+                  }),
+                );
               throw new Error(`nonliteral parameter: ${value.getText(source)}`);
             };
             cases = data.elements.map((element) =>

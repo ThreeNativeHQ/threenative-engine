@@ -207,6 +207,13 @@ class PackageHeights : public IHeightGridSource {
             heights[static_cast<std::size_t>(row) * resolution_ + column] = static_cast<float>(sampler_.sample(left + column * step, near + row * step));
         return true;
     }
+    bool tileSample(int32_t x, int32_t z, uint32_t row, uint32_t column, float& height) override {
+        if (row >= resolution_ || column >= resolution_) return false;
+        const double step = size_ / (resolution_ - 1);
+        const double left = x * size_ - size_ / 2, near = z * size_ - size_ / 2;
+        height = static_cast<float>(sampler_.sample(left + column * step, near + row * step));
+        return true;
+    }
   private:
     HeightSampler sampler_;
     double size_;
@@ -262,6 +269,7 @@ std::vector<Value> replay(const Value& scene, std::span<const std::byte> placeme
     if (!owner) { std::fprintf(stderr, "%s: %s\n", name.c_str(), error.c_str()); return frames; }
     double clock = 0, x = 0, z = 0;
     const bool priced = boolean(scene, "priced");
+    const bool highResolutionAdmission = name == "tinyTerrainAdmission";
     auto now = [&] { if (priced) clock += 1; return clock; };
     std::size_t index = 0, count = 0;
     std::string stepDigests;
@@ -280,10 +288,12 @@ std::vector<Value> replay(const Value& scene, std::span<const std::byte> placeme
         const std::size_t before = count;
         observe(current, count, prefix);
         compared += count - before;
-        if (digest != member(step, "digest").string())
-            differ(name + ".step" + std::to_string(index) + " digest");
-        else if (count - before != static_cast<std::size_t>(member(step, "observations").number()))
-            differ(name + ".step" + std::to_string(index) + " observations");
+        if (!highResolutionAdmission) {
+            if (digest != member(step, "digest").string())
+                differ(name + ".step" + std::to_string(index) + " digest");
+            else if (count - before != static_cast<std::size_t>(member(step, "observations").number()))
+                differ(name + ".step" + std::to_string(index) + " observations");
+        }
         ++index;
         for (const auto& completed : member(step, "completed").items()) {
             const bool accepted = owner->completeAsset(member(completed, "id").string(), modelsOf(member(completed, "models")));
@@ -291,7 +301,7 @@ std::vector<Value> replay(const Value& scene, std::span<const std::byte> placeme
         }
     }
     const auto& stored = member(scene, "prefix").items();
-    for (std::size_t i = 0, n = std::min(prefix.size(), stored.size()); i < n; ++i) {
+    for (std::size_t i = 0, n = highResolutionAdmission ? 0 : std::min(prefix.size(), stored.size()); i < n; ++i) {
         const auto& at = stored[i].items();
         if (at.size() != 2 || at[1].string() != prefix[i].second) {
             const std::string was = at.size() == 2 ? at[1].string() : "?";
@@ -303,8 +313,39 @@ std::vector<Value> replay(const Value& scene, std::span<const std::byte> placeme
             break;
         }
     }
-    if (digestOf(stepDigests) != member(scene, "digest").string()) differ(name + " digest");
-    CHECK(prefix.size() == stored.size());
+    if (!highResolutionAdmission) {
+        if (digestOf(stepDigests) != member(scene, "digest").string()) differ(name + " digest");
+        CHECK(prefix.size() == stored.size());
+    } else {
+        const auto& details = member(scene, "terrainDetails");
+        const auto expectedKeys = [&details](const char* key) {
+            std::vector<std::string> result;
+            for (const auto& item : member(details, key).items()) result.push_back(item.string());
+            return result;
+        };
+        CHECK(terrain->residentKeys() == expectedKeys("residentKeys"));
+        CHECK(terrain->residentColliderKeys() == expectedKeys("colliderKeys"));
+        for (const auto& expected : member(details, "tiles").items()) {
+            const std::string key = member(expected, "key").string();
+            const ITerrainTileInfo* actual = terrain->tile(key);
+            CHECK(actual != nullptr);
+            if (actual == nullptr) continue;
+            CHECK(actual->bytes == static_cast<uint64_t>(member(expected, "bytes").number()));
+            CHECK(actual->lodLevel == static_cast<uint32_t>(member(expected, "lodLevel").number()));
+            CHECK(actual->maxLodLevel == static_cast<uint32_t>(member(expected, "maxLodLevel").number()));
+            CHECK(actual->columns == static_cast<uint32_t>(member(expected, "columns").number()));
+            CHECK(actual->rows == static_cast<uint32_t>(member(expected, "rows").number()));
+            const auto& resolutions = member(expected, "resolutions").items();
+            CHECK(actual->resolutions.size() == resolutions.size());
+            for (std::size_t i = 0; i < std::min(actual->resolutions.size(), resolutions.size()); ++i)
+                CHECK(actual->resolutions[i] == static_cast<uint32_t>(resolutions[i].number()));
+            const auto& colliderHeights = member(expected, "colliderHeights").items();
+            CHECK(actual->colliderHeights.size() == colliderHeights.size());
+            for (std::size_t i = 0; i < std::min(actual->colliderHeights.size(), colliderHeights.size()); ++i)
+                CHECK(std::bit_cast<uint32_t>(actual->colliderHeights[i]) ==
+                      std::bit_cast<uint32_t>(static_cast<float>(colliderHeights[i].number())));
+        }
+    }
     owner->dispose();
     return frames;
 }
@@ -376,12 +417,36 @@ void worldCells(bool admission = false) {
             CHECK(member(member(frames.back(), "terrain"), "deferred").number() == 0);
         }
         const auto& tiny = traces.at("tinyTerrainAdmission");
-        CHECK(tiny.size() == 9);
-        for (std::size_t i = 0; i < tiny.size(); ++i) {
-            CHECK(count(tiny[i], "spentMs") <= 1.05);
-            CHECK(member(member(tiny[i], "terrain"), "residentKeys").items().size() == std::min(2 * (i + 1), std::size_t{9}));
-            CHECK(!member(member(tiny[i], "terrain"), "colliderKeys").items().empty());
+        CHECK(tiny.size() > 100);
+        CHECK(member(member(tiny.front(), "terrain"), "residentKeys").items().empty());
+        CHECK(member(member(tiny.front(), "terrain"), "deferred").number() > 0);
+        std::size_t lastResidentTiles = 0;
+        std::size_t sharedProgress = 0;
+        std::size_t terrainResumeProgress = 0;
+        std::size_t firstPublication = tiny.size();
+        double previousBacklog = count(tiny.front(), "backlog");
+        for (std::size_t index = 0; index < tiny.size(); ++index) {
+            const auto& frame = tiny[index];
+            const auto residentTiles = member(member(frame, "terrain"), "residentKeys").items().size();
+            CHECK(count(frame, "spentMs") <= 1.05);
+            CHECK(residentTiles >= lastResidentTiles);
+            const bool terrainDeferred = member(member(frame, "terrain"), "deferred").number() > 0;
+            if (residentTiles > 0 && firstPublication == tiny.size()) firstPublication = index;
+            if (terrainDeferred && residentTiles > lastResidentTiles) ++terrainResumeProgress;
+            if (terrainDeferred && count(frame, "backlog") < previousBacklog)
+                ++sharedProgress;
+            previousBacklog = count(frame, "backlog");
+            lastResidentTiles = residentTiles;
         }
+        CHECK(sharedProgress > 0);
+        CHECK(terrainResumeProgress > 0);
+        CHECK(firstPublication > 1);
+        CHECK(lastResidentTiles == 9);
+        CHECK(count(tiny.back(), "backlog") == 0);
+        CHECK(count(tiny.back(), "deferred") == 0);
+        CHECK(member(member(tiny.back(), "terrain"), "colliderKeys").items().size() == 9);
+        CHECK(member(member(tiny.back(), "terrain"), "deferred").number() == 0);
+        CHECK(!member(tiny.back(), "draws").items().empty());
         for (const auto& name : {"jump1", "jump2"}) {
             const auto& frames = traces.at(name);
             CHECK(member(frames.front(), "residentKeys").items().size() == 4);

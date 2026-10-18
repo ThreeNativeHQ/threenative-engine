@@ -16,6 +16,7 @@ constexpr double kLodPopThreshold = 16.0;
 constexpr uint32_t kLodTransitionFrames = 3;
 // BRIDGE_STRIP_INDEX_PATTERN's length: one quad per fine vertex, twelve indices each.
 constexpr uint64_t kBridgeIndicesPerSegment = 12;
+constexpr std::size_t kConstructionChunkSamples = 256;
 // Heightfield.memoryBytes with no world passes: the canonical grid and its collider-order copy.
 constexpr uint32_t kFieldSampleCopies = 2;
 // TERRAIN_MERGE_BLOCK: the KxK tile block one super-tile covers.
@@ -56,21 +57,6 @@ double interpolatedHeight(const std::vector<float>& samples, uint32_t resolution
     const double upper = at(row0, column0) + (at(row0, column1) - at(row0, column0)) * columnMix;
     const double lower = at(row1, column0) + (at(row1, column1) - at(row1, column0)) * columnMix;
     return upper + (lower - upper) * rowMix;
-}
-
-/** surfaceDeltaFromSamples: the largest visible disagreement between two levels of one tile. */
-double surfaceDelta(const std::vector<float>& samples, uint32_t samplesResolution,
-                    const std::vector<float>& level, uint32_t levelResolution) {
-    const uint32_t total = std::max(samplesResolution, levelResolution);
-    double maximum = 0.0;
-    for (uint32_t row = 0; row < total; row += 1)
-        for (uint32_t column = 0; column < total; column += 1) {
-            const double x = static_cast<double>(column) / static_cast<double>(total - 1);
-            const double z = static_cast<double>(row) / static_cast<double>(total - 1);
-            maximum = std::max(maximum, std::abs(interpolatedHeight(samples, samplesResolution, x, z) -
-                                                 interpolatedHeight(level, levelResolution, x, z)));
-        }
-    return maximum;
 }
 
 /** toColliderHeights: the canonical grid transposed into the collider's column-major order. */
@@ -169,12 +155,16 @@ uint32_t TerrainTiles::resolutionFor(uint32_t factor) const {
     return (options_.tileResolution - 1) / factor + 1;
 }
 
-uint64_t TerrainTiles::estimatedLevelBytes(uint32_t resolution) const {
+uint64_t TerrainTiles::estimatedLevelBytes(uint32_t resolution, uint32_t morphTargets) const {
     const uint64_t vertices = static_cast<uint64_t>(resolution) * resolution + resolution * 4;
     const uint64_t triangles =
         static_cast<uint64_t>(resolution - 1) * (resolution - 1) + static_cast<uint64_t>(resolution - 1) * 4;
     const uint64_t edgeSampleBytes = resolution * 4 * sizeof(float);
-    return vertices * 3 * sizeof(float) * 2 + triangles * 6 * sizeof(uint32_t) + edgeSampleBytes;
+    const uint64_t texels = vertices * 2;
+    const uint64_t packedTexels = texels * 2;
+    const uint64_t morphBytes = morphTargets *
+        (vertices * 3 * sizeof(float) * 2 + packedTexels * 4 * 4 * 2);
+    return vertices * 3 * sizeof(float) * 2 + triangles * 6 * sizeof(uint32_t) + edgeSampleBytes + morphBytes;
 }
 
 uint64_t TerrainTiles::estimatedFieldBytes() const {
@@ -184,7 +174,12 @@ uint64_t TerrainTiles::estimatedFieldBytes() const {
 
 uint64_t TerrainTiles::estimatedTileBytes() const {
     uint64_t total = estimatedFieldBytes();
-    for (const uint32_t factor : options_.lodFactors) total += estimatedLevelBytes(resolutionFor(factor));
+    for (const uint32_t factor : options_.lodFactors) {
+        const uint32_t targets = options_.validate ? 0 : static_cast<uint32_t>(std::count_if(
+            options_.lodFactors.begin(), options_.lodFactors.end(),
+            [factor](uint32_t candidate) { return candidate >= factor; })) - 1;
+        total += estimatedLevelBytes(resolutionFor(factor), targets);
+    }
     return total;
 }
 
@@ -192,19 +187,6 @@ uint64_t TerrainTiles::residentBytes() const {
     uint64_t total = topologyBytes_ + stitchBytes_;
     for (const ITile& tile : tiles_) total += tile.info.bytes;
     return total;
-}
-
-uint32_t TerrainTiles::coarsestSelectableLevel(const std::vector<std::vector<float>>& levels) const {
-    uint32_t coarsest = 0;
-    for (std::size_t index = 1; index < levels.size(); index += 1) {
-        double error = 0.0;
-        for (std::size_t finer = 0; finer < index; finer += 1)
-            error = std::max(error, surfaceDelta(levels[finer], resolutionFor(options_.lodFactors[finer]),
-                                                levels[index], resolutionFor(options_.lodFactors[index])));
-        if (error > kLodPopThreshold) break;
-        coarsest = static_cast<uint32_t>(index);
-    }
-    return coarsest;
 }
 
 bool TerrainTiles::wantsCollider(int32_t tileX, int32_t tileZ, int32_t centerX, int32_t centerZ) const {
@@ -242,61 +224,150 @@ const ITerrainTileInfo* TerrainTiles::find(const std::string& key) const {
 
 const ITerrainTileInfo* TerrainTiles::tile(const std::string& key) const { return find(key); }
 
-TerrainTiles::ITile* TerrainTiles::buildTile(int32_t tileX, int32_t tileZ, double distance,
-                                             bool withCollider, std::string& error) {
-    const uint32_t columns = options_.tileResolution;
-    const uint32_t rows = options_.tileResolution;
-    std::vector<float> grid;
-    if (!heights_->tileGrid(tileX, tileZ, grid) || grid.size() != static_cast<std::size_t>(columns) * rows) {
-        error.assign(kTerrainTileFieldCode);
-        return nullptr;
-    }
+void TerrainTiles::startConstruction(int32_t tileX, int32_t tileZ, double distance, bool withCollider) {
+    IConstruction work;
+    work.tileX = tileX;
+    work.tileZ = tileZ;
+    work.distance = distance;
+    work.withCollider = withCollider;
+    const std::size_t fieldSamples = static_cast<std::size_t>(options_.tileResolution) * options_.tileResolution;
+    work.chunked = fieldSamples > kConstructionChunkSamples;
+    work.fieldGrid.resize(fieldSamples);
+    if (!options_.createCollider || withCollider) work.colliderHeights.resize(fieldSamples);
+    for (const uint32_t factor : options_.lodFactors)
+        work.levelHeights.emplace_back(static_cast<std::size_t>(resolutionFor(factor)) * resolutionFor(factor));
+    construction_ = std::move(work);
+}
 
+bool TerrainTiles::advanceConstruction(std::string& error) {
+    if (!construction_) return false;
+    IConstruction& work = *construction_;
+    const uint32_t columns = options_.tileResolution;
+    const std::size_t fieldSamples = work.fieldGrid.size();
+    std::size_t processed = 0;
+    while (processed < kConstructionChunkSamples) {
+        if (work.fieldCursor < fieldSamples) {
+            const std::size_t index = work.fieldCursor;
+            float height = 0.0f;
+            if (!heights_->tileSample(work.tileX, work.tileZ, static_cast<uint32_t>(index / columns),
+                                      static_cast<uint32_t>(index % columns), height)) {
+                error.assign(kTerrainTileFieldCode);
+                return false;
+            }
+            work.fieldGrid[index] = height;
+            ++work.fieldCursor;
+            ++processed;
+            continue;
+        }
+
+        if (work.levelIndex < work.levelHeights.size()) {
+            const uint32_t resolution = resolutionFor(options_.lodFactors[work.levelIndex]);
+            const uint32_t step = (columns - 1) / (resolution - 1);
+            const std::size_t count = work.levelHeights[work.levelIndex].size();
+            if (work.levelCursor < count) {
+                const std::size_t index = work.levelCursor;
+                const uint32_t row = static_cast<uint32_t>(index / resolution);
+                const uint32_t column = static_cast<uint32_t>(index % resolution);
+                work.levelHeights[work.levelIndex][index] =
+                    work.fieldGrid[static_cast<std::size_t>(row * step) * columns + column * step];
+                ++work.levelCursor;
+                ++processed;
+                continue;
+            }
+            ++work.levelIndex;
+            work.levelCursor = 0;
+            continue;
+        }
+
+        if (work.safetyLevel < work.levelHeights.size()) {
+            if (work.safetyFiner >= work.safetyLevel) {
+                if (work.safetyLevelError > kLodPopThreshold) {
+                    work.safetyLevel = work.levelHeights.size();
+                    continue;
+                }
+                work.maxLodLevel = static_cast<uint32_t>(work.safetyLevel);
+                ++work.safetyLevel;
+                work.safetyFiner = 0;
+                work.safetyCursor = 0;
+                work.safetyPairError = 0.0;
+                work.safetyLevelError = 0.0;
+                continue;
+            }
+            const uint32_t finerResolution = resolutionFor(options_.lodFactors[work.safetyFiner]);
+            const uint32_t coarseResolution = resolutionFor(options_.lodFactors[work.safetyLevel]);
+            const uint32_t total = std::max(finerResolution, coarseResolution);
+            const std::size_t samples = static_cast<std::size_t>(total) * total;
+            if (work.safetyCursor >= samples) {
+                work.safetyLevelError = std::max(work.safetyLevelError, work.safetyPairError);
+                ++work.safetyFiner;
+                work.safetyCursor = 0;
+                work.safetyPairError = 0.0;
+                continue;
+            }
+            const uint32_t row = static_cast<uint32_t>(work.safetyCursor / total);
+            const uint32_t column = static_cast<uint32_t>(work.safetyCursor % total);
+            const double x = static_cast<double>(column) / static_cast<double>(total - 1);
+            const double z = static_cast<double>(row) / static_cast<double>(total - 1);
+            const double difference = std::abs(
+                interpolatedHeight(work.levelHeights[work.safetyFiner], finerResolution, x, z) -
+                interpolatedHeight(work.levelHeights[work.safetyLevel], coarseResolution, x, z));
+            work.safetyPairError = std::max(work.safetyPairError, difference);
+            ++work.safetyCursor;
+            ++processed;
+            continue;
+        }
+
+        const bool hasCollider = !options_.createCollider || work.withCollider;
+        if (hasCollider && work.colliderCursor < fieldSamples) {
+            const std::size_t index = work.colliderCursor;
+            const uint32_t row = static_cast<uint32_t>(index % options_.tileResolution);
+            const uint32_t column = static_cast<uint32_t>(index / options_.tileResolution);
+            work.colliderHeights[index] = work.fieldGrid[static_cast<std::size_t>(row) * columns + column];
+            ++work.colliderCursor;
+            ++processed;
+            continue;
+        }
+
+        if (options_.createCollider && options_.colliderFactoryThrows) {
+            error.assign(kTerrainTileColliderCode);
+            return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+TerrainTiles::ITile* TerrainTiles::publishConstruction() {
+    if (!construction_) return nullptr;
+    IConstruction work = std::move(*construction_);
+    construction_.reset();
     ITile tile;
-    tile.info.key = keyFor(tileX, tileZ);
-    tile.info.tileX = tileX;
-    tile.info.tileZ = tileZ;
-    tile.info.originX = static_cast<double>(tileX) * options_.tileSize;
-    tile.info.originZ = static_cast<double>(tileZ) * options_.tileSize;
+    tile.info.key = keyFor(work.tileX, work.tileZ);
+    tile.info.tileX = work.tileX;
+    tile.info.tileZ = work.tileZ;
+    tile.info.originX = static_cast<double>(work.tileX) * options_.tileSize;
+    tile.info.originZ = static_cast<double>(work.tileZ) * options_.tileSize;
     tile.info.width = options_.tileSize;
     tile.info.depth = options_.tileSize;
-    tile.info.columns = columns;
-    tile.info.rows = rows;
+    tile.info.columns = options_.tileResolution;
+    tile.info.rows = options_.tileResolution;
     for (const uint32_t factor : options_.lodFactors)
         tile.info.resolutions.push_back(resolutionFor(factor));
-
-    // buildLevel reads the field's own grid one `step` apart per level, so every level is a strided
-    // view of the same samples and no level holds a height the field does not.
-    for (const uint32_t resolution : tile.info.resolutions) {
-        const uint32_t step = (columns - 1) / (resolution - 1);
-        std::vector<float> heights(static_cast<std::size_t>(resolution) * resolution);
-        for (uint32_t row = 0; row < resolution; row += 1)
-            for (uint32_t column = 0; column < resolution; column += 1)
-                heights[row * resolution + column] = grid[(row * step) * columns + column * step];
-        tile.levelHeights.push_back(std::move(heights));
-    }
-
-    tile.info.maxLodLevel = coarsestSelectableLevel(tile.levelHeights);
+    tile.fieldGrid = std::move(work.fieldGrid);
+    tile.levelHeights = std::move(work.levelHeights);
+    tile.info.maxLodLevel = work.maxLodLevel;
     tile.info.bytes = estimatedFieldBytes();
-    for (const uint32_t resolution : tile.info.resolutions) tile.info.bytes += estimatedLevelBytes(resolution);
-
-    // A tile always carries a collider object, but only one inside `colliderRadius` is a real body:
-    // without a factory the core hands out an empty one, so every tile reports as carrying a collider
-    // and only the field's own collider-order copy comes with it.
-    tile.info.hasCollider = !options_.createCollider;
-    if (options_.createCollider) {
-        if (options_.colliderFactoryThrows) {
-            // The factory threw: the core releases the half-built tile, so nothing is resident.
-            error.assign(kTerrainTileColliderCode);
-            return nullptr;
-        }
-        if (withCollider) {
-            tile.hasBody = true;
-            tile.info.hasCollider = true;
-        }
+    for (std::size_t index = 0; index < tile.info.resolutions.size(); ++index) {
+        const uint32_t factor = options_.lodFactors[index];
+        const uint32_t targets = options_.validate ? 0 : static_cast<uint32_t>(std::count_if(
+            options_.lodFactors.begin(), options_.lodFactors.end(),
+            [factor](uint32_t candidate) { return candidate >= factor; })) - 1;
+        tile.info.bytes += estimatedLevelBytes(tile.info.resolutions[index], targets);
     }
-    if (tile.info.hasCollider) tile.info.colliderHeights = colliderOrder(grid, columns, rows);
-    tile.info.lodLevel = std::min(lodLevelForDistance(distance), tile.info.maxLodLevel);
+    tile.info.hasCollider = !options_.createCollider || work.withCollider;
+    tile.hasBody = options_.createCollider && work.withCollider;
+    tile.info.colliderHeights = std::move(work.colliderHeights);
+    tile.info.lodLevel = std::min(lodLevelForDistance(work.distance), tile.info.maxLodLevel);
     tiles_.push_back(std::move(tile));
     return &tiles_.back();
 }
@@ -420,8 +491,7 @@ void TerrainTiles::updateColliders(int32_t centerX, int32_t centerZ,
             ringEpoch_ += 1;
             continue;
         }
-        std::vector<float> grid;
-        if (options_.colliderFactoryThrows || !heights_->tileGrid(tile.info.tileX, tile.info.tileZ, grid)) {
+        if (options_.colliderFactoryThrows) {
             deferredAdmissions_ = 1;
             continue;
         }
@@ -432,7 +502,7 @@ void TerrainTiles::updateColliders(int32_t centerX, int32_t centerZ,
         const auto created = [&] {
             tile.hasBody = true;
             tile.info.hasCollider = true;
-            tile.info.colliderHeights = colliderOrder(grid, tile.info.columns, tile.info.rows);
+            tile.info.colliderHeights = colliderOrder(tile.fieldGrid, tile.info.columns, tile.info.rows);
             colliderEvents_.push_back({tile.info.key, tile.info.tileX, tile.info.tileZ, true});
         };
         if (!admission || near) {
@@ -539,6 +609,15 @@ bool TerrainTiles::follow(double x, double z, const TerrainTileAdmission& admiss
     std::vector<std::string> selectedKeys;
     selectedKeys.reserve(wanted.size());
     for (const IWanted& candidate : wanted) selectedKeys.push_back(keyFor(candidate.tileX, candidate.tileZ));
+    if (construction_ && std::find(selectedKeys.begin(), selectedKeys.end(),
+                                    keyFor(construction_->tileX, construction_->tileZ)) == selectedKeys.end())
+        construction_.reset();
+    if (construction_) {
+        const auto pending = std::find_if(wanted.begin(), wanted.end(), [&](const IWanted& candidate) {
+            return candidate.tileX == construction_->tileX && candidate.tileZ == construction_->tileZ;
+        });
+        if (pending != wanted.end()) std::rotate(wanted.begin(), pending, pending + 1);
+    }
 
     // Anything this pass did not select leaves the ring whole, so a tile the next `follow` wants
     // again is admitted from nothing rather than half released.
@@ -562,6 +641,8 @@ bool TerrainTiles::follow(double x, double z, const TerrainTileAdmission& admiss
         }
         // The estimate the admission is judged on: every level plus the field, as one whole unit.
         if (residentBytes() + estimate > options_.residentByteBudget) {
+            if (construction_ && construction_->tileX == candidate.tileX && construction_->tileZ == candidate.tileZ)
+                construction_.reset();
             if (candidate.tileX == centerX && candidate.tileZ == centerZ) {
                 reason = TerrainTileBudgetReason::kTile;
                 error.assign(kTerrainTileBudgetCode);
@@ -569,23 +650,52 @@ bool TerrainTiles::follow(double x, double z, const TerrainTileAdmission& admiss
             }
             continue;
         }
-        // One tile is one unit: every level is built and the body made inside it. A budget may not
-        // refuse the pass's first tile, because a ring that never converges is a hole that never
-        // closes, so the forced one is the nearest tile still missing.
+        // Keep one selected tile's construction across follows. Large fields advance by real
+        // source/LOD samples; the forced first admission advances one such chunk only.
         const bool withCollider = wantsCollider(candidate.tileX, candidate.tileZ, centerX, centerZ);
-        ITile* admitted = nullptr;
+        if (!construction_ || construction_->tileX != candidate.tileX || construction_->tileZ != candidate.tileZ)
+            startConstruction(candidate.tileX, candidate.tileZ, candidate.distance, withCollider);
+        bool complete = false;
         std::string tileError;
-        const auto created = [&] {
-            admitted = buildTile(candidate.tileX, candidate.tileZ, candidate.distance, withCollider,
-                                 tileError);
+        const auto advance = [&] {
+            do {
+                complete = advanceConstruction(tileError);
+            } while (!construction_->chunked && !complete && tileError.empty());
         };
-        if (!admission || built == 0) created();
-        else if (!admission(created)) {
-            deferredAdmissions_ = 1;
-            continue;
+        if (!admission) {
+            do {
+                advance();
+            } while (!complete && tileError.empty());
+        } else {
+            bool progressOwed = built == 0;
+            while (!complete && tileError.empty()) {
+                if (admission(advance)) {
+                    progressOwed = false;
+                    continue;
+                }
+                if (progressOwed) {
+                    advance();
+                    progressOwed = false;
+                    continue;
+                }
+                deferredAdmissions_ = 1;
+                break;
+            }
         }
-        if (admitted == nullptr) {
+        if (!tileError.empty()) {
+            construction_.reset();
             error = tileError;
+            return false;
+        }
+        if (!complete) {
+            deferredAdmissions_ = 1;
+            break;
+        }
+        construction_->distance = candidate.distance;
+        ITile* admitted = publishConstruction();
+        if (admitted == nullptr) {
+            construction_.reset();
+            error.assign(kTerrainTileFieldCode);
             return false;
         }
         built += 1;
@@ -645,6 +755,7 @@ void TerrainTiles::dispose() {
     for (ITile& tile : tiles_)
         if (tile.hasBody) giveBackBody(tile);
     tiles_.clear();
+    construction_.reset();
     stitches_.clear();
     dirtyBlocks_.clear();
     stitchBytes_ = 0;

@@ -37,6 +37,8 @@ class IHeightGridSource {
 
     /** `columns * rows` row-major canonical samples for `(tileX, tileZ)`, or false when absent. */
     virtual bool tileGrid(int32_t tileX, int32_t tileZ, std::vector<float>& heights) = 0;
+    /** One canonical row-major field sample, or false when the tile/sample is absent. */
+    virtual bool tileSample(int32_t tileX, int32_t tileZ, uint32_t row, uint32_t column, float& height) = 0;
 };
 
 /** The measured region the topology evaluator owns; its retained samples count against the cap. */
@@ -191,17 +193,38 @@ class TerrainTiles {
 
     struct ITile {
         ITerrainTileInfo info;
+        std::vector<float> fieldGrid;
         std::vector<std::vector<float>> levelHeights;
         ITransition lodTransition;
         bool hasTransition = false;
         bool hasBody = false;
     };
 
+    struct IConstruction {
+        int32_t tileX = 0;
+        int32_t tileZ = 0;
+        double distance = 0.0;
+        bool withCollider = false;
+        std::vector<float> fieldGrid;
+        std::vector<std::vector<float>> levelHeights;
+        std::size_t fieldCursor = 0;
+        std::size_t levelIndex = 0;
+        std::size_t levelCursor = 0;
+        std::size_t safetyLevel = 1;
+        std::size_t safetyFiner = 0;
+        std::size_t safetyCursor = 0;
+        double safetyPairError = 0.0;
+        double safetyLevelError = 0.0;
+        uint32_t maxLodLevel = 0;
+        std::vector<float> colliderHeights;
+        std::size_t colliderCursor = 0;
+        bool chunked = false;
+    };
+
     uint32_t resolutionFor(uint32_t factor) const;
-    uint64_t estimatedLevelBytes(uint32_t resolution) const;
+    uint64_t estimatedLevelBytes(uint32_t resolution, uint32_t morphTargets = 0) const;
     uint64_t estimatedFieldBytes() const;
     uint64_t estimatedTileBytes() const;
-    uint32_t coarsestSelectableLevel(const std::vector<std::vector<float>>& levels) const;
     bool wantsCollider(int32_t tileX, int32_t tileZ, int32_t centerX, int32_t centerZ) const;
     uint32_t lodLevelForDistance(double distance) const;
     /** The level whose surface the renderer shows: the finer one while a blend is in flight. */
@@ -209,7 +232,9 @@ class TerrainTiles {
     ITile* findTile(const std::string& key);
     /** The tile's own record, or nullptr when it is not resident. */
     const ITerrainTileInfo* find(const std::string& key) const;
-    ITile* buildTile(int32_t tileX, int32_t tileZ, double distance, bool withCollider, std::string& error);
+    void startConstruction(int32_t tileX, int32_t tileZ, double distance, bool withCollider);
+    bool advanceConstruction(std::string& error);
+    ITile* publishConstruction();
     void giveBackBody(ITile& tile);
     void evict(ITile& tile);
     void setLodLevel(ITile& tile, uint32_t level, bool countTransition);
@@ -225,6 +250,7 @@ class TerrainTiles {
 
     ITerrainTilesOptions options_;
     IHeightGridSource* heights_ = nullptr;
+    std::optional<IConstruction> construction_;
     std::vector<ITile> tiles_;
     std::vector<ITerrainColliderEvent> colliderEvents_;
     std::vector<ITerrainStitchInfo> stitches_;

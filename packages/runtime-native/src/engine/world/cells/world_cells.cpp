@@ -7,6 +7,7 @@
 
 namespace tn::engine::world {
 namespace {
+constexpr double kRefilterStepMetres = 2.0;
 double distance(double x, double z) {
     // V8's two-argument Math.hypot operation order, as in the existing GPU-scene CPU oracle.
     const double high = std::max(std::abs(x), std::abs(z));
@@ -309,7 +310,10 @@ bool WorldCells::step(Job& job) {
     if (!a || a->levels.empty()) return true;
     const std::size_t count = run.records.size() / 8;
     if (job.next < count) {
-        if (job.levels.empty()) job.levels.assign(count, -1);
+        if (job.levels.empty()) {
+            job.x = x_; job.z = z_;
+            job.levels.assign(count, -1);
+        }
         const std::size_t end = std::min(count, job.next + 256);
         for (std::size_t at = job.next; at < end; ++at) {
             const auto* record = &run.records[at * 8];
@@ -343,7 +347,7 @@ void WorldCells::update(double x, double z, const std::function<double()>& now, 
     x_ = x; z_ = z;
     const double terrainLimit = jobs_.empty() ? options_.admissionBudgetMs : options_.admissionBudgetMs / 2;
     Budget ground{terrainLimit, 0, now};
-    const bool pending = companionPending || !jobs_.empty() || (terrain_ && terrain_->deferredAdmissions() > 0) ||
+    const bool pending = companionPending || owed_ || !jobs_.empty() || (terrain_ && terrain_->deferredAdmissions() > 0) ||
         std::any_of(assets_.begin(), assets_.end(), [](const Asset& a) { return a.levels.empty(); });
     if (pending || distance(x - residencyX_, z - residencyZ_) >= 0.5) {
         residencyX_ = x; residencyZ_ = z;
@@ -356,7 +360,7 @@ void WorldCells::update(double x, double z, const std::function<double()>& now, 
         }
         const auto point = ahead(x, z, now);
         residency(x, z, point[0], point[1]);
-        if (owed_ || epoch_ != filterEpoch_ || distance(x - refilterX_, z - refilterZ_) >= 2) {
+        if (owed_ || epoch_ != filterEpoch_ || distance(x - refilterX_, z - refilterZ_) >= kRefilterStepMetres) {
             filterEpoch_ = epoch_; refilterX_ = x; refilterZ_ = z;
             refilter(x, z);
         }
@@ -365,7 +369,14 @@ void WorldCells::update(double x, double z, const std::function<double()>& now, 
     while (!jobs_.empty()) {
         bool done = false;
         if (!props.admit([&] { done = step(jobs_[0]); })) break;
-        if (done) jobs_.erase(jobs_.begin());
+        if (done) {
+            const auto& job = jobs_.front();
+            // If the follow point moved while this bounded snapshot was being built, revisit the
+            // refilter after publication even when it now stands still. Match the first-slice pose
+            // held by the job; a queued job's earlier pose is not a coherent placement snapshot.
+            if (!job.levels.empty() && distance(x_ - job.x, z_ - job.z) >= kRefilterStepMetres) owed_ = true;
+            jobs_.erase(jobs_.begin());
+        }
     }
     terrainSpentMs_ = ground.spent;
     spentMs_ = ground.spent + props.spent;

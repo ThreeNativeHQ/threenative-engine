@@ -41,6 +41,8 @@ struct RefOptions {
     const uint64_t* distances;
     uint32_t recordColliders;
     uint32_t colliderThrows;
+    uint32_t mergeTiles;
+    uint32_t validate;
     uint32_t hasTopology;
     uint32_t topologyColumns;
     uint32_t topologyRows;
@@ -69,6 +71,7 @@ struct RefStep {
     uint32_t outcome;
     uint32_t deferredAdmissions;
     uint32_t units;
+    uint32_t budgeted;
     uint64_t x;
     uint64_t z;
     uint32_t processes;
@@ -107,6 +110,7 @@ struct RefScene {
 class RecordedHeights : public IHeightGridSource {
   public:
     explicit RecordedHeights(const RefGrid* grids, uint32_t count) : grids_(grids), count_(count) {}
+    uint64_t tileSampleReads() const { return tileSampleReads_; }
 
     bool tileGrid(int32_t tileX, int32_t tileZ, std::vector<float>& heights) override {
         for (uint32_t index = 0; index < count_; index += 1) {
@@ -120,9 +124,21 @@ class RecordedHeights : public IHeightGridSource {
         return false;
     }
 
+    bool tileSample(int32_t tileX, int32_t tileZ, uint32_t row, uint32_t column, float& height) override {
+        for (uint32_t index = 0; index < count_; index += 1) {
+            const RefGrid& grid = grids_[index];
+            if (grid.tileX != tileX || grid.tileZ != tileZ || row >= grid.rows || column >= grid.columns) continue;
+            tileSampleReads_ += 1;
+            height = floatFromBits(grid.samples[static_cast<std::size_t>(row) * grid.columns + column]);
+            return true;
+        }
+        return false;
+    }
+
   private:
     const RefGrid* grids_ = nullptr;
     uint32_t count_ = 0;
+    uint64_t tileSampleReads_ = 0;
 };
 
 /** The recorded scene's options as the port's own, with every default the core resolved spelled out. */
@@ -142,6 +158,8 @@ ITerrainTilesOptions buildOptions(const RefOptions& ref) {
         options.lodDistances.push_back(doubleFromBits(ref.distances[index]));
     options.createCollider = ref.recordColliders != 0 || ref.colliderThrows != 0;
     options.colliderFactoryThrows = ref.colliderThrows != 0;
+    options.mergeTiles = ref.mergeTiles != 0;
+    options.validate = ref.validate != 0;
     if (ref.hasTopology != 0)
         options.topologyObservation = TerrainTileTopologyObservation{
             ref.topologyColumns, ref.topologyRows, doubleFromBits(ref.topologyWidth),

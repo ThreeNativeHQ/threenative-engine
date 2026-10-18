@@ -193,6 +193,7 @@ interface IStepRecord {
   stitchBytes: number;
   tiles: ITileRecord[];
   units: number;
+  budgeted: boolean;
 }
 
 interface ISceneRecord {
@@ -367,6 +368,7 @@ function run(scene: ISceneSpec): ISceneRecord {
       stitchBytes: bridges.bytes,
       tiles: recorded,
       units: step.units ?? 0,
+      budgeted: step.units !== undefined,
       x: step.x,
       z: step.z,
     });
@@ -380,6 +382,7 @@ function run(scene: ISceneSpec): ISceneRecord {
     // A settling step records the ring it converged to as well, so the settled decision is recorded.
     if ((step.settle ?? 0) > 0) record(step, 0);
   }
+  if (scene.name === "sampleReadChunk65") gridOf(0, 0);
   tiles.dispose();
   return { refusal: 0, steps };
 }
@@ -402,6 +405,41 @@ const scenes: ISceneSpec[] = [
     },
     sample: specSampleHeight,
     steps: [{ x: 0, z: 0 }],
+  },
+  // Validation allocates no morph targets, so this cap fits its base tile but not the normal path.
+  {
+    name: "validatedBaseTileCap",
+    options: {
+      ...base,
+      mergeTiles: false,
+      residentByteBudget: 10_000,
+      residentTileBudget: 1,
+      streamRadius: 0,
+      tileResolution: 9,
+      tileSize: 8,
+      validate: true,
+    },
+    sample: () => 0,
+    steps: [{ x: 0, z: 0 }],
+  },
+  // Both the forced progress floor and an admitted callback do useful source reads in one chunk.
+  {
+    name: "sampleReadChunk65",
+    options: {
+      ...base,
+      mergeTiles: false,
+      residentByteBudget: 100_000_000,
+      residentTileBudget: 1,
+      streamRadius: 0,
+      tileResolution: 65,
+      tileSize: 64,
+      validate: true,
+    },
+    sample: () => 0,
+    steps: [
+      { x: 0, z: 0, units: 0 },
+      { x: 0, z: 0, units: 1 },
+    ],
   },
   // "rejects a tile when retained edge samples make it exceed the byte cap".
   {
@@ -689,7 +727,9 @@ records.forEach(({ record, scene }, sceneIndex) => {
       `${dec((scene.options.streamRadius as number | undefined) ?? 1)}, ` +
       `${dec((scene.options.colliderRadius as number | undefined) ?? (scene.options.streamRadius as number | undefined) ?? 1)},`,
     `    ${dec(factors.length)}, ${dec(distances.length)}, kWorldTile${s}Factors, kWorldTile${s}Distances,`,
-    `    ${factory === "record" ? 1 : 0}, ${factory === "throws" ? 1 : 0}, ${topology === undefined ? 0 : 1},`,
+    `    ${factory === "record" ? 1 : 0}, ${factory === "throws" ? 1 : 0}, ` +
+      `${scene.options.mergeTiles === false ? 0 : 1}, ${scene.options.validate === true ? 1 : 0}, ` +
+      `${topology === undefined ? 0 : 1},`,
     `    ${topology === undefined ? "0u, 0u" : `${dec(topology.columns)}, ${dec(topology.rows)}`}, ` +
       `${topology === undefined ? "0ull, 0ull" : `${u64(topology.width)}, ${u64(topology.depth)}`},`,
     "};",
@@ -738,7 +778,7 @@ records.forEach(({ record, scene }, sceneIndex) => {
   record.steps.forEach((step, stepIndex) => {
     const at = `${s}Step${String(stepIndex)}`;
     lines.push(
-      `    {${dec(step.outcome)}, ${dec(step.deferredAdmissions)}, ${dec(step.units)}, ` +
+      `    {${dec(step.outcome)}, ${dec(step.deferredAdmissions)}, ${dec(step.units)}, ${step.budgeted ? 1 : 0}, ` +
         `${u64(step.x)}, ${u64(step.z)}, ${dec(step.processes)}, ` +
         `kWorldTile${at}Resident, ${dec(step.residentKeys.length)}, ` +
         `kWorldTile${at}Insertion, ${dec(step.insertionKeys.length)}, ` +
