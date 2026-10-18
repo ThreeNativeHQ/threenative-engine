@@ -598,7 +598,7 @@ async function runResponseArchive(records: IDeviceResponseObservation[], options
   const artifactDirectory = join(projectPath, "artifacts");
   const artifactPath = join(artifactDirectory, "device-response-observations.json");
   const paths = androidMailboxPaths("com.example.archive");
-  let observer: ((record: IDeviceResponseObservation) => void | Promise<void>) | undefined;
+  let observer: ((record: IDeviceResponseObservation) => unknown) | undefined;
   let stopped = false;
   let closed = false;
   const transport: IDevicePlaytestTransport = {

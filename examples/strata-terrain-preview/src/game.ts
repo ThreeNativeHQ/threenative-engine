@@ -7,7 +7,7 @@ import {
   markStatic,
 } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
-import { Heightfield } from "@threenative/core/world";
+import { Heightfield, type WorldCells } from "@threenative/core/world";
 import {
   CharacterBody3D,
   CollisionShape3D,
@@ -127,6 +127,7 @@ const initialState = {
   canopyComparison: { normals: "authored", specular: "disabled" } as ICanopyComparison,
   showcase: false,
   worldReady: false,
+  spawnReadiness: [] as Array<Record<string, string | number | boolean>>,
   loadingError: "",
   spawnCellsRequired: 0,
   spawnCellsLoaded: 0,
@@ -299,6 +300,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         view: "player",
         currentViewWindows: 0,
         worldReady: false,
+        spawnReadiness: [],
         loadingError: "",
         spawnCellsRequired: 0,
         spawnCellsLoaded: 0,
@@ -381,6 +383,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const deadlineAt = performance.now() + 120_000;
       let spawnCells = { required: 0, loaded: 0 };
       let spawnReady = false;
+      const spawnJoins = new Map<WorldCells, { data: string; prewarm: string }>();
       let spawnError = "";
       let spawnSettled = false;
       let capturingSpawnFailure = false;
@@ -919,7 +922,29 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           } else {
             void Promise.all([
               Promise.all(
-                props.worlds.map((stream) => stream.whenSpawnReady(spawn, 60, remaining)),
+                props.worlds.map((stream) => {
+                  const status = { data: "pending", prewarm: "pending" };
+                  spawnJoins.set(stream, status);
+                  const data = stream.whenSpawnReady(spawn, 60, remaining);
+                  // Observe settlement without replacing the promises the spawn join awaits.
+                  void data.then(
+                    () => {
+                      status.data = "resolved";
+                    },
+                    () => {
+                      status.data = "rejected";
+                    },
+                  );
+                  void stream.prewarmed.then(
+                    () => {
+                      status.prewarm = "resolved";
+                    },
+                    () => {
+                      status.prewarm = "rejected";
+                    },
+                  );
+                  return data;
+                }),
               ),
               ...props.worlds.map((stream) => stream.prewarmed),
             ]).then(
@@ -1153,6 +1178,19 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
               admissionBacklog: stagedStreaming.admission.backlog,
             }
           : props?.stats();
+        const spawnReadiness = [...spawnJoins].map(([stream, status], index) => {
+          if (spawnReady)
+            return { name: stream.name, ...ctx.state.getState().spawnReadiness[index], ...status };
+          const stats = stream.stats();
+          return {
+            name: stream.name,
+            observedFrame: frames,
+            ...status,
+            ...stream.readinessAt(spawn, 60),
+            admissionBacklog: stats.admission.backlog,
+            impostorPending: stats.impostor.pending,
+          };
+        });
         const worldReady = spawnReady;
         if (spawnError) ctx.state.set({ loadingError: spawnError });
         if (
@@ -1214,6 +1252,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
             ? ((mesh.material as MeshStandardMaterial).userData.biome ?? "baked")
             : `stage:${forestStageArm(globalThis.location?.search ?? "")}`,
           worldReady,
+          spawnReadiness,
           spawnCellsRequired: spawnCells.required,
           spawnCellsLoaded: spawnCells.loaded,
           streamingResidentCells: streaming?.residentCells ?? 0,

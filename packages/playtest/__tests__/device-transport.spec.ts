@@ -104,7 +104,7 @@ test("Android mailbox transport observes the raw response before consuming it", 
   const mailbox = new FakeMailbox(paths);
   const transport = new DeviceMailboxTransport(mailbox, paths);
   const observations: IDeviceResponseObservation[] = [];
-  transport.setResponseObserver((observation) => { observations.push(observation); });
+  transport.setResponseObserver((observation) => observations.push(observation));
   await transport.start();
   try {
     await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));

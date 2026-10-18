@@ -54,7 +54,7 @@ export interface IDeviceRequestContext {
 
 export interface IDevicePlaytestTransport extends IBridgeTransport {
   start(): Promise<void>;
-  setResponseObserver?(observer: (observation: IDeviceResponseObservation) => void | Promise<void>): void;
+  setResponseObserver?(observer: (observation: IDeviceResponseObservation) => unknown): void;
   getPendingRequest?(): IDeviceRequestContext | undefined;
 }
 
@@ -188,7 +188,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
   // Calls that gave up before the host answered. The host still answers them, late, and that
   // answer is theirs, not an error in whichever call is waiting when it lands.
   private readonly abandonedIds = new Set<string>();
-  private responseObserver?: (observation: IDeviceResponseObservation) => void | Promise<void>;
+  private responseObserver?: (observation: IDeviceResponseObservation) => unknown;
 
   constructor(
     private readonly mailbox: IDeviceMailbox,
@@ -196,7 +196,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     private readonly operationTimeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
   ) {}
 
-  setResponseObserver(observer: (observation: IDeviceResponseObservation) => void | Promise<void>): void {
+  setResponseObserver(observer: (observation: IDeviceResponseObservation) => unknown): void {
     this.responseObserver = observer;
   }
 

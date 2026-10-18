@@ -159,27 +159,46 @@ function host(ready: Promise<void>) {
   };
 }
 
-it.each(["attached", "cancelled", "released"] as const)(
+it.each(["attached", "cancelled", "released", "data-rejected", "prewarm-rejected"] as const)(
   "defers hidden world draws until prepared streams attach: %s",
   async (outcome) => {
     const declarations = gameDeclarations(["buildProps"], true);
     const controllerHost = host(new Promise<void>(() => undefined));
     controllerHost.canvasLayer.opaque = true;
     controllerHost.canvasLayer.renderWorldDuringStartup = false;
-    let admit: () => void = () => undefined;
-    let draw: () => void = () => undefined;
-    const world = {
-      prewarmed: new Promise<void>((resolve) => {
-        draw = resolve;
-      }),
-      update: () => undefined,
-      whenSpawnReady: vi.fn(
-        () =>
-          new Promise<{ requiredCells: number; loadedCells: number }>((resolve) => {
-            admit = () => resolve({ requiredCells: 1, loadedCells: 1 });
-          }),
-      ),
-    };
+    const gates = [0, 1].map((index) => {
+      let admit: () => void = () => undefined;
+      let draw: () => void = () => undefined;
+      let rejectData: (error: Error) => void = () => undefined;
+      let rejectDraw: (error: Error) => void = () => undefined;
+      const data = new Promise<{ requiredCells: number; loadedCells: number }>(
+        (resolve, reject) => {
+          admit = () => resolve({ requiredCells: index + 1, loadedCells: index + 1 });
+          rejectData = reject;
+        },
+      );
+      const world = {
+        name: `strata-props:${index}`,
+        prewarmed: new Promise<void>((resolve, reject) => {
+          draw = resolve;
+          rejectDraw = reject;
+        }),
+        update: () => undefined,
+        whenSpawnReady: vi.fn(() => data),
+        readinessAt: vi.fn(() => ({
+          ready: false,
+          requiredCells: index + 1,
+          loadedCells: 0,
+          failures: 0,
+        })),
+        stats: vi.fn(() => ({
+          admission: { backlog: index + 4 },
+          impostor: { pending: index + 2 },
+        })),
+      };
+      return { world, data, admit, draw, rejectData, rejectDraw };
+    });
+    const all = vi.fn((values: Iterable<unknown>) => Promise.all(values));
     const attachments: boolean[] = [];
     let entered: () => void = () => undefined;
     const preparing = new Promise<void>((resolve) => {
@@ -193,12 +212,14 @@ it.each(["attached", "cancelled", "released"] as const)(
     const parts = new Map();
     const scope = {
       exports: {} as { Controller?: new () => { run(): Promise<void> } },
-      performance,
-      deadlineAt: performance.now() + 120_000,
+      performance: { now: () => 1000 },
+      deadlineAt: 121_000,
       settleSpawn: vi.fn(),
+      spawnJoins: new Map(),
       spawnSettled: false,
       spawnCells: { required: 0, loaded: 0 },
-      failSpawn: () => undefined,
+      failSpawn: vi.fn(),
+      Promise: { all, resolve: Promise.resolve.bind(Promise) },
       ctx: {
         ...controllerHost,
         assets: undefined,
@@ -255,7 +276,7 @@ it.each(["attached", "cancelled", "released"] as const)(
         return outcome === "cancelled"
           ? undefined
           : {
-              worlds: [world],
+              worlds: gates.map((gate) => gate.world),
               byId: new Map(),
               meshes: [],
               dispose: () => {
@@ -289,24 +310,144 @@ it.each(["attached", "cancelled", "released"] as const)(
       finish();
       await work;
     }
-    expect(attachments).toEqual(outcome === "attached" ? [false] : []);
-    expect(controllerHost.canvasLayer.keepWorldRendering).toBe(outcome === "attached");
+    const attached = outcome !== "cancelled" && outcome !== "released";
+    expect(attachments).toEqual(attached ? [false, false] : []);
+    expect(controllerHost.canvasLayer.keepWorldRendering).toBe(attached);
     expect(disposed).toBe(outcome === "released");
     expect(scope.settleSpawn).not.toHaveBeenCalled();
     expect(scope.spawnCells).toEqual({ required: 0, loaded: 0 });
-    draw();
+    if (!attached) return;
+    expect([...scope.spawnJoins.values()]).toEqual([
+      { data: "pending", prewarm: "pending" },
+      { data: "pending", prewarm: "pending" },
+    ]);
+    expect(
+      all.mock.calls.some(
+        ([values]) =>
+          Array.isArray(values) && values[0] === gates[0]?.data && values[1] === gates[1]?.data,
+      ),
+    ).toBe(true);
+    expect(
+      all.mock.calls.some(
+        ([values]) =>
+          Array.isArray(values) &&
+          values[1] === gates[0]?.world.prewarmed &&
+          values[2] === gates[1]?.world.prewarmed,
+      ),
+    ).toBe(true);
+    gates[0]?.admit();
+    gates[1]?.draw();
     for (let turn = 0; turn < 5; turn++) await Promise.resolve();
+    expect([...scope.spawnJoins.values()]).toEqual([
+      { data: "resolved", prewarm: "pending" },
+      { data: "pending", prewarm: "resolved" },
+    ]);
     expect(scope.settleSpawn).not.toHaveBeenCalled();
-    admit();
+    const error = new Error("original world gate rejection");
+    if (outcome === "data-rejected") gates[1]?.rejectData(error);
+    else gates[1]?.admit();
+    if (outcome === "prewarm-rejected") gates[0]?.rejectDraw(error);
+    else gates[0]?.draw();
     for (let turn = 0; turn < 5; turn++) await Promise.resolve();
-    expect(scope.settleSpawn).toHaveBeenCalledTimes(outcome === "attached" ? 1 : 0);
     if (outcome === "attached") {
-      expect(scope.spawnCells).toEqual({ required: 1, loaded: 1 });
-      expect(scope.ctx.state.set).not.toHaveBeenCalled();
-      expect(world.whenSpawnReady).toHaveBeenCalledWith(scope.spawn, 60, expect.any(Number));
+      expect(scope.settleSpawn).toHaveBeenCalledOnce();
+      expect(scope.spawnCells).toEqual({ required: 3, loaded: 3 });
+      expect([...scope.spawnJoins.values()]).toEqual([
+        { data: "resolved", prewarm: "resolved" },
+        { data: "resolved", prewarm: "resolved" },
+      ]);
+      expect(scope.failSpawn).not.toHaveBeenCalled();
+    } else {
+      expect(scope.settleSpawn).not.toHaveBeenCalled();
+      expect(scope.failSpawn).toHaveBeenCalledExactlyOnceWith(error);
+      expect([...scope.spawnJoins.values()]).toContainEqual(
+        outcome === "data-rejected"
+          ? { data: "rejected", prewarm: "resolved" }
+          : { data: "resolved", prewarm: "rejected" },
+      );
     }
+    expect(scope.ctx.state.set).not.toHaveBeenCalled();
+    expect(gates[0]?.world.whenSpawnReady).toHaveBeenCalledExactlyOnceWith(
+      scope.spawn,
+      60,
+      120_000,
+    );
+    expect(gates[1]?.world.whenSpawnReady).toHaveBeenCalledExactlyOnceWith(
+      scope.spawn,
+      60,
+      120_000,
+    );
   },
 );
+
+it("reports each spawn region and promise status without querying readiness after settlement", () => {
+  const status = { data: "pending", prewarm: "rejected" };
+  const stream = {
+    name: "strata-props:coastal-trees",
+    readinessAt: vi.fn(() => ({
+      ready: false,
+      requiredCells: 3,
+      loadedCells: 2,
+      requiredTerrainTiles: 0,
+      loadedTerrainTiles: 0,
+      failures: 1,
+      cancelled: false,
+    })),
+    stats: vi.fn(() => ({ admission: { backlog: 7 }, impostor: { pending: 4 } })),
+  };
+  const scope = {
+    exports: { snapshot: [] as Array<Record<string, string | number | boolean>> },
+    spawnJoins: new Map([[stream, status]]),
+    spawn: { x: 11, z: 23 },
+    spawnReady: false,
+    frames: 12,
+    ctx: { state: { getState: () => ({ spawnReadiness: scope.exports.snapshot }) } },
+  };
+  const code = ts.transpileModule(
+    `(function () { ${gameDeclarations(["spawnReadiness"])}; exports.snapshot = spawnReadiness; })();`,
+    {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+    },
+  ).outputText;
+  runInNewContext(code, scope);
+  expect(scope.exports.snapshot).toEqual([
+    {
+      name: stream.name,
+      observedFrame: 12,
+      data: "pending",
+      prewarm: "rejected",
+      ready: false,
+      requiredCells: 3,
+      loadedCells: 2,
+      requiredTerrainTiles: 0,
+      loadedTerrainTiles: 0,
+      failures: 1,
+      cancelled: false,
+      admissionBacklog: 7,
+      impostorPending: 4,
+    },
+  ]);
+  expect(stream.readinessAt).toHaveBeenCalledExactlyOnceWith(scope.spawn, 60);
+  status.data = "resolved";
+  status.prewarm = "resolved";
+  scope.spawnReady = true;
+  scope.frames = 13;
+  runInNewContext(code, scope);
+  expect(scope.exports.snapshot[0]).toMatchObject({
+    data: "resolved",
+    prewarm: "resolved",
+    loadedCells: 2,
+    observedFrame: 12,
+  });
+  expect(stream.readinessAt).toHaveBeenCalledOnce();
+  expect(stream.stats).toHaveBeenCalledOnce();
+  scope.exports.snapshot = [];
+  runInNewContext(code, scope);
+  expect(scope.exports.snapshot).toEqual([
+    { name: stream.name, data: "resolved", prewarm: "resolved" },
+  ]);
+  expect(stream.readinessAt).toHaveBeenCalledOnce();
+});
 
 it("reports completed streamed admission work before spawn cells become ready", () => {
   const progress = startupProgressExpression();
