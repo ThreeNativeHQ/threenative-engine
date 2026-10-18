@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,9 +15,46 @@ import {
 // The package script runs vitest from the package directory with `--root ../..`, so cwd is not the repo root.
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const verifyOcean = resolve(repoRoot, "examples/strata-terrain-preview/scripts/verify-ocean.mjs");
+const strataPackage = resolve(repoRoot, "examples/strata-terrain-preview/package.json");
 const ROI = { x: 0, y: 0, width: 280, height: 100 };
 const half = (value: number): number => DataUtils.toHalfFloat(value);
 const flush = (): Promise<void> => new Promise((settle) => setTimeout(settle, 0));
+
+it("runs the canonical terrain proof against the production Vite build", () => {
+  const manifest = JSON.parse(readFileSync(strataPackage, "utf8")) as {
+    scripts: Record<string, string>;
+  };
+  const command = manifest.scripts["test:terrain:web"];
+
+  expect(command).toMatch(
+    /^pnpm build && node \.\.\/\.\.\/packages\/playtest\/dist\/runner\/cli\.js playtests\/terrain\.playtest\.json /,
+  );
+  expect(command).toContain("--url 'http://127.0.0.1:5196/?showcase=1&waterproof=1'");
+  expect(command).toContain(
+    "--server-command 'pnpm exec vite preview --host 127.0.0.1 --port 5196 --strictPort'",
+  );
+  expect(command).toContain("--browser-recipe webgpu --headed --artifacts artifacts/playtest/web");
+  expect(command).toContain(
+    "&& node scripts/verify-ocean.mjs artifacts/playtest/web --proof=water",
+  );
+  expect(command).not.toContain("pnpm dev");
+
+  const controlCommand = manifest.scripts["test:terrain:web:control"];
+  expect(controlCommand).toMatch(
+    /^pnpm build && node \.\.\/\.\.\/packages\/playtest\/dist\/runner\/cli\.js playtests\/terrain\.playtest\.json /,
+  );
+  expect(controlCommand).toContain("--url 'http://127.0.0.1:5196/?showcase=1&waterproof=foam'");
+  expect(controlCommand).toContain(
+    "--server-command 'pnpm exec vite preview --host 127.0.0.1 --port 5196 --strictPort'",
+  );
+  expect(controlCommand).toContain(
+    "--browser-recipe webgpu --headed --artifacts artifacts/playtest/water-control",
+  );
+  expect(controlCommand).toContain(
+    "&& node scripts/verify-ocean.mjs artifacts/playtest/water-control --proof=foam",
+  );
+  expect(controlCommand).not.toContain("pnpm dev");
+});
 
 // The exact three r185 copyTextureToBuffer layout: every row but the last padded to 256 bytes.
 function padded(make: (x: number, y: number) => [number, number]): Uint16Array {

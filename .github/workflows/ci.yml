@@ -704,8 +704,6 @@ jobs:
           shared-artifact: workspace-packages
           save-bundles: "false"
       - uses: ./.github/actions/playwright-chromium
-      - name: Generate the terrain example's ignored world source
-        run: pnpm --filter strata-terrain-preview bake
       - name: Run strata web playtest
         run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:web
       - name: Run strata consumer verification
