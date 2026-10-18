@@ -25,6 +25,8 @@ const currentCall = { id: 0 };
 
 /** The counters the manager under test writes, which the manager outlives. */
 let currentCounts: ICounted | undefined;
+/** The generation three gives a texture each time it re-creates the GPU texture behind it. */
+let textureGeneration = 0;
 
 /** The armed counters, failing closed: a draw before its test armed them is a broken test, not a zero. */
 function liveCounts(): ICounted {
@@ -60,6 +62,8 @@ interface ICounted {
   /** The attributes whose upload this draw asked the backend for, by identity. */
   uploads: object[];
   layoutsBuilt: number;
+  /** `backend.updateBindings` calls: a bind group was rebuilt over its current textures. */
+  bindGroupsRebuilt: number;
 }
 
 function worldFor(mesh: InstancedMesh) {
@@ -130,6 +134,7 @@ function draw(mesh: InstancedMesh, observer: ReturnType<typeof observerFor>, app
     attributeScans: 0,
     uploads: [],
     layoutsBuilt: 0,
+    bindGroupsRebuilt: 0,
   };
   let renderObject = renderObjects.get(mesh) as Record<string, unknown> | undefined;
   renderObject ??= {};
@@ -233,7 +238,9 @@ function draw(mesh: InstancedMesh, observer: ReturnType<typeof observerFor>, app
       entry(bindGroup).layout = { layoutGPU: {} };
     },
     updateBinding: () => undefined,
-    updateBindings: () => undefined,
+    updateBindings: () => {
+      counts.bindGroupsRebuilt += 1;
+    },
   };
   Bindings.prototype.updateForRender.call(
     {
@@ -249,7 +256,7 @@ function draw(mesh: InstancedMesh, observer: ReturnType<typeof observerFor>, app
       info: { createUniformBuffer: () => undefined },
       _createBindings: Bindings.prototype._createBindings,
       textures: {
-        get: () => ({ generation: 0, bindGroups: new Set() }),
+        get: () => ({ generation: textureGeneration, bindGroups: new Set() }),
         updateTexture: () => undefined,
         needsMipmaps: () => false,
       },
@@ -302,6 +309,19 @@ function objectGroupBinding() {
       liveCounts().objectGroupWrites += 1;
       return true;
     },
+  };
+}
+
+/** A sampled texture in an object group: three's default group for a `texture()` node. */
+function objectGroupTexture() {
+  return {
+    isSampledTexture: true,
+    isBuffer: true,
+    updateRanges: [],
+    generation: 0,
+    groupNode: { updateType: NodeUpdateType.OBJECT, version: 1 },
+    texture: { id: 9, version: 1 },
+    update: () => true,
   };
 }
 
@@ -372,6 +392,33 @@ describe("a settled static object skips the per-object draw work", () => {
     expect(backendData.get(late)?.layout?.layoutGPU, "a group with no layout").toBeDefined();
     // Never seen before, so never written: a settled draw writes the group it just created.
     expect(settled.counts.objectGroupWrites, "texture binding + the new group").toBe(2);
+  });
+
+  it("rebuilds a settled static object's bind group when its sampled texture is re-created", () => {
+    // The output pass samples the frame buffer target. A resolution-scale change makes three destroy
+    // that GPU texture and give the target a new generation; a settled object that skips the
+    // texture binding keeps the old bind group, and every submit after it fails with "Destroyed
+    // texture used in a submit" until the scale changes back.
+    const mesh = litMesh();
+    mesh.static = true;
+    const observer = observerFor(mesh);
+    draw(mesh, observer);
+    expect(draw(mesh, observer).settled).toBe(true);
+
+    textureGeneration = 0;
+    const sampled: IGroup = { bindings: [objectGroupTexture()] };
+    createGroup(sampled);
+    const steady = draw(mesh, observer, [sampled]);
+    expect(steady.settled).toBe(true);
+    expect(steady.counts.bindGroupsRebuilt, "same texture generation: nothing to rebuild").toBe(0);
+
+    textureGeneration = 1;
+    const resized = draw(mesh, observer, [sampled]);
+    textureGeneration = 0;
+    expect(resized.settled, "a settled draw is still a draw").toBe(true);
+    // Two groups hold a sampled texture: the object's own render-group one, which always follows,
+    // and the object-group one this test adds, which a settled draw must not skip.
+    expect(resized.counts.bindGroupsRebuilt, "the new texture reaches both bind groups").toBe(2);
   });
 
   it("runs every step of a draw that answered 'no refresh'", () => {

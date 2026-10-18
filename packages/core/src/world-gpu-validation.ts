@@ -31,6 +31,7 @@ export const LIVE_MATRIX = new Float32Array(LOCAL_WORDS);
  */
 export function sameGates(one: IAssetSlot, other: IAssetSlot): boolean {
   if (one.cull !== other.cull) return false;
+  if ((one.shadowFallback === false) !== (other.shadowFallback === false)) return false;
   if ((one.impostor === true) !== (other.impostor === true)) return false;
   if (one.distances.length !== other.distances.length) return false;
   for (const [index, distance] of one.distances.entries())

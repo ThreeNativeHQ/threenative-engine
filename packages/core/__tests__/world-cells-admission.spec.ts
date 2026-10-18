@@ -249,7 +249,7 @@ async function makeWorld(options: {
 }
 
 /** Update until nothing is queued, returning every frame's admission spend. */
-function drain(world: WorldCells, limit = 4000, covered = false): number[] {
+function drain(world: WorldCells, limit = 10_000, covered = false): number[] {
   const spent: number[] = [];
   for (let frame = 0; frame < limit; frame += 1) {
     if (covered) world.process(undefined, undefined, true);
@@ -553,7 +553,7 @@ describe("WorldCells admission budget", () => {
     const { world: covered } = await makeWorld({ priced: true });
     covered.update();
     await step(covered);
-    const coveredSpent = drain(covered, 4000, true);
+    const coveredSpent = drain(covered, 10_000, true);
     for (const frame of coveredSpent) expect(frame).toBeLessThanOrEqual(16 + UNIT_MS);
     expect(Math.max(...coveredSpent)).toBeGreaterThan(2 + UNIT_MS);
     expect(coveredSpent.length).toBeLessThan(openSpent.length);
@@ -595,7 +595,7 @@ describe("WorldCells admission budget", () => {
     });
     cells.update();
     await step(cells);
-    for (const frame of drain(cells, 4000, true)) expect(frame).toBeLessThanOrEqual(2 + UNIT_MS);
+    for (const frame of drain(cells, 10_000, true)) expect(frame).toBeLessThanOrEqual(2 + UNIT_MS);
     cells.dispose();
   });
 
@@ -646,12 +646,14 @@ describe("WorldCells admission budget", () => {
       await step(cells);
       expect(cells.stats().residentCells).toBe(4);
       const before = cells.stats().pressure.cells;
+      const originalKeys = cells.stats().residentKeys;
       const at = cellCenter(to[0], to[1]);
       follow.position.x = at.x;
       follow.position.z = at.z;
       await step(cells);
       expect(cells.stats().residentCells).toBe(4);
       expect(cells.stats().failures).toBe(0);
+      if (to[0] === 1) expect(cells.stats().residentKeys).toEqual(originalKeys);
       const refused = cells.stats().pressure.cells - before;
       cells.dispose();
       return refused;
@@ -660,9 +662,411 @@ describe("WorldCells admission budget", () => {
     // all within the hysteresis ring, so without the yield all eight new ones are refused; with it
     // three of the four the corner held give way and only five are.
     expect(await jump([2, 2])).toBe(5);
-    // A one-cell step is not a jump: the hysteresis holds, as a walk needs it to.
+    // All four original cells are still wanted after this one-cell step: pressure must not
+    // evict a wanted resident merely to replace it with a different wanted cell.
     expect(await jump([1, 1])).toBe(5);
   });
+
+  it.each([
+    ...[Number.POSITIVE_INFINITY, 2].map((budgetMs) => ({
+      name: `same-cell alternating speculative lead with admission budget ${budgetMs}`,
+      sameCellAlternation: true,
+      expectedLost: false,
+      expectedLead: false,
+      expectedRows: [],
+      capacity: 25,
+      prefetchSeconds: 1.5,
+      slack: false,
+      budgetMs,
+      startX: 537,
+      endX: 600,
+      endZ: -555.5,
+      lost: "10:3",
+      ledEdge: "15:3",
+    })),
+    {
+      name: "same-cell speculative lead uses available slack",
+      sameCellAlternation: true,
+      expectedLost: false,
+      expectedLead: true,
+      expectedRows: [],
+      capacity: 30,
+      prefetchSeconds: 1.5,
+      slack: true,
+      budgetMs: Number.POSITIVE_INFINITY,
+      startX: 537,
+      endX: 600,
+      endZ: -555.5,
+      lost: "10:3",
+      ledEdge: "15:3",
+    },
+    {
+      name: "baseline hysteresis preserves retired visible lead cells",
+      sameCellAlternation: false,
+      expectedLost: false,
+      expectedLead: false,
+      expectedRows: [],
+      capacity: 25,
+      prefetchSeconds: 1.5,
+      slack: false,
+      budgetMs: Number.POSITIVE_INFINITY,
+      startX: 403.7396859094827,
+      endX: 394.7772706584761,
+      endZ: -375.603969352881,
+      lost: "11:4",
+      ledEdge: "11:2",
+    },
+    {
+      name: "full-capacity ordinary shift preserves hysteresis",
+      sameCellAlternation: false,
+      expectedLost: false,
+      expectedLead: false,
+      expectedRows: [
+        [1, 10, 14],
+        [2, 10, 14],
+        [3, 10, 14],
+        [4, 10, 14],
+        [5, 10, 14],
+      ],
+      capacity: 25,
+      prefetchSeconds: 0,
+      slack: false,
+      budgetMs: Number.POSITIVE_INFINITY,
+      startX: 537,
+      endX: 650,
+      endZ: -555.5,
+      lost: "10:3",
+      ledEdge: "15:3",
+    },
+    {
+      name: "finite ordinary shift and delayed models",
+      sameCellAlternation: false,
+      expectedLost: false,
+      expectedLead: false,
+      expectedRows: [
+        [1, 10, 14],
+        [2, 10, 14],
+        [3, 10, 14],
+        [4, 10, 14],
+        [5, 10, 14],
+      ],
+      capacity: 25,
+      prefetchSeconds: 0,
+      slack: false,
+      budgetMs: 2,
+      startX: 537,
+      endX: 650,
+      endZ: -555.5,
+      lost: "10:3",
+      ledEdge: "15:3",
+    },
+    {
+      name: "one-cell speculative lead preserves the full retained ring",
+      sameCellAlternation: false,
+      expectedLost: false,
+      expectedLead: false,
+      expectedRows: [
+        [1, 10, 14],
+        [2, 10, 14],
+        [3, 10, 14],
+        [4, 10, 14],
+        [5, 10, 14],
+      ],
+      capacity: 25,
+      prefetchSeconds: 1.5,
+      slack: false,
+      budgetMs: Number.POSITIVE_INFINITY,
+      startX: 537,
+      endX: 600,
+      endZ: -555.5,
+      lost: "10:3",
+      ledEdge: "15:3",
+    },
+    {
+      name: "ordinary shift retains hysteresis when there is room",
+      sameCellAlternation: false,
+      expectedLost: false,
+      expectedLead: true,
+      expectedRows: [
+        [1, 10, 15],
+        [2, 10, 15],
+        [3, 10, 15],
+        [4, 10, 15],
+        [5, 10, 15],
+      ],
+      capacity: 30,
+      prefetchSeconds: 0,
+      slack: true,
+      budgetMs: Number.POSITIVE_INFINITY,
+      startX: 537,
+      endX: 650,
+      endZ: -555.5,
+      lost: "10:3",
+      ledEdge: "15:3",
+    },
+    {
+      name: "one-cell move",
+      sameCellAlternation: false,
+      expectedLost: true,
+      expectedLead: true,
+      expectedRows: [
+        [2, 12, 14],
+        [3, 12, 16],
+        [4, 12, 16],
+        [5, 12, 17],
+        [6, 13, 16],
+        [7, 14, 15],
+      ],
+      capacity: 25,
+      prefetchSeconds: 1.5,
+      slack: false,
+      budgetMs: Number.POSITIVE_INFINITY,
+      startX: 537,
+      endX: 739.1,
+      endZ: -426.6,
+      lost: "11:2",
+      ledEdge: "15:7",
+    },
+    {
+      name: "finite admission and delayed model",
+      sameCellAlternation: false,
+      expectedLost: true,
+      expectedLead: true,
+      expectedRows: [
+        [2, 12, 14],
+        [3, 12, 16],
+        [4, 12, 16],
+        [5, 12, 16],
+        [6, 12, 16],
+        [7, 14, 15],
+      ],
+      capacity: 25,
+      prefetchSeconds: 1.5,
+      slack: false,
+      budgetMs: 2,
+      startX: 537,
+      endX: 739.1,
+      endZ: -426.6,
+      lost: "11:2",
+      ledEdge: "15:7",
+    },
+    {
+      name: "two-cell jump below velocity reset distance",
+      sameCellAlternation: false,
+      expectedLost: true,
+      expectedLead: true,
+      expectedRows: [
+        [1, 13, 17],
+        [2, 13, 17],
+        [3, 13, 17],
+        [4, 13, 17],
+        [5, 13, 17],
+      ],
+      capacity: 25,
+      prefetchSeconds: 1.5,
+      slack: false,
+      budgetMs: Number.POSITIVE_INFINITY,
+      startX: 639.9,
+      endX: 850,
+      endZ: -555.5,
+      lost: "12:2",
+      ledEdge: "17:3",
+    },
+  ])(
+    "preserves bounded baseline residency after movement: $name",
+    async ({
+      name,
+      capacity,
+      prefetchSeconds,
+      slack,
+      budgetMs,
+      startX,
+      endX,
+      endZ,
+      lost,
+      ledEdge,
+      sameCellAlternation,
+      expectedLost,
+      expectedLead,
+      expectedRows,
+    }) => {
+      const placements = new Float32Array(18 * 18 * 8);
+      const cells = Array.from({ length: 18 * 18 }, (_, index) => {
+        const x = index % 18;
+        const z = Math.floor(index / 18);
+        placements.set(
+          [-1024 + (x + 0.5) * 128, 0, -1024 + (z + 0.5) * 128, 0, 0, 0, 1, 1],
+          index * 8,
+        );
+        return { x, z, runs: [{ asset: "pine", offset: index, count: 1 }] };
+      });
+      let clock = 0;
+      const finite = Number.isFinite(budgetMs);
+      const now = vi.fn(() => {
+        clock += finite ? 0.5 : 0;
+        return clock;
+      });
+      let releaseModel: (() => void) | undefined;
+      const modelReady = new Promise<void>((resolve) => {
+        releaseModel = resolve;
+      });
+      const replay = name === "baseline hysteresis preserves retired visible lead cells";
+      const follow = followAt(startX, replay ? -170.799977417021 : -555.5);
+      const pine = manifest.assets.pine;
+      if (pine === undefined) throw new Error("Missing pine fixture asset");
+      const world = await WorldCells.load({
+        url: "/world/world.json",
+        data: {
+          manifest: {
+            ...manifest,
+            assets: { pine: { glb: "assets/pine.glb", bounds: pine.bounds } },
+            cellSize: 128,
+            extent: { minX: -1024, minZ: -1024, sizeX: 2304, sizeZ: 2304 },
+            terrain: { ...manifest.terrain, spacing: 18 },
+            cells,
+          },
+          placements: placements.buffer,
+        },
+        admissionNow: now,
+        admissionBudgetMs: budgetMs,
+        budgets: { ...budgets, residentCells: capacity },
+        prefetchSeconds,
+        follow,
+        concurrency: 1,
+        loadModel: async () => {
+          if (finite) await modelReady;
+          return model();
+        },
+        ring: 2,
+        surface,
+        terrain: false,
+      });
+      try {
+        world.update();
+        await step(world);
+        expect(world.stats().residentCells).toBe(25);
+        expect(world.stats().residentKeys).toContain(lost);
+        if (replay) {
+          const trace = [];
+          // Saved follow coordinates around diagnostic updates 69/233. A fast movement leads two
+          // cells; a 0.6 m drift after waiting retires the lead without an actual-cell jump and
+          // keeps the residency pass active independently of terrain work.
+          for (const [time, x, z] of [
+            [250, 400.44618046764936, -246.0612817706866],
+            [1000, 399.84618046764933, -246.0612817706866],
+            [1250, 399.0180232406597, -278.69671463201064],
+            [2000, 398.4180232406597, -278.69671463201064],
+            [2250, 394.7772706584761, -375.603969352881],
+            [3000, 394.1772706584761, -375.603969352881],
+          ]) {
+            if (time === undefined || x === undefined || z === undefined)
+              throw new Error("Missing replay coordinate");
+            clock = time;
+            follow.position.x = x;
+            follow.position.z = z;
+            await step(world);
+            const stats = world.stats();
+            expect(stats.residentCells).toBeLessThanOrEqual(25);
+            expect(stats.failures).toBe(0);
+            trace.push([
+              time,
+              ...["11:3", "11:2", "10:1"].map((key) => stats.residentKeys.includes(key)),
+            ]);
+          }
+          expect(trace).toEqual([
+            [250, true, true, false],
+            [1000, true, false, false],
+            [1250, true, true, false],
+            [2000, true, true, false],
+            [2250, true, true, true],
+            [3000, true, true, false],
+          ]);
+          return;
+        }
+        if (sameCellAlternation) {
+          if (releaseModel === undefined) throw new Error("Missing delayed model release");
+          releaseModel();
+          for (let frame = 0; frame < 80 && world.stats().loadedCells < 25; frame += 1) {
+            clock += 600;
+            await step(world);
+          }
+          expect(world.stats().loadedCells).toBe(25);
+          const originalKeys = world.stats().residentKeys;
+          const trace = [];
+          for (const positionX of slack ? [600] : [600, 537, 600, 537]) {
+            clock += 1660;
+            follow.position.x = positionX;
+            await step(world);
+            const stats = world.stats();
+            trace.push({
+              actualCell: Math.floor((positionX + 1024) / 128),
+              evictions: stats.evictions,
+              missingActualKeys: originalKeys.filter((key) => !stats.residentKeys.includes(key)),
+              residentCells: stats.residentCells,
+              predictedKeys: stats.residentKeys.filter((key) => !originalKeys.includes(key)),
+            });
+          }
+          expect(trace).toEqual(
+            Array.from({ length: slack ? 1 : 4 }, () => ({
+              actualCell: 12,
+              evictions: 0,
+              missingActualKeys: [],
+              residentCells: capacity,
+              predictedKeys: slack ? ["15:1", "15:2", "15:3", "15:4", "15:5"] : [],
+            })),
+          );
+          return;
+        }
+        // An ordinary move retains the old ring while it fits the outer hysteresis boundary.
+        // A farther lead may evict that boundary and admit forward cells without a recovery pass.
+        clock = 1660;
+        follow.position.x = endX;
+        follow.position.z = endZ;
+        world.update();
+        expect(world.stats().residentKeys.includes(lost)).toBe(!expectedLost);
+        expect(world.stats().residentKeys.includes(ledEdge)).toBe(expectedLead);
+        // Let the lead retire, then stop completely. No further camera movement can rescue a cell.
+        for (let frame = 0; frame < 8; frame += 1) {
+          clock += 600;
+          await step(world);
+          expect(world.stats().residentCells).toBeLessThanOrEqual(capacity);
+        }
+        // Fixed row ranges from the immutable a602 residency-contract replay. The finite case
+        // has its own expected rows because its injected clock also advances during admission.
+        const wanted = new Set(
+          expectedRows.flatMap(([z, minX, maxX]) => {
+            if (z === undefined || minX === undefined || maxX === undefined)
+              throw new Error("Missing expected baseline row");
+            return Array.from({ length: maxX - minX + 1 }, (_, i) => `${minX + i}:${z}`);
+          }),
+        );
+        expect(new Set(world.stats().residentKeys)).toEqual(wanted);
+        expect(world.stats().residentCells).toBe(wanted.size);
+        if (finite) {
+          expect(world.stats().loadedCells).toBe(0);
+          if (releaseModel === undefined) throw new Error("Missing delayed model release");
+          releaseModel();
+          await flush();
+          world.update();
+          expect(world.stats().admission.backlog).toBeGreaterThan(0);
+          for (let frame = 0; frame < 80 && world.stats().loadedCells < 25; frame += 1) {
+            clock += 600;
+            await step(world);
+            expect(world.stats().residentCells).toBeLessThanOrEqual(capacity);
+          }
+        }
+        expect(world.stats().loadedCells).toBe(wanted.size);
+        expect(new Set(world.stats().residentKeys)).toEqual(wanted);
+        expect(world.stats().failures).toBe(0);
+        now.mockClear();
+        world.update();
+        // Only the adaptive-LOD and census clocks remain; no lookahead/admission work spins forever.
+        expect(now).toHaveBeenCalledTimes(2);
+      } finally {
+        world.dispose();
+      }
+    },
+  );
 
   it("reports the deferred work and the backlog while it waits, and empties both", async () => {
     const { world: cells } = await makeWorld({ admissionBudgetMs: 2, priced: true });
@@ -718,8 +1122,12 @@ describe("WorldCells admission budget", () => {
     for (let frame = 0; frame < 10_000 && terrain.residentTileCount < 9; frame += 1) {
       cells.update();
       expect(cells.stats().admission.spentMs).toBeLessThanOrEqual(UNIT_MS);
+      if (terrain.deferredAdmissions > 0)
+        expect(cells.stats().admission.backlog).toBeGreaterThan(0);
     }
     expect(terrain.residentTileCount).toBe(9);
+    drain(cells);
+    expect(cells.stats().admission.backlog).toBe(0);
     expect(cells.stats().failures).toBe(0);
     cells.dispose();
   });
@@ -785,6 +1193,7 @@ describe("WorldCells admission budget", () => {
     cells.update();
     expect(cells.stats().residentKeys).toEqual([]);
     expect(cells.stats().admission.deferred).toBe(0);
+    drain(cells);
     expect(cells.stats().admission.backlog).toBe(0);
     expect(drawn(cells).size).toBe(0);
     expect(cells.stats().failures).toBe(0);

@@ -350,6 +350,26 @@
       "path": "src/renderers/common/RenderObjects.js",
       "oldHash": "72569d0339314d26eb7a35ff2a8462a803c852a6",
       "newHash": "72569d0339314d26eb7a35ff2a8462a803c852a6"
+    },
+    {
+      "path": "src/renderers/common/Bindings.js",
+      "oldHash": "a9da6dbb8e15c87a8b434ad019a318b9e7e70335",
+      "newHash": "a3cec4ed844ab88f870b46714c56c941e0cc7a8e"
+    },
+    {
+      "path": "src/renderers/common/Renderer.js",
+      "oldHash": "35c82282c7e0717516a8f7f0c947467b9142e438",
+      "newHash": "b1293bfbe2ccf0583711813c625ddd5c5ba78620"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "25c2364fe50e512155f1e3a584e54854bd293bd1",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "b344d27b52f8be09a0e6c7fef999c87b16377c9c",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
     }
   ],
   "baseFinalHashes": {

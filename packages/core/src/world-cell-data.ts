@@ -924,7 +924,7 @@ export interface IWorldCellsStats {
     readonly spentMs: number;
     /** Cell-asset builds the last `update` had no budget for, still queued for a later one. */
     readonly deferred: number;
-    /** Units of work those builds still owe — placement slices left plus meshes left to publish. */
+    /** Placement slices and meshes left to publish, plus one unit while terrain admission is owed. */
     readonly backlog: number;
   };
 }

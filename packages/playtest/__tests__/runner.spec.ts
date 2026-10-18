@@ -75,25 +75,31 @@ function targetPaintScreenshot(hidden: boolean): Buffer {
   return PNG.sync.write(png);
 }
 
-test("visual capture reads the largest canvas instead of composited page UI", async () => {
+test("visual capture clips the largest canvas without waiting for locator stability", async () => {
   const smallCanvas = { height: 1, width: 1 } as HTMLCanvasElement;
   const renderCanvas = { height: 2, width: 4 } as HTMLCanvasElement;
-  const screenshot = vi.fn(async () => Buffer.from("canvas"));
-  const nth = vi.fn(() => ({ screenshot }));
+  const locatorScreenshot = vi.fn(async () => Buffer.from("locator-canvas"));
+  const boundingBox = vi.fn(async () => ({ height: 360, width: 640, x: 12, y: 24 }));
+  const nth = vi.fn(() => ({ boundingBox, screenshot: locatorScreenshot }));
   const evaluateAll = vi.fn(async (callback: (elements: HTMLCanvasElement[]) => unknown) =>
     callback([smallCanvas, renderCanvas]),
   );
   const locator = { evaluateAll, nth };
+  const pageScreenshot = vi.fn(async () => Buffer.from("canvas"));
   const page = {
     locator: vi.fn(() => locator),
-    screenshot: vi.fn(async () => Buffer.from("dom-overlay")),
+    screenshot: pageScreenshot,
   } as unknown as Page;
 
   await expect(captureVisualSurface(page)).resolves.toEqual(Buffer.from("canvas"));
   expect(page.locator).toHaveBeenCalledWith("canvas");
   expect(nth).toHaveBeenCalledWith(1);
-  expect(screenshot).toHaveBeenCalledWith({ timeout: SCREENSHOT_TIMEOUT_MS });
-  expect(page.screenshot).not.toHaveBeenCalled();
+  expect(boundingBox).toHaveBeenCalledWith();
+  expect(locatorScreenshot).not.toHaveBeenCalled();
+  expect(pageScreenshot).toHaveBeenCalledWith({
+    clip: { height: 360, width: 640, x: 12, y: 24 },
+    timeout: SCREENSHOT_TIMEOUT_MS,
+  });
 });
 
 test("visual observations rasterize an element-bound region captured beside the screenshot", () => {
@@ -339,7 +345,8 @@ test("fixed-step startup races retry without hiding a stopped loop", async () =>
 
   await advanceFixedStep(page, bridge, 10);
 
-  expect(attempts).toBe(2);
+  // The first one-tick request retries once; the remaining nine ticks each use one bounded request.
+  expect(attempts).toBe(11);
   expect(page.evaluate).toHaveBeenCalledTimes(1);
 });
 

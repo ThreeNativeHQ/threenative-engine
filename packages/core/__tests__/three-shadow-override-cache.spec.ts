@@ -3,11 +3,14 @@ import {
   type BufferGeometry,
   Camera,
   Float32BufferAttribute,
+  type Material,
   Mesh,
+  MeshBasicMaterial,
   Scene,
 } from "three";
 // @ts-expect-error Three's private renderer module has no public declaration; this test must exercise it directly.
 import RenderObjects from "three/src/renderers/common/RenderObjects.js";
+import { float } from "three/tsl";
 import {
   FrontSide,
   MeshStandardNodeMaterial,
@@ -65,7 +68,10 @@ type RenderObjectCall = (
   passId: unknown,
 ) => void;
 
-function shadowPass(onDraw?: (mesh: Mesh, camera: Camera) => void): {
+function shadowPass(
+  onDraw?: (mesh: Mesh, camera: Camera) => void,
+  sceneOverride?: Material,
+): {
   drawn: IDrawnMaterial[];
   draw: (mesh: Mesh, camera?: Camera) => void;
   override: NodeMaterial;
@@ -90,7 +96,7 @@ function shadowPass(onDraw?: (mesh: Mesh, camera: Camera) => void): {
   (override as NodeMaterial & { isShadowPassMaterial: boolean }).isShadowPassMaterial = true;
   override.name = "ShadowMaterial";
   const scene = new Scene();
-  scene.overrideMaterial = override;
+  scene.overrideMaterial = sceneOverride ?? override;
   const camera = new Camera();
 
   return {
@@ -212,6 +218,34 @@ function renderObjectsProbe(): {
 }
 
 describe("three shadow override material cache", () => {
+  it("uses the source alpha threshold node in the actual shadow draw and restores the override", () => {
+    const foliage = caster(0.5);
+    const source = foliage.material as MeshStandardNodeMaterial;
+    const cutoff = float(0.125);
+    source.alphaTestNode = cutoff;
+    const seen: (typeof cutoff | null)[] = [];
+    const { draw, override } = shadowPass(() => {
+      const shadowCutoff = override.alphaTestNode as typeof cutoff | null;
+      seen.push(shadowCutoff);
+      expect(shadowCutoff).toBe(cutoff);
+    });
+    draw(foliage);
+    expect(seen).toEqual([cutoff]);
+    expect(override.alphaTestNode).toBeNull();
+  });
+
+  it("keeps numeric shadow alphaTest when the next caster has no threshold node", () => {
+    const foliage = caster(0.5);
+    (foliage.material as NodeMaterial).alphaTestNode = float(0.125);
+    const seen: unknown[] = [];
+    const { draw, override } = shadowPass(() => {
+      seen.push(override.alphaTestNode ?? override.alphaTest);
+    });
+    draw(foliage);
+    draw(caster(0.5));
+    expect(seen).toEqual([(foliage.material as NodeMaterial).alphaTestNode, 0.5]);
+    expect(override.alphaTestNode).toBeNull();
+  });
   it("fetches geometry swapped in onBeforeRender even when cameras share a render object", () => {
     const probe = renderObjectsProbe();
     const source = probe.makeSource(0);
@@ -275,6 +309,17 @@ describe("three shadow override material cache", () => {
     draw(caster(0.5));
 
     expect(override.alphaTest).toBe(baseline);
+  });
+
+  it("leaves a plain scene override material without an undefined alphaTestNode", () => {
+    // A plain override (the volumetric-fog black pass) is converted to a node material later; an
+    // own `alphaTestNode: undefined` then reaches TSL `float(undefined)` and the build throws.
+    const plain = new MeshBasicMaterial();
+    const { draw } = shadowPass(undefined, plain);
+
+    draw(caster(0.5));
+
+    expect(plain).not.toHaveProperty("alphaTestNode", undefined);
   });
 });
 

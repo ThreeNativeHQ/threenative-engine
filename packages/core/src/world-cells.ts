@@ -461,7 +461,7 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #cellsPerCullCell: number;
   /** The follow point the last full residency pass ran for; see `#residencyStale`. */
   readonly #residencyPoint = new Vector3(Number.NaN, 0, Number.NaN);
-  /** The follow point's cell at the last residency pass; a move of more than one is a jump. */
+  /** Actual cell at the last residency pass; only a jump reclaims retained hysteresis. */
   #residencyCell: { readonly x: number; readonly z: number } | undefined;
   /** The follow point the last refilter pass ran for; see `#refilterStale`. */
   readonly #refilterPoint = new Vector3(Number.NaN, 0, Number.NaN);
@@ -2180,9 +2180,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#queued.delete(job.run);
   }
 
-  /** Units of work the queue still owes: placement slices left, plus meshes left to publish. */
+  /** Placement slices and meshes left to publish, plus the terrain's outstanding admission. */
   #backlog(): number {
-    let units = 0;
+    let units = this.#terrain?.deferredAdmissions ?? 0;
     for (const job of this.#jobs) {
       const meshes = job.batches === undefined ? 0 : publishCount(job.batches);
       units +=

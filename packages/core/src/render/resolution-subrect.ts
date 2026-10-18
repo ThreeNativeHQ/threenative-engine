@@ -193,13 +193,13 @@ export class ResolutionSubrect implements IResolutionSubrect {
         }
         this.#reserving = true;
         try {
-          original.call(node, width, height);
-          // Reserve the scaled pass too: rounding the outer view up to the allocation quantum
-          // can make a floored inner mip one pixel larger than the corresponding full-size mip.
-          original.call(node, quantize(width * this.#scale), quantize(height * this.#scale));
+          // Reserve for the quantized size the viewport can reach at scale 1. A node that floors
+          // each mip of a halving chain can otherwise leave a capacity one texel short of it.
+          original.call(node, quantize(width), quantize(height));
         } finally {
           this.#reserving = false;
         }
+        original.call(node, quantize(width * this.#scale), quantize(height * this.#scale));
         // PassNode copies its own viewport/scissor after target.setSize().
         for (const target of retained) this.#applyViewport(target);
       },

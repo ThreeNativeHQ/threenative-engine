@@ -2096,6 +2096,7 @@ export class CellRender {
       cull: gates.cull,
       distances: [...gates.distances],
       impostor: gates.impostor,
+      shadowFallback: gates.shadowFallback,
       levels: gates.levels.map((level) => ({ ...level })),
       locals: asset.levels.map((parts) =>
         parts.map((part) => Float32Array.from(part.local.elements)),
@@ -2117,6 +2118,7 @@ export class CellRender {
       // A generated terminal gate is based on the unit asset sphere and scales per placement. An
       // authored impostorDistance is already a world-metre cutoff and stays fixed across scales.
       impostor: asset.impostor !== undefined && asset.definition.impostorDistance === undefined,
+      shadowFallback: asset.definition.lods === undefined,
       levels: gates,
     };
   }

@@ -49,6 +49,12 @@ const RESOURCE_LIFETIME_PREDECESSORS = JSON.parse(
   ).toString("utf8"),
 ) as Record<string, string>;
 
+const DEVELOP_REFRESH_PREDECESSORS = JSON.parse(
+  brotliDecompressSync(
+    readFileSync(join(testDir, "fixtures", "develop-refresh-predecessors.json.br")),
+  ).toString("utf8"),
+) as Record<string, string>;
+
 const run = promisify(execFile);
 const roots: string[] = [];
 
@@ -99,6 +105,8 @@ async function installedTree(): Promise<{
 
 /** Invert the frozen legacy hunks to materialise the exact predecessor bytes for one entry. */
 async function legacyPredecessor(path: string, oldHash: string): Promise<string> {
+  const developRefresh = DEVELOP_REFRESH_PREDECESSORS[`${path}:${oldHash}`];
+  if (developRefresh !== undefined && blobHash(developRefresh) === oldHash) return developRefresh;
   const recorded = GEOMETRY_CACHE_PREDECESSORS[path];
   if (recorded !== undefined && blobHash(recorded) === oldHash) return recorded;
   const resourceLifetime = RESOURCE_LIFETIME_PREDECESSORS[path];
