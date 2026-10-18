@@ -1658,12 +1658,12 @@ js::JSValueHandle handleGpuDeviceCreateShaderModule(BindingsState* state, Bindin
                                 return state->engine->newUndefined();
                             auto jsShader = createNativeWrapper(
                                 state, "GPUShaderModule", shaderModule);
-                            state->registries.shaderModuleMetadata->entries[shaderModule] = {
-                                singleWgslEntryPoint(code, "vertex"),
-                                singleWgslEntryPoint(code, "fragment"),
-                                pipelineSourceHash(code),
-                                code.size(),
-                            };
+                            state->registries.shaderModuleMetadata->acquire(
+                                shaderModule,
+                                {singleWgslEntryPoint(code, "vertex"),
+                                 singleWgslEntryPoint(code, "fragment"),
+                                 pipelineSourceHash(code),
+                                 code.size()});
                             state->engine->registerRelease(
                                 jsShader, [metadata = std::weak_ptr<ShaderModuleMetadataStore>(
                                                state->registries.shaderModuleMetadata),

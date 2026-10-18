@@ -26,6 +26,42 @@ namespace mystral {
 namespace webgpu {
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
 
+using RenderBundleEncoderHandler = js::JSValueHandle (*)(
+    BindingsState*, WGPURenderBundleEncoder, const std::vector<js::JSValueHandle>&);
+
+struct RenderBundleEncoderPin {
+    explicit RenderBundleEncoderPin(WGPURenderBundleEncoder value) : encoder(value) {
+        wgpuRenderBundleEncoderAddRef(encoder);
+    }
+    ~RenderBundleEncoderPin() { wgpuRenderBundleEncoderRelease(encoder); }
+
+    RenderBundleEncoderPin(const RenderBundleEncoderPin&) = delete;
+    RenderBundleEncoderPin& operator=(const RenderBundleEncoderPin&) = delete;
+
+    WGPURenderBundleEncoder encoder;
+};
+
+static BindingHandler makeOwnedRenderBundleEncoderHandler(
+    const std::shared_ptr<OwnedWebGpuResources>& resources,
+    uint64_t encoderId,
+    const char* method,
+    RenderBundleEncoderHandler handler) {
+    return [resources, encoderId, method, handler](
+               BindingsState* state, BindingDestination,
+               const std::vector<js::JSValueHandle>& args) {
+        const auto encoder = resources->renderBundleEncoder(encoderId);
+        if (!encoder) {
+            state->engine->throwTypeError(
+                (std::string("GPURenderBundleEncoder.") + method + ": encoder is no longer valid").c_str());
+            return state->engine->newUndefined();
+        }
+        // Handler argument conversions may run JS and collect the wrapper. Pin the native handle
+        // across the entire dispatch, then release it after the native call returns.
+        const RenderBundleEncoderPin pin(encoder);
+        return handler(state, pin.encoder, args);
+    };
+}
+
 static js::JSValueHandle handleGpuRenderBundleEncoderFinish(BindingsState* state, WGPURenderBundleEncoder capturedEncoder, const std::vector<js::JSValueHandle>& args) {
                                     WGPURenderBundleDescriptor desc = {};
                                     WGPURenderBundle bundle = wgpuRenderBundleEncoderFinish(capturedEncoder, &desc);
@@ -205,48 +241,51 @@ js::JSValueHandle handleGpuDeviceCreateRenderBundleEncoder(BindingsState* state,
                             }
                             auto jsEncoder = createNativeWrapper(
                                 state, "GPURenderBundleEncoder", bundleEncoder);
-                            // Capture for closures
-                            WGPURenderBundleEncoder capturedEncoder = bundleEncoder;
+                            auto ownedResources = state->registries.ownedResources;
+                            const uint64_t encoderId = ownedResources->trackRenderBundleEncoder(bundleEncoder);
                             // renderBundleEncoder.setPipeline(pipeline)
                             if (!installBindingTable(state->engine, state, bindingTable({
                                 {"GPURenderBundleEncoder", "setPipeline", 0, nullptr,
-                                makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderSetPipeline)
+                                makeOwnedRenderBundleEncoderHandler(ownedResources, encoderId, "setPipeline", &handleGpuRenderBundleEncoderSetPipeline)
                             , jsEncoder},
                             // renderBundleEncoder.setVertexBuffer(slot, buffer, offset?, size?)
                                 {"GPURenderBundleEncoder", "setVertexBuffer", 0, nullptr,
-                                makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderSetVertexBuffer)
+                                makeOwnedRenderBundleEncoderHandler(ownedResources, encoderId, "setVertexBuffer", &handleGpuRenderBundleEncoderSetVertexBuffer)
                             , jsEncoder},
                             // renderBundleEncoder.setIndexBuffer(buffer, format, offset?, size?)
                                 {"GPURenderBundleEncoder", "setIndexBuffer", 0, nullptr,
-                                makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderSetIndexBuffer)
+                                makeOwnedRenderBundleEncoderHandler(ownedResources, encoderId, "setIndexBuffer", &handleGpuRenderBundleEncoderSetIndexBuffer)
                             , jsEncoder},
                             // renderBundleEncoder.setBindGroup(index, bindGroup, dynamicOffsets?)
                                 {"GPURenderBundleEncoder", "setBindGroup", 0, nullptr,
-                                makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderSetBindGroup)
+                                makeOwnedRenderBundleEncoderHandler(ownedResources, encoderId, "setBindGroup", &handleGpuRenderBundleEncoderSetBindGroup)
                             , jsEncoder},
                             // renderBundleEncoder.draw(vertexCount, instanceCount?, firstVertex?, firstInstance?)
                                 {"GPURenderBundleEncoder", "draw", 0, nullptr,
-                                makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderDraw)
+                                makeOwnedRenderBundleEncoderHandler(ownedResources, encoderId, "draw", &handleGpuRenderBundleEncoderDraw)
                             , jsEncoder},
                             // renderBundleEncoder.drawIndexed(indexCount, instanceCount?, firstIndex?, baseVertex?, firstInstance?)
                                 {"GPURenderBundleEncoder", "drawIndexed", 0, nullptr,
-                                makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderDrawIndexed)
+                                makeOwnedRenderBundleEncoderHandler(ownedResources, encoderId, "drawIndexed", &handleGpuRenderBundleEncoderDrawIndexed)
                             , jsEncoder},
                             // renderBundleEncoder.drawIndirect(indirectBuffer, indirectOffset)
                                 {"GPURenderBundleEncoder", "drawIndirect", 0, nullptr,
-                                makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderDrawIndirect)
+                                makeOwnedRenderBundleEncoderHandler(ownedResources, encoderId, "drawIndirect", &handleGpuRenderBundleEncoderDrawIndirect)
                             , jsEncoder},
                             // renderBundleEncoder.drawIndexedIndirect(indirectBuffer, indirectOffset)
                                 {"GPURenderBundleEncoder", "drawIndexedIndirect", 0, nullptr,
-                                makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderDrawIndexedIndirect)
+                                makeOwnedRenderBundleEncoderHandler(ownedResources, encoderId, "drawIndexedIndirect", &handleGpuRenderBundleEncoderDrawIndexedIndirect)
                             , jsEncoder},
                             // renderBundleEncoder.finish(descriptor?)
                                 {"GPURenderBundleEncoder", "finish", 0, nullptr,
-                                makeCapturedHandler(capturedEncoder, &handleGpuRenderBundleEncoderFinish)
+                                makeOwnedRenderBundleEncoderHandler(ownedResources, encoderId, "finish", &handleGpuRenderBundleEncoderFinish)
                             , jsEncoder}}))) {
-                                wgpuRenderBundleEncoderRelease(bundleEncoder);
+                                ownedResources->releaseRenderBundleEncoder(encoderId);
                                 return state->engine->newUndefined();
                             }
+                            state->engine->registerRelease(jsEncoder, [ownedResources, encoderId]() {
+                                ownedResources->releaseRenderBundleEncoder(encoderId);
+                            });
                             if (state->verboseLogging) std::cout << "[WebGPU] Created render bundle encoder" << std::endl;
                             return jsEncoder;
 }

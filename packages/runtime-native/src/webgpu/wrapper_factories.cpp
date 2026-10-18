@@ -90,6 +90,11 @@ js::JSValueHandle getPipelineBindGroupLayoutBinding(
 
     auto jsLayout = createNativeWrapper(state, "GPUBindGroupLayout", layout);
     state->engine->setProperty(jsLayout, "_type", state->engine->newString("bindGroupLayout"));
+    auto ownedResources = state->registries.ownedResources;
+    const uint64_t layoutId = ownedResources->trackBindGroupLayout(layout);
+    state->engine->registerRelease(jsLayout, [ownedResources, layoutId]() {
+        ownedResources->releaseBindGroupLayout(layoutId);
+    });
     return jsLayout;
 }
 

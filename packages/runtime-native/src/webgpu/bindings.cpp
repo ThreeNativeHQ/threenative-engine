@@ -404,6 +404,7 @@ void destroyBindingsState(BindingsState*& state) {
 #endif
         state->canvas2D.canvas2DContexts.clear();
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
+        state->registries.ownedResources->releaseAll();
         while (!state->registries.textureRegistry.empty()) {
             releaseTextureRegistryEntry(state, state->registries.textureRegistry.begin()->first);
         }

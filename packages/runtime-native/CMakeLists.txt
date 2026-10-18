@@ -2527,6 +2527,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-webgpu-bindings-reentrancy-test EXCLUDE_FROM_ALL
         tests/webgpu_bindings_reentrancy_test.cpp)
     target_link_libraries(threenative-webgpu-bindings-reentrancy-test PRIVATE mystral-runtime)
+    if(TARGET skia::skia)
+        target_link_libraries(threenative-webgpu-bindings-reentrancy-test PRIVATE skia::skia)
+    endif()
 
     add_executable(threenative-handle-lifetime-test EXCLUDE_FROM_ALL
         tests/handle_lifetime_test.cpp)
