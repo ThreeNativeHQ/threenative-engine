@@ -1,0 +1,30 @@
+{
+  "adapter": {
+    "available": true,
+    "vendor": "nvidia",
+    "architecture": "turing",
+    "device": "",
+    "description": "",
+    "isFallbackAdapter": null,
+    "requestDevice": "requestDevice succeeded"
+  },
+  "browserArgs": [
+    "--ozone-platform=x11",
+    "--enable-unsafe-webgpu",
+    "--disable-gpu-sandbox",
+    "--ignore-gpu-blocklist",
+    "--enable-features=Vulkan"
+  ],
+  "captureMethod": "page.screenshot",
+  "headless": false,
+  "softwareAllowed": false,
+  "target": "web",
+  "url": "http://127.0.0.1:5189/",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "errors": [
+    "TN_START_FAILED: The game failed to start: Cannot read properties of undefined (reading 'setSize')"
+  ]
+}
