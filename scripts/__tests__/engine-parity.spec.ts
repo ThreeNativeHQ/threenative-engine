@@ -1,5 +1,8 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { PNG } from "pngjs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ENGINE_PARITY_THRESHOLD,
   KNOWN_GAPS,
@@ -8,6 +11,7 @@ import {
   sameFixedStepPose,
   sideBySide,
   verdict,
+  withBrowserWatchdogArtifact,
   withEngine,
 } from "../engine-parity.js";
 
@@ -26,6 +30,150 @@ function frame(width: number, height: number, paint: (x: number, y: number) => n
 }
 
 describe("engine parity guard", () => {
+  it("persists Chromium watchdog evidence when a capture fails, then rethrows that failure", async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "engine-parity-watchdog-"));
+    let histogramRequests = 0;
+    const cdp = {
+      send: async () => {
+        histogramRequests++;
+        return histogramRequests === 1
+          ? { histograms: [] }
+          : {
+              histograms: [
+                {
+                  name: "GPU.WatchdogThread.Event",
+                  sum: 2,
+                  count: 1,
+                  buckets: [{ low: 1, high: 2, count: 1 }],
+                },
+              ],
+            };
+      },
+      detach: async () => undefined,
+    };
+    const page = {
+      context: () => ({
+        browser: () => ({
+          version: () => "Chromium 151.0.0.0",
+          newBrowserCDPSession: async () => cdp,
+        }),
+      }),
+    } as never;
+    const failure = new Error("screenshot failed");
+    try {
+      await expect(
+        withBrowserWatchdogArtifact(page, path.join(directory, "watchdog.json"), async () => {
+          throw failure;
+        }),
+      ).rejects.toBe(failure);
+      const artifact = JSON.parse(readFileSync(path.join(directory, "watchdog.json"), "utf8"));
+      expect(artifact).toMatchObject({
+        browserVersion: "Chromium 151.0.0.0",
+        query: "GPU.WatchdogThread.Event",
+        status: "watchdog-kill-confirmed",
+        samples: [
+          { response: { histograms: [] } },
+          { response: { histograms: [{ name: "GPU.WatchdogThread.Event", sum: 2, count: 1 }] } },
+        ],
+      });
+      expect(histogramRequests).toBe(2);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("records unavailable or empty CDP data as inconclusive without masking the capture failure", async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "engine-parity-watchdog-"));
+    const failure = new Error("diagnostic capture failed");
+    const cases = [
+      {
+        label: "unavailable",
+        open: async () => {
+          throw new Error("CDP unavailable");
+        },
+      },
+      {
+        label: "empty",
+        open: async () => ({
+          send: async () => ({ histograms: [] }),
+          detach: async () => undefined,
+        }),
+      },
+    ];
+    try {
+      for (const item of cases) {
+        const page = {
+          context: () => ({
+            browser: () => ({
+              version: () => "Chromium 151.0.0.0",
+              newBrowserCDPSession: item.open,
+            }),
+          }),
+        } as never;
+        const artifactPath = path.join(directory, `${item.label}.json`);
+        await expect(
+          withBrowserWatchdogArtifact(page, artifactPath, async () => {
+            throw failure;
+          }),
+        ).rejects.toBe(failure);
+        const artifact = JSON.parse(readFileSync(artifactPath, "utf8"));
+        expect(artifact.status).toBe("inconclusive");
+        expect(artifact.browserVersion).toBe("Chromium 151.0.0.0");
+        expect(artifact).not.toHaveProperty("watchdogDetected");
+        if (item.label === "unavailable") expect(artifact.reason).toContain("CDP unavailable");
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("bounds delayed CDP attach and detaches a session that arrives after cleanup", async () => {
+    vi.useFakeTimers();
+    const directory = mkdtempSync(path.join(tmpdir(), "engine-parity-watchdog-"));
+    let resolveSession!: (session: { detach: () => Promise<void> }) => void;
+    let detached = false;
+    const pendingSession = new Promise<{ detach: () => Promise<void> }>((resolve) => {
+      resolveSession = resolve;
+    });
+    const page = {
+      context: () => ({
+        browser: () => ({
+          version: () => "Chromium 151.0.0.0",
+          newBrowserCDPSession: () => pendingSession,
+        }),
+      }),
+    } as never;
+    const failure = new Error("capture failed during browser teardown");
+    try {
+      const capture = withBrowserWatchdogArtifact(
+        page,
+        path.join(directory, "watchdog.json"),
+        async () => {
+          throw failure;
+        },
+      );
+      const preservedCaptureError = expect(capture).rejects.toBe(failure);
+      await vi.advanceTimersByTimeAsync(900);
+      await preservedCaptureError;
+      const artifact = JSON.parse(readFileSync(path.join(directory, "watchdog.json"), "utf8"));
+      expect(artifact.status).toBe("inconclusive");
+      expect(artifact.reason).toContain("deadline elapsed");
+
+      resolveSession({
+        detach: () => {
+          detached = true;
+          return new Promise(() => undefined);
+        },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(detached).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("measures the pose interval from the bridge's fixed-step clock", () => {
     // This is the public sample clock emitted by a fixed-step Three bridge: no resources clock
     // is required for the elapsed simulation interval.

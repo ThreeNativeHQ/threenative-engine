@@ -15,7 +15,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import {
+  type IBrowserCaptureSession,
   WEBGPU_BROWSER_ARGS,
+  boundedTeardownStep,
   softwareAdapterName,
   withBrowserCapture,
 } from "../packages/playtest/dist/runner/index.js";
@@ -164,6 +166,112 @@ export function withEngine(source: string, engine: (typeof ENGINES)[number]): st
   return `${source.replace(/^export\s+default\s+/mu, "const __engineParityBase = ")}\nexport default { ...__engineParityBase, engine: "${engine}" };\n`;
 }
 
+/** Preserve the browser's GPU watchdog sample before its owned capture session tears down. */
+export async function withBrowserWatchdogArtifact<T>(
+  page: IBrowserCaptureSession["page"],
+  artifactPath: string,
+  capture: () => Promise<T>,
+): Promise<T> {
+  let captureFailed = false;
+  try {
+    return await capture();
+  } catch (error) {
+    captureFailed = true;
+    throw error;
+  } finally {
+    if (captureFailed) {
+      let detachSession: (() => Promise<void>) | undefined;
+      let expired = false;
+      const deadlineMs = 900;
+      const started = Date.now();
+      const artifact: {
+        browserVersion: string | null;
+        query: string;
+        status: "watchdog-kill-confirmed" | "inconclusive";
+        samples: Array<{ response?: unknown; error?: string }>;
+        reason?: string;
+        detachError?: string;
+      } = {
+        browserVersion: null,
+        query: "GPU.WatchdogThread.Event",
+        status: "inconclusive",
+        samples: [],
+      };
+      const diagnostics = async () => {
+        const browser = page.context().browser();
+        if (browser === null) {
+          artifact.reason = "Playwright browser is unavailable";
+          return;
+        }
+        artifact.browserVersion = browser.version();
+        const pendingSession = browser.newBrowserCDPSession().then((value) => {
+          if (expired) {
+            void Promise.resolve()
+              .then(() => value.detach())
+              .catch(() => undefined);
+            return undefined;
+          }
+          detachSession = () => value.detach();
+          return value;
+        });
+        const activeSession = await pendingSession;
+        if (activeSession === undefined || expired) return;
+        for (let attempt = 0; attempt < 3 && !expired; attempt++) {
+          try {
+            const result = await activeSession.send("Browser.getHistograms", {
+              query: artifact.query,
+              delta: false,
+            });
+            if (expired) return;
+            artifact.samples.push({ response: result });
+            const histogram = result.histograms.find((entry) => entry.name === artifact.query);
+            if (
+              histogram?.buckets.some(
+                (bucket) => bucket.low === 1 && bucket.high === 2 && bucket.count > 0,
+              )
+            ) {
+              artifact.status = "watchdog-kill-confirmed";
+              break;
+            }
+          } catch (error) {
+            if (expired) return;
+            artifact.samples.push({
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+          if (attempt < 2 && !expired) await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        if (artifact.status === "inconclusive" && !expired)
+          artifact.reason =
+            "No positive GPU.WatchdogThread.Event [1,2) sample; status is inconclusive";
+      };
+      const diagnosticRun = diagnostics().catch((error: unknown) => {
+        if (!expired) artifact.reason = error instanceof Error ? error.message : String(error);
+      });
+      const completed = await boundedTeardownStep(diagnosticRun, deadlineMs);
+      expired = !completed;
+      if (!completed) artifact.reason = "CDP diagnostic deadline elapsed; status is inconclusive";
+      if (detachSession !== undefined) {
+        const detach = Promise.resolve()
+          .then(detachSession)
+          .catch((error: unknown) => {
+            artifact.detachError = error instanceof Error ? error.message : String(error);
+          });
+        const remaining = Math.max(0, deadlineMs - (Date.now() - started));
+        if (remaining > 0) await boundedTeardownStep(detach, remaining);
+        else void detach;
+      }
+      try {
+        writeFileSync(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
+      } catch (error) {
+        console.error(
+          `TN_ENGINE_PARITY_WATCHDOG_ARTIFACT: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+}
+
 /** Two frames side by side, threejs left, for the reviewer. */
 export function sideBySide(a: PNG, b: PNG): PNG {
   const gap = 16;
@@ -239,7 +347,7 @@ async function main(argv: string[]): Promise<number> {
         allowSoftwareAdapter: process.env.TN_PLAYTEST_ALLOW_SOFTWARE === "1",
       };
       try {
-        await withBrowserCapture(captureConfig, async (session) => {
+        const capture = async (session: IBrowserCaptureSession) => {
           const adapter = session.provenance.adapter;
           if (adapter === undefined || Object.keys(adapter).length === 0) {
             throw new Error("TN_ENGINE_PARITY_ADAPTER: capture did not report adapter.info");
@@ -354,7 +462,14 @@ async function main(argv: string[]): Promise<number> {
               2,
             )}\n`,
           );
-        });
+        };
+        await withBrowserCapture(captureConfig, (session) =>
+          withBrowserWatchdogArtifact(
+            session.page,
+            path.join(artifacts, "browser-watchdog.json"),
+            () => capture(session),
+          ),
+        );
       } catch (error) {
         // A known gap may fail on its own arm (action-rpg's threejs console errors); anything else may not.
         if (KNOWN_GAPS[template] === undefined) {
