@@ -274,7 +274,8 @@ bool readsViewport(const shader::StageModule& stage) {
 
 bool perDrawFragment(const shader::StageModule& stage) {
     for (const shader::Binding& binding : stage.bindings)
-        if (binding.name == "t_map" || binding.name == "t_env" || binding.name == "t_reflector" || graphTextureBinding(binding.name) ||
+        if (binding.name == "t_map" || binding.name == "t_normalMap" || binding.name == "t_env" ||
+            binding.name == "t_reflector" || graphTextureBinding(binding.name) ||
             postTextureBinding(binding.name) || viewportBinding(binding.name))
             return true;
     return false;

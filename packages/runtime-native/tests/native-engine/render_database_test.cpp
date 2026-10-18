@@ -2449,6 +2449,51 @@ void skinnedNormalizedWeights() {
 // direction is where dFdy's sign shows. The same maps as a loaded `Texture` (mipmapped) must agree
 // with the DataTexture (one level). Each arm's textures are destroyed before the next arm builds its
 // own: the renderer's texture cache must not serve a dead texture's image to one built at its address.
+struct ScopeVerdict {
+    std::atomic<bool> done{false};
+    WGPUErrorType type = WGPUErrorType_NoError;
+    std::string message;
+    bool popSucceeded = false;
+
+    bool clean() const { return done && popSucceeded && type == WGPUErrorType_NoError; }
+};
+
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+void onScopePopped(WGPUPopErrorScopeStatus status, WGPUErrorType type, WGPUStringView message, void* verdict, void*) {
+    auto& result = *static_cast<ScopeVerdict*>(verdict);
+    result.popSucceeded = status == WGPUPopErrorScopeStatus_Success;
+    result.type = type;
+    if (message.data) result.message.assign(message.data, message.length);
+    result.done = true;
+}
+#else
+void onScopePopped(WGPUErrorType type, const char* message, void* verdict) {
+    auto& result = *static_cast<ScopeVerdict*>(verdict);
+    // This legacy callback API exposes no pop status; callback delivery is its only completion signal.
+    result.popSucceeded = true;
+    result.type = type;
+    if (message) result.message = message;
+    result.done = true;
+}
+#endif
+
+void popScope(WGPUDevice device, Renderer& r, EventQueue& events, ScopeVerdict& verdict) {
+#if WGPU_USES_CALLBACK_INFO_PATTERN
+    WGPUPopErrorScopeCallbackInfo callbackInfo = {};
+    callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+    callbackInfo.callback = onScopePopped;
+    callbackInfo.userdata1 = &verdict;
+    (void)wgpuDevicePopErrorScope(device, callbackInfo);
+#else
+    wgpuDevicePopErrorScope(device, onScopePopped, &verdict);
+#endif
+    for (int i = 0; i < 4000 && !verdict.done; ++i) {
+        r.poll();
+        events.drain();
+        if (!verdict.done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
 void normalMapTilt() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -2457,7 +2502,7 @@ void normalMapTilt() {
     renderer.setSize(160, 120);
     renderer.setOutput(OutputState{std::nullopt, 1, true});
     struct Tilt { int red, green; bool loaded; };  // red < 0: no map
-    auto brightness = [&](Tilt tilt, std::array<double, 3> lightAt) {
+    auto brightness = [&](const char* label, Tilt tilt, std::array<double, 3> lightAt) {
         Scene scene;
         PerspectiveCamera camera;
         camera.fov = 40; camera.aspect = 4.0 / 3; camera.near = 0.1; camera.far = 50;
@@ -2490,9 +2535,16 @@ void normalMapTilt() {
         scene.add(light);
         scene.updateMatrixWorld(true);
         RenderDatabase database;
+        const WGPUDevice device = context.getDevice();
+        wgpuDevicePushErrorScope(device, WGPUErrorFilter_Validation);
         database.render(renderer, scene, camera, {0, 0, 0, 1});
         CHECK(database.diagnostics().empty());
         const auto px = read(renderer, events);
+        ScopeVerdict verdict;
+        popScope(device, renderer, events, verdict);
+        if (!verdict.clean())
+            std::fprintf(stderr, "normal map arm %s WebGPU validation error: %s\n", label, verdict.message.c_str());
+        CHECK(verdict.clean());
         CHECK(px.size() == 160 * 120 * 4);
         double sum = 0;
         for (int y = 40; y < 80; ++y)
@@ -2500,18 +2552,20 @@ void normalMapTilt() {
         return sum / (40 * 40);
     };
     const std::array<double, 3> fromRight{4, 0, 2}, fromAbove{0, 4, 2};
-    const double none = brightness({-1, 128, false}, fromRight);
-    const double toward = brightness({191, 128, false}, fromRight), away = brightness({64, 128, false}, fromRight);
-    const double noneUp = brightness({-1, 128, false}, fromAbove);
-    const double up = brightness({128, 191, false}, fromAbove), down = brightness({128, 64, false}, fromAbove);
-    const double loadedToward = brightness({191, 128, true}, fromRight);
-    const double loadedUp = brightness({128, 191, true}, fromAbove);
+    const double none = brightness("none-x", {-1, 128, false}, fromRight);
+    const double toward = brightness("data-red-toward", {191, 128, false}, fromRight);
+    const double away = brightness("data-red-away", {64, 128, false}, fromRight);
+    const double noneUp = brightness("none-y", {-1, 128, false}, fromAbove);
+    const double up = brightness("data-green-up", {128, 191, false}, fromAbove);
+    const double down = brightness("data-green-down", {128, 64, false}, fromAbove);
+    const double loadedToward = brightness("loaded-red-toward", {191, 128, true}, fromRight);
+    const double loadedUp = brightness("loaded-green-up", {128, 191, true}, fromAbove);
     std::printf("normal map tilt: x %.1f/%.1f/%.1f, y %.1f/%.1f/%.1f, loaded %.1f/%.1f\n", toward, none, away, up, noneUp, down,
                 loadedToward, loadedUp);
     CHECK(toward > none + 8 && none > away + 8);
     CHECK(up > noneUp + 8 && noneUp > down + 8);  // green: the dFdy sign
     CHECK(std::abs(loadedToward - toward) < 2 && std::abs(loadedUp - up) < 2);
-    brightness({-1, 128, false}, fromRight);  // the next frame sweeps the last arm's dead texture too
+    brightness("final-sweep", {-1, 128, false}, fromRight);  // sweep the last arm's dead texture too
     CHECK(renderer.materialTextureCount() == 0);  // no dead texture's GPU copy is kept
 }
 
@@ -2847,43 +2901,6 @@ void gpuTimerIsOptIn() {
     CHECK(renderer.gpuSamples() > 0 && renderer.lastGpuMs() >= 0);
 }
 
-// Device errors reach stderr only, never the diagnostics. A frame that must draw cleanly runs inside
-// a validation scope, and the scope's verdict is what the frame is checked against.
-struct ScopeVerdict {
-    std::atomic<bool> done{false};
-    WGPUErrorType type = WGPUErrorType_NoError;
-};
-
-#if WGPU_USES_CALLBACK_INFO_PATTERN
-void onScopePopped(WGPUPopErrorScopeStatus, WGPUErrorType type, WGPUStringView, void* verdict, void*) {
-    static_cast<ScopeVerdict*>(verdict)->type = type;
-    static_cast<ScopeVerdict*>(verdict)->done = true;
-}
-#else
-void onScopePopped(WGPUErrorType type, const char*, void* verdict) {
-    static_cast<ScopeVerdict*>(verdict)->type = type;
-    static_cast<ScopeVerdict*>(verdict)->done = true;
-}
-#endif
-
-// Pops the scope pushed before the frame, then polls until its verdict arrives.
-void popScope(WGPUDevice device, Renderer& r, EventQueue& events, ScopeVerdict& verdict) {
-#if WGPU_USES_CALLBACK_INFO_PATTERN
-    WGPUPopErrorScopeCallbackInfo callbackInfo = {};
-    callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-    callbackInfo.callback = onScopePopped;
-    callbackInfo.userdata1 = &verdict;
-    (void)wgpuDevicePopErrorScope(device, callbackInfo);
-#else
-    wgpuDevicePopErrorScope(device, onScopePopped, &verdict);
-#endif
-    for (int i = 0; i < 4000 && !verdict.done; ++i) {
-        r.poll();
-        events.drain();
-        if (!verdict.done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-}
-
 void msaaEdges() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -2963,7 +2980,7 @@ void msaaEdges() {
     database.render(renderer, scene, camera, {0, 0, 0, 1});
     ScopeVerdict verdict;
     popScope(device, renderer, events, verdict);
-    CHECK(verdict.done && verdict.type == WGPUErrorType_NoError);
+    CHECK(verdict.clean());
     CHECK(database.diagnostics().empty());
     CHECK(renderer.diagnostics().empty());
 }
