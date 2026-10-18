@@ -1,0 +1,116 @@
+{
+  "purpose": "Corrected rendered-source provenance for private visual comparison; raw capture artifacts remain unchanged.",
+  "originalProducerMetadataIssue": {
+    "field": "runtime-marker.json head for control arm",
+    "recordedValue": "1228819a70260aab73885824f7698397a8ffebdf",
+    "meaning": "The locked pose producer pinned the refresh checkout for tooling, but this value does not identify the served control site source.",
+    "actualRenderedSource": "d1cacff4dffb4db8b764a89dd9c4bf32843b890e"
+  },
+  "control": {
+    "sourceCommit": "d1cacff4dffb4db8b764a89dd9c4bf32843b890e",
+    "sourceManifest": "private-inputs/run-final-visual-pair.mts",
+    "sourceManifestArm": "control-run-1 and control-run-2 use d1-control-scale-1, sourceSha d1cacff4dffb4db8b764a89dd9c4bf32843b890e",
+    "manifestSiteTreeSha256": "6eeff04ff70bf360b99e74655d208dd008d194846304c6c464b2735b34b86f18",
+    "lockedServedSite": "private-inputs/sites-61d/control",
+    "lockedServedSiteTreeSha256": "adeb53e676332352da3ba1d88010e17827b1ccc3c089601bd215878a39d8f0e6",
+    "indexHtmlSha256": "516c371c981dd6e09db977053eb1dd774abb7956b9a9ec9635b136ceea94c316",
+    "mainBundle": "assets/index-BbXCRk3Y.js",
+    "mainBundleSha256": "f39ca1b717dab9219d542a2b2b9a1225499d8bd593cae3d30ee908cad453e864",
+    "byteIdentity": "All 106 regular files under the locked control site match the D1 manifest site by relative path and SHA-256; the four asset links use relocated relative targets and resolve through the same closure.",
+    "sharedClosureSha256": "df0714460f0dc0f36ecdbbdf0152316bef1bd88d237a7928807aa374c6ddce28",
+    "captureProof": "Each of the eight control captures is successful and clean; the producer preflight maps control to this one frozen site and checks lockedServedSiteTreeSha256 before and after each invocation."
+  },
+  "candidate": {
+    "sourceCommit": "61d605775134e509aedfbfa02112778dec152a37",
+    "buildStamp": "private-inputs/build-61d-source.txt",
+    "siteTreeSha256": "2d055b748a56ba67dc18c3122d6d627d5bbba672ad423345dc16f02d76f262f1",
+    "mainBundle": "assets/index-D2J1ukH_.js",
+    "mainBundleSha256": "4f47f1adda03c3755ab5c7878aab9c41ae05b2f2ecd410587eb3b61a4fcd9aca",
+    "sharedClosureSha256": "df0714460f0dc0f36ecdbbdf0152316bef1bd88d237a7928807aa374c6ddce28"
+  },
+  "renderDifferenceAndCriterion": {
+    "codeChange": "D1 sky.ts has no forest filter override; 61d adds forest-only PCFSoftShadowFilter assignment. The candidate also includes startup-readiness and settled interleaved-geometry correctness changes.",
+    "criterion": "PRD-618 AC-7 requires IMPROVEMENT in overview/river far-tree crowns: solid silhouette, no speckle/shimmer, crown-matched shadows and no visible pop at 60m/150m.",
+    "limits": "The candidate bundle contains neither customFilterFootprint nor the proposed radius-derived override; this comparison tests the shipped PCFSoftShadowFilter change, not that experimental variant."
+  },
+  "judgeIdentityRequirement": "Use D1 full commit as the control rendered-source label, not legacy control marker head 122. Require control site adeb53e6... plus main bundle f39ca1b7... and closure df071446...; require candidate source/build stamp 61d60577..., site 2d055b74... and same closure. Keep all raw markers/images/logs immutable.",
+  "controlCaptures": [
+    {
+      "run": "run-1",
+      "pose": "player",
+      "marker": "private-capture-inputs/control-run-1/player/runtime-marker.json",
+      "status": 0,
+      "cleanupAbsent": true,
+      "leaseReleased": true,
+      "legacyHeadField": "1228819a70260aab73885824f7698397a8ffebdf"
+    },
+    {
+      "run": "run-1",
+      "pose": "meadow-close",
+      "marker": "private-capture-inputs/control-run-1/meadow-close/runtime-marker.json",
+      "status": 0,
+      "cleanupAbsent": true,
+      "leaseReleased": true,
+      "legacyHeadField": "1228819a70260aab73885824f7698397a8ffebdf"
+    },
+    {
+      "run": "run-1",
+      "pose": "overview",
+      "marker": "private-capture-inputs/control-run-1/overview/runtime-marker.json",
+      "status": 0,
+      "cleanupAbsent": true,
+      "leaseReleased": true,
+      "legacyHeadField": "1228819a70260aab73885824f7698397a8ffebdf"
+    },
+    {
+      "run": "run-1",
+      "pose": "river",
+      "marker": "private-capture-inputs/control-run-1/river/runtime-marker.json",
+      "status": 0,
+      "cleanupAbsent": true,
+      "leaseReleased": true,
+      "legacyHeadField": "1228819a70260aab73885824f7698397a8ffebdf"
+    },
+    {
+      "run": "run-2",
+      "pose": "player",
+      "marker": "private-capture-inputs/control-run-2/player/runtime-marker.json",
+      "status": 0,
+      "cleanupAbsent": true,
+      "leaseReleased": true,
+      "legacyHeadField": "1228819a70260aab73885824f7698397a8ffebdf"
+    },
+    {
+      "run": "run-2",
+      "pose": "meadow-close",
+      "marker": "private-capture-inputs/control-run-2/meadow-close/runtime-marker.json",
+      "status": 0,
+      "cleanupAbsent": true,
+      "leaseReleased": true,
+      "legacyHeadField": "1228819a70260aab73885824f7698397a8ffebdf"
+    },
+    {
+      "run": "run-2",
+      "pose": "overview",
+      "marker": "private-capture-inputs/control-run-2/overview/runtime-marker.json",
+      "status": 0,
+      "cleanupAbsent": true,
+      "leaseReleased": true,
+      "legacyHeadField": "1228819a70260aab73885824f7698397a8ffebdf"
+    },
+    {
+      "run": "run-2",
+      "pose": "river",
+      "marker": "private-inputs/locked-61d/proof/control-run-2/river/runtime-marker.json",
+      "status": 0,
+      "cleanupAbsent": true,
+      "leaseReleased": true,
+      "legacyHeadField": "1228819a70260aab73885824f7698397a8ffebdf"
+    }
+  ],
+  "publicationPathNote": {
+    "originalCorrectionSha256": "563101604fa8aaccedca5df20aa9e52d8edaf8d48573dcc8c4a73a1f018f1797",
+    "pathHandling": "Host-specific absolute paths are normalized to logical evidence references in this public copy; the original correction JSON and raw captures remain unchanged and local.",
+    "publishedEvidence": "The eight pair figures each retain the scene pixels and labels; raw capture PNGs are intentionally not duplicated in this branch."
+  }
+}
