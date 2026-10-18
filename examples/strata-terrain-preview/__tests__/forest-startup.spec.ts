@@ -114,8 +114,8 @@ function harness() {
     startup: {
       phase: "collapsing",
       progress: 0.9,
-      hold: vi.fn((_label: string, work: Promise<void>) => {
-        void work.catch(() => undefined);
+      hold: vi.fn((_label: string, work: Promise<unknown> | (() => boolean)) => {
+        if (typeof work !== "function") void work.catch(() => undefined);
       }),
       whenReady: async () => undefined,
     },
