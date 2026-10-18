@@ -376,6 +376,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       const textureUploads = new AbortController();
       let propsStage = "waiting-for-physics";
       let preparation: IPropPreparationProgress | undefined;
+      let buildStartedAt: number | undefined;
+      let phaseStartedAt: number | undefined;
+      let lastProgressAt: number | undefined;
       let completedPropsWork = 0;
       // One scene-local spawn gate: a single deadline taken here, settled once by the world readiness
       // join, a failure or teardown. `WorldCells.whenSpawnReady` is the data authority and each
@@ -424,11 +427,29 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         120_000,
       );
       function captureSpawnFailure(reason: string): void {
+        const failedAt = performance.now();
+        const sceneStartedAt = deadlineAt - 120_000;
         console.error(
           `TN_STRATA_SPAWN_FAILURE ${JSON.stringify({
             reason: reason.slice(0, 256),
             world,
             stage: (preparation?.phase ?? propsStage).slice(0, 64),
+            bucket: preparation?.bucket.slice(0, 64) ?? null,
+            added: preparation?.added ?? null,
+            total: preparation?.total ?? null,
+            deadlineElapsedMs: Math.max(0, Math.round(failedAt - sceneStartedAt)),
+            buildStartedMs:
+              buildStartedAt === undefined
+                ? null
+                : Math.max(0, Math.round(buildStartedAt - sceneStartedAt)),
+            phaseStartedMs:
+              phaseStartedAt === undefined
+                ? null
+                : Math.max(0, Math.round(phaseStartedAt - sceneStartedAt)),
+            lastProgressMs:
+              lastProgressAt === undefined
+                ? null
+                : Math.max(0, Math.round(lastProgressAt - sceneStartedAt)),
           })}`,
         );
       }
@@ -821,6 +842,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // loaders run together and fail soft per file, so one missing species costs that species and
         // nothing else. One load, because `afterPhysics` runs every frame.
         buildProps = async (): Promise<void> => {
+          buildStartedAt = performance.now();
           propsStage = "assets";
           const [prepared, pack, skyLight] = await Promise.all([
             loadPreparedProps(ctx.assets),
@@ -886,6 +908,15 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
                 : 5000,
             whileCurrent: () => !released,
             onProgress: (progress) => {
+              const progressedAt = performance.now();
+              const previousPreparation = preparation;
+              if (
+                previousPreparation === undefined ||
+                previousPreparation.phase !== progress.phase ||
+                previousPreparation.bucket !== progress.bucket
+              )
+                phaseStartedAt = progressedAt;
+              lastProgressAt = progressedAt;
               const previous =
                 preparation?.phase === progress.phase && preparation.bucket === progress.bucket
                   ? preparation.added
