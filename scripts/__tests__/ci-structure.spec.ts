@@ -1101,6 +1101,10 @@ describe("CI pipeline structure", () => {
     `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
   const heavyMatrix = (format: string, axis: string, need = "scope") =>
     `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
+  const gpuHeavy = (id: string, need = "scope") =>
+    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || vars.TN_RUNNER_GPU || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+  const gpuHeavyMatrix = (format: string, axis: string, need = "scope") =>
+    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${axis} == 'racing' && vars.TN_RUNNER_GPU) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
   // `starter-linux` resolves its per-row runner inside the scope job, so the admission output it
   // reads is a step output there, not a `needs` one.
   const heavyStep = (id: string) =>
@@ -1114,14 +1118,14 @@ describe("CI pipeline structure", () => {
     ["ci.yml:test-native", heavy("ci:test-native")],
     ["ci.yml:test-browser", heavy("ci:test-browser")],
     ["ci.yml:test-playtest", heavy("ci:test-playtest")],
-    ["ci.yml:strata", heavy("ci:strata")],
-    ["ci.yml:benchmark", heavy("ci:benchmark")],
+    ["ci.yml:strata", gpuHeavy("ci:strata")],
+    ["ci.yml:benchmark", gpuHeavy("ci:benchmark")],
     ["ci.yml:build-artifacts", heavy("ci:build-artifacts")],
     ["ci.yml:performance-contracts", heavy("ci:performance-contracts")],
     ["ci.yml:budgets", heavy("ci:budgets")],
     ["ci.yml:test-unit", heavyMatrix("ci:test-unit:{0}", "matrix.shard")],
     ["ci.yml:golden-path-template", heavyMatrix("ci:golden-path-template:{0}", "matrix.template")],
-    ["ci.yml:template-nonvisual", heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
+    ["ci.yml:template-nonvisual", gpuHeavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
     ["integration.yml:animation", heavy("integration:animation", "paths")],
     ["integration.yml:capture", heavy("integration:capture", "paths")],
     ["integration.yml:cold-boot", heavy("integration:cold-boot", "paths")],
@@ -1326,7 +1330,7 @@ describe("CI pipeline structure", () => {
     return rows;
   }
 
-  it("routes every movable Linux job through exactly one TN_RUNNER switch", async () => {
+  it("routes every movable Linux job through its configured runner pool", async () => {
     const directory = path.join(repo, ".github/workflows");
     const routed = [
       ".github/workflows/ci.yml",
@@ -1427,6 +1431,7 @@ describe("CI pipeline structure", () => {
     expect(scope).toContain("runner_admission: ${{ steps.admission.outputs.runner_admission }}");
     expect(scope).toContain("node scripts/ci-runner-admission.mjs --admit");
     expect(scope).toContain("TN_RUNNER_SLOTS: ${{ vars.TN_RUNNER_SLOTS }}");
+    expect(scope).toContain("TN_RUNNER_GPU: ${{ vars.TN_RUNNER_GPU }}");
     const forwarded =
       ci.match(/runner_admission: \$\{\{ needs\.scope\.outputs\.runner_admission \}\}/gu) ?? [];
     expect(forwarded, "one plan reaches both reusable workflows").toHaveLength(2);
@@ -2015,7 +2020,7 @@ describe("CI pipeline structure", () => {
     expect(lane).not.toMatch(/^\s+max-parallel:/mu);
     expect(lane).toContain("fail-fast: false");
     expect(lane).toContain(
-      `runs-on: ${heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")}`,
+      `runs-on: ${gpuHeavyMatrix("ci:template-nonvisual:{0}", "matrix.template")}`,
     );
   });
 

@@ -73,6 +73,10 @@ const INVENTORY_SET = new Set(
   ),
 );
 
+// These instances move to the separately provisioned GPU runner when its label is configured;
+// they must not consume slots from the shared CPU-heavy pool in the same run.
+const GPU_RUNNER_INSTANCES = new Set(["ci:benchmark", "ci:strata", "ci:template-nonvisual:racing"]);
+
 // Two integration jobs gate on a lane output whose name differs from the job id.
 const INTEGRATION_LANE = Object.freeze({
   capture: "world-capture",
@@ -152,10 +156,16 @@ export function parseAdmissionPlan(value, prefix = "CI_ADMISSION") {
 
 // The parent's one decision: admit the first `slots` of the caller's ordered selected instances.
 // At most that many instances total, across every workflow — never one budget per namespace.
-export function admissionPlan(selected, slots, { fork = false, prefix = "CI_ADMISSION" } = {}) {
+export function admissionPlan(
+  selected,
+  slots,
+  { fork = false, gpuRunner = "", prefix = "CI_ADMISSION" } = {},
+) {
   const count = slotCount(slots, prefix);
   if (fork || count === null) return Object.freeze([]);
-  const selectedInstances = validateAdmissionPlan(selected, prefix);
+  const selectedInstances = validateAdmissionPlan(selected, prefix).filter(
+    (id) => !gpuRunner || !GPU_RUNNER_INSTANCES.has(id),
+  );
   return Object.freeze(selectedInstances.slice(0, count));
 }
 
@@ -226,6 +236,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     emit(
       admissionPlan(selectInstances(plan, lanes), process.env.TN_RUNNER_SLOTS, {
         fork: fork || !process.env.TN_RUNNER,
+        gpuRunner: process.env.TN_RUNNER_GPU,
       }),
     );
   } else {

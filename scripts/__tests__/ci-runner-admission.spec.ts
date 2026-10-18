@@ -60,6 +60,25 @@ it("admits at most the published slots, in the caller's order, across every work
   expect(admissionPlan(selected, 1)).toEqual(["ci:test-unit:1/4"]);
 });
 
+it("keeps GPU-designated instances out of CPU slots only when a GPU runner is configured", () => {
+  const selected = [
+    "ci:test-unit:1/4",
+    "ci:benchmark",
+    "ci:template-nonvisual:racing",
+    "ci:strata",
+    "ci:typecheck",
+  ];
+  expect(admissionPlan(selected, 3, { gpuRunner: "tn-gpu" })).toEqual([
+    "ci:test-unit:1/4",
+    "ci:typecheck",
+  ]);
+  expect(admissionPlan(selected, 3)).toEqual(selected.slice(0, 3));
+});
+
+it("keeps GPU-designated instances hosted for forks even when both runner labels exist", () => {
+  expect(admissionPlan(selected, 5, { fork: true, gpuRunner: "tn-gpu" })).toEqual([]);
+});
+
 it("treats zero capacity, a missing count or an absent runner as hosted", () => {
   expect(admissionPlan(selected, 0)).toEqual([]);
   expect(admissionPlan(selected, undefined)).toEqual([]);

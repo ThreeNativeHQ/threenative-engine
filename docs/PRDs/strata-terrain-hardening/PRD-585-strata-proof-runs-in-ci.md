@@ -62,7 +62,24 @@ index them in the example's `AGENTS.md`.
 
 The local job wiring is verified; AC-1/AC-2 need a real candidate CI run with successful `strata` execution. Skipped draft checks are not runtime proof.
 
-2026-10-18 CI hardware status: D1 (`d1cacff4d`) restores the original CI runner-admission ordering, withdrawing provisional Strata-first priority because the generic local Docker runner is not GPU-capable. Its NVIDIA/Turing visual captures ran outside Actions and do not close AC-1/AC-2. The Actions Docker runner has no GPU/NVIDIA toolkit. A host-native runner was parked because the available interactive-user setup would weaken job isolation; no host service or global runner configuration was changed. CI hardware proof remains open.
+2026-10-18 CI hardware status: D1 restores the original generic runner-admission order; those Docker slots still have no GPU access. A separate disposable container now proves NVIDIA RTX 2080 Vulkan and headed WebGPU device creation/queue completion using specific device nodes and read-only matching driver libraries, without a host-native runner, toolkit/service changes, home/socket mounts or changes to the existing pool. This is hardware viability only; AC-1/AC-2 remain open.
+
+Local CI repair: the optional GPU route passes 246 admission/structure/needs contracts after routing regressions fail on the original code. The direct visual-gate path now acquires the shared lease before browser launch and releases it even on failure (11 focused tests PASS). Full workspace typecheck and lint PASS, with existing lint warnings; fresh read-only review approves after correcting a policy-union type error. Actual container game execution, queued-job launcher/cleanup and current-candidate Actions proof remain pending.
+
+Bounded CI repair plan within Phase 2. Complexity: 3 → HIGH; security override: isolation and credentials for an ephemeral GPU Actions job. Keep the ordinary PR event, selected membership, job names, receipts, fork-first routing and all runtime/performance limits. A distinct optional GPU runner variable must not change the balancer-owned `TN_RUNNER`.
+
+- Route only Strata, Racing's selected nonvisual instance and the existing Strata startup benchmark to the dedicated GPU capability; prove hosted fallback/fork guards and unchanged selected checks with focused CI contracts. [local]
+- Run an already-queued GPU job in one owned disposable container under the host's existing capture lease; preserve PID isolation, pass the existing private runner env file without printing/copying secrets, and verify exact container/runner cleanup. No pool restart or host service/config changes. [local/shared]
+- Qualify the immutable current PR candidate through its actual required Actions jobs and independent receipts; publish measured results without claiming runtime/visual acceptance from device viability. [shared]
+
+```mermaid
+flowchart LR
+  Q[Queued selected GPU job] --> L[Host capture lease]
+  L --> C[Isolated ephemeral runner]
+  C --> G[Unchanged existing gates]
+  G --> R[Current-run receipts and required join]
+```
+
 
 Forest performance follow-up (2026-10-15, in progress): a real NVIDIA/Turing overview census attributes 16,519,116 submitted triangles to procedural spruce/sapling LOD0; no licensed tree pack is provisioned in either the task or primary checkout. The supported fallback is the baseline. Keep near geometry, materials, seed consumption, trunks and sapling scaling unchanged; generate a reduced far crown and register it through the existing 60 m WorldCells LOD chain in the preview's `spruce.ts`/`props.ts`. First capture two unchanged overview runs; then prove unchanged near buffers, deterministic reduced far buffers and level registration, and capture two matched candidate runs. A fresh visual judge must return NEUTRAL or IMPROVEMENT before retaining the change. Final performance acceptance requires a quiet-host real-GPU comparison and the unchanged runtime budgets; the loaded-host census establishes counts only. This work does not close either CI box.
 

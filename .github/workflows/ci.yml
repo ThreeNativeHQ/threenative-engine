@@ -48,8 +48,9 @@ jobs:
       reason: ${{ steps.classify.outputs.reason }}
       plan: ${{ steps.classify.outputs.plan }}
       candidate_sha: ${{ steps.classify.outputs.candidate_sha }}
-      # PRD-620: the one admitted slice of eligible HEAVY instances across all three workflows,
-      # at most `TN_RUNNER_SLOTS`. Empty for a fork, a missing count or no advertised runner.
+      # PRD-620: the one admitted slice of eligible CPU-heavy instances across all three workflows,
+      # at most `TN_RUNNER_SLOTS`. GPU-routed instances are excluded; empty for a fork, missing count
+      # or no advertised CPU runner.
       runner_admission: ${{ steps.admission.outputs.runner_admission }}
     # PRD-481 tree reuse: the classification asks the Actions API which successful run tested this
     # exact tree. Read-only, and nothing else in the workflow gains from it.
@@ -90,7 +91,8 @@ jobs:
           printf 'Candidate checked out once: `%s`\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       # PRD-620: one shared admission budget for every workflow. The count comes from the publisher's
       # observed idle-heavy count; a missing count or an unset runner leaves every lane hosted. The
-      # selected instances are the plan's required jobs in the inventory's CPU-heavy order.
+      # selected instances are the plan's required jobs in CPU-heavy order, excluding GPU-routed
+      # instances when TN_RUNNER_GPU is configured.
       - id: admission
         name: Admit the eligible heavy instances to the idle pool
         env:
@@ -98,6 +100,7 @@ jobs:
           TN_CI_FORK: ${{ github.event.pull_request.head.repo.fork }}
           TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
           TN_RUNNER: ${{ vars.TN_RUNNER }}
+          TN_RUNNER_GPU: ${{ vars.TN_RUNNER_GPU }}
           TN_RUNNER_SLOTS: ${{ vars.TN_RUNNER_SLOTS }}
         run: node scripts/ci-runner-admission.mjs --admit
 
@@ -678,7 +681,7 @@ jobs:
   strata:
     needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs.strata.required }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:strata')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || vars.TN_RUNNER_GPU || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:strata')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
     timeout-minutes: 60
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -860,9 +863,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
-    # Routes through the idle-pool switch with hosted fallback: forks fall through to hosted and
-    # snapshot fallback is best-effort, so queued legs may remain local.
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-nonvisual:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    # Racing can use the opt-in GPU pool; other legs use the shared CPU pool with hosted fallback.
+    # Forks always stay hosted, and snapshot fallback is best-effort.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (matrix.template == 'racing' && vars.TN_RUNNER_GPU) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-nonvisual:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
     # rain relaunches the page for each of its five GPU-free scenarios. On the hosted SwiftShader
     # adapter each launch now takes about 7 minutes, against about 1 minute on develop (runs
     # 38818830914 and 38824021621), so five launches exceed the 30-minute cap. Only rain gets the
@@ -981,7 +984,7 @@ jobs:
   benchmark:
     needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:benchmark')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || vars.TN_RUNNER_GPU || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:benchmark')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
     timeout-minutes: 25
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
