@@ -410,6 +410,8 @@ public:
             releasePersistent(handle);
         }
         frameHandles_.clear();
+        releasePersistent(undefinedHandle_);
+        undefinedHandle_ = nullptr;
         protectedHandles_.clear();
         for (auto* pooled : persistentPool_) delete pooled;
         persistentPool_.clear();
