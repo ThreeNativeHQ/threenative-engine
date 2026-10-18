@@ -71,6 +71,30 @@ function gameDeclarations(names: readonly string[], assignments = false): string
     .join("\n");
 }
 
+function startupProgressExpression(): string {
+  const source = ts.createSourceFile(
+    "game.ts",
+    readFileSync(GAME_URL, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  let expression: string | undefined;
+  function visit(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.getText(source) === "ctx.startup.hold" &&
+      node.arguments.length >= 4
+    )
+      expression = node.arguments[3]?.getText(source);
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  if (expression === undefined)
+    throw new Error("Missing production strata startup progress callback");
+  return expression;
+}
+
 interface ISpawnGate {
   readonly spawn: Promise<void>;
   readonly state: { worldReady: boolean; loadingError: string };
@@ -283,6 +307,22 @@ it.each(["attached", "cancelled", "released"] as const)(
     }
   },
 );
+
+it("reports completed streamed admission work before spawn cells become ready", () => {
+  const progress = startupProgressExpression();
+  const result = runInNewContext(`(${progress})()`, {
+    completedPropsWork: 0,
+    preparation: { prewarmedWorlds: 0 },
+    props: {
+      worlds: [
+        { stats: () => ({ admissionCompletedUnits: 4, prewarmMinted: 2 }) },
+        { stats: () => ({ admissionCompletedUnits: 3, prewarmMinted: 1 }) },
+      ],
+    },
+    ctx: { state: { getState: () => ({ spawnCellsLoaded: 0 }) } },
+  });
+  expect(result).toBe(10);
+});
 
 it.each(["世界", "\u0000", "\uD800"])(
   "bounds failure receipts for %j without retaining scene objects or resident key arrays",

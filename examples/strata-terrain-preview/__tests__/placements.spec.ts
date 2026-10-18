@@ -1,6 +1,6 @@
 import type { IPlacement } from "@threenative/terrain";
-import { describe, expect, it } from "vitest";
-import { decodePlacements, encodePlacements } from "../src/render/placements.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { decodePlacements, encodePlacements, loadPlacements } from "../src/render/placements.js";
 
 const placements: IPlacement[] = [
   {
@@ -69,5 +69,46 @@ describe("baked placement table", () => {
     expect(() =>
       encodePlacements({ placements, counts: { ...counts, spruce: 3 } }, canopy),
     ).toThrow();
+  });
+});
+
+describe("load baked placement table", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const urls = ["world/forest.placements.bin", "assets/world/forest.placements.bin"];
+  const assets = { resolve: async () => urls };
+
+  it("continues to the staged source path when native fetch rejects the verbatim path", async () => {
+    const fetch = vi.fn(async (url: string) => {
+      if (url === urls[0]) throw new Error(`Failed to open file: ${url}`);
+      return new Response(encode());
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    const loaded = await loadPlacements(assets, "forest");
+
+    expect(loaded.placements).toEqual(placements);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(urls);
+  });
+
+  it("rejects when every candidate fetch fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        throw new Error(`Failed to open file: ${url}`);
+      }),
+    );
+
+    await expect(loadPlacements(assets, "forest")).rejects.toThrow(
+      "Missing baked placement table: world/forest.placements.bin",
+    );
+  });
+
+  it("does not fall through after a successful response contains malformed data", async () => {
+    const fetch = vi.fn(async () => new Response(new Uint8Array([0, 0, 0, 0])));
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(loadPlacements(assets, "forest")).rejects.toThrow("Invalid baked placement table");
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

@@ -85,6 +85,7 @@ it("keeps a failed spawn pending and reports its model failure by region", async
     expect(world.readinessAt(at).failures).toBeGreaterThan(0);
     expect(world.readinessAt(at).ready).toBe(false);
     expect(world.stats().loadedCells).toBe(0);
+    expect(world.stats().admissionCompletedUnits).toBe(0);
     expect(() => world.readinessAt({ x: Number.NaN, z: 0 })).toThrow("finite");
   } finally {
     world.dispose();
@@ -291,6 +292,29 @@ afterEach(() => {
 });
 
 describe("WorldCells admission budget", () => {
+  it("counts completed admission units but not queued or idle work", async () => {
+    const { world } = await makeWorld({ admissionBudgetMs: 1, priced: true });
+    try {
+      const stats = () => world.stats();
+      expect(stats().admissionCompletedUnits).toBe(0);
+
+      world.update();
+      await flush();
+      expect(world.stats().admissionBacklog).toBeGreaterThan(0);
+      expect(stats().admissionCompletedUnits).toBe(0);
+
+      world.update();
+      expect(stats().admissionCompletedUnits).toBeGreaterThan(0);
+
+      drain(world);
+      const afterWork = stats().admissionCompletedUnits;
+      world.update();
+      expect(stats().admissionCompletedUnits).toBe(afterWork);
+    } finally {
+      world.dispose();
+    }
+  });
+
   it("flushes each covered publication to shadows while uncovered notifications remain throttled", async () => {
     const notifications = async (covered: boolean): Promise<number[]> => {
       stubFixtureFetch();

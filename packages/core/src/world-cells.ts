@@ -496,6 +496,8 @@ export class WorldCells extends Group implements IComputeDriven {
   #bytes = 0;
   #evictions = 0;
   #failures = 0;
+  /** Completed admission steps; queued, refused and discarded work does not count. */
+  #admissionCompletedUnits = 0;
   #rebuilds = 0;
   /** Refilter passes run, whether or not they queued anything; see `IWorldCellsStats.refilters`. */
   #refilters = 0;
@@ -1615,6 +1617,7 @@ export class WorldCells extends Group implements IComputeDriven {
       loadsInFlight: this.#models.loadsInFlight,
       loadsQueued: this.#models.loadsQueued,
       admissionBacklog: this.#backlog(),
+      admissionCompletedUnits: this.#admissionCompletedUnits,
       mainCull: this.#render.mainCullStats(),
       // Minted meshes still owed a first draw, not minted meshes. The two used to be the same
       // number, so a loading bar read minting as the whole of the prewarm and then stood still for
@@ -2212,16 +2215,21 @@ export class WorldCells extends Group implements IComputeDriven {
       const end = Math.min(job.next + ADMISSION_SLICE_PLACEMENTS, job.run.count);
       this.#addPlacements(job, job.next, end);
       job.next = end;
+      this.#admissionCompletedUnits += 1;
       return false;
     }
     const batches = job.batches;
     // A run with nothing placed in it publishes nothing, exactly as an unbounded build would.
     if (batches === undefined) return true;
     if (job.published < publishCount(batches)) {
+      const published = job.published;
       this.#buildOne(job, batches);
+      if (job.published > published) this.#admissionCompletedUnits += 1;
       return false;
     }
-    return this.#render.swap(job);
+    const swapped = this.#render.swap(job);
+    if (swapped) this.#admissionCompletedUnits += 1;
+    return swapped;
   }
 
   /**

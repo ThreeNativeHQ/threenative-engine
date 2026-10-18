@@ -140,12 +140,17 @@ export function decodePlacements(buffer: ArrayBuffer): IPropScatter & { canopy: 
 }
 
 export async function loadPlacements(
-  assets: IAssetLoader,
+  assets: Pick<IAssetLoader, "resolve">,
   world: string,
 ): Promise<ReturnType<typeof decodePlacements>> {
   const path = `world/${world}.placements.bin`;
   for (const url of await assets.resolve(path)) {
-    const response = await fetch(url);
+    let response: Response;
+    try {
+      response = await fetch(url);
+    } catch {
+      continue;
+    }
     if (response.ok) return decodePlacements(await response.arrayBuffer());
   }
   throw new Error(`Missing baked placement table: ${path}`);

@@ -437,6 +437,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           () =>
             completedPropsWork +
             (preparation?.prewarmedWorlds ?? 0) +
+            (props?.worlds.reduce((sum, stream) => {
+              const stats = stream.stats();
+              return sum + stats.admissionCompletedUnits + stats.prewarmMinted;
+            }, 0) ?? 0) +
             ctx.state.getState().spawnCellsLoaded,
         );
       const loading = createLoadingScreen({

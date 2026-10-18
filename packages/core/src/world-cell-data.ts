@@ -755,6 +755,8 @@ export interface IWorldCellsStats {
   readonly loadsQueued: number;
   /** Remaining placement slices and batch publications waiting for admission. */
   readonly admissionBacklog: number;
+  /** Cumulative placement slices, mesh builds, and final run swaps completed by admission. */
+  readonly admissionCompletedUnits: number;
   /**
    * Shared batches still to be minted, plus the ones minted and not yet drawn; `0` once
    * `prewarmed` has resolved.
