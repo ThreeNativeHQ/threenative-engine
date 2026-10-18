@@ -240,6 +240,88 @@ it("fences groups of PMREM faces by GPU cost and fences once more before publish
   source.dispose();
 });
 
+const fencedRenderer = () => ({
+  backend: { device: { queue: { onSubmittedWorkDone: vi.fn(async () => undefined) } } },
+});
+
+it("never bakes a ready equirect synchronously on a queue-fenced backend", async () => {
+  const renderer = fencedRenderer();
+  const source = new Texture({ height: 8 } as never);
+  const generatedTexture = new Texture({ height: 16 } as never);
+  const target = { texture: generatedTexture, dispose: vi.fn() };
+  let releasePreparation: ((target: never) => void) | undefined;
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releasePreparation = resolve;
+        }),
+    );
+  const generateSync = vi.spyOn(PMREMGenerator.prototype, "fromEquirectangular");
+  const prepare = vi.spyOn(PatchedPMREMNode, "prepareTextureAsync");
+  const node = new PMREMNode(source) as PatchedPMREMNodeInstance;
+  const update = vi.spyOn(node, "updateFromTexture");
+
+  try {
+    node.setup({ renderer, context: { getUV: () => vec3(0, 1, 0) } } as never);
+    for (let frame = 0; frame < 5; frame += 1) node.updateBefore({ renderer } as never);
+
+    expect(generateSync).not.toHaveBeenCalled();
+    expect(prepare).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(generateAsync).toHaveBeenCalledOnce());
+    expect(update).not.toHaveBeenCalled();
+
+    releasePreparation?.(target as never);
+    await vi.waitFor(() => expect(prepare.mock.results[0]?.value).toBeInstanceOf(Promise));
+    await prepare.mock.results[0]?.value;
+    node.updateBefore({ renderer } as never);
+
+    expect(update).toHaveBeenCalledWith(generatedTexture);
+    expect(generateSync).not.toHaveBeenCalled();
+    expect(prepare).toHaveBeenCalledOnce();
+  } finally {
+    generateAsync.mockRestore();
+    generateSync.mockRestore();
+    prepare.mockRestore();
+  }
+});
+
+it("logs a rejected fenced preparation once per texture version and retries on a new version", async () => {
+  const renderer = fencedRenderer();
+  const source = new Texture({ height: 8 } as never);
+  const failure = new Error("bake failed");
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockRejectedValue(failure);
+  const generateSync = vi.spyOn(PMREMGenerator.prototype, "fromEquirectangular");
+  const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const node = new PMREMNode(source) as PatchedPMREMNodeInstance;
+
+  try {
+    node.setup({ renderer, context: { getUV: () => vec3(0, 1, 0) } } as never);
+    node.updateBefore({ renderer } as never);
+    await vi.waitFor(() => expect(logged).toHaveBeenCalledOnce());
+    for (let frame = 0; frame < 5; frame += 1) {
+      node.updateBefore({ renderer } as never);
+      await Promise.resolve();
+    }
+
+    expect(logged).toHaveBeenCalledWith(failure);
+    expect(generateAsync).toHaveBeenCalledOnce();
+    expect(generateSync).not.toHaveBeenCalled();
+
+    source.pmremVersion += 1;
+    node.updateBefore({ renderer } as never);
+    await vi.waitFor(() => expect(logged).toHaveBeenCalledTimes(2));
+    expect(generateAsync).toHaveBeenCalledTimes(2);
+  } finally {
+    generateAsync.mockRestore();
+    generateSync.mockRestore();
+    logged.mockRestore();
+  }
+});
+
 it("reuses an asynchronously prepared PMREM from the same renderer cache", async () => {
   const renderer = {};
   const source = new Texture({ height: 8 } as never);

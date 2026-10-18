@@ -22302,3 +22302,117 @@ index abf70ebd31e68675de93ef368a814789ccc84d70..ace19db76fab3f08ed4d581d1e272066
  
  			}
  
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 864d4cec8c57038d11d9202c5b81f4e0313cea86..d835e23ec85acea5fd8ba15a2b76c83b83561c3c 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -23278,6 +23278,7 @@ class CubeRenderTarget extends RenderTarget {
+ 
+ const _cache$1 = new WeakMap();
+ const _pending = new WeakMap();
++const _failed = new WeakMap();
+ function _listenForDispose( texture, cache ) {
+ 
+ 	if ( cache.has( texture ) ) return;
+@@ -27248,6 +27249,25 @@ function _getPMREMFromTexture( texture, renderer, generator ) {
+ 	if ( pmremVersion !== texture.pmremVersion ) {
+ 
+ 		const image = texture.image;
++		const fence = renderer.backend && renderer.backend.device && renderer.backend.device.queue;
++
++		if ( fence && typeof fence.onSubmittedWorkDone === 'function' ) {
++
++			// A queue-fenced backend never bakes synchronously: all GGX passes in one submission can hang the GPU process.
++			const version = texture.pmremVersion;
++
++			if ( _failed.get( texture ) === version ) return null;
++
++			PMREMNode.prepareTextureAsync( renderer, texture ).catch( ( error ) => {
++
++				_failed.set( texture, version );
++				console.error( error );
++
++			} );
++
++			return null;
++
++		}
+ 
+ 		if ( texture.isCubeTexture ) {
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 90139888908b6214b4e6b5d563c81a4cb8bdad72..d030da8cf893d8f222330d437b45297e3a06c0d0 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -23262,6 +23262,7 @@ class CubeRenderTarget extends RenderTarget {
+ 
+ const _cache$1 = new WeakMap();
+ const _pending = new WeakMap();
++const _failed = new WeakMap();
+ function _listenForDispose( texture, cache ) {
+ 
+ 	if ( cache.has( texture ) ) return;
+@@ -27232,6 +27233,25 @@ function _getPMREMFromTexture( texture, renderer, generator ) {
+ 	if ( pmremVersion !== texture.pmremVersion ) {
+ 
+ 		const image = texture.image;
++		const fence = renderer.backend && renderer.backend.device && renderer.backend.device.queue;
++
++		if ( fence && typeof fence.onSubmittedWorkDone === 'function' ) {
++
++			// A queue-fenced backend never bakes synchronously: all GGX passes in one submission can hang the GPU process.
++			const version = texture.pmremVersion;
++
++			if ( _failed.get( texture ) === version ) return null;
++
++			PMREMNode.prepareTextureAsync( renderer, texture ).catch( ( error ) => {
++
++				_failed.set( texture, version );
++				console.error( error );
++
++			} );
++
++			return null;
++
++		}
+ 
+ 		if ( texture.isCubeTexture ) {
+ 
+diff --git a/src/nodes/pmrem/PMREMNode.js b/src/nodes/pmrem/PMREMNode.js
+index 2e3a84341d1d3af4e4b8c0327c4ad2cde4df0c5b..c4c33cf3060d8c75398000589ed4e3f9a52ec285 100644
+--- a/src/nodes/pmrem/PMREMNode.js
++++ b/src/nodes/pmrem/PMREMNode.js
+@@ -12,6 +12,7 @@ import { materialEnvRotation } from '../accessors/MaterialProperties.js';
+ 
+ const _cache = new WeakMap();
+ const _pending = new WeakMap();
++const _failed = new WeakMap();
+ 
+ function _listenForDispose( texture, cache ) {
+ 
+@@ -83,6 +84,25 @@ function _getPMREMFromTexture( texture, renderer, generator ) {
+ 	if ( pmremVersion !== texture.pmremVersion ) {
+ 
+ 		const image = texture.image;
++		const fence = renderer.backend && renderer.backend.device && renderer.backend.device.queue;
++
++		if ( fence && typeof fence.onSubmittedWorkDone === 'function' ) {
++
++			// A queue-fenced backend never bakes synchronously: all GGX passes in one submission can hang the GPU process.
++			const version = texture.pmremVersion;
++
++			if ( _failed.get( texture ) === version ) return null;
++
++			PMREMNode.prepareTextureAsync( renderer, texture ).catch( ( error ) => {
++
++				_failed.set( texture, version );
++				console.error( error );
++
++			} );
++
++			return null;
++
++		}
+ 
+ 		if ( texture.isCubeTexture ) {
+ 
