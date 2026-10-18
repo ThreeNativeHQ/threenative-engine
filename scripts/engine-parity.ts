@@ -172,6 +172,7 @@ export async function withBrowserWatchdogArtifact<T>(
   artifactPath: string,
   capture: () => Promise<T>,
 ): Promise<T> {
+  const captureStartedAt = new Date().toISOString();
   let captureFailed = false;
   try {
     return await capture();
@@ -185,6 +186,8 @@ export async function withBrowserWatchdogArtifact<T>(
       const deadlineMs = 900;
       const started = Date.now();
       const artifact: {
+        captureStartedAt: string;
+        captureFailedAt: string;
         browserVersion: string | null;
         query: string;
         status: "watchdog-kill-confirmed" | "inconclusive";
@@ -192,6 +195,8 @@ export async function withBrowserWatchdogArtifact<T>(
         reason?: string;
         detachError?: string;
       } = {
+        captureStartedAt,
+        captureFailedAt: new Date(started).toISOString(),
         browserVersion: null,
         query: "GPU.WatchdogThread.Event",
         status: "inconclusive",
