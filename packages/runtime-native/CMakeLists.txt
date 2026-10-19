@@ -917,6 +917,13 @@ if(MYSTRAL_USE_V8)
             elseif(WIN32)
                 # V8 on Windows needs these
                 set(V8_SYSTEM_LIBS winmm dbghelp shlwapi)
+                # v8config.h refuses anything below C++20 by `__cplusplus`, which MSVC reports as
+                # 199711L without this flag. mystral-runtime set it for itself, so the engine
+                # player's V8 services failed "C++20 or later required" (release-proof run
+                # 39258851241); every target that includes V8 headers needs it.
+                if(MSVC)
+                    set_property(TARGET v8::v8 APPEND PROPERTY INTERFACE_COMPILE_OPTIONS /Zc:__cplusplus)
+                endif()
             endif()
         else()
             message(WARNING "V8 not found:")
