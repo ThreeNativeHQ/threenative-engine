@@ -173,3 +173,42 @@ it("does not retry an interrupted request or use its partial output", () => {
   expect(() => readAttemptJobs(identity)).toThrow("error connecting");
   expect(execute).toHaveBeenCalledTimes(1);
 });
+it("rereads while a job the caller depends on still reads as unfinished", () => {
+  const stale = JSON.stringify([
+    { total_count: 1, jobs: [{ id: 10, name: "integration / animation", status: "queued" }] },
+  ]);
+  const settled = JSON.stringify([
+    {
+      total_count: 1,
+      jobs: [
+        { id: 10, name: "integration / animation", status: "completed", conclusion: "success" },
+      ],
+    },
+  ]);
+  execute.mockReturnValueOnce(stale).mockReturnValueOnce(settled);
+  expect(readAttemptJobs(identity, "CI_INTEGRATION", ["integration / animation"]).jobs).toEqual([
+    { id: 10, name: "integration / animation", status: "completed", conclusion: "success" },
+  ]);
+  expect(execute).toHaveBeenCalledTimes(2);
+});
+it("returns the last unfinished read so the caller's own check fails closed", () => {
+  const stale = JSON.stringify([
+    { total_count: 1, jobs: [{ id: 10, name: "integration / animation", status: "queued" }] },
+  ]);
+  execute.mockReturnValue(stale);
+  expect(readAttemptJobs(identity, "CI_INTEGRATION", ["integration / animation"]).jobs).toEqual([
+    { id: 10, name: "integration / animation", status: "queued" },
+  ]);
+  expect(execute).toHaveBeenCalledTimes(8);
+});
+it("does not wait on unfinished jobs the caller does not depend on", () => {
+  execute.mockReturnValue(
+    JSON.stringify([
+      { total_count: 1, jobs: [{ id: 10, name: "integration / tone", status: "in_progress" }] },
+    ]),
+  );
+  expect(
+    readAttemptJobs(identity, "CI_INTEGRATION", ["integration / animation"]).jobs,
+  ).toHaveLength(1);
+  expect(execute).toHaveBeenCalledTimes(1);
+});
