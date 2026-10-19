@@ -47,6 +47,7 @@ import {
   spanNow,
   spansRequested,
 } from "./profiling/Spans.js";
+import { applyOpacityConvention } from "./profiling/opacity-convention.js";
 import {
   RenderListValidator,
   formatValidationReport,
@@ -924,6 +925,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#scene !== scene) return false;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
     this.#sceneEntered = true;
+    // Before the audit, so an opacity the convention made take effect is reported as a warning.
+    const opacity = applyOpacityConvention(ctx.scene);
+    if (opacity !== undefined) console.warn(opacity);
     for (const line of renderTrapAudit(ctx.scene)) console.error(line);
     // Cutout PBR with no image-based light renders as cardboard, and the compensating tint the
     // author reaches for is invisible in a screenshot review. Once per scene entry, right after
