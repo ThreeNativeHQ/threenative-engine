@@ -16,6 +16,7 @@ physical-device reports pass every functional gate, every required negative cont
 observed red, and the evidence rollup is committed; an emulator, simulator, hosted runner,
 signed-but-unexecuted artifact, published package, or promoted consumer cannot satisfy it.
 
+**Priority:** P1 — Open boxes build the device qualification CLI, schema validation and fail-closed report checks.
 Complexity: 10 → HIGH mode.
 
 Blast radius: 17 repository files across root command wiring, `runtime-native`, the

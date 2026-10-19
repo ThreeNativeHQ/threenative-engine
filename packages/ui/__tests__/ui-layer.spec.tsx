@@ -156,3 +156,41 @@ describe("UiLayer", () => {
     restore();
   });
 });
+
+it("stops the hit region registry on an open bridge during unmount", async () => {
+  const restore = installDocument();
+  const gameBridge = connectUiBridge({ end: "game" });
+  const emptyPublished: unknown[] = [];
+  gameBridge.onMessage((message) => {
+    const hitMessage = message as { regions?: unknown[] };
+    if (
+      message.type === "tn:hit-regions" &&
+      Array.isArray(hitMessage.regions) &&
+      hitMessage.regions.length === 0
+    ) {
+      emptyPublished.push(message);
+    }
+  });
+
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(
+      createElement(
+        UiLayer,
+        null,
+        createElement("button", { "data-tn-interactive": "true", type: "button" }, "click"),
+      ),
+    );
+    await flush();
+  });
+
+  await act(async () => {
+    renderer.unmount();
+    await flush();
+  });
+
+  expect(emptyPublished.length).toBeGreaterThan(0);
+
+  gameBridge.close();
+  restore();
+});

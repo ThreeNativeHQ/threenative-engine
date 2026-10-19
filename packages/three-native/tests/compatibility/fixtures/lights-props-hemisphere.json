@@ -1,0 +1,132 @@
+{
+  "name": "lights-props-hemisphere",
+  "adaptedFrom": "original — HemisphereLight: sky and ground hex colour arguments through ColorManagement, intensity and groundColor",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "fresh",
+      "class": "HemisphereLight",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "l",
+      "class": "HemisphereLight",
+      "args": [11189137, 2236962, 0.6]
+    },
+    {
+      "op": "set",
+      "id": "l",
+      "path": "intensity",
+      "value": 0.9
+    },
+    {
+      "op": "set",
+      "id": "l",
+      "path": "groundColor.r",
+      "value": 0.25
+    },
+    {
+      "op": "set",
+      "id": "l",
+      "path": "groundColor.g",
+      "value": 0.15
+    },
+    {
+      "op": "set",
+      "id": "l",
+      "path": "groundColor.b",
+      "value": 0.05
+    }
+  ],
+  "observe": [
+    {
+      "id": "fresh",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "fresh",
+      "path": "color.r",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "color.g",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "color.b",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "groundColor.r",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "groundColor.g",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "groundColor.b",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "intensity",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "l",
+      "path": "color.r",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "color.g",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "color.b",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "groundColor.r",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "groundColor.g",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "groundColor.b",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "intensity",
+      "kind": "number"
+    },
+    {
+      "id": "l",
+      "path": "position.z",
+      "kind": "number"
+    }
+  ]
+}

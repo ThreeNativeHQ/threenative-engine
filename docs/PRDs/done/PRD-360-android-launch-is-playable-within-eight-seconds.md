@@ -66,7 +66,7 @@ wgpu-native. Reaching 8,000 ms from the measured ~10.9 s needs roughly a third f
 programs, which is an authoring decision about how the game looks. **The criterion is unmet and
 gated outside `packages/`; this needs an owner decision on scope, not more framework work.**
 Evidence: [pipeline-shapes](../../verification/prd-360-startup-cost-2026-09-08/pipeline-shapes.md).
-**Owner:** [PRD-339](../performance/critical/PRD-339-the-compile-walk-leaves-the-main-thread.md),
+**Owner:** [PRD-540](../performance/critical/PRD-540-the-compile-walk-leaves-the-main-thread.md),
 **Canonical findings:** [runtime performance state](../../verification/runtime-perf-state.md),
 especially “PRD-360 retry investigation — 2026-09-08.”
 **Complexity:** MEDIUM, core/native/game boundaries. No new package or public API is planned.
@@ -228,7 +228,7 @@ changes without a new measured mechanism.
 - [ ] Current candidate passes browser WebGPU movement/visual checks with actual adapter identity,
   focused red/green/revert controls, full repository gates and affected real playtests.
 - [ ] Independent checkpoint review verifies callers, replaced paths, evidence and negative controls;
-  update PRD-339 with this slice's delivered scope before marking this PRD complete.
+  update PRD-540 with this slice's delivered scope before marking this PRD complete.
 
 An unchanged over-budget result does not establish a hardware floor. Hardware attribution requires
 a controlled identified workload and a measured lower bound for the unavoidable work. If the owner

@@ -1,7 +1,21 @@
-import { BufferAttribute, BufferGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
+import {
+  BufferAttribute,
+  BufferGeometry,
+  Mesh,
+  MeshBasicMaterial,
+  OrthographicCamera,
+  PerspectiveCamera,
+  Vector3,
+} from "three";
 import { describe, expect, it, vi } from "vitest";
+import { terrainHeight } from "../../../examples/abyss-framework/src/world/terrainSampler.js";
 import { createAssetLoader } from "../src/assets.js";
+import {
+  DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
+  DISCRETE_LOD_DEFAULT_HYSTERESIS,
+} from "../src/model-lod.js";
 import { type IWorldTile, type IWorldTileCollider, TerrainTiles } from "../src/world-tiles.js";
+import { summarizeWorldTopology } from "../src/world-topology.js";
 import { Heightfield } from "../src/world.js";
 
 const sampleHeight = (x: number, z: number): number =>
@@ -183,6 +197,33 @@ function measured(value: number | undefined): number {
 }
 
 describe("TerrainTiles", () => {
+  it.each([false, true])(
+    "reports JSON-safe terrain debug with validation %s without inventing diagnostics",
+    (validate) => {
+      const tiles = new TerrainTiles({
+        surface: new MeshBasicMaterial(),
+        residentByteBudget: 1_000_000,
+        residentTileBudget: 1,
+        sampleHeight,
+        streamRadius: 0,
+        tileResolution: 9,
+        tileSize: 64,
+        validate,
+      });
+      try {
+        tiles.follow({ x: 0, z: 0 });
+        const debug = tiles.debug();
+        expect(debug).toEqual(JSON.parse(JSON.stringify(debug)));
+        for (const key of ["maxSeamGap", "maxVisualSeamGap", "maxLodPop"]) {
+          expect(Object.hasOwn(debug, key)).toBe(validate);
+          if (validate) expect(Number.isFinite(debug[key])).toBe(true);
+        }
+      } finally {
+        tiles.dispose();
+      }
+    },
+  );
+
   it("counts retained topology storage against the hard byte cap", () => {
     expect(
       () =>
@@ -226,6 +267,132 @@ describe("TerrainTiles", () => {
     expect(tiles.residentBytes).toBe(8_672);
     tiles.dispose();
   });
+
+  it.each([
+    [9, 51_080],
+    [65, 1_869_960],
+  ])(
+    "charges every morph delta plus Three's packed CPU and GPU textures before admitting a %i grid",
+    (tileResolution, bytes) => {
+      const options = {
+        surface: new MeshBasicMaterial(),
+        sampleHeight,
+        residentTileBudget: 1,
+        streamRadius: 0,
+        tileResolution,
+        tileSize: 16,
+        validate: false,
+      };
+      const tiles = new TerrainTiles({ ...options, residentByteBudget: bytes });
+      tiles.follow({ x: 0, z: 0 });
+      const tile = tiles.getTile("0:0");
+      if (tile === undefined) throw new Error("Expected the admitted morph tile.");
+      expect(tile.bytes).toBe(bytes);
+      expect(tiles.residentBytes).toBe(bytes);
+      expect(
+        tile.lod.levels.map(({ object }) => {
+          if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+          return object.geometry.morphAttributes.position?.length ?? 0;
+        }),
+      ).toEqual([2, 1, 0]);
+      const disposed = tile.lod.levels.map(({ object }) => {
+        if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+        return vi.spyOn(object.geometry, "dispose");
+      });
+      tiles.dispose();
+      for (const dispose of disposed) expect(dispose).toHaveBeenCalledOnce();
+      const tooSmall = new TerrainTiles({ ...options, residentByteBudget: bytes - 1 });
+      try {
+        expect(() => tooSmall.follow({ x: 0, z: 0 })).toThrow(/residentByteBudget/u);
+        expect(tooSmall.residentTileCount).toBe(0);
+      } finally {
+        tooSmall.dispose();
+        options.surface.dispose();
+      }
+    },
+  );
+
+  it("reserves enough morph storage for stock WebGL packing at an 8192 texture limit", () => {
+    const options = {
+      surface: new MeshBasicMaterial(),
+      sampleHeight,
+      residentTileBudget: 1,
+      residentByteBudget: 2_000_000,
+      streamRadius: 0,
+      tileResolution: 65,
+      tileSize: 64,
+      lodFactors: [1, 2],
+      lodDistances: [8],
+    };
+    const gpu = new TerrainTiles({ ...options, validate: false });
+    const cpu = new TerrainTiles({ ...options, validate: true });
+    try {
+      gpu.follow({ x: 0, z: 0 });
+      cpu.follow({ x: 0, z: 0 });
+      const mesh = gpu.getTile("0:0")?.lod.levels[0]?.object;
+      if (!(mesh instanceof Mesh)) throw new Error("Expected the finest LOD mesh.");
+      const positions = mesh.geometry.morphAttributes.position?.[0];
+      const normals = mesh.geometry.morphAttributes.normal?.[0];
+      if (positions === undefined || normals === undefined)
+        throw new Error("Expected both morph deltas.");
+      // Stock WebGLMorphtargets packs 8,970 texels into two 8,192-texel RGBA32F rows.
+      const textureBytes = 8192 * 2 * 4 * Float32Array.BYTES_PER_ELEMENT;
+      expect(gpu.residentBytes - cpu.residentBytes).toBeGreaterThanOrEqual(
+        positions.array.byteLength + normals.array.byteLength + textureBytes * 2,
+      );
+    } finally {
+      gpu.dispose();
+      cpu.dispose();
+      options.surface.dispose();
+    }
+  });
+
+  it.each([[[1]], [[1, 1]], [[1, 2, 2]], [[2, 1, 2]]])(
+    "admits exactly the charged bytes for effective LOD factors %j",
+    (lodFactors) => {
+      const options = {
+        surface: new MeshBasicMaterial(),
+        sampleHeight: vi.fn(sampleHeight),
+        residentTileBudget: 1,
+        streamRadius: 0,
+        tileResolution: 9,
+        tileSize: 16,
+        lodFactors,
+        lodDistances: lodFactors.slice(1).map((_, index) => 8 * (index + 1)),
+        validate: false,
+      };
+      const probe = new TerrainTiles({ ...options, residentByteBudget: 1_000_000 });
+      probe.follow({ x: 0, z: 0 });
+      const bytes = probe.residentBytes;
+      if (lodFactors.length === 1) expect(bytes).toBe(5_904);
+      const tile = probe.getTile("0:0");
+      if (tile === undefined) throw new Error("Expected the probe tile.");
+      expect(
+        tile.lod.levels.map(({ object }) => {
+          if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+          return object.geometry.morphAttributes.position?.length ?? 0;
+        }),
+      ).toEqual(
+        lodFactors.map(
+          (factor) => lodFactors.filter((candidate) => candidate >= factor).length - 1,
+        ),
+      );
+      probe.dispose();
+      const fitted = new TerrainTiles({ ...options, residentByteBudget: bytes });
+      const tooSmall = new TerrainTiles({ ...options, residentByteBudget: bytes - 1 });
+      try {
+        fitted.follow({ x: 0, z: 0 });
+        expect(fitted.residentBytes).toBe(bytes);
+        options.sampleHeight.mockClear();
+        expect(() => tooSmall.follow({ x: 0, z: 0 })).toThrow(/residentByteBudget/u);
+        expect(options.sampleHeight).not.toHaveBeenCalled();
+      } finally {
+        fitted.dispose();
+        tooSmall.dispose();
+        options.surface.dispose();
+      }
+    },
+  );
 
   it("rejects a tile when retained edge samples make it exceed the byte cap", () => {
     const tiles = new TerrainTiles({
@@ -389,6 +556,483 @@ describe("TerrainTiles", () => {
       expect(visibleSeamGap(a, b)).toBeLessThan(0.00001);
       expect(canonicalEdgeError(a, "east", visibleSurface(a))).toBeLessThan(0.00001);
       expect(canonicalEdgeError(b, "west", visibleSurface(b))).toBeLessThan(0.00001);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it.each([1, 2, 9])(
+    "renders GPU morphs with %i resident tiles without CPU attribute writes and matches the validating CPU blend",
+    (residentTileBudget) => {
+      const surface = new MeshBasicMaterial();
+      const options = {
+        surface,
+        mergeTiles: false,
+        residentByteBudget: 2_000_000,
+        residentTileBudget,
+        sampleHeight,
+        streamRadius: residentTileBudget === 1 ? 0 : 1,
+        tileResolution: 17,
+        tileSize: 64,
+        lodDistances: [8, 16],
+      };
+      const gpu = new TerrainTiles({ ...options, validate: false });
+      const cpu = new TerrainTiles({ ...options, validate: true });
+      try {
+        gpu.follow({ x: 0, z: 0 });
+        cpu.follow({ x: 0, z: 0 });
+        const tile = gpu.getTile("0:0");
+        if (tile === undefined) throw new Error("Expected the resident GPU tile.");
+        const versions = tile.lod.levels.map(({ object }) => {
+          if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+          return [
+            object.geometry.getAttribute("position").version,
+            object.geometry.getAttribute("normal").version,
+          ];
+        });
+        const finest = tile.lod.levels[0]?.object;
+        if (!(finest instanceof Mesh)) throw new Error("Expected the finest LOD mesh.");
+        const originalGeometry = finest.geometry;
+        const originalPosition = originalGeometry.getAttribute("position");
+        const originalNormal = originalGeometry.getAttribute("normal");
+        const disposed = vi.spyOn(originalGeometry, "dispose");
+        // Include skipped levels, refinement and an interrupted transition.
+        for (const [x, frames] of [
+          [9, 3],
+          [0, 3],
+          [20, 1],
+          [0, 3],
+        ] as const) {
+          gpu.follow({ x, z: 0 });
+          cpu.follow({ x, z: 0 });
+          for (let frame = 0; frame <= frames; frame += 1) {
+            if (frame > 0) {
+              gpu.process();
+              cpu.process();
+            }
+            const rendered = tile.lod.levels.find(({ object }) => object.visible)?.object;
+            const reference = cpu
+              .getTile("0:0")
+              ?.lod.levels.find(({ object }) => object.visible)?.object;
+            if (!(rendered instanceof Mesh) || !(reference instanceof Mesh))
+              throw new Error("Expected matching visible meshes.");
+            expect(rendered.material).toBe(surface);
+            expect(rendered.geometry.morphTargetsRelative).toBe(true);
+            for (
+              let vertex = 0;
+              vertex < rendered.geometry.getAttribute("position").count;
+              vertex += 1
+            ) {
+              const actual = new Vector3();
+              rendered.getVertexPosition(vertex, actual);
+              const expected = new Vector3().fromBufferAttribute(
+                reference.geometry.getAttribute("position"),
+                vertex,
+              );
+              expect(actual.distanceTo(expected)).toBeLessThan(0.001);
+              const normal = new Vector3().fromBufferAttribute(
+                rendered.geometry.getAttribute("normal"),
+                vertex,
+              );
+              for (const [target, weight] of (rendered.morphTargetInfluences ?? []).entries()) {
+                const delta = rendered.geometry.morphAttributes.normal?.[target];
+                if (delta !== undefined)
+                  normal.addScaledVector(new Vector3().fromBufferAttribute(delta, vertex), weight);
+              }
+              normal.normalize();
+              expect(
+                normal.distanceTo(
+                  new Vector3().fromBufferAttribute(
+                    reference.geometry.getAttribute("normal"),
+                    vertex,
+                  ),
+                ),
+              ).toBeLessThan(0.001);
+            }
+            expect(
+              tile.lod.levels.map(({ object }) => {
+                if (!(object instanceof Mesh)) throw new Error("Expected an LOD mesh.");
+                return [
+                  object.geometry.getAttribute("position").version,
+                  object.geometry.getAttribute("normal").version,
+                ];
+              }),
+            ).toEqual(versions);
+          }
+        }
+        expect(finest.geometry.getAttribute("position")).toBe(originalPosition);
+        expect(finest.geometry.getAttribute("normal")).toBe(originalNormal);
+        if (residentTileBudget === 2) expect(disposed).toHaveBeenCalledOnce();
+        else expect(disposed).not.toHaveBeenCalled();
+        expect(gpu.maxLodTransitionFrames).toBe(3);
+        expect(gpu.blendingTiles).toBe(0);
+      } finally {
+        gpu.dispose();
+        cpu.dispose();
+        surface.dispose();
+      }
+    },
+  );
+
+  it("keeps the default distance floor, preserves no-view calls and reuses retained errors across residency", () => {
+    const sampleHeight = vi.fn((x: number) => Math.cos((Math.PI * x) / 8));
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 49,
+      mergeTiles: false,
+      sampleHeight,
+      streamRadius: 3,
+      tileResolution: 9,
+      tileSize: 64,
+      skirtDepth: 1,
+    });
+    const camera = new PerspectiveCamera(60, 1280 / 720, 0.1, 10_000);
+    camera.position.set(0, 0, 4000);
+    camera.lookAt(0, 0, 0);
+    const view = { camera, viewportHeight: 720, maxPixelError: 1, hysteresis: 0.15 };
+    try {
+      tiles.follow({ x: 127, z: 0 }, undefined, view);
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+      tiles.follow({ x: 129, z: 0 }, undefined, view);
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(1);
+      const sampled = sampleHeight.mock.calls.length;
+      const tileBytes = tiles.residentKeys.reduce(
+        (sum, key) => sum + (tiles.getTile(key)?.bytes ?? 0),
+        0,
+      );
+      for (let frame = 0; frame < 6; frame++) tiles.process();
+      expect(sampleHeight).toHaveBeenCalledTimes(sampled);
+      expect(tiles.residentBytes).toBeGreaterThanOrEqual(tileBytes);
+      expect(tiles.residentBytes).toBeLessThanOrEqual(tiles.residentByteBudget);
+      camera.position.z = 100;
+      tiles.process();
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+      tiles.follow({ x: 129, z: 0 });
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(1);
+      tiles.follow({ x: 0, z: 0 }, undefined, view);
+      expect(tiles.residentTileCount).toBe(49);
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+      tiles.follow({ x: 640, z: 0 }, undefined, view);
+      expect(tiles.getTile("0:0")).toBeUndefined();
+      expect(tiles.residentTileCount).toBe(49);
+      expect(tiles.residentBytes).toBeGreaterThanOrEqual(tileBytes);
+      expect(tiles.residentBytes).toBeLessThanOrEqual(tiles.residentByteBudget);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("preserves each tile's selection when cameras, scales and eligible level counts switch back", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      sampleHeight: (x, z) => x * x * (0.001 + 0.00001 * x) + 0.003 * z * z,
+      residentByteBudget: 2_000_000,
+      residentTileBudget: 9,
+      tileResolution: 9,
+      tileSize: 32,
+      streamRadius: 1,
+      lodDistances: [10, 25],
+      mergeTiles: false,
+      skirtDepth: 1,
+    });
+    const perspective = new PerspectiveCamera(60, 16 / 9, 0.1, 10_000);
+    const orthographic = new OrthographicCamera(-80, 80, 45, -45, 0.1, 10_000);
+    for (const camera of [perspective, orthographic]) {
+      camera.position.set(0, 50, 200);
+      camera.lookAt(0, 0, 0);
+    }
+    // These decisions were measured on c13b3e1ac before reusing selector scratch arrays.
+    const stages = [
+      {
+        camera: perspective,
+        height: 720,
+        budget: 4,
+        scale: 1,
+        x: 0,
+        levels: [0, 1, 1, 1, 1, 2, 2, 2, 2],
+        targets: [0, 2, 2, 2, 2, 2, 2, 2, 2],
+      },
+      {
+        camera: perspective,
+        height: 1440,
+        budget: 1,
+        scale: 2,
+        x: 7,
+        levels: [0, 1, 1, 0, 0, 1, 1, 0, 0],
+        targets: [0, 1, 1, 0, 0, 1, 1, 0, 0],
+      },
+      {
+        camera: orthographic,
+        height: 720,
+        budget: 1,
+        scale: 1,
+        x: -7,
+        levels: [0, 1, 1, 1, 1, 1, 1, 1, 1],
+        targets: [0, 1, 1, 1, 1, 1, 1, 1, 1],
+      },
+      {
+        camera: orthographic,
+        height: 1440,
+        budget: 0.25,
+        scale: 3,
+        x: 0,
+        levels: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+        targets: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+      },
+      {
+        camera: perspective,
+        height: 720,
+        budget: 4,
+        scale: 1,
+        x: 0,
+        levels: [0, 1, 1, 1, 1, 2, 2, 2, 2],
+        targets: [0, 2, 2, 2, 2, 2, 2, 2, 2],
+      },
+    ];
+    try {
+      for (const stage of stages) {
+        tiles.scale.setScalar(stage.scale);
+        tiles.follow({ x: stage.x, z: 0 }, undefined, {
+          camera: stage.camera,
+          viewportHeight: stage.height,
+          maxPixelError: stage.budget,
+          hysteresis: 0.15,
+        });
+        for (let frame = 0; frame < 3; frame++) tiles.process();
+        const decisions = tiles.debug().lodDecisions as {
+          key: string;
+          lodLevel: number;
+          targetLod: number;
+        }[];
+        expect(decisions.map(({ key }) => key)).toEqual([
+          "0:0",
+          "0:-1",
+          "-1:0",
+          "1:0",
+          "0:1",
+          "-1:-1",
+          "1:-1",
+          "-1:1",
+          "1:1",
+        ]);
+        expect(decisions.map(({ lodLevel }) => lodLevel)).toEqual(stage.levels);
+        expect(decisions.map(({ targetLod }) => targetLod)).toEqual(stage.targets);
+      }
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("projects retained metre errors through the installed selector rather than treating metres as pixels", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      sampleHeight: (x) => 0.01 * x * x,
+      residentByteBudget: 20_000_000,
+      residentTileBudget: 9,
+      tileResolution: 65,
+      tileSize: 64,
+      streamRadius: 1,
+      lodDistances: [48, 96],
+      mergeTiles: false,
+    });
+    const camera = new OrthographicCamera(
+      (-150 * 1280) / 720,
+      (150 * 1280) / 720,
+      150,
+      -150,
+      1,
+      1000,
+    );
+    camera.position.set(64, 180, 180);
+    camera.lookAt(64, 0, 0);
+    const view = { camera, viewportHeight: 720, maxPixelError: 1, hysteresis: 0.15 };
+    const decision = () =>
+      (
+        tiles.debug().lodDecisions as {
+          key: string;
+          lodLevel: number;
+          targetLod: number;
+          nextCoarser: { surfaceError: number; errorPixels: number };
+        }[]
+      ).find((tile) => tile.key === "0:0");
+    try {
+      tiles.follow({ x: 64, z: 0 }, undefined, view);
+      expect(decision()).toMatchObject({ lodLevel: 1, targetLod: 1 });
+      camera.zoom = 100;
+      camera.updateProjectionMatrix();
+      tiles.process(undefined, camera, undefined, view);
+      expect(decision()).toMatchObject({ lodLevel: 0, targetLod: 0 });
+      // A two-metre coarse cell interpolates x² at its one-metre midpoint:
+      // 0.01 * ((0² + 2²)/2 - 1²) = 0.01 m; 720/300 * zoom = 240 px/m.
+      expect(decision()?.nextCoarser.surfaceError).toBeCloseTo(0.01, 4);
+      expect(decision()?.nextCoarser.errorPixels).toBeCloseTo(2.4, 2);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("reports actual resident LOD decisions and world-metre sampler error at the probe projection", () => {
+    const sampled = vi.fn(terrainHeight);
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      sampleHeight: sampled,
+      residentByteBudget: 20_000_000,
+      residentTileBudget: 9,
+      tileResolution: 65,
+      tileSize: 64,
+      streamRadius: 1,
+      lodDistances: [48, 96],
+      mergeTiles: false,
+    });
+    const camera = new OrthographicCamera(
+      -(150 * 1280) / 720,
+      (150 * 1280) / 720,
+      150,
+      -150,
+      1,
+      1000,
+    );
+    camera.position.set(0, 180, 180);
+    camera.lookAt(0, 0, 0);
+    const view = {
+      camera,
+      viewportHeight: 720,
+      maxPixelError: DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
+      hysteresis: DISCRETE_LOD_DEFAULT_HYSTERESIS,
+    };
+    try {
+      tiles.follow({ x: 0, z: 0 }, undefined, view);
+      const calls = sampled.mock.calls.length;
+      const debug = tiles.debug();
+      const decisions = debug.lodDecisions as {
+        key: string;
+        lodLevel: number;
+        distance: number;
+        distanceLod: number;
+        maxLodLevel: number;
+        targetLod: number;
+        nextCoarser?: {
+          lodLevel: number;
+          surfaceError: number;
+          errorPixels: number;
+          degenerate: boolean;
+        };
+      }[];
+      expect(decisions).toHaveLength(9);
+      expect(debug.lodPolicy).toEqual({
+        lodDistances: [48, 96],
+        maxPixelError: 1,
+        hysteresis: 0.15,
+        coarsenBelowPixels: 0.85,
+        viewportHeight: 720,
+      });
+      for (const decision of decisions) {
+        const tile = tiles.getTile(decision.key);
+        expect(tile).toBeDefined();
+        expect(decision.lodLevel).toBe(tile?.lodLevel);
+        expect(decision.distanceLod).toBe(
+          decision.distance < 48 ? 0 : decision.distance < 96 ? 1 : 2,
+        );
+        expect(decision.targetLod).toBeLessThanOrEqual(
+          Math.min(decision.distanceLod, decision.maxLodLevel),
+        );
+        const next = decision.nextCoarser;
+        expect(next).toBeDefined();
+        expect(next?.lodLevel).toBe(decision.lodLevel + 1);
+        expect(next?.surfaceError).toBeGreaterThan(0);
+        expect(next?.errorPixels).toBeCloseTo(((next?.surfaceError ?? 0) * 720) / 300, 10);
+        expect(next?.degenerate).toBe(false);
+      }
+      const center = tiles.getTile("0:0");
+      expect(center?.field.heightAt(-31, -30)).toBeCloseTo(terrainHeight(-31, -30), 5);
+      expect(sampled).toHaveBeenCalledWith(-31, -30);
+      expect(tiles.getTile("1:0")?.field.heightAt(33, -30)).toBeCloseTo(terrainHeight(33, -30), 5);
+      expect(sampled).toHaveBeenCalledWith(33, -30);
+      expect(sampled).toHaveBeenCalledTimes(calls); // Diagnostics use retained errors, never resample.
+      tiles.follow({ x: 0, z: 0 });
+      expect(tiles.debug().lodPolicy).toEqual({ lodDistances: [48, 96] });
+      expect(
+        (tiles.debug().lodDecisions as { nextCoarser?: { errorPixels?: number } }[])[0]
+          ?.nextCoarser,
+      ).not.toHaveProperty("errorPixels");
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("owes a budgeted merge pass after a view-only LOD change", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 2_000_000,
+      residentTileBudget: 25,
+      sampleHeight: (x) => Math.cos((Math.PI * x) / 8),
+      streamRadius: 2,
+      tileResolution: 9,
+      tileSize: 64,
+      skirtDepth: 1,
+    });
+    const camera = new PerspectiveCamera(60, 1280 / 720, 0.1, 10_000);
+    camera.position.set(0, 0, 4000);
+    camera.lookAt(0, 0, 0);
+    const view = { camera, viewportHeight: 720, maxPixelError: 1, hysteresis: 0.15 };
+    try {
+      for (let frame = 0; frame < 12; frame++) {
+        tiles.follow({ x: 127, z: 0 }, undefined, view);
+        tiles.process();
+      }
+      expect(tiles.deferredAdmissions).toBe(0);
+      expect(tiles.getTile("1:0")?.lodLevel).toBe(0);
+      expect(tiles.getTile("4:0")?.lodLevel).toBe(1);
+      camera.position.z = 100;
+      tiles.process();
+      expect(tiles.deferredAdmissions).toBe(1);
+      for (let frame = 0; frame < 12; frame++) {
+        tiles.follow({ x: 127, z: 0 }, undefined, view);
+        tiles.process();
+      }
+      expect(tiles.deferredAdmissions).toBe(0);
+      expect(tiles.blendingTiles).toBe(0);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("holds a finer terrain level at 1440 raster rows and refreshes a settled view", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 2_000_000,
+      residentTileBudget: 1,
+      sampleHeight: (x) => Math.cos((Math.PI * x) / 4),
+      streamRadius: 0,
+      tileResolution: 17,
+      tileSize: 64,
+      skirtDepth: 1,
+      lodDistances: [8, 16],
+    });
+    const camera = new PerspectiveCamera(60, 1280 / 720, 0.1, 5000);
+    camera.position.set(0, 0, 2000);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld(true);
+    const view = { camera, viewportHeight: 720, maxPixelError: 1, hysteresis: 0.15 };
+    try {
+      tiles.follow({ x: 7, z: 0 }, undefined, view);
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+      tiles.follow({ x: 9, z: 0 }, undefined, view);
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(1);
+      for (let frame = 0; frame < 3; frame += 1) tiles.process();
+      const transitions = tiles.lodTransitions;
+      tiles.process(undefined, undefined, undefined, { ...view, viewportHeight: 1440 });
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+      expect(tiles.lodTransitions).toBe(transitions + 1);
+      for (let frame = 0; frame < 3; frame += 1) tiles.process();
+      camera.position.z = 4000;
+      camera.updateMatrixWorld(true);
+      tiles.process();
+      expect(tiles.getTile("0:0")?.lodLevel).toBe(1);
+      for (let frame = 0; frame < 3; frame += 1) tiles.process();
+      expect(tiles.maxLodTransitionFrames).toBe(3);
+      expect(tiles.blendingTiles).toBe(0);
     } finally {
       tiles.dispose();
     }
@@ -858,9 +1502,29 @@ describe("TerrainTiles", () => {
     expect(disposed).toContain("0:0");
     expect(created).toContain("3:0");
     expect(created).toContain("4:0");
+    // The tile that lost its body still draws: physics left it, residency did not.
+    expect(tiles.residentKeys).toContain("0:0");
+    expect(tiles.residentTileCount).toBe(49);
 
     tiles.dispose();
     expect(disposed).toContain("4:0");
+  });
+
+  it("control: with no `colliderRadius`, every resident tile collides", () => {
+    // The pre-PRD-461 behaviour, kept as the default: physics follows the render radius.
+    const tiles = new TerrainTiles({
+      createCollider: () => ({ dispose: () => undefined }),
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 49,
+      sampleHeight,
+      streamRadius: 3,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+    tiles.follow({ x: 0, z: 0 });
+    expect(tiles.residentColliderKeys).toHaveLength(49);
+    tiles.dispose();
   });
 
   it("leaves settled mixed-LOD seams alone instead of rewriting them every frame", () => {
@@ -1148,6 +1812,231 @@ describe("TerrainTiles", () => {
     expect(visible[0]).toBe(tile.lod.levels[tile.lodLevel]?.object);
     expect(measured(tiles.maxVisualSeamGap)).toBeLessThanOrEqual(measured(tiles.maxSeamGap));
     tiles.dispose();
+  });
+
+  it("tags every tile level as terrain and as a shadow-neutral visibility swap", () => {
+    const tiles = new TerrainTiles({
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 17,
+      tileSize: 16,
+    });
+
+    tiles.follow({ x: 8, z: 8 });
+
+    const key = tiles.residentKeys[0];
+    const tile = key === undefined ? undefined : tiles.getTile(key);
+    if (tile === undefined) throw new Error("Expected the followed tile to be resident.");
+    expect(tile.lod.levels.length).toBeGreaterThan(0);
+    for (const { object } of tile.lod.levels) {
+      expect(object.userData.tnDrawSource).toBe("terrain");
+      expect(object.userData.tnShadowSwap).toBe(true);
+    }
+    tiles.dispose();
+  });
+
+  it.each([false, true])(
+    "keeps the real 20 MB probe ring resident through a 330 m walk (validate=%s)",
+    (validate) => {
+      const surface = new MeshBasicMaterial();
+      const tiles = new TerrainTiles({
+        validate,
+        surface,
+        sampleHeight: terrainHeight,
+        residentByteBudget: 20_000_000,
+        residentTileBudget: 9,
+        tileResolution: 65,
+        tileSize: 64,
+        streamRadius: 1,
+        lodDistances: [48, 96],
+        topologyObservation: {
+          columns: 1025,
+          rows: 1025,
+          width: 1024,
+          depth: 1024,
+          origin: { x: 0, z: 0 },
+        },
+        worldPasses: {
+          dispatchBudget: 4,
+          gpu: false,
+          erosion: {
+            depositionRate: 0.35,
+            erosionRate: 0.22,
+            evaporation: 0.04,
+            iterations: 4,
+            rainfall: 0.08,
+            sedimentCapacity: 0.7,
+            timeStep: 0.05,
+          },
+        },
+      });
+      const initial = tiles.debug();
+      const camera = new OrthographicCamera(
+        -(150 * 1280) / 720,
+        (150 * 1280) / 720,
+        150,
+        -150,
+        1,
+        1000,
+      );
+      const view = {
+        camera,
+        viewportHeight: 720,
+        maxPixelError: DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
+        hysteresis: DISCRETE_LOD_DEFAULT_HYSTERESIS,
+      };
+      const observations: { x: number; bytes: number; keys: readonly string[] }[] = [];
+      try {
+        for (let x = 0; x <= 330; x++) {
+          camera.position.set(x, 180, 180);
+          camera.lookAt(x, 0, 0);
+          camera.updateMatrixWorld(true);
+          expect(
+            () => tiles.follow({ x, z: 0 }, undefined, view),
+            `probe walk x=${x}`,
+          ).not.toThrow();
+          tiles.process(undefined, camera, undefined, view);
+          observations.push({ x, bytes: tiles.residentBytes, keys: tiles.residentKeys });
+        }
+        expect(initial.peakResidentBytes).toBe(16_810_000);
+        expect(initial.topologyBytes).toBe(0);
+        for (const { x, bytes, keys } of observations) {
+          const tileX = Math.floor((x + 32) / 64);
+          const expected = [-1, 0, 1]
+            .flatMap((dx) => [-1, 0, 1].map((z) => `${tileX + dx}:${z}`))
+            .sort();
+          expect(keys, `ring at x=${x}`).toEqual(expected);
+          expect(bytes, `bytes at x=${x}`).toBeLessThanOrEqual(20_000_000);
+        }
+        expect(tiles.debug().peakResidentTiles).toBe(9);
+        console.info("probe walk residency", {
+          validate,
+          initialBytes: observations[0]?.bytes,
+          finalBytes: tiles.residentBytes,
+          peakBytes: tiles.debug().peakResidentBytes,
+        });
+      } finally {
+        tiles.dispose();
+        surface.dispose();
+      }
+    },
+    60_000,
+  );
+
+  it.each([
+    { columns: 17, rows: 9, width: 32, depth: 16, passes: true },
+    { columns: 17, rows: 9, width: 32, depth: 16, passes: false },
+    { columns: 1025, rows: 1025, width: 1024, depth: 1024, passes: true },
+    { columns: 1025, rows: 1025, width: 1024, depth: 1024, passes: false },
+  ])(
+    "caches unchanged topology diagnostics and releases sample buffers ($columns x $rows, passes=$passes)",
+    ({ passes, ...grid }) => {
+      const observation = { ...grid, origin: { x: 0, z: 0 } };
+      const worldPasses = passes
+        ? {
+            dispatchBudget: 4,
+            gpu: false,
+            erosion: {
+              depositionRate: 0.35,
+              erosionRate: 0.22,
+              evaporation: 0.04,
+              iterations: 0,
+              rainfall: 0.08,
+              sedimentCapacity: 0.7,
+              timeStep: 0.05,
+            },
+          }
+        : undefined;
+      const field = Heightfield.fromSampler({
+        ...observation,
+        sampleHeight,
+        ...(worldPasses ? { worldPasses } : {}),
+      });
+      const heights = field.heights;
+      const flow = field.flow;
+      const raw = heights.length <= 10_000;
+      const expected = {
+        ...observation,
+        ...(raw
+          ? { heights: Array.from(heights), ...(flow ? { flow: Array.from(flow) } : {}) }
+          : flow
+            ? { metrics: summarizeWorldTopology({ ...grid, heights, flow }) }
+            : {}),
+      };
+      const constructionBytes = field.memoryBytes;
+      field.detach();
+      const detach = vi.spyOn(Heightfield.prototype, "detach");
+      const surface = new MeshBasicMaterial();
+      const tiles = new TerrainTiles({
+        sampleHeight,
+        surface,
+        residentByteBudget: 20_000_000,
+        residentTileBudget: 9,
+        tileSize: 16,
+        tileResolution: grid.columns === 17 ? 9 : 17,
+        topologyObservation: observation,
+        ...(worldPasses ? { worldPasses } : {}),
+      });
+      try {
+        expect(tiles.debug().topology).toEqual(expected);
+        expect(detach).toHaveBeenCalledTimes(1);
+        expect(tiles.debug().peakResidentBytes).toBe(constructionBytes);
+        expect(tiles.debug().topologyBytes).toBe(raw ? heights.length * (passes ? 2 : 1) * 8 : 0);
+        const mutated = tiles.debug().topology as {
+          origin: { x: number };
+          heights?: number[];
+          flow?: number[];
+          metrics?: { reliefFieldEdge: number };
+        };
+        mutated.origin.x = 999;
+        if (mutated.heights) mutated.heights[0] = 999;
+        if (mutated.flow) mutated.flow[0] = 999;
+        if (mutated.metrics) mutated.metrics.reliefFieldEdge = 999;
+        expect(tiles.debug().topology).toEqual(expected);
+        tiles.dispose();
+        expect(tiles.debug()).not.toHaveProperty("topology");
+        expect(tiles.debug().topologyBytes).toBe(0);
+        expect(tiles.residentBytes).toBe(0);
+        expect(detach).toHaveBeenCalledTimes(1);
+      } finally {
+        tiles.dispose();
+        surface.dispose();
+        detach.mockRestore();
+      }
+    },
+    60_000,
+  );
+
+  it("releases topology construction resources before propagating a byte-cap failure", () => {
+    const detach = vi.spyOn(Heightfield.prototype, "detach");
+    const surface = new MeshBasicMaterial();
+    try {
+      expect(
+        () =>
+          new TerrainTiles({
+            sampleHeight,
+            surface,
+            residentByteBudget: 1_223,
+            residentTileBudget: 1,
+            tileSize: 16,
+            tileResolution: 9,
+            topologyObservation: {
+              columns: 17,
+              rows: 9,
+              width: 32,
+              depth: 16,
+              origin: { x: 0, z: 0 },
+            },
+          }),
+      ).toThrow(/cannot fit the topology observation/u);
+      expect(detach).toHaveBeenCalledTimes(1);
+    } finally {
+      surface.dispose();
+      detach.mockRestore();
+    }
   });
 
   it("publishes the resident field and routed flow for topology evaluation", () => {

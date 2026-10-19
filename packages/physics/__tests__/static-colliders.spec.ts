@@ -106,4 +106,35 @@ describe("buildStaticColliders", () => {
     expect(() => buildStaticColliders(ctx, root, () => false)).toThrow(/zero colliders/u);
     plugin.dispose?.(ctx);
   });
+
+  it("culls meshes at or above reachableCeiling and forwards collisionLayer and collisionMask", async () => {
+    const { ctx, plugin } = await setup();
+    const root = new Group();
+
+    // Low mesh reachable below ceiling
+    const lowMesh = new Mesh(new BoxGeometry(1, 1, 1));
+    lowMesh.position.y = 1;
+    lowMesh.name = "low";
+    root.add(lowMesh);
+
+    // High mesh whose lowest point (y - 0.5 = 9.5) is well above reachableCeiling (5.0)
+    const highMesh = new Mesh(new BoxGeometry(1, 1, 1));
+    highMesh.position.y = 10;
+    highMesh.name = "high";
+    root.add(highMesh);
+
+    const bodies = buildStaticColliders(ctx, root, {
+      collisionLayer: 2,
+      collisionMask: 4,
+      reachableCeiling: 5.0,
+    });
+
+    // Only lowMesh should produce a body; highMesh is culled by ceiling
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]?.object?.position.y).toBe(1);
+    expect(bodies[0]?.shape.descriptor.collisionLayer).toBe(2);
+    expect(bodies[0]?.shape.descriptor.collisionMask).toBe(4);
+
+    plugin.dispose?.(ctx);
+  });
 });

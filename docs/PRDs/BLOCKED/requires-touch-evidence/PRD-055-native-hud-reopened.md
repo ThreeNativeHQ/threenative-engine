@@ -3,6 +3,7 @@
 **Status: BLOCKED AT TOUCH PLAYABILITY, 2026-08-09.** Candidate G now renders generated HUD
 source on browser, desktop, and the Android emulator. Acceptance criterion 2 remains blocked.
 
+**Priority:** P1 — Native HUD parity unfinished: scaffolded HUD on desktop and Android, touch playability blocked at adb EPERM.
 Three review defects were repaired on 2026-08-09:
 
 1. **Row 25 was synthetic.** It changed only projection numbers, so it passed without the

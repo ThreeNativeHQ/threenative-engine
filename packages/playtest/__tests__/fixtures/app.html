@@ -17,6 +17,7 @@
       // not a fixture bug.
       const params = new URLSearchParams(location.search);
       const mode = params.get("mode") ?? "good";
+      const fixedClock = mode === "physics" || params.get("clock") === "fixed-step";
       const canvas = document.getElementById("view");
       let startupPollsRemaining = mode === "startup-delayed" ? 3 : Infinity;
 
@@ -37,7 +38,33 @@
         canvas.dataset.engine = "webgpu";
       }
 
-      if (mode !== "generic-adapter") {
+      if (mode === "adapter-rejected") {
+        // The provenance diagnostic used to flatten this into "no adapter": the browser's own
+        // reason is the only thing that says whether the page is misconfigured or the GPU is gone.
+        // Painted in 2D so the capture is not blank and the run reaches the provenance check.
+        try {
+          Object.defineProperty(navigator, "gpu", {
+            configurable: true,
+            value: {
+              requestAdapter: async () => {
+                throw new Error("fixture-adapter-rejected");
+              },
+            },
+          });
+        } catch {
+          // The provenance negative control still exercises the real browser adapter below.
+        }
+        canvas.dataset.engine = "webgpu";
+        const context2d = canvas.getContext("2d");
+        if (context2d !== null) {
+          context2d.fillStyle = "#cc3333";
+          context2d.fillRect(0, 0, canvas.width, canvas.height);
+          context2d.fillStyle = "#33cc33";
+          context2d.fillRect(40, 40, 200, 120);
+        }
+      }
+
+      if (mode !== "generic-adapter" && mode !== "adapter-rejected") {
         const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
         if (gl !== null) {
           gl.enable(gl.SCISSOR_TEST);
@@ -198,7 +225,7 @@
       }
 
       requestAnimationFrame(function frame() {
-        if (mode !== "physics") step();
+        if (!fixedClock) step();
         requestAnimationFrame(frame);
       });
 
@@ -242,7 +269,8 @@
             "entity.observe",
             "entity.setup",
             "runtime.resources",
-            ...(mode === "physics" ? ["runtime.fixedStep", "runtime.physics"] : []),
+            ...(fixedClock ? ["runtime.fixedStep"] : []),
+            ...(mode === "physics" ? ["runtime.physics"] : []),
             ...(mode === "startup-delayed" || mode === "startup-stuck" ? ["runtime.startup"] : []),
           ],
           limits: {
@@ -292,7 +320,7 @@
           const diagnostics = runtimeDiagnostics();
           const contract = bridge.describe();
           return {
-          clock: mode === "physics"
+          clock: fixedClock
             ? { mode: "fixed-step", tick }
             : { mode: "render-frame", timeMs: tick * 16 },
           // `silent-drop` answers every sample with zero entities. The runner has

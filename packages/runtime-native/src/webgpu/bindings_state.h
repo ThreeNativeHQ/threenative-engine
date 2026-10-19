@@ -61,6 +61,8 @@ struct TextureInfo {
     uint32_t mipLevelCount = 1;
     WGPUTextureDimension dimension = WGPUTextureDimension_2D;
     uint32_t sampleCount = 1;
+    bool transientAttachment = false;
+    uint64_t transientNominalBytes = 0;
     bool ownsTexture = true;
     bool accounted = false;
 };
@@ -70,6 +72,7 @@ struct ShaderModuleMetadata {
     std::string fragmentEntryPoint;
     std::string hash;
     size_t bytes = 0;
+    size_t references = 0;
 };
 
 struct ShaderModuleMetadataStore {
@@ -77,16 +80,94 @@ struct ShaderModuleMetadataStore {
 
     std::unordered_map<WGPUShaderModule, ShaderModuleMetadata> entries;
 
+    void acquire(WGPUShaderModule module, ShaderModuleMetadata metadata) {
+        auto [entry, inserted] = entries.try_emplace(module, std::move(metadata));
+        (void)inserted;
+        entry->second.references += 1;
+    }
+
     bool release(WGPUShaderModule module, NativeRelease releaseNative) {
         const auto entry = entries.find(module);
         if (entry == entries.end()) return false;
-        entries.erase(entry);
+        if (--entry->second.references == 0) entries.erase(entry);
         releaseNative(module);
         return true;
     }
 
     void releaseAll(NativeRelease releaseNative) {
         while (!entries.empty()) release(entries.begin()->first, releaseNative);
+    }
+};
+
+// Holds native resources whose JS wrappers can remain rooted through runtime shutdown. Weak-release
+// callbacks share this owner instead of capturing BindingsState, so shutdown can drain the handles
+// before the state disappears and any later callback becomes a no-op.
+struct OwnedWebGpuResources {
+    uint64_t nextId = 1;
+    std::unordered_map<uint64_t, WGPUSampler> samplers;
+    std::unordered_map<uint64_t, WGPURenderBundleEncoder> renderBundleEncoders;
+    std::unordered_map<uint64_t, WGPUBindGroupLayout> bindGroupLayouts;
+
+    uint64_t trackSampler(WGPUSampler sampler) {
+        const uint64_t id = nextId++;
+        samplers.emplace(id, sampler);
+        return id;
+    }
+
+    uint64_t trackRenderBundleEncoder(WGPURenderBundleEncoder encoder) {
+        const uint64_t id = nextId++;
+        renderBundleEncoders.emplace(id, encoder);
+        return id;
+    }
+
+    WGPURenderBundleEncoder renderBundleEncoder(uint64_t id) const {
+        const auto entry = renderBundleEncoders.find(id);
+        return entry == renderBundleEncoders.end() ? nullptr : entry->second;
+    }
+
+    uint64_t trackBindGroupLayout(WGPUBindGroupLayout layout) {
+        const uint64_t id = nextId++;
+        bindGroupLayouts.emplace(id, layout);
+        return id;
+    }
+
+    void releaseAll() {
+        for (const auto& [id, sampler] : samplers) {
+            (void)id;
+            wgpuSamplerRelease(sampler);
+        }
+        samplers.clear();
+        for (const auto& [id, encoder] : renderBundleEncoders) {
+            (void)id;
+            wgpuRenderBundleEncoderRelease(encoder);
+        }
+        renderBundleEncoders.clear();
+        for (const auto& [id, layout] : bindGroupLayouts) {
+            (void)id;
+            wgpuBindGroupLayoutRelease(layout);
+        }
+        bindGroupLayouts.clear();
+    }
+
+    void releaseSampler(uint64_t id) {
+        const auto entry = samplers.find(id);
+        if (entry == samplers.end()) return;
+        wgpuSamplerRelease(entry->second);
+        samplers.erase(entry);
+    }
+
+    void releaseRenderBundleEncoder(uint64_t id) {
+        const auto entry = renderBundleEncoders.find(id);
+        if (entry == renderBundleEncoders.end()) return;
+        wgpuRenderBundleEncoderRelease(entry->second);
+        renderBundleEncoders.erase(entry);
+    }
+
+    void releaseBindGroupLayout(uint64_t id) {
+        const auto entry = bindGroupLayouts.find(id);
+        if (entry == bindGroupLayouts.end()) return;
+        wgpuBindGroupLayoutRelease(entry->second);
+        bindGroupLayouts.erase(entry);
     }
 };
 
@@ -109,6 +190,7 @@ struct BufferMapRequest {
     WGPUMapMode mode = WGPUMapMode_None;
     uint64_t offset = 0;
     uint64_t size = 0;
+    bool started = false;
     bool completed = false;
     WGPUBufferMapAsyncStatus_Compat status = WGPUBufferMapAsyncStatus_Unknown_Compat;
     std::string errorMessage;
@@ -216,6 +298,7 @@ struct UploadStaging {
 #endif
 
 struct ResourceRegistries {
+    std::shared_ptr<OwnedWebGpuResources> ownedResources = std::make_shared<OwnedWebGpuResources>();
     std::vector<js::JSValueHandle> protectedHandles;
 #if defined(MYSTRAL_WEBGPU_WGPU) && TN_WEBGPU_UPLOAD_STAGING
     UploadStaging uploadStaging;
@@ -272,6 +355,10 @@ struct PresentationState {
     WGPUBindGroupLayout srgbPresentationBindGroupLayout = nullptr;
     uint32_t canvasWidth = 800;
     uint32_t canvasHeight = 600;
+    // Canvas backing pixels can differ from the window pixels the swapchain presents.
+    uint32_t surfaceWidth = 0;
+    uint32_t surfaceHeight = 0;
+    void* surfaceNativeHandle = nullptr;
     bool contextConfigured = false;
     WGPUTexture currentTexture = nullptr;
     WGPUTextureView currentTextureView = nullptr;
@@ -383,6 +470,7 @@ struct FrameProfiling {
     bool disableFrameOpStreamForTesting = false;
     // Set while a mid-frame flush is replaying, so a nested flush cannot re-enter the drain.
     bool frameOpStreamFlushing = false;
+    bool frameOpStreamPendingOps = false;
     uint64_t frameOpStreamReplayCrossings = 0;
     uint64_t frameOpStreamDirectCommandCalls = 0;
     uint64_t frameOpStreamLastOpCount = 0;

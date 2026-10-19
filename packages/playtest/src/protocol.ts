@@ -41,6 +41,40 @@ export type JsonPrimitive = boolean | number | string | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type PlaytestClockMode = "fixed-step" | "render-frame" | "wall-clock";
 
+/**
+ * The clock a consumer asks this game to run on, named in this protocol's own vocabulary.
+ *
+ * Set before the game module evaluates — the production profile injects it into the instrumentation
+ * it puts ahead of the bundle, and the browser runner puts it in an `addInitScript` ahead of every
+ * page script — and read by the producer that owns the loop. It lives here, next to the mode it
+ * names, because a request the producer cannot read is how a live loop came to be judged a
+ * fixed-step one.
+ */
+export const PLAYTEST_CLOCK_GLOBAL = "__THREENATIVE_PLAYTEST_CLOCK__";
+
+/**
+ * The clock the host asked for, or `undefined` for the default deterministic run.
+ *
+ * `wall-clock` is the production profile's opt-in and the only one this protocol has. An
+ * unrecognised value throws instead of falling back, because a misspelling that quietly left the
+ * loop frozen would publish a frame rate for a game that was not playing.
+ *
+ * Read at the moment it is needed rather than once at install: a request that arrives after the
+ * producer was installed is still a request, and a producer that missed it would judge a live
+ * frame pump by a count it never asked for.
+ * @situation report which clock a playtest producer is really running on, before judging its ticks
+ * @constraint throws on an unrecognised value instead of falling back to a fixed-step run
+ * @example if (requestedPlaytestClockMode() === "wall-clock") host.pumpDrivesTheSimulation();
+ */
+export function requestedPlaytestClockMode(): PlaytestClockMode | undefined {
+  const requested = (globalThis as Record<string, unknown>)[PLAYTEST_CLOCK_GLOBAL];
+  if (requested === undefined) return undefined;
+  if (requested === "wall-clock") return "wall-clock";
+  throw new Error(
+    `TN_PLAYTEST_CLOCK_UNSUPPORTED: '${PLAYTEST_CLOCK_GLOBAL}' is ${JSON.stringify(requested)}; this protocol knows 'wall-clock' and nothing else.`,
+  );
+}
+
 export interface IPlaytestBridgeDescription {
   capabilities: readonly string[];
   limits: typeof PLAYTEST_PROTOCOL_LIMITS;
@@ -504,6 +538,7 @@ export interface IPlaytestObservationSnapshot {
    * `runtime.physics`.
    */
   physicsSteps?: number;
+  network?: { requests: number; entries: Array<{ method: string; url: string }> };
   performance?: IPlaytestPerformanceObservation;
   /** Bounded shader/pipeline creation capture supplied by the engine when diagnostics are enabled. */
   pipelineCensus?: JsonValue;
@@ -537,12 +572,19 @@ export interface IPlaytestAdvanceResult {
 }
 
 export interface IPlaytestBridgeV1 {
-  advance?(ticks: number): Promise<IPlaytestAdvanceResult>;
+  /** A core bridge draws a driven frame only when asked (`render: true`), as a measurement that couples updates to draws does. */
+  advance?(ticks: number, options?: { render?: boolean }): Promise<IPlaytestAdvanceResult>;
   applySetup?(request: IPlaytestSetupRequest): Promise<IPlaytestSetupConfirmation | void>;
   describe(): IPlaytestBridgeDescription | Promise<IPlaytestBridgeDescription>;
   drainEvents?(limit?: number): Promise<JsonValue[]>;
   focus?(): boolean | Promise<boolean>;
   ready(): IPlaytestBridgeReady | Promise<IPlaytestBridgeReady>;
+  /**
+   * Draw the current world once without advancing it, so a capture can see a present while a
+   * deterministic run's loop is driven and presents nothing between ticks. Present only when the
+   * bridge advertises `runtime.renderOnly`.
+   */
+  renderOnly?(): number | void | Promise<number | void>;
   sample(request: IPlaytestSampleRequest): IPlaytestObservationSnapshot | Promise<IPlaytestObservationSnapshot>;
 }
 

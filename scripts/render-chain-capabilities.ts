@@ -19,22 +19,26 @@ import type { ICapabilityManifestEntry } from "./build-capability-manifest.js";
 function stage(entry: {
   readonly symbol: string;
   readonly importPath: string;
+  readonly packageName?: string;
   readonly kind?: ICapabilityManifestEntry["kind"];
   readonly signature?: string;
   readonly summary: string;
   readonly situations: readonly string[];
   readonly constraints: readonly string[];
+  readonly example?: string;
 }): ICapabilityManifestEntry {
   return {
     symbol: entry.symbol,
-    package: "three",
+    package: entry.packageName ?? "three",
     importPath: entry.importPath,
     kind: entry.kind ?? "class",
     signature: entry.signature ?? `class ${entry.symbol}`,
     summary: entry.summary,
     situations: entry.situations,
     // Every one of these is already wired; the example is the dial, not the constructor.
-    example: "src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment",
+    example:
+      entry.example ??
+      "src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment",
     constraints: entry.constraints,
     overrides: [],
     supersedes: [],
@@ -103,6 +107,137 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
       "Read the TN_RENDER_CHAIN line before assuming a stage ran: it names every stage as applied or dropped, with the reason it was dropped.",
       "A stage reported `applied` can still be invisible if its own inputs are wrong — the chain reports whether it built, not whether you can see it.",
       "Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks.",
+    ],
+  }),
+  // The `rain` template's generated source. Same reason as the stages above: these are functions in
+  // files the game owns (`src/render/`, `src/audio/`), so no package export puts them in the manifest
+  // and an agent searching "storm sky" or "thunder distance" had nowhere to land. Ordinary Three.js
+  // plus the engine's own `AudioBus`; what the game draws and hears is authored here, not configured
+  // from a package. Only what exists today is listed, because a manifest entry is a promise the
+  // source keeps.
+  stage({
+    symbol: "createWeatherWorld",
+    importPath: "src/render/world.ts",
+    packageName: "template:rain",
+    kind: "function",
+    signature: "createWeatherWorld(scene: Scene, camera: PerspectiveCamera): IWeatherWorld",
+    summary:
+      "The raymarched coastal storm as generated source: one screen quad whose TSL shader draws the sky, the sea, the coast, the road, the forest and the lamps, and whose wet ground reflects them, written from the uniforms the game feeds it each frame. The sky it samples is the live cloud pass this call builds, not a stand-in gradient. Returns `{ quad, update(options), dispose() }`.",
+    situations: [
+      "a procedural storm, sea, coastline or open horizon drawn from maths rather than geometry",
+      "rain and wind that change how a scene looks without swapping a mesh",
+      "a lightning flash that lights the coast and the sky at once",
+      "wet reflections on a ground plane",
+      "sky that darkens as cloud cover rises",
+    ],
+    example:
+      "src/render/world.ts — edit the shader there, or the weather it is fed from src/state.ts",
+    constraints: [
+      "`update` takes `{ elapsed, flash, weather, strike, quality }`: absolute seconds, a flash envelope already gated on the photosensitivity switch by the caller, the bolt's entry point in the cloud deck in metres (what the clouds glow around and the coast is lit from), and a quality name of `performance | balanced | high | ultra`.",
+      "The tier's cloud resolution share, march steps and reflection switch come from `STUDY_TIERS` in src/render/quality.ts; `performance` skips the 36-step reflection march, so a low tier loses reflections, not the coast. `clouds()` reads back the cloud target the renderer really drew and its steps.",
+      "Its colours and lights are uniforms set once from src/render/palette.ts, sky.ts, lighting.ts and materials.ts; the shader itself is generated from tools/tempest-*.frag by tools/generate-shaders.mjs — edit the .frag, not the generated file.",
+      "The engine's `Scene` and `PerspectiveCamera` are injected as arguments; the file holds no engine lifetime of its own. `dispose()` removes the quad and disposes the geometry, material and sky texture — the scene does not do it for you.",
+      "The quad has `frustumCulled = false`, because its two-metre bounds would otherwise be culled the moment the camera looks along the coast.",
+      "The cloud pass is built first and its texture feeds the world shader (sampled with the render-target flip); `update` also drives the clouds. Rain streaks and the bolt are separate draws: `createStormRain`, `createStormLightning`.",
+      "This entry describes the Rain starter scaffold's own generated `src/render/world.ts`, not a `@threenative/` or three export — there is no installed package to import it from. Appearance lives in that source with no package import at all; nothing in packages/ decides how this storm looks.",
+    ],
+  }),
+  stage({
+    symbol: "createNoiseVolume",
+    importPath: "src/render/noise-volume.ts",
+    packageName: "template:rain",
+    kind: "function",
+    signature: "createNoiseVolume(): INoiseVolume",
+    summary:
+      "The 64³ RGBA cloud noise volume as generated Rain source: `{ data: Uint8Array, texture: Data3DTexture }`. Its authored seed, octave weights and source-exact generator define the storm's cloud shapes.",
+    situations: [
+      "generate a 3D noise volume instead of shipping one as an asset",
+      "rebuild the storm's clouds procedurally at startup",
+      "tileable 3D noise that does not crease at the edges",
+      "four octave scales packed into one texture",
+    ],
+    example:
+      "src/render/noise-volume.ts — edit the seed, the lattices or the channel weights there",
+    constraints: [
+      "Seed 13291 uses the source's mulberry32 sequence. The generated volume matches all 1,048,576 reference bytes; changing the authored seed or generator changes its appearance.",
+      "Two distinct failure channels, not one: `TN_NOISE_CHANNEL` is a channel value that does not fit a byte, `TN_NOISE_LENGTH` is a byte count that does not fill the volume. Both throw rather than uploading a volume the shader would read wrong.",
+      "64³ of RGBA is 1 MiB, and `NOISE_SIZE` is what the loops and the byte count are written against; changing the size changes the memory cost with it.",
+      "Indices wrap at every face, which is what makes the volume tile, and the fractional part is smoothed by `f²(3 − 2f)` so lattice edges do not show as creases in the cloud.",
+      "This entry describes the Rain starter scaffold's own generated `src/render/noise-volume.ts`, not a `@threenative/` or three export — there is no installed package to import it from.",
+    ],
+  }),
+  stage({
+    symbol: "createStormAudio",
+    importPath: "src/audio/storm.ts",
+    packageName: "template:rain",
+    kind: "function",
+    signature: "createStormAudio(ctx: ICtx<GameState>): IStormAudio",
+    summary:
+      "The storm's sound as generated source, mixed through the engine's own `AudioBus`: a rain hiss, a wind bed, and thunder queued strike by strike and delayed and filtered by how far away it was struck.",
+    situations: [
+      "rain hiss, wind bed, thunder, a storm you can hear",
+      "delay thunder by the distance it was struck",
+      "sound that follows pause, mute and tab visibility",
+      "audio that queues strikes instead of cutting each other off",
+    ],
+    example:
+      "src/audio/storm.ts — register the returned helper, call update(state) after advancing the simulation, and dispose it with the owning scene",
+    constraints: [
+      "`queueStrike({ at, metres })` queues: a second strike does not overwrite one still crossing the air, and `at` is absolute simulation time, which is what lets a strike survive a freeze.",
+      "Two holds, kept apart so neither latches the other: `setSilenced` is the game's own pause intent, `setHidden` is the UI realm or engine lifecycle visibility. The bus is released only when both are clear.",
+      "`update(state)` is the frame's truth and is called once per frame after the simulation advances; `debug()` is what a playtest reads back.",
+      "The caller owns entity registration, updates and disposal; creating the helper does not register it.",
+      "Audio begins only after a user gesture — the bus's unlock error is surfaced rather than swallowed.",
+      "The three clips are baked by `tools/make-storm-audio.mjs` from the study's own maths; this file plays them, it does not synthesise them live.",
+      "The helper requests the source's compressor settings ahead of master gain: threshold -15 dB, knee 30 dB, ratio 5, attack 0.003 s and release 0.25 s.",
+      "Each thunder voice is a labelled `thunder` cue, so a playtest's `audio` assertion reads it from the runtime ledger; the rain kit's `playtests/lightning.playtest.json` proves one cue after a strike, sounded only once the strike's `distance / 343` delay had passed.",
+      "This entry describes the Rain starter scaffold's own generated `src/audio/storm.ts`, not a `@threenative/` or three export — there is no installed package to import it from.",
+    ],
+  }),
+  stage({
+    symbol: "createStormLightning",
+    importPath: "src/render/lightning.ts",
+    packageName: "template:rain",
+    kind: "function",
+    signature: "createStormLightning(scene: Scene, camera: PerspectiveCamera): IStormLightning",
+    summary:
+      "A branching lightning bolt as generated Rain source: `makeBolt(end, random)` walks a 30-segment channel down from the cloud deck with side branches, and one additive camera-facing ribbon draw (gaussian core inside a wide halo) shows it while the caller's flash envelope is above zero. `strike(position, random)` returns where the bolt entered the sky.",
+    situations: [
+      "generate branching lightning ribbon geometry",
+      "a lightning strike that lights the scene and the clouds",
+      "a camera-facing ribbon or beam that stays the same pixel width at any distance",
+      "a flash envelope that stutters rather than fades once",
+    ],
+    example:
+      "src/render/lightning.ts — the bolt; src/state.ts `flashAt` for the envelope; src/scenes/Boot.ts strike() for the thunder delay",
+    constraints: [
+      "Pass the game's seeded random so a strike is reproducible; a non-finite position or random value throws rather than drawing NaN geometry.",
+      "The buffers hold the worst case (30 channel segments plus 24 branches of 9) and are allocated once; a strike rewrites them and opens the draw range, never reallocating.",
+      "`update(flash)` takes an envelope already gated on photosensitivity mode by the caller; below 0.003 the mesh is hidden. Register it with `alwaysRender`: its quads are projected by its own vertex stage, so its bounds say nothing about where it lands.",
+      "It depth-tests against the coast's written depth, so a bolt behind the headland is hidden by it.",
+      "This entry describes the Rain starter scaffold's own generated `src/render/lightning.ts`, not a `@threenative/` or three export — there is no installed package to import it from.",
+    ],
+  }),
+  stage({
+    symbol: "createStormRain",
+    importPath: "src/render/rain.ts",
+    packageName: "template:rain",
+    kind: "function",
+    signature: "createStormRain(scene: Scene, camera: PerspectiveCamera): IStormRain",
+    summary:
+      "Camera-anchored falling rain as generated Rain source: one instanced draw whose vertex stage hashes each drop from its index, wraps it in a 66 × 30 × 66 m cell that follows the camera in 12 m steps, and projects a quad stretched along its own fall — no particle simulation, no texture.",
+    situations: [
+      "rain streaks around the camera",
+      "thousands of falling drops in one draw",
+      "rain that leans with the wind and lights up in a lightning flash",
+    ],
+    example:
+      "src/render/rain.ts — the drop maths; `STUDY_TIERS` in src/render/quality.ts for the per-tier budget",
+    constraints: [
+      "The drawn count is `round(rainBudget × weather.rain)` for the tier, read back from `geometry.instanceCount` (`instanceCount`), not from the budget.",
+      "Stateless by design: a drop's position is a function of its index and the clock, so pausing the clock freezes the rain and nothing accumulates. `GPUParticles3D` is the engine's emitter with lifetimes; reach for it when drops must spawn, live and die.",
+      "Register it with `alwaysRender`: the vertex stage places every drop, so the geometry's own bounds do not.",
+      "This entry describes the Rain starter scaffold's own generated `src/render/rain.ts`, not a `@threenative/` or three export — there is no installed package to import it from.",
     ],
   }),
   // Not a render stage: the engine's scene-draw optimizer, which a game can decline, and whose

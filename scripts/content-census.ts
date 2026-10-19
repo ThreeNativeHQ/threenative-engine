@@ -35,14 +35,13 @@ function row(entry: IContentCensus): string {
   ].join("  ");
 }
 
-async function main(): Promise<void> {
-  const directory = process.argv[2];
+export async function main(argv: readonly string[]): Promise<number> {
+  const directory = argv.find((argument) => !argument.startsWith("--"));
   if (directory === undefined) {
     console.error("usage: pnpm census:content <directory of .glb files> [--json]");
-    process.exitCode = 2;
-    return;
+    return 2;
   }
-  const json = process.argv.includes("--json");
+  const json = argv.includes("--json");
   const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
   const files = (await readdir(directory)).filter((file) => file.endsWith(".glb")).sort();
   const results: IContentCensus[] = [];
@@ -56,9 +55,11 @@ async function main(): Promise<void> {
     }
   }
   const total = totalCensus(results);
+  // A model the census could not read is a hole in the number, so the run fails closed.
+  const exitCode = unreadable.length > 0 ? 1 : 0;
   if (json) {
     console.log(JSON.stringify({ models: results, total, unreadable }, null, 2));
-    return;
+    return exitCode;
   }
   for (const entry of [...results].sort((left, right) => right.materials - left.materials))
     console.log(row(entry));
@@ -69,6 +70,8 @@ async function main(): Promise<void> {
     `buckets ${String(total.before.buckets)} -> ${String(total.after.buckets)}, singletons ${String(total.before.singletons)} -> ${String(total.after.singletons)}, ${String(total.excluded)} sources excluded as tiling`,
   );
   for (const failure of unreadable) console.error(`unreadable ${failure}`);
+  return exitCode;
 }
 
-await main();
+if (import.meta.url === `file://${process.argv[1]}`)
+  process.exitCode = await main(process.argv.slice(2));

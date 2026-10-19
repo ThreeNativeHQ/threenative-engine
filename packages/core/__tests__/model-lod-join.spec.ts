@@ -14,6 +14,8 @@ import {
   TN_DISCRETE_LOD,
   baseGeometryOf,
   isLodJoinProxy,
+  setLodBias,
+  setModelLodLayers,
   updateModelLods,
 } from "../src/model-lod.js";
 import { ScenePicker } from "../src/picking.js";
@@ -238,10 +240,79 @@ function proxies(container: Group): Group[] {
 }
 
 afterEach(() => {
+  setLodBias(1);
   vi.restoreAllMocks();
 });
 
 describe("joined far rung runtime selection", () => {
+  it.each([
+    { name: "unit", scale: [1, 1, 1], joined: true },
+    { name: "uniform", scale: [2.42232295, 2.42232295, 2.42232295], joined: false },
+    { name: "nonuniform maximum axis", scale: [2.42232295, 1, 1], joined: false },
+  ])("projects joined error at $name world scale", async ({ scale, joined }) => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const target = fixture({ chainless: true, rungError: 0.0604127214 });
+    await attached(target);
+    const parent = new Group();
+    parent.scale.fromArray(scale);
+    parent.add(target.container);
+    const scene = new Scene();
+    scene.add(parent);
+    scene.updateMatrixWorld(true);
+    // The joined prototype spans [0, 1] on each axis: its sphere has radius sqrt(3) / 2.
+    const camera = new PerspectiveCamera(90, 1, 0.1, 1000);
+    camera.position.z = 0.5 * (scale[2] ?? 1) + (Math.sqrt(3) / 2) * Math.max(...scale) + 40;
+    camera.updateMatrixWorld(true);
+    setLodBias(2.5);
+    expect(updateModelLods(scene, camera, 2000)).toBe(joined ? 2 : LOD0_TRIANGLES * 2);
+    expect(proxies(target.container)).toHaveLength(joined ? 1 : 0);
+    expect(target.members.every((member) => member.visible)).toBe(!joined);
+  });
+
+  it("propagates main-layer handoffs to an existing join and restores them before near detail", async () => {
+    const target = fixture();
+    await attached(target);
+    updateModelLods(target.container, farCamera(), 1080);
+    for (const member of target.members) setModelLodLayers(member, 1 << 28);
+    proxies(target.container)[0]?.traverse((node) => {
+      if (node instanceof Mesh) expect(node.layers.mask).toBe(1 << 28);
+    });
+    for (const member of target.members) setModelLodLayers(member, 1);
+    updateModelLods(target.container, nearCamera(), 1080);
+    expect(proxies(target.container)).toHaveLength(0);
+    expect(target.members.every((member) => member.visible && member.layers.mask === 1)).toBe(true);
+  });
+  it.each(["layers", "castShadow", "receiveShadow"] as const)(
+    "retains source detail when joined members disagree on %s",
+    async (field) => {
+      const target = fixture();
+      await attached(target);
+      if (field === "layers") target.members[0].layers.enable(28);
+      else target.members[0][field] = true;
+      updateModelLods(target.container, farCamera(), 1080);
+      expect(proxies(target.container)).toHaveLength(0);
+      expect(target.members.every((member) => member.visible)).toBe(true);
+    },
+  );
+  it("inherits source main and shadow ownership instead of publishing default layer-zero geometry", async () => {
+    const target = fixture();
+    await attached(target);
+    for (const member of target.members) {
+      member.layers.set(28);
+      member.layers.enable(27);
+      member.castShadow = true;
+      member.receiveShadow = true;
+    }
+    updateModelLods(target.container, farCamera(), 1080);
+    const joined = proxies(target.container);
+    expect(joined).toHaveLength(1);
+    joined[0]?.traverse((node) => {
+      if (!(node instanceof Mesh)) return;
+      expect(node.layers.mask).toBe(target.members[0].layers.mask);
+      expect(node.castShadow).toBe(true);
+      expect(node.receiveShadow).toBe(true);
+    });
+  });
   it("selects the joined rung beyond the error budget and collapses the draw count", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const target = fixture();

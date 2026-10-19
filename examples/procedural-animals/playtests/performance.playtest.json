@@ -1,0 +1,73 @@
+{
+  "name": "procedural-wolf-complete-frame-series-web",
+  "schemaVersion": 1,
+  "subject": "Every selected world render includes each full animal surface and its shadow. Original300 warmup and1800 measured rows, complete asynchronous GPU query groups and raw CPU windows are recorded after collection. The same animal-free course supplies each paired baseline.",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "press": "KeyB",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "timeoutMs": 120000,
+      "label": "complete-series",
+      "waitForResource": {
+        "id": "state",
+        "path": "performanceFinished",
+        "equals": true
+      },
+      "screenshot": "complete-series"
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "state",
+        "path": "performanceDone",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "performanceFrames",
+        "equals": 2100
+      },
+      {
+        "id": "state",
+        "path": "performanceMeasuredFrames",
+        "equals": 1800
+      },
+      {
+        "id": "state",
+        "path": "performanceError",
+        "equals": null,
+        "allowTrivial": "No error is a held invariant; all2100 independently recorded rows and complete1800 CPU/GPU pairs are mandatory."
+      }
+    ],
+    "geometry": {
+      "limit": 500
+    },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true,
+      "noNetworkErrors": true
+    },
+    "performance": {
+      "maxPassDrawCalls": {
+        "main": 35,
+        "shadow": 32
+      }
+    }
+  }
+}

@@ -706,7 +706,6 @@ function meshDraftsOf(armed: IArmedFrame): IMeshDraft[] {
     // A batch is one draw however many sources it folded. Charging a whole draw to each member is
     // how a merged batch reads as more expensive than the objects it replaced.
     const owner = displayName(record.object);
-    const members = ownership.sources.length;
     for (const source of ownership.sources) {
       const geometry = (source as IRenderedLike).geometry;
       const own = geometryTriangles(geometry);

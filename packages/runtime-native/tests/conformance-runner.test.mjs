@@ -1,13 +1,16 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import childProcess, { spawnSync } from "node:child_process";
+import { createRequire, syncBuiltinESMExports } from "node:module";
+import * as esbuild from "esbuild";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
-import { test } from "vitest";
+import ts from "typescript";
+import { afterEach, expect, test, vi } from "vitest";
 import { workflowBlockScalars } from "./runtime-test-utils.js";
 import { absoluteErrorRatio } from "../conformance/metrics.mjs";
 import { isMultitouchProofSatisfied } from "../conformance/multitouch-proof.mjs";
@@ -27,6 +30,7 @@ import {
   resolveParityProject,
 } from "../conformance/project-mode.mjs";
 import {
+  bundle,
   androidDeviceKind,
   androidDeathExcerpt,
   androidDependencyBlocker,
@@ -47,6 +51,7 @@ import {
   launchAndroidConformanceActivity,
   runCommand,
   validateWindowedSurfaceOutput,
+  validateWorldGpuReadbackOutput,
   temporalCaptureLabel,
   unexpectedBlockedRows,
   expiredExclusions,
@@ -64,7 +69,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const runner = join(root, "conformance/run-conformance.mjs");
 const SDL3_AAR = `SDL3-${SDL3_ANDROID_VERSION}.aar`;
 
-function run(args, env = {}) {
+function run(args, env = {}, timeout = 120_000) {
   return spawnSync(process.execPath, [runner, ...args], {
     cwd: root,
     encoding: "utf8",
@@ -76,7 +81,7 @@ function run(args, env = {}) {
       ...process.env,
       ...env,
     },
-    timeout: 120_000,
+    timeout,
   });
 }
 
@@ -116,6 +121,143 @@ test("the GPU scene BVH row requires a hardware adapter", () => {
   const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
   const row = registry.tests.find(({ id }) => id === "76-gpu-scene-bvh");
   assert.equal(row?.requiresHardwareAdapter, true);
+});
+
+test("World GPU readback gives awaited scene frames time to reach their proof deadline", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const row = registry.tests.find(({ id }) => id === "world-gpu-scene-readback");
+  assert.equal(row?.captureFrames, 1200);
+  assert.equal(row?.nativeFrames, 1200);
+});
+
+test("World GPU readback fences 200 completed frame validations before disposal", () => {
+  const source = readFileSync(
+    join(root, "conformance/scenes/shared/world-gpu-scene-readback.js"),
+    "utf8",
+  );
+  assert.match(source, /awaitRender: true/u);
+  assert.match(source, /validateGpuFrame\(frame\)/u);
+  assert.match(source, /detail\.framewise >= 200/u);
+  assert.match(source, /detail\.steadyFrames >= 200/u);
+  assert.match(source, /detail\.terminalDrawFrames > 0/u);
+  assert.match(source, /stats\.impostor\.pending === 1 && stats\.impostor\.assets === 0/u);
+  assert.match(source, /stats\.levelRefilters === detail\.readyRefilters/u);
+  assert.match(source, /detail\.targetIdentities === 4/u);
+  assert.match(source, /detail\.disposeEvents === 4/u);
+});
+
+test.each([{ idleFrames: 2, readbackFrames: 3 }, { idleFrames: 3, readbackFrames: 5 }])("World GPU readback awaits teardown before scheduling another validation %j", async ({ idleFrames, readbackFrames }) => {
+  const fixture = readFileSync(join(root, "conformance/scenes/shared/world-gpu-scene-readback.js"), "utf8");
+  const support = readFileSync(join(root, "conformance/scenes/shared/scene-support.js"), "utf8");
+  const declaration = (source, name, method = false) => {
+    const file = ts.createSourceFile("fixture.js", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+    let found;
+    const visit = node => {
+      if ((method ? ts.isMethodDeclaration(node) : ts.isFunctionDeclaration(node)) && node.name?.getText(file) === name) found = node.getText(file);
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+    assert.ok(found, `actual fixture declaration missing: ${name}`);
+    return found.replace(/^export /u, "");
+  };
+  let callbacks = [];
+  const raf = callback => { callbacks.push(callback); };
+  const afterFrames = count => new Promise(resolve => {
+    const advance = () => { if (--count === 0) resolve(); else raf(advance); };
+    raf(advance);
+  });
+  const detail = {
+    framewise: 200, steadyFrames: 199, terminalDrawFrames: 184, releaseEvents: 400,
+    disposeEvents: 2, targetIdentities: 4, readyRefilters: 0, reloadReady: false,
+    originalNonemptyFrames: 200, failure: "", reloadFailures: 0,
+  };
+  const targets = new Map([1, 2, 3, 4].map(id => [id, true]));
+  const releases = new Map([[1, 15], [2, 15], [3, 185], [4, 185]]);
+  let validating = false;
+  let disposed = false;
+  let validations = 0;
+  const disposedIdentities = new Map([[1, 1], [2, 1]]);
+  const disposePair = () => {
+    for (const id of [3, 4]) disposedIdentities.set(id, (disposedIdentities.get(id) ?? 0) + 1);
+    detail.disposeEvents += 2;
+  };
+  const world = {
+    update() {},
+    stats: () => ({ admission: { backlog: 0, deferred: 0 }, gpuScene: { dispatches: 201 }, loadsInFlight: 0, loadsQueued: 0, pendingPrewarm: 0, levelRefilters: 0, failures: 0, impostor: { assets: 1, pending: 0, atlasBytes: 2796160 } }),
+    async validateGpuFrame() {
+      validations += 1;
+      validating = true;
+      // Queue submission completion and JS map/release completion have independent ordering.
+      await afterFrames(readbackFrames);
+      for (const id of [3, 4]) releases.set(id, releases.get(id) + 1);
+      detail.releaseEvents += 2;
+      validating = false;
+      if (disposed) disposePair();
+      return {};
+    },
+    dispose() { disposed = true; if (!validating) disposePair(); },
+  };
+  const assertCondition = (condition, message) => { if (!condition) throw new Error(message); };
+  const helpers = new Function("assertCondition", `${["assertReadbackLifecycle", "scheduleDisposal", "canDispose"].map(name => declaration(fixture, name)).join("\n")}\nreturn {scheduleDisposal,canDispose};`)(assertCondition);
+  class Renderer {
+    backend = { device: { queue: { onSubmittedWorkDone: () => afterFrames(idleFrames) } } };
+    async init() {}
+    setPixelRatio() {}
+    setSize() {}
+    render() {}
+  }
+  class Scene { add() {} }
+  const startVisualScene = new Function("THREE", "requestAnimationFrame", "globalThis", `${declaration(support, "startVisualScene")}\nreturn startVisualScene;`)({ WebGPURenderer: Renderer, Scene, Color: class {} }, raf, {});
+  const renderer = new Renderer();
+  const args = { frame: 200, renderedWorld: world, worldRenderer: {}, camera: {}, renderer, detail, world, targets, releases, disposePending: false, ...helpers, assertCondition,
+    assertFrameValidation: () => { detail.framewise += 1; },
+    observeWorldFrame: () => { detail.originalNonemptyFrames += 1; },
+    reportFinalMarker() {}, assertProofDeadline() {}, loadWorld: async () => world, scene: new Scene(),
+  };
+  const render = new Function(...Object.keys(args), `return ({${declaration(fixture, "render", true)}}).render;`)(...Object.values(args));
+  // Run the shipped awaitRender loop and the actual fixture render method, not a model of its await.
+  const started = startVisualScene({}, { width: 1280, height: 720 }, "scheduler", async () => ({ detail, render }), { awaitRender: true, camera: () => ({}) });
+  for (let tick = 0; tick < 20 && !detail.reloadReady && detail.failure === ""; tick += 1) {
+    for (let flush = 0; flush < 12; flush += 1) await Promise.resolve();
+    const ready = callbacks; callbacks = [];
+    for (const callback of ready) callback();
+  }
+  for (let flush = 0; flush < 12; flush += 1) await Promise.resolve();
+  assert.equal(detail.failure, "");
+  assert.equal(detail.reloadReady, true);
+  assert.equal(detail.targetIdentities, 4);
+  assert.equal(detail.disposeEvents, 4);
+  assert.deepEqual([...disposedIdentities.entries()], [[1, 1], [2, 1], [3, 1], [4, 1]]);
+  assert.equal(detail.releaseEvents, 402);
+  assert.deepEqual([...releases.values()], [15, 15, 186, 186]);
+  assert.equal(validations, 1);
+  await started;
+});
+
+test("World GPU readback rejects absent, partial and invalid lifecycle completion", () => {
+  const handoff = "TN_WORLD_GPU_IMPOSTOR_HANDOFF frames=200 levelRefilters=0 terminalDrawFrames=185 atlasBytes=2796160";
+  const lifecycle = "TN_WORLD_GPU_SCENE_READBACK final original=disposed originalNonempty=201 framewise=201 lastDispatch=201 censuses=201 targetIdentities=4 releaseEvents=402 disposeEvents=4 reload=ready reloadNonempty=95 reloadFailures=0 validation=off reason=post-disposal-reload";
+  const complete = `${handoff}\n${lifecycle}`;
+  assert.deepEqual(validateWorldGpuReadbackOutput(complete).errors, []);
+  for (const incomplete of [
+    "TN_CONFORMANCE_READY:world-gpu-scene-readback",
+    handoff,
+    lifecycle,
+    complete.replace("frames=200", "frames=199"),
+    complete.replace("frames=200", "frames=200.1"),
+    complete.replace("frames=200", `frames=${"9".repeat(400)}`),
+    complete.replace("levelRefilters=0", "levelRefilters=2"),
+    complete.replace("terminalDrawFrames=185", "terminalDrawFrames=0"),
+    complete.replace("disposeEvents=4", "disposeEvents=2"),
+    complete.replace("censuses=201", "censuses=0"),
+    complete.replace("releaseEvents=402", "releaseEvents=4"),
+    complete.replace("reloadFailures=0", "reloadFailures=1"),
+    complete.replace("original=disposed", "original=active"),
+    complete.replace("reload=ready", "reload=pending"),
+  ]) assert.ok(validateWorldGpuReadbackOutput(incomplete).errors.length > 0);
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /result\.browser\.worldProof = validateWorldGpuReadbackOutput/u);
+  assert.match(source, /result\.native\.worldProof = validateWorldGpuReadbackOutput/u);
 });
 
 test("a SwiftShader lane blocks only the rows it is allowed to leave unrun", () => {
@@ -401,7 +543,7 @@ test("dry run validates and bundles implemented rows without a browser or native
       FIREFOX_BIN: join(dir, "missing-firefox"),
       TN_RUNTIME: join(dir, "missing-runtime"),
       MYSTRAL_BIN: "",
-    });
+    }, 240_000);
 
     assert.equal(proc.status, 0, proc.stderr || proc.stdout);
     const report = JSON.parse(readFileSync(out, "utf8"));
@@ -983,6 +1125,15 @@ test("uniform captures fail closed even when reference and candidate bytes match
     width: 2,
     height: 1,
   });
+
+  // An RGB reference carries no alpha: a candidate's alpha cannot differ from it, its colour can.
+  const rgbReference = PNG.sync.write(uniform, { colorType: 2 });
+  const transparent = new PNG({ width: 2, height: 1 });
+  transparent.data.set([12, 34, 56, 0, 13, 34, 56, 255]);
+  assert.equal(compareCaptures(rgbReference, PNG.sync.write(transparent)).pixelMismatchRatio, 0);
+  assert.equal(compareCaptures(visiblePng, PNG.sync.write(transparent)).pixelMismatchRatio, 0.5);
+  transparent.data.set([12, 34, 57, 0], 0);
+  assert.equal(compareCaptures(rgbReference, PNG.sync.write(transparent)).pixelMismatchRatio, 0.5);
 });
 
 test("screen-space glyph raster fails closed on missing pixels and drifting bounds", () => {
@@ -1170,6 +1321,62 @@ test("parity lanes restore workspace imports before conformance bundling", () =>
   }
 });
 
+test("the emulator final logcat dump retains full output and diagnoses its exact failure", () => {
+  const workflow = readFileSync(join(root, "../../.github/workflows/native-platforms.yml"), "utf8");
+  const script = workflowBlockScalars(workflow, "script").find((value) => value.includes("run-conformance.mjs"));
+  const dump = script?.match(/(?:if )?adb (?:-s emulator-5554 )?logcat -d[\s\S]*$/u)?.[0];
+  assert.ok(dump, "the final emulator log dump must remain inside the live emulator action");
+  const temp = makeTempDirSync("tn-final-emulator-log-");
+  try {
+    const fullDump = "device-output\n".repeat(8192);
+    writeFileSync(join(temp, "dump"), fullDump);
+    writeFileSync(join(temp, "state"), "device-state\n".repeat(1024));
+    writeFileSync(join(temp, "adb"), `#!/bin/sh
+printf '%s\n' "$*" >> "$CALLS"
+case "$*" in
+  *"logcat -d") cat "$DUMP"; exit "$LOGCAT_EXIT" ;;
+  "-s emulator-5554 get-state"|"devices -l") cat "$STATE" ;;
+  *) exit 99 ;;
+esac
+`);
+    chmodSync(join(temp, "adb"), 0o755);
+    for (const conformanceStatus of [0, 2, 1]) {
+      for (const logcatExit of [37, 0]) {
+        writeFileSync(join(temp, "calls"), "");
+        const result = spawnSync("sh", ["-c", `status=$CONFORMANCE_STATUS; ${dump}`], {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${temp}${delimiter}${process.env.PATH}`,
+            RUNNER_TEMP: temp,
+            CONFORMANCE_STATUS: String(conformanceStatus),
+            LOGCAT_EXIT: String(logcatExit),
+            CALLS: join(temp, "calls"),
+            DUMP: join(temp, "dump"),
+            STATE: join(temp, "state"),
+          },
+        });
+        assert.equal(result.status, conformanceStatus === 1 ? 1 : 0);
+        assert.equal(readFileSync(join(temp, "emulator-logcat.txt"), "utf8"), fullDump);
+        const stderr = readFileSync(join(temp, "emulator-logcat.err"), "utf8");
+        const calls = readFileSync(join(temp, "calls"), "utf8").trim().split("\n");
+        if (logcatExit === 37) {
+          assert.match(stderr, /TN_ADB_LOGCAT_FAILED exitCode=37/u);
+          assert.ok(Buffer.byteLength(stderr) <= Buffer.byteLength("TN_ADB_LOGCAT_FAILED exitCode=37\n") + 2048);
+          assert.match(stderr, /get-state/u);
+          assert.match(stderr, /devices -l/u);
+          assert.deepEqual(calls, ["-s emulator-5554 logcat -d", "-s emulator-5554 get-state", "devices -l"]);
+        } else {
+          assert.equal(stderr, "");
+          assert.deepEqual(calls, ["-s emulator-5554 logcat -d"]);
+        }
+      }
+    }
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test("the parity registry binds the simultaneous stick-and-jump proof to Android injection", () => {
   const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
   const proof = registry.tests.find((entry) => entry.id === "90-multitouch-input");
@@ -1296,6 +1503,12 @@ test("Linux desktop parity selects SDL X11 because the native surface does not s
   assert.match(source, /process\.platform === "linux"[\s\S]*SDL_VIDEODRIVER: "x11"/u);
 });
 
+test("desktop conformance preserves verbose native diagnostics without hiding spawn errors", () => {
+  const source = readFileSync(runner, "utf8");
+  assert.match(source, /timeout: 180_000,[\s\S]*maxBuffer: 64 \* 1024 \* 1024/u);
+  assert.match(source, /error: proc\.error instanceof Error/u);
+});
+
 test("a pre-marker death excerpt carries the app's own diagnostic lines, not death chatter", () => {
   // PRD-166 phase 3: the full-lane rerun's row error appended a raw 400-char tail that was
   // Window Manager lines merely naming the app, crowding out the scene trace that names the
@@ -1315,4 +1528,242 @@ test("a pre-marker death excerpt carries the app's own diagnostic lines, not dea
     androidDeathExcerpt("Android process exited before the conformance marker.", ""),
     "Android process exited before the conformance marker.",
   );
+});
+
+vi.mock("esbuild", async () => {
+  const actual = await vi.importActual("esbuild");
+  return { ...actual, build: vi.fn(actual.build), stop: vi.fn(actual.stop) };
+});
+afterEach(async () => {
+  vi.useRealTimers();
+  await esbuild.stop();
+  vi.clearAllMocks();
+  vi.unstubAllEnvs();
+});
+
+function bundleFixture(body = "export const choice = import.meta.env?.DEV;") {
+  const dir = makeTempDirSync("threenative-bundle-service-");
+  const entry = join(dir, "entry.ts");
+  const out = join(dir, "output.js");
+  writeFileSync(entry, body);
+  return { dir, entry, out, compiler: join(root, "node_modules/.bin/esbuild") };
+}
+
+test("resolution-subrect conformance bundles the shipped controller through down/up/down transitions", async () => {
+  const dir = makeTempDirSync("threenative-resolution-subrect-");
+  const scene = "conformance/scenes/shared/resolution-subrect.js";
+  try {
+    const entry = makeEntry(
+      { captureFrames: 2, id: "resolution-subrect-contract", scene },
+      "browser",
+      1234,
+      dir,
+    );
+    const output = join(dir, "resolution-subrect.js");
+    const result = {};
+    assert.equal(
+      await bundle(entry, output, result, "browser", join(root, "node_modules/.bin/esbuild"), true),
+      true,
+      result.browser?.stderr,
+    );
+    assert.match(
+      readFileSync(output, "utf8"),
+      /TN_RESOLUTION_SUBRECT: viewport exceeds retained capacity/u,
+      "the conformance bundle must contain the shipped controller, not a hand-written substitute",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("conformance API preserves changing NODE_PATH lookup, bytes and maps", async () => {
+  const fixture = bundleFixture('export { choice } from "conformance-node-path-only";');
+  try {
+    for (const value of [undefined, ""]) {
+      vi.stubEnv("NODE_PATH", value);
+      const result = {};
+      assert.equal(await bundle(fixture.entry, fixture.out, result, "browser", fixture.compiler, true), false);
+      assert.match(result.browser.stderr, /conformance-node-path-only/u);
+    }
+    for (const choice of ["first", "second"]) {
+      const modules = join(fixture.dir, choice);
+      const dependency = join(modules, "conformance-node-path-only");
+      mkdirSync(dependency, { recursive: true });
+      writeFileSync(join(dependency, "index.js"), `export const choice = ${JSON.stringify(choice)};`);
+      vi.stubEnv("NODE_PATH", [join(fixture.dir, "missing"), modules].join(delimiter));
+      const cli = spawnSync(process.execPath, [join(root, "node_modules/esbuild/bin/esbuild"), fixture.entry, "--bundle", `--outfile=${fixture.out}`, "--format=esm", "--platform=browser", "--sourcemap", "--log-level=silent"], { cwd: root, encoding: "utf8", env: { ...process.env }, timeout: 120_000 });
+      assert.equal(cli.status, 0, cli.stderr);
+      const expected = readFileSync(fixture.out);
+      const map = readFileSync(`${fixture.out}.map`);
+      assert.equal(await bundle(fixture.entry, fixture.out, {}, "browser", fixture.compiler, true), true);
+      assert.deepEqual(readFileSync(fixture.out), expected);
+      assert.deepEqual(readFileSync(`${fixture.out}.map`), map);
+    }
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+test("serial conformance bundles reuse the compiler service instead of launching each CLI", async () => {
+  const fixture = bundleFixture();
+  const calls = vi.spyOn(childProcess, "spawnSync");
+  syncBuiltinESMExports();
+  try {
+    assert.equal(await bundle(fixture.entry, fixture.out, {}, "browser", fixture.compiler, true), true);
+    assert.equal(await bundle(fixture.entry, fixture.out, {}, "native", fixture.compiler, true), true);
+    assert.equal(calls.mock.calls.filter(([command]) => command === fixture.compiler).length, 0);
+  } finally {
+    calls.mockRestore();
+    syncBuiltinESMExports();
+    rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+for (const [side, format, conditions] of [
+  ["browser", "esm", []], ["native", "esm", ["threenative-native"]],
+  ["native", "iife", ["alpha", "beta"]],
+  ["browser", "esm", [""]],
+  ["browser", "esm", ["alpha,beta"]],
+]) test(`conformance API preserves CLI bytes and linked maps for ${side}/${format}/${conditions}`, async () => {
+  const fixture = bundleFixture('import choice from "choices"; export const value = [choice, import.meta.env?.DEV];');
+  const modules = join(fixture.dir, "node_modules/choices");
+  mkdirSync(modules, { recursive: true });
+  writeFileSync(join(modules, "package.json"), JSON.stringify({ type: "module", exports: { alpha: "./alpha.js", beta: "./beta.js", "threenative-native": "./native.js", module: "./module.js", default: "./default.js" } }));
+  for (const name of ["alpha", "beta", "native", "module", "default"]) writeFileSync(join(modules, `${name}.js`), `export default ${JSON.stringify(name)};`);
+  try {
+    const proc = spawnSync(fixture.compiler, [fixture.entry, "--bundle", `--outfile=${fixture.out}`, `--format=${format}`, "--platform=browser", "--sourcemap", ...(side === "native" ? ['--define:import.meta.env={"BASE_URL":"/","DEV":false,"MODE":"production","PROD":true,"SSR":false}'] : []), ...conditions.map(c => `--conditions=${c}`)], { cwd: root, encoding: "utf8", timeout: 120_000 });
+    assert.equal(proc.status, 0, proc.stderr);
+    const output = readFileSync(fixture.out);
+    const map = readFileSync(`${fixture.out}.map`);
+    assert.equal(await bundle(fixture.entry, fixture.out, {}, side, fixture.compiler, true, format, conditions), true);
+    assert.deepEqual(readFileSync(fixture.out), output);
+    assert.deepEqual(readFileSync(`${fixture.out}.map`), map);
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+test("conformance bundle errors retain the row side and primary import failure", async () => {
+  const fixture = bundleFixture('import missing from "no-such-package-for-conformance"; export default missing;');
+  try {
+    const result = {};
+    assert.equal(await bundle(fixture.entry, fixture.out, result, "native", fixture.compiler, true), false);
+    assert.equal(result.status, "fail");
+    assert.equal(result.native.phase, "bundle");
+    assert.match(result.native.stderr, /no-such-package-for-conformance/u);
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+test("an absent compiler remains a failed dry run and a blocked execution", async () => {
+  const fixture = bundleFixture();
+  try {
+    for (const dry of [true, false]) {
+      const result = {};
+      assert.equal(await bundle(fixture.entry, fixture.out, result, "browser", join(fixture.dir, "missing-esbuild"), dry), false);
+      assert.equal(result.status, dry ? "fail" : "blocked");
+      assert.match(result.blockedReason, /Install JavaScript dependencies/u);
+    }
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+test("a stuck compiler fails at the existing 120-second boundary and stops its service", async () => {
+  const fixture = bundleFixture();
+  vi.useFakeTimers();
+  esbuild.build.mockImplementationOnce(() => new Promise(() => {}));
+  try {
+    const result = {};
+    const pending = Promise.resolve(bundle(fixture.entry, fixture.out, result, "browser", fixture.compiler, true));
+    await vi.advanceTimersByTimeAsync(119_999);
+    assert.equal(result.status, undefined);
+    await vi.advanceTimersByTimeAsync(1);
+    assert.equal(await pending, false);
+    assert.equal(result.status, "fail");
+    assert.match(result.browser.stderr, /120000|ETIMEDOUT/u);
+    expect(esbuild.stop).toHaveBeenCalled();
+    assert.equal(vi.getTimerCount(), 0);
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+test("a timeout preserves its primary error when compiler cleanup also fails", async () => {
+  const fixture = bundleFixture();
+  vi.useFakeTimers();
+  esbuild.build.mockImplementationOnce(() => new Promise(() => {}));
+  esbuild.stop.mockRejectedValueOnce(new Error("cleanup failure receipt"));
+  try {
+    const result = {};
+    const pending = bundle(fixture.entry, fixture.out, result, "native", fixture.compiler, true);
+    await vi.advanceTimersByTimeAsync(120_000);
+    assert.equal(await pending, false);
+    assert.match(result.native.stderr, /TN_CONFORMANCE_BUNDLE_TIMEOUT/u);
+    assert.match(result.native.cleanupError, /cleanup failure receipt/u);
+    assert.equal(result.native.timedOut, true);
+    assert.equal(vi.getTimerCount(), 0);
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+for (const invalid of [false, true]) test(`the compiler service closes after terminal ${invalid ? "error" : "success"}`, () => {
+  const dir = makeTempDirSync("threenative-service-cleanup-");
+  const events = join(dir, "service-events.jsonl");
+  const observer = join(dir, "observer.cjs");
+  writeFileSync(observer, `
+const cp = require('node:child_process');
+const {appendFileSync} = require('node:fs');
+const {syncBuiltinESMExports} = require('node:module');
+const original = cp.spawn;
+cp.spawn = function(command, args, options) {
+  const child = original.apply(this, arguments);
+  if (args?.some(value => String(value).startsWith('--service='))) {
+    appendFileSync(${JSON.stringify(events)}, JSON.stringify({phase:'start',pid:child.pid})+'\\n');
+    // Keep this test's observer alive until close: a missing terminal stop must be detected.
+    child.unref = () => child;
+    child.on('close', (code, signal) => appendFileSync(${JSON.stringify(events)}, JSON.stringify({phase:'close',pid:child.pid,code,signal})+'\\n'));
+  }
+  return child;
+};
+syncBuiltinESMExports();
+`);
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ threenative: { nativeEntry: "game.ts" } }));
+  writeFileSync(join(dir, "game.ts"), invalid ? 'import missing from "cleanup-missing-package"; export default missing;' : 'export default { start() {} };');
+  try {
+    const proc = run(["--dry-run", "--project", dir, "--out", join(dir, "report.json")], {
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require=${observer}`,
+    });
+    assert.equal(proc.status, invalid ? 1 : 0, proc.error?.message || proc.stderr || proc.stdout);
+    const recorded = readFileSync(events, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    assert.equal(recorded.filter(event => event.phase === "start").length, 1);
+    assert.equal(recorded.filter(event => event.phase === "close").length, 1);
+    assert.equal(recorded[0].pid, recorded[1].pid);
+    const report = JSON.parse(readFileSync(join(dir, "report.json"), "utf8"));
+    assert.equal(report.summary.pass, 0);
+    assert.equal(report.summary.validated, invalid ? 0 : 1);
+    if (invalid) assert.match(report.results[0].native.stderr, /cleanup-missing-package/u);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+
+test("vehicle conformance resolves Rapier from its own clean catalog importer", async () => {
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.equal(manifest.devDependencies["@dimforge/rapier3d-compat"], "catalog:");
+  const dir = makeTempDirSync("threenative-vehicle-importer-");
+  try {
+    const fixture = join(dir, "vehicle-physics.js");
+    writeFileSync(fixture, readFileSync(join(root, "conformance/scenes/shared/vehicle-physics.js")));
+    // This clean importer has only its declared Rapier dependency. No workspace root,
+    // sibling physics importer or ambient NODE_PATH can satisfy the fixture import.
+    const require = createRequire(join(root, "package.json"));
+    const rapierEntry = require.resolve("@dimforge/rapier3d-compat");
+    const dependency = join(dir, "node_modules/@dimforge");
+    mkdirSync(dependency, { recursive: true });
+    symlinkSync(dirname(rapierEntry), join(dependency, "rapier3d-compat"));
+    const result = await esbuild.build({
+      absWorkingDir: dir,
+      entryPoints: [fixture],
+      bundle: true,
+      write: false,
+      platform: "browser",
+      format: "esm",
+      nodePaths: [],
+      external: ["three/webgpu", "../../../../physics/*", "./scene-support.js"],
+      metafile: true,
+      logLevel: "silent",
+    });
+    assert.ok(Object.keys(result.metafile.inputs).some(input => input.includes("rapier")));
+    assert.ok(result.outputFiles[0].contents.length > 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

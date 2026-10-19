@@ -7,6 +7,7 @@ import {
   HemisphereLight,
   type Object3D,
   type Scene,
+  type ToneMapping,
   type Vector3,
 } from "three";
 import { SkyMesh } from "three/addons/objects/SkyMesh.js";
@@ -25,6 +26,8 @@ export interface IDaylightOptions {
   readonly sunIntensity: number;
   /** Half-widths of the shadow windows in world units, finest first, strictly increasing. */
   readonly shadowExtents: readonly number[];
+  /** Texels per shadow level edge; a level's texel is `2 * extent / shadowMapSize`. Default: the sun's `shadow.mapSize.width` (512). */
+  readonly shadowMapSize?: number;
   /**
    * How far a window may trail the camera before it re-renders, as a fraction of its own extent:
    * one value for every level, or one per level finest first, the last entry standing in for the
@@ -43,8 +46,10 @@ export interface IDaylightOptions {
   readonly fill: { readonly sky: Color; readonly ground: Color; readonly intensity: number };
   /** Exponential-squared haze in the sky's horizon colour, so distance fades into the sky. */
   readonly haze: { readonly color: Color; readonly density: number };
-  /** Linear exposure multiplier for the AgX tone curve (2^EV). */
+  /** Linear exposure multiplier for the tone curve (2^EV). */
   readonly exposure: number;
+  /** The tone curve, a look the game picks; AgX when it names none. */
+  readonly toneMapping?: ToneMapping;
   /**
    * Edge of the sky box in world units. It must sit inside the camera's far plane with its corners
    * included (a box, so half-diagonal ≈ 0.87 × this).
@@ -83,6 +88,7 @@ export class Daylight extends Group implements IComputeDriven {
   readonly #sunDirection: Vector3;
   readonly #haze: FogExp2;
   readonly #exposure: number;
+  readonly #toneMapping: ToneMapping;
   #released = false;
 
   constructor(options: IDaylightOptions) {
@@ -93,6 +99,7 @@ export class Daylight extends Group implements IComputeDriven {
     this.#follow = options.follow;
     this.#sunDirection = options.sunDirection.clone().normalize();
     this.#exposure = options.exposure;
+    this.#toneMapping = options.toneMapping ?? AgXToneMapping;
 
     this.sky = new SkyMesh();
     this.sky.name = "daylight-sky";
@@ -102,7 +109,14 @@ export class Daylight extends Group implements IComputeDriven {
     this.sky.rayleigh.value = options.sky.rayleigh;
     this.sky.mieCoefficient.value = options.sky.mieCoefficient;
     this.sky.mieDirectionalG.value = options.sky.mieDirectionalG;
+    // The haze is for the world in front of the sky, not for the sky: the dome is half a sky size
+    // from the eye, fully fogged at any useful density, and a fogged dome is a flat grey sky.
+    this.sky.material.fog = false;
     this.sky.sunPosition.value.copy(this.#sunDirection);
+    // Where the frame budget counts this mesh's main-pass draw (`RenderPassBudget`). One draw, on
+    // the main camera's own layer, and no world system owns it — so without the origin it is a line
+    // in the `other` bucket that reads as a prop rather than as the sky.
+    this.sky.userData.tnDrawSource = "sky";
     this.add(this.sky);
 
     this.fill = new HemisphereLight(options.fill.sky, options.fill.ground, options.fill.intensity);
@@ -116,6 +130,7 @@ export class Daylight extends Group implements IComputeDriven {
       // A game that wants the fine level on a different cadence than the coarse two says so here,
       // per level, instead of taking one step for all of them.
       ...(options.refreshStep === undefined ? {} : { refreshStep: options.refreshStep }),
+      ...(options.shadowMapSize === undefined ? {} : { mapSize: options.shadowMapSize }),
     });
     this.add(this.sun);
     this.add(this.sun.target);
@@ -139,7 +154,7 @@ export class Daylight extends Group implements IComputeDriven {
       toneMappingExposure?: number;
       shadowMap?: { enabled: boolean };
     };
-    raw.toneMapping = AgXToneMapping;
+    raw.toneMapping = this.#toneMapping;
     raw.toneMappingExposure = this.#exposure;
     if (raw.shadowMap !== undefined) raw.shadowMap.enabled = true;
     const scene = this.#scene();

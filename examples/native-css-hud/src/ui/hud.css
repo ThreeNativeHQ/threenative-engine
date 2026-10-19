@@ -1,0 +1,31 @@
+@import "tailwindcss";
+/* The corpus harness is not UI source: a word in its comments ("table") became a utility rule. */
+@source not "../../corpus";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, sans-serif; /* bundled font is a later phase */
+  --color-brand: #2563eb;
+}
+
+.inventory {
+  font-family: var(--font-sans);
+  --inventory-border: var(--color-zinc-700);
+  border-color: var(--inventory-border);
+}
+
+.inventory > h2 {
+  letter-spacing: -0.02em;
+}
+
+/*
+ * Keyboard focus, as a fill rather than an outline.
+ *
+ * A focus ring is the right default and Tailwind's `focus-visible:outline-*` classes is still on
+ * the button for it, but a ring is two pixels of outline: a screenshot of a 1280x720 surface has
+ * to be able to decode that focus happened, and counting a handful of pixels along an edge is a
+ * flake. The fill is what this fixture proves, and it is the same amber the crate's own focus tests
+ * use for `:focus-visible`.
+ */
+.inventory button:focus-visible {
+  background: #f59e0b;
+}

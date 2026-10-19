@@ -1,0 +1,87 @@
+{
+  "name": "rain-reduced-motion-suppresses-every-flash",
+  "schemaVersion": 1,
+  "target": "web",
+  "reducedMotion": "reduce",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "warmupFrames": 30,
+  "steps": [
+    {
+      "kind": "input",
+      "press": "KeyL",
+      "label": "strike",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "strike"
+        }
+      },
+      "label": "button",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "auto",
+      "waitTicks": 700,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "safe",
+        "equals": true,
+        "allowTrivial": "prefers-reduced-motion turns photosensitivity mode on before the first observation; this scenario proves it stays on through a key strike, the strike button and 700 ticks"
+      },
+      {
+        "id": "state",
+        "path": "autoLightning",
+        "equals": false,
+        "allowTrivial": "reduced motion takes automatic lightning down at boot; 700 ticks (past the 9 s first auto strike) prove it never comes back"
+      },
+      {
+        "id": "state",
+        "path": "cinematic",
+        "equals": false,
+        "allowTrivial": "reduced motion keeps the cinematic orbit off from boot"
+      },
+      {
+        "id": "state",
+        "path": "flash",
+        "atSteps": [
+          {
+            "equals": 0,
+            "label": "strike"
+          },
+          {
+            "equals": 0,
+            "label": "button"
+          }
+        ],
+        "equals": 0,
+        "allowTrivial": "the invariant under test: no strike path produces a flash while reduced motion holds"
+      },
+      {
+        "id": "state",
+        "path": "strikes",
+        "equals": 0,
+        "allowTrivial": "the invariant under test: neither the key, the button nor the auto scheduler strikes under reduced motion"
+      }
+    ]
+  }
+}

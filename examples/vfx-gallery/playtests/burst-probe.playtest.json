@@ -1,0 +1,23 @@
+{
+  "name": "vfx-gallery-burst-probe-restart",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 8,
+  "subject": "burst-probe",
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "kind": "wait", "label": "burst-window-complete", "waitTicks": 600, "release": true }
+  ],
+  "assert": {
+    "components": [
+      { "entity": "burst-probe", "component": "done", "equals": true },
+      { "entity": "burst-probe", "component": "amount", "gte": 0 },
+      { "entity": "burst-probe", "component": "meanAgeFractionFirstFrame", "gte": 0 },
+      { "entity": "burst-probe", "component": "maxOneFrameMoveAtSecondBurst", "gte": 0 },
+      { "entity": "burst-probe", "component": "secondBurstHiddenAtFrame", "gte": 0 },
+      { "entity": "burst-probe", "component": "firstBurstVisibleFrames", "gte": 0 },
+      { "entity": "burst-probe", "component": "samples", "gte": 0 }
+    ]
+  }
+}

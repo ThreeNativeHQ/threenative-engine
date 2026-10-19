@@ -2,17 +2,14 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <unordered_set>
+#include <unordered_map>
 
 namespace {
 
-std::unordered_set<WGPUShaderModule> releasedModules;
+std::unordered_map<WGPUShaderModule, size_t> releaseCounts;
 
 void recordRelease(WGPUShaderModule module) {
-    if (!releasedModules.insert(module).second) {
-        std::cerr << "shader-module-metadata: native module released twice" << std::endl;
-        std::abort();
-    }
+    releaseCounts[module] += 1;
 }
 
 }  // namespace
@@ -22,20 +19,26 @@ int main() {
     std::weak_ptr<mystral::webgpu::ShaderModuleMetadataStore> weakStore = store;
     const auto first = reinterpret_cast<WGPUShaderModule>(static_cast<uintptr_t>(1));
     const auto second = reinterpret_cast<WGPUShaderModule>(static_cast<uintptr_t>(2));
-    store->entries[first] = {"vertexFirst", "fragmentFirst"};
-    store->entries[second] = {"vertexSecond", "fragmentSecond"};
+    // Match two createShaderModule calls that Dawn canonicalizes to one native handle.
+    store->acquire(first, {"vertexFirst", "fragmentFirst"});
+    store->acquire(first, {"vertexFirst", "fragmentFirst"});
+    store->acquire(second, {"vertexSecond", "fragmentSecond"});
+    store->acquire(second, {"vertexSecond", "fragmentSecond"});
 
     if (!store->release(first, &recordRelease) ||
+        store->entries.find(first) == store->entries.end() ||
+        !store->release(first, &recordRelease) ||
+        store->entries.find(first) != store->entries.end() ||
         store->release(first, &recordRelease) ||
         store->entries.size() != 1 ||
-        releasedModules != std::unordered_set<WGPUShaderModule>{first}) {
+        releaseCounts != std::unordered_map<WGPUShaderModule, size_t>{{first, 2}}) {
         std::cerr << "shader-module-metadata: wrapper release contract failed" << std::endl;
         return EXIT_FAILURE;
     }
 
     store->releaseAll(&recordRelease);
     if (!store->entries.empty() ||
-        releasedModules != std::unordered_set<WGPUShaderModule>{first, second}) {
+        releaseCounts != std::unordered_map<WGPUShaderModule, size_t>{{first, 2}, {second, 2}}) {
         std::cerr << "shader-module-metadata: teardown release contract failed" << std::endl;
         return EXIT_FAILURE;
     }
@@ -46,7 +49,8 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    std::cout << "shader-module-metadata: wrapper=erase+release-once teardown=release-survivors"
+    std::cout << "shader-module-metadata: wrapper=erase+release-once "
+                 "duplicate-wrapper-refs=release-each teardown=release-survivors"
               << std::endl;
     return EXIT_SUCCESS;
 }

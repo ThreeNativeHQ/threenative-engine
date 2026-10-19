@@ -27,6 +27,7 @@ AC-2 to AC-6 stay fixture claims; one harness defect the packaged run exposed �
 reported a pass after measuring nothing — is fixed with a red-green test. Exact gaps are in
 “Execution results”.
 
+**Priority:** P1 — Open ACs require visible loading updates, per-frame state, responsive pointers, 2 ms p95.
 ## Context
 
 João reports dark background transitions during loading and visibly slow React UI refresh on

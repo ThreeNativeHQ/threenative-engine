@@ -1,0 +1,291 @@
+{
+  "captureSourceSha": "8bf16f4c320748403dd091e4fd7da394da314bff",
+  "historicalEvidence": "All55/388/originalcoldboot evidence remains unchanged. Newactual8bf images reuse only byte-identical publicPNG aliases; legacy filenames retain original provenance.",
+  "nativeProductionSourceTree": "50cf798dd03c8bb6055ce4ca1dc58517503bd0ee",
+  "currentHarnessSourceTree": "8a6451f4ed1ce8a210bea91a2d78b91dc677db86",
+  "generatedGraphSources": {
+    "autoExposure.ts": "df33444e80ff05979baa9c432b9fcf48b99092edf2b04883a066c3dd3f177958",
+    "exposureGraph.ts": "f3469ca4a79481a29e9632ea98caf586692d9020ebcd3f5022566d7e3031b9e1",
+    "exposureReadback.ts": "ebd6172df130ea62426fc4ef78972a41c0a66239db1e0d1646d3bb33fc4e269a",
+    "worldEnvironment.ts": "d19cc71369979c9a8d02e536218b2e68c0b6761559dd2f16d2cdaac823c87da2",
+    "exposure.ts": "e450681e739b192c8a632a6f0bc73dcb7d0f3bfc22273eeca1ee715c88e38631"
+  },
+  "approvedAC2": {
+    "coldBoots": "Current55 tenboot gain1 3.7815% band; diagnostic gain0 .8032% also honestlypasses. Clock/age/scene unchanged; no spreadnegativeclaim.",
+    "snapRunId": "5c376a16-f7b0-4354-b5b6-ce7fcbe0e23f",
+    "results": [
+      {
+        "snapGain": 1,
+        "missingWire": false,
+        "expectedConsumerFailure": false,
+        "cutTiming": {
+          "renderedUpdates": 1,
+          "consumedSeconds": 0.016666666666666607
+        },
+        "errorStops": 4.76837158203125e-7
+      },
+      {
+        "snapGain": 0,
+        "missingWire": false,
+        "expectedConsumerFailure": false,
+        "cutTiming": {
+          "renderedUpdates": 114,
+          "consumedSeconds": 1.8999999999999937
+        },
+        "errorStops": 10.553099393844604,
+        "expectedFailure": "TN_EXPOSURE_SNAP_RESPONSE_MISSING: First post-cut GPU update remains 10.553099393844604 stops from the target (limit 0.25)."
+      },
+      {
+        "snapGain": 1,
+        "missingWire": true,
+        "expectedConsumerFailure": true,
+        "cutTiming": {
+          "renderedUpdates": 1,
+          "consumedSeconds": 0.016666666666666607
+        },
+        "errorStops": 4.76837158203125e-7
+      }
+    ]
+  },
+  "consumerOwnership": {
+    "gain1": ["TN_EXPOSURE_CONSUMER:{\"installed\":true,\"owned\":true}"],
+    "gain0": ["TN_EXPOSURE_CONSUMER:{\"installed\":true,\"owned\":true}"],
+    "missingWire": ["TN_EXPOSURE_CONSUMER:{\"installed\":true,\"owned\":false}"],
+    "lifecycle": ["TN_EXPOSURE_CONSUMER:{\"installed\":true,\"owned\":true}"],
+    "native": ["TN_EXPOSURE_CONSUMER:{\"installed\":true,\"owned\":true}"],
+    "nativeValidationNegativeScopeOnly": [
+      "TN_EXPOSURE_CONSUMER:{\"installed\":true,\"owned\":true}"
+    ]
+  },
+  "missingWireControl": {
+    "mutationRecords": [
+      {
+        "mutation": "consumer",
+        "sourceSha256": "d19cc71369979c9a8d02e536218b2e68c0b6761559dd2f16d2cdaac823c87da2",
+        "mutatedSha256": "5245ed5840c6fca57dcf43408dec764b2ce19d5459b6a42b53bfb227f6a2d171"
+      }
+    ],
+    "qualifiedFailure": "Exposure consumer did not own the generated environment's actual graph.",
+    "responseStillPasses": true,
+    "meaning": "Disposablefixturemanualfallback adapts correctly; only generatedownership gate rejects missingwire. No claim that mutant pixels lacked adaptation."
+  },
+  "lifecycle": {
+    "runId": "17c6c2b2-9e5b-48cf-968b-bec477cd740b",
+    "pairedSamples": 720,
+    "stages": {
+      "before": 180,
+      "rebuild": 181,
+      "resize": 361,
+      "reset": 541
+    },
+    "resizedViewport": [320, 180],
+    "resetFirstMeasuredTargetStops": 6.551916122436523
+  },
+  "native": {
+    "runId": "9f2cb7a3-9a34-429e-9192-0cbcf0768a9b",
+    "sourceSha": "8bf16f4c320748403dd091e4fd7da394da314bff",
+    "consumer": true,
+    "positive": {
+      "terminal": {
+        "measured": true,
+        "applied": true,
+        "luminance": 3.8949010372161865,
+        "exposureStops": -4.435490608215332,
+        "targetStops": -4.43551778793335,
+        "settled": true
+      },
+      "samples": 180,
+      "adapter": "native:vulkan/nvidia/NVIDIA GeForce RTX 2080/turing/NVIDIA: 615.71.09 615.71.9.0",
+      "pixels": {
+        "darkPixelRatio": 0,
+        "nonblankPixelRatio": 1
+      },
+      "validation": {
+        "updates": 180,
+        "scopes": ["internal", "out-of-memory", "validation"],
+        "errors": [null, null, null]
+      },
+      "beforePixels": {
+        "darkPixelRatio": 0,
+        "nonblankPixelRatio": 1
+      }
+    },
+    "negative": {
+      "injectedValidationRejected": true
+    },
+    "runtimeSha256": "bc0b9d8eaebc811014133e79f240ea90cd98e5440fa2ce0d4191ae7d504d34f1",
+    "diagnosticSource": "actual GPU error scopes and captured native host console; native GPUDevice.lost is an unsupported stub and is not a diagnostic producer; no normalized runtime diagnostic defaults"
+  },
+  "nativeContract": {
+    "sourceSha": "63f69c922f835a7cb85d94739d5530a02c393826",
+    "receiptSha256": "754cac2e4d80534724c6f188954f508eb2a0d422a2ab3434a0c46dc9738123d7",
+    "includedInTrace": "nativeContractReceipt"
+  },
+  "nativeCoverage": {
+    "sourceSha": "8bf16f4c320748403dd091e4fd7da394da314bff",
+    "sourceDigest": "26e52aa0d7cade3c712d4e4054e9a014d7f07709558b3146196827780580d713",
+    "rawProfiles": 47,
+    "profileBytes": 40641088,
+    "reportSha256": "5218b905f90a699fdb7e49fa23eea8a26e61c95a4b7bfe03cdb3b5e7aa54a6c1",
+    "logSha256": "69496ec3a4e22726a6216f8e12722bae56459163462ae3a19f8068a68ec7392f"
+  },
+  "scaffolds": {
+    "baselineSourceSha": "52b0563c0115b1f43597558559a93635bcdfc8d3",
+    "currentSourceSha": "8bf16f4c320748403dd091e4fd7da394da314bff",
+    "allowedChanges": [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "src/render/autoExposure.ts",
+      "src/render/quality.ts",
+      "src/render/worldEnvironment.ts",
+      "src/render/exposureGraph.ts",
+      "src/render/exposureReadback.ts"
+    ],
+    "measuredHashes": {
+      "action-rpg": [
+        "b7f054b47c662c77372335279fe81a916d45afed60a39d12e6054f35a31f4fc6",
+        "ac45303b74f9daab0faebc8caa4c6cd4826419997b8baf1949feb30695e41da6"
+      ],
+      "minimal": [
+        "5147f37e55f3c6524b7d2489b1bda46b7276fad825465be825ceaa87aa718b42",
+        "8b8127a3228e91e49dd54c9990ef3f1e9ed83d3c8a0383a310542469e3d17098"
+      ],
+      "platformer": [
+        "40342e5fcaaf682d486878d12dbe42cf08ebd3a97b927025a85f2a58e227e2f8",
+        "02adfd2b349ede31af2589488974ff7cc3fe5548b56284ec460738b1be2a3a07"
+      ],
+      "puzzle": [
+        "649e38d75110dee453fda27b68fd4e2428520f1cebbab8d182d05aea7d97fe9a",
+        "1f0fd9280fb629766dd8508cbd842afe3e86aaa04f0a9d3b63a11b77acceca74"
+      ],
+      "racing": [
+        "c5375fd0ca297f309ab7e8d121a86b6815a20cdd5b00ef4ad695452da35c5b9b",
+        "7dfe8c0f8c1501490216d8cb8b59bc44ec8144df7b897077de5a781a9af9e6d7"
+      ],
+      "rain": [
+        "3fc0a3879815321f51e8d886db9f2c9a2832c0ddff6aa7a25b30ff6fe7e02e8f",
+        "717ab2324392a83f8a3b7d9e7640647af82ba8f0d1937668990c5300b96a824b"
+      ],
+      "rts": [
+        "c04d8fbbcfad0fa962055202df3223d62a80361a2779863127b0e49debe8d2eb",
+        "611552b795122611fa8d515e1632aaf3b1c043f0538459ea1811ddb58e8064ad"
+      ],
+      "runner": [
+        "82edfe3f91964d74a727a5a32719cf97170bf8484bc82bfd3626efe9d7964d0e",
+        "5e44aeb29248a63f93648716cbdfe861dd758eb8db65dbea0ad0f6002c09136a"
+      ],
+      "sailing": [
+        "205d7eb3b82d743d3dcd1bef2e23290cf0576f4ce377c1d93bafb3a089a2baa5",
+        "90df74708eedb1ccac4a8a6a260f2ce91ab7e45246ae373364c5bfd1b9e0d268"
+      ],
+      "shooter": [
+        "39eaa2254eaa77038b19c1ba0b8cf50665d8b9e6e96223f76131d97b1835de82",
+        "96aaf05c134c9643867a9b9653deb534b8e34c8f77f20e2d6d472705ea1f3709"
+      ],
+      "snow": [
+        "d322ab60a23e146ca729348db119c2491c54cc1f949bd394676d3dd4ff2aa294",
+        "481eeb617fd4948e4473618b51247e9848c6b583285d795e5af87339f3dda9c6"
+      ],
+      "starter": [
+        "d7ec4b02ffb446b33666f52ccd9db0e034a17d5961ea3b2caa17012a481e73a8",
+        "c434168b09b7e6baba24e2d95ed4abcf03ce41c3067aedbeeca7083ec4c992ca"
+      ],
+      "tower-defense": [
+        "e5980d5a22836b591f3ac5853c5dd522aa8bcb090722a71e1afcc122defa8ad0",
+        "02554a3279225373e6d39fcdd41f95edffa832804a49f816d593598dad2b64c5"
+      ]
+    },
+    "manifestSha256": "54fc62e1fa65dca17da1a058d0f1c85c795a045e7a7c2adee691f9345d022804"
+  },
+  "imageAliases": [
+    {
+      "dataset": "gain1",
+      "capture": "after.png",
+      "sha256": "1d46097e8fb83c439ebaa89f88bd6148fb03cf339e9197cd0717928c8517f0fd",
+      "bytes": 38954,
+      "publicImage": "snap-gain-1-after-388e8a.png"
+    },
+    {
+      "dataset": "gain1",
+      "capture": "before.png",
+      "sha256": "8a90cc9200af54282ccfecd12cbfaaab89a0bda29e5766d0ab129c115a1517de",
+      "bytes": 39393,
+      "publicImage": "snap-gain-1-before-388e8a.png"
+    },
+    {
+      "dataset": "gain0",
+      "capture": "after.png",
+      "sha256": "d7675e77a49d15fbb6cd7c61c2d9dbd55d0456df29ff2e1898f6d657b2544f0a",
+      "bytes": 38970,
+      "publicImage": "snap-gain-0-after-388e8a.png"
+    },
+    {
+      "dataset": "gain0",
+      "capture": "before.png",
+      "sha256": "1d7db32509f7e561a22c3b84469dda7a67d5fde6f93b96c9cf54a7f4bb6e38a4",
+      "bytes": 39376,
+      "publicImage": "snap-gain-0-before-388e8a.png"
+    },
+    {
+      "dataset": "missingWire",
+      "capture": "after.png",
+      "sha256": "1d46097e8fb83c439ebaa89f88bd6148fb03cf339e9197cd0717928c8517f0fd",
+      "bytes": 38954,
+      "publicImage": "snap-gain-1-after-388e8a.png"
+    },
+    {
+      "dataset": "missingWire",
+      "capture": "before.png",
+      "sha256": "8a90cc9200af54282ccfecd12cbfaaab89a0bda29e5766d0ab129c115a1517de",
+      "bytes": 39393,
+      "publicImage": "snap-gain-1-before-388e8a.png"
+    },
+    {
+      "dataset": "lifecycle",
+      "capture": "after.png",
+      "sha256": "4012c5576e19675ec740dd9bbe7670ddb5eea259b5e11346e3849c8a4267f8cb",
+      "bytes": 14520,
+      "publicImage": "lifecycle-after-388e8a.png"
+    },
+    {
+      "dataset": "lifecycle",
+      "capture": "before.png",
+      "sha256": "8da06212e01c69c54d97e9ed230012102fa5f11aed97455f0fd21ac2276fd52e",
+      "bytes": 8383,
+      "publicImage": "lifecycle-before-388e8a.png"
+    },
+    {
+      "dataset": "native",
+      "capture": "after.png",
+      "sha256": "d24e07af21f761dca31ad65ae97b387eb2a8d2402999f321c28d417c670d5c35",
+      "bytes": 15985,
+      "publicImage": "native-before-388e8a.png"
+    },
+    {
+      "dataset": "native",
+      "capture": "before.png",
+      "sha256": "d24e07af21f761dca31ad65ae97b387eb2a8d2402999f321c28d417c670d5c35",
+      "bytes": 15985,
+      "publicImage": "native-before-388e8a.png"
+    }
+  ],
+  "trace": {
+    "path": "consumer-paired-8bf16f4.json.xz",
+    "compression": "xz (Pythonstdlib lzma)",
+    "rawBytes": 3456823,
+    "bytes": 60552,
+    "rawSha256": "49345cdf0f4fc36f34d2c44bfd1da0f5981cd4d712395606f3a0aee7d92f226b",
+    "sha256": "8dbc2d2dd812956c38a0fef814d0689650e2e962a94499304533cac007510a1b",
+    "counts": {
+      "gain1": 1086,
+      "gain0": 1086,
+      "missingWire": 1086,
+      "lifecycle": 2169,
+      "native": 546,
+      "nativeValidationNegativeScopeOnly": 3
+    },
+    "nativeNegativeScopeOnly": "Only actual run/ownership/error-scope markers retained for injectedvalidationcontrol; fullconsole original receipt below. Positive180pairs retained entirely."
+  },
+  "qualificationPending": "Actual consumer acceptance verified; approved lossless preservation and current develop source-scoped integration qualified. Exact-head remote CI and auto-merge remain separate pending gates.",
+  "artifactReceiptsIncludedInTrace": "artifactReceipts"
+}

@@ -376,4 +376,50 @@ describe("NavigationAgent3D hot-path cost", () => {
       everySpy.mockRestore();
     }
   });
+
+  it("walks a wall detour to completion and targetReached fires once", async () => {
+    const { ctx, navigationPlugin } = await setup();
+    new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const object = new Object3D();
+    object.position.set(7.5, 0.75, 0);
+    const agent = new NavigationAgent3D({
+      avoidanceEnabled: false,
+      navigation: navigation(ctx),
+      object,
+      pathDesiredDistance: 0.8,
+      targetDesiredDistance: 0.8,
+    });
+    const target = new Vector3(0, 0.75, 0);
+    let targetReachedCount = 0;
+    agent.on("targetReached", () => {
+      targetReachedCount += 1;
+    });
+    agent.setTargetPosition(target);
+
+    const nextPos = new Vector3();
+    let detourObserved = false;
+    for (let step = 0; step < 300 && !agent.isNavigationFinished(); step += 1) {
+      agent.getNextPathPosition(nextPos);
+      if (Math.abs(object.position.z) > 1.5) {
+        detourObserved = true;
+      }
+      const stepDir = new Vector3().subVectors(nextPos, object.position);
+      if (stepDir.lengthSq() > 0.0001) {
+        stepDir.setLength(Math.min(0.2, stepDir.length()));
+        object.position.add(stepDir);
+      }
+      navigationPlugin.update?.(ctx, 1 / 60);
+    }
+
+    expect(detourObserved).toBe(true);
+    expect(agent.isNavigationFinished()).toBe(true);
+    expect(object.position.distanceTo(target)).toBeLessThanOrEqual(0.8);
+    expect(targetReachedCount).toBe(1);
+
+    // Additional updates after completion must not fire targetReached again
+    navigationPlugin.update?.(ctx, 1 / 60);
+    agent.advance();
+    expect(targetReachedCount).toBe(1);
+    agent.dispose();
+  });
 });

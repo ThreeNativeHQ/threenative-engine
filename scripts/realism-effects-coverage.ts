@@ -19,8 +19,6 @@ export const REALISM_EFFECTS_EXPORTS = [
 ] as const;
 
 export const REALISM_EFFECTS_PLATFORMS = ["desktop", "android", "ios"] as const;
-export type RealismEffectsExport = (typeof REALISM_EFFECTS_EXPORTS)[number];
-export type RealismEffectsPlatform = (typeof REALISM_EFFECTS_PLATFORMS)[number];
 export type RealismEffectsCoverageKind = "upstream" | "template" | "not-covered";
 
 export interface IRealismEffectsCoverageRow {

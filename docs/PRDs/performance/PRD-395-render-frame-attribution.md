@@ -18,6 +18,7 @@ further work. Android and iOS rows need hardware in addition.
 **Depends on:** nothing. Blocks PRD-396 measurement and PRD-397 pricing.
 **PR:** (open as draft before Phase 1) — label `prd:0`
 
+**Priority:** P1 — Prerequisite for P1 PRD-397, priced against its published figures. Seventeen open boxes are user verification runs of the landed attribution.
 ## Problem
 
 Native desktop, 1280x720, reference game (midway), frame p50 **20.2 ms** (42–51 fps):

@@ -75,11 +75,6 @@ const records = new WeakMap<Material, IUniformRecord>();
 const opaqueIds = new WeakMap<object, number>();
 let nextOpaqueId = 1;
 
-function colorValueOf(value: unknown): Color | undefined {
-  if (value === null || value === undefined) return undefined;
-  return (value as { isColor?: boolean }).isColor === true ? (value as Color) : undefined;
-}
-
 function isTextureValue(value: unknown): boolean {
   return value !== null && (value as { isTexture?: boolean }).isTexture === true;
 }

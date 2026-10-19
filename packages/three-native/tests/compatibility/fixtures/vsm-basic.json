@@ -1,0 +1,435 @@
+{
+  "name": "vsm-basic",
+  "adaptedFrom": "PRD-524: native page atlas versus the shipped VirtualShadowNode; cached fine/coarse shadows on standard and Lambert receivers",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.x",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 5.5
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 6.5
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0.4, 0]
+    },
+    {
+      "op": "new",
+      "id": "sun",
+      "class": "DirectionalLight",
+      "args": [16777215, 2.5]
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.x",
+      "value": -2
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.y",
+      "value": 6
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.z",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "castShadow",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.bias",
+      "value": -0.0005
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [13426943, 3351057, 0.5]
+    },
+    {
+      "op": "new",
+      "id": "floorGeometry",
+      "class": "PlaneGeometry",
+      "args": [12, 12]
+    },
+    {
+      "op": "new",
+      "id": "floorMaterial",
+      "class": "MeshLambertMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "floor",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "floorGeometry"
+        },
+        {
+          "ref": "floorMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "floor",
+      "path": "rotation.x",
+      "value": -1.5707963267948966
+    },
+    {
+      "op": "set",
+      "id": "floor",
+      "path": "receiveShadow",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "waveGeometry",
+      "class": "BoxGeometry",
+      "args": [3, 1.5, 2]
+    },
+    {
+      "op": "new",
+      "id": "waveMaterial",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "waveMaterial",
+      "path": "color.r",
+      "value": 0.3
+    },
+    {
+      "op": "set",
+      "id": "waveMaterial",
+      "path": "color.g",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "waveMaterial",
+      "path": "color.b",
+      "value": 0.9
+    },
+    {
+      "op": "set",
+      "id": "waveMaterial",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "new",
+      "id": "wave",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "waveGeometry"
+        },
+        {
+          "ref": "waveMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "wave",
+      "path": "rotation.x",
+      "value": -1.5707963267948966
+    },
+    {
+      "op": "set",
+      "id": "wave",
+      "path": "position.y",
+      "value": 1.6
+    },
+    {
+      "op": "set",
+      "id": "wave",
+      "path": "castShadow",
+      "value": true
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "floor"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "wave"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sun"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "sunTarget",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "target",
+      "value": {
+        "ref": "sunTarget"
+      }
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sunTarget"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "standardFloorMaterial",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "standardFloorMaterial",
+      "path": "roughness",
+      "value": 1
+    },
+    {
+      "op": "new",
+      "id": "standardFloor",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "floorGeometry"
+        },
+        {
+          "ref": "standardFloorMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "standardFloor",
+      "path": "rotation.x",
+      "value": -1.5707963267948966
+    },
+    {
+      "op": "set",
+      "id": "standardFloor",
+      "path": "position.x",
+      "value": 12
+    },
+    {
+      "op": "set",
+      "id": "standardFloor",
+      "path": "receiveShadow",
+      "value": true
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "standardFloor"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "secondCaster",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "waveGeometry"
+        },
+        {
+          "ref": "waveMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "secondCaster",
+      "path": "position.x",
+      "value": 12
+    },
+    {
+      "op": "set",
+      "id": "secondCaster",
+      "path": "position.y",
+      "value": 1.6
+    },
+    {
+      "op": "set",
+      "id": "secondCaster",
+      "path": "rotation.x",
+      "value": -1.5707963267948966
+    },
+    {
+      "op": "set",
+      "id": "secondCaster",
+      "path": "castShadow",
+      "value": true
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "secondCaster"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.x",
+      "value": 6
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 10
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 12
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [6, 0.4, 0]
+    },
+    {
+      "op": "tsl",
+      "id": "sun",
+      "program": "vsm-basic"
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb",
+    "shadowMap": true
+  }
+}

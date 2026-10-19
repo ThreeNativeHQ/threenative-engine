@@ -163,10 +163,10 @@ async function readAdapterInfo(
       gpu?: { requestAdapter(): Promise<{ info?: Record<string, unknown> } | null> };
     };
     const adapter = await gpuNavigator.gpu?.requestAdapter();
-    const raw = adapter?.info ?? {};
+    const raw = adapter?.info;
     return Object.fromEntries(
-      ["architecture", "description", "device", "vendor"].flatMap((key) => {
-        const value = raw[key];
+      (["architecture", "description", "device", "vendor"] as const).flatMap((key) => {
+        const value = raw?.[key];
         return typeof value === "string" && value.trim() !== "" ? [[key, value]] : [];
       }),
     );

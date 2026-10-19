@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "0.1.0",
+  "source": "browser-webgpu-capture",
+  "recipe": "webgpu",
+  "rows": [
+    {
+      "id": "vfx-spawn-requests",
+      "capture": "vfx-spawn-requests.png",
+      "settledFrame": 8,
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 }
+    }
+  ]
+}

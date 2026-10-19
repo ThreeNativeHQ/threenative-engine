@@ -118,6 +118,19 @@ if [[ ! -x "$browser_path" ]]; then
   exit 2
 fi
 
+# The capture mutex intentionally retains its coordination root and empty queue after release.
+# Initialize only this run's private infrastructure before counting; still require no lease or
+# queue entry after SIGTERM, so a real lock/process/profile leak cannot become a green count.
+capture_coordination_root="$suite_temp_root/threenative-playtest-capture"
+mkdir -p -- "$capture_coordination_root/queue"
+capture_coordination_empty() {
+  [[ ! -e "$capture_coordination_root/lock" && ! -L "$capture_coordination_root/lock" ]] || return 1
+  if [[ -d "$capture_coordination_root/queue" && ! -L "$capture_coordination_root/queue" ]]; then
+    [[ -z "$(find "$capture_coordination_root/queue" -mindepth 1 -maxdepth 1 -print -quit)" ]]
+  else
+    [[ ! -e "$capture_coordination_root/queue" && ! -L "$capture_coordination_root/queue" ]]
+  fi
+}
 before_temp_directories="$(count_temp_directories)"
 
 set +e
@@ -167,7 +180,7 @@ while true; do
   sleep 1
   orphans="$(list_orphan_processes)"
   after_temp_directories="$(count_temp_directories)"
-  if [[ -z "$orphans" && "$after_temp_directories" -le "$before_temp_directories" ]]; then
+  if [[ -z "$orphans" && "$after_temp_directories" -le "$before_temp_directories" ]] && capture_coordination_empty; then
     break
   fi
   if (( SECONDS - settle_started >= settle_deadline_seconds )); then
@@ -178,6 +191,12 @@ done
 if [[ -n "$orphans" ]]; then
   echo "orphan processes remain after ${settle_deadline_seconds}s:" >&2
   echo "$orphans" >&2
+  exit 1
+fi
+
+if ! capture_coordination_empty; then
+  echo "owned capture lease or queue entries remain after ${settle_deadline_seconds}s in '$capture_coordination_root'" >&2
+  find "$capture_coordination_root" -mindepth 1 -maxdepth 2 -print >&2 2>/dev/null || true
   exit 1
 fi
 

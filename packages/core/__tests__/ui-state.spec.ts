@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { GAME_STATE_MESSAGE, UI_INTENT_MESSAGE, connectUiBridge } from "../src/ui-bridge.js";
 import { onUiIntent, publishUiState, sendUiIntent, subscribeUiState } from "../src/ui-state.js";
 
@@ -31,6 +31,84 @@ function fakeStore(initial: Record<string, unknown>) {
 const now = (flush: () => void): void => flush();
 
 describe("published state", () => {
+  test("should serialize each flush once and preserve the exact host frame", () => {
+    const sent: string[] = [];
+    const game = connectUiBridge({
+      end: "game",
+      scope: {
+        __tnUiPost: (frame: string) => sent.push(frame),
+        __tnUiOverlayAttached: () => true,
+      },
+    });
+    const store = fakeStore({ score: 0 });
+    const publisher = publishUiState(game, store, { schedule: now });
+    const stringify = vi.spyOn(JSON, "stringify");
+    try {
+      store.flush();
+      expect(stringify).toHaveBeenCalledTimes(1);
+      expect(sent).toHaveLength(1);
+      stringify.mockClear();
+      store.tick({ score: 1 });
+      store.flush();
+      expect(stringify).toHaveBeenCalledTimes(1);
+      const [value] = stringify.mock.calls[0] ?? [];
+      expect(
+        value === store.getPublishedState() || value?.state === store.getPublishedState(),
+      ).toBe(true);
+      stringify.mockClear();
+      publisher.publish();
+      expect(stringify).toHaveBeenCalledTimes(1);
+      expect(sent).toHaveLength(3);
+    } finally {
+      stringify.mockRestore();
+      publisher.stop();
+    }
+    expect(sent).toEqual([
+      JSON.stringify({ type: GAME_STATE_MESSAGE, state: { score: 0 } }),
+      JSON.stringify({ type: GAME_STATE_MESSAGE, state: { score: 1 } }),
+      JSON.stringify({ type: GAME_STATE_MESSAGE, state: { score: 1 } }),
+    ]);
+  });
+
+  test("should preserve key-sensitive toJSON and omitted state bytes", () => {
+    const sent: string[] = [];
+    const game = connectUiBridge({
+      end: "game",
+      scope: {
+        __tnUiPost: (frame: string) => sent.push(frame),
+        __tnUiOverlayAttached: () => true,
+      },
+    });
+    for (const state of [{ toJSON: (key: string) => ({ key }) }, undefined]) {
+      const publisher = publishUiState(game, {
+        getState: () => state,
+        subscribe: () => () => undefined,
+      });
+      expect(sent.at(-1)).toBe(JSON.stringify({ type: GAME_STATE_MESSAGE, state }));
+      publisher.stop();
+    }
+  });
+
+  test("should retain bridge serialization errors for invalid state", () => {
+    const game = connectUiBridge({
+      end: "game",
+      scope: { __tnUiPost: () => undefined, __tnUiOverlayAttached: () => true },
+    });
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    for (const state of [cyclic, { value: 1n }]) {
+      let detail = "";
+      try {
+        JSON.stringify({ type: GAME_STATE_MESSAGE, state });
+      } catch (error) {
+        detail = (error as Error).message;
+      }
+      expect(() => publishUiState(game, fakeStore(state))).toThrow(
+        `TN_UI_BRIDGE_MESSAGE_INVALID: '${GAME_STATE_MESSAGE}' is not JSON-serialisable: ${detail}`,
+      );
+    }
+  });
+
   test("should carry the throttled state, not the live one", () => {
     const scope: Scope = {};
     const game = connectUiBridge({ end: "game", scope });

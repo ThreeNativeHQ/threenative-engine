@@ -3,6 +3,7 @@ import {
   type IRandom,
   Scene,
   type SceneFrame,
+  getPlatform,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
@@ -22,8 +23,10 @@ import { Seal } from "../entities/Seal.js";
 import { WARDEN_SPAWN, Warden } from "../entities/Warden.js";
 import { createVaultCamera } from "../render/camera.js";
 import { CRATE_SIZE } from "../render/crateShape.js";
+import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import {
   crateBraceMaterial,
   crateMaterials,
@@ -32,6 +35,7 @@ import {
   phaseMaterial,
 } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
+import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { SEAL, VAULT, createVaultRoom } from "../render/vault.js";
@@ -109,6 +113,18 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #banner: Mesh | undefined;
   #statics: RigidBody3D[] = [];
 
+  #environmentSample: IEnvironmentSample | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+  #post: ReturnType<typeof setupPost> | undefined;
+  #materialEnvironment(ctx: GameCtx) {
+    return {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
+  }
   static override readonly initialState: GameState = {
     blockedTicks: 0,
     crates: 0,
@@ -184,6 +200,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     if (banner === undefined) throw new Error("Proof glTF did not contain a mesh.");
     this.#banner = banner;
     console.info("TN_NATIVE_STARTER_ASSETS_LOADED:texture,glb");
+    setupSky(ctx.scene);
+    this.#environmentSample = await sampleEnvironment(
+      ctx.renderer.raw,
+      ctx.scene,
+      this.#materialEnvironment(ctx),
+    );
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -199,10 +221,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+    this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
       godraysLight: sun,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
+      onTierChanged: (tier) =>
+        this.#materialLighting?.setEnabled(
+          materialLightingEnabled(tier, this.#materialEnvironment(ctx)),
+        ),
     });
     const loading = createLoadingScreen(ctx);
     const room = createVaultRoom();
@@ -318,7 +345,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     /** V pressed before the opening drop finished: honoured as soon as it has. */
     let replayRequested = false;
 
-    const unwatch = seal.watch({
+    seal.watch({
       isCrate: (body) => crateBodies.has(body),
       onContact: (by) => {
         // The seal is switched off for the duration of the replay, so anything that reaches it
@@ -399,6 +426,23 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.state.set({ ...Play.initialState, replayTicks: REPLAY_TICKS, status });
 
     const frameState: Partial<GameState> = {};
+
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, sun, {
+        ...this.#materialEnvironment(ctx),
+        enabled: materialLightingEnabled(this.#post.tier, this.#materialEnvironment(ctx)),
+      }),
+    );
+    if (this.#environmentSample !== undefined) {
+      const { measurement, source, intensity } = this.#environmentSample;
+      this.#materialLighting.setEnvironmentMeasurement(
+        measurement,
+        source,
+        intensity,
+        this.#environmentSample,
+      );
+    }
 
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: the frame is the vault's whole
     // per-tick bookkeeping — the two replay passes, the settle test, the push tally and the state
@@ -550,6 +594,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   }
 
   override exit(ctx: GameCtx): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
+
     for (const body of this.#statics) body.dispose();
     this.#statics = [];
     super.exit(ctx);

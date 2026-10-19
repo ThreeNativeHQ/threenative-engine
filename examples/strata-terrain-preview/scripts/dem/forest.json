@@ -1,0 +1,31 @@
+{
+  "site": "Sprague Lake / Glacier Creek conifer valley, Rocky Mountain National Park, Colorado",
+  "size": 512,
+  "resolution": 257,
+  "spacing": 2,
+  "encoding": "int16-le-decimetres-relative-to-elevationOffset",
+  "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
+  "crs": "EPSG:26913",
+  "verticalCRS": "NAVD88 metres",
+  "sourceCRS": "EPSG:26913",
+  "center": [448720, 4463470],
+  "bbox": [448464, 4463214, 448976, 4463726],
+  "bboxWGS84": [-105.60661224384326, 40.31785953683633, -105.60054511356564, 40.32250348536587],
+  "elevationOffset": 2635,
+  "relativeElevationRange": [-2.6, 38.4],
+  "tileIds": ["USGS_1M_13_x44y447_CO_DRCOG_2020_B20"],
+  "acquisitionDate": {
+    "begin": "2020-05-26",
+    "end": "2021-03-13",
+    "basis": "USGS project metadata temporal extent"
+  },
+  "acquisitionDateNote": "Project temporal extent, not a claim that every crop pixel was flown on one day.",
+  "downloadURL": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/CO_DRCOG_2020_B20/TIFF/USGS_1M_13_x44y447_CO_DRCOG_2020_B20.tif",
+  "metadataURL": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/CO_DRCOG_2020_B20/metadata/USGS_1M_13_x44y447_CO_DRCOG_2020_B20.xml",
+  "accessed": "2026-10-03",
+  "filter": "2×2 1 m area/box filter at each 2 m vertex; rounded to 0.1 m; no vertical exaggeration",
+  "sha256": "cf04efc24a7c5a762c38677996ea78ca552878a0cfcaa7cfda5bc89841f8b5a4",
+  "citation": "U.S. Geological Survey, 3D Elevation Program (3DEP), The National Map, 1 meter and 1/3 arc-second Digital Elevation Models, accessed October 3, 2026. Cropped, filtered, translated vertically and quantized by this example; not endorsed by USGS.",
+  "license": "U.S. Government public domain",
+  "licenseURL": "https://data.usgs.gov/datacatalog/data/USGS:77ae0551-c61e-4979-aedd-d797abdcde0e"
+}

@@ -800,11 +800,23 @@ export interface IVerifyRegistryInstallOptions {
   readonly template?: string;
 }
 
+/** Streams each finished step to stderr, so a job killed by its clock still names the slow step. */
+function progress(item: IRegistryInstallStep, started: number): IRegistryInstallStep {
+  const seconds = ((performance.now() - started) / 1000).toFixed(0);
+  process.stderr.write(`${item.ok ? "pass" : "FAIL"}  ${item.name} (${seconds}s)\n`);
+  return item;
+}
+
 function step(name: string, work: () => string): IRegistryInstallStep {
+  const started = performance.now();
   try {
-    return { detail: work().trim().slice(-400) || "(no output)", name, ok: true };
+    return progress(
+      { detail: work().trim().slice(-400) || "(no output)", name, ok: true },
+      started,
+    );
   } catch (error) {
-    return { detail: error instanceof Error ? error.message : String(error), name, ok: false };
+    const detail = error instanceof Error ? error.message : String(error);
+    return progress({ detail, name, ok: false }, started);
   }
 }
 
@@ -817,10 +829,13 @@ function stepPlan(upgrade: boolean): readonly string[] {
 
 /** `step` for work that has to await: reading the installed package's ES modules cannot be sync. */
 async function stepAsync(name: string, work: () => Promise<string>): Promise<IRegistryInstallStep> {
+  const started = performance.now();
   try {
-    return { detail: (await work()).trim().slice(-400) || "(no output)", name, ok: true };
+    const detail = (await work()).trim().slice(-400) || "(no output)";
+    return progress({ detail, name, ok: true }, started);
   } catch (error) {
-    return { detail: error instanceof Error ? error.message : String(error), name, ok: false };
+    const detail = error instanceof Error ? error.message : String(error);
+    return progress({ detail, name, ok: false }, started);
   }
 }
 

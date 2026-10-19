@@ -1,0 +1,1098 @@
+name: Integration lanes
+
+# CI calls every selected lane at one exact candidate. Ordinary PRs select affected lanes;
+# qualification events require all lanes and current-attempt completion receipts.
+on:
+  workflow_call:
+    inputs:
+      selection_plan:
+        type: string
+        required: true
+      candidate_sha:
+        type: string
+        required: true
+      # PRD-620: the parent's single admitted slice of eligible HEAVY instances. Empty (or a direct
+      # dispatch) means every heavy lane stays hosted.
+      runner_admission:
+        type: string
+        default: ""
+      base_sha:
+        type: string
+        default: ""
+    outputs:
+      coverage_receipt:
+        value: ${{ jobs.completion.outputs.coverage_receipt }}
+
+permissions:
+  contents: read
+  actions: read
+
+# Only ordinary PR runs supersede earlier reviews. Queue/audit candidate runs cannot cancel peers.
+concurrency:
+  group: integration-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || format('{0}-{1}', inputs.candidate_sha, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TN_CI_PLAN: ${{ inputs.selection_plan }}
+  TN_CI_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+  TN_CI_EVENT: ${{ github.event_name }}
+  TN_CI_BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
+  TN_BASE_SHA: ${{ inputs.base_sha }}
+
+jobs:
+  # The per-lane trigger filters these lane files used to carry, as one gate: the pull request's own
+  # changed paths decide which lanes run, and a lane this commit does not touch is skipped rather than
+  # spending a runner. Lane-local workflow edits select that lane; shared scheduling edits
+  # fail closed to every lane. Source filters remain independent of workflow-only selection.
+  paths:
+    name: exact candidate integration inventory
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      animation: ${{ steps.filter.outputs.animation }}
+      candidate_sha: ${{ steps.filter.outputs.candidate_sha }}
+      required_jobs: ${{ steps.filter.outputs.required_jobs }}
+      exposure: ${{ steps.filter.outputs.exposure }}
+      cold-boot: ${{ steps.filter.outputs.cold-boot }}
+      csg: ${{ steps.filter.outputs.csg }}
+      decals: ${{ steps.filter.outputs.decals }}
+      fog: ${{ steps.filter.outputs.fog }}
+      fluid-particles: ${{ steps.filter.outputs.fluid-particles }}
+      fluid-native: ${{ steps.filter.outputs.fluid-native }}
+      ik: ${{ steps.filter.outputs.ik }}
+      temporal: ${{ steps.filter.outputs.temporal }}
+      native-assets: ${{ steps.filter.outputs.native-assets }}
+      tone: ${{ steps.filter.outputs.tone }}
+      vegetation: ${{ steps.filter.outputs.vegetation }}
+      velocity: ${{ steps.filter.outputs.velocity }}
+      world-capture: ${{ steps.filter.outputs.world-capture }}
+      # PRD-620: the caller's admitted heavy slice, validated and re-emitted as safe JSON. Absent
+      # or empty input stays hosted; a malformed plan throws and fails this scope job closed.
+      runner_admission: ${{ steps.filter.outputs.runner_admission }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ inputs.candidate_sha }}
+      - id: filter
+        env:
+          TN_BASE_SHA: ${{ inputs.base_sha }}
+          TN_HEAD_SHA: ${{ inputs.candidate_sha }}
+          TN_RUNNER_ADMISSION: ${{ inputs.runner_admission }}
+          # Exact source filters; workflow-only changes compare each job and filter separately.
+          TN_LANE_FILTERS: |
+            animation ^packages/core/src/animation\.ts$|^packages/core/__tests__/animation[^/]*\.spec\.ts$|^examples/abyss-framework/src/render/animation-reversal[^/]*\.ts$|^examples/abyss-framework/src/animation-reversal-main\.ts$|^examples/abyss-framework/animation-reversal\.html$|^examples/abyss-framework/playtests/animation-reversal\.playtest\.json$|^scripts/verify-animation-reversal\.ts$|^packages/core/__tests__/vq-locomotion-blend-spaces\.spec\.ts$|^examples/abyss-framework/src/render/locomotion-[^/]*\.ts$|^examples/abyss-framework/src/render/vq-locomotion-[^/]*\.ts$|^examples/abyss-framework/src/vq-locomotion-main\.ts$|^examples/abyss-framework/playtests/vq-locomotion-blend-spaces\.playtest\.json$|^examples/abyss-framework/assets/mannequin\.glb$|^scripts/verify-vq-locomotion\.ts$
+            cold-boot ^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|worldEnvironment)\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^packages/core/src/.*$|^packages/core/patches/.*$|^packages/playtest/.*$|^packages/runtime-native/.*$|^pnpm-lock\.yaml$|^scripts/xvfb\.sh$|^\.github/actions/(workspace-dist|pnpm|playwright-chromium)/.*$
+            exposure ^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|worldEnvironment)\.ts$|^packages/create-threenative/__tests__/auto-exposure[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/auto-exposure/.*$|^packages/core/src/.*$|^packages/core/patches/.*$|^packages/playtest/.*$|^packages/runtime-native/.*$|^pnpm-lock\.yaml$|^scripts/xvfb\.sh$|^\.github/actions/(workspace-dist|pnpm|playwright-chromium)/.*$
+            csg ^examples/integrations/csg/.*$
+            decals ^packages/playtest/.*$|^packages/create-threenative/templates/shooter/src/render/decals\.ts$|^packages/create-threenative/templates/shooter/src/scenes/Play\.ts$|^packages/create-threenative/__tests__/shooter-decals[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/bounded-decals/.*$|^packages/runtime-native/.*$|^scripts/xvfb\.sh$|^\.github/actions/workspace-dist/.*$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^pnpm-lock\.yaml$
+            fluid-particles ^packages/core/(src|__tests__)/(fluid|gpu-readback|particles)[^/]*$|^packages/(physics|playtest)/.*$|^examples/prd476-fluid-particles/.*$|^scripts/fluid-collision-proof\.ts$|^scripts/__tests__/fluid-collision-(proof|view)\.spec\.ts$|^package\.json$|^pnpm-(lock|workspace)\.yaml$|^tsconfig[^/]*\.json$|^patches/.*$|^\.github/actions/pnpm/.*$|^scripts/workspace-packages\.ts$|^scripts/verify-fluid-(collision|consumers)\.ts$|^\.github/actions/playwright-chromium/.*$|^scripts/xvfb\.sh$|^scripts/observe-fluid-ci\.mjs$|^scripts/__tests__/observe-fluid-ci\.spec\.ts$
+            fluid-native ^packages/core/(src|__tests__)/(fluid|gpu-readback|particles)[^/]*$|^packages/(physics|playtest)/.*$|^examples/prd476-fluid-particles/.*$|^scripts/fluid-collision-proof\.ts$|^scripts/__tests__/fluid-collision-(proof|view)\.spec\.ts$|^package\.json$|^pnpm-(lock|workspace)\.yaml$|^tsconfig[^/]*\.json$|^patches/.*$|^\.github/actions/pnpm/.*$|^scripts/workspace-packages\.ts$|^packages/runtime-native/.*$|^scripts/verify-fluid-collision-native\.ts$|^scripts/__tests__/fluid-collision-native-proof\.spec\.ts$|^\.github/actions/workspace-dist/.*$
+            fog ^packages/create-threenative/templates/starter/src/render/volumetricFog[A-Za-z]*\.ts$|^packages/create-threenative/templates/starter/src/render/postprocessing\.ts$|^packages/create-threenative/templates/starter/src/scenes/Play\.ts$|^packages/create-threenative/template-assets/worldEnvironment\.ts$|^packages/create-threenative/__tests__/vq-(volumetric-fog|fog-fixture)\.spec\.ts$|^packages/core/src/renderer\.ts$|^packages/core/src/render/chain\.ts$|^examples/abyss-framework/vq-fog/.*$|^examples/abyss-framework/playtests/vq-volumetric-fog\.playtest\.json$|^scripts/verify-volumetric-fog\.ts$|^scripts/__tests__/(verify-volumetric-fog|vq-fog-native-proof)\.spec\.ts$|^packages/runtime-native/include/mystral/webgpu_compat\.h$|^packages/runtime-native/src/webgpu/bindings_presentation\.cpp$|^packages/runtime-native/src/webgpu/presentation\.cpp$|^packages/runtime-native/include/mystral/webgpu/presentation\.h$|^packages/runtime-native/tests/surface_texture_status_test\.cpp$|^packages/runtime-native/tests/canvas_presentation_test\.cpp$
+            ik ^examples/integrations/ik/.*$
+            native-assets ^packages/create-threenative/src/build\.ts$|^packages/create-threenative/src/buildReport\.ts$|^packages/create-threenative/__tests__/vq-native-[^/]*\.spec\.ts$|^packages/assets/src/(compile|report)\.ts$|^packages/core/src/assets\.ts$|^packages/runtime-native/scripts/bundle\.mjs$|^packages/runtime-native/scripts/package-desktop\.mjs$|^packages/runtime-native/scripts/native-build\.mjs$|^packages/runtime-native/scripts/download-deps\.mjs$|^examples/abyss-framework/vq-assets/.*$|^examples/abyss-framework/playtests/vq-native-asset-capabilities\.playtest\.json$|^scripts/verify-native-asset-capabilities\.ts$|^scripts/native-asset-capture-proof\.ts$|^scripts/__tests__/native-asset-capture-proof\.spec\.ts$
+            temporal ^packages/core/src/render/chain\.ts$|^packages/core/src/render/velocity\.ts$|^packages/core/__tests__/temporal-chain\.spec\.ts$|^packages/create-threenative/templates/starter/src/render/temporalAA[^/]*\.ts$|^packages/create-threenative/templates/starter/src/render/temporalResolve[^/]*\.ts$|^packages/create-threenative/templates/starter/src/render/temporalCurrent[^/]*\.ts$|^packages/create-threenative/templates/starter/src/render/temporalRejectionCounter\.ts$|^packages/create-threenative/__tests__/temporal[^/]*\.spec\.ts$|^packages/runtime-native/conformance/scenes/shared/temporal-aa[^/]*\.js$|^packages/runtime-native/conformance/scenes/shared/temporal-velocity-probe\.ts$|^packages/runtime-native/conformance/scenes/shared/temporal-resolve-probe\.ts$|^packages/runtime-native/__tests__/temporal-velocity-probe\.spec\.ts$|^examples/abyss-framework/temporal[^/]*$|^examples/abyss-framework/playtests/temporal-[^/]*\.playtest\.json$|^scripts/verify-temporal-[^/]*\.ts$|^scripts/temporal-aa-[^/]*\.ts$|^scripts/__tests__/temporal-aa-[^/]*\.spec\.ts$
+            velocity ^packages/core/src/renderProjection\.ts$|^packages/core/src/render/velocity\.ts$|^packages/core/src/render/batched-velocity\.ts$|^packages/core/__tests__/render-velocity\.spec\.ts$|^packages/core/__tests__/instance-velocity-upload\.spec\.ts$|^packages/core/__tests__/velocity-coverage-proof\.spec\.ts$|^packages/core/__tests__/skinned-velocity-bind-history\.spec\.ts$|^packages/core/patches/three@0\.185\.1\.patch$|^packages/playtest/.*$|^examples/abyss-framework/velocity-main\.ts$|^examples/abyss-framework/velocity-cost-main\.ts$|^examples/abyss-framework/velocity-cost\.html$|^examples/abyss-framework/src/render/velocityCost\.ts$|^examples/abyss-framework/playtests/velocity-cost\.playtest\.json$|^scripts/__tests__/velocity-cost-proof\.spec\.ts$|^examples/abyss-framework/src/render/velocityReadback\.ts$|^examples/abyss-framework/src/render/velocityCoverage\.ts$|^examples/abyss-framework/velocity\.html$|^examples/abyss-framework/velocity\.vite\.config\.ts$|^examples/abyss-framework/velocity\.tsconfig\.json$|^examples/abyss-framework/playtests/velocity-history\.playtest\.json$|^scripts/verify-velocity-history\.ts$|^scripts/velocity-capture-proof\.ts$|^scripts/__tests__/velocity-capture-proof\.spec\.ts$|^pnpm-lock\.yaml$
+            tone ^scripts/xvfb\.sh$|^packages/playtest/.*$|^examples/abyss-framework/src/render/toneCalibration\.ts$|^examples/abyss-framework/src/tone-main\.ts$|^examples/abyss-framework/tone\.html$|^examples/abyss-framework/tone\.vite\.config\.ts$|^examples/abyss-framework/playtests/tone\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-tone-exposure\.ts$|^scripts/tone-capture-proof\.ts$|^scripts/__tests__/tone-capture-proof\.spec\.ts$|^scripts/non-visual-scenarios\.mjs$|^package\.json$|^pnpm-lock\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|exposureSettings|worldEnvironment)\.ts$
+            vegetation ^examples/integrations/vegetation/.*$
+            world-capture ^packages/core/src/world[^/]*\.ts$|^packages/core/__tests__/world-capture-fixture\.spec\.ts$|^packages/playtest/.*$|^packages/assets/.*$|^examples/abyss-framework/src/scenes/WorldProbe\.ts$|^examples/abyss-framework/src/world-main\.ts$|^examples/abyss-framework/src/style\.css$|^examples/abyss-framework/assets/world/.*$|^examples/abyss-framework/index\.html$|^examples/abyss-framework/vite\.config\.ts$|^examples/abyss-framework/threenative\.config\.ts$|^examples/abyss-framework/playtests/phase477-world-capture\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-world-capture\.ts$|^scripts/world-capture-manifest\.ts$|^scripts/world-visual-gate\.ts$|^scripts/capture-guard\.ts$|^scripts/__tests__/verify-world-capture\.spec\.ts$|^scripts/__tests__/world-capture-manifest\.spec\.ts$|^scripts/__tests__/world-visual-gate\.spec\.ts$|^package\.json$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$
+        run: |
+          node scripts/ci-integration-scope.mjs
+          node scripts/ci-runner-admission.mjs --validate-admission
+
+  csg:
+    name: csg
+    if: ${{ needs.paths.outputs.csg == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    # PRD-620: generic lanes route to idle tn-local with hosted fallback; forks fall through to hosted.
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:csg')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: examples/integrations/csg
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - id: build
+        run: npm run build
+      - run: npm run test:contracts
+      - if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npm run test:integration
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  ik:
+    name: ik
+    if: ${{ needs.paths.outputs.ik == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:ik')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: examples/integrations/ik
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm test
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  vegetation:
+    name: vegetation
+    if: ${{ needs.paths.outputs.vegetation == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:vegetation')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: examples/integrations/vegetation
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm test
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  decals:
+    name: decals
+    if: ${{ needs.paths.outputs.decals == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:decals')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: 'false'
+          save-bundles: 'false'
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/shooter-decals-projection.spec.ts packages/create-threenative/__tests__/shooter-decals-fixture.spec.ts packages/create-threenative/__tests__/shooter-decals-lifetime.spec.ts packages/create-threenative/__tests__/template-runtime-cost.spec.ts
+      - name: Capture actual receiver projection, motion, removal and restart
+        run: node --import tsx packages/create-threenative/__tests__/fixtures/bounded-decals/verify.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vq11-decals-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: artifacts/vq11-decals
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  decals-native:
+    name: Linux native decal correctness
+    needs: [decals]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      TN_PLAYTEST_ALLOW_SOFTWARE: '1'
+      TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS: '30000'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - name: Build this source's public JavaScript packages
+        uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: 'false'
+          pack-archives: 'false'
+      - name: Verify native preflight and capture rejection controls
+        run: pnpm exec vitest run packages/create-threenative/__tests__/shooter-decals-native.spec.ts --maxWorkers=1
+      - name: Restore checksum-provisioned native dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Install the existing native lane's system prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - name: Build the ordinary ARM desktop host
+        run: pnpm --filter @threenative/runtime-native native:build
+      - name: Run the same packaged decal scenarios and unchanged pixel gates
+        env:
+          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+        run: node --import tsx packages/create-threenative/__tests__/fixtures/bounded-decals/verify-native.ts
+      - name: Retain native screenshots, host console and executable identities
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vq11-decals-native-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: |
+            artifacts/vq11-decals-native/
+            !artifacts/vq11-decals-native/variants/**
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  tone:
+    name: exposure
+    if: ${{ needs.paths.outputs.tone == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:tone')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build this commit's standalone bridge and runner
+        run: pnpm --filter @threenative/playtest build
+      - name: Validate histogram and fail-closed assertion paths
+        run: pnpm exec vitest run --maxWorkers=1 packages/playtest/__tests__/capture.spec.ts packages/playtest/__tests__/tone.spec.ts packages/playtest/__tests__/tone-runner.spec.ts scripts/__tests__/tone-capture-proof.spec.ts
+      - name: Render underexposed and restored scene through the real runner
+        run: pnpm test:tone
+      - name: Retain runtime screenshots and exact adapter evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tone-exposure-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: artifacts/tone-exposure
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  temporal:
+    name: temporal
+    if: ${{ !github.event.pull_request.draft && needs.paths.outputs.temporal == 'true' }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:temporal')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @threenative/playtest build
+      - uses: ./.github/actions/playwright-chromium
+      - name: Validate actual TRAANode and history lifecycle contracts
+        run: pnpm exec vitest run packages/core/__tests__/temporal-chain.spec.ts packages/core/__tests__/render-chain.spec.ts packages/core/__tests__/render-velocity.spec.ts packages/create-threenative/__tests__/temporal-aa.spec.ts packages/create-threenative/__tests__/temporal-initial-projection.spec.ts packages/create-threenative/__tests__/temporal-resolve.spec.ts packages/runtime-native/__tests__/temporal-velocity-probe.spec.ts scripts/__tests__/temporal-aa-evidence.spec.ts scripts/__tests__/temporal-aa-quality.spec.ts --maxWorkers=2
+      - name: Render temporal motion and reset variants
+        run: node --import tsx scripts/verify-temporal-aa.ts
+      # The strict 31-arm corpus (verify-temporal-motion.ts) is PRD-539's proof and fails by design until
+      # a reconstructor clears its edge/reveal gate; this job enforces the shipped ghosting scope.
+      - name: Measure animated-character ghosting against the zero-velocity control
+        run: node --import tsx scripts/verify-temporal-ghosting.ts
+      - name: Retain actual runtime screenshots and adapter evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: temporal-aa-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: artifacts/temporal-aa
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  velocity:
+    name: velocity
+    if: ${{ !github.event.pull_request.draft && needs.paths.outputs.velocity == 'true' }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:velocity')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build this commit's public bridge and runner
+        run: pnpm --filter @threenative/playtest build
+      - name: Verify motion history and fail-closed capture guards
+        run: pnpm exec vitest run --maxWorkers=1 scripts/__tests__/velocity-capture-proof.spec.ts scripts/__tests__/velocity-cost-proof.spec.ts packages/core/__tests__/velocity-coverage-proof.spec.ts packages/core/__tests__/skinned-velocity-bind-history.spec.ts packages/core/__tests__/render-velocity.spec.ts packages/core/__tests__/instance-velocity-upload.spec.ts packages/core/__tests__/three-static-settled.spec.ts packages/core/__tests__/batched-velocity.spec.ts packages/core/__tests__/render-projection-pipeline.spec.ts packages/core/__tests__/renderProjection.spec.ts
+      - name: Check the exact source-wired fixture types
+        run: pnpm exec tsc --noEmit -p examples/abyss-framework/velocity.tsconfig.json
+      - name: Render actual authored batch velocity and missing-history control
+        # PRD-550 phase 1. The temporal-off cost arm lives in performance-regression.yml: it prices
+        # actual frame submission against split-control noise, which a runner shared by twenty jobs
+        # cannot hold, and its `p95NoiseExcessMs` red was other people's load.
+        run: pnpm exec tsx scripts/verify-velocity-history.ts --variant=history
+      - name: Retain runtime PNGs, readbacks and exact adapter provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: velocity-history-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: artifacts/velocity-history
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  animation:
+    name: animation
+    if: ${{ needs.paths.outputs.animation == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:animation')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The fixtures build on the default engine, which loads the web Wasm engine.
+      - uses: ./.github/actions/native-engine-wasm
+      - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: 'false'
+          save-bundles: 'false'
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm exec vitest run --maxWorkers=1 packages/core/__tests__/animation.spec.ts packages/core/__tests__/animation-reversal-fixture.spec.ts packages/core/__tests__/animation-weighted.spec.ts packages/core/__tests__/vq-locomotion-blend-spaces.spec.ts
+      - name: Capture real mannequin gait reversals on headed WebGPU
+        run: node --import tsx scripts/verify-animation-reversal.ts
+      - name: Capture the two-rig locomotion blend spaces on headed WebGPU
+        run: node --import tsx scripts/verify-vq-locomotion.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: vq04-animation-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: artifacts/vq04-animation
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  animation-native:
+    name: Linux native locomotion correctness
+    needs: [animation]
+    # The browser capture cannot say what the compiled runtime does with the same blend-space
+    # trace, and a stale host binary answers for the wrong source. Build this candidate's ARM
+    # desktop host and run the authored scenario file unchanged, so the lane's own scenario is
+    # the native proof rather than a second near-copy of it.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      TN_PLAYTEST_ALLOW_SOFTWARE: '1'
+      TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS: '30000'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - name: Build this source's public JavaScript packages
+        uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: 'false'
+          pack-archives: 'false'
+      - name: Restore checksum-provisioned native dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Install the existing native lane's system prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - name: Build the ordinary ARM desktop host from this source
+        run: pnpm --filter @threenative/runtime-native native:build
+      - name: Bundle the authored locomotion entry for the native host
+        run: node packages/runtime-native/scripts/bundle.mjs --project examples/abyss-framework --entry src/render/vq-locomotion-game.ts --target desktop --output examples/abyss-framework/dist/vq-locomotion-native.js
+      - name: Record this run's host identity beside its screenshots
+        run: |
+          mkdir -p examples/abyss-framework/artifacts/playtest
+          sha256sum packages/runtime-native/build/tn-linux/mystral > examples/abyss-framework/artifacts/playtest/native-host-identity.txt
+          git rev-parse HEAD >> examples/abyss-framework/artifacts/playtest/native-host-identity.txt
+      - name: Run the authored locomotion trace on the freshly built host
+        # A non-zero CLI status fails the step, so a run that never reached its assertions fails too.
+        run: sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js playtests/vq-locomotion-blend-spaces.playtest.json --target desktop --executable ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral --project examples/abyss-framework --host-arg run --host-arg dist/vq-locomotion-native.js
+      - name: Retain native screenshots, host console and executable identities
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vq04-locomotion-native-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: examples/abyss-framework/artifacts/playtest
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  fog:
+    name: fog capture
+    if: ${{ needs.paths.outputs.fog == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:fog')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm --filter @threenative/playtest build
+      - run: pnpm --filter abyss-framework exec vite build --config vq-fog/vite.config.ts
+      - run: node --import tsx scripts/verify-volumetric-fog.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: volumetric-fog-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: artifacts/volumetric-fog/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  fog-native:
+    name: Linux native fog correctness
+    needs: [fog]
+    # Use the shipped ARM V8/wgpu default for native fog correctness.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      TN_PLAYTEST_ALLOW_SOFTWARE: '1'
+      TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS: '30000'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - name: Build this source's public JavaScript packages
+        uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: 'false'
+          pack-archives: 'false'
+      - name: Verify native preflight and capture rejection controls
+        run: pnpm exec vitest run scripts/__tests__/vq-fog-native-proof.spec.ts --maxWorkers=1
+      - name: Restore checksum-provisioned native dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Install the existing native lane's system prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - name: Build the ordinary ARM desktop host
+        run: pnpm --filter @threenative/runtime-native native:build
+      - name: Verify the compiled surface acquisition status contract
+        run: |
+          cmake --build packages/runtime-native/build/tn-linux --target threenative-surface-texture-status-test --parallel 2
+          packages/runtime-native/build/tn-linux/threenative-surface-texture-status-test
+      - name: Verify rendered presentation destination pixels
+        run: |
+          cmake --build packages/runtime-native/build/tn-linux --target threenative-canvas-presentation-test --parallel 2
+          packages/runtime-native/build/tn-linux/threenative-canvas-presentation-test
+      - name: Isolate native resize with no fog allocation
+        id: resize-control
+        # Preserve the original fog sequence even when this diagnostic reproduces the abort.
+        # The final step below still fails the job if this control fails.
+        continue-on-error: true
+        env:
+          VQ_FOG_RESIZE_CONTROL: '1'
+          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+        run: node --import tsx scripts/verify-volumetric-fog.ts
+      - name: Run the same authored fog and pixel gates on the native host
+        env:
+          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+        run: node --import tsx scripts/verify-volumetric-fog.ts
+      - name: Require the no-fog resize control
+        if: always() && steps.resize-control.outcome != 'success'
+        run: exit 1
+      - name: Retain native screenshots, host console and executable identities
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: volumetric-fog-native-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: |
+            artifacts/volumetric-fog-native/
+            artifacts/volumetric-fog-native-resize-control/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  capture:
+    name: capture
+    if: ${{ !github.event.pull_request.draft && needs.paths.outputs.world-capture == 'true' }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:capture')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - name: Record exact source before setup
+        run: |
+          mkdir -p artifacts/world-capture
+          git rev-parse HEAD > artifacts/world-capture/source-sha.txt
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build runner, runtime, and Vite asset cooker from this commit
+        run: pnpm --filter '@threenative/playtest...' --filter '@threenative/core...' --filter '@threenative/assets...' --filter '@threenative/physics...' --filter '@threenative/ui...' --workspace-concurrency=1 build
+      - name: Verify capture rejection and importer contracts
+        run: pnpm exec vitest run --maxWorkers=1 scripts/__tests__/verify-world-capture.spec.ts scripts/__tests__/world-capture-manifest.spec.ts scripts/__tests__/world-visual-gate.spec.ts packages/core/__tests__/world-capture-fixture.spec.ts
+      - name: Capture 34 real frames and confirm strict software rejection
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.candidate_sha }}
+        # The headed runner provisions its private Xvfb. Software is diagnostic only.
+        run: pnpm exec tsx scripts/verify-world-capture.ts
+      - name: Retain screenshots, reports, importer result, and strict gate outcome
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: world-capture-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: artifacts/world-capture
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  fluid-collision:
+    name: fluid collision
+    if: ${{ needs.paths.outputs.fluid-particles == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:fluid-collision')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build the public core and its workspace dependency closure
+        run: pnpm --filter '@threenative/core...' --workspace-concurrency=1 build
+      - name: Validate solver and fail-closed proof contracts
+        run: pnpm exec vitest run --maxWorkers=1 packages/core/__tests__/fluid-particles.spec.ts packages/core/__tests__/gpu-readback.spec.ts scripts/__tests__/fluid-collision-proof.spec.ts scripts/__tests__/fluid-collision-view.spec.ts
+      - name: Render real GPU readbacks and the missing-gate control
+        run: sh scripts/xvfb.sh pnpm exec tsx scripts/verify-fluid-collision.ts
+      - name: Retain captured pixels and minimal source provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fluid-collision-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: |
+            artifacts/fluid-collision/**/*.png
+            artifacts/fluid-collision/summary.json
+            artifacts/fluid-collision/failure.json
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  fluid-collision-native:
+    name: Linux native fluid correctness
+    if: ${{ needs.paths.outputs.fluid-native == 'true' && !github.event.pull_request.draft }}
+    needs: paths
+    # Use the shipped ARM V8/wgpu default for native fluid correctness.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      TN_PLAYTEST_ALLOW_SOFTWARE: '1'
+      TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS: '30000'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - name: Build this source's public JavaScript packages
+        uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: 'false'
+          pack-archives: 'false'
+      - name: Verify native preflight and capture rejection controls
+        run: pnpm exec vitest run scripts/__tests__/fluid-collision-proof.spec.ts scripts/__tests__/fluid-collision-native-proof.spec.ts --maxWorkers=1
+      - name: Restore checksum-provisioned native dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Install the existing native lane's system prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - name: Build the ordinary ARM desktop host from this source
+        run: pnpm --filter @threenative/runtime-native native:build
+      - name: Run the same authored four-arm proof and missing-gate control
+        env:
+          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+        run: node --import tsx scripts/verify-fluid-collision-native.ts
+      - name: Retain native pixels and minimal source provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fluid-collision-native-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: |
+            artifacts/fluid-collision-native/**/*.png
+            artifacts/fluid-collision-native/summary.json
+            artifacts/fluid-collision-native/failure.json
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  # The flaky browser fluid-consumers gate is deliberately retired.
+  # Keep observe-fluid-ci.mjs / verify-fluid-consumers.ts for explicit diagnostics;
+  # fluid-collision CPU and fluid-collision-native remain required when selected.
+
+  packaged-quickjs:
+    name: packaged native asset fallback
+    if: ${{ !github.event.pull_request.draft && needs.paths.outputs.native-assets == 'true' }}
+    needs: paths
+    # This fallback proof explicitly selects QuickJS; the ARM desktop default is V8.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      TN_PLAYTEST_ALLOW_SOFTWARE: '1'
+      TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS: '30000'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - name: Build this commit's JavaScript packages
+        uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: 'false'
+          pack-archives: 'false'
+      - name: Validate real compressed-source normalization and capture guards
+        run: >-
+          pnpm exec vitest run --maxWorkers=1
+          packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts
+          packages/create-threenative/__tests__/vq-native-fixture.spec.ts
+          scripts/__tests__/native-asset-capture-proof.spec.ts
+      - name: Restore checksum-provisioned native dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Install the existing native lane's system prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - name: Build the QuickJS host required by the packaged fallback
+        run: |
+          pnpm --filter @threenative/runtime-native native:build
+          node packages/runtime-native/scripts/download-deps.mjs --only quickjs
+          cmake -S packages/runtime-native -B packages/runtime-native/build/tn-linux -DMYSTRAL_USE_V8=OFF -DMYSTRAL_USE_QUICKJS=ON
+          cmake --build packages/runtime-native/build/tn-linux --target mystral --parallel 2
+      - name: Build the real fixture and capture its packaged native executable
+        env:
+          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+        run: node --import tsx scripts/verify-native-asset-capabilities.ts
+      - name: Retain raw native captures, artifact identities and decoded payload measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vq01-native-assets-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: artifacts/vq01-native-assets/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  exposure:
+    name: auto-exposure
+    if: ${{ !github.event.pull_request.draft && needs.paths.outputs.exposure == 'true' }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:exposure')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: 'false'
+          save-bundles: 'false'
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts packages/create-threenative/__tests__/auto-exposure-node.spec.ts packages/create-threenative/__tests__/auto-exposure-proof.spec.ts packages/create-threenative/__tests__/auto-exposure-mutations.spec.ts packages/create-threenative/__tests__/auto-exposure-clock.spec.ts packages/create-threenative/__tests__/auto-exposure-camera.spec.ts
+      - name: Capture the real exposure graph
+        run: node --import tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verify.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prd339-exposure-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: artifacts/prd339-exposure
+          if-no-files-found: error
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  cold-boot:
+    name: auto-exposure cold boot
+    if: ${{ !github.event.pull_request.draft && needs.paths.outputs.cold-boot == 'true' }}
+    needs: paths
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:cold-boot')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: 'false'
+          save-bundles: 'false'
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts packages/create-threenative/__tests__/auto-exposure-node.spec.ts packages/create-threenative/__tests__/auto-exposure-proof.spec.ts packages/create-threenative/__tests__/auto-exposure-mutations.spec.ts packages/create-threenative/__tests__/auto-exposure-clock.spec.ts packages/create-threenative/__tests__/auto-exposure-cold-boot.spec.ts
+      - name: Capture twenty independent exposure cold boots
+        run: node --import tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verifyColdBoot.ts
+      - name: Qualify first-update snap response and zero-gain expected failure
+        run: node --import tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verifySnap.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prd339-cold-boot-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}
+          path: |
+            artifacts/prd339-cold-boot
+            artifacts/prd339-snap-response
+      - name: Record exact current-attempt integration receipt
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_JOB_RESULT: ${{ job.status }}
+        run: node "$GITHUB_WORKSPACE/scripts/ci-integration-receipts.mjs" --write
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-${{ github.job }}
+          path: ${{ github.workspace }}/artifacts/ci-integration-receipts/${{ github.job }}.json
+          if-no-files-found: error
+
+  completion:
+    name: Verify required integration receipts
+    needs: [paths, csg, ik, vegetation, decals, decals-native, tone, animation, animation-native, fog, fog-native, capture, fluid-collision, fluid-collision-native, packaged-quickjs, exposure, cold-boot, temporal, velocity]
+    if: ${{ always() }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
+    timeout-minutes: 5
+    outputs:
+      coverage_receipt: ${{ steps.collect.outputs.coverage_receipt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v7
+        if: needs.paths.outputs.required_jobs != '[]'
+        with:
+          pattern: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-*
+          path: artifacts/integration-receipts
+      - id: collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_PATHS_RESULT: ${{ needs.paths.result }}
+        run: |
+          set -euo pipefail
+          test "$TN_CI_PATHS_RESULT" = success
+          node scripts/ci-integration-receipts.mjs --collect artifacts/integration-receipts

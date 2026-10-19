@@ -920,10 +920,6 @@ export async function capabilityScaffoldImportReport(
     };
   }
 
-  const installedByAnyTemplate = new Set(templates.flatMap((template) => template.packages));
-  const sourceImportedByAnyTemplate = new Set(
-    templates.flatMap((template) => template.sourceImports),
-  );
   const entriesByPackage = new Map<string, ICapabilityManifestEntry[]>();
   let checkedEntries = 0;
   let requiredEntries = 0;
@@ -931,55 +927,48 @@ export async function capabilityScaffoldImportReport(
     const packageNameValue = manifestImportPackageName(entry.importPath);
     if (packageNameValue === undefined) continue;
     checkedEntries += 1;
+    if (entryRequires(entry).length > 0) requiredEntries += 1;
     const group = entriesByPackage.get(packageNameValue) ?? [];
     group.push(entry);
     entriesByPackage.set(packageNameValue, group);
-    if (entryRequires(entry).length > 0) {
-      requiredEntries += 1;
-      continue;
-    }
-    if (installedByAnyTemplate.has(packageNameValue)) continue;
-    if (sourceImportedByAnyTemplate.has(packageNameValue)) continue;
   }
 
+  // Every template is a project an agent can be working in, so each closure is checked on its
+  // own: a package another template installs does not resolve in this one.
   const problems: ICapabilityScaffoldImportProblem[] = [];
-  for (const [packageNameValue, entries] of entriesByPackage) {
-    if (installedByAnyTemplate.has(packageNameValue)) continue;
-    if (sourceImportedByAnyTemplate.has(packageNameValue)) continue;
-    for (const entry of entries.filter((candidate) => entryRequires(candidate).length === 0)) {
-      problems.push({
-        importPath: entry.importPath,
-        packageName: packageNameValue,
-        reason:
-          "no scaffold dependency closure installs this package and the capability has no @requires install instruction",
-        symbol: entry.symbol,
-        template: "all templates",
-      });
-    }
-  }
-
   for (const template of templates) {
     const installed = new Set(template.packages);
-    for (const packageNameValue of template.sourceImports) {
+    const imported = new Set(template.sourceImports);
+    for (const [packageNameValue, entries] of entriesByPackage) {
       if (installed.has(packageNameValue)) continue;
-      for (const entry of entriesByPackage.get(packageNameValue) ?? []) {
+      const sourceImported = imported.has(packageNameValue);
+      for (const entry of entries) {
+        if (!sourceImported && entryRequires(entry).length > 0) continue;
         problems.push({
           importPath: entry.importPath,
           packageName: packageNameValue,
-          reason:
-            "template source imports this package but the generated package.json dependency closure omits it",
+          reason: sourceImported
+            ? "template source imports this package but the generated package.json dependency closure omits it"
+            : "this template's dependency closure does not install this package and the capability has no @requires install instruction",
           symbol: entry.symbol,
           template: template.template,
         });
       }
     }
   }
+  const unresolved = new Set(problems.map((problem) => `${problem.importPath}#${problem.symbol}`));
+  const unresolvedUndocumented = [...entriesByPackage.values()]
+    .flat()
+    .filter(
+      (entry) =>
+        entryRequires(entry).length === 0 && unresolved.has(`${entry.importPath}#${entry.symbol}`),
+    ).length;
 
   return {
     checkedEntries,
     problems,
     requiredEntries,
-    resolvedEntries: checkedEntries - requiredEntries - problems.length,
+    resolvedEntries: checkedEntries - requiredEntries - unresolvedUndocumented,
     templates,
   };
 }
@@ -987,7 +976,7 @@ export async function capabilityScaffoldImportReport(
 export function formatCapabilityScaffoldImportReport(
   report: ICapabilityScaffoldImportReport,
 ): string {
-  return `capability scaffold imports: ${report.resolvedEntries + report.requiredEntries} of ${report.checkedEntries} package-backed entries resolvable or documented across ${report.templates.length} template closures (${report.requiredEntries} require install instructions, ${report.problems.length} unresolved)`;
+  return `capability scaffold imports: ${report.resolvedEntries + report.requiredEntries} of ${report.checkedEntries} package-backed entries resolvable or documented across ${report.templates.length} template closures (${report.requiredEntries} require install instructions, ${report.problems.length} unresolved template imports)`;
 }
 
 function formatCapabilityScaffoldImportErrors(report: ICapabilityScaffoldImportReport): string {

@@ -2,6 +2,7 @@
 
 **Status: PROPOSED — 2026-09-09. Implementation has not started.**
 
+**Priority:** P2 — Open: five MCP tools work from a clean install and a fresh agent proves the recipe.
 **Planning Mode: Principal Architect. Complexity: 9 → HIGH mode.** More than ten implementation
 files (+3), a new integration (+2), child-process cancellation and concurrent output writes (+2),
 and delivery across the asset MCP and engine repositories (+2). Automated review follows every

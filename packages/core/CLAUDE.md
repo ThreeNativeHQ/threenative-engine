@@ -54,6 +54,18 @@ six-second walk on a 289-tile ring paid ~270 ms for them: `TN_TERRAIN_VALIDATE=1
 `?tnTerrainValidate=1` or `validate: true` runs them, and `maxSeamGap`, `maxVisualSeamGap` and
 `maxLodPop` report `undefined` while they are off, never an unmeasured `0`.
 
+`SnowField` is the subpath's numerical snow record: indentation, displaced bank, compaction and
+disturbance channels over one canonical `Heightfield`, plus load-dependent penetration and bounded
+sparse recovery. It writes `terrain + depth + bank - indent` back through
+`Heightfield.updateHeights`, so queries, rendered geometry and collider export keep reading one
+surface. The game supplies the terrain, the snow depth, the contact footprint, the load in newtons
+and the supported area; the field owns no boot, tread, material, particle or camera. `depth`,
+`hardness`, `yieldFraction`, `maxBank` and `responseTime` are its only response coefficients.
+`heightAt` and `normalAt` keep `Heightfield`'s out-of-region error contract; `sample` returns zeros
+outside the resident region so a broad sweep needs no bounds check. It is a heightfield
+approximation, never granular snow, avalanche simulation, melting or a calibrated material law,
+and it does not encode to a texture — GPU encoding belongs in `src/render/`.
+
 `picking.ts` is the one place a third-party dependency other than `three` and `zustand`
 reaches core. It is contained deliberately: `ScenePicker` builds a hierarchy on first use,
 patches no `three` prototype, and a game that never calls `ctx.raycast` never builds one.
@@ -98,7 +110,8 @@ particular, Godot-borrowed node names stay unchanged.
 
 - `defineGame(config)` returns an `IGame` with `start()` / `stop()`. `stop()` must fully
   reverse `start()`: loop stopped, scene exited, registry cleared, plugin `dispose` called,
-  cleanups drained, input disposed, store stopped, renderer disposed.
+  cleanups drained, input disposed, store stopped, renderer disposed. A throwing scene exit must
+  still reach every plugin/setup cleanup and renderer release; the original failure is retained.
 - A `Scene` is a class with five optional methods — `load`, `enter`, `update`, `exit`,
   `render`. Do not add a sixth.
 - `ICtx` hands out the real objects: `ctx.scene` is a `THREE.Scene`, `ctx.camera` is a real
@@ -110,6 +123,10 @@ particular, Godot-borrowed node names stay unchanged.
   is exposed as `window.__THREENATIVE__` in dev builds only, and playtest reads it.
 - Scene-owned time lives behind `ctx.after`, `ctx.every`, `ctx.tween`; `Scheduler` and
   `ScheduleHandle` are the public supporting types, and transitions cancel it.
+- `frameBudget.report` also receives window projection/span/static/validation/scene-warning telemetry.
+  Its default preserves the existing console info/warn severities. A custom sink changes reporting,
+  never measurement or validation.
+- `ctx.renderer.observeGpuFrames({ maxFrames, maxQueries })` opts into complete, immutable render-query groups from the existing asynchronous timestamp resolver. Capacities bound pending, undrained and queued membership; losses and unavailable timestamp support fail explicitly. `take()` delivers each group once. `stop()` fences allocated frames and permits their drain; `dispose()` invalidates late completions. Observation preserves ordinary timestamp sampling. A benchmark needing every world frame requests the named `renderer.gpuTimestampFrameInterval: 1` override and joins query IDs to actual world renders, separating overlays. Ordinary games allocate no observation receipt. Browser/Linux correctness before this observer remains separate proof; actual observer performance qualification is still required.
 - `ctx.beforeRender(cb)` runs once per actual world draw, after the frame's last fixed update and
   before the projection reconciles and the renderer draws; a held loader frame draws no world and
   dispatches nothing. It is scene-owned and cleared on scene change and stop, like `ctx.afterPhysics`.

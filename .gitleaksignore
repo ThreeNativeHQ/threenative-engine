@@ -25,3 +25,6 @@ f66af22303112d84174d7031cf6a2b28502d3095:packages/assets/__tests__/shared-images
 # persistent warm-up cache revision in a core integration test, not a credential. The fixture
 # now uses a lower-entropy value too; scope this exception to the already-published finding.
 e2e871f1feac6fa0f7dc4d372f30d3cb586a8f72:packages/core/__tests__/warmup-default.spec.ts:generic-api-key:115
+
+# Verified 2026-10-11: PRD-595's slash-separated CellPrewarm counter names are prose, not a credential.
+0c2f9e4b57382d980ef98424f6ac03b86e1d785b:docs/PRDs/strata-terrain-hardening/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md:generic-api-key:63

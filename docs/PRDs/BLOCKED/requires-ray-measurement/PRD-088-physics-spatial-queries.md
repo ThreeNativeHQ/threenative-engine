@@ -15,6 +15,7 @@ acquisition), [PRD-090](../../done/PRD-090-racing-starter-kit.md) (on-road probe
 [PRD-093](../../done/PRD-093-action-rpg-starter-kit.md) (aggro range and line of sight).
 **Independent of** [PRD-091](../../done/PRD-091-genre-kit-delivery-rail.md); the two run in parallel.
 
+**Priority:** P1 — Only open box is the ray query-and-hit measurement; physics cannot answer ray or ground queries.
 **Complexity: 7 → HIGH mode.** New public surface on `@threenative/physics`, a new method
 group on the simulation ABI, and a native implementation in C++. That is three seams, and
 the native one has a cost this PRD measures before it designs.

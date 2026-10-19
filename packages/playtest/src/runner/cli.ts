@@ -1,3 +1,4 @@
+import { toneCommand } from "./tone.js";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -103,6 +104,13 @@ export function classifyRunnerError(
     };
   }
   const message = error instanceof Error ? error.message : String(error);
+  if (message.startsWith("TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE:")) {
+    return diagnostic(
+      "TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE",
+      message,
+      "Check DISPLAY and its session credentials, and install xdpyinfo to verify the requested host display before rerunning.",
+    );
+  }
   if (message.startsWith("TN_PLAYTEST_BUILD_REPORT_STALE")) {
     return diagnostic(
       "TN_PLAYTEST_BUILD_REPORT_STALE",
@@ -290,6 +298,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     if (argv[0] === "doctor") return await doctorCommand(argv.slice(1));
     if (argv[0] === "perf") return await perfCommand(argv.slice(1));
     if (argv[0] === "trace") return await traceCommand(argv.slice(1));
+    if (argv[0] === "tone") return await toneCommand(argv.slice(1));
     if (argv[0] === "audio") return await audioCommand(argv.slice(1));
     if (argv[0] === "init") {
       const result = await initStandalonePlaytest(process.cwd());

@@ -16,6 +16,7 @@ exactly four deliveries … got 6" when the erase is reverted — case-level rev
 unmet and unprovable today; criteria 3/5 carry phase-1 evidence only. Stop record:
 [prd177-phase1-shipped-23-stopped-2026-08-22.md](../../../verification/prd177-phase1-shipped-23-stopped-2026-08-22.md).
 
+**Priority:** P1 — Listener removal returns undefined, protected callbacks never unprotected, shutdown clears live sockets; real native lifetime defects remain.
 Filed from the 2026-08-22 area scorecard
 ([plans/threenative-area-scorecard-2026-08-22.md](../../../../plans/threenative-area-scorecard-2026-08-22.md),
 findings #1, #9, #15; runtime-native scored 54/100, the lowest area). Every claim below was

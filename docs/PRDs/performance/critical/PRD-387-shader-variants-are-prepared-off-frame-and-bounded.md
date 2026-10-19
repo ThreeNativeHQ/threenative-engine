@@ -22,6 +22,7 @@ keeping the currently valid rendering until the new path is ready. Cover the var
 actually runs — shadow, reflection and its real render passes — not every conceivable combination.
 
 **Status:** NOT STARTED — specification only.
+**Priority:** P2 — Spec only: trace the synchronous build, census variants, prepare off-frame with a bound.
 **Date:** 2026-09-15.
 **Scope:** Engine warm-up/preparation in `@threenative/core`, on both runtimes. No game code, no new
 public shader-authoring surface, no change to how a game writes materials.
@@ -108,7 +109,7 @@ exists to stop that answer.
 | Depends on | Why | Blocking? |
 | --- | --- | --- |
 | **PRD-386** | The GPU-driven cut multiplies the number of material/pass variants. Preparing them off-frame is the prerequisite for 386, so **PRD-387 precedes 386**. | Yes |
-| PRD-339 (native compile walk) | Its main-thread compile work and native `createRenderPipelineAsync` finding share the "compile off the loop" theme; do not duplicate its mechanism. | Record |
+| PRD-540 (native compile walk) | Its main-thread compile work and native `createRenderPipelineAsync` finding share the "compile off the loop" theme; do not duplicate its mechanism. | Record |
 
 ## 5. Execution phases
 

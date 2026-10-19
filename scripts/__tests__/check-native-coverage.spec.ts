@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { checkNativeCoverage, nativeCoverageGateErrors } from "../check-native-coverage.js";
@@ -17,6 +18,11 @@ Source digest: \`sha256:aaaa\`
 `;
 
 describe("native coverage gate", () => {
+  it("keeps the committed measured record fresh for the exact coverage execution inputs", async () => {
+    await expect(
+      checkNativeCoverage(fileURLToPath(new URL("../../", import.meta.url))),
+    ).resolves.toBeUndefined();
+  });
   it("should fail when a subsystem drops below its floor", () => {
     const belowFloor = record.replace("| 100 | 35 | 35.00% |", "| 100 | 33 | 33.00% |");
     expect(nativeCoverageGateErrors(belowFloor, "aaaa")).toEqual([
@@ -40,6 +46,13 @@ describe("native coverage gate", () => {
     expect(nativeCoverageGateErrors(record, "aaaa")).toEqual([]);
   });
 
+  it("should reject a floor looser than the measured value by more than the margin", () => {
+    const loose = record.replace("| `src/webgpu/` | 34.00% |", "| `src/webgpu/` | 20.00% |");
+    expect(nativeCoverageGateErrors(loose, "aaaa")).toEqual([
+      "native coverage floor too loose: src/webgpu/ floor 20.00%, measured 35.00%; raise it to at least 30.00% (measured - 5 percentage points)",
+    ]);
+  });
+
   it("should reject incomplete or duplicate floor sets", () => {
     expect(nativeCoverageGateErrors(record.replace("| `src/js/` | 40.00% |", ""), "aaaa")).toEqual([
       expect.stringContaining("floor set differs"),
@@ -52,7 +65,7 @@ describe("native coverage gate", () => {
     ).toThrow(/duplicate row: src\/js\//u);
   });
 
-  it("should retain the established floor when regeneration measures a regression", async () => {
+  it("should ratchet improved coverage while retaining established regression floors", async () => {
     const coverageModule = (await import(
       new URL("../../packages/runtime-native/scripts/measure-native-coverage.mjs", import.meta.url)
         .href
@@ -62,6 +75,16 @@ describe("native coverage gate", () => {
         subsystems: Array<{ name: string; percent: number }>,
       ): Array<{ name: string; percent: number }>;
     };
+    const improved = record.replace("34.00%", "20.00%");
+    expect(
+      coverageModule.retainedCoverageFloors(improved, [
+        { name: "webgpu", percent: 35 },
+        { name: "js", percent: 40 },
+      ]),
+    ).toEqual([
+      { name: "src/webgpu/", percent: 30 },
+      { name: "src/js/", percent: 40 },
+    ]);
     const established = record.replace("34.00%", "33.82%");
     expect(
       coverageModule.retainedCoverageFloors(established, [

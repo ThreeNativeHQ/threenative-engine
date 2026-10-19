@@ -15,7 +15,6 @@ import {
   resolveAtmosphereParameters,
   solarPosition,
   updateAtmosphereParameters,
-  zenithTransmittance,
 } from "./params.js";
 
 /** The structural contract consumed by the compute registry from PRD-242. */
@@ -84,7 +83,7 @@ function nodeRgb(value: TextureNode): Node<"vec3"> {
  * those, and the same object remains useful when a game supplies a completely different look.
  * @situation render a sunrise that changes as time and place change
  * @situation add distance haze from the depth of a scene pass
- * @alias bright sky saturated green platforms
+ * @alias green platforms bright saturated sky
  * @constraint supply rayleigh, mie, ozone, planetRadius, and atmosphereRadius; there is no Earth fallback
  * @constraint the game creates the sky object, surface, and sun from the returned nodes
  * @example const atmosphere = new Atmosphere({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });

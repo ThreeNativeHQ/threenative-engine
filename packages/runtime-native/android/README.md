@@ -141,6 +141,16 @@ adb logcat -s Mystral SDL
 adb logcat --pid=$(adb shell pidof com.threenative.game)
 ```
 
+A native crash on Android leaves a tombstone in `adb shell dumpsys dropbox --print
+data_app_native_crash`, because the host installs no signal handlers there (PRD-210). The APK
+carries a stripped `libmystral-runtime.so`, so the tombstone names functions but not lines. A debug
+build keeps the unstripped copy beside it. Pass that directory to `ndk-stack`:
+
+```bash
+adb logcat -d | "$ANDROID_HOME"/ndk/<version>/ndk-stack \
+  -sym app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib/<abi>
+```
+
 Run the gate's emulator-free unit coverage with:
 
 ```bash

@@ -406,9 +406,34 @@ test('iOS builds selected React UI from installed packages and checks full-scree
   expect(step.match(/if: \$\{\{ inputs\.ios_only == true \}\}/gu)).toHaveLength(2);
 });
 
-test('iOS workflow dispatch can run without unrelated platform cancellation', () => {
+test('iOS workflow dispatch gates named desktop/Android jobs without weakening full receipts', () => {
+  const job = (source, id) => source.match(
+    new RegExp(`\\n {2}${id}:\\n[\\s\\S]*?(?=\\n {2}[a-z0-9-]+:|$)`, 'u'),
+  )?.[0] ?? '';
+  const condition = (body) => body.match(/^ {4}if: [^\n]*(?:\n {6}[^\n]*)*/mu)?.[0] ?? '';
+  const guarded = ['android-v8-source', 'android-emulator-parity', 'desktop-parity', 'desktop', 'starter-linux'];
+  const assertIsolation = (source) => {
+    for (const id of guarded) {
+      expect(condition(job(source, id)), `${id} skips an isolated iOS dispatch`).toContain('inputs.ios_only != true');
+      expect(condition(job(source, id)), `${id} retains selected full coverage`).toContain("needs.scope.outputs.selection == 'full'");
+    }
+    expect(condition(job(source, 'completion'))).toBe('    if: ${{ always() && inputs.ios_only != true }}');
+    expect(job(source, 'performance-coverage')).toContain(
+      "TN_PERF_REQUIRED_DESKTOP: ${{ needs.scope.outputs.native_tier == 'full' && inputs.ios_only != true && 'Windows,macOS' || '' }}",
+    );
+    expect(job(source, 'ios-simulator')).toContain('continue-on-error: true');
+    expect(condition(job(source, 'ios-simulator'))).not.toContain('inputs.ios_only != true');
+    expect(source).toContain('group: native-platforms-${{ github.event_name }}-${{ github.ref }}-${{ github.run_id }}');
+    expect(source).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+  };
   expect(workflow).toContain('ios_only:');
-  expect(workflow.match(/inputs\.ios_only != true/gu)).toHaveLength(5);
+  assertIsolation(workflow);
+  for (const id of [...guarded, 'completion', 'performance-coverage']) {
+    const body = job(workflow, id);
+    const inverted = body.replace('inputs.ios_only != true', 'inputs.ios_only == true');
+    expect(inverted).not.toBe(body);
+    expect(() => assertIsolation(workflow.replace(body, inverted))).toThrow();
+  }
 });
 
 test('iOS consumer proof runs but cannot hold the merge verdict', () => {

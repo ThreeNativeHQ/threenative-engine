@@ -2,6 +2,7 @@
 
 **Status:** IN PROGRESS
 
+**Priority:** P1 — Open: bundle-completeness errors, no silent downgrades, per-platform 60 Hz UI proof.
 **Owner decision 2026-09-24 — 60 Hz latency bound.** In-frame composition through a CPU copy measured
 87.93 / 87.38 ms p95 at 60 Hz on the Pixel 8 (worse than the child-window path's 53.22 / 53.62 ms),
 and removing the remaining frame needs a zero-copy AHardwareBuffer import that the Android wgpu

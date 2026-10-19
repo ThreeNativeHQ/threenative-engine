@@ -69,9 +69,12 @@ test('every host keeps hit regions to itself instead of forwarding them to the g
   assert.equal(message, 'tn:hit-regions');
   assert.match(android, new RegExp(`HIT_REGIONS_MESSAGE = "${message}"`, 'u'));
   assert.match(ios, new RegExp(`kHitRegions = @"${message}"`, 'u'));
-  // Desktop's runtime recognises the frame before it reaches the game's bridge.
+  // Desktop's runtime hands the frame to the shared overlay seam, which recognises it before it
+  // reaches the game's bridge (the parser moved out of runtime.cpp so the player shares it).
   const runtime = readFileSync(new URL('../src/runtime.cpp', import.meta.url), 'utf8');
-  assert.match(runtime, new RegExp(`"\\\\"${message}\\\\""`, 'u'));
+  assert.match(runtime, /platform::applyUiHitRegionsFrame\(frame\)/u);
+  const overlay = readFileSync(new URL('../src/platform/ui_overlay.cpp', import.meta.url), 'utf8');
+  assert.match(overlay, new RegExp(`"\\\\"${message}\\\\""`, 'u'));
 });
 
 test('no host serves the UI from file://', () => {
@@ -272,7 +275,9 @@ bool attached = true;
 bool uiOverlayAttached() { return attached; }
 void setUiOverlayAttached(bool value) { attached = value; }
 void tn_ui_overlay_detach() {}
-void resetUiOverlayKeyboard() {}
+int keyboardResets = 0;
+void countKeyboardReset() { ++keyboardResets; }
+void (*g_resetKeyboard)() = &countKeyboardReset;
 std::string delivered;
 bool uiOverlayHitTest(float x, float y) { return x >= 0.1f && x <= 0.3f && y >= 0.1f && y <= 0.3f; }
 bool uiOverlayInjectPointer(const char* type, float, float, int, int) { delivered = type; return true; }
@@ -301,6 +306,7 @@ int main() {
   assert(uiOverlayRoutePointer("pointerdown", 0.2f, 0.2f, 1, 1));
   detachDesktopUiOverlay();
   assert(!g_uiGesture.uiOwned && !g_uiGesture.gameOwned);
+  assert(keyboardResets == 1);  // detach releases the keys the UI owned through the installed reset
   attached = true;
   assert(!uiOverlayRoutePointer("pointerdown", 0.8f, 0.8f, 1, 1));
   assert(!uiOverlayRoutePointer("pointercancel", 0, 0, 0, 1));
@@ -349,4 +355,51 @@ int main() {
   assert.equal(compile.status, 0, compile.stderr || compile.error?.message);
   const run = spawnSync(executable, { encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
+});
+
+test('native CSS scroll traces round-trip the host double offsets without rounding', async () => {
+  const source = readFileSync(new URL('../src/platform/ui_overlay.cpp', import.meta.url), 'utf8');
+  const trace = /void traceCssState\(\) \{[\s\S]*?\n\}/u.exec(source)?.[0];
+  assert.ok(trace, 'execute the actual trace function');
+  const directory = makeTempDirSync('tn-css-state-precision-');
+  const path = join(directory, 'trace.cpp');
+  const executable = join(directory, 'trace');
+  writeFileSync(path, `#include <cstdlib>
+#include <cstdint>
+#include <iostream>
+#include <iomanip>
+#include <limits>
+#include <sstream>
+#include <string>
+#include <vector>
+size_t tn_css_ui_scrolled_ids(uint32_t* ids, size_t capacity) { if (ids && capacity) ids[0] = 7; return 1; }
+uint32_t tn_css_ui_focused_id() { return 7; }
+int tn_css_ui_scroll_offset(uint32_t, double* x, double* y) { *x = 1234567.0; *y = 0.123456789012345; return 1; }
+${trace}
+int main() { setenv("TN_CSS_UI_STATE_TRACE", "1", 1); traceCssState(); }
+`);
+  const compile = spawnSync('c++', ['-std=c++17', path, '-o', executable], { encoding: 'utf8' });
+  assert.equal(compile.status, 0, compile.stderr || compile.error?.message);
+  const run = spawnSync(executable, { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  const { cssStateAt } = await import('../../../examples/native-css-hud/corpus/interactions-desktop.mjs');
+  assert.deepEqual(cssStateAt(run.stdout.trim().split('\n')).scrollOf(7), [1234567, 0.123456789012345]);
+});
+
+test('Android corpus fails when any interaction observation is skipped or unreachable', () => {
+  const source = readFileSync(new URL('../../../examples/native-css-hud/corpus/android.mjs', import.meta.url), 'utf8');
+  // Execute the verdict in the real runner without launching its device/browser main program.
+  const assignment = /entry\.pass\s*=\s*[\s\S]*?;/u.exec(source.slice(source.indexOf("async function runInteraction(")))?.[0];
+  assert.ok(assignment, 'the Android interaction verdict must exist');
+  const pass = new Function('entry', 'problems', 'exitOk', `${assignment} return entry.pass;`);
+  const complete = { observations: 2, compared: [{ index: 0 }, { index: 1 }], skipped: 0, unreachable: [], mismatches: [] };
+  assert.equal(pass(complete, [], true), true);
+  for (const entry of [
+    { ...complete, skipped: 1, unreachable: [{ index: 1, why: 'unsupported observation' }], compared: [{ index: 0 }] },
+    { ...complete, unreachable: [{ index: 1, why: 'unsupported observation' }] },
+    { ...complete, skipped: 1 },
+    { ...complete, compared: [{ index: 0 }] },
+  ]) assert.equal(pass(entry, [], true), false, JSON.stringify(entry));
+  assert.equal(pass(complete, ['wrong backend'], true), false);
+  assert.equal(pass(complete, [], false), false);
 });

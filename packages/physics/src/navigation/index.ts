@@ -49,6 +49,7 @@ function disposeNavigation(navigation: INavigationContext): void {
  * @situation NPC patrols a level and chases a player
  * @constraint requires rapier() earlier in the plugins array
  * @example const game = defineGame({ plugins: [rapier(), recast()] });
+ * @requires npm i @threenative/physics
  */
 export function recast(): NavigationPlugin {
   let navigation: INavigationContext | undefined;
@@ -108,6 +109,7 @@ export function recast(): NavigationPlugin {
  * agent.setTargetPosition(player.position);
  * const reusableTarget = new Vector3();
  * const next = agent.getNextPathPosition(reusableTarget);
+ * @requires npm i @threenative/physics
  */
 export { NavigationAgent3D } from "./NavigationAgent3D.js";
 export type {
@@ -121,6 +123,7 @@ export type {
  * @situation make a stationary character affect crowd avoidance
  * @constraint create it after recast() and dispose it with the scene
  * @example const obstacle = new NavigationObstacle3D({ navigation, object });
+ * @requires npm i @threenative/physics
  */
 export { NavigationObstacle3D } from "./NavigationObstacle3D.js";
 export type { INavigationObstacle3DOptions } from "./NavigationObstacle3D.js";
@@ -130,6 +133,7 @@ export type { INavigationObstacle3DOptions } from "./NavigationObstacle3D.js";
  * @situation create the baked navmesh required by NavigationAgent3D
  * @constraint bake before creating agents or obstacles
  * @example const region = new NavigationRegion3D({ navigation, meshes: [floor] });
+ * @requires npm i @threenative/physics
  */
 export { NavigationRegion3D } from "./NavigationRegion3D.js";
 export type { INavigationRegion3DOptions } from "./NavigationRegion3D.js";

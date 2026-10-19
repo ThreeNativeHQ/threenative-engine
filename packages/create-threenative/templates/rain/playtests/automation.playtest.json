@@ -1,0 +1,133 @@
+{
+  "name": "rain-browser-controls-and-capture",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "warmupFrames": 60,
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "press": "KeyL",
+      "label": "strike",
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "press": "KeyX",
+      "label": "safe",
+      "release": true,
+      "waitTicks": 20
+    },
+    {
+      "kind": "input",
+      "press": "KeyH",
+      "label": "hidden",
+      "release": true,
+      "waitTicks": 20
+    },
+    {
+      "kind": "input",
+      "press": "KeyP",
+      "label": "capture",
+      "release": true,
+      "waitTicks": 40
+    },
+    {
+      "kind": "input",
+      "press": "Space",
+      "label": "paused",
+      "release": true,
+      "waitTicks": 20
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "status",
+        "atSteps": [
+          {
+            "equals": "flashing",
+            "label": "strike"
+          },
+          {
+            "equals": "steady",
+            "label": "safe"
+          },
+          {
+            "equals": "paused",
+            "label": "paused"
+          }
+        ],
+        "equals": "paused"
+      },
+      {
+        "id": "state",
+        "path": "safe",
+        "atSteps": [
+          {
+            "equals": false,
+            "label": "strike"
+          },
+          {
+            "equals": true,
+            "label": "safe"
+          }
+        ],
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "uiHidden",
+        "atSteps": [
+          {
+            "equals": true,
+            "label": "hidden"
+          }
+        ],
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "quality",
+        "equals": "performance",
+        "allowTrivial": "a 390-px window picks the performance tier on the first snapshot, before any observation"
+      },
+      {
+        "id": "state",
+        "path": "frame",
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "dropCount",
+        "equals": 4940,
+        "allowTrivial": "the performance tier draws round(6500 x 0.76 storm rain) = 4940 drops from boot"
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

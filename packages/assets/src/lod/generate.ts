@@ -7,12 +7,14 @@
 
 import { createHash } from "node:crypto";
 import type {
+  Accessor,
   Document,
   Node as GltfNode,
   Material,
   Mesh,
   Primitive,
   Scene,
+  TypedArray,
 } from "@gltf-transform/core";
 import {
   compactPrimitive,
@@ -24,7 +26,7 @@ import { MeshoptSimplifier } from "meshoptimizer";
 import { Matrix4 } from "three";
 import { type IFoliageCutoutSummary, convertFoliageCutout } from "../foliage.js";
 import { TN_VIRTUAL_GEOMETRY } from "../virtual/extension.js";
-import { type ICardLevelSummary, generateCardChain } from "./cards.js";
+import { type ICardCopies, type ICardLevelSummary, generateCardChain } from "./cards.js";
 import {
   type DiscreteLodSkipReason,
   type LodMinTrianglesScope,
@@ -126,7 +128,7 @@ export const LOD_GENERATOR = "threenative-discrete-lod";
  * Bumped when the *generated levels* change, so a stale cook cache cannot serve the old chain. The
  * artifact schema stays put: a chain with or without the terminal level reads the same.
  */
-export const LOD_GENERATOR_VERSION = 3;
+export const LOD_GENERATOR_VERSION = 4;
 /** Bumped with the output layout so a stale cache entry cannot hide a schema change. */
 export const LOD_ARTIFACT_SCHEMA_VERSION = 1;
 /** The pinned simplifier this artifact's error metric was produced with. */
@@ -629,6 +631,8 @@ interface IGeneratedChain {
   readonly errors: number[];
   readonly indices: Uint32Array[];
   readonly lod0Triangles: number;
+  /** Scaled card copies the levels' indices point at, appended in level order; card chains only. */
+  readonly vertexCopies?: readonly ICardCopies[];
 }
 
 /**
@@ -926,7 +930,43 @@ function generateCardsChain(
     errors: [...chain.errors],
     indices: [...chain.indices],
     lod0Triangles: chain.lod0Triangles,
+    vertexCopies: chain.copies,
   };
+}
+
+/**
+ * Appends a card chain's scaled copies to every attribute of `primitive`, in level order, so the
+ * levels' indices resolve. Each attribute gets a new accessor: another primitive sharing the old one
+ * keeps its own vertex count. LOD0's indices are untouched and never reach a copy.
+ */
+function appendCardCopies(primitive: Primitive, copies: readonly ICardCopies[]): void {
+  const base = primitive.getAttribute("POSITION")?.getCount() ?? 0;
+  let added = 0;
+  for (const level of copies) added += level.source.length;
+  if (added === 0) return;
+  for (const semantic of primitive.listSemantics()) {
+    const accessor = primitive.getAttribute(semantic) as Accessor;
+    const size = accessor.getElementSize();
+    const array = accessor.getArray() as TypedArray;
+    const grown = new (array.constructor as new (length: number) => TypedArray)(
+      (base + added) * size,
+    );
+    grown.set(array.subarray(0, base * size));
+    let at = base;
+    for (const level of copies)
+      for (const vertex of level.source) {
+        grown.set(array.subarray(vertex * size, vertex * size + size), at * size);
+        at += 1;
+      }
+    const extended = accessor.clone().setArray(grown);
+    if (semantic === "POSITION") {
+      at = base;
+      for (const level of copies)
+        for (let copy = 0; copy < level.source.length; copy += 1, at += 1)
+          extended.setElement(at, Array.from(level.positions.subarray(copy * 3, copy * 3 + 3)));
+    }
+    primitive.setAttribute(semantic, extended);
+  }
 }
 
 function reachableNodes(document: Document): GltfNode[] {
@@ -970,15 +1010,25 @@ function animatedNodes(document: Document): Set<GltfNode> {
 
 function meshFlags(document: Document, animated: Set<GltfNode>): Map<Mesh, IMeshFlags> {
   const flags = new Map<Mesh, IMeshFlags>();
+  const levelNamed = new Set<Mesh>();
+  let levelNodes = 0;
   for (const node of reachableNodes(document)) {
     const mesh = node.getMesh();
     if (mesh === null) continue;
     const current = flags.get(mesh) ?? { animated: false, authoredLod: false, skinned: false };
     current.skinned ||= node.getSkin() !== null;
     current.animated ||= animated.has(node);
-    current.authoredLod ||= authoredLodName(node.getName()) || authoredLodName(mesh.getName());
+    if (authoredLodName(node.getName()) || authoredLodName(mesh.getName())) {
+      levelNamed.add(mesh);
+      levelNodes += 1;
+    }
     flags.set(mesh, current);
   }
+  // An authored chain is two or more level-named nodes in one asset. A lone level name (a pack's
+  // `_LOD2` exported as a model of its own) has no sibling for anything to select, so it is this
+  // asset's LOD0 and gets a generated chain like any other mesh.
+  if (levelNodes > 1)
+    for (const mesh of levelNamed) (flags.get(mesh) as IMeshFlags).authoredLod = true;
   return flags;
 }
 
@@ -1324,7 +1374,7 @@ export async function generateDiscreteLod(
   // Before every early return: a `BLEND` needle card is refused a chain by rule, so the conversion
   // is what makes one possible at all — and an asset can opt into it with `enabled: false`.
   const cutout = policy.cutout
-    ? convertFoliageCutout(document)
+    ? await convertFoliageCutout(document)
     : { converted: [], kept: [] as const };
   if (!policy.enabled) return emptySummary(policy, (now() - started) / 1000, cutout);
   const joinRequested = policy.generation.join;
@@ -1414,6 +1464,7 @@ export async function generateDiscreteLod(
         trianglesAfter += before;
         continue;
       }
+      if (chain.vertexCopies !== undefined) appendCardCopies(primitive, chain.vertexCopies);
       extension ??= document.createExtension(TNDiscreteLod).setRequired(false);
       const property = attachDiscreteLod(document, extension, primitive, {
         ...chain,

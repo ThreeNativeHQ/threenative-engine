@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-385 — Performance defaults: share rig preparation and reuse frame storage
 
 **Status:** PARTIAL
+**Priority:** P2 — Twelve open ACs removing repeated binding audits and steady-iteration allocations.
 **Progress:** 0/3 phases implemented
 **Complexity:** 6 → MEDIUM; 6–10 implementation files (+2), cache/snapshot semantics (+2), engine-to-game tarball boundary (+2); risk override: none.
 **Owner:** Engine implementation agent

@@ -1,0 +1,245 @@
+{
+  "sourceSha": "8f85fff19913c955a44b7b85d2cc117b972bd19c",
+  "runUrl": "https://github.com/ThreeNativeHQ/threenative/actions/runs/37015640669",
+  "artifactId": 11231490134,
+  "artifactSha256": "07925a63d4091f2a53d06ef7b178619d775ef9185890949afb4645c83e9d519f",
+  "qualification": "Packaged Linux ARM QuickJS software-adapter correctness. No mobile or hardware-performance claim.",
+  "pass": true,
+  "capture": {
+    "adapter": {
+      "architecture": "unknown",
+      "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+      "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+      "vendor": "llvmpipe"
+    },
+    "browserArgs": [],
+    "captureMethod": "device.screenshot",
+    "rendererKind": "webgpu",
+    "target": "desktop",
+    "viewport": {
+      "height": 540,
+      "width": 960
+    }
+  },
+  "runtimeSha256": "da16138cc37938a14ce6831476aa58972a0d469ba2172b6a06faf6d1d56c6042",
+  "runtimeVersion": "Mystral Native Runtime v0.3.4; wgpu-native + QuickJS",
+  "assetHashes": {
+    "receiver.glb": "7ed6179e17f75f3f60576f72968140773c7f65cb1b8d760240576ac4092c05c3",
+    "assets.manifest.json": "3b833a9fc96c4f3ef939840f2154f3e40aa95d4beb6cda965833b54f43cde1dc"
+  },
+  "builds": {
+    "native.ts": {
+      "executableSha256": "6d53ae54426ee3226a06373978fa1ea081c02d1667ceafa191bf70a1657a7fa7",
+      "bundleSha256": "391f98f6391b915798aa10053b71a03a652d1b07a72062d29448309435ac051a"
+    },
+    "native-atlas.ts": {
+      "executableSha256": "a8bda56b2a103f0ae6f1330c5f35f56dfb2c7dc0d4b2ce672b2424f5eff05b26",
+      "bundleSha256": "683bc8d337886e7f9ca803c09d0ea89393e5914d17c7c58cfe2536fbe2db49d5"
+    },
+    "native-hidden.ts": {
+      "executableSha256": "a404951c4b9f9e73d44589b307253383590b185dcc33aae1cad4bdc83fcfc4d5",
+      "bundleSha256": "54e4a82de7e6920b74d87beb66c995dd40bbf3012efcaf06989ec14a04e26abe"
+    },
+    "native-hidden-fading.ts": {
+      "executableSha256": "511bfb911a6909a09043151fdfc65ea124b1ced21559b80c27c93144c8d6c7cd",
+      "bundleSha256": "5f538d5bdde31205935bf18c22214b641748e98a8636a7ba73e37ea06ee2d329"
+    }
+  },
+  "results": [
+    {
+      "name": "static",
+      "pass": true,
+      "negativeControl": false,
+      "png": "../vq11-decals-native-37010879478/static.png",
+      "screenshotSha256": "ffb1bc6c5abaf5e4c55c258740c549731e81a8dc9c48c9b449ec7ddd27b95fa8",
+      "active": 256,
+      "created": 321,
+      "released": 65,
+      "geometryBytes": 275076,
+      "maxDrawCalls": 516,
+      "averageOpacity": 1,
+      "failedPixelAssertions": []
+    },
+    {
+      "name": "motion",
+      "pass": true,
+      "negativeControl": false,
+      "png": "../vq11-decals-native-37010879478/motion.png",
+      "screenshotSha256": "a80813b0c2ebdff2c817664a8780b59396bbec4844bacfba5ac25998fe001c99",
+      "active": 256,
+      "created": 321,
+      "released": 65,
+      "geometryBytes": 275076,
+      "maxDrawCalls": 516,
+      "averageOpacity": 1,
+      "failedPixelAssertions": []
+    },
+    {
+      "name": "teardown",
+      "pass": true,
+      "negativeControl": false,
+      "png": "../vq11-decals-native-37010879478/teardown.png",
+      "screenshotSha256": "2a85f1cb78de0bd06f79534704b44170397c6a299d9b5709dd76c560c08f6880",
+      "active": 128,
+      "created": 321,
+      "released": 193,
+      "geometryBytes": 136188,
+      "maxDrawCalls": 516,
+      "averageOpacity": 1,
+      "failedPixelAssertions": []
+    },
+    {
+      "name": "restart",
+      "pass": true,
+      "negativeControl": false,
+      "png": "../vq11-decals-native-37010879478/static.png",
+      "screenshotSha256": "ffb1bc6c5abaf5e4c55c258740c549731e81a8dc9c48c9b449ec7ddd27b95fa8",
+      "active": 256,
+      "created": 321,
+      "released": 65,
+      "geometryBytes": 275076,
+      "maxDrawCalls": 516,
+      "averageOpacity": 1,
+      "failedPixelAssertions": []
+    },
+    {
+      "name": "lifecycle",
+      "pass": true,
+      "negativeControl": false,
+      "png": "../vq11-decals-native-37010879478/static.png",
+      "screenshotSha256": "ffb1bc6c5abaf5e4c55c258740c549731e81a8dc9c48c9b449ec7ddd27b95fa8",
+      "active": 256,
+      "created": 321,
+      "released": 65,
+      "geometryBytes": 275076,
+      "maxDrawCalls": 516,
+      "averageOpacity": 1,
+      "failedPixelAssertions": [],
+      "residency": [
+        {
+          "generation": 1,
+          "renderCalls": 18,
+          "stableFrames": 3,
+          "geometries": 259,
+          "textures": 4,
+          "bytes": 6522894
+        },
+        {
+          "generation": 2,
+          "renderCalls": 230,
+          "stableFrames": 3,
+          "geometries": 259,
+          "textures": 4,
+          "bytes": 6522894
+        },
+        {
+          "generation": 3,
+          "renderCalls": 258,
+          "stableFrames": 3,
+          "geometries": 259,
+          "textures": 4,
+          "bytes": 6522894
+        },
+        {
+          "generation": 4,
+          "renderCalls": 286,
+          "stableFrames": 3,
+          "geometries": 259,
+          "textures": 4,
+          "bytes": 6522894
+        },
+        {
+          "generation": 5,
+          "renderCalls": 314,
+          "stableFrames": 3,
+          "geometries": 259,
+          "textures": 4,
+          "bytes": 6522894
+        },
+        {
+          "generation": 6,
+          "renderCalls": 342,
+          "stableFrames": 3,
+          "geometries": 259,
+          "textures": 4,
+          "bytes": 6522894
+        }
+      ],
+      "growth": {
+        "geometryGrowth": 0,
+        "textureGrowth": 0,
+        "memoryGrowth": 0
+      }
+    },
+    {
+      "name": "atlas",
+      "pass": true,
+      "negativeControl": false,
+      "png": "atlas.png",
+      "screenshotSha256": "4ecb9a664104a750608b1326bf18bbed367f03d0ed88c021b19a94f9d91fcd0f",
+      "active": 256,
+      "created": 321,
+      "released": 65,
+      "geometryBytes": 275076,
+      "maxDrawCalls": 516,
+      "averageOpacity": 1,
+      "failedPixelAssertions": []
+    },
+    {
+      "name": "fading",
+      "pass": true,
+      "negativeControl": false,
+      "png": "fading.png",
+      "screenshotSha256": "4740d99ae7b3ba976a3ea9a49c218021443a7e870c9dbc4da72bc5479f55a554",
+      "active": 256,
+      "created": 321,
+      "released": 65,
+      "geometryBytes": 275076,
+      "maxDrawCalls": 516,
+      "averageOpacity": 0.4749999999999973,
+      "failedPixelAssertions": []
+    },
+    {
+      "name": "expired",
+      "pass": true,
+      "negativeControl": false,
+      "png": "expired.png",
+      "screenshotSha256": "12304589dcd60b2f774176717c8910ddddc7cdef39d5a75fe6e526ec5caef56e",
+      "active": 0,
+      "created": 321,
+      "released": 321,
+      "geometryBytes": 0,
+      "maxDrawCalls": 516,
+      "averageOpacity": 0,
+      "failedPixelAssertions": []
+    },
+    {
+      "name": "hidden-decals",
+      "pass": true,
+      "negativeControl": true,
+      "png": "expired.png",
+      "screenshotSha256": "12304589dcd60b2f774176717c8910ddddc7cdef39d5a75fe6e526ec5caef56e",
+      "active": 256,
+      "created": 321,
+      "released": 65,
+      "geometryBytes": 259794,
+      "maxDrawCalls": 4,
+      "averageOpacity": 1,
+      "failedPixelAssertions": ["visual.1.region.darkPixels", "visual.2.region.darkPixels"]
+    },
+    {
+      "name": "hidden-fading",
+      "pass": true,
+      "negativeControl": true,
+      "png": "expired.png",
+      "screenshotSha256": "12304589dcd60b2f774176717c8910ddddc7cdef39d5a75fe6e526ec5caef56e",
+      "active": 256,
+      "created": 321,
+      "released": 65,
+      "geometryBytes": 275076,
+      "maxDrawCalls": 516,
+      "averageOpacity": 0.4749999999999973,
+      "failedPixelAssertions": ["visual.3.region.darkPixels", "visual.4.region.darkPixels"]
+    }
+  ]
+}

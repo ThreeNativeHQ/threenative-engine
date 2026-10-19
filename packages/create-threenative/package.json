@@ -1,6 +1,6 @@
 {
   "name": "create-threenative",
-  "version": "0.2.7",
+  "version": "0.2.9",
   "license": "MIT",
   "description": "Scaffold a readable ThreeNative game project.",
   "keywords": [
@@ -62,7 +62,7 @@
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict",
-    "prepack": "node -e \"const fs=require('node:fs');const s='../core/patches/three@0.185.1.patch',d='template-assets/patches/three@0.185.1.patch';if(fs.existsSync(s))fs.cpSync(s,d);else if(!fs.existsSync(d))throw new Error('TN_FRAMEWORK_PATCH_MISSING: '+s)\""
+    "prepack": "node -e \"const fs=require('node:fs');for(const [s,n] of [['../core/patches/three@0.185.1.patch','three@0.185.1.patch'],['../../patches/vite@8.2.0.patch','vite@8.2.0.patch'],['../../patches/@tailwindcss__node@4.3.3.patch','@tailwindcss__node@4.3.3.patch']]){const d='template-assets/patches/'+n;fs.mkdirSync('template-assets/patches',{recursive:true});if(fs.existsSync(s))fs.cpSync(s,d);else if(!fs.existsSync(d))throw new Error('TN_FRAMEWORK_PATCH_MISSING: '+s)}\""
   },
   "dependencies": {
     "@gltf-transform/core": "catalog:",
@@ -72,7 +72,8 @@
     "ktx-parse": "^1.1.0",
     "ktx2-encoder": "0.6.0",
     "meshoptimizer": "1.1.1",
-    "three": "catalog:"
+    "three": "catalog:",
+    "@jridgewell/trace-mapping": "catalog:"
   },
   "devDependencies": {
     "@gltf-transform/core": "catalog:",
@@ -86,9 +87,11 @@
     "threenative-blender-mcp": "workspace:*",
     "tsup": "8.5.1",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "@typescript/native": "catalog:",
+    "@typescript/typescript6": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/assets": ">=0.3.5 <0.4.0"
+    "@threenative/assets": ">=0.3.6 <0.4.0"
   }
 }

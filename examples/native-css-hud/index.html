@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>ThreeNative native CSS HUD</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        /* The dark clear colour the native host paints under the HUD, so the browser reference and
+           the native capture agree on what "nothing here" looks like. */
+        background: #18181b;
+      }
+      #canvas {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      /* The overlay the HUD lives in. The section inside it carries its own `fixed` box, so the
+         overlay itself only has to cover the page. */
+      #tn-ui {
+        position: fixed;
+        inset: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas" width="1280" height="720"></canvas>
+    <div id="tn-ui"></div>
+    <script>
+      globalThis.canvas = document.getElementById("canvas");
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

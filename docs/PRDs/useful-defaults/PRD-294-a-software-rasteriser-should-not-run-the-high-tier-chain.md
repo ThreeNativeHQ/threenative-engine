@@ -4,6 +4,7 @@
 because it is a preset decision and a mechanism decision wearing one coat, and only one of them is
 the framework's to make.
 
+**Priority:** P1 — Software adapters run SSGI/SSR at tier high; golden-path already exceeds 30 minutes.
 ## The observation
 
 Every scenario on the GPU-less CI lane — the one the workflow marks `TN_PLAYTEST_ALLOW_SOFTWARE: "1"`

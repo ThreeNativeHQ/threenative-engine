@@ -258,3 +258,45 @@ describe("cellPlacements", () => {
     );
   });
 });
+
+describe("world cell proxy validation", () => {
+  const proxy = {
+    glb: "proxy.glb",
+    error: 0.1,
+    triangles: 10,
+    materialGroups: 1,
+    scope: "cell",
+    bounds: { min: [0, 0, 0], max: [1, 1, 1] },
+    sourceTriangles: 100,
+    sourcePrimitives: 2,
+  };
+  function withProxy(value: unknown) {
+    return { ...validPackage(), cells: [{ x: 0, z: 0, runs: [], proxy: value }] };
+  }
+  it("accepts legacy chunk proxy records and scatter-inclusive metadata", () => {
+    expect(validateWorldPackage(withProxy(proxy), options).ok).toBe(true);
+    expect(
+      validateWorldPackage(
+        withProxy({ glb: "proxy.glb", error: 0, triangles: 1, materialGroups: 1 }),
+        options,
+      ).ok,
+    ).toBe(true);
+  });
+  it.each([
+    null,
+    { ...proxy, error: -1 },
+    { ...proxy, error: Number.NaN },
+    { ...proxy, glb: "" },
+    { ...proxy, triangles: 0 },
+    { ...proxy, materialGroups: 1.5 },
+    { ...proxy, scope: "scatter" },
+    { ...proxy, bounds: { min: [2, 0, 0], max: [1, 1, 1] } },
+    { ...proxy, sourceTriangles: -1 },
+    { ...proxy, triangles: Number.MAX_SAFE_INTEGER + 1 },
+    { ...proxy, sourcePrimitives: Number.MAX_SAFE_INTEGER + 1 },
+  ])("rejects malformed proxy metadata %j before attachment", (value) => {
+    const result = validateWorldPackage(withProxy(value), options);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((error) => error.path.startsWith("cells[0].proxy"))).toBe(true);
+  });
+});

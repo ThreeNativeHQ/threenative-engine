@@ -34,7 +34,7 @@ const visual = (source) => {
   // A `visual` assertion forces the runner to capture a frame no matter what the artifacts say —
   // `wantsVisual` overrides `--no-screenshots`, correctly, because the assertion needs the pixels.
   // Missing this let a scenario through as non-visual and straight into the screenshot hang.
-  if (scenario.assert?.visual !== undefined) return true;
+  if (scenario.assert?.visual !== undefined || scenario.assert?.tone !== undefined) return true;
   // A scenario whose steps hold an input for many ticks and then assert on where the subject
   // ended up is measuring distance travelled under sustained simulation, which is as much a
   // hardware property as a pixel is. `coyote` is the case: it walks the player off a ledge over

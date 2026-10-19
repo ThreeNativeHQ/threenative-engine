@@ -1,0 +1,144 @@
+{
+  "sourceSha": "0ea7e29a0ff18717d33b8bce3300ec0568fea842",
+  "workflowRun": "https://github.com/ThreeNativeHQ/threenative/actions/runs/36988379892",
+  "artifactId": 11218670853,
+  "artifactDigest": "sha256:8c8b12e370e8f8013804b7701570d284f2ed618b23b692b873e5ec6240110a89",
+  "qualification": "rendered-pixel correctness only; software adapters allowed, no native or hardware-performance claim",
+  "dedicatedGatePassed": true,
+  "fullRequiredCi": "pending",
+  "frames": [
+    {
+      "variant": "underexposed",
+      "file": "underexposed.png",
+      "sha256": "173b18dadda32b33922afacf2bb9596dab752e8273914755204f86617c4b6657",
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 720,
+          "width": 1280
+        }
+      },
+      "pass": false,
+      "tone": [
+        {
+          "code": "TN_TONE",
+          "label": "tone-0.png",
+          "atStep": "rendered",
+          "mean": 89.55505316840278,
+          "p1": 6,
+          "p50": 95,
+          "p99": 136,
+          "clipFraction": 0,
+          "blackFraction": 0.00390625
+        },
+        {
+          "code": "TN_TONE",
+          "label": "after.png",
+          "mean": 89.55505316840278,
+          "p1": 6,
+          "p50": 95,
+          "p99": 136,
+          "clipFraction": 0,
+          "blackFraction": 0.00390625
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_TONE_ASSERTION_FAILED",
+          "message": "Tone 'rendered' mean measured 89.55505316840278; required {\"min\":140,\"max\":210}.",
+          "severity": "error",
+          "observedRuntimePath": "observations.json/tone"
+        },
+        {
+          "code": "TN_PLAYTEST_TONE_ASSERTION_FAILED",
+          "message": "Tone 'rendered' p99 measured 136; required {\"min\":230}.",
+          "severity": "error",
+          "observedRuntimePath": "observations.json/tone"
+        },
+        {
+          "code": "TN_PLAYTEST_TONE_ASSERTION_FAILED",
+          "message": "Tone 'after.png' mean measured 89.55505316840278; required {\"min\":140,\"max\":210}.",
+          "severity": "error",
+          "observedRuntimePath": "observations.json/tone"
+        },
+        {
+          "code": "TN_PLAYTEST_TONE_ASSERTION_FAILED",
+          "message": "Tone 'after.png' p99 measured 136; required {\"min\":230}.",
+          "severity": "error",
+          "observedRuntimePath": "observations.json/tone"
+        }
+      ]
+    },
+    {
+      "variant": "restored",
+      "file": "restored.png",
+      "sha256": "ad77af341b9ab04b61060e3eb8e1904f93b7d9273b6b2bc763e0e6269f0e4dcf",
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 720,
+          "width": 1280
+        }
+      },
+      "pass": true,
+      "tone": [
+        {
+          "code": "TN_TONE",
+          "label": "tone-0.png",
+          "atStep": "rendered",
+          "mean": 170.49870985243055,
+          "p1": 22,
+          "p50": 180,
+          "p99": 254,
+          "clipFraction": 0.0078125,
+          "blackFraction": 0.00390625
+        },
+        {
+          "code": "TN_TONE",
+          "label": "after.png",
+          "mean": 170.49870985243055,
+          "p1": 22,
+          "p50": 180,
+          "p99": 254,
+          "clipFraction": 0.0078125,
+          "blackFraction": 0.00390625
+        }
+      ],
+      "diagnostics": []
+    }
+  ]
+}

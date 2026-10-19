@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
+import { declaredNeeds } from "../ci-workflow.js";
 import { parsePerformanceLaneManifest } from "../engine-load-test/report.js";
 import {
   collectorCoverage,
@@ -30,6 +31,44 @@ import {
 } from "../performance-regression/run.js";
 
 const repo = path.resolve(import.meta.dirname, "../..");
+
+it("release engine players include the desktop physics ABI", async () => {
+  const presets = JSON.parse(
+    await readFile(path.join(repo, "packages/runtime-native/CMakePresets.json"), "utf8"),
+  );
+  const release = requiredJob(
+    await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8"),
+    "build",
+  );
+  for (const [name, target, library] of [
+    ["tn-linux", "x86_64-unknown-linux-gnu", "libthreenative_native_physics.a"],
+    ["tn-windows", "x86_64-pc-windows-msvc", "threenative_native_physics.lib"],
+    ["tn-macos", "aarch64-apple-darwin", "libthreenative_native_physics.a"],
+  ]) {
+    const preset = presets.configurePresets.find((entry: { name: string }) => entry.name === name);
+    expect(preset?.cacheVariables.TN_ENABLE_NATIVE_PHYSICS, name).toBe("ON");
+    expect(preset?.cacheVariables.THREENATIVE_PHYSICS_LIBRARY, name).toBe(
+      `\${sourceDir}/.runtime/physics-target/${target}/release/${library}`,
+    );
+    expect(release).toContain(`preset: ${name}`);
+  }
+  // native:build already builds the host Rust crate before either engine-player configure.
+  for (const name of ["Build native runtime with MSVC", "Build Release engine player"]) {
+    const step = workflowRunScript(release, name);
+    const configure = "cmake --preset ${{ matrix.preset }} -B build/tn-engine-ui";
+    const configureIndex = release.indexOf(configure, release.indexOf(`- name: ${name}`));
+    const before = release.slice(0, configureIndex);
+    expect(step).toContain(configure);
+    expect(before).toContain("pnpm --filter @threenative/runtime-native native:build");
+    expect(step).not.toContain("-DTN_ENABLE_NATIVE_PHYSICS=OFF");
+    expect(step).toContain("--config Release --target tn-native-engine-player-v8");
+  }
+  const builder = await readFile(
+    path.join(repo, "packages/runtime-native/scripts/native-build.mjs"),
+    "utf8",
+  );
+  expect(builder).toContain("'build-native-physics.mjs'), '--desktop'");
+});
 
 // A git command can return while a background auto-gc still writes
 // .git/objects/pack, so a plain recursive rm races it and throws ENOTEMPTY.
@@ -413,10 +452,94 @@ it("approved baseline binds provenance while allowing a fresh candidate", () => 
 });
 const workflows = [
   ".github/workflows/ci.yml",
+  ".github/workflows/ci-janitor.yml",
   ".github/workflows/native-platforms.yml",
   ".github/workflows/native-release.yml",
   ".github/workflows/npm-release.yml",
 ] as const;
+
+/**
+ * Every workflow file on disk, read off the directory rather than off a hand-kept list of "the ones
+ * that matter". A workflow file that lands without being named here is a set of triggers, runners
+ * and required checks nobody in this repository has read, and the audit that found
+ * `feat/prd-368-persistent-pipeline-cache` still holding a 31-minute job could only see it by
+ * reading the files. Naming the file here is the review.
+ */
+const reviewedWorkflows = [
+  ".github/workflows/build-quiche-owned.yml",
+  ".github/workflows/ci.yml",
+  ".github/workflows/ci-janitor.yml",
+  ".github/workflows/integration.yml",
+  ".github/workflows/native-platforms.yml",
+  ".github/workflows/native-release.yml",
+  ".github/workflows/npm-release.yml",
+  ".github/workflows/performance-regression.yml",
+  ".github/workflows/pipeline-cache.yml",
+  ".github/workflows/release-candidate.yml",
+  ".github/workflows/site-docs.yml",
+] as const;
+
+/**
+ * Triggers that test one commit more than once, or that outlive the pull request they were added for.
+ *
+ * A `push` with no `branches:` filter fires for the PR's own head commit as well as for the
+ * `pull_request` event carrying it, so `integration-csg` ran its proof twice for every commit it had
+ * a pull request for. Narrowing `push` to `main` is not that defect: it fires for the merge, which is
+ * a different commit, and both `ci.yml` and `pipeline-cache` rely on it to prove the promotion. What
+ * is never legitimate is a *feature* branch in a `push` filter — `integration-decals` carried
+ * `fix/vq11-decal-material-lifetime` for a pull request that merged, and `pipeline-cache` listed the
+ * branch PRD-368 landed on three weeks earlier, each spending a long native lane on pushes nobody
+ * reads.
+ */
+function duplicateCommitTriggers(source: string): readonly string[] {
+  const triggers = commandText(triggerSection(source));
+  const findings: string[] = [];
+  const push = /^ {2}push:\n(?: {4}.*\n)*/mu.exec(triggers)?.[0] ?? "";
+  if (/^ {2}pull_request:/mu.test(triggers) && push !== "" && !/\n {4}branches:/u.test(push)) {
+    findings.push("push + pull_request: one commit runs this workflow twice");
+  }
+  const inline = /branches: \[([^\]]*)\]/mu.exec(push)?.[1] ?? "";
+  const block = /\n {4}branches:\n((?: {6}- .*\n)*)/mu.exec(push)?.[1] ?? "";
+  for (const branch of `${inline}\n${block}`
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^ {6}- /u, "")
+        .trim()
+        .replace(/^["']|["']$/gu, ""),
+    )
+    .filter((name) => name !== "")) {
+    if (!/^(?:main|develop)$/u.test(branch)) {
+      findings.push(`push narrowed to ${branch}: the lane outlives its pull request`);
+    }
+  }
+  return findings;
+}
+
+/** Every `paths:` entry in a workflow's triggers, in file order. */
+function triggerPaths(source: string): readonly string[] {
+  const triggers = commandText(triggerSection(source));
+  const entries: string[] = [];
+  let reading = false;
+  for (const line of triggers.split("\n")) {
+    if (/^ {4}paths:/u.test(line)) {
+      reading = true;
+      continue;
+    }
+    if (!reading) continue;
+    if (!/^ {6}- /u.test(line)) {
+      reading = false;
+      continue;
+    }
+    entries.push(
+      line
+        .replace(/^ {6}- /u, "")
+        .trim()
+        .replace(/^["']|["']$/gu, ""),
+    );
+  }
+  return entries;
+}
 
 function jobSections(source: string): readonly [string, string][] {
   const jobsIndex = source.indexOf("\njobs:\n");
@@ -462,16 +585,23 @@ function triggerSection(source: string): string {
 }
 
 function kvmProvisioning(source: string): readonly string[] {
-  return source
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(
-      (line) =>
-        line.includes('KERNEL=="kvm"') ||
-        line === "| sudo tee /etc/udev/rules.d/99-kvm4all.rules" ||
-        line === "sudo udevadm control --reload-rules" ||
-        line === "sudo udevadm trigger --name-match=kvm",
-    );
+  return (
+    source
+      .split("\n")
+      .map((line) => line.trim())
+      // A trailing `|| true` is not part of the provisioning. native-platforms.yml's copy carries one
+      // because it is the lane PRD-480 routes onto the `tn-local` container, where no udev runs and
+      // /sys is read-only, so the commands cannot succeed there — while native-release.yml stays
+      // hosted and keeps them strict. The two lanes must still provision KVM the same way.
+      .map((line) => line.replace(/ \|\| true$/u, ""))
+      .filter(
+        (line) =>
+          line.includes('KERNEL=="kvm"') ||
+          line === "| sudo tee /etc/udev/rules.d/99-kvm4all.rules" ||
+          line === "sudo udevadm control --reload-rules" ||
+          line === "sudo udevadm trigger --name-match=kvm",
+      )
+  );
 }
 
 function commandText(section: string): string {
@@ -496,6 +626,9 @@ function cmakeFunction(source: string, name: string): string {
  * coverage it was checking was unchanged. Reading the entries is what the assertion always meant.
  */
 function matrixTemplates(section: string): readonly string[] {
+  if (section.includes("fromJSON(needs.scope.outputs.plan).templateMatrix"))
+    return [...expectedTemplates].sort();
+  if (section.includes("fromJSON(needs.scope.outputs.plan).goldenMatrix")) return ["starter"];
   const listed = [...section.matchAll(/^\s+-\s+([a-z][a-z0-9-]*)\s*$/gmu)].map(
     (match) => match[1] ?? "",
   );
@@ -519,6 +652,9 @@ interface IScopeFixture {
 function isolatedGitEnvironment(): NodeJS.ProcessEnv {
   const environment = { ...process.env };
   for (const variable of [
+    // A fixture repo is never a CI run: inherited from the CI job, this turned on the live tree-reuse
+    // lookup and the plan grew an Actions API error.
+    "GITHUB_ACTIONS",
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_COMMON_DIR",
     "GIT_DIR",
@@ -582,6 +718,8 @@ function classifyScope(
       root,
       "--event-name",
       "pull_request",
+      "--target",
+      "develop",
       "--base",
       base,
       "--head",
@@ -601,7 +739,9 @@ describe("CI pipeline structure", () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const scope = requiredJob(ci, "scope");
     expect(scope).toContain("scripts/ci-change-scope.mjs");
-    expect(scope).toContain("fetch-depth: 0");
+    expect(scope).toContain(
+      "fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 1 || 0 }}",
+    );
     expect(scope).toContain("scope: ${{ steps.classify.outputs.scope }}");
     expect(scope).toContain("selection: ${{ steps.classify.outputs.selection }}");
     expect(scope).toContain("reason: ${{ steps.classify.outputs.reason }}");
@@ -665,6 +805,38 @@ describe("CI pipeline structure", () => {
     expect(triggers).toContain("workflow_call:");
     expect(triggers).toContain("ios_only:");
     expect(triggers).not.toMatch(/\n\s{2}(?:push|pull_request|schedule):/u);
+  });
+
+  it("never lets a draft pull request run cancel a ready one", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const group = /^concurrency:\n {2}group: (.*)$/mu.exec(ci)?.[1] ?? "";
+    // A push then `gh pr ready` fires a synchronize run whose payload still says draft. In the
+    // shared `latest` group with cancel-in-progress, that skipped run cancelled the real one
+    // (#403, run 37075825121). Only a non-draft pull request run joins the shared group.
+    expect(group).toContain("!github.event.pull_request.draft && 'latest'");
+  });
+
+  it("warms the base-branch caches from a develop push, and lets no push cancel another", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    // `develop` is the only branch a push may name besides main, and it is the base branch every
+    // pull request reads its caches from.
+    const push = /^ {2}push:\n(?: {4}.*\n)*/mu.exec(commandText(triggerSection(ci)))?.[0] ?? "";
+    expect([...push.matchAll(/^ {6}- (\S+)$/gmu)].map((match) => match[1])).toEqual([
+      "main",
+      "develop",
+    ]);
+    // The `warm` plan still exists as a selection, and these are the only jobs it runs: the two
+    // cache publishers plus the reporting job.
+    for (const name of ["build-artifacts", "test-native", "run-summary"]) {
+      expect(requiredJob(ci, name), `${name} never runs on a develop push`).toContain(
+        "needs.scope.outputs.selection == 'warm'",
+      );
+    }
+    expect(duplicateCommitTriggers(ci)).toEqual([]);
+    // Each push run gets its own concurrency group (the group ends in its run id unless it is a
+    // ready pull request) and nothing but a pull request cancels in progress, so a second push to
+    // develop cannot kill the first one while it is saving.
+    expect(ci).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
   });
 
   it("does not require skipped performance lanes on a prose-only run", async () => {
@@ -776,7 +948,7 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("classifies workflow-only changes as full CI with no prose skip", async () => {
+  it("classifies a workflow-only change as the `ci` selection, not prose and not full", async () => {
     const fixture = await scopeFixture();
     try {
       const workflowHead = await commitScopeChange(
@@ -786,15 +958,202 @@ describe("CI pipeline structure", () => {
         "workflow-only change",
       );
 
-      expect(classifyScope(fixture.root, fixture.base, workflowHead)).toMatchObject({
+      const plan = classifyScope(fixture.root, fixture.base, workflowHead, ["--target", "develop"]);
+      expect(plan).toMatchObject({
         files: [".github/workflows/ci.yml"],
-        reason: '".github/workflows/ci.yml" is a non-Markdown path',
-        scope: "full",
-        selection: "full",
+        selection: "ci",
+        nativeTier: "none",
       });
+      expect(
+        Object.entries(plan.jobs as Record<string, { required: boolean }>)
+          .filter(([, job]) => job.required)
+          .map(([name]) => name)
+          .sort(),
+      ).toEqual([
+        "budgets",
+        "build-artifacts",
+        "integration",
+        "lint",
+        "supply-chain",
+        "test-unit",
+        "typecheck",
+      ]);
     } finally {
       await removeFixture(fixture.root);
     }
+  });
+
+  // PRD-573 slice 0b. The native engine's own tree is proven by its own job, so a diff that touches
+  // only that tree skips the 75-minute native-platforms matrix. The paths are empty on develop today,
+  // which is why every other diff has to classify exactly as before.
+  describe("native-engine scope", () => {
+    const ENGINE_FILES = [
+      "packages/runtime-native/src/engine/scene/node.cpp",
+      "packages/runtime-native/src/adapters/v8/bind.cpp",
+      "packages/runtime-native/tests/native-engine/scene_test.cpp",
+      "packages/runtime-native/cmake/NativeEngineCore.cmake",
+    ];
+    const jobsOf = (plan: Record<string, unknown>) =>
+      plan.jobs as Record<string, { required: boolean; reason: string }>;
+
+    it.each(ENGINE_FILES)("selects only the native-engine job for %s", async (relative) => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(fixture, relative, "changed\n", "engine only");
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan).toMatchObject({
+          selection: "native-engine",
+          native: false,
+          nativeTier: "none",
+        });
+        const jobs = jobsOf(plan);
+        expect(jobs["native-engine"]?.required).toBe(true);
+        expect(jobs["native-platforms"]?.required).toBe(false);
+        expect(jobs["native-platforms"]?.reason).toContain("native-engine");
+        expect(jobs["test-native"]?.required).toBe(false);
+        expect(
+          Object.entries(jobs)
+            .filter(([, job]) => job.required)
+            .map(([name]) => name)
+            .sort(),
+        ).toEqual(["integration", "lint", "native-engine", "supply-chain"]);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it("keeps native-platforms required when an engine path rides with a legacy runtime-native path", async () => {
+      const fixture = await scopeFixture();
+      try {
+        await commitScopeChange(fixture, ENGINE_FILES[0] ?? "", "changed\n", "engine");
+        const head = await commitScopeChange(
+          fixture,
+          "packages/runtime-native/src/runtime.cpp",
+          "changed\n",
+          "legacy runtime-native",
+        );
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan).toMatchObject({ selection: "full", native: true });
+        expect(jobsOf(plan)["native-platforms"]?.required).toBe(true);
+        expect(jobsOf(plan)["native-engine"]?.required).toBe(true);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it.each(["packages/core/src/index.ts", ".github/workflows/ci.yml"])(
+      "does not narrow an engine path mixed with %s",
+      async (other) => {
+        const fixture = await scopeFixture();
+        try {
+          await commitScopeChange(fixture, ENGINE_FILES[0] ?? "", "changed\n", "engine");
+          const head = await commitScopeChange(fixture, other, "changed\n", "other");
+          const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+          expect(plan.selection).not.toBe("native-engine");
+          expect(jobsOf(plan)["native-engine"]?.required).toBe(true);
+        } finally {
+          await removeFixture(fixture.root);
+        }
+      },
+    );
+
+    it("lets prose ride with an engine path", async () => {
+      const fixture = await scopeFixture();
+      try {
+        await commitScopeChange(fixture, ENGINE_FILES[1] ?? "", "changed\n", "engine");
+        const head = await commitScopeChange(fixture, "docs/PRDs/other.md", "# prose\n", "prose");
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan.selection).toBe("native-engine");
+        expect(jobsOf(plan)["native-platforms"]?.required).toBe(false);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it.each([
+      "packages/runtime-native/src/engineering/x.cpp",
+      "packages/runtime-native/src/adapters-legacy/x.cpp",
+      "packages/runtime-native/tests/native-engine-assets.spec.ts",
+      "packages/runtime-native/cmake/CheckNativeEngineGraph.cmake",
+      "packages/runtime-native/android/engine-player/build.gradle",
+    ])("treats the lookalike %s as an ordinary path", async (relative) => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(fixture, relative, "changed\n", "lookalike");
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan.selection).toBe("full");
+        expect(jobsOf(plan)["native-engine"]?.required).toBe(false);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it("does not read a repo-root src/engine as the engine tree", async () => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(fixture, "src/engine/x.cpp", "changed\n", "root");
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan.selection).toBe("full");
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it("keeps native-platforms for an engine-only change into main and under --full", async () => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(fixture, ENGINE_FILES[0] ?? "", "changed\n", "engine");
+        for (const extra of [
+          ["--target", "main"],
+          ["--target", "develop", "--full"],
+        ]) {
+          const plan = classifyScope(fixture.root, fixture.base, head, extra);
+          expect(plan.selection, extra.join(" ")).toBe("full");
+          expect(jobsOf(plan)["native-platforms"]?.required, extra.join(" ")).toBe(true);
+          expect(jobsOf(plan)["native-engine"]?.required, extra.join(" ")).toBe(true);
+        }
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it("leaves every existing diff unchanged: native-engine is not required outside the engine tree", async () => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(
+          fixture,
+          "packages/runtime-native/src/host.cpp",
+          "changed\n",
+          "legacy",
+        );
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan.selection).toBe("full");
+        expect(jobsOf(plan)["native-engine"]?.required).toBe(false);
+        const prose = await commitScopeChange(fixture, "docs/PRDs/inert.md", "# x\n", "prose");
+        const docsPlan = classifyScope(fixture.root, head, prose, ["--target", "develop"]);
+        expect(docsPlan.selection).toBe("prose");
+        expect(jobsOf(docsPlan)["native-engine"]?.required).toBe(false);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it("wires one native-engine job: own ccache key, cached emsdk, guarded ctest, reported in the verdict", async () => {
+      const source = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+      const job = requiredJob(source, "native-engine");
+      expect(job).toContain("needs: scope");
+      expect(job).toContain("needs.scope.outputs.selection == 'native-engine'");
+      expect(job).toContain("fromJSON(needs.scope.outputs.plan).jobs['native-engine'].required");
+      expect(job).toContain("key: native-ccache-ci-native-engine-");
+      expect(job).not.toContain("native-ccache-ci-test-native-");
+      expect(job).toContain("emsdk");
+      expect(job).toContain("actions/cache@v4");
+      expect(job).toContain("packages/runtime-native/cmake/NativeEngineCore.cmake");
+      expect(job).toMatch(/ctest [^\n]*-L native-engine/u);
+      expect(job).toContain("steps.engine.outputs.present == 'true'");
+      expect(requiredJob(source, "ci-required")).toMatch(/needs: \[[^\]]*\bnative-engine\b/u);
+      expect(requiredJob(source, "run-summary")).toContain("      - native-engine\n");
+    });
   });
 
   it("syncs capability artifacts on relevant commits and rejects stale manifests in CI", async () => {
@@ -835,8 +1194,12 @@ describe("CI pipeline structure", () => {
       expect(source, `${relative} cancels its own run`).not.toContain(
         "actions/runs/$GITHUB_RUN_ID/cancel",
       );
-      // Nothing left here calls the Actions API, so nothing may ask to write to it.
-      expect(source, `${relative} needs no actions: write`).not.toContain("actions: write");
+      // Nothing calls the Actions API to cancel its own run, so nothing may ask to write to it.
+      // `ci-janitor.yml` is the single named exception: it cancels *other* runs, on a closed PR,
+      // never from a failure step, and never its own run id — all four pinned in its own case.
+      if (relative !== ".github/workflows/ci-janitor.yml") {
+        expect(source, `${relative} needs no actions: write`).not.toContain("actions: write");
+      }
     }
 
     // Fail-fast that keeps its evidence: a matrix reports every leg, and an expensive job is
@@ -915,6 +1278,370 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  // PRD-480. Every Linux job that can move picks its runner from one expression, so the pool is
+  // changed by setting or deleting a repository variable and nothing else. A job left at a bare
+  // `ubuntu-latest` still runs, which is exactly why this has to be a spec: the pool comes up and
+  // the queue does not shrink, and nothing in a run says which half of the board ignored it.
+  const routing =
+    "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}";
+  const lightRouting =
+    "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}";
+  // PRD-620: a heavy lane is admitted to the idle pool only when its canonical id is in the one
+  // plan the parent scope published. The fork and missing-runner guards stay, so a malicious or
+  // stale plan can never route fork code or a withdrawn pool onto the owner's machine.
+  const heavy = (id: string, need = "scope") =>
+    `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
+  const heavyMatrix = (format: string, axis: string, need = "scope") =>
+    `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
+  // `starter-linux` resolves its per-row runner inside the scope job, so the admission output it
+  // reads is a step output there, not a `needs` one.
+  const heavyStep = (id: string) =>
+    `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(steps.admission.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
+  // The canonical id each heavy job gates on. A matrix job carries its leg; `starter-linux` is
+  // routed per shaped row, named `job/platform` the same way the matrix allow-list reads it.
+  const heavyByJob = new Map<string, string>([
+    ["ci.yml:typecheck", heavy("ci:typecheck")],
+    ["ci.yml:lint", heavy("ci:lint")],
+    ["ci.yml:test", heavy("ci:test")],
+    ["ci.yml:test-native", heavy("ci:test-native")],
+    ["ci.yml:test-browser", heavy("ci:test-browser")],
+    ["ci.yml:test-playtest", heavy("ci:test-playtest")],
+    ["ci.yml:benchmark", heavy("ci:benchmark")],
+    ["ci.yml:build-artifacts", heavy("ci:build-artifacts")],
+    ["ci.yml:performance-contracts", heavy("ci:performance-contracts")],
+    ["ci.yml:budgets", heavy("ci:budgets")],
+    ["ci.yml:test-unit", heavyMatrix("ci:test-unit:{0}", "matrix.shard")],
+    ["ci.yml:golden-path-template", heavyMatrix("ci:golden-path-template:{0}", "matrix.template")],
+    ["ci.yml:template-nonvisual", heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
+    ["ci.yml:native-engine", heavy("ci:native-engine")],
+    ["integration.yml:animation", heavy("integration:animation", "paths")],
+    ["integration.yml:capture", heavy("integration:capture", "paths")],
+    ["integration.yml:cold-boot", heavy("integration:cold-boot", "paths")],
+    ["integration.yml:csg", heavy("integration:csg", "paths")],
+    ["integration.yml:decals", heavy("integration:decals", "paths")],
+    ["integration.yml:exposure", heavy("integration:exposure", "paths")],
+    ["integration.yml:fluid-collision", heavy("integration:fluid-collision", "paths")],
+    ["integration.yml:fog", heavy("integration:fog", "paths")],
+    ["integration.yml:ik", heavy("integration:ik", "paths")],
+    ["integration.yml:temporal", heavy("integration:temporal", "paths")],
+    ["integration.yml:tone", heavy("integration:tone", "paths")],
+    ["integration.yml:vegetation", heavy("integration:vegetation", "paths")],
+    ["integration.yml:velocity", heavy("integration:velocity", "paths")],
+    ["native-platforms.yml:web-reference", heavy("native:web-reference")],
+    ["native-platforms.yml:android-v8-source", heavy("native:android-v8-source")],
+    ["native-platforms.yml:desktop-parity", heavy("native:desktop-parity")],
+    ["native-platforms.yml:starter-linux/linux-x64", heavyStep("native:starter-linux:linux-x64")],
+  ]);
+  const expectedHeavy = (relative: string, name: string): string | undefined =>
+    heavyByJob.get(`${relative.split("/").pop() ?? relative}:${name}`);
+  // The hosted jobs that stay hosted, per workflow. `supply-chain` runs gitleaks through
+  // `docker run`; a self-hosted container would need the host Docker socket mounted to do that,
+  // which would hand every job root on the owner's machine. `publish-android-v8` is the release
+  // publish itself — `permissions: contents: write` and a `gh release upload` — and PRD-480 keeps
+  // release writes on GitHub's own machines.
+  const hosted = new Map<string, ReadonlySet<string>>([
+    [".github/workflows/ci.yml", new Set(["supply-chain"])],
+    [
+      ".github/workflows/native-platforms.yml",
+      // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
+      // overran its 45-minute budget on a pinned 4-thread slot (run 37082733117).
+      new Set(["android-emulator-parity", "publish-android-v8", "publish-linux-arm64-v8"]),
+    ],
+    [
+      ".github/workflows/integration.yml",
+      // PRD-620: every generic Linux lane routes to idle tn-local with hosted fallback.
+      new Set([]),
+    ],
+  ]);
+  it.each([
+    ["web-reference", "native-web-reference-${{ needs.scope.outputs.candidate_sha }}"],
+    ["android-v8-source", "android-v8-${{ needs.scope.outputs.candidate_sha }}"],
+  ])(
+    "routes native platform prerequisite %s to idle tn-local with exact candidate artifacts",
+    async (job, artifact) => {
+      const native = await readFile(
+        path.join(repo, ".github/workflows/native-platforms.yml"),
+        "utf8",
+      );
+      const section = requiredJob(native, job);
+      // PRD-620: these producers ride the same idle-pool switch with hosted fallback; the
+      // snapshot fallback is best-effort and queued jobs may remain local.
+      expect(section.match(/^ {4}runs-on: (.+)$/mu)?.[1]).toBe(heavy(`native:${job}`));
+      expect(declaredNeeds(section)).toEqual(["scope"]);
+      expect(section).toContain("TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}");
+      expect(section).toContain("ref: ${{ needs.scope.outputs.candidate_sha }}");
+      expect(section).toContain(`name: ${artifact}`);
+      expect(section).toContain("if-no-files-found: error");
+      const android = requiredJob(native, "android-emulator-parity");
+      expect(declaredNeeds(android)).toEqual(["scope", "web-reference", "android-v8-source"]);
+      expect(android).toContain(`name: ${artifact}`);
+      if (job === "android-v8-source") {
+        expect(section).toContain("uses: ./.github/actions/android-v8-source");
+        expect(section).toContain("recipe-hash: ${{ steps.v8.outputs.recipe-hash }}");
+        expect(section).toContain("published: ${{ steps.v8.outputs.published }}");
+      }
+    },
+  );
+
+  it("isolates the cached Linux arm64 V8 producer from consumers and release credentials", async () => {
+    const native = await readFile(
+      path.join(repo, ".github/workflows/native-platforms.yml"),
+      "utf8",
+    );
+    const source = requiredJob(native, "linux-arm64-v8-source");
+    const publish = requiredJob(native, "publish-linux-arm64-v8");
+    expect(declaredNeeds(source)).toEqual(["scope"]);
+    expect(source).toContain("runs-on: ubuntu-24.04-arm");
+    expect(source).toContain("github.event_name == 'workflow_dispatch'");
+    expect(source).toContain("inputs.build_linux_arm64_v8 == true");
+    expect(native).toMatch(
+      /build_linux_arm64_v8:\n {8}description: .+\n {8}required: false\n {8}type: boolean\n {8}default: false/u,
+    );
+    expect(source).toContain("needs.scope.outputs.selection == 'full'");
+    expect(source).toContain("needs.scope.outputs.native_tier != 'reduced'");
+    expect(source).toContain("inputs.ios_only != true");
+    expect(source).toContain("ref: ${{ needs.scope.outputs.candidate_sha }}");
+    expect(source).toContain("timeout-minutes: 210");
+    expect(source).toContain("timeout --signal=TERM --kill-after=30s 180m");
+    expect(source).toContain("contents: read");
+    expect(source).not.toContain("contents: write");
+    const recipe = source.match(/hashFiles\(([\s\S]*?)\)/u)?.[1] ?? "";
+    expect([...recipe.matchAll(/'([^']+)'/gu)].map((match) => match[1])).toEqual([
+      "packages/runtime-native/scripts/build-linux-arm64-v8.mjs",
+    ]);
+    expect(source).toContain("gh release download ci-v8-linux-arm64");
+    expect(source).toContain("v8-linux-arm64-${{ steps.recipe.outputs.hash }}.tgz");
+    expect(source).toContain(
+      "node packages/runtime-native/scripts/build-linux-arm64-v8.mjs --verify",
+    );
+    expect(source).toContain(
+      "if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'",
+    );
+    expect(source).toContain("Published Linux arm64 V8 asset hit: $ASSET; no rebuild.");
+    expect(source).toContain("packages/runtime-native/third_party/.v8-linux-arm64-source");
+    expect(source).toContain("steps.verify.outcome == 'success'");
+    expect(source).toContain("steps.build.outcome == 'failure'");
+    expect(source).toContain('ar p "$library" "$member"');
+    expect(source).toContain('file "$RUNNER_TEMP/v8-arm64-member.o"');
+    expect(source).toContain("grep -Eq 'Machine:.*AArch64'");
+    expect(source).toContain('sha256sum "$ASSET"');
+    expect(source).toContain("if-no-files-found: error");
+    expect(declaredNeeds(publish)).toEqual(["scope", "linux-arm64-v8-source"]);
+    expect(publish).toContain("github.event_name != 'pull_request'");
+    expect(publish).toContain(
+      "github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'",
+    );
+    expect(publish).toContain("contents: write");
+    expect(publish).not.toContain("actions/checkout");
+    expect(publish).not.toContain("node ");
+    expect(publish).toContain("sha256sum --check linux-arm64-v8-proof/payload.sha256");
+    expect(publish).toContain('gh release upload ci-v8-linux-arm64 "payload/$ASSET"');
+    expect(publish).not.toContain("--clobber");
+    expect(publish).toContain('cmp -- "payload/$ASSET" "$RUNNER_TEMP/published-v8/$ASSET"');
+    expect(declaredNeeds(requiredJob(native, "starter-linux"))).not.toContain(
+      "linux-arm64-v8-source",
+    );
+    expect(declaredNeeds(requiredJob(native, "completion"))).toEqual(
+      expect.arrayContaining(["linux-arm64-v8-source", "publish-linux-arm64-v8"]),
+    );
+    const install =
+      source
+        .split("      - name: Install the pinned Linux arm64 V8 compiler\n")[1]
+        ?.split("      - name:")[0] ?? "";
+    expect(install).toContain(
+      "if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'",
+    );
+    expect(install).toContain("sudo apt-get update");
+    expect(install).toContain(
+      "sudo apt-get install -y --allow-downgrades clang-18=1:18.1.3-1ubuntu1 lld-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 libclang-rt-18-dev=1:18.1.3-1 ninja-build build-essential python3 git pkg-config libglib2.0-dev",
+    );
+    expect(source.indexOf("Install the pinned Linux arm64 V8 compiler")).toBeLessThan(
+      source.indexOf("Build the Linux arm64 V8 payload"),
+    );
+  });
+
+  // PRD-480's light lane: the jobs whose whole work is a script or a summary — no workspace build
+  // and no test suite; a JSON aggregator may still `pnpm install` its own toolchain. `scope`
+  // classifies the diff, `build` and `golden-path`
+  // assert an upstream verdict, `ci-required` is the merge verdict and `run-summary` writes the
+  // report; in native-platforms.yml `networking-matrix` is the one join that needs no toolchain, and
+  // `release-reports` and `performance-coverage` only download artifacts and write JSON (no compile
+  // or GPU leg). They join on
+  // `tn-local-light` (1 CPU, 2 GB) so a ten-second verdict does not queue behind
+  // five twenty-minute builds. Both directions are load-bearing and both are asserted below: a
+  // heavy job here would build the workspace in one core, and a light job off the list would queue
+  // behind the heavy pool — which is the wait the lane exists to remove.
+  const light = new Set([
+    "completion",
+    "build",
+    "ci-required",
+    "golden-path",
+    "networking-matrix",
+    "paths",
+    "performance-coverage",
+    "release-reports",
+    "run-summary",
+    "scope",
+  ]);
+
+  // A matrix job routes per row: `runs-on: ${{ matrix.runner }}` is only a pointer, and what decides
+  // where a leg lands is the `runner:` value inside `strategy.matrix.include`. Both native
+  // matrices carry hosted rows next to movable ones (`linux-x64` moves, `linux-arm64` cannot), so
+  // the row is named `job/row` here and that is the key the hosted allow-list would use.
+  function matrixRunnerRows(job: string, section: string): readonly (readonly [string, string])[] {
+    const rows: [string, string][] = [];
+    for (const row of section.split(/^ {10}- /mu).slice(1)) {
+      const runner = row.match(/^ {12}runner: (.+)$/mu)?.[1];
+      if (runner !== undefined) {
+        const platform = row.match(/^\s*platform: (.+)$/mu)?.[1] ?? runner;
+        rows.push([`${job}/${platform}`, runner]);
+      }
+    }
+    return rows;
+  }
+
+  // `starter-linux` has no `include` rows at all: a job's `if` cannot read `matrix`, so the arm64 leg
+  // an ordinary pull request does not owe is dropped by shaping the matrix in `scope` instead. The
+  // rows therefore still name their runners, one job earlier. Following the pointer is what stops a
+  // moved row from escaping the switch by moving — the values are asserted in the same place.
+  function shapedRunnerRows(
+    job: string,
+    section: string,
+    source: string,
+  ): readonly (readonly [string, string])[] {
+    if (!/^\s+matrix: \$\{\{ fromJSON\(needs\.scope\.outputs\./mu.test(section)) return [];
+    const scope = source.match(/^ {2}scope:\n([\s\S]*?)(?=^ {2}\S)/mu)?.[1] ?? "";
+    const rows: [string, string][] = [];
+    for (const row of scope.matchAll(/\{ platform: "([^"]+)", runner: ("[^"]+") \}/gu)) {
+      rows.push([`${job}/${row[1] ?? ""}`, (row[2] ?? "").slice(1, -1)]);
+    }
+    return rows;
+  }
+
+  it("routes every movable Linux job through exactly one TN_RUNNER switch", async () => {
+    const directory = path.join(repo, ".github/workflows");
+    const routed = [
+      ".github/workflows/ci.yml",
+      ".github/workflows/native-platforms.yml",
+      ...(await readdir(directory))
+        .filter(
+          (entry) =>
+            entry === "integration.yml" ||
+            (entry.startsWith("integration-") && entry.endsWith(".yml")),
+        )
+        .map((entry) => `.github/workflows/${entry}`),
+    ].sort();
+    expect(routed.length).toBeGreaterThan(2);
+    for (const relative of routed) {
+      const keepHosted = hosted.get(relative) ?? new Set<string>();
+      const source = await readFile(path.join(repo, relative), "utf8");
+      for (const [job, section] of jobSections(source)) {
+        const runsOn = section.match(/^\s+runs-on:.*$/mu)?.[0].trim();
+        if (runsOn === undefined) continue;
+        const rows = [...matrixRunnerRows(job, section), ...shapedRunnerRows(job, section, source)];
+        const targets: readonly (readonly [string, string])[] =
+          rows.length > 0 ? rows : [[job, runsOn.replace(/^runs-on: /u, "")]];
+        for (const [name, runner] of targets) {
+          const target = `${relative} ${name}`;
+          // macOS, Windows and arm64 have no tn-local counterpart, so the expression must never
+          // appear on one of them.
+          if (/macos|windows|arm/u.test(runner)) {
+            expect(runner, `${target} is not Linux`).not.toContain(routing);
+            expect(runner, `${target} is not Linux`).not.toContain(lightRouting);
+            continue;
+          }
+          const expected = expectedHeavy(relative, name);
+          const onHeavy = expected !== undefined && runner === expected;
+          const onLight = runner === lightRouting;
+          if (keepHosted.has(name)) {
+            expect(
+              onHeavy || onLight,
+              `${target} is on the hosted allow-list but selects ${runner}`,
+            ).toBe(false);
+            continue;
+          }
+          expect(
+            onHeavy || onLight,
+            `${target} runs on \`${runner}\`: use the TN_RUNNER routing expression, or name it on the hosted allow-list`,
+          ).toBe(true);
+          expect(
+            light.has(name),
+            `${target} is ${onLight ? "on" : "off"} the light lane: only ${[...light].join(", ")} may select tn-local-light`,
+          ).toBe(onLight);
+        }
+      }
+    }
+  });
+
+  // PRD-620: the generic lanes route to idle tn-local with hosted fallback; the light switch and native ARM labels stay.
+  it("routes generic Integration lanes to idle tn-local while the light and native legs keep their routing", async () => {
+    const source = await readFile(path.join(repo, ".github/workflows/integration.yml"), "utf8");
+    const runsOn = (job: string) => requiredJob(source, job).match(/^ {4}runs-on: (.+)$/mu)?.[1];
+    for (const job of [
+      "animation",
+      "capture",
+      "cold-boot",
+      "csg",
+      "decals",
+      "exposure",
+      "fluid-collision",
+      "fog",
+      "ik",
+      "temporal",
+      "tone",
+      "vegetation",
+      "velocity",
+    ] as const) {
+      expect(runsOn(job), `integration ${job} routes to idle tn-local first`).toBe(
+        heavy(`integration:${job}`, "paths"),
+      );
+    }
+    for (const job of ["paths", "completion"] as const) {
+      expect(runsOn(job), `integration ${job} keeps the light routing switch`).toBe(lightRouting);
+    }
+    for (const job of [
+      "animation-native",
+      "decals-native",
+      "fluid-collision-native",
+      "fog-native",
+      "packaged-quickjs",
+    ] as const) {
+      expect(runsOn(job), `integration ${job} keeps its native ARM label`).toBe("ubuntu-24.04-arm");
+    }
+  });
+
+  // PRD-620: one parent scope decides the single admitted slice from the count the publisher
+  // advertises and forwards that one plan to both reusable workflows; every heavy selector keeps
+  // its fork/missing-runner guard and adds the membership test beside it.
+  it("publishes one admission budget from the parent and forwards it to both reusable workflows", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const scope = requiredJob(ci, "scope");
+    expect(scope).toContain("runner_admission: ${{ steps.admission.outputs.runner_admission }}");
+    expect(scope).toContain("node scripts/ci-runner-admission.mjs --admit");
+    expect(scope).toContain("TN_RUNNER_SLOTS: ${{ vars.TN_RUNNER_SLOTS }}");
+    const forwarded =
+      ci.match(/runner_admission: \$\{\{ needs\.scope\.outputs\.runner_admission \}\}/gu) ?? [];
+    expect(forwarded, "one plan reaches both reusable workflows").toHaveLength(2);
+    for (const relative of [
+      ".github/workflows/integration.yml",
+      ".github/workflows/native-platforms.yml",
+    ]) {
+      const source = await readFile(path.join(repo, relative), "utf8");
+      expect(source, `${relative} declares the admission input`).toContain("runner_admission:");
+      expect(source, `${relative} validates the supplied plan`).toContain(
+        "node scripts/ci-runner-admission.mjs --validate-admission",
+      );
+      expect(source).toContain("TN_RUNNER_ADMISSION: ${{ inputs.runner_admission }}");
+      // No platform or receipt weakening: the coverage receipt the verdict reads is unchanged.
+      expect(source).toContain("coverage_receipt:");
+    }
+    // The admission test is added to the fork and missing-runner guards, never swapped in.
+    for (const expression of heavyByJob.values()) {
+      expect(expression).toContain("github.event.pull_request.head.repo.fork");
+      expect(expression).toContain("!vars.TN_RUNNER");
+    }
+  });
+
   // A draft PR spends no runner: every job needs `scope`, so skipping it and the always() gate
   // skips the board, and `ready_for_review` starts it once the draft is marked ready.
   it("runs nothing on draft pull requests until they are marked ready", async () => {
@@ -926,6 +1653,189 @@ describe("CI pipeline structure", () => {
     expect(ci).toContain("if: ${{ always() && !github.event.pull_request.draft }}");
   });
 
+  // PRD-481 adds a fourth selection and a fourth trigger. Every gate's condition has to name what it
+  // admits rather than what it excludes: `!= 'prose'` reads a reused tree as "not prose" and runs a
+  // second full lint on a tree CI already passed.
+  it("runs the merge group and admits no gate on a reused tree", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(triggerSection(ci)).toContain("merge_group:\n    types: [checks_requested]");
+    for (const [name, section] of jobSections(ci)) {
+      // ci-required is the verdict, not a gate: it runs on `always()` and reads the plan instead.
+      // scope is the decision that produces the selection.
+      if (name === "integration") {
+        expect(section).toContain("fromJSON(needs.scope.outputs.plan).jobs.integration.required");
+        continue;
+      }
+      if (name === "ci-required" || name === "scope") continue;
+      expect(section, `${name} does not name the selection it admits`).toContain(
+        "selection == 'full'",
+      );
+      expect(section, `${name} would run on a reused tree`).not.toContain("selection != 'prose'");
+    }
+    // A merge group carries no pull_request object, so `!github.event.pull_request.draft` is true
+    // for it. That has to stay true, or the queue waits forever on a check nobody will report.
+    expect(requiredJob(ci, "scope")).toContain("if: ${{ !github.event.pull_request.draft }}");
+    expect(requiredJob(ci, "ci-required")).toContain(
+      "if: ${{ always() && !github.event.pull_request.draft }}",
+    );
+    // Both jobs that consult the Actions API, and only with a read-only token.
+    for (const name of ["scope", "ci-required"]) {
+      expect(requiredJob(ci, name)).toContain("actions: read");
+      expect(requiredJob(ci, name)).toContain("GH_TOKEN: ${{ github.token }}");
+    }
+  });
+
+  // The audit behind PRD-481 cost 2.4k runner-minutes on one workflow that was still listed against
+  // a branch whose lane landed three weeks earlier, and ran a second time for every commit that
+  // also opened a pull request. Neither shape is visible from the workflow file alone, which is why
+  // they are stated as rules here rather than left to whoever reads the next one.
+  it("names every workflow file so none lands unreviewed", async () => {
+    const onDisk = (await readdir(path.join(repo, ".github/workflows")))
+      .filter((name) => /\.ya?ml$/u.test(name))
+      .map((name) => `.github/workflows/${name}`)
+      .sort();
+    expect(onDisk).toEqual([...reviewedWorkflows].sort());
+    // The owner's rule: no workflow file per feature. A new lane is a job in an existing workflow
+    // with its own paths gate, not a new set of triggers, permissions and required checks. The
+    // allow-list above already rejects an unnamed file; this names the shape it rejects.
+    expect(
+      onDisk.filter((name) => /integration-[^/]+\.ya?ml$/u.test(name)),
+      "a per-feature integration workflow is back; add its proof as a job in integration.yml",
+    ).toEqual([]);
+  });
+
+  it("keeps every integration lane in one workflow, each with its own paths gate", async () => {
+    const integrations = reviewedWorkflows.filter((name) => name.includes("/integration"));
+    expect(
+      integrations,
+      "the integration lanes are one workflow, not one file per feature",
+    ).toEqual([".github/workflows/integration.yml"]);
+    const source = await readFile(path.join(repo, ".github/workflows/integration.yml"), "utf8");
+    expect(duplicateCommitTriggers(source)).toEqual([]);
+    // Skipping drafts only saves a runner if the event that ends the draft is one this workflow
+    // listens for. Without `ready_for_review` the guard turns the lanes off rather than cheap.
+    expect(triggerSection(source)).toContain("workflow_call:");
+    expect(
+      triggerSection(await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8")),
+    ).toContain("types: [opened, synchronize, reopened, ready_for_review]");
+    const sections = jobSections(source);
+    // A job behind another job of the same workflow is skipped when that one is, so the guard belongs
+    // on the entry points only.
+    for (const [job, section] of sections) {
+      if (/^ {4}needs:/mu.test(section)) continue;
+      expect(section, `${job} runs on a draft`).toContain(
+        "if: ${{ !github.event.pull_request.draft }}",
+      );
+    }
+    // One gate, one output per lane, and every lane job reads its own. A lane folded in without its
+    // filter would run on every pull request; a filter with no job behind it would silently stop.
+    const lanes = [...source.matchAll(/^ {12}([a-z][a-z-]*) \^/gmu)].map((match) => match[1]);
+    expect(lanes.length, "a lane lost its trigger filter").toBeGreaterThanOrEqual(5);
+    for (const lane of lanes) {
+      const gated = sections.filter(([, section]) =>
+        section.includes(`needs.paths.outputs.${lane} == 'true'`),
+      );
+      expect(gated.length, `no job runs the ${lane} gate`).toBeGreaterThanOrEqual(1);
+      for (const [job, section] of gated) {
+        expect(section, `${job} runs the ${lane} gate on a draft`).toContain(
+          "!github.event.pull_request.draft",
+        );
+      }
+      expect(source, `the ${lane} gate is not exposed as a job output`).toContain(
+        `${lane}: \${{ steps.filter.outputs.${lane} }}`,
+      );
+    }
+    for (const [job, section] of sections) {
+      if (job === "paths" || /^ {4}needs:/mu.test(section)) continue;
+      expect(section, `${job} is not behind a per-lane gate`).toContain("needs: paths");
+    }
+  });
+
+  it("rejects a push trigger that would fire beside pull_request, or for one branch", () => {
+    expect(
+      duplicateCommitTriggers(
+        [
+          "name: fixture",
+          "on:",
+          "  pull_request:",
+          "    paths:",
+          "      - 'examples/a/**'",
+          "  push:",
+          "    paths:",
+          "      - 'examples/a/**'",
+          "",
+          "jobs:",
+          "  test:",
+          "    runs-on: ubuntu-latest",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual(["push + pull_request: one commit runs this workflow twice"]);
+    expect(
+      duplicateCommitTriggers(
+        [
+          "name: fixture",
+          "on:",
+          "  pull_request:",
+          "    paths:",
+          "      - 'examples/a/**'",
+          "  push:",
+          "    branches: ['fix/vq11-decal-material-lifetime']",
+          "",
+          "jobs:",
+          "  test:",
+          "    runs-on: ubuntu-latest",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      "push narrowed to fix/vq11-decal-material-lifetime: the lane outlives its pull request",
+    ]);
+    // `push` alone is how a workflow follows its own branch after a merge, and how ci.yml hears
+    // about main. The rule is the pair, not the trigger.
+    expect(
+      duplicateCommitTriggers(
+        [
+          "name: fixture",
+          "on:",
+          "  push:",
+          "    branches: [main]",
+          "",
+          "jobs:",
+          "  test:",
+          "    runs-on: ubuntu-latest",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps the pipeline-cache proof's triggers on what that proof reads", async () => {
+    const relative = ".github/workflows/pipeline-cache.yml";
+    const source = await readFile(path.join(repo, relative), "utf8");
+    const commands = commandText(source);
+
+    // Every path it fires on has to be a path its own steps open, or the lane runs a 45-minute
+    // native proof for a commit that cannot have moved it. The workflow file itself is the one
+    // exemption: GitHub reads it to decide, and every lane lists itself.
+    const entries = triggerPaths(source);
+    expect(
+      entries.length,
+      "the pipeline-cache lane stopped narrowing its triggers",
+    ).toBeGreaterThan(0);
+    for (const entry of entries) {
+      if (entry === relative) continue;
+      expect(commands, `${relative} fires on ${entry}, which its steps never read`).toContain(
+        entry.replace(/\/?\*\*$/u, "/"),
+      );
+    }
+
+    // `push` on a protected branch only, and never beside `pull_request`. The branch it listed
+    // until now — `feat/prd-368-persistent-pipeline-cache` — kept compiling an android-arm64 ABI
+    // job for 41 runs and 2.4k runner-minutes after the lane it was opened for had landed.
+    expect(duplicateCommitTriggers(source), relative).toEqual([]);
+  });
+
   it("preserves main qualification while enabling develop PRs and serializes release lanes", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
@@ -933,13 +1843,10 @@ describe("CI pipeline structure", () => {
     expect(ci).toMatch(/push:\n\s+branches:\n\s+- main/u);
     expect(ci).toMatch(/pull_request:\n\s+branches:\n\s+- main/u);
     expect(ci).toContain("group: ci-${{ github.event_name }}-${{ github.ref }}");
-    // Main evidence arrives via CI completion, never via the push itself: every
-    // `workflow_run` run shares `github.ref` (the default branch), so the group also
-    // keys on the triggering CI head SHA - a new completion for a newer main SHA gets
-    // its own group instead of queueing behind a superseded evidence run.
-    expect(native).toContain(
-      "group: native-release-${{ github.event_name }}-${{ github.event.workflow_run.head_sha }}-${{ github.ref }}",
-    );
+    // Every release proof shares one group now, whatever triggered it: a per-ref or per-SHA key
+    // is what let a promotion PR, a manual dispatch and a main CI completion hold the pool at
+    // once. `native-release-proof.spec.ts` owns the setting; this is the structural backstop.
+    expect(native).toContain("&& 'native-release-proof' ||");
     expect(native).toContain("cancel-in-progress: false");
     const triggers = triggerSection(native);
     expect(triggers).toContain("workflow_run:");
@@ -956,6 +1863,108 @@ describe("CI pipeline structure", () => {
     // Tag publication and manual proof keep the single-shot lookup they always had.
     expect(native).toMatch(/gh run list .*--workflow ci\.yml --commit/u);
     expect(npm).toContain('gh release view "runtime-native-v${native_version}"');
+  });
+
+  it("holds every release proof in one cross-branch concurrency group", async () => {
+    const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
+    const concurrency = triggerSection(native).split("\nconcurrency:\n")[1] ?? "";
+    expect(concurrency, "native-release declares no concurrency block").not.toBe("");
+    // Exactly one, and carrying nothing event-derived. A `${{ github.ref }}` or
+    // `${{ github.event.workflow_run.head_sha }}` suffix is a second proof running beside the
+    // first, which is exactly the starvation this group exists to end (PRD-380: 7.0k
+    // runner-minutes of PR proof against a pool of about three).
+    const groups = [...concurrency.matchAll(/^\x20{2}group: (.*)$/gmu)].map((match) => match[1]);
+    // Proof-eligible runs share `native-release-proof`; every other run (an ordinary PR push that
+    // `gates` refuses) gets a group of its own so it can never displace a pending proof.
+    expect(groups).toEqual([
+      "${{ (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}",
+    ]);
+    // `false`, not a conditional: a superseded run still lets its queued consumer finish.
+    expect(concurrency).toContain("cancel-in-progress: false");
+  });
+
+  it("reruns only a failed CI run's failed jobs, once, and only for known flakes", async () => {
+    const janitor = await readFile(path.join(repo, ".github/workflows/ci-janitor.yml"), "utf8");
+    expect(janitor).toMatch(/workflow_run:\n\s+workflows: \[CI\]\n\s+types: \[completed\]/u);
+    // Once: a second failure of the same run is a real signal, never retried again.
+    expect(janitor).toContain("github.event.workflow_run.run_attempt == 1");
+    expect(janitor).toContain("github.event.workflow_run.conclusion == 'failure'");
+    // Only the failed jobs, and only when every primary failure matches a flake signature.
+    expect(janitor).toContain('gh run rerun "$RUN_ID" --failed');
+    expect(janitor).toMatch(/FLAKE: TN_PLAYTEST_SOFTWARE_DEVICE_LOST\|/u);
+    expect(janitor).toContain("not a known flake; leaving the run red");
+  });
+
+  it("cancels a closed pull request's runs without injecting its head ref into a shell", async () => {
+    const janitor = await readFile(path.join(repo, ".github/workflows/ci-janitor.yml"), "utf8");
+    // Merged or closed, nothing the head ref is still doing can change the outcome, and those
+    // runs went on holding runners for another 5.0k runner-minutes over 2026-09-18 to 10-02.
+    expect(triggerSection(janitor)).toMatch(/pull_request:\n\x20{4}types: \[closed\]/u);
+    // Cancelling a run is an Actions write; a token that cannot do it reports success while
+    // cancelling nothing.
+    expect(janitor).toMatch(/permissions:\n\x20{2}actions: write/u);
+    const cancel = jobSections(janitor).find(([name]) => name === "cancel")?.[1] ?? "";
+    expect(cancel, "ci-janitor declares no cancel job").not.toBe("");
+    // The head ref is attacker-controlled branch text: interpolated straight into `run:` it is a
+    // command injection on a job holding `actions: write`. So is the base ref the merge-group
+    // prefix is built from, and the number inside it.
+    expect(cancel).toMatch(
+      /env:\n(?:\x20{10}[A-Z_]+: .*\n)*\x20{10}HEAD_REF: \$\{\{ github\.event\.pull_request\.head\.ref \}\}/u,
+    );
+    expect(cancel).toMatch(
+      /\x20{10}BASE_REF: \$\{\{ github\.event\.pull_request\.base\.ref \}\}\n\x20{10}PR_NUMBER: \$\{\{ github\.event\.pull_request\.number \}\}/u,
+    );
+    for (const line of cancel.split("\n")) {
+      if (/^\x20*#/u.test(line) || !/(?:head[._]ref|base\.ref|\.number)/u.test(line)) continue;
+      expect(
+        line,
+        "a github.* context is interpolated into a shell instead of passed as env",
+      ).not.toMatch(/run:/u);
+    }
+    // A fork's runs belong to another repository; its token cannot cancel them, and trying would
+    // fail a red check on every fork PR close.
+    expect(cancel).toMatch(
+      /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/u,
+    );
+    // The promotion PR's head is `develop`: closing it must not cancel develop's own CI runs.
+    expect(cancel).toMatch(
+      /head\.ref != 'develop' && github\.event\.pull_request\.head\.ref != 'main'/u,
+    );
+    expect(cancel).toContain('gh run list --repo "$GITHUB_REPOSITORY" --branch "$HEAD_REF"');
+    expect(cancel).toContain("--json databaseId,status");
+    // A merge-group run reports its branch as `gh-readonly-queue/<base>/pr-<number>-<sha>`. GitHub
+    // drops the pull request from the queue on close but never cancels the run it already started,
+    // so #404's run 37093098790 held nine self-hosted jobs after #404 had merged: the head ref's
+    // cancel never reaches it. The prefix is built from the event's own base ref and number, so the
+    // sweep reaches that pull request's group and no other.
+    expect(cancel).toContain('group_prefix="gh-readonly-queue/${BASE_REF}/pr-${PR_NUMBER}-"');
+    expect(cancel).toContain("startswith($prefix)");
+    expect(cancel).toContain(
+      'gh run list --repo "$GITHUB_REPOSITORY" --json databaseId,status,headBranch --limit 100',
+    );
+    // The run-sweeping predecessor this replaced reached across every branch in the repository;
+    // every cancel here is scoped to the event's own repository and the closed PR's own ref.
+    expect(cancel).toContain(
+      'gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/force-cancel"',
+    );
+    // Never a failure handler: cancelling from the gate that went red is what erased which
+    // gate went red, on 2026-09-02.
+    expect(cancel, "the janitor must not be a failure handler").not.toContain("failure()");
+    // Only the runs still holding a runner, and never the janitor's own.
+    for (const status of ["queued", "in_progress"]) {
+      expect(cancel).toContain(`.status == "${status}"`);
+    }
+    expect(cancel).toMatch(/SELF_RUN_ID/gu);
+    expect(cancel).toMatch(/actions\/runs\/\$run_id\/force-cancel/u);
+    // A run that finished between the list and the cancel is the expected race, not a failure:
+    // the cancel is a guarded command, so its non-zero exit is reported rather than propagated.
+    expect(cancel).toContain(
+      'if gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/force-cancel"',
+    );
+    // And the lookup itself fails closed, so a broken call cannot report success having
+    // cancelled nothing.
+    expect(cancel).toContain("set -euo pipefail");
+    expect(cancel).toMatch(/runs="\$\(gh run list/u);
   });
 
   // A `gh` call infers its repository from a git checkout. A job that never checks out has
@@ -1062,6 +2071,22 @@ describe("CI pipeline structure", () => {
     expect(verifier).toBeGreaterThan(sdk);
   });
 
+  // A clean-room-only dispatch re-proves the published cohort without a publish: it must never
+  // reach `gates` or `publish`, and the clean room must still run after a real publish succeeds.
+  it("runs the clean room alone on a clean_room_only dispatch, never the publish", async () => {
+    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
+    const jobs = jobSections(npm);
+    const gates = jobs.find(([job]) => job === "gates")?.[1];
+    const cleanRoom = jobs.find(([job]) => job === "clean-room")?.[1];
+    expect(npm).toMatch(/clean_room_only:\n(?: {8}.+\n)*? {8}default: false/u);
+    expect(gates).toContain("if: inputs.clean_room_only != true");
+    expect(cleanRoom).toContain("inputs.clean_room_only == true");
+    // The desktop prebuilt links the overlay webview; without it doctor and native exit 127.
+    expect(cleanRoom).toContain("libwebkit2gtk-4.1-0");
+    expect(cleanRoom).toContain("needs.publish.result == 'success'");
+    expect(cleanRoom).toContain("!cancelled()");
+  });
+
   it("requires native release CI to be a successful push on main", async () => {
     const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
     const gates = jobSections(native).find(([job]) => job === "gates")?.[1];
@@ -1146,7 +2171,10 @@ describe("CI pipeline structure", () => {
     // Runs on every event since 2026-09-01 (owner call): the PR skip reported nothing on the
     // branch where the regression was written, and the merge that shipped it reported too late.
     expect(job).not.toContain("github.event_name == 'push'");
-    expect(job).not.toContain("pull_request");
+    // An `if:` gate naming the event, not any mention of it: the TN_RUNNER routing expression
+    // (PRD-480) reads `github.event.pull_request.head.repo.fork` in every routed job and gates
+    // nothing on it. What this forbids is a gate that skips pull requests.
+    expect(job).not.toMatch(/^\s+if:.*pull_request/mu);
     expect(job).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
     expect(job).toContain("non-visual-scenarios.mjs");
     expect(job).toContain("threenative-playtest");
@@ -1166,111 +2194,34 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  // Sharding a lane is how coverage disappears without anyone noticing: a slice that selects
-  // nothing, or two slices that miss the same scenario, both report green. The step's own
-  // arithmetic is the guard at run time; this is the guard on the matrix that feeds it.
-  it("shards every template across slices that add back up to one whole", async () => {
+  // The obsolete shard arithmetic snapshots are replaced by complete kit/scenario coverage.
+  // ci-template-selection.spec.ts checks PR selections and exhaustive queue matrices.
+  it("runs the complete classifier output once, without repeated scaffold shards", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const job = requiredJob(ci, "template-nonvisual");
-
-    const entries = [
-      ...job.matchAll(
-        /^\s+-\s*\{\s*template:\s*([a-z][a-z0-9-]*)\s*,\s*shard:\s*"(\d+)\/(\d+)"/gmu,
-      ),
-    ].map((match) => ({
-      template: match[1] ?? "",
-      index: Number(match[2]),
-      count: Number(match[3]),
-    }));
-    expect(entries.length, "template-nonvisual declares no shards").toBeGreaterThan(0);
-
-    const byTemplate = new Map<string, number[]>();
-    for (const { template, index, count } of entries) {
-      expect(index, `${template} shard index`).toBeGreaterThanOrEqual(1);
-      expect(index, `${template} shard ${index}/${count} is out of range`).toBeLessThanOrEqual(
-        count,
-      );
-      const seen = byTemplate.get(template) ?? [];
-      expect(seen, `${template} declares shard ${index} twice`).not.toContain(index);
-      byTemplate.set(template, [...seen, index]);
-    }
-
-    // Every template names one shard count, and every slice of it exists exactly once — so the
-    // slices are a partition, not a sample.
-    for (const [template, indices] of byTemplate) {
-      const counts = new Set(entries.filter((e) => e.template === template).map((e) => e.count));
-      expect(counts.size, `${template} mixes shard counts`).toBe(1);
-      const [count] = [...counts];
-      expect(
-        indices.sort((left, right) => left - right),
-        `${template} is missing a shard`,
-      ).toEqual(Array.from({ length: count ?? 0 }, (_, offset) => offset + 1));
-    }
-
-    // And the step must refuse a slice that selected nothing rather than report on an empty set.
-    expect(job).toContain('test "${#mine[@]}" -gt 0');
-    expect(job).toContain("non-visual-scenarios.mjs");
+    const lane = requiredJob(ci, "template-nonvisual");
+    expect(lane).toContain("matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}");
+    expect(lane).toContain('for scenario in "${scenarios[@]}"');
+    expect(lane).toContain('test "${#scenarios[@]}" -gt 0');
+    expect(lane).not.toContain("SHARD");
+    // Both pools own capacity; the workflow must not hold selected kits back.
+    expect(lane).not.toMatch(/^\s+max-parallel:/mu);
+    expect(lane).toContain("fail-fast: false");
+    expect(lane).toContain(
+      `runs-on: ${heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")}`,
+    );
   });
 
-  it("keeps the measured puzzle lane split into two shards", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const job = requiredJob(ci, "template-nonvisual");
-    const puzzleShards = [
-      ...job.matchAll(/^\s+-\s*\{\s*template:\s*puzzle\s*,\s*shard:\s*"(\d+)\/(\d+)"/gmu),
-    ].map((match) => ({ index: Number(match[1]), count: Number(match[2]) }));
-
-    expect(puzzleShards, "puzzle's measured scenario lane must stay split").toEqual([
-      { index: 1, count: 2 },
-      { index: 2, count: 2 },
-    ]);
-  });
-
-  // A shard count above the template's scenario count is a leg that can only ever select nothing.
-  // The step fails closed when that happens, but it fails closed *in CI*, after the matrix has
-  // already paid for the runner. The classifier is right here, so the matrix can be wrong on a
-  // developer machine instead.
-  it("never declares more shards for a template than it has non-visual scenarios", async () => {
-    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
-    const job = requiredJob(ci, "template-nonvisual");
-    const entries = [
-      ...job.matchAll(
-        /^\s+-\s*\{\s*template:\s*([a-z][a-z0-9-]*)\s*,\s*shard:\s*"(\d+)\/(\d+)"/gmu,
-      ),
-    ].map((match) => ({ template: match[1] ?? "", count: Number(match[3]) }));
-    expect(entries.length, "template-nonvisual declares no shards").toBeGreaterThan(0);
-
-    const templateRoot = path.join(repo, "packages/create-threenative/templates");
-    for (const [template, count] of new Map(entries.map((e) => [e.template, e.count]))) {
-      // The lane copies `template-playtests/<template>/` into the scaffold before it classifies
-      // (PRD-449), so the count is the union of the template's own scenarios and the engine
-      // guards a new game no longer ships. Classifying the template alone would understate a
-      // starter as 1 non-visual and condemn a matrix that is still correct.
-      const root = await makeTempDir("threenative-template-scenarios-");
-      const playtests = path.join(root, "playtests");
-      await mkdir(playtests, { recursive: true });
-      for (const source of [
-        path.join(templateRoot, template, "playtests"),
-        path.join(repo, "packages/create-threenative/template-playtests", template),
-      ]) {
-        await cp(source, playtests, { recursive: true }).catch((error: unknown) => {
-          // Most templates ship no guards, so the directory simply is not there.
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-          throw error;
-        });
-      }
-      const result = spawnSync(
-        process.execPath,
-        [path.join(repo, "scripts/non-visual-scenarios.mjs"), root],
-        { encoding: "utf8" },
-      );
-      expect(result.status, `${template}: ${result.stderr}`).toBe(0);
-      const scenarios = result.stdout.trim().split("\n").filter(Boolean);
-      expect(
-        count,
-        `${template} declares ${count} shards for ${scenarios.length} scenarios`,
-      ).toBeLessThanOrEqual(scenarios.length);
-      await rm(root, { force: true, recursive: true });
-    }
+  it("preserves platformer's unique production artifact in its installed scenario job", async () => {
+    const lane = requiredJob(
+      await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8"),
+      "template-nonvisual",
+    );
+    expect(lane).toContain("name: Verify the platformer production artifact");
+    expect(lane).toContain(
+      "!contains(fromJSON(needs.scope.outputs.plan).goldenMatrix.template, 'platformer')",
+    );
+    expect(lane).toContain('pnpm --dir "$target" exec threenative build --target web');
+    expect(lane).toContain('test -s "$target/dist/index.html"');
   });
 
   // `pnpm/action-setup` bootstraps pnpm by running `npm ci` against registry.npmjs.org and then
@@ -1359,9 +2310,12 @@ describe("CI pipeline structure", () => {
     const supplyChain = requiredJob(ci, "supply-chain");
     // Markdown-only PRs skip the scan entirely (owner call 2026-09-12): the nightly develop run
     // and promotions still scan the full git history, so an inert prose PR spends no runner here.
+    // PRD-481 added the reused tree to the exempt set and the `ci` selection to the admitted one,
+    // so the condition names every selection it admits instead of the one it refuses.
     expect(supplyChain).toContain("needs: scope");
-    expect(supplyChain).toContain("if: needs.scope.outputs.selection != 'prose'");
-    expect(supplyChain).not.toContain("needs.scope.outputs.selection == 'full'");
+    expect(supplyChain).toContain(
+      "if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'native-engine'",
+    );
     expect(supplyChain).toContain("if: github.event_name != 'pull_request'");
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
     // ...but the dependency diff itself stays pull_request-only: it needs a base ref and a head
@@ -1805,6 +2759,58 @@ describe("CI pipeline structure", () => {
     );
   });
 
+  // Within one run the workspace dist compiled about nine times, at 71-95s each. Every consumer
+  // declared `needs: scope` only, so all eight started beside the one job that saves the key, all
+  // eight looked for an entry nobody had published yet, and all eight compiled it themselves. The
+  // action grows a mode that takes this run's upload instead; a job that keeps the cache path next
+  // to a producer it is ordered behind is the arrangement that put the nine builds back.
+  it("compiles the workspace dist once and hands the upload to every consumer", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const producer = requiredJob(ci, "build-artifacts");
+    expect(producer).toContain("uses: ./.github/actions/workspace-dist");
+    expect(producer, "the producer no longer publishes what consumers download").toContain(
+      "name: workspace-packages",
+    );
+    expect(producer).toMatch(/^\s+packages\/\*\/dist$/mu);
+
+    const shared = "shared-artifact: workspace-packages";
+    for (const [name, section] of jobSections(ci)) {
+      if (name === "build-artifacts") continue;
+      // The action is what compiles; this job is about which of them compile it themselves.
+      if (!section.includes("uses: ./.github/actions/workspace-dist")) continue;
+      // `lint` keeps the cache path on purpose: its dist lane runs on the `instructions` selection,
+      // where `build-artifacts` is skipped and there is no upload to take. Everything that runs on
+      // `full` downloads instead.
+      if (name === "lint") continue;
+      expect(section, `${name} restores a key nobody saved before it`).toContain(
+        "needs: [scope, build-artifacts]",
+      );
+      expect(section, `${name} compiles the workspace instead of downloading it`).toContain(shared);
+    }
+
+    const action = await readFile(
+      path.join(repo, ".github/actions/workspace-dist/action.yml"),
+      "utf8",
+    );
+    // Fail closed on the download exactly as on the restore: a partial upload must not be imported
+    // from, and the producer's step order — build, validate, publish — is what keeps it complete.
+    expect(action).toContain("Take the compiled workspace from this run's producer");
+    expect(action).toContain("uses: actions/download-artifact@v4");
+    expect(action).toContain("TN_WORKSPACE_DIST_INCOMPLETE");
+    for (const step of [
+      "Restore the compiled workspace",
+      "Build missing workspace bundles",
+      "Pack current workspace files",
+    ]) {
+      const entry = action
+        .split(/(?=^ {4}- name:)/mu)
+        .find((block) => block.startsWith(`    - name: ${step}\n`));
+      expect(entry, `the shared download does not gate ${step}`).toContain(
+        "inputs.shared-artifact == ''",
+      );
+    }
+  });
+
   // Six jobs need `packages/*/dist` and each compiled it from scratch — measured at 49-65s per
   // job, six times a run. tsup keeps no incremental state, so the output is what gets cached, and
   // one shared action owns the key so the six cannot drift apart into six different answers about
@@ -2072,18 +3078,15 @@ describe("CI pipeline structure", () => {
       "unit",
     ]);
 
-    const shards = [...unit.matchAll(/"(\d+)\/(\d+)"/gu)].map((match) => ({
-      index: Number(match[1]),
-      count: Number(match[2]),
-    }));
-    expect(shards.length, "test-unit declares no shards").toBeGreaterThan(0);
-    const counts = new Set(shards.map(({ count }) => count));
-    expect(counts.size, "test-unit mixes shard counts").toBe(1);
-    const [count] = [...counts];
-    expect(
-      shards.map(({ index }) => index).sort((left, right) => left - right),
-      "test-unit is missing a shard",
-    ).toEqual(Array.from({ length: count ?? 0 }, (_, offset) => offset + 1));
+    expect(unit).toContain("matrix: ${{ fromJSON(needs.scope.outputs.plan).unitMatrix }}");
+    const plan = JSON.parse(
+      spawnSync(
+        process.execPath,
+        [path.join(repo, "scripts/ci-change-scope.mjs"), "--full", "--format", "json"],
+        { cwd: repo, encoding: "utf8" },
+      ).stdout,
+    );
+    expect(plan.unitMatrix.shard).toEqual(["1/4", "2/4", "3/4", "4/4"]);
 
     // And the script must refuse a selection that would run nothing rather than report on it.
     const runner = await readFile(path.join(repo, "scripts/run-test-suite.sh"), "utf8");
@@ -2173,10 +3176,10 @@ describe("CI pipeline structure", () => {
     }
   });
 
-  it("golden-path still exercises both templates through the verifier", async () => {
+  it("golden-path retains the default end-to-end journey through the verifier", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const goldenPath = requiredJob(ci, "golden-path-template");
-    expect(goldenPath).toMatch(/template:\s*\n\s+- starter\s*\n\s+- platformer/u);
+    expect(goldenPath).toContain("matrix: ${{ fromJSON(needs.scope.outputs.plan).goldenMatrix }}");
     expect(goldenPath).toContain("TN_GOLDEN_PATH_TEMPLATES: ${{ matrix.template }}");
     expect(goldenPath).toContain("pnpm verify:golden-path");
   });
@@ -2262,7 +3265,7 @@ describe("CI pipeline structure", () => {
     // wrong spelling: it also fires when the run was cancelled, where the matrix result is
     // `cancelled` and this job then reported failure on a run nobody had broken.
     expect(aggregate).toContain(
-      "if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}",
+      "if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}",
     );
     expect(aggregate).toContain(
       'echo "golden-path templates: not applicable (explicit selective exemption)"',
@@ -2291,7 +3294,88 @@ describe("CI pipeline structure", () => {
       expect(source, relative).not.toContain("unsupported workspace package");
       callers += occurrences(source, /uses: \.\/\.github\/actions\/scaffold-from-tarballs/gu);
     }
-    expect(callers).toBe(9);
+    expect(callers).toBe(10);
+  });
+
+  it("selects QuickJS for the packaged fallback without changing native features", async () => {
+    const integration = await readFile(
+      path.join(repo, ".github/workflows/integration.yml"),
+      "utf8",
+    );
+    const job = requiredJob(integration, "packaged-quickjs");
+    const name = "Build the QuickJS host required by the packaged fallback";
+    const step = job.slice(job.indexOf(`      - name: ${name}`)).split("\n      - ")[0];
+    if (step === undefined) throw new Error(`workflow step ${name} was not found.`);
+    const script = step.includes("        run: |")
+      ? workflowRunScript(job, name)
+      : step.match(/ {8}run: (.+)/u)?.[1];
+    expect(script).toBeTruthy();
+    const directory = await makeTempDir("packaged-quickjs-selection-");
+    const runtime = path.join(directory, "packages/runtime-native");
+    await mkdir(runtime, { recursive: true });
+    await writeFile(
+      path.join(runtime, "CMakeLists.txt"),
+      `
+cmake_minimum_required(VERSION 3.20)
+project(fallback_selection NONE)
+foreach(flag MYSTRAL_USE_V8 MYSTRAL_USE_QUICKJS MYSTRAL_USE_WGPU MYSTRAL_USE_DAWN TN_ENABLE_CANVAS2D TN_ENABLE_NATIVE_PHYSICS TN_ENABLE_UI_OVERLAY)
+  option(\${flag} "fixture feature" OFF)
+endforeach()
+if(MYSTRAL_USE_V8)
+  set(engine v8)
+else()
+  set(engine quickjs)
+endif()
+file(WRITE "\${CMAKE_BINARY_DIR}/mystral" "#!/bin/sh\nprintf 'Native WebGPU JS runtime - wgpu-native + \${engine} build\\n'\n")
+file(CHMOD "\${CMAKE_BINARY_DIR}/mystral" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
+add_custom_target(mystral)
+`,
+    );
+    const result = spawnSync(
+      "bash",
+      [
+        "-e",
+        "-u",
+        "-o",
+        "pipefail",
+        "-c",
+        `
+pnpm() {
+  cmake -S packages/runtime-native -B packages/runtime-native/build/tn-linux \\
+    -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF -DMYSTRAL_USE_WGPU=ON -DMYSTRAL_USE_DAWN=OFF \\
+    -DTN_ENABLE_CANVAS2D=ON -DTN_ENABLE_NATIVE_PHYSICS=ON -DTN_ENABLE_UI_OVERLAY=ON
+}
+node() { test "$*" = "packages/runtime-native/scripts/download-deps.mjs --only quickjs"; }
+${script}
+`,
+      ],
+      { cwd: directory, encoding: "utf8", timeout: 30_000 },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    const cache = await readFile(path.join(runtime, "build/tn-linux/CMakeCache.txt"), "utf8");
+    expect(cache).toMatch(/^MYSTRAL_USE_V8:BOOL=OFF$/mu);
+    expect(cache).toMatch(/^MYSTRAL_USE_QUICKJS:BOOL=ON$/mu);
+    for (const feature of [
+      "MYSTRAL_USE_WGPU",
+      "TN_ENABLE_CANVAS2D",
+      "TN_ENABLE_NATIVE_PHYSICS",
+      "TN_ENABLE_UI_OVERLAY",
+    ])
+      expect(cache).toMatch(new RegExp(`^${feature}:BOOL=ON$`, "mu"));
+    expect(cache).toMatch(/^MYSTRAL_USE_DAWN:BOOL=OFF$/mu);
+    const { resolveRuntimeAssetCapabilities } = await import(
+      "../../packages/create-threenative/src/build.js"
+    );
+    expect(
+      resolveRuntimeAssetCapabilities("desktop", path.join(runtime, "build/tn-linux/mystral")),
+    ).toMatchObject({
+      engine: "quickjs",
+      webAssembly: false,
+      decoders: { ktx2: false, meshopt: false, draco: false },
+    });
+    expect(job).toContain(
+      "THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral",
+    );
   });
 
   it("keeps the native contracts and primary CI documentation honest", async () => {
@@ -2881,7 +3965,7 @@ describe("PRD-373 selective feature verification", () => {
     try {
       const head = await commitScopeChange(fixture, relative, "changed\n", "feature");
       const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
-      expect(plan).toMatchObject({ version: 1, selection });
+      expect(plan).toMatchObject({ version: 2, selection });
       const jobs = plan.jobs as Record<string, { required: boolean; reason: string }>;
       expect(jobs["native-platforms"]).toMatchObject({ required: false });
       expect(jobs["native-platforms"]?.reason.length).toBeGreaterThan(10);
@@ -2902,39 +3986,47 @@ describe("PRD-373 selective feature verification", () => {
     "packages/physics/src/index.ts",
     "examples/native-smoke/src/index.ts",
     "tsconfig.base.json",
-    ".github/workflows/ci.yml",
     "templates/topdown/CLAUDE.md",
-  ])(
-    "retains all consumers for %s while exempting native on a clean develop diff",
-    async (relative) => {
-      const fixture = await scopeFixture();
-      try {
-        const head = await commitScopeChange(fixture, relative, "changed\n", "dependency");
-        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
-        expect(plan.selection).toBe("full");
-        expect(plan.jobs).toMatchObject({
-          "native-platforms": { required: false },
-          "test-native": { required: true },
-          "golden-path-template": { required: true },
-          "template-nonvisual": { required: true },
-        });
-        const native = (plan.jobs as Record<string, { reason: string }>)["native-platforms"];
-        expect(native?.reason.length).toBeGreaterThan(10);
-      } finally {
-        await removeFixture(fixture.root);
-      }
-    },
-  );
+  ])("selects retained consumers for %s according to shared/native reach", async (relative) => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(fixture, relative, "changed\n", "dependency");
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+      expect(plan.selection).toBe(
+        relative.includes("create-threenative/templates/") ? "template" : "full",
+      );
+      expect(plan.jobs).toMatchObject({
+        "native-platforms": {
+          required: !relative.includes("create-threenative/templates/"),
+        },
+        "test-native": {
+          required: !relative.includes("create-threenative/templates/"),
+        },
+        "golden-path-template": { required: true },
+        "template-nonvisual": { required: true },
+      });
+      const native = (plan.jobs as Record<string, { reason: string }>)["native-platforms"];
+      expect(native?.reason.length).toBeGreaterThan(10);
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
 
   it("a fresh install cannot stop on the interactive node_modules purge prompt", () => {
     // A checkout whose node_modules was not created by this pnpm makes `pnpm install` ask before
     // purging it. Agents run without a TTY, so the prompt hangs them until `CI=true` is added by
     // hand; this setting answers it for every install. pnpm reads workspace config from
     // pnpm-workspace.yaml, so a plain grep of package.json would not prove it.
-    const result = spawnSync("pnpm", ["config", "get", "confirmModulesPurge"], {
-      cwd: repo,
-      encoding: "utf8",
-    });
+    // pnpm 10 (the pinned packageManager) only reports a workspace-file setting at the `project`
+    // location, while pnpm 11 reports it from the default lookup; accept either.
+    const read = (extra: string[]) =>
+      spawnSync("pnpm", ["config", "get", "confirmModulesPurge", ...extra], {
+        cwd: repo,
+        encoding: "utf8",
+      });
+    const defaultLookup = read([]);
+    const result =
+      defaultLookup.stdout.trim() === "false" ? defaultLookup : read(["--location=project"]);
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe("false");
   });
@@ -2962,7 +4054,7 @@ describe("PRD-373 selective feature verification", () => {
   });
 
   it.each([
-    ["packages/core/src/x.ts", "develop", false],
+    ["packages/core/src/x.ts", "develop", true],
     ["packages/runtime-native/src/x.cpp", "develop", true],
     ["pnpm-lock.yaml", "develop", true],
     ["packages/core/src/x.ts", "main", true],
@@ -2977,7 +4069,7 @@ describe("PRD-373 selective feature verification", () => {
     }
   });
 
-  it.each(["push", "schedule", "workflow_dispatch"])(
+  it.each(["schedule", "workflow_dispatch"])(
     "requires native for the %s event however clean the diff is",
     async (event) => {
       const fixture = await scopeFixture();
@@ -2996,6 +4088,42 @@ describe("PRD-373 selective feature verification", () => {
       }
     },
   );
+
+  it("requires native for a push to main, and qualifies a push to develop with the whole board", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        "packages/core/src/x.ts",
+        "export {};\n",
+        "core",
+      );
+      const main = classifyScope(fixture.root, fixture.base, head, [
+        "--target",
+        "main",
+        "--event-name",
+        "push",
+      ]);
+      expect(main).toMatchObject({ selection: "full", native: true });
+      // PRD-550: the exhaustive board left the queue for the tree-qualifying events, so a develop
+      // push runs every lane and every native row.
+      const develop = classifyScope(fixture.root, fixture.base, head, [
+        "--target",
+        "develop",
+        "--event-name",
+        "push",
+      ]);
+      expect(develop).toMatchObject({
+        selection: "full",
+        native: true,
+        qualification: true,
+        nativeTier: "full",
+      });
+      expect(develop.jobs).toMatchObject({ "native-platforms": { required: true } });
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
 
   it("requires native for --full and for a diff the classifier cannot resolve", async () => {
     const fixture = await scopeFixture();
@@ -3022,8 +4150,8 @@ describe("PRD-373 selective feature verification", () => {
         "core",
       );
       const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
-      expect(plan).toMatchObject({ native: false });
-      plan.native = true;
+      expect(plan).toMatchObject({ native: true });
+      plan.native = false;
       const result = spawnSync(
         process.execPath,
         [path.join(repo, "scripts/ci-change-scope.mjs"), "--validate-plan", JSON.stringify(plan)],
@@ -3063,7 +4191,7 @@ describe("PRD-373 selective feature verification", () => {
       ]) {
         expect(classifyScope(fixture.root, fixture.base, head, extra).selection).toBe("full");
       }
-      for (const event of ["push", "schedule", "workflow_dispatch", "merge_group"]) {
+      for (const event of ["schedule", "workflow_dispatch"]) {
         expect(
           classifyScope(fixture.root, fixture.base, head, [
             "--target",
@@ -3072,6 +4200,17 @@ describe("PRD-373 selective feature verification", () => {
             event,
           ]).selection,
         ).toBe("full");
+      }
+      // A push qualifies the exact tree it promotes, on develop and on main alike.
+      for (const target of ["develop", "main"]) {
+        const push = classifyScope(fixture.root, fixture.base, head, [
+          "--target",
+          target,
+          "--event-name",
+          "push",
+        ]);
+        expect(push.selection).toBe("full");
+        expect(push.qualification).toBe(true);
       }
     } finally {
       await removeFixture(fixture.root);
@@ -3122,6 +4261,255 @@ describe("PRD-373 selective feature verification", () => {
         classifyScope(fixture.root, fixture.base, head, ["--target", "develop", "--local"])
           .selection,
       ).toBe("full");
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+});
+
+/**
+ * A pull request whose whole diff is CI configuration. The rules that shape it:
+ *
+ *   - qualifying paths are the workflows, the `ci-*` scripts, their own specs and the runner
+ *     images, plus anything already classified prose or instructions. Everything else keeps
+ *     `full`: `.github/actions/**` is consumed by every board job including the native matrix,
+ *     and a package, a template or a lockfile is the whole point of the board.
+ *   - the merge queue runs the full board before anything lands, so a queue entry, a push, the
+ *     nightly, an explicit audit and a promotion into main are never narrowed — they are the
+ *     places where a tree is qualified rather than a change reviewed.
+ *   - what stays required is what reads the configuration: the classifier itself, lint, typecheck,
+ *     the unit shards (every `ci-*.spec.ts` is one of them), the budgets that hold the invariant,
+ *     the secrets scan, and `build-artifacts` because three of those jobs consume its upload.
+ */
+const CI_KEPT_JOBS = [
+  "budgets",
+  "build-artifacts",
+  "integration",
+  "lint",
+  "supply-chain",
+  "test-unit",
+  "typecheck",
+];
+
+const CI_SKIPPED_JOBS = [
+  "benchmark",
+  "build",
+  "golden-path",
+  "golden-path-template",
+  "native-platforms",
+  "performance-contracts",
+  "template-nonvisual",
+  "test",
+  "test-browser",
+  "test-native",
+  "test-playtest",
+];
+
+describe("a CI-configuration-only pull request", () => {
+  it.each([
+    ".github/workflows/ci.yml",
+    ".github/workflows/integration.yml",
+    "scripts/ci-change-scope.mjs",
+    "scripts/ci-local.sh",
+    "scripts/ci-workflow.ts",
+    "scripts/__tests__/ci-needs.spec.ts",
+    "tools/ci-runners/entrypoint.sh",
+    "tools/ci-runners/scripts/balance.mjs",
+  ])("selects `ci` for %s and requires exactly the jobs that read it", async (relative) => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(fixture, relative, "# changed\n", "ci configuration");
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+      expect(plan).toMatchObject({ selection: "ci", nativeTier: "none" });
+      expect(
+        Object.entries(plan.jobs as Record<string, { required: boolean }>)
+          .filter(([, job]) => job.required)
+          .map(([name]) => name)
+          .sort(),
+      ).toEqual(CI_KEPT_JOBS);
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it("keeps one package file in the same diff at full", async () => {
+    const fixture = await scopeFixture();
+    try {
+      await commitScopeChange(fixture, ".github/workflows/ci.yml", "name: CI\njobs: {}\n", "ci");
+      const head = await commitScopeChange(
+        fixture,
+        "packages/core/src/change.ts",
+        "export const changed = true;\n",
+        "one package file",
+      );
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+      expect(plan).toMatchObject({ selection: "full" });
+      expect(plan.reason).toContain("packages/core/src/change.ts");
+      const jobs = plan.jobs as Record<string, { required: boolean }>;
+      expect(Object.values(jobs).filter((job) => job.required).length).toBeGreaterThan(6);
+      // Every gate the `ci` selection skipped comes back. `native-platforms` is the one a clean
+      // develop diff legitimately waives, and this diff does not touch a native path.
+      for (const name of CI_SKIPPED_JOBS.filter((job) => job !== "native-platforms")) {
+        expect(jobs[name]?.required, name).toBe(true);
+      }
+      expect(jobs["native-platforms"]?.required).toBe(true);
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it.each([
+    ".github/actions/pnpm/action.yml",
+    "pnpm-lock.yaml",
+    "scripts/lib/not-ci.ts",
+    "scripts/__tests__/something-else.spec.ts",
+    "packages/create-threenative/templates/starter/src/game.ts",
+  ])("keeps %s at full, because no CI-config rule covers it", async (relative) => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(fixture, relative, "# changed\n", "not ci config");
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]).selection,
+      ).toBe(relative.includes("create-threenative/templates/") ? "template" : "full");
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  // `.github/workflows/*.yml` qualifies, and `native-platforms.yml` is the one that must not: it is
+  // the matrix's own definition, so narrowing it would exempt the very lane that has to prove it.
+  it("keeps the native matrix's own workflow at full", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        ".github/workflows/native-platforms.yml",
+        "name: native\njobs: {}\n",
+        "native matrix",
+      );
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]),
+      ).toMatchObject({ selection: "full", native: true, nativeTier: "reduced" });
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it("folds a doc or an AGENTS.md edit into the same `ci` selection", async () => {
+    const fixture = await scopeFixture();
+    try {
+      await commitScopeChange(fixture, ".github/workflows/ci.yml", "name: CI\njobs: {}\n", "ci");
+      await commitScopeChange(fixture, "AGENTS.md", "# agents\n", "instructions");
+      const head = await commitScopeChange(fixture, "docs/PRDs/inert.md", "# prose\n", "docs");
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]).selection,
+      ).toBe("ci");
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it.each([
+    [["--event-name", "schedule", "--target", "develop"]],
+    [["--event-name", "workflow_dispatch", "--target", "develop"]],
+    [["--event-name", "merge_group", "--target", "main"]],
+    [["--event-name", "push", "--target", "develop"]],
+    [["--target", "main"]],
+  ])("never narrows %j", async (extra) => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        ".github/workflows/ci.yml",
+        "name: CI\njobs: {}\n",
+        "ci configuration",
+      );
+      expect(
+        classifyScope(fixture.root, fixture.base, head, ["--target", "develop", ...extra])
+          .selection,
+      ).toBe("full");
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it("runs a develop push as the exhaustive qualification, never the ci narrowing", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        ".github/workflows/ci.yml",
+        "name: CI\njobs: {}\n",
+        "ci configuration",
+      );
+      const push = classifyScope(fixture.root, fixture.base, head, [
+        "--event-name",
+        "push",
+        "--target",
+        "develop",
+      ]);
+      expect(push.selection).toBe("full");
+      expect(push.qualification).toBe(true);
+    } finally {
+      await removeFixture(fixture.root);
+    }
+  });
+
+  it("runs the kept jobs on `ci` and leaves every other gate on `full` alone", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const sections = new Map(jobSections(ci));
+    // `scope` produces the selection and `ci-required` reads the plan on `always()`; neither is
+    // gated by one, so neither can name it.
+    for (const name of [...CI_KEPT_JOBS, "run-summary"]) {
+      if (name === "integration") {
+        expect(sections.get(name)).toContain(
+          "fromJSON(needs.scope.outputs.plan).jobs.integration.required",
+        );
+        continue;
+      }
+      expect(sections.get(name), name).toContain("needs.scope.outputs.selection == 'ci'");
+    }
+    for (const name of CI_SKIPPED_JOBS) {
+      expect(sections.get(name), name).not.toContain("needs.scope.outputs.selection == 'ci'");
+      expect(sections.get(name), name).toContain("needs.scope.outputs.selection == 'full'");
+    }
+    // `build-artifacts` produces the upload three kept jobs consume; skipping it would leave them
+    // ordered behind a job that never ran.
+    for (const name of ["typecheck", "test-unit", "budgets"]) {
+      expect(declaredNeeds(sections.get(name) ?? ""), name).toContain("build-artifacts");
+    }
+  });
+
+  it("validates a `ci` plan and rejects one whose kept jobs were flipped", async () => {
+    const fixture = await scopeFixture();
+    try {
+      const head = await commitScopeChange(
+        fixture,
+        ".github/workflows/ci.yml",
+        "name: CI\njobs: {}\n",
+        "ci configuration",
+      );
+      const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+      const validate = (value: unknown) =>
+        spawnSync(
+          process.execPath,
+          [
+            path.join(repo, "scripts/ci-change-scope.mjs"),
+            "--validate-plan",
+            JSON.stringify(value),
+          ],
+          { encoding: "utf8", env: isolatedGitEnvironment() },
+        );
+      expect(validate(plan).status).toBe(0);
+      const forged = JSON.parse(JSON.stringify(plan)) as {
+        jobs: Record<string, { required: boolean }>;
+      };
+      const unit = forged.jobs["test-unit"];
+      expect(unit).toBeDefined();
+      (unit as { required: boolean }).required = false;
+      const refused = validate(forged);
+      expect(refused.status).toBe(2);
+      expect(refused.stderr).toContain("CI_SCOPE_INVALID_PLAN");
     } finally {
       await removeFixture(fixture.root);
     }

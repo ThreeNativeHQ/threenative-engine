@@ -223,7 +223,7 @@ function syncPeerRanges(repo: string, versions: ReadonlyMap<string, string>): nu
   return changed;
 }
 
-function syncSourceVersions(repo: string, versions: ReadonlyMap<string, string>): number {
+export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, string>): number {
   const coreVersion = versions.get("@threenative/core");
   const engineVersion = versions.get("threenative-engine-mcp");
   const blenderVersion = versions.get("threenative-blender-mcp");
@@ -275,6 +275,11 @@ function syncSourceVersions(repo: string, versions: ReadonlyMap<string, string>)
       path.join(repo, "packages/create-threenative/engine-mcp-tools.json"),
       /("version": ")[^"]+(")/u,
       `$1${engineVersion}$2`,
+    ],
+    [
+      path.join(repo, "examples/abyss-framework/playtests/replay.playtest.json"),
+      /("core": ")[^"]+(")/u,
+      `$1${coreVersion}$2`,
     ],
   ];
   let changed = 0;

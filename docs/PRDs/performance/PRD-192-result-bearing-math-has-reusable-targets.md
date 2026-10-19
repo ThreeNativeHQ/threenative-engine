@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P2 — Reuse math temporaries in picking, PathFollow3D and NavigationAgent3D.
 **Complexity:** +2 for 6–10 files, +2 for retained-result semantics, +2 for core/physics changes =
 **6 → MEDIUM mode**.
 

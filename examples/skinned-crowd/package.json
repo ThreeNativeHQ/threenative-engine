@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "threenative": { "nativeEntry": "src/game.ts" },
+  "threenative": {
+    "nativeEntry": "src/game.ts"
+  },
   "scripts": {
     "build": "vite build",
     "build:desktop": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/skinned-crowd-native.js",
@@ -17,6 +19,7 @@
   "devDependencies": {
     "@types/three": "0.185.3",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "@typescript/native": "catalog:"
   }
 }

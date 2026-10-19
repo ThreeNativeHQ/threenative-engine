@@ -47,7 +47,7 @@ export interface IStartupReadinessOptions {
  */
 export const STARTUP_COMPILE_BUDGET_MS = 15_000;
 /**
- * How long `startup.progress` may stand completely still before the launch is reported as stalled.
+ * How long both display progress and measured startup work may stand still before a stall report.
  * Generous on purpose: one large model legitimately holds the main thread for tens of seconds
  * while it decodes (43 s for one measured aircraft), the bar only moves as assets settle, and a
  * false stall report is worse than none. It is not a timeout — nothing is cancelled.
@@ -75,9 +75,14 @@ export const STARTUP_HOLD_BUDGET_MS = 45_000;
 /** One registered hold: the game's own launch work, and the bounded wait for it. */
 interface IHold {
   readonly label: string;
+  /** Polled once per rendered frame for a predicate hold; absent for a promise hold. */
+  readonly ready?: () => boolean;
+  release?: (expired: boolean) => void;
   settled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined;
   expired: boolean;
+  progress: (() => number) | undefined;
+  completed: number;
 }
 
 export class StartupReadiness {
@@ -171,6 +176,16 @@ export class StartupReadiness {
     return [...this.#holds.values()].filter((hold) => !hold.settled).map((hold) => hold.label);
   }
 
+  /** Completed units from active holds; settled holds freeze their count. Display progress is separate. */
+  get workProgress(): number {
+    let completed = 0;
+    for (const hold of this.#holds.values()) {
+      if (!hold.settled) this.#sampleHold(hold);
+      completed += hold.completed;
+    }
+    return completed;
+  }
+
   /** Every hold's label paired with whether it settled inside its budget. */
   get holdReport(): readonly { readonly expired: boolean; readonly label: string }[] {
     return [...this.#holds.values()].map((hold) => ({ expired: hold.expired, label: hold.label }));
@@ -197,7 +212,12 @@ export class StartupReadiness {
    * both mean the caller believes it is gating something it is not, which is the failure this
    * whole seam exists to remove.
    */
-  hold(label: string, work: Promise<unknown>, budgetMs: number = this.#holdBudgetMs): void {
+  hold(
+    label: string,
+    work: Promise<unknown> | (() => boolean),
+    budgetMs: number = this.#holdBudgetMs,
+    progress?: () => number,
+  ): void {
     if (typeof label !== "string" || label.trim() === "")
       throw new Error("TN_STARTUP_HOLD_LABEL_INVALID: a hold needs a non-empty label.");
     if (this.#holds.has(label))
@@ -207,10 +227,20 @@ export class StartupReadiness {
         `TN_STARTUP_HOLD_TOO_LATE: '${label}' was registered after startup already resolved.`,
       );
     const bounded = positiveNumber(budgetMs, "holdBudgetMs");
-    const hold: IHold = { expired: false, label, settled: false, timer: undefined };
+    const hold: IHold = {
+      completed: 0,
+      expired: false,
+      label,
+      progress,
+      settled: false,
+      timer: undefined,
+      ...(typeof work === "function" ? { ready: work } : {}),
+    };
     this.#holds.set(label, hold);
     const release = (expired: boolean): void => {
       if (hold.settled) return;
+      this.#sampleHold(hold);
+      hold.progress = undefined;
       hold.settled = true;
       hold.expired = expired;
       if (hold.timer !== undefined) clearTimeout(hold.timer);
@@ -218,10 +248,41 @@ export class StartupReadiness {
       this.#resolveIfComplete();
     };
     hold.timer = setTimeout(() => release(true), bounded);
+    hold.release = release;
+    if (typeof work === "function") return;
     void Promise.resolve(work).then(
       () => release(false),
       () => release(false),
     );
+  }
+
+  #sampleHold(hold: IHold): void {
+    try {
+      const measured = hold.progress?.();
+      // Invalid or regressing observations cannot buy more time for a stalled launch.
+      if (measured !== undefined && Number.isFinite(measured))
+        hold.completed = Math.max(hold.completed, measured);
+    } catch {
+      // Observation cannot block settlement or disable stall detection; failed reads get no credit.
+    }
+  }
+
+  /**
+   * Predicate holds settle on rendered frames, not simulation steps: a deterministic playtest clock
+   * advances no fixed step while startup is held, so a gate read only in `afterPhysics` waited on
+   * itself until its deadline. A throwing predicate fails open, like a rejected promise.
+   */
+  #pollHolds(): void {
+    for (const hold of this.#holds.values()) {
+      if (hold.settled || hold.ready === undefined) continue;
+      let done: boolean;
+      try {
+        done = hold.ready();
+      } catch {
+        done = true;
+      }
+      if (done) hold.release?.(false);
+    }
   }
 
   /** Begin the one-time first-use gate after the entered scene has been built. */
@@ -246,6 +307,7 @@ export class StartupReadiness {
 
   /** Feed actual callback wall time, not requestAnimationFrame timestamp spacing. */
   observe(frameMs: number): void {
+    if (!this.#ready) this.#pollHolds();
     if (!this.#started || this.#ready) return;
     if (
       this.#compileSettled &&

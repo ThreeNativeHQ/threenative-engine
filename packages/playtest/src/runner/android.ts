@@ -161,6 +161,23 @@ export interface IAndroidPointerInjection {
   trackingIds: number[];
 }
 
+/**
+ * The `am start` extras that carry the native-css UI's own test knobs, or none.
+ *
+ * An Android app inherits no environment, so the host cannot read these from `getenv` the way it
+ * does on desktop; the activity forwards them to `setenv` from intent extras. Read from this
+ * runner's own environment rather than a new flag: the desktop lane already configures its host
+ * from the environment, so one variable name means the same thing on both device lanes.
+ */
+function hostCssUiExtras(): string[] {
+  const extras: string[] = [];
+  for (const name of ["TN_CSS_UI_FIXED_STEP_MS", "TN_CSS_UI_STATE_TRACE"]) {
+    const value = process.env[name];
+    if (value !== undefined && value !== "") extras.push("--es", name, value);
+  }
+  return extras;
+}
+
 export interface IAndroidTouchViewport {
   device: { height: number; width: number };
   logical: { bottom: number; left: number; right: number; top: number };
@@ -186,6 +203,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
   private touchViewport?: IAndroidTouchViewport;
   private readonly user?: string;
   private activeUser?: string;
+  private readonly consolePids = new Set<string>();
   /** Set by a lifecycle `rotate`, whose display lock `stop()` has to free on its own account. */
   private lifecycleRotationLocked = false;
   private viewportPresented = false;
@@ -217,6 +235,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
     if (viewport !== undefined) await this.presentViewport(viewport);
     // Stopping the old app can log a broken input channel. Capture only the new launch.
     await this.adb(["logcat", "-c"]);
+    this.consolePids.clear();
     await this.adb([
       "shell",
       "am",
@@ -230,7 +249,19 @@ export class AdbAndroidDriver implements IAndroidDriver {
       "TN_PLAYTEST_ENDPOINT",
       endpoint,
       ...(mailboxRoot === undefined ? [] : ["--es", "TN_PLAYTEST_MAILBOX_ROOT", mailboxRoot]),
+      // The native-css UI's own test knobs, forwarded from this runner's environment because `am
+      // start` passes the app none: its fixed animation clock and its focus/scroll state trace. The
+      // desktop driver needs no equivalent because it spawns the host and inherits them there, so
+      // the same two variables in the environment mean the same thing on both device lanes.
+      ...hostCssUiExtras(),
     ]);
+    await this.rememberConsolePids();
+  }
+
+  private async rememberConsolePids(): Promise<void> {
+    const output = await this.adb(["shell", "pidof", this.options.packageName]).catch(() => "");
+    for (const pid of output.trim().split(/\s+/u))
+      if (/^[1-9]\d*$/u.test(pid)) this.consolePids.add(pid);
   }
 
   private async resolveUser(): Promise<string> {
@@ -378,9 +409,55 @@ export class AdbAndroidDriver implements IAndroidDriver {
     );
   }
 
+  /**
+   * The device's own diagnostics, read once and parsed once.
+   *
+   * The read is the only step here that can fail for a reason the game did not cause: a hosted
+   * SwiftShader emulator drops the adb transport mid-dump, and `adb logcat -d` exits non-zero after
+   * printing part of the buffer — a run whose assertions all passed died on a truncated line (CI
+   * `clean-consumer`, 5th of 6 sequential runs). The native harnesses already answer that with one
+   * re-read after `wait-for-device` (#310, b12becde6); this mirrors it, including the named refusal
+   * exemption: a `KO:` reply is the device rejecting the command, and retrying it would hide that.
+   */
   async captureConsole(): Promise<Array<{ text: string; type: string }>> {
-    const output = await this.adb(["logcat", "-d", "-v", "brief"]);
-    return parseAndroidConsole(output);
+    const args = ["logcat", "-d", "-v", "brief"];
+    let output: string | undefined;
+    let lastError = "";
+    for (let attempt = 1; output === undefined && attempt <= LOGCAT_ATTEMPTS; attempt += 1) {
+      try {
+        output = await this.adb(args);
+      } catch (error) {
+        lastError = (error as Error).message;
+        if (isAdbRefusal(lastError) || attempt === LOGCAT_ATTEMPTS) break;
+        await this.adb(["wait-for-device"]).catch(() => undefined);
+      }
+    }
+    if (output === undefined) throw failedLogcat(args.join(" "), lastError);
+    await this.rememberConsolePids();
+    // A launch may crash before pidof sees it; the cleared log retains its process identity.
+    for (const line of output.split(/\r?\n/u)) {
+      const launch = /\bStart proc ([1-9]\d*):([^\s/]+)/u.exec(line);
+      const java = /\bProcess:\s*([^,\s]+),\s*PID:\s*([1-9]\d*)\b/u.exec(line);
+      const native = /\bpid:\s*([1-9]\d*),.*>>>\s*([^<\s]+)\s*<<</u.exec(line);
+      const name = launch?.[2] ?? java?.[1] ?? native?.[2];
+      const pid = launch?.[1] ?? java?.[2] ?? native?.[1];
+      if (
+        pid !== undefined &&
+        (name === this.options.packageName || name?.startsWith(`${this.options.packageName}:`))
+      )
+        this.consolePids.add(pid);
+    }
+    if (this.consolePids.size === 0) {
+      const excerpt =
+        output.length > LOGCAT_ERROR_LIMIT ? `…${output.slice(-LOGCAT_ERROR_LIMIT)}` : output;
+      throw new Error(
+        `TN_PLAYTEST_ANDROID_CONSOLE_UNATTRIBUTED: no process identity for '${this.options.packageName}'; console tail:\n${excerpt}`,
+      );
+    }
+    return parseAndroidConsoleEntries(output, {
+      packageName: this.options.packageName,
+      pids: this.consolePids,
+    });
   }
 
   async screenshot(path: string): Promise<void> {
@@ -686,19 +763,74 @@ async function waitForProcessExit(child: ChildProcess, timeoutMs: number): Promi
   });
 }
 
+/**
+ * A refusal is the device answering, not the transport dropping.
+ *
+ * `adb` reports a command it will not run as `KO:` on stdout — an unknown subcommand, a locked
+ * transport, a disabled daemon. Nothing about a retry changes that answer, and retrying it would
+ * turn a named refusal into a slower version of the same failure. Every other `adb ... failed:` is
+ * an exit status, which is the one shape a dropped transport produces.
+ */
+function isAdbRefusal(message: string): boolean {
+  return /\bKO:/u.test(message);
+}
+
+/**
+ * The tail of a failed dump, never the whole buffer.
+ *
+ * The truncation *is* the evidence — it lands mid-line — so the end is kept. The head is 82 KB of
+ * Android noise that buries the one line a reader needs, and a CI log viewer truncates it anyway.
+ */
+function failedLogcat(command: string, message: string): Error {
+  const prefix = `adb ${command} failed: `;
+  const detail = message.startsWith(prefix) ? message.slice(prefix.length) : message;
+  const excerpt = detail.length > LOGCAT_ERROR_LIMIT
+    ? `…${detail.slice(-LOGCAT_ERROR_LIMIT)}`
+    : detail;
+  return new Error(`${prefix}${excerpt}`);
+}
+
 export function parseAndroidConsole(output: string): Array<{ text: string; type: string }> {
-  return output
-    .split(/\r?\n/u)
-    .filter((line) => !/^[VDIWEF]\/SurfaceSyncGroup\(/u.test(line))
-    .filter((line) => /Mystral|THREENATIVE|chromium/u.test(line))
-    .map((text) => ({
-      text,
-      type: isPlatformWebViewNoise(text)
-        ? "log"
-        : /^(?:E|F)\//u.test(text) || /\b(?:Error|FATAL|FAILED)\b/u.test(text)
-          ? "error"
-          : "log",
-    }));
+  return parseAndroidConsoleEntries(output);
+}
+
+function parseAndroidConsoleEntries(
+  output: string,
+  app?: { packageName: string; pids: ReadonlySet<string> },
+): Array<{ text: string; type: string }> {
+  const packageRecord =
+    app === undefined
+      ? undefined
+      : new RegExp(
+          `(?:^|[^\\w.])${app.packageName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?=[:/\\s,})]|$)`,
+          "u",
+        );
+  return (
+    output
+      .split(/\r?\n/u)
+      // system_server and the compositor name the activity while reporting on themselves.
+      .filter((line) => !/^[VDIWEF]\/(?:SurfaceSyncGroup|TransitionController)\(/u.test(line))
+      .filter((line) => {
+        if (app === undefined) return /Mystral|THREENATIVE|chromium/u.test(line);
+        if (app.pids.size === 0) return line.trim().length > 0;
+        const pid = /^[VDIWEF]\/[^\n(]+\(\s*(\d+)\)/u.exec(line)?.[1];
+        return (
+          (pid !== undefined &&
+            app.pids.has(pid) &&
+            (/Mystral|THREENATIVE|chromium/u.test(line) ||
+              /^[EF]\/(?:AndroidRuntime|libc|DEBUG)\s*\(/u.test(line))) ||
+          (/^[EF]\//u.test(line) && packageRecord!.test(line))
+        );
+      })
+      .map((text) => ({
+        text,
+        type: isPlatformWebViewNoise(text)
+          ? "log"
+          : /^(?:E|F)\//u.test(text) || /\b(?:Error|FATAL|FAILED)\b/u.test(text)
+            ? "error"
+            : "log",
+      }))
+  );
 }
 
 /**
@@ -722,6 +854,10 @@ function isPlatformWebViewNoise(text: string): boolean {
 }
 
 const TOUCH_AXIS_MAX = 32767;
+/** A dropped adb transport is re-read once; a device that never returns fails the run. */
+const LOGCAT_ATTEMPTS = 2;
+/** Bytes of a failed dump kept in the error, so an 82 KB logcat never becomes the report. */
+const LOGCAT_ERROR_LIMIT = 2_000;
 
 export function parseAndroidTouchViewport(output: string): IAndroidTouchViewport {
   const match = /Viewport\s+INTERNAL:\s*displayId=0,[\s\S]*?(?:orientation=(\d+),\s*)?logicalFrame=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\],\s*physicalFrame=\[\s*(-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\s*\],\s*deviceSize=\[\s*(\d+),\s*(\d+)\s*\]/u.exec(output);

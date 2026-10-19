@@ -123,6 +123,17 @@ describe("SpanRecorder reporting", () => {
     // A span nothing ever entered stays out of the report.
     expect(window?.spans.sort).toBeUndefined();
   });
+
+  it("stores the recorder on a global symbol, so a second copy of this module sees it", () => {
+    // Core is built once per entry: a game importing `@threenative/core/world` gets a second copy
+    // of this module, and module state left the world's own spans recording nothing in a browser
+    // walk — two copies, two states. The slot is a `Symbol.for`, one per realm.
+    const recorder = new SpanRecorder();
+    setSpanRecorder(recorder);
+    const slot = Symbol.for("threenative.frameSpans.recorder");
+    expect((globalThis as unknown as Record<symbol, unknown>)[slot]).toBe(recorder);
+    expect(spanRecorder()).toBe(recorder);
+  });
 });
 
 describe("spansRequested", () => {
@@ -151,4 +162,23 @@ describe("spansRequested", () => {
       expect(globalThis.location).toBe(original);
     }
   });
+});
+
+it("routes span boundaries to the native monotonic sink without reading simulation time", () => {
+  setSpanRecorder(undefined);
+  const now = vi.spyOn(performance, "now");
+  const sink = vi.fn();
+  vi.stubGlobal("__tnGameSpan", sink);
+  try {
+    beginSpan(SPANS.sceneUpdate);
+    endSpan(SPANS.sceneUpdate);
+    expect(sink.mock.calls).toEqual([
+      [SPANS.sceneUpdate, 0],
+      [SPANS.sceneUpdate, 1],
+    ]);
+    expect(now).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+    now.mockRestore();
+  }
 });

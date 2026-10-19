@@ -1,0 +1,59 @@
+{
+  "at": "2026-10-06T12:21:37.603329+00:00",
+  "base": "c2779e9091cc57c8122b1524aefe4f9f4d1cf353",
+  "scope": "Current reconstruction preserves each exact-native input axis; existing one-pass point inputs, not certified footprint radiance.",
+  "qualification": false,
+  "red": {
+    "newAuthoredGraphTestsFailed": 6,
+    "nativeColumnLeakRedChannel": 0.9425719608641422,
+    "nativeRowLeakRedChannel": 0.03732923526291835
+  },
+  "green": {
+    "focusedTests": 73,
+    "actualOfflineWGSLTests": 11,
+    "strictTypeScript": "7.0.2 scoped source/test context; pass",
+    "biomeFiles": 5,
+    "readability": "one existing selected looks test passed;18 skipped",
+    "noInstallScaffolds": 13,
+    "scaffoldTests": "one existing selected complete-tree assertion passed;65 skipped",
+    "candidateReplayWitnesses": 65,
+    "candidateCPURowsExactlyEqualPublishedReplay": true
+  },
+  "retainedRed": {
+    "actualStoredStaleness": 0.11041229831655071,
+    "authoredReplayStaleness": 0.11045044152711368,
+    "threshold": 0.1
+  },
+  "preserved": [
+    "both depth-history vetoes",
+    "mandatory RGB clipping",
+    "all nine clipping moments",
+    "original426x240 quality protocol",
+    "original31-arm scorer",
+    "velocity/frame/counter/scaler ownership"
+  ],
+  "unrun": [
+    "candidate GPU/browser runtime",
+    "native/platform execution",
+    "aggregate originalquality rerun",
+    "GPU-bound paired cost table",
+    "automatic three-scale cost/resources"
+  ],
+  "resources": {
+    "cpuAffinity": [22],
+    "maxWorkers": 1,
+    "GPUruns": 0,
+    "nativeRuns": 0,
+    "browserLaunches": 0,
+    "externalUploads": 0
+  },
+  "sourceSHA256": {
+    "packages/create-threenative/templates/starter/src/render/temporalResolve.ts": "7cbd1cb475e36f960d8ab249ed6deedb00253f0a4523be166d7c826dac155131",
+    "packages/create-threenative/templates/starter/src/render/temporalResolveMath.ts": "ae84295418e7db28d030e2ccbe59a0c5f8361396b45f2e514ae52d8cc5d321bb"
+  },
+  "review": {
+    "reportSHA256": "fb396dc2b9ae28f70d2a7163ed7118e7b53cfbb5b9321a786e12c98ae765073c",
+    "result": "source implementation review passes; quality/cost/platform remainopen"
+  },
+  "limits": "CPU double-precision graph, recorded historyLinear and projected-depth injection; comparison to earlier actualGPU f32/RGBA16F within explicit tolerances. No new GPU or bitwise half-float claim."
+}

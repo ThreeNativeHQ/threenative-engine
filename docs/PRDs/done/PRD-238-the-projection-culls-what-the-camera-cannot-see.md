@@ -15,7 +15,7 @@ Source of the borrowed technique:
 MIT, cloned at depth 1 on 2026-08-28. **The library itself is refused as a dependency** — see below.
 What is mined is one function of 25 lines and the idea behind it.
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 
 **Complexity:** +2 complex state (a per-frame visibility set inside a hot path that already exists
 to be fast), +2 the change is a measurement before it is a feature, +1 touches ≤5 files,

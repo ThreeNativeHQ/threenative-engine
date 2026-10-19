@@ -1,0 +1,65 @@
+{
+  "sourceSha": "4cfc3c2024da1cb37533dc67fd07679e364c27f6",
+  "runUrl": "https://github.com/ThreeNativeHQ/threenative/actions/runs/36991562324",
+  "artifactId": 11218994493,
+  "artifactSha256": "a84190c40b3cdd6679ff9fea858dd6cfe2373646f090192ee531411fbaba1070",
+  "kind": "historical hidden-material control provenance",
+  "pass": false,
+  "expectedFailureIds": ["visual.1.region.darkPixels", "visual.2.region.darkPixels"],
+  "assertions": [
+    {
+      "id": "visual.0.region",
+      "pass": true
+    },
+    {
+      "id": "visual.1.region",
+      "pass": true
+    },
+    {
+      "id": "visual.1.region.darkPixels",
+      "pass": false
+    },
+    {
+      "id": "visual.1.region.maxDarkPixels",
+      "pass": true
+    },
+    {
+      "id": "visual.2.region",
+      "pass": true
+    },
+    {
+      "id": "visual.2.region.darkPixels",
+      "pass": false
+    },
+    {
+      "id": "visual.2.region.maxDarkPixels",
+      "pass": true
+    },
+    {
+      "id": "component.decals.active.value",
+      "pass": true
+    },
+    {
+      "id": "component.decals.created.value",
+      "pass": true
+    },
+    {
+      "id": "component.decals.geometryBytes.value",
+      "pass": true
+    },
+    {
+      "id": "component.decals.renderTriangles.value",
+      "pass": true
+    },
+    {
+      "id": "component.decals.generation.value",
+      "pass": true
+    },
+    {
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "originalReportUrl": "https://github.com/ThreeNativeHQ/threenative/blob/e1566472ee439650c74109a92e7fabae1770f71a/docs/verification/vq11-decals-36991562324/hidden-report.json",
+  "note": "Minimal public provenance. Full original report remains in the workflow artifact and the immutable historical commit; no environment or diagnostic payload is republished."
+}

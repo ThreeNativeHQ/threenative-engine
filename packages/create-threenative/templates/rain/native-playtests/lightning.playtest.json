@@ -1,0 +1,173 @@
+{
+  "name": "rain-native-strike-flashes-and-thunder-follows",
+  "schemaVersion": 1,
+  "target": "desktop",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "press": "KeyL",
+      "label": "suppressed",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyX",
+      "label": "flashes-on",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyM",
+      "label": "sound",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyL",
+      "label": "strike",
+      "waitTicks": 6,
+      "screenshot": "native-strike",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "in-the-air",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "heard",
+      "waitTicks": 150,
+      "release": true
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "state",
+        "path": "safe",
+        "allowTrivial": "this desktop web view reports prefers-reduced-motion: reduce, so the storm boots with flashes suppressed; the scenario proves a strike is suppressed until the player turns flashes back on",
+        "atSteps": [
+          {
+            "equals": true,
+            "label": "suppressed"
+          },
+          {
+            "equals": false,
+            "label": "flashes-on"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "audioEnabled",
+        "atSteps": [
+          {
+            "equals": true,
+            "label": "sound"
+          }
+        ],
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "strikes",
+        "atSteps": [
+          {
+            "equals": 0,
+            "label": "suppressed"
+          },
+          {
+            "equals": 1,
+            "label": "strike"
+          },
+          {
+            "equals": 1,
+            "label": "heard"
+          }
+        ],
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "status",
+        "atSteps": [
+          {
+            "equals": "flashing",
+            "label": "strike"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lastStrike.delay",
+        "gte": 0.7,
+        "lte": 1.6
+      },
+      {
+        "id": "state",
+        "path": "pendingThunderAt",
+        "atSteps": [
+          {
+            "equals": -1,
+            "label": "heard"
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "storm-audio",
+        "component": "pendingThunder",
+        "atSteps": [
+          {
+            "equals": 1,
+            "label": "strike"
+          },
+          {
+            "equals": 1,
+            "label": "in-the-air"
+          },
+          {
+            "equals": 0,
+            "label": "heard"
+          }
+        ]
+      },
+      {
+        "entity": "storm-audio",
+        "component": "thunderVoices",
+        "atSteps": [
+          {
+            "equals": 0,
+            "label": "in-the-air"
+          },
+          {
+            "equals": 1,
+            "label": "heard"
+          }
+        ],
+        "equals": 1
+      }
+    ],
+    "audio": [
+      {
+        "cue": "thunder",
+        "minPlays": 1,
+        "maxPlays": 1
+      }
+    ]
+  }
+}

@@ -8,7 +8,7 @@ prd_contract: v1
 
 Executed evidence: [static-light verification](../../verification/prd-256-static-lightmap-2026-08-29.md).
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 
 **Outcome:** an ordinary `.glb` or static scene placed in `assets/` receives deterministic
 `TEXCOORD_1`/UV2 atlas coordinates and a compressed `.ktx2` static lightmap during the existing

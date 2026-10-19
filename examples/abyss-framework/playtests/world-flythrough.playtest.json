@@ -15,19 +15,22 @@
       "label": "cross-a",
       "press": "KeyF",
       "release": true,
-      "waitTicks": 40
+      "waitTicks": 40,
+      "screenshot": "view-distance-cross-a"
     },
     {
       "label": "cross-b",
       "press": "KeyF",
       "release": true,
-      "waitTicks": 40
+      "waitTicks": 40,
+      "screenshot": "view-distance-cross-b"
     },
     {
       "label": "cross-c",
       "press": "KeyF",
       "release": true,
-      "waitTicks": 40
+      "waitTicks": 40,
+      "screenshot": "view-distance-cross-c"
     },
     {
       "label": "cross-d",
@@ -45,13 +48,15 @@
       "label": "cross-f",
       "press": "KeyF",
       "release": true,
-      "waitTicks": 40
+      "waitTicks": 40,
+      "screenshot": "view-distance-cross-f"
     },
     {
       "label": "cross-g",
       "press": "KeyF",
       "release": true,
-      "waitTicks": 40
+      "waitTicks": 40,
+      "screenshot": "view-distance-cross-g"
     },
     {
       "label": "cross-h",
@@ -143,6 +148,36 @@
         "entity": "world",
         "gte": 1,
         "allowTrivial": "A cumulative render count; the run is what makes any level render at all."
+      },
+      {
+        "component": "maxResidentCells",
+        "entity": "world",
+        "equals": 16,
+        "allowTrivial": "Ring 2 reaches all 16 fixture cells from the middle; the fixture is too small for the recipe's 25, which the unit test proves on an 8x8 grid."
+      },
+      {
+        "component": "residentTiles",
+        "entity": "world",
+        "equals": 49,
+        "allowTrivial": "The recipe's radius holds from the first settled frame; the load-bearing half is that it still holds after the camera crossed the whole fixture and every collider moved with it."
+      },
+      {
+        "component": "residentColliders",
+        "entity": "world",
+        "equals": 9,
+        "allowTrivial": "The recipe's radius holds from the first settled frame; the load-bearing half is that it still holds after the camera crossed the whole fixture and every collider moved with it."
+      },
+      {
+        "component": "bodies",
+        "entity": "world",
+        "equals": 9,
+        "allowTrivial": "The recipe's radius holds from the first settled frame; the load-bearing half is that it still holds after the camera crossed the whole fixture and every collider moved with it."
+      },
+      {
+        "component": "bodyReachTiles",
+        "entity": "world",
+        "lte": 1.5,
+        "allowTrivial": "The recipe's radius holds from the first settled frame; the load-bearing half is that it still holds after the camera crossed the whole fixture and every collider moved with it."
       }
     ]
   }

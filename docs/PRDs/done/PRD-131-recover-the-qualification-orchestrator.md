@@ -59,7 +59,7 @@ behind.
 
 **Depends on:** nothing external. The code, the tests and the fixtures already exist.
 
-**Blocks:** [PRD-128](../mobile/PRD-128-android-qualification-split.md) Phases 2–3. Everything PRD-128 calls
+**Blocks:** [PRD-128](../native/PRD-128-android-qualification-split.md) Phases 2–3. Everything PRD-128 calls
 "the runs" needs a runner.
 
 **Complexity: 6 → MEDIUM-HIGH mode.** No new capability and no design. The difficulty is entirely

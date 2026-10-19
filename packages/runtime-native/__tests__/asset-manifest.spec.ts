@@ -144,6 +144,43 @@ describe("the asset selector drops what this cook did not produce", () => {
     ]);
   });
 
+  it("stages a hand-placed file no cook produces, whatever its extension", () => {
+    // PRD-492 filed this as "the desktop packager drops every undeclared public/ file", from a
+    // `TN_GRADE_TABLE grade.cube: File read error` on the starter's desktop run. It does not: the
+    // selector's rule 3 keeps what no cook produced, so a colour table — an extension no asset
+    // pipeline emits — stages on every native target exactly like the level JSON above. What was
+    // actually missing was the file: that run's scaffold had no `public/grade.cube` in it. The
+    // guard stands so the next report of this shape is checked here first.
+    const root = makeTempDirSync("threenative-manifest-undeclared-");
+    roots.push(root);
+    const assets = join(root, "public");
+    mkdirSync(assets, { recursive: true });
+    writeFileSync(join(assets, "grade.cube"), "LUT_3D_SIZE 2\n0 0 0\n");
+    writeFileSync(join(assets, "b.glb"), minimalGlb());
+    writeFileSync(
+      join(assets, "assets.manifest.json"),
+      JSON.stringify({ version: 1, entries: { "b.glb": { output: "b.glb", kind: "model" } } }),
+    );
+    const bundle = join(root, "bundle.js");
+    writeFileSync(bundle, "export default 1;");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const desktop = join(root, "desktop");
+    const android = join(root, "android");
+    const ios = join(root, "ios");
+    mkdirSync(desktop, { recursive: true });
+    mkdirSync(ios, { recursive: true });
+    stageDesktopFiles(bundle, assets, desktop);
+    stageAndroidAssets(assets, android);
+    stageIosAssets(assets, ios);
+    for (const destination of [desktop, android, ios]) {
+      assert.equal(
+        existsSync(join(destination, "grade.cube")),
+        true,
+        `${destination} colour table`,
+      );
+    }
+  });
+
   it("Android, desktop and iOS staging all drop the orphan and keep the rest", () => {
     const { assets, root } = fixture();
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});

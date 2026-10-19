@@ -1,0 +1,73 @@
+{
+  "templates": [
+    "action-rpg",
+    "minimal",
+    "platformer",
+    "puzzle",
+    "racing",
+    "rain",
+    "rts",
+    "runner",
+    "sailing",
+    "shooter",
+    "snow",
+    "starter",
+    "tower-defense"
+  ],
+  "results": [
+    {
+      "pass": true,
+      "template": "action-rpg"
+    },
+    {
+      "pass": true,
+      "template": "minimal"
+    },
+    {
+      "pass": true,
+      "template": "platformer"
+    },
+    {
+      "pass": true,
+      "template": "puzzle"
+    },
+    {
+      "pass": true,
+      "template": "racing"
+    },
+    {
+      "pass": true,
+      "template": "rain"
+    },
+    {
+      "pass": true,
+      "template": "rts"
+    },
+    {
+      "pass": true,
+      "template": "runner"
+    },
+    {
+      "pass": true,
+      "template": "sailing"
+    },
+    {
+      "error": "pnpm test exited 1.",
+      "pass": false,
+      "template": "shooter"
+    },
+    {
+      "error": "pnpm test exited 1.",
+      "pass": false,
+      "template": "snow"
+    },
+    {
+      "pass": true,
+      "template": "starter"
+    },
+    {
+      "pass": true,
+      "template": "tower-defense"
+    }
+  ]
+}

@@ -1,10 +1,12 @@
 import {
   BufferAttribute,
-  type BufferGeometry,
+  BufferGeometry,
   Color,
   type ColorRepresentation,
   type InstancedMesh,
+  type InterleavedBufferAttribute,
   type Material,
+  Matrix3,
   Matrix4,
   Mesh,
   Object3D,
@@ -110,23 +112,286 @@ function placementMatrix(part: IMergePart): Matrix4 | undefined {
 }
 
 /**
- * Flatten one piece: place it, strip it to position plus the requested channels, and paint its colour.
+ * Three's `denormalize` divisor for an array's type, or `-1` for a type it does not know.
  *
- * `mergeGeometries` needs every input to agree on indexing and on the exact set of attribute names. A
- * `BoxGeometry` is indexed and an `ExtrudeGeometry` is not, so a building made of both fails at the
- * first piece; the attribute sets diverge the same way. When the group is mixed, de-indexing
- * everything and keeping one known set of channels is what makes the two agree — the fallback, and
- * the only path that does.
- *
- * When **every** part is indexed there is nothing to reconcile, so the index is kept: the matrix is
- * baked into the cloned vertices and `mergeGeometries` offsets each part's indices into one index.
- * That is a third of the vertices a de-indexed merge uploads, and the saving is the whole point —
- * 228.8 MB of triangle soup over 826 buffers, on the first draw of every new chunk mesh.
- *
- * Position alone is the default and the normals are recomputed after the merge, because the merged
- * seam's normal is not either input's; a caller that asks for `normal` keeps the authored ones
- * instead, and `uv` is copied through.
+ * `denormalize` divides by it and clamps at `-1`; `normalize` multiplies by the same number and
+ * rounds. A float channel's divisor is `0`, because both are the identity there and the copy skips
+ * them. One number covers both directions because three switches on the same array constructor for
+ * each.
  */
+function divisorOf(array: IRawNumbers): number {
+  if (array instanceof Float32Array) return 0;
+  if (array instanceof Int8Array) return 127;
+  if (array instanceof Uint8Array) return 255;
+  if (array instanceof Int16Array) return 32767;
+  if (array instanceof Uint16Array) return 65535;
+  if (array instanceof Int32Array) return 2147483647;
+  if (array instanceof Uint32Array) return 4294967295;
+  return -1;
+}
+
+/**
+ * Where one channel's raw components live, addressed for a copy loop.
+ *
+ * A cooked model's channels are quantized and interleaved (`KHR_mesh_quantization`: normalized Int8
+ * normals inside a shared stride), so three reaches them through `getX`/`setXYZ`, which denormalizes,
+ * multiplies and renormalizes one component at a time through a `Vector3`, and a `clone()` of such a
+ * channel de-interleaves it first through a boxed `Array`. Read straight out of the array the same
+ * arithmetic is three additions and a divide, and nothing is copied five times to get there.
+ */
+interface IChannel {
+  /** Components one vertex holds. */
+  readonly itemSize: number;
+  /** Vertices the part contributes: its own, or its index count where the group de-indexes. */
+  readonly count: number;
+  /** Components between two vertices: the interleaved stride, or `itemSize` for a plain attribute. */
+  readonly stride: number;
+  /** Where this channel sits inside a vertex. */
+  readonly offset: number;
+  /** The raw numbers: an interleaved buffer's array, or a plain attribute's. */
+  readonly array: IRawNumbers;
+  /** {@link divisorOf} for this channel's array, or `-1` when this path cannot read it. */
+  readonly scale: number;
+}
+
+/** Raw components, addressed by index: any typed array three reads a channel out of. */
+interface IRawNumbers {
+  readonly [component: number]: number;
+}
+
+/** The channel a kept attribute reads as, or `undefined` for a type this path cannot read. */
+function channelOf(attribute: BufferAttribute, count: number): IChannel | undefined {
+  if (Reflect.get(attribute, "isFloat16BufferAttribute") === true) return undefined;
+  // quality-allow: three types a geometry attribute as BufferAttribute; the flag below tells them apart.
+  const interleaved = attribute as unknown as InterleavedBufferAttribute | undefined;
+  const data = interleaved?.isInterleavedBufferAttribute === true ? interleaved.data : undefined;
+  const array = (data?.array ?? attribute.array) as IRawNumbers;
+  const scale = divisorOf(array);
+  if (scale < 0) return undefined;
+  return {
+    array,
+    count,
+    itemSize: attribute.itemSize,
+    offset: data === undefined ? 0 : (interleaved?.offset ?? 0),
+    scale,
+    stride: data?.stride ?? attribute.itemSize,
+  };
+}
+
+/** The index a de-indexing part reads its vertices through, or `null` when it reads them in order. */
+function indexOf(part: IMergePart, deindex: boolean): Uint16Array | Uint32Array | null {
+  if (!deindex) return null;
+  const index = part.geometry.getIndex();
+  if (index === null) return null;
+  const array = index.array;
+  if (array instanceof Uint16Array) return array;
+  if (array instanceof Uint32Array) return array;
+  return null;
+}
+
+/** The 16 elements of a placement, read once so the loop below reads locals. */
+type PlacementElements = readonly [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
+
+/** The 9 elements of an inverse transpose, read once so the loop below reads locals. */
+type NormalElements = readonly [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
+
+/**
+ * Positions of one part, placed, written into `values` at `at`.
+ *
+ * The expression is three's `Vector3.applyMatrix4` term for term over the same elements in the same
+ * order, including its homogeneous divide, so a merged buffer holds the values it held before. The
+ * second half of it is what `setXYZ` wrote back into the part's own typed array before the
+ * de-quantizing copy read it again: `normalize` rounds into the channel's own range — the scratch
+ * store keeps a value outside that range wrapping exactly as three's store did — and `denormalize`
+ * reads it back as a float.
+ */
+function writePosition(
+  channel: IChannel,
+  indices: Uint16Array | Uint32Array | null,
+  elements: PlacementElements | null,
+  scratch: IScratch | null,
+  values: Float32Array,
+  at: number,
+): void {
+  const { array, count, offset, scale, stride } = channel;
+  for (let vertex = 0; vertex < count; vertex += 1) {
+    const base = (indices === null ? vertex : (indices[vertex] as number)) * stride + offset;
+    const raw = array as { [component: number]: number | undefined };
+    const x = scale === 0 ? (raw[base] as number) : Math.max((raw[base] as number) / scale, -1);
+    const y =
+      scale === 0 ? (raw[base + 1] as number) : Math.max((raw[base + 1] as number) / scale, -1);
+    const z =
+      scale === 0 ? (raw[base + 2] as number) : Math.max((raw[base + 2] as number) / scale, -1);
+    let px: number;
+    let py: number;
+    let pz: number;
+    if (elements === null) {
+      px = x;
+      py = y;
+      pz = z;
+    } else {
+      const e = elements;
+      const w = 1 / (e[3] * x + e[7] * y + e[11] * z + e[15]);
+      px = (e[0] * x + e[4] * y + e[8] * z + e[12]) * w;
+      py = (e[1] * x + e[5] * y + e[9] * z + e[13]) * w;
+      pz = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w;
+    }
+    const out = at + vertex * 3;
+    if (scratch !== null) {
+      scratch[0] = Math.round(px * scale);
+      scratch[1] = Math.round(py * scale);
+      scratch[2] = Math.round(pz * scale);
+      px = Math.max((scratch[0] as number) / scale, -1);
+      py = Math.max((scratch[1] as number) / scale, -1);
+      pz = Math.max((scratch[2] as number) / scale, -1);
+    }
+    values[out] = px;
+    values[out + 1] = py;
+    values[out + 2] = pz;
+  }
+}
+
+/**
+ * Normals of one part, placed by the inverse transpose, written into `values` at `at`. Three's
+ * `applyNormalMatrix`, term for term, quantized back to the channel's own range exactly as
+ * {@link writePosition} does.
+ */
+function writeNormal(
+  channel: IChannel,
+  indices: Uint16Array | Uint32Array | null,
+  elements: NormalElements | null,
+  scratch: IScratch | null,
+  values: Float32Array,
+  at: number,
+): void {
+  const { array, count, offset, scale, stride } = channel;
+  const e = elements;
+  for (let vertex = 0; vertex < count; vertex += 1) {
+    const base = (indices === null ? vertex : (indices[vertex] as number)) * stride + offset;
+    const raw = array as { [component: number]: number | undefined };
+    const x = scale === 0 ? (raw[base] as number) : Math.max((raw[base] as number) / scale, -1);
+    const y =
+      scale === 0 ? (raw[base + 1] as number) : Math.max((raw[base + 1] as number) / scale, -1);
+    const z =
+      scale === 0 ? (raw[base + 2] as number) : Math.max((raw[base + 2] as number) / scale, -1);
+    let px: number;
+    let py: number;
+    let pz: number;
+    if (e === null) {
+      px = x;
+      py = y;
+      pz = z;
+    } else {
+      px = e[0] * x + e[3] * y + e[6] * z;
+      py = e[1] * x + e[4] * y + e[7] * z;
+      pz = e[2] * x + e[5] * y + e[8] * z;
+      // `Vector3.applyNormalMatrix` ends in `normalize()`, so a placed normal is a unit normal and
+      // not the scaled vector the matrix produced — the same three terms, then its `length()` and
+      // its `multiplyScalar(1 / length)`.
+      const by = 1 / (Math.sqrt(px * px + py * py + pz * pz) || 1);
+      px *= by;
+      py *= by;
+      pz *= by;
+    }
+    const out = at + vertex * 3;
+    if (scratch !== null) {
+      scratch[0] = Math.round(px * scale);
+      scratch[1] = Math.round(py * scale);
+      scratch[2] = Math.round(pz * scale);
+      px = Math.max((scratch[0] as number) / scale, -1);
+      py = Math.max((scratch[1] as number) / scale, -1);
+      pz = Math.max((scratch[2] as number) / scale, -1);
+    }
+    values[out] = px;
+    values[out + 1] = py;
+    values[out + 2] = pz;
+  }
+}
+
+/**
+ * Every other kept channel of one part, copied through as three's de-quantizing copy read it, and one
+ * part's flat colour written over `count` vertices.
+ */
+function writeThrough(
+  channel: IChannel,
+  indices: Uint16Array | Uint32Array | null,
+  values: Float32Array,
+  at: number,
+): void {
+  const { array, count, itemSize, offset, scale, stride } = channel;
+  if (scale === 0) {
+    for (let vertex = 0; vertex < count; vertex += 1) {
+      const from = (indices === null ? vertex : (indices[vertex] as number)) * stride + offset;
+      const out = at + vertex * itemSize;
+      for (let component = 0; component < itemSize; component += 1)
+        values[out + component] = array[from + component] as number;
+    }
+    return;
+  }
+  for (let vertex = 0; vertex < count; vertex += 1) {
+    const from = (indices === null ? vertex : (indices[vertex] as number)) * stride + offset;
+    const out = at + vertex * itemSize;
+    for (let component = 0; component < itemSize; component += 1)
+      values[out + component] = Math.max((array[from + component] as number) / scale, -1);
+  }
+}
+
+/** One part's flat colour, written across every vertex it contributes. */
+function writeColour(values: Float32Array, at: number, count: number, tone: Color): void {
+  for (let vertex = 0; vertex < count; vertex += 1) {
+    const out = at + vertex * 3;
+    values[out] = tone.r;
+    values[out + 1] = tone.g;
+    values[out + 2] = tone.b;
+  }
+}
+
+/**
+ * A three-component scratch array of one channel's own type, standing in for the in-place
+ * quantization `setXYZ` did on the part three had cloned.
+ */
+interface IScratch {
+  [component: number]: number;
+}
+
+/** A scratch array of one channel's own type, where `setXYZ` would have quantized in place. */
+function scratchOf(array: IRawNumbers): IScratch | null {
+  if (array instanceof Int8Array) return new Int8Array(3);
+  if (array instanceof Int16Array) return new Int16Array(3);
+  if (array instanceof Int32Array) return new Int32Array(3);
+  if (array instanceof Uint8Array) return new Uint8Array(3);
+  if (array instanceof Uint16Array) return new Uint16Array(3);
+  if (array instanceof Uint32Array) return new Uint32Array(3);
+  return null;
+}
+
 function flatten(
   part: IMergePart,
   paint: boolean,
@@ -217,13 +482,181 @@ export function mergeParts(
       }
     }
   });
-  const flattened: BufferGeometry[] = [];
   // One indexed part among non-indexed ones is what `mergeGeometries` refuses, so a mixed group
   // de-indexes and an all-indexed group keeps its index and a third of its vertices.
   const deindex = !list.every((part) => part.geometry.index !== null);
+  const merged = fusable(list, preserve, deindex)
+    ? concatenate(list, coloured !== 0, preserve, deindex, label)
+    : mergeThroughThree(list, coloured !== 0, preserve, deindex, label);
+  if (!preserve.includes("normal")) merged.computeVertexNormals();
+  return merged;
+}
+
+/** The channels a group keeps, in the order the first part carries them — a merged buffer's own order. */
+function keptChannels(first: IMergePart, preserve: readonly ("uv" | "normal")[]): string[] {
+  const keep = new Set<string>(["position", ...preserve]);
+  return Object.keys(first.geometry.attributes).filter((name) => keep.has(name));
+}
+
+/** Vertices one part contributes: its index count where the group de-indexes, else its own. */
+function contributes(part: IMergePart, deindex: boolean): number {
+  const index = part.geometry.getIndex();
+  if (!deindex || index === null) return part.geometry.getAttribute("position")?.count ?? 0;
+  return index.count;
+}
+
+/**
+ * Whether {@link concatenate} can read every channel this group keeps. It cannot for a type three's
+ * `normalize`/`denormalize` do not describe (half floats) or for a position that is not three
+ * components, and those groups take the path that was always here.
+ */
+function fusable(
+  list: readonly IMergePart[],
+  preserve: readonly ("uv" | "normal")[],
+  deindex: boolean,
+): boolean {
+  if (!preserve.every((channel) => channel === "uv" || channel === "normal")) return false;
+  const names = keptChannels(list[0] as IMergePart, preserve);
+  return list.every((part) => fusablePart(part, names, deindex));
+}
+
+/** One part's answer to {@link fusable}, per kept channel. */
+function fusablePart(part: IMergePart, names: readonly string[], deindex: boolean): boolean {
+  const index = part.geometry.getIndex();
+  if (deindex && index !== null && indexOf(part, deindex) === null) return false;
+  const count = contributes(part, deindex);
+  return names.every((name) => {
+    const attribute = part.geometry.getAttribute(name);
+    if (attribute === undefined) return false;
+    // A channel whose vertex count is not the part's own would merge at a length of its own, which
+    // is a buffer three had already stopped being able to draw; that part takes the three path.
+    if (attribute.count !== count) return false;
+    if (attribute.itemSize !== 3 && (name === "position" || name === "normal")) return false;
+    return channelOf(attribute as BufferAttribute, count) !== undefined;
+  });
+}
+
+/**
+ * Every part's channels, placed and de-quantized, written straight into one buffer.
+ *
+ * This is what `flatten` and `mergeGeometries` did between them, without the intermediates: no
+ * `clone()` (which de-interleaves a quantized channel through a boxed `Array`), no `toNonIndexed()`,
+ * no per-channel re-quantizing copy, no second copy into the merged attributes, and no index built
+ * one `Array.push` at a time. Each byte of a part is read once and lands once, which is the whole of
+ * a 5.5 ms/MB merge becoming a fraction of that.
+ */
+function concatenate(
+  list: readonly IMergePart[],
+  paint: boolean,
+  preserve: readonly ("uv" | "normal")[],
+  deindex: boolean,
+  label: string,
+): BufferGeometry {
+  const names = keptChannels(list[0] as IMergePart, preserve);
+  if (paint) names.push("color");
+  const counts = list.map((part) => contributes(part, deindex));
+  const vertices = counts.reduce((total, count) => total + count, 0);
+  const geometry = new BufferGeometry();
+  for (const name of names) {
+    const itemSize =
+      name === "color" ? 3 : ((list[0] as IMergePart).geometry.getAttribute(name)?.itemSize ?? 3);
+    const values = new Float32Array(vertices * itemSize);
+    let at = 0;
+    for (let part = 0; part < list.length; part += 1) {
+      const count = counts[part] as number;
+      if (name === "color") writeColour(values, at, count, new Color(list[part]?.color));
+      else writeChannel(name, list[part] as IMergePart, count, deindex, label, values, at);
+      at += count * itemSize;
+    }
+    geometry.setAttribute(name, new BufferAttribute(values, itemSize));
+  }
+  geometry.setIndex(deindex ? null : new BufferAttribute(mergeIndex(list, vertices), 1));
+  return geometry;
+}
+
+/** One part's one kept channel, placed and de-quantized into `values` at `at`. */
+function writeChannel(
+  name: string,
+  part: IMergePart,
+  count: number,
+  deindex: boolean,
+  label: string,
+  values: Float32Array,
+  at: number,
+): void {
+  const channel = channelOf(part.geometry.getAttribute(name) as BufferAttribute, count);
+  if (channel === undefined)
+    throw new Error(`mergeParts(${label}): a part has no ${name} this path can read.`);
+  const indices = indexOf(part, deindex);
+  const matrix = placementMatrix(part);
+  if (name === "position") {
+    writePosition(
+      channel,
+      indices,
+      // quality-allow: Matrix4.elements is number[] in three's types and always 16 long.
+      matrix === undefined ? null : (matrix.elements as unknown as PlacementElements),
+      scratchOf(channel.array),
+      values,
+      at,
+    );
+    return;
+  }
+  if (name === "normal") {
+    writeNormal(
+      channel,
+      indices,
+      matrix === undefined
+        ? null
+        : // quality-allow: Matrix3.elements is number[] in three's types and always 9 long.
+          (new Matrix3().getNormalMatrix(matrix).elements as unknown as NormalElements),
+      scratchOf(channel.array),
+      values,
+      at,
+    );
+    return;
+  }
+  writeThrough(channel, indices, values, at);
+}
+
+/**
+ * One index for the whole group, each part's offset by the vertices before it — a 32-bit one past
+ * 65,535 vertices, because a 16-bit one cannot name the vertex, which is the same rule `widenIndex`
+ * applied to a merged index three had already built.
+ */
+function mergeIndex(list: readonly IMergePart[], vertices: number): Uint16Array | Uint32Array {
+  let total = 0;
+  for (const part of list) total += part.geometry.getIndex()?.count ?? 0;
+  const merged = vertices > 65_535 ? new Uint32Array(total) : new Uint16Array(total);
+  let at = 0;
+  let offset = 0;
+  for (const part of list) {
+    const source = part.geometry.getIndex();
+    if (source === null) continue;
+    const values = source.array as Uint16Array | Uint32Array;
+    for (let entry = 0; entry < source.count; entry += 1)
+      merged[at + entry] = (values[entry] as number) + offset;
+    at += source.count;
+    offset += part.geometry.getAttribute("position")?.count ?? 0;
+  }
+  return merged;
+}
+
+/**
+ * The path that was always here: `flatten` each part and hand the lot to `mergeGeometries`. It is
+ * what a group whose channels this file cannot read directly — a half-float channel, a position that
+ * is not three components — takes, and the refusals it raises are the ones a caller already handles.
+ */
+function mergeThroughThree(
+  list: readonly IMergePart[],
+  paint: boolean,
+  preserve: readonly ("uv" | "normal")[],
+  deindex: boolean,
+  label: string,
+): BufferGeometry {
+  const flattened: BufferGeometry[] = [];
   let merged: BufferGeometry | null;
   try {
-    for (const part of list) flattened.push(flatten(part, coloured !== 0, preserve, deindex));
+    for (const part of list) flattened.push(flatten(part, paint, preserve, deindex));
     merged = mergeGeometries(flattened, false);
   } finally {
     for (const geometry of flattened) geometry.dispose();
@@ -235,7 +668,6 @@ export function mergeParts(
     throw new Error(`mergeParts(${label}): ${reason} Tried ${list.length} parts. ${requirement}`);
   }
   if (!deindex) widenIndex(merged);
-  if (!preserve.includes("normal")) merged.computeVertexNormals();
   return merged;
 }
 

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type Document, Format, type GLTF, type NodeIO } from "@gltf-transform/core";
+import { type ITextureQuality, readTextureQuality } from "../image-quality.js";
 
 /**
  * Images that models share, written once and referenced from every model that carries them.
@@ -17,6 +18,7 @@ import { type Document, Format, type GLTF, type NodeIO } from "@gltf-transform/c
  * bytes resolve to one URL and the browser cache, the bundle and the delete-test all see one file.
  */
 export interface ISharedImage {
+  readonly quality?: ITextureQuality;
   readonly buffer: Buffer;
   /** `uastc`, `etc1s` or `none`, spelled into the filename so a cache hit knows what it found. */
   readonly codec: string;
@@ -107,8 +109,38 @@ export function createSharedImageStore(
 ): ISharedImageStore {
   const memory = new Map<string, ISharedImage>();
   let listing: Promise<Map<string, string>> | undefined;
+  let manifestQuality: Promise<Map<string, ITextureQuality>> | undefined;
   const directory =
     outputRoot === undefined ? undefined : path.join(outputRoot, SHARED_IMAGES_DIRECTORY);
+
+  // Compiler-owned observations already publish atomically in its manifest. Reuse that cache
+  // rather than adding files to the runtime acquisition set; direct stores use a sidecar.
+  const qualityInManifest = (): Promise<Map<string, ITextureQuality>> => {
+    manifestQuality ??= (async () => {
+      const scores = new Map<string, ITextureQuality>();
+      if (outputRoot === undefined) return scores;
+      try {
+        const manifest = JSON.parse(
+          await readFile(path.join(outputRoot, "assets.manifest.json"), "utf8"),
+        ) as {
+          entries?: Record<string, { sharedImages?: { key?: unknown; quality?: unknown }[] }>;
+        };
+        for (const entry of Object.values(manifest.entries ?? {})) {
+          if (!Array.isArray(entry?.sharedImages)) continue;
+          for (const image of entry.sharedImages) {
+            const quality = readTextureQuality(image?.quality);
+            if (typeof image?.key === "string" && quality !== undefined)
+              scores.set(image.key, quality);
+          }
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !(error instanceof SyntaxError))
+          throw error;
+      }
+      return scores;
+    })();
+    return manifestQuality;
+  };
 
   const onDisk = (): Promise<Map<string, string>> => {
     listing ??= (async () => {
@@ -142,6 +174,20 @@ export function createSharedImageStore(
         buffer: await readFile(path.join(directory, name)),
         codec: parsed.codec,
         mimeType: parsed.mimeType,
+        ...(await (async () => {
+          const cached = (await qualityInManifest()).get(key);
+          if (cached !== undefined) return { quality: cached };
+          try {
+            const quality = readTextureQuality(
+              JSON.parse(await readFile(path.join(directory, `${name}.quality.json`), "utf8")),
+            );
+            return quality === undefined ? {} : { quality };
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError)
+              return {};
+            throw error;
+          }
+        })()),
       };
       memory.set(key, image);
       return image;
@@ -152,7 +198,7 @@ export function createSharedImageStore(
       if (directory === undefined || options.writeThrough === false) return;
       const name = fileNameFor(key, image);
       const known = await onDisk();
-      if (known.has(key)) return;
+      if (known.has(key) && image.quality === undefined) return;
       await mkdir(directory, { recursive: true });
       // Temp file + rename: a concurrent reader (another worker's get, a parallel build's) must
       // never observe a truncated image, and two writers of identical bytes must not be able to
@@ -164,6 +210,16 @@ export function createSharedImageStore(
         await rename(temporary, target);
       } finally {
         await rm(temporary, { force: true }).catch(() => undefined);
+      }
+      if (image.quality !== undefined) {
+        const qualityTarget = `${target}.quality.json`;
+        const qualityTemporary = `${qualityTarget}.${process.pid}.${randomUUID()}.tmp`;
+        try {
+          await writeFile(qualityTemporary, `${JSON.stringify(image.quality)}\n`);
+          await rename(qualityTemporary, qualityTarget);
+        } finally {
+          await rm(qualityTemporary, { force: true }).catch(() => undefined);
+        }
       }
       known.set(key, name);
     },

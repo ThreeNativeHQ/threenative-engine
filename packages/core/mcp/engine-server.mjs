@@ -472,7 +472,7 @@ function handleToolCall(params, manifestFile) {
   if (name === "engine_search_capabilities") {
     if (typeof argumentsValue.situation !== "string")
       throw new Error("engine_search_capabilities requires a string 'situation' argument.");
-    const scope = argumentsValue.scope ?? "mechanic";
+    const scope = argumentsValue.scope === void 0 ? "mechanic" : argumentsValue.scope;
     if (scope !== "request" && scope !== "mechanic")
       throw new Error("engine_search_capabilities scope must be 'request' or 'mechanic'.");
     const response = searchCapabilities(argumentsValue.situation, manifestFile, scope);
@@ -524,7 +524,7 @@ function handleLine(line, manifestFile) {
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.4" }
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.5" }
       });
     }
     if (request.method === "tools/list") {

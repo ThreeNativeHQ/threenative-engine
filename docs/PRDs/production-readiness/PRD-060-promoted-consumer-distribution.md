@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-060 — One verified public cohort can be safely promoted and shipped
 
 **Status:** PROPOSED — historical credential blockers must be checked at execution; no publication authorized by this plan. Revised 2026-09-08; planning only.
+**Priority:** P1 — release.ts and both workflows unwired, release.spec.ts not green; deploy path unbuilt.
 **Complexity:** 10 → HIGH (+3 files, +2 release module/state, +2 promotion/recovery concurrency, +2 multi-package, +1 registry/signing APIs).
 **Problem:** Green source and individual artifacts do not prove that the public default install resolves one coherent, playable and distributable non-iOS release.
 
@@ -23,7 +24,7 @@ Batch contract and dependency order: [production-readiness](README.md). Baseline
 
 Existing npm-release requires a promoted native release before publishing npm, while native-release promotes after local-tarball consumer checks. The report found runtime HTTP404 and old public package contents. Earlier PRD-060 mixed packaging, publisher implementation and broad all-platform claims; packaging now has explicit delegated owners.
 
-Release orchestration only. [PRD-196](critical/PRD-196-published-install-is-functional.md) owns package/MCP contents; [PRD-078](../done/PRD-078-toolchain-free-consumer-proof.md)/[PRD-262](../done/PRD-262-the-runtime-native-prebuilt-release-exists.md) hosted/prebuilt delivery; [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md)/[PRD-212](../done/PRD-212-published-install-builds-android.md) Android compatibility/artifacts; [PRD-217](../done/PRD-217-webview-ui-layer.md)/[PRD-365](../done/PRD-365-consumer-desktop-distribution.md) desktop UI/artifacts; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) brand; [PRD-374](../done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) diagnosis; [PRD-366](../BLOCKED/requires-physical-device/PRD-366-one-consumer-game-proves-supported-platforms.md) actual game qualification. Existing PRD-059 provenance/SBOM, PRD-054 conformance and PRD-080 stranger protocol remain dependencies for their applicable non-iOS evidence. Do not duplicate their implementations or mark their iOS criteria complete.
+Release orchestration only. [PRD-196](../done/PRD-196-published-install-is-functional.md) owns package/MCP contents; [PRD-078](../done/PRD-078-toolchain-free-consumer-proof.md)/[PRD-262](../done/PRD-262-the-runtime-native-prebuilt-release-exists.md) hosted/prebuilt delivery; [PRD-221](../done/PRD-221-android-v8-is-16kb-clean.md)/[PRD-212](../done/PRD-212-published-install-builds-android.md) Android compatibility/artifacts; [PRD-217](../done/PRD-217-webview-ui-layer.md)/[PRD-365](../done/PRD-365-consumer-desktop-distribution.md) desktop UI/artifacts; [PRD-153](../done/PRD-153-game-branding-from-launch-to-play.md) brand; [PRD-374](../done/PRD-374-doctor-predicts-the-requested-build-prerequisite.md) diagnosis; [PRD-366](../BLOCKED/requires-physical-device/PRD-366-one-consumer-game-proves-supported-platforms.md) actual game qualification. Existing PRD-059 provenance/SBOM, PRD-054 conformance and PRD-080 stranger protocol remain dependencies for their applicable non-iOS evidence. Do not duplicate their implementations or mark their iOS criteria complete.
 
 ## Approach and boundaries
 

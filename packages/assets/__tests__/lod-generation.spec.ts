@@ -57,6 +57,8 @@ async function torusGlb(
     joints?: boolean;
     morph?: boolean;
     name?: string;
+    /** One node and mesh per name, each with its own copy of the primitive. */
+    names?: readonly string[];
     noIndices?: boolean;
   } = {},
 ): Promise<Buffer> {
@@ -114,10 +116,14 @@ async function torusGlb(
       accessor(document, buffer, "VEC4", new Float32Array(count * 4)),
     );
   if (options.morph === true) primitive.addTarget(document.createPrimitiveTarget());
-  const name = options.name ?? "hull";
-  scene.addChild(
-    document.createNode(name).setMesh(document.createMesh(name).addPrimitive(primitive)),
-  );
+  for (const [index, name] of (options.names ?? [options.name ?? "hull"]).entries())
+    scene.addChild(
+      document
+        .createNode(name)
+        .setMesh(
+          document.createMesh(name).addPrimitive(index === 0 ? primitive : primitive.clone()),
+        ),
+    );
   return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
 }
 
@@ -746,6 +752,17 @@ describe("automatic discrete LOD generation", () => {
     expect(summary.reasons).toContain("already-cooked");
   }, 120_000);
 
+  it("generates a chain for a lone LOD-named mesh, which no authored chain selects", async () => {
+    // A pack's `_LOD2` scattered as a tree of its own: no sibling level exists in the asset, so
+    // skipping it as authored left Machinefall's 545 nearest pines at 8,900 triangles each.
+    const summary = await cook(await mediumGlb({ name: "pine_far_LOD2" }), {
+      lod: GENERATE,
+      virtual: "none",
+    });
+    expect(summary.reasons).not.toContain("authored-lod");
+    expect(summary.generated).toBeGreaterThan(0);
+  }, 120_000);
+
   it("reports each structural skip reason on a fixture that triggers it", async () => {
     const cases: readonly {
       reason: string;
@@ -773,7 +790,7 @@ describe("automatic discrete LOD generation", () => {
       // of LOD0's fragments, so a chain keeps its silhouette. `foliage-lod.spec.ts` proves the
       // foliage half; `BLEND` is still refused, because a simplified blended card is a hole.
       { build: () => smallGlb({ alpha: "BLEND" }), reason: "material-unsupported" },
-      { build: () => smallGlb({ name: "hull_LOD1" }), reason: "authored-lod" },
+      { build: () => smallGlb({ names: ["hull_LOD0", "hull_LOD1"] }), reason: "authored-lod" },
       {
         // Edge (0,1) is shared by three triangles: a non-manifold fan. A tiny floor is needed so
         // the fixture is not declined as too-small first.
@@ -1143,7 +1160,7 @@ describe("terminal coarse level (PRD-473)", () => {
     // The chain layout did not change, so a file cooked before this feature still reads. The cache
     // identity moved instead, which is what makes a re-cook pick the terminal level up.
     expect(LOD_SCHEMA_VERSION).toBe(1);
-    expect(LOD_GENERATOR_VERSION).toBe(3);
+    expect(LOD_GENERATOR_VERSION).toBe(4);
     const document = await readWithLod(await oldChainGlb());
     const primitive = document
       .getRoot()

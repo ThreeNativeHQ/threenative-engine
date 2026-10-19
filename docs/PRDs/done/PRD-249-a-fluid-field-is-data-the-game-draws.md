@@ -14,7 +14,7 @@ Source: [`bandinopla/threejs-fluid-simulation`](https://github.com/bandinopla/th
 at `14ff3b0e`, MIT (Pavel Dobryakov's original WebGL shaders, ported to TSL). Cloned at depth 1 and
 read on 2026-08-28. **Nothing copied.**
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 
 **Complexity:** +2 new subsystem, +2 ping-pong state across frames inside a hot path, +1 ≤5 files
 per phase, +1 public surface = **6 → MEDIUM mode.**

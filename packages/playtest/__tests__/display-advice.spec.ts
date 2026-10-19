@@ -14,7 +14,7 @@ const scannedTrees = ["packages/playtest/src", "packages/runtime-native/src"];
 // Records that quote the old advice to analyse it sit outside the scanned trees by design.
 // An allowlist entry inside a scanned tree would silently exempt it, so the disjointness is
 // asserted below rather than trusted.
-const allowedXvfbRunMentions = ["docs/", "scripts/analyze-prd-075-render-advisor.mjs"];
+const allowedXvfbRunMentions = ["docs/"];
 
 // A mention is fine when its sentence carries the warning; an instruction to run it is not.
 // The warning wraps, so read the sentence around the mention rather than the line.

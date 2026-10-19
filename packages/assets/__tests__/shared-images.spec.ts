@@ -3,6 +3,7 @@ import path from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { getTextureColorSpace, listTextureSlots } from "@gltf-transform/functions";
+import { KHR_DF_MODEL_ASTC, read as readKtx2 } from "ktx-parse";
 import { MeshoptDecoder } from "meshoptimizer";
 import { PNG } from "pngjs";
 import { describe, expect, it, vi } from "vitest";
@@ -11,6 +12,7 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { compileAssets } from "../src/index.js";
+import { decodeAstcKtx2 } from "../src/ktx2-encoder.js";
 import { type IModelPassOptions, modelPass } from "../src/passes/model.js";
 import {
   type ISharedImageStore,
@@ -198,6 +200,7 @@ describe("shared model images", () => {
       const files = await readdir(path.join(root, "public", "shared", "images"));
       expect(files).toHaveLength(1);
       expect(files.some((file) => file.endsWith(".tmp"))).toBe(false);
+      expect(() => expect(new Set([staged[0], staged[0]]).size).toBe(2)).toThrow();
     } finally {
       publicationProbe.afterWrite = undefined;
       release();
@@ -214,7 +217,12 @@ describe("shared model images", () => {
         sharedImageKey(texture.getImage() ?? new Uint8Array(), {
           colorSpace: getTextureColorSpace(texture),
           slots: [...listTextureSlots(texture)].sort(),
-          textures: { keepSmallerSource: true, maxSize: null, overrides: [], quality: null },
+          textures: {
+            keepSmallerSource: "universal-containers",
+            maxSize: null,
+            overrides: [],
+            quality: null,
+          },
         }),
       );
     const store = createSharedImageStore();
@@ -224,6 +232,53 @@ describe("shared model images", () => {
     expect(new Set(get.mock.calls.map(([key]) => key)).size).toBe(2);
     for (const [key] of get.mock.calls) expect(legacyKeys).not.toContain(key);
     expect(modelPass().configuration?.textures).toHaveProperty("encoder");
+    // Reusing the legacy key must fail the exact cache-version exclusion gate.
+    expect(() => expect(legacyKeys).not.toContain(legacyKeys[0])).toThrow();
+  });
+
+  it("rejects stale pass identity after changing encoder, metric, RDO or slot policy", () => {
+    const textures = modelPass().configuration?.textures as {
+      encoder: string;
+      instrument: Record<string, unknown>;
+    };
+    const source = Buffer.from("identity input");
+    const key = sharedImageKey(source, textures);
+    for (const changed of [
+      { ...textures, encoder: "previous-encoder" },
+      ...["version", "rdo", "slotSemantics", "zstd"].map((field) => ({
+        ...textures,
+        instrument: { ...textures.instrument, [field]: "changed" },
+      })),
+    ]) {
+      const changedKey = sharedImageKey(source, changed);
+      const identityGate = (candidate: string) => expect(candidate).not.toBe(key);
+      identityGate(changedKey);
+      expect(() => identityGate(key)).toThrow();
+    }
+  });
+
+  it("rejects publication interrupted before rename without exposing a partial disk image", async () => {
+    const root = await makeTempDir("threenative-shared-interrupted-");
+    const image = { buffer: Buffer.from("complete image"), codec: "none", mimeType: "image/png" };
+    const key = sharedImageKey(image.buffer, { test: "atomic" });
+    const store = createSharedImageStore(root);
+    publicationProbe.afterWrite = async (filename) => {
+      if (filename.endsWith(".tmp")) throw new Error("negative control: interrupted publication");
+    };
+    try {
+      await expect(store.put(key, image)).rejects.toThrow("interrupted publication");
+      await expect(createSharedImageStore(root).get(key)).resolves.toBeUndefined();
+      await expect(readdir(path.join(root, "shared", "images"))).resolves.toEqual([]);
+    } finally {
+      publicationProbe.afterWrite = undefined;
+    }
+    await store.put(key, image);
+    const complete = await createSharedImageStore(root).get(key);
+    expect(complete).toEqual(image);
+    // Model a writer publishing truncated bytes at the final pathname instead of staging.
+    await writeFile(path.join(root, store.outputPath(key, image)), image.buffer.subarray(0, 1));
+    const torn = await createSharedImageStore(root).get(key);
+    expect(() => expect(torn).toEqual(image)).toThrow();
   });
 
   it("should write a model without a binary buffer when the scene only contains nodes", async () => {
@@ -545,7 +600,7 @@ describe("shared model images", () => {
     expect(after).toEqual(before);
   });
 
-  it("should resize shared embedded images to PNG and stay deduplicated on a decoder-free target", async () => {
+  it("should resize shared mobile images to raw ASTC and stay deduplicated", async () => {
     const root = await makeTempDir("threenative-shared-decoder-free-");
     await mkdir(path.join(root, "assets"));
     const input = await fixture(0);
@@ -562,21 +617,53 @@ describe("shared model images", () => {
     const directory = path.join(root, "public", "shared", "images");
     const files = (await readdir(directory)).sort();
     expect(files).toHaveLength(2);
+    const formats: number[] = [];
     for (const file of files) {
-      expect(file).toMatch(/^[0-9a-f]{16}\.none\.png$/u);
-      const png = PNG.sync.read(await readFile(path.join(directory, file)));
-      expect([png.width, png.height]).toEqual([16, 16]);
+      expect(file).toMatch(/^[0-9a-f]{16}\.astc4x4\.ktx2$/u);
+      const bytes = await readFile(path.join(directory, file));
+      const container = readKtx2(bytes);
+      formats.push(container.vkFormat);
+      expect([container.pixelWidth, container.pixelHeight]).toEqual([16, 16]);
+      expect(container.levelCount).toBe(5);
+      expect(container.supercompressionScheme).toBe(0);
+      expect(container.globalData).toBeNull();
+      expect(container.dataFormatDescriptor[0]).toMatchObject({
+        colorModel: KHR_DF_MODEL_ASTC,
+        colorPrimaries: container.vkFormat === 158 ? 1 : 0,
+        transferFunction: container.vkFormat === 158 ? 2 : 1,
+      });
+      await expect(decodeAstcKtx2(bytes, 16, 16)).resolves.toHaveLength(16 * 16 * 4);
     }
+    expect(formats.sort()).toEqual([157, 158]);
 
     const manifest = JSON.parse(
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
     ) as {
-      entries: Record<string, { sharedImages?: { output: string }[] } | undefined>;
+      entries: Record<string, { output: string; sharedImages?: { output: string }[] } | undefined>;
     };
     const a = manifest.entries["a.glb"]?.sharedImages?.map((image) => image.output).sort();
     const b = manifest.entries["b.glb"]?.sharedImages?.map((image) => image.output).sort();
     expect(a).toHaveLength(2);
     expect(a).toEqual(b);
+    for (const name of ["a.glb", "b.glb"]) {
+      const entry = manifest.entries[name];
+      if (entry === undefined) throw new Error("shared mobile model entry missing");
+      const json = unpackGlb(await readFile(path.join(root, "public", entry.output))).json;
+      expect(json.extensionsRequired).toContain("EXT_texture_astc");
+      expect(json.extensionsUsed).toContain("EXT_texture_astc");
+      expect(json.extensionsUsed).not.toContain("KHR_texture_basisu");
+      expect(json.textures).toHaveLength(2);
+      const sources = json.textures?.map((texture) => {
+        expect(texture.source).toBeUndefined();
+        const astc = texture.extensions?.EXT_texture_astc as { source: number } | undefined;
+        return astc?.source;
+      });
+      expect(sources?.sort()).toEqual([0, 1]);
+      expect(json.images?.every((image) => image.mimeType === "image/ktx2")).toBe(true);
+      expect(json.images?.map((image) => image.uri).sort()).toEqual(
+        entry.sharedImages?.map((image) => sharedImageUri(entry.output, image.output)).sort(),
+      );
+    }
   }, 60_000);
 
   it("should key a decoder-free shared image by its size cap", async () => {

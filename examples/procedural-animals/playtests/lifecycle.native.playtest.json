@@ -1,0 +1,103 @@
+{
+  "name": "procedural-wolf-fifty-lifetimes-desktop",
+  "schemaVersion": 1,
+  "subject": "Fifty distinct 32-wolf generations on one renderer: actual per-pass submissions, GPU handle identities/bytes, Three memory, Rapier bodies, listeners, callbacks and pending actions return to the measured shared first-draw baseline. Console records every boundary.",
+  "target": "desktop",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "press": "KeyL",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "timeoutMs": 120000,
+      "label": "cycles-10",
+      "waitForResource": {
+        "id": "state",
+        "path": "cycles",
+        "gte": 10
+      }
+    },
+    {
+      "timeoutMs": 120000,
+      "label": "cycles-20",
+      "waitForResource": {
+        "id": "state",
+        "path": "cycles",
+        "gte": 20
+      }
+    },
+    {
+      "timeoutMs": 120000,
+      "label": "cycles-30",
+      "waitForResource": {
+        "id": "state",
+        "path": "cycles",
+        "gte": 30
+      }
+    },
+    {
+      "timeoutMs": 120000,
+      "label": "cycles-40",
+      "waitForResource": {
+        "id": "state",
+        "path": "cycles",
+        "gte": 40
+      }
+    },
+    {
+      "timeoutMs": 120000,
+      "label": "fifty-lifetimes",
+      "waitForResource": {
+        "id": "state",
+        "path": "done",
+        "equals": true
+      },
+      "screenshot": "fifty-lifetimes"
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "state",
+        "path": "done",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "cycles",
+        "equals": 50
+      },
+      {
+        "id": "state",
+        "path": "error",
+        "equals": null,
+        "allowTrivial": "No lifecycle error is a held invariant; fifty complete independently observed cycle records are mandatory."
+      }
+    ],
+    "geometry": {
+      "limit": 500
+    },
+    "tone": [
+      {
+        "atStep": "fifty-lifetimes",
+        "blackFraction": {
+          "max": 0.9
+        }
+      }
+    ],
+    "startup": {
+      "maxReadyMs": 60000
+    }
+  }
+}

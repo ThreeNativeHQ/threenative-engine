@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P3 — Open boxes delete zero-caller aliases behind pasted caller censuses; low-impact hygiene.
 **Complexity:** +3 for 10+ files, but every item is deletion/comment/single-sourcing with
 no behaviour change except DebugOverlay = **5 → MEDIUM mode** (mechanically wide, risk
 low).

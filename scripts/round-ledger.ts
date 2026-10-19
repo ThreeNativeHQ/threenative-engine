@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type RoundDisposition = "framework change" | "user space" | "rejected";
 export type RoundArmName = "after" | "before" | "framework" | "vanilla";
 
 export interface RoundArm {

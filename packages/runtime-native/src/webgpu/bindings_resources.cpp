@@ -252,6 +252,30 @@ static void rejectBufferMapRequests(
     }
 }
 
+static void startBufferMapRequest(const std::shared_ptr<BufferMapRequest>& request) {
+    request->started = true;
+#if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
+    WGPUBufferMapCallbackInfo info = {};
+    info.mode = WGPUCallbackMode_AllowSpontaneous;
+    info.callback = onBufferMapped;
+    info.userdata1 = new std::shared_ptr<BufferMapRequest>(request);
+    wgpuBufferMapAsync(request->buffer, request->mode, request->offset, request->size, info);
+#else
+    wgpuBufferMapAsync(request->buffer, request->mode, request->offset, request->size,
+                      onBufferMapped, new std::shared_ptr<BufferMapRequest>(request));
+#endif
+}
+
+void startDeferredBufferMaps(BindingsState* state) {
+    std::vector<std::shared_ptr<BufferMapRequest>> requests;
+    {
+        std::lock_guard<std::mutex> lock(state->asyncBufferMaps.mutex);
+        for (const auto& entry : state->asyncBufferMaps.pending)
+            if (!entry.second->started) requests.push_back(entry.second);
+    }
+    for (const auto& request : requests) startBufferMapRequest(request);
+}
+
 void drainAsyncBufferMaps(BindingsState* state) {
     if (state == nullptr || state->engine == nullptr) return;
     {
@@ -570,6 +594,20 @@ WGPUTextureFormat stringToFormat(const std::string& format) {
     if (format == "bc6h-rgb-float") return WGPUTextureFormat_BC6HRGBFloat;
     if (format == "bc7-rgba-unorm") return WGPUTextureFormat_BC7RGBAUnorm;
     if (format == "bc7-rgba-unorm-srgb") return WGPUTextureFormat_BC7RGBAUnormSrgb;
+    // The mobile counterparts, selected when the device advertises texture-compression-etc2 or
+    // -astc (Android). Unmapped, they took the same BGRA8 fall-through as BC once did.
+    if (format == "etc2-rgb8unorm") return WGPUTextureFormat_ETC2RGB8Unorm;
+    if (format == "etc2-rgb8unorm-srgb") return WGPUTextureFormat_ETC2RGB8UnormSrgb;
+    if (format == "etc2-rgb8a1unorm") return WGPUTextureFormat_ETC2RGB8A1Unorm;
+    if (format == "etc2-rgb8a1unorm-srgb") return WGPUTextureFormat_ETC2RGB8A1UnormSrgb;
+    if (format == "etc2-rgba8unorm") return WGPUTextureFormat_ETC2RGBA8Unorm;
+    if (format == "etc2-rgba8unorm-srgb") return WGPUTextureFormat_ETC2RGBA8UnormSrgb;
+    if (format == "eac-r11unorm") return WGPUTextureFormat_EACR11Unorm;
+    if (format == "eac-r11snorm") return WGPUTextureFormat_EACR11Snorm;
+    if (format == "eac-rg11unorm") return WGPUTextureFormat_EACRG11Unorm;
+    if (format == "eac-rg11snorm") return WGPUTextureFormat_EACRG11Snorm;
+    if (format == "astc-4x4-unorm") return WGPUTextureFormat_ASTC4x4Unorm;
+    if (format == "astc-4x4-unorm-srgb") return WGPUTextureFormat_ASTC4x4UnormSrgb;
     // Integer formats, the absence of which is not a missing feature but a wrong picture. An
     // unrecognized name fell through to the BGRA8Unorm default below, so a texture three.js asked
     // to sample as `uint` came back as a float colour format, every bind group built against it
@@ -838,6 +876,11 @@ js::JSValueHandle handleGpuDeviceCreateSampler(BindingsState* state, BindingDest
                             }
                             auto jsSampler = createNativeWrapper(state, "GPUSampler", sampler);
                             state->engine->setProperty(jsSampler, "_type", state->engine->newString("sampler"));
+                            auto ownedResources = state->registries.ownedResources;
+                            const uint64_t samplerId = ownedResources->trackSampler(sampler);
+                            state->engine->registerRelease(jsSampler, [ownedResources, samplerId]() {
+                                ownedResources->releaseSampler(samplerId);
+                            });
                             if (state->verboseLogging) std::cout << "[WebGPU] Created sampler" << std::endl;
                             return jsSampler;
 }
@@ -1025,6 +1068,21 @@ js::JSValueHandle handleGpuDeviceCreateTexture(BindingsState* state, BindingDest
                             uint32_t mipLevelCount = state->engine->isUndefined(mipLevelCountVal) ? 1 : (uint32_t)state->engine->toNumber(mipLevelCountVal);
                             auto sampleCountVal = state->engine->getProperty(descriptor, "sampleCount");
                             uint32_t sampleCount = state->engine->isUndefined(sampleCountVal) ? 1 : (uint32_t)state->engine->toNumber(sampleCountVal);
+                            // Only a renderer proof may opt in; usage alone never establishes lifetime.
+                            const auto lifetime = state->engine->getProperty(descriptor, "_tnPassLocalMSAA");
+                            if (!state->engine->isUndefined(lifetime) && !state->engine->isBoolean(lifetime)) {
+                                state->engine->throwException("_tnPassLocalMSAA must be boolean");
+                                return state->engine->newUndefined();
+                            }
+                            bool transientAttachment = false;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+                            transientAttachment = state->engine->toBoolean(lifetime) && sampleCount > 1 &&
+                                usage == WGPUTextureUsage_RenderAttachment &&
+                                dimension == WGPUTextureDimension_2D && depthOrArrayLayers == 1 &&
+                                mipLevelCount == 1 &&
+                                wgpuDeviceHasFeature(state->device, WGPUFeatureName_TransientAttachments);
+                            if (transientAttachment) usage |= WGPUTextureUsage_TransientAttachment;
+#endif
                             // Create texture descriptor
                             WGPUTextureDescriptor texDesc = {};
                             texDesc.size.width = width;
@@ -1060,6 +1118,8 @@ js::JSValueHandle handleGpuDeviceCreateTexture(BindingsState* state, BindingDest
                             textureInfo.mipLevelCount = mipLevelCount;
                             textureInfo.dimension = dimension;
                             textureInfo.sampleCount = sampleCount;
+                            textureInfo.transientAttachment = transientAttachment;
+                            textureInfo.transientNominalBytes = transientAttachment ? textureMetricBytes(textureInfo) : 0;
                             textureInfo.ownsTexture = true;
                             textureInfo.accounted = false;
                             state->registries.textureRegistry[textureId] = textureInfo;
@@ -1121,8 +1181,9 @@ static js::JSValueHandle handleGpuBufferGetMappedRange(BindingsState* state, uin
                                         if (state->verboseLogging) std::cerr << "[WebGPU] getMappedRange: Buffer " << bufferId << " is not mapped" << std::endl;
                                         return state->engine->newUndefined();
                                     }
-                                    uint64_t offset = args.empty() ? 0 : (uint64_t)state->engine->toNumber(args[0]);
-                                    uint64_t rangeSize = args.size() > 1 ? (uint64_t)state->engine->toNumber(args[1]) : bufferInfo.size - offset;
+                                    // An explicit undefined means the argument was omitted (WebGPU optional), not NaN.
+                                    uint64_t offset = args.empty() || state->engine->isUndefined(args[0]) ? 0 : (uint64_t)state->engine->toNumber(args[0]);
+                                    uint64_t rangeSize = args.size() > 1 && !state->engine->isUndefined(args[1]) ? (uint64_t)state->engine->toNumber(args[1]) : bufferInfo.size - offset;
                                     // Use wgpuBufferGetConstMappedRange for MAP_READ, wgpuBufferGetMappedRange for MAP_WRITE
                                     // Dawn requires the const version for read-only mapped buffers
                                     const void* mappedData = nullptr;
@@ -1175,10 +1236,10 @@ static js::JSValueHandle handleGpuBufferMapAsync(
                                         // GPUMapMode.READ = 1, GPUMapMode.WRITE = 2
                                         if (jsMode == 2) mode = WGPUMapMode_Write;
                                     }
-                                    uint64_t offset = args.size() > 1
+                                    uint64_t offset = args.size() > 1 && !state->engine->isUndefined(args[1])
                                         ? (uint64_t)state->engine->toNumber(args[1])
                                         : 0;
-                                    uint64_t mapSize = args.size() > 2
+                                    uint64_t mapSize = args.size() > 2 && !state->engine->isUndefined(args[2])
                                         ? (uint64_t)state->engine->toNumber(args[2])
                                         : bufferInfo.size - offset;
 
@@ -1211,20 +1272,10 @@ static js::JSValueHandle handleGpuBufferMapAsync(
                                         bufferInfo.mapPending = false;
                                         return promise;
                                     }
-#if WGPU_BUFFER_MAP_USES_CALLBACK_INFO
-                                    WGPUBufferMapCallbackInfo mapCallbackInfo = {};
-                                    mapCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-                                    mapCallbackInfo.callback = onBufferMapped;
-                                    mapCallbackInfo.userdata1 =
-                                        new std::shared_ptr<BufferMapRequest>(request);
-                                    mapCallbackInfo.userdata2 = nullptr;
-                                    wgpuBufferMapAsync(
-                                        bufferInfo.buffer, mode, offset, mapSize, mapCallbackInfo);
-#else
-                                    wgpuBufferMapAsync(
-                                        bufferInfo.buffer, mode, offset, mapSize, onBufferMapped,
-                                        new std::shared_ptr<BufferMapRequest>(request));
-#endif
+                                    // An outer render pass can precede this submitted readback in
+                                    // the recorder. Its unfinished tail cannot replay until end-frame.
+                                    if (!state->profiling.frameOpStreamPendingOps)
+                                        startBufferMapRequest(request);
                                     return promise;
 }
 

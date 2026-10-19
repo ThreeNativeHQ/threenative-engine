@@ -33,8 +33,9 @@ function gridIndices(triangles: number): number[] {
  * `TN_discrete_lod` extension on the primitive. Written by hand so the loader — not the asset
  * package the pipeline owns — is what this test exercises.
  */
-function cookedGlb(): Buffer {
-  const positions = new Float32Array((QUADS + 1) * 2 * 3);
+function cookedGlb(options: { copies?: boolean } = {}): Buffer {
+  const lod0Vertices = (QUADS + 1) * 2;
+  let positions = new Float32Array(lod0Vertices * 3);
   for (let vertex = 0; vertex <= QUADS; vertex += 1) {
     positions[vertex * 6] = (vertex / QUADS) * 2 - 1;
     positions[vertex * 6 + 1] = -1;
@@ -44,7 +45,19 @@ function cookedGlb(): Buffer {
     positions[vertex * 6 + 5] = 0;
   }
   const baseIndices = new Uint32Array(gridIndices(LOD0_TRIANGLES));
-  const levelIndices = new Uint32Array(gridIndices(COARSE_TRIANGLES));
+  let levelIndices = new Uint32Array(gridIndices(COARSE_TRIANGLES));
+  if (options.copies === true) {
+    // The card cook's shape (PRD-541): the level draws copies of its vertices, scaled and appended
+    // after LOD0's, which LOD0's own indices never reach.
+    const source = [...new Set(levelIndices)];
+    const grown = new Float32Array((lod0Vertices + source.length) * 3);
+    grown.set(positions);
+    for (const [copy, vertex] of source.entries())
+      for (let axis = 0; axis < 3; axis += 1)
+        grown[(lod0Vertices + copy) * 3 + axis] = (positions[vertex * 3 + axis] as number) * 2;
+    positions = grown;
+    levelIndices = levelIndices.map((vertex) => lod0Vertices + source.indexOf(vertex));
+  }
   const binPadded = padTo4(
     Buffer.concat([
       Buffer.from(positions.buffer, positions.byteOffset, positions.byteLength),
@@ -60,9 +73,9 @@ function cookedGlb(): Buffer {
       {
         bufferView: 0,
         componentType: 5126,
-        count: (QUADS + 1) * 2,
-        max: [1, 1, 0],
-        min: [-1, -1, 0],
+        count: positions.length / 3,
+        max: options.copies === true ? [2, 2, 0] : [1, 1, 0],
+        min: options.copies === true ? [-2, -2, 0] : [-1, -1, 0],
         type: "VEC3",
       },
       { bufferView: 1, componentType: 5125, count: baseIndices.length, type: "SCALAR" },
@@ -184,6 +197,30 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
     expect(mesh.geometry.getAttribute("position")).toBe(base.getAttribute("position"));
     // LOD0 is still recoverable for picking.
     expect(baseGeometryOf(mesh)).toBe(base);
+  }, 120_000);
+
+  it("draws a level whose indices reach vertex copies appended after LOD0's", async () => {
+    stubFetch(cookedGlb({ copies: true }));
+    const loader = createAssetLoader({ basePath: "" });
+    const value = await loader.model<{ scene: Object3D }>("cards.glb");
+    const mesh = firstMesh(value.scene);
+    const lod0Vertices = (QUADS + 1) * 2;
+    const scene = new Scene();
+    scene.add(mesh);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(0, 0, 100);
+    camera.updateMatrixWorld(true);
+    expect(updateModelLods(scene, camera, 1080)).toBe(COARSE_TRIANGLES);
+    const level = Array.from(mesh.geometry.index?.array ?? []);
+    expect(level.length).toBe(COARSE_TRIANGLES * 3);
+    // Every corner the level draws is a copy, and the copy is in the shared position buffer.
+    for (const vertex of level) expect(vertex).toBeGreaterThanOrEqual(lod0Vertices);
+    const position = mesh.geometry.getAttribute("position");
+    expect(position).toBe(baseGeometryOf(mesh).getAttribute("position"));
+    expect(Math.max(...level)).toBeLessThan(position.count);
+    // LOD0 never reaches a copy.
+    const lod0 = Array.from(baseGeometryOf(mesh).index?.array ?? []);
+    expect(Math.max(...lod0)).toBeLessThan(lod0Vertices);
   }, 120_000);
 
   it("shares the base's bounds with every level, so bounds padded after load reach them", async () => {

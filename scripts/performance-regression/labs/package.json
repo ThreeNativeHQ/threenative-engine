@@ -1,0 +1,14 @@
+{
+  "name": "@threenative/cpu-bench-tool",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Isolated profile that installs the pinned @pmndrs/labs CPU microbenchmark CLI. It is outside the pnpm workspace globs and is installed only through `pnpm bench:engines --cpu-setup`.",
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@pmndrs/labs": "0.9.0"
+  }
+}

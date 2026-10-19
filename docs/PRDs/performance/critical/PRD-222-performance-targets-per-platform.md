@@ -12,6 +12,7 @@ that decides it and the evidence that closes it.
 **Complexity:** +3 measurement across five platform lanes, +2 complex performance work,
 +1 device seam = **6 → HIGH mode**, checkpoint after every phase.
 
+**Priority:** P2 — Remaining boxes fill Tier 1 and Tier 3 floors and one sustained run per lever.
 **Moved to `performance/critical/` 2026-09-02.** This is the acceptance bar for every row in
 [`README.md`](README.md); it is critical because nothing else decides when a launch or frame
 change is done. What changed since Phase 0: a scaffolded template now holds Tier 1 on an

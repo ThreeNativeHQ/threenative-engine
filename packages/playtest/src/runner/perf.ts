@@ -1,13 +1,16 @@
-import { execFile, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { availableParallelism, constants as osConstants, loadavg } from "node:os";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { decideDisplayStrategy } from "./captureEnvironment.js";
+import { type IProvidedDisplay, provideDisplay } from "./captureEnvironment.js";
 
 import { discoverAdb } from "./android.js";
 import { formatPipelineCacheObservations, parsePipelineCacheObservations, type IPipelineCacheObservation } from "./pipeline-cache-observations.js";
 import { PlaytestCliUsageError } from "./config.js";
 import { parsePipelineEventMarkers, type IPipelineCaptureEvent } from "./pipeline-summary.js";
+import { parseSchedstatCpuNs } from "./linuxCpuWindow.js";
 
 /**
  * `threenative-playtest perf` — read the frame the host already reports, without opening a log by
@@ -67,6 +70,18 @@ export interface IPerfSummary {
   readonly p95: number;
 }
 
+/**
+ * One pass's submissions in a window, as the runtime reported them.
+ *
+ * `triangles` is three's CPU figure — `instanceCount * count / 3` per draw, and an indirect batch's
+ * `count` is its merged geometry's capacity, so a streamed world reads in the hundreds of millions.
+ * `gpuTriangles` is what the kernel selected, which is the number to bound work against.
+ */
+export interface IPerfPassJson extends IPassJson {
+  readonly triangles?: IPerfSummary;
+  readonly gpuTriangles?: number;
+}
+
 /** What the window's frames were drawn at, when the loop reported it. */
 export interface IFrameSurfaceJson {
   /** Present only when the runtime measured whether asynchronous pipeline compilation remained active. */
@@ -77,6 +92,19 @@ export interface IFrameSurfaceJson {
   readonly drawingBufferWidth: number;
   readonly drawingBufferHeight: number;
   readonly atFloor?: boolean;
+}
+
+/**
+ * One render pass's submissions, as `packages/core/src/render-pass-budget.ts` reports them.
+ *
+ * `drawsBySource` is PRD-494's per-origin split of the main pass's draws: the frame-level counts sum
+ * to `draws`, so the percentiles of two different sources need not, and the line below is read as
+ * "which origin owns the pass", not as arithmetic.
+ */
+export interface IPassJson {
+  readonly draws?: IPerfSummary;
+  readonly drawsBySource?: Readonly<Record<string, IPerfSummary>>;
+  readonly frames?: number;
 }
 
 export interface IFrameBudgetWindowJson {
@@ -97,6 +125,8 @@ export interface IFrameBudgetWindowJson {
   readonly surface?: IFrameSurfaceJson;
   /** GPU milliseconds from `timestamp-query`, absent when the adapter has none. */
   readonly gpuMs?: number;
+  /** Per-pass draws and triangles, absent on a runtime that measured no passes. */
+  readonly passes?: Readonly<Record<string, IPerfPassJson>>;
   readonly window: number;
 }
 
@@ -150,16 +180,334 @@ export interface IPresentGapJson {
 
 export type IPerfViolationCode =
   | "TN_PERF_BOUNDS_NOT_ASSESSABLE"
+  | "TN_PERF_HOST_EXIT"
+  | "TN_PERF_HOST_LOAD_UNREADABLE"
   | "TN_PERF_MAX_FRAME_P95"
   | "TN_PERF_MIN_FPS"
+  | "TN_PERF_RSS_UNREADABLE"
   | "TN_PERF_VIRTUAL_DISPLAY"
-  | "TN_PERF_WINDOWS_MISSING";
+  | "TN_PERF_WINDOWS_MISSING"
+  | "TN_SOAK_CRASH"
+  | "TN_SOAK_RSS_GROWTH";
 
 export interface IPerfViolation {
   readonly bound: number;
   readonly code: IPerfViolationCode;
+  /** Why it failed, in words. A named code with no reason tells the reader nothing to act on. */
+  readonly detail?: string;
   readonly observed: number | undefined;
   readonly window: number;
+}
+
+/**
+ * The one-minute load average and the core count of the machine that ran the report. Absolute
+ * milliseconds measured while more than half the cores are busy are somebody else's contention.
+ *
+ * The verdict rule and the reading are copied from `scripts/engine-load-test/report.ts`
+ * (`readHostLoad`, `absolutesVerdict`) rather than imported: a package must not reach into scripts/,
+ * and the rule is ten lines.
+ */
+export interface IPerfHostLoadReading {
+  readonly cores: number;
+  readonly load1: number;
+}
+export interface IPerfHostLoad extends IPerfHostLoadReading {
+  readonly absolutes: "invalid-absolute" | "valid";
+}
+export interface IPerfHostLoadSource {
+  cores(): number;
+  loadavg(): number[];
+}
+
+/** Absolutes are invalid once the one-minute load passes half the cores. */
+export function absolutesVerdict(reading: IPerfHostLoadReading): IPerfHostLoad["absolutes"] {
+  return reading.load1 > reading.cores / 2 ? "invalid-absolute" : "valid";
+}
+
+/** Defaults to this machine; a spec passes a stub. */
+export function readHostLoad(
+  source: IPerfHostLoadSource = { cores: () => availableParallelism(), loadavg },
+): IPerfHostLoadReading {
+  const cores = source.cores();
+  const load1 = source.loadavg()[0];
+  if (!Number.isInteger(cores) || cores < 1 || load1 === undefined || !Number.isFinite(load1)) {
+    throw new Error(
+      `TN_PERF_HOST_LOAD_UNREADABLE: cannot read host load (load1 ${String(load1)}, cores ${String(cores)}); an unmeasured load cannot vouch for absolutes`,
+    );
+  }
+  return { cores, load1 };
+}
+
+/**
+ * What the run's own memory cost, in MB.
+ *
+ * `rssPeakMb` is `VmHWM` of the desktop host, read at the end of the run. `pssMb` is the Android
+ * total PSS, which is the device's own accounting. Neither is ever reported as zero: a field the
+ * kernel or the device did not print is a named failure, not a measurement.
+ */
+export interface IPerfMemory {
+  readonly pssMb?: number;
+  readonly rssMb?: number;
+  readonly rssPeakMb?: number;
+}
+
+/**
+ * What each window cost the CPU, from the kernel's own per-thread accounting rather than a wall
+ * clock. `/proc/<pid>/task/<tid>/schedstat` field 1 is the nanoseconds a thread spent on a CPU, so
+ * the delta between two window boundaries is the time that window's frames really ran. It is the
+ * one reading comparable across hosts: a loop that spins faster than it presents reports a cadence
+ * the display never saw, and only on-CPU time measures the work in a way both engines share.
+ */
+export interface IPerfCpuThread {
+  readonly cpuMsPerFrame: number;
+  readonly name: string;
+}
+export interface IPerfCpuWindow {
+  readonly frames: number;
+  readonly processCpuMsPerFrame: number;
+  /** Threads that started or exited between this window's boundaries; booked in neither. */
+  readonly skippedThreads: number;
+  readonly threads: readonly IPerfCpuThread[];
+}
+export interface IPerfCpu {
+  readonly method: "linux-schedstat";
+  readonly summary: {
+    /** The single thread with the most on-CPU time per window; a host may run its game loop off the leader. */
+    readonly busiestThread: { readonly cpuMsPerFrameMedian: number; readonly name: string };
+    readonly mainThread: { readonly cpuMsPerFrameMedian: number; readonly name: string };
+    readonly processCpuMsPerFrameMedian: number;
+  };
+  readonly windows: readonly IPerfCpuWindow[];
+}
+
+/** One thread's on-CPU total at a window boundary, named by the kernel's own `comm`. */
+export interface ILinuxCpuThread {
+  readonly cpuNs: number;
+  readonly name: string;
+}
+export interface ILinuxCpuSnapshot {
+  readonly threads: ReadonlyMap<number, ILinuxCpuThread>;
+}
+
+/**
+ * Every thread of `pid`, with its on-CPU nanoseconds, read from `/proc`. Synchronous on purpose:
+ * the `perf` command takes this snapshot from a stdout data handler, the moment a window boundary
+ * line arrives, so the reading belongs to that boundary and not to a later turn of the event loop.
+ */
+export function readLinuxCpuSnapshot(pid: number, procRoot = "/proc"): ILinuxCpuSnapshot {
+  const taskDir = join(procRoot, String(pid), "task");
+  const threads = new Map<number, ILinuxCpuThread>();
+  for (const tid of readdirSync(taskDir)) {
+    const threadDir = join(taskDir, tid);
+    threads.set(Number(tid), {
+      cpuNs: parseSchedstatCpuNs(readFileSync(join(threadDir, "schedstat"), "utf8")),
+      name: readFileSync(join(threadDir, "comm"), "utf8").trim(),
+    });
+  }
+  return { threads };
+}
+
+/**
+ * Turn consecutive window snapshots into per-frame CPU cost.
+ *
+ * Each window after the first is measured between the snapshot that closed the previous window and
+ * the one that closed it. Its frame count comes from the marker itself: a window that does not say
+ * how many frames it held cannot yield a per-frame figure, and guessing it is exactly the
+ * fabrication this command refuses. A thread present at only one boundary started or exited inside
+ * the window; it is skipped and counted, never booked as a zero-cost thread.
+ */
+export function computeLinuxCpu(
+  windows: readonly Partial<IFrameBudgetWindowJson>[],
+  snapshots: readonly ILinuxCpuSnapshot[],
+  pid: number,
+): IPerfCpu {
+  const cpuWindows: IPerfCpuWindow[] = [];
+  const mainSamples: number[] = [];
+  let mainName: string | undefined;
+  const busiestSamples: number[] = [];
+  let busiestName = "";
+  for (let index = 1; index < snapshots.length; index += 1) {
+    const window = windows[index];
+    const frames = window?.frames;
+    if (typeof frames !== "number" || !Number.isFinite(frames) || frames <= 0) {
+      throw new Error(
+        `TN_PERF_CPU_FRAME_COUNT_UNREADABLE: window ${window?.window ?? index} carries no frame ` +
+          "count; CPU time per frame cannot be derived from a window that does not say its frames",
+      );
+    }
+    const before = snapshots[index - 1] as ILinuxCpuSnapshot;
+    const after = snapshots[index] as ILinuxCpuSnapshot;
+    const byName = new Map<string, number>();
+    let processNs = 0;
+    let skippedThreads = 0;
+    let busiestNs = -1;
+    for (const [tid, thread] of after.threads) {
+      const previous = before.threads.get(tid);
+      if (previous === undefined) {
+        skippedThreads += 1;
+        continue;
+      }
+      const delta = thread.cpuNs - previous.cpuNs;
+      if (delta < 0) {
+        throw new Error(`TN_PERF_CPU_REGRESSED: thread ${tid} (${thread.name}) on-CPU time went backwards`);
+      }
+      processNs += delta;
+      if (delta > busiestNs) {
+        busiestNs = delta;
+        busiestName = thread.name;
+      }
+      byName.set(thread.name, (byName.get(thread.name) ?? 0) + delta);
+    }
+    for (const tid of before.threads.keys()) if (!after.threads.has(tid)) skippedThreads += 1;
+    const beforeMain = before.threads.get(pid);
+    const afterMain = after.threads.get(pid);
+    if (beforeMain !== undefined && afterMain !== undefined) {
+      mainName = afterMain.name;
+      mainSamples.push((afterMain.cpuNs - beforeMain.cpuNs) / 1e6 / frames);
+    }
+    if (busiestNs >= 0) busiestSamples.push(busiestNs / 1e6 / frames);
+    cpuWindows.push({
+      frames,
+      processCpuMsPerFrame: processNs / 1e6 / frames,
+      skippedThreads,
+      threads: [...byName]
+        .map(([name, ns]) => ({ cpuMsPerFrame: ns / 1e6 / frames, name }))
+        .sort((left, right) => right.cpuMsPerFrame - left.cpuMsPerFrame),
+    });
+  }
+  if (cpuWindows.length === 0) {
+    throw new Error("TN_PERF_CPU_UNAVAILABLE: fewer than two window boundaries were sampled");
+  }
+  if (mainName === undefined) {
+    throw new Error("TN_PERF_CPU_MAIN_THREAD_UNREADABLE: no snapshot held the process leader thread");
+  }
+  return {
+    method: "linux-schedstat",
+    summary: {
+      busiestThread: { cpuMsPerFrameMedian: median(busiestSamples), name: busiestName },
+      mainThread: { cpuMsPerFrameMedian: median(mainSamples), name: mainName },
+      processCpuMsPerFrameMedian: median(cpuWindows.map((window) => window.processCpuMsPerFrame)),
+    },
+    windows: cpuWindows,
+  };
+}
+
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = sorted.length >> 1;
+  return sorted.length % 2 === 1
+    ? (sorted[middle] as number)
+    : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
+}
+
+/** kB per MB, the unit `/proc` and `dumpsys meminfo` both report in. */
+const KB_PER_MB = 1024;
+
+/** Parse `/proc/<pid>/status`. Both fields are required; a missing one throws rather than reading 0. */
+export function parseProcStatusMemory(text: string): { rssMb: number; rssPeakMb: number } {
+  return {
+    rssMb: procStatusKb(text, "VmRSS:"),
+    rssPeakMb: procStatusKb(text, "VmHWM:"),
+  };
+}
+
+function procStatusKb(text: string, field: string): number {
+  const kb = new RegExp(`^${field}\\s+(\\d+) kB$`, "mu").exec(text)?.[1];
+if (kb === undefined) {
+    throw new Error(
+      `TN_PERF_RSS_UNREADABLE: /proc/<pid>/status carries no ${field} line; memory cannot be read, and an unread one is never reported as 0`,
+    );
+  }
+  return Number(kb) / KB_PER_MB;
+}
+
+/** Parse `adb shell dumpsys meminfo <pid>`: its `TOTAL PSS:` line, or a named failure. */
+export function parseTotalPssMb(text: string): number {
+  const kb = /^\s*TOTAL PSS:\s+(\d+)/mu.exec(text)?.[1];
+  if (kb === undefined) {
+    throw new Error(
+      "TN_PERF_PSS_UNREADABLE: dumpsys meminfo reported no TOTAL PSS line; device memory cannot be " +
+        "read, and an unread one is never reported as 0",
+    );
+  }
+  return Number(kb) / KB_PER_MB;
+}
+
+/** A soak runs at least this many frames; anything shorter is not a soak. */
+export const SOAK_MIN_FRAMES = 1800;
+/** RSS is sampled every this many frames. */
+export const SOAK_SAMPLE_EVERY_FRAMES = 100;
+/** Growth is judged from here, once startup has settled and the first allocations are resident. */
+export const SOAK_BASELINE_FRAME = 300;
+/** Resident set may grow this much past the baseline, in percent, before the soak fails. */
+export const SOAK_GROWTH_LIMIT_PCT = 10;
+
+export interface ISoakSample {
+  readonly frame: number;
+  readonly rssMb: number;
+}
+
+export interface ISoakRun {
+  /** Frames the soak was asked for. A run that stopped short of this died. */
+  readonly frames: number;
+  readonly samples: readonly ISoakSample[];
+}
+
+export interface ISoakVerdict {
+  readonly baselineMb: number;
+  readonly code?: "TN_SOAK_CRASH" | "TN_SOAK_RSS_GROWTH";
+  readonly endMb: number;
+  readonly framesReported: number;
+  readonly framesRequested: number;
+  readonly growthPct: number;
+  readonly pass: boolean;
+  readonly samples: number;
+}
+
+/**
+ * Did the soak survive, and did it stay the size it was after startup? Pure: the same samples
+ * always give the same verdict, so a report can be read without the run.
+ */
+export function soakVerdict(run: ISoakRun): ISoakVerdict {
+  requireSoakFrames(run.frames);
+  const end = run.samples.at(-1);
+  const baseline = run.samples.find((sample) => sample.frame >= SOAK_BASELINE_FRAME);
+  // No sample at or after the baseline frame, or a last sample short of the request, means the
+  // process never got there. There is no settled memory to compare against, so it is a crash
+  // rather than a flat run.
+  if (end === undefined || baseline === undefined || end.frame < run.frames) {
+    return {
+      baselineMb: baseline?.rssMb ?? 0,
+      code: "TN_SOAK_CRASH",
+      endMb: end?.rssMb ?? 0,
+      framesReported: end?.frame ?? 0,
+      framesRequested: run.frames,
+      growthPct: 0,
+      pass: false,
+      samples: run.samples.length,
+    };
+  }
+  const growthPct = ((end.rssMb - baseline.rssMb) / baseline.rssMb) * 100;
+  const growing = growthPct > SOAK_GROWTH_LIMIT_PCT;
+  return {
+    baselineMb: baseline.rssMb,
+    ...(growing ? { code: "TN_SOAK_RSS_GROWTH" as const } : {}),
+    endMb: end.rssMb,
+    framesReported: end.frame,
+    framesRequested: run.frames,
+    growthPct,
+    pass: !growing,
+    samples: run.samples.length,
+  };
+}
+
+function requireSoakFrames(frames: number): number {
+  if (frames < SOAK_MIN_FRAMES) {
+    throw new PlaytestCliUsageError(
+      `threenative-playtest perf: a soak needs at least ${SOAK_MIN_FRAMES} frames, received ${frames}.`,
+    );
+  }
+  return frames;
 }
 
 /**
@@ -227,9 +575,14 @@ export const PRESENTS_REACHED_DISPLAY_RATIO = 0.95;
 
 export interface IPerfReport {
   readonly budgets: readonly IFrameBudgetWindowJson[];
+  readonly cpu?: IPerfCpu;
+  /** Why per-frame CPU could not be measured. Never a fabricated zero, as the memory fields. */
+  readonly cpuUnavailable?: string;
   readonly discardedWindows: readonly number[];
   readonly hitches: readonly IHitchWindowJson[];
   readonly hostGaps: readonly IHostGapWindowJson[];
+  readonly hostLoad?: IPerfHostLoad;
+  readonly memory?: IPerfMemory;
   readonly pipelineEvents?: readonly IPipelineCaptureEvent[];
   readonly pipelineCaches?: readonly IPipelineCacheObservation[];
   readonly display?: IPerfDisplay;
@@ -239,6 +592,7 @@ export interface IPerfReport {
   readonly presents: readonly IPresentsTickJson[];
   readonly projections: readonly IProjectionWindowJson[];
   readonly slowPhases: readonly ISlowPhaseJson[];
+  readonly soak?: ISoakVerdict;
   readonly source: string;
   readonly violations: readonly IPerfViolation[];
 }
@@ -271,6 +625,7 @@ export interface IPerfArgs extends IPerfBounds {
   readonly file: string | undefined;
   readonly hostArgs: readonly string[];
   readonly logcatSerial: string | undefined;
+  readonly soakFrames: number | undefined;
   readonly text: boolean;
   readonly timeoutSeconds: number;
 }
@@ -558,6 +913,7 @@ export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
     requireWindows: 2,
   };
   let text = false;
+  let soakFrames: number | undefined;
   let timeoutSeconds = 180;
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -566,13 +922,12 @@ export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
     else if (flag === "--allow-virtual-display") bounds.allowVirtualDisplay = true;
     else if (flag === "--file") { sources.file = requireValue(flag, value); index += 1; }
     else if (flag === "--executable") { sources.executable = requireValue(flag, value); index += 1; }
-    else if (flag === "--host-arg") {
-      if (value !== undefined) sources.hostArgs.push(value);
-      index += 1;
-    } else if (flag === "--logcat") { sources.logcatSerial = requireValue(flag, value); index += 1; }
+    else if (flag === "--host-arg") { sources.hostArgs.push(requireValue(flag, value)); index += 1; }
+    else if (flag === "--logcat") { sources.logcatSerial = requireValue(flag, value); index += 1; }
     else if (flag === "--max-frame-p95") { bounds.maxFrameMsP95 = requireNumber(flag, value); index += 1; }
     else if (flag === "--min-fps") { bounds.minFps = requireNumber(flag, value); index += 1; }
     else if (flag === "--require-windows") { bounds.requireWindows = requireNumber(flag, value); index += 1; }
+    else if (flag === "--soak") { soakFrames = requireSoakFrames(requireNumber(flag, value)); index += 1; }
     else if (flag === "--timeout") { timeoutSeconds = requireNumber(flag, value); index += 1; }
     else throw new PlaytestCliUsageError(`threenative-playtest perf: unknown flag '${flag}'. See threenative-playtest --help.`);
   }
@@ -586,6 +941,10 @@ export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
   if (named > 1) {
     throw new PlaytestCliUsageError("threenative-playtest perf: --file, --executable and --logcat are mutually exclusive.");
   }
+  // The soak watches a live process grow, so it needs the process: a log of frames already past.
+  if (soakFrames !== undefined && sources.executable === undefined) {
+    throw new PlaytestCliUsageError("threenative-playtest perf: --soak runs frames against a live host, so it needs --executable.");
+  }
   return {
     allowVirtualDisplay: bounds.allowVirtualDisplay === true,
     executable: sources.executable,
@@ -595,6 +954,7 @@ export function parsePerfArgs(argv: readonly string[]): IPerfArgs {
     maxFrameMsP95: bounds.maxFrameMsP95,
     minFps: bounds.minFps,
     requireWindows: bounds.requireWindows,
+    soakFrames,
     text,
     timeoutSeconds,
   };
@@ -607,7 +967,7 @@ function requireValue(flag: string, value: string | undefined): string {
 
 function requireNumber(flag: string, value: string | undefined): number {
   const parsed = Number(value);
-  if (value === undefined || Number.isNaN(parsed)) {
+  if (value === undefined || value.trim() === "" || Number.isNaN(parsed)) {
     throw new PlaytestCliUsageError(`threenative-playtest perf: ${flag} needs a number, received '${value ?? ""}'.`);
   }
   return parsed;
@@ -621,7 +981,10 @@ export async function perfCommand(argv: readonly string[]): Promise<number> {
       return emit(parsePerformanceMarkers(await readFile(path, "utf8")), args, `file: ${path}`);
     }
     if (args.logcatSerial !== undefined) {
-      return emit(parsePerformanceMarkers(await readLogcat(args.logcatSerial)), args, `logcat: ${args.logcatSerial}`);
+      const logcat = await readLogcat(args.logcatSerial);
+      return emit(parsePerformanceMarkers(logcat.text), args, `logcat: ${args.logcatSerial}`, {
+        memory: await logcatMemory(args.logcatSerial, logcat.pid),
+      });
     }
     if (args.executable !== undefined) {
       return await runExecutable(args, args.executable);
@@ -632,7 +995,8 @@ export async function perfCommand(argv: readonly string[]): Promise<number> {
     // as the command's failure with its TN_PERF_ code — never as a stack trace, never as an
     // empty success.
     const message = error instanceof Error ? error.message : String(error);
-    const code = message.startsWith("TN_PERF_") ? (message.split(":")[0] ?? "TN_PERF_SOURCE_UNREADABLE") : "TN_PERF_SOURCE_UNREADABLE";
+    const namedFailure = message.startsWith("TN_PERF_") || message.startsWith("TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE:");
+    const code = namedFailure ? (message.split(":")[0] ?? "TN_PERF_SOURCE_UNREADABLE") : "TN_PERF_SOURCE_UNREADABLE";
     process.stderr.write(`${JSON.stringify({ diagnostics: [{ code, message, severity: "error" }], pass: false }, null, 2)}\n`);
     process.exitCode = 2;
     return 2;
@@ -640,67 +1004,347 @@ export async function perfCommand(argv: readonly string[]): Promise<number> {
   throw new PlaytestCliUsageError("threenative-playtest perf: no source named.");
 }
 
-/** Spawn the host, collect its output, and stop once enough windows have closed. */
+/** What one run measured beyond its windows: the host's own memory, and a soak's verdict. */
+export interface IPerfRun {
+  readonly cpu?: IPerfCpu;
+  /** Set when per-frame CPU could not be measured. A named failure, never a missing column. */
+  readonly cpuUnavailable?: string;
+  readonly display?: { readonly strategy: string; readonly virtual: boolean };
+  readonly hostStatus?: number;
+  readonly memory?: IPerfMemory;
+  /** Set when the host's memory could not be read. A named failure, never a missing column. */
+  readonly memoryError?: string;
+  readonly soak?: ISoakVerdict;
+}
+
+/** Spawn the host, collect its output, and stop once enough windows — or soak frames — have passed. */
 async function runExecutable(args: IPerfArgs, executable: string): Promise<number> {
+  // The same display every other lane gets: the host display only when the operator asked for it,
+  // otherwise a private Xvfb with every Wayland variable stripped. Deciding the strategy without
+  // providing it left the host on the session's compositor while the report said "virtual".
+  const display = await provideDisplay();
+  try {
+    return await runExecutableOn(args, executable, display);
+  } finally {
+    await display.release();
+  }
+}
+
+async function runExecutableOn(args: IPerfArgs, executable: string, display: IProvidedDisplay): Promise<number> {
   const source = `executable: ${[executable, ...args.hostArgs].join(" ")}`;
-  // The same decision every other lane makes: the operator asked for the host display or this run
-  // paints on a private one. A run that owns its Xvfb cannot report a frame rate from it.
-  const strategy = decideDisplayStrategy({ env: process.env, platform: process.platform });
-  const child = spawn(executable, args.hostArgs, { stdio: ["ignore", "pipe", "pipe"] });
+  // A run that owns its Xvfb cannot report a frame rate from it.
+  const strategy = display.strategy;
+  // Its own process group, so the stop reaches every helper the host started (WebKit's web process).
+  const child = spawn(executable, args.hostArgs, {
+    detached: process.platform !== "win32",
+    env: display.env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
   let collected = "";
   let stopped = false;
+  let spawnFailed = false;
+  const soakFrames = args.soakFrames;
+  const samples: ISoakSample[] = [];
+  let nextSampleFrame = SOAK_SAMPLE_EVERY_FRAMES;
+  let memory: IPerfMemory | undefined;
+  let memoryError: string | undefined;
+  // Per-frame CPU from the kernel's own accounting. A snapshot is taken at each window boundary,
+  // from the live process, so the delta between two snapshots is the CPU the window between them
+  // cost. Absent or unreadable, it is a named reason — never a fabricated zero.
+  const procRoot = process.env.TN_PLAYTEST_PROC_ROOT ?? "/proc";
+  const cpuSnapshots: ILinuxCpuSnapshot[] = [];
+  const cpuWindows: IFrameBudgetWindowJson[] = [];
+  let cpuUnavailable: string | undefined =
+    process.platform === "linux"
+      ? undefined
+      : `on-CPU time needs Linux schedstat accounting; this host is ${process.platform}`;
   // The first window is discarded as startup, so a complete run closes requireWindows + 1.
   const enoughWindows = (): boolean =>
     collected.split(FRAME_BUDGET_MARKER).length - 1 >= args.requireWindows + 1;
+  // The host's own memory, read from the live process. Once it exits, /proc/<pid> is gone, so every
+  // sample has to precede the stop; an unreadable one is a named failure rather than a missing
+  // column, and it never becomes a 0.
+  const readMemory = (): IPerfMemory | undefined => {
+    try {
+      return readProcStatusMemory(child.pid);
+    } catch (error) {
+      memoryError ??= error instanceof Error ? error.message : String(error);
+      return undefined;
+    }
+  };
+  const done = (): boolean =>
+    soakFrames === undefined ? enoughWindows() : framesReported(collected) >= soakFrames;
   const stop = (): void => {
     if (!stopped) {
       stopped = true;
-      child.kill("SIGTERM");
+      memory = readMemory();
+      signalGroup(child, "SIGTERM");
+      // A host that ignores SIGTERM would hold the run open forever and outlive it as an orphan.
+      killTimer = setTimeout(() => signalGroup(child, "SIGKILL"), HOST_STOP_GRACE_MS);
     }
   };
   child.stdout.on("data", (chunk: Buffer) => {
     collected += chunk.toString("utf8");
-    if (enoughWindows()) stop();
+    if (soakFrames !== undefined) {
+      // Sampled as the frame count crosses each boundary, so the series is what the run did rather
+      // than what it did between two reads of a clock.
+      const framesSeen = framesReported(collected);
+      while (framesSeen >= nextSampleFrame) {
+        const reading = readMemory();
+        if (reading === undefined) return stop();
+        if (reading.rssMb === undefined) {
+          memoryError ??= "TN_PERF_RSS_UNREADABLE: /proc status printed no VmRSS";
+          return stop();
+        }
+        samples.push({ frame: nextSampleFrame, rssMb: reading.rssMb });
+        nextSampleFrame += SOAK_SAMPLE_EVERY_FRAMES;
+      }
+    }
+    if (cpuUnavailable === undefined) {
+      // One snapshot per window boundary, taken the moment the boundary line completes. Partial
+      // lines are held until their newline, so a window still arriving is never parsed as malformed.
+      const windows = completeFrameWindows(collected);
+      while (cpuSnapshots.length < windows.length) {
+        const index = cpuSnapshots.length;
+        try {
+          if (child.pid === undefined) throw new Error("the host has no PID");
+          cpuSnapshots.push(readLinuxCpuSnapshot(child.pid, procRoot));
+        } catch (error) {
+          cpuUnavailable =
+            `TN_PERF_CPU_UNAVAILABLE: ${error instanceof Error ? error.message : String(error)}`;
+          break;
+        }
+        cpuWindows.push(windows[index] as IFrameBudgetWindowJson);
+      }
+    }
+    if (done()) stop();
   });
   child.stderr.on("data", (chunk: Buffer) => { collected += chunk.toString("utf8"); });
   const timeout = setTimeout(stop, args.timeoutSeconds * 1000);
   return new Promise<number>((settleExit) => {
     child.on("error", (error) => {
+      spawnFailed = true;
       clearTimeout(timeout);
       const message = `TN_PERF_SOURCE_UNREADABLE: could not spawn ${executable}: ${error.message}`;
       process.stderr.write(`${JSON.stringify({ diagnostics: [{ code: "TN_PERF_SOURCE_UNREADABLE", message, severity: "error" }], pass: false }, null, 2)}\n`);
       process.exitCode = 2;
       settleExit(2);
     });
-    child.on("exit", () => {
+    // Wait for 'close', not 'exit'. Close fires after the pipes end, so every marker is read.
+    child.on("close", (code, signal) => {
       clearTimeout(timeout);
-      const code = emit(parsePerformanceMarkers(collected), args, source, {
-        strategy: strategy.kind,
-        virtual: strategy.kind === "private-xvfb",
+      clearTimeout(killTimer);
+      // The host is gone; a helper it left in its group is this run's, never anyone else's.
+      signalGroup(child, "SIGKILL");
+      if (spawnFailed) return;
+      let cpu: IPerfCpu | undefined;
+      if (cpuUnavailable === undefined) {
+        try {
+          cpu = computeLinuxCpu(cpuWindows, cpuSnapshots, child.pid as number);
+        } catch (error) {
+          cpuUnavailable =
+            `TN_PERF_CPU_UNAVAILABLE: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+      const exitCode = emit(parsePerformanceMarkers(collected), args, source, {
+        ...(cpu === undefined ? {} : { cpu }),
+        ...(cpuUnavailable === undefined ? {} : { cpuUnavailable }),
+        hostStatus: hostFailureStatus(code, signal, stopped),
+        ...(memory === undefined ? {} : { memory }),
+        ...(memoryError === undefined ? {} : { memoryError }),
+        ...(soakFrames === undefined ? {} : { soak: soakVerdict({ frames: soakFrames, samples }) }),
+        display: { strategy: strategy.kind, virtual: strategy.kind === "private-xvfb" },
       });
-      process.exitCode = code;
-      settleExit(code);
+      process.exitCode = exitCode;
+      settleExit(exitCode);
     });
   });
 }
 
-async function readLogcat(serial: string): Promise<string> {
-  const execFileAsync = promisify(execFile);
+/** Frames the host has reported across every window collected so far. */
+function framesReported(text: string): number {
+  let total = 0;
+  for (const line of text.split("\n")) {
+    const window = parseMarkerLine<IFrameBudgetWindowJson>(line, FRAME_BUDGET_MARKER);
+    if (window !== undefined) total += window.frames;
+  }
+  return total;
+}
+
+/**
+ * The frame-budget windows that have fully arrived. Only text before the last newline is read, so a
+ * marker line still streaming in is never seen as malformed JSON — the same partial-line danger the
+ * whole-stream parse avoids by running at close.
+ */
+function completeFrameWindows(text: string): IFrameBudgetWindowJson[] {
+  const end = text.lastIndexOf("\n");
+  if (end === -1) return [];
+  const windows: IFrameBudgetWindowJson[] = [];
+  for (const line of text.slice(0, end).split("\n")) {
+    const window = parseMarkerLine<IFrameBudgetWindowJson>(line, FRAME_BUDGET_MARKER);
+    if (window !== undefined) windows.push(window);
+  }
+  return windows;
+}
+
+function readProcStatusMemory(pid: number | undefined): IPerfMemory {
+  if (pid === undefined) {
+    throw new Error("TN_PERF_RSS_UNREADABLE: the host has no PID, so its memory cannot be read");
+  }
+  let text: string;
+  try {
+    text = readFileSync(`/proc/${pid}/status`, "utf8");
+  } catch (error) {
+    throw new Error(
+      `TN_PERF_RSS_UNREADABLE: cannot read /proc/${pid}/status: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return parseProcStatusMemory(text);
+}
+
+const execFileAsync = promisify(execFile);
+
+async function readLogcat(serial: string): Promise<{ pid: string | undefined; text: string }> {
   const { stdout } = await execFileAsync(discoverAdb(), ["-s", serial, "logcat", "-d", "-v", "brief"], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
-  return stdout;
+  const text = newestProcessLines(stdout);
+  return { pid: newestPid(text), text };
 }
 
-function emit(
-  parse: IPerfMarkerParse,
-  args: IPerfArgs,
-  source: string,
-  display?: { readonly strategy: string; readonly virtual: boolean },
-): number {
-  const report = assessPerfMarkers(parse, args, source, display);
-  const windowsMissing = report.violations.some(({ code }) => code === "TN_PERF_WINDOWS_MISSING");
+/** The Android process whose memory the device reports, from the PID that wrote the newest window. */
+async function logcatMemory(serial: string, pid: string | undefined): Promise<IPerfMemory> {
+  if (pid === undefined) {
+    throw new Error(
+      `TN_PERF_PSS_UNREADABLE: no PID in the logcat buffer for ${serial}; dumpsys meminfo needs one`,
+    );
+  }
+  const { stdout } = await execFileAsync(discoverAdb(), ["-s", serial, "shell", "dumpsys", "meminfo", pid], {
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return { pssMb: parseTotalPssMb(stdout) };
+}
+
+/**
+ * Keep the lines of the process that wrote the newest marker. Logcat holds earlier launches until
+ * its buffer rolls over, and each launch has its own PID. Those older lines are stale, not this run.
+ * ponytail: a relaunch that has not written a window yet still reads the previous PID's windows.
+ */
+export function newestProcessLines(text: string): string {
+  const lines = text.split("\n");
+  const pid = newestPid(text);
+  if (pid === undefined) return text;
+  return lines.filter((line) => logcatPid(line) === undefined || logcatPid(line) === pid).join("\n");
+}
+
+/** The PID that wrote the newest frame-budget marker, which is the launch this run is about. */
+function newestPid(text: string): string | undefined {
+  const newest = [...text.split("\n")].reverse().find((line) => line.includes(FRAME_BUDGET_MARKER));
+  return newest === undefined ? undefined : logcatPid(newest);
+}
+
+/** The PID in a brief-format header, such as `I/MystralStdio( 4321): message`. */
+function logcatPid(line: string): string | undefined {
+  return /\(\s*(\d+)\)/u.exec(line)?.[1];
+}
+
+/**
+ * The host's failure status, or undefined when it stopped on its own terms. A signal reads as the
+ * shell status 128 plus its number, so a SIGSEGV is 139. Our own SIGTERM after enough windows is a
+ * normal stop.
+ * ponytail: a host that dies from the default SIGTERM action reads as our stop. A host that catches
+ * SIGTERM and exits non-zero is judged on its status.
+ */
+/** How long a stopped host has to exit on SIGTERM before its process group is killed. */
+const HOST_STOP_GRACE_MS = 3_000;
+
+/** Signal the host's whole process group, falling back to the host alone where groups do not exist. */
+function signalGroup(child: ChildProcess, signal: "SIGKILL" | "SIGTERM"): void {
+  if (child.pid === undefined) return;
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // The group is already gone, or was never made; the host itself is the only target left.
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+    // Already exited.
+  }
+}
+
+function hostFailureStatus(code: number | null, signal: NodeJS.Signals | null, stoppedByUs: boolean): number | undefined {
+  if (code === 0 || (code === null && signal === "SIGTERM" && stoppedByUs)) return undefined;
+  if (code !== null) return code;
+  return signal === null ? 128 : 128 + osConstants.signals[signal];
+}
+
+/**
+ * What the run itself found, beyond its windows: the host's exit, its memory, the soak, and the
+ * load it ran under. Each is a named failure or an absent value, never a softened pass.
+ *
+ * The load is read when the report is written, so it describes the run that just finished. An
+ * unreadable one cannot vouch for absolutes, so it fails the run by name instead of being absent.
+ */
+function runFindings(run?: IPerfRun): { hostLoad?: IPerfHostLoad; violations: IPerfViolation[] } {
+  const violations: IPerfViolation[] = [];
+  let hostLoad: IPerfHostLoad | undefined;
+  try {
+    const reading = readHostLoad();
+    hostLoad = { ...reading, absolutes: absolutesVerdict(reading) };
+  } catch (error) {
+    violations.push({
+      bound: 0,
+      code: "TN_PERF_HOST_LOAD_UNREADABLE",
+      detail: error instanceof Error ? error.message : String(error),
+      observed: undefined,
+      window: -1,
+    });
+  }
+  // A host that failed on its own fails the run, whatever its markers say.
+  if (run?.hostStatus !== undefined) {
+    violations.push({ bound: 0, code: "TN_PERF_HOST_EXIT", observed: run.hostStatus, window: -1 });
+  }
+  if (run?.memoryError !== undefined) {
+    violations.push({ bound: 0, code: "TN_PERF_RSS_UNREADABLE", detail: run.memoryError, observed: undefined, window: -1 });
+  }
+  const soak = run?.soak;
+  if (soak !== undefined && !soak.pass) {
+    const growth = soak.code === "TN_SOAK_RSS_GROWTH";
+    violations.push({
+      bound: growth ? SOAK_GROWTH_LIMIT_PCT : soak.framesRequested,
+      code: soak.code ?? "TN_SOAK_CRASH",
+      detail: growth
+        ? `${soak.baselineMb.toFixed(1)} MB after frame ${SOAK_BASELINE_FRAME} to ${soak.endMb.toFixed(1)} MB at frame ${soak.framesReported}`
+        : `${soak.framesReported} of ${soak.framesRequested} frames over ${soak.samples} RSS samples`,
+      observed: growth ? soak.growthPct : soak.framesReported,
+      window: -1,
+    });
+  }
+  return { hostLoad, violations };
+}
+
+function emit(parse: IPerfMarkerParse, args: IPerfArgs, source: string, run?: IPerfRun): number {
+  const assessed = assessPerfMarkers(parse, args, source, run?.display);
+  const findings = runFindings(run);
+  const violations = [...assessed.violations, ...findings.violations];
+  const report: IPerfReport = {
+    ...assessed,
+    ...(run?.cpu === undefined ? {} : { cpu: run.cpu }),
+    ...(run?.cpuUnavailable === undefined ? {} : { cpuUnavailable: run.cpuUnavailable }),
+    ...(findings.hostLoad === undefined ? {} : { hostLoad: findings.hostLoad }),
+    ...(run?.memory === undefined ? {} : { memory: run.memory }),
+    ...(run?.soak === undefined ? {} : { soak: run.soak }),
+    pass: violations.length === 0 && assessed.pass,
+    violations,
+  };
+  const windowsMissing = violations.some(({ code }) => code === "TN_PERF_WINDOWS_MISSING");
   const exitCode: 0 | 1 | 2 = windowsMissing ? 2 : report.pass ? 0 : 1;
   process.stdout.write(args.text ? formatPerfReport(report) : `${JSON.stringify(report, null, 2)}\n`);
   process.exitCode = exitCode;
@@ -733,6 +1377,8 @@ export function formatPerfReport(report: IPerfReport): string {
     lines.push("pipeline events: not reported — this log cannot attribute shader compilation");
   }
   if (report.presentMode !== undefined) lines.push(`present mode: ${report.presentMode}`);
+  lines.push(...formatRunContext(report));
+  lines.push(...formatCpu(report));
   // Reported once, from the last window, next to the fps it explains. Named as unreported when
   // absent rather than left off: a reader who sees no scale line must not assume a full-resolution
   // single-sample frame, which is exactly how a perf record and its tree came to disagree.
@@ -796,6 +1442,7 @@ export function formatPerfReport(report: IPerfReport): string {
     );
   }
   if (report.discardedWindows.length > 0) lines.push("* discarded as startup (window 1 always lies)");
+  lines.push(...formatMainPassTriangles(report.budgets));
   // A zero in the fps column is true and easy to misread as a frozen game: name the windows where
   // the display simply showed nothing in a window of loop frames too short to contain a present.
   const presentedNothing = report.budgets.filter((window) => window.presents === 0);
@@ -805,6 +1452,7 @@ export function formatPerfReport(report: IPerfReport): string {
         "too short to contain a present, so their frame rate is unmeasured rather than zero",
     );
   }
+  lines.push(...formatDrawSources(report.budgets));
   lines.push(...formatProjection(report.projections));
   const lastGap = report.hostGaps.at(-1);
   if (lastGap !== undefined) {
@@ -816,10 +1464,126 @@ export function formatPerfReport(report: IPerfReport): string {
   lines.push(...formatHitches(report.hitches, report.presentGaps, report.slowPhases));
   for (const violation of report.violations) {
     const observed = violation.observed === undefined ? "absent" : round(violation.observed).toString();
-    lines.push(`FAIL ${violation.code}: window ${violation.window} observed ${observed} against bound ${violation.bound}`);
+    lines.push(
+      `FAIL ${violation.code}: window ${violation.window} observed ${observed} against bound ${violation.bound}` +
+        (violation.detail === undefined ? "" : ` — ${violation.detail}`),
+    );
   }
   if (report.pass) lines.push("PASS");
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * What the run cost and the machine it ran on: the host load its absolutes were measured under, the
+ * memory of the game process, and the soak's own verdict.
+ *
+ * Each memory value is its own line. The desktop host reports a peak, an Android device reports a
+ * PSS, and a soak reports the series it sampled: a blank or a zero where a number belongs is a
+ * measurement nobody can act on, so a value that could not be read is a named failure above.
+ */
+function formatRunContext(report: IPerfReport): string[] {
+  const lines: string[] = [];
+  if (report.hostLoad !== undefined) {
+    lines.push(
+      `host load: 1-minute ${report.hostLoad.load1.toFixed(2)} on ${report.hostLoad.cores} core(s) — absolutes ${report.hostLoad.absolutes}` +
+        (report.hostLoad.absolutes === "invalid-absolute"
+          ? " (more than half the cores were busy, so absolute milliseconds are somebody else's contention)"
+          : ""),
+    );
+  }
+  if (report.memory?.rssPeakMb !== undefined) {
+    lines.push(`memory: peak RSS ${report.memory.rssPeakMb.toFixed(1)} MB (VmHWM of the game process)`);
+  }
+  if (report.memory?.rssMb !== undefined) lines.push(`memory: RSS ${report.memory.rssMb.toFixed(1)} MB`);
+  if (report.memory?.pssMb !== undefined) {
+    lines.push(`memory: PSS ${report.memory.pssMb.toFixed(1)} MB (dumpsys meminfo TOTAL PSS)`);
+  }
+  if (report.soak !== undefined) {
+    lines.push(
+      `soak: ${report.soak.framesReported} of ${report.soak.framesRequested} frames, ${report.soak.samples} RSS samples every ${SOAK_SAMPLE_EVERY_FRAMES}, ` +
+        `${report.soak.baselineMb.toFixed(1)} MB after frame ${SOAK_BASELINE_FRAME} to ${report.soak.endMb.toFixed(1)} MB ` +
+        `(${report.soak.growthPct.toFixed(1)}% against a ${SOAK_GROWTH_LIMIT_PCT}% limit) — ${report.soak.pass ? "PASS" : `FAIL ${report.soak.code}`}`,
+    );
+  }
+  return lines;
+}
+
+/**
+ * The run's per-frame CPU cost, from the kernel's schedstat counters.
+ *
+ * One line names the process median and the main thread, then the busiest threads by median
+ * ms/frame. A host the counters could not be read from says why instead of printing nothing: a
+ * missing CPU line must not read as a run that cost the CPU nothing.
+ */
+function formatCpu(report: IPerfReport): string[] {
+  const cpu = report.cpu;
+  if (cpu === undefined) {
+    return report.cpuUnavailable === undefined ? [] : [`cpu: not reported — ${report.cpuUnavailable}`];
+  }
+  const lines = [
+    `cpu: ${cpu.summary.processCpuMsPerFrameMedian.toFixed(3)} ms/frame process median (${cpu.method}), ` +
+      `main thread ${cpu.summary.mainThread.name} ${cpu.summary.mainThread.cpuMsPerFrameMedian.toFixed(3)} ms/frame, ` +
+      `busiest thread ${cpu.summary.busiestThread.name} ${cpu.summary.busiestThread.cpuMsPerFrameMedian.toFixed(3)} ms/frame`,
+  ];
+  const byName = new Map<string, number[]>();
+  let skipped = 0;
+  for (const window of cpu.windows) {
+    skipped += window.skippedThreads;
+    for (const thread of window.threads) byName.set(thread.name, [...(byName.get(thread.name) ?? []), thread.cpuMsPerFrame]);
+  }
+  const ranked = [...byName]
+    .map(([name, samples]) => ({ median: median(samples), name }))
+    .sort((left, right) => right.median - left.median)
+    .slice(0, 4);
+  for (const thread of ranked) lines.push(`  ${thread.name.padEnd(16)}${thread.median.toFixed(3)} ms/frame`);
+  if (skipped > 0) {
+    lines.push(`  ${skipped} thread(s) started or exited mid-run and were skipped, not counted as zero`);
+  }
+  return lines;
+}
+
+/**
+ * The main pass's triangle count, from the last window, and which of the two figures it is.
+ *
+ * Three counts a draw as `instanceCount * count / 3`, and for an indirect batch `count` is the
+ * merged geometry's capacity rather than what the GPU selected — a streamed world read 338 million
+ * triangles for 402 thousand actually drawn. The GPU figure is the one worth acting on, so it wins
+ * when it is there and the CPU figure is named as the ceiling it is. A window that submitted no main
+ * pass says so rather than printing a zero.
+ */
+function formatMainPassTriangles(windows: readonly IFrameBudgetWindowJson[]): string[] {
+  const main = windows.at(-1)?.passes?.main;
+  if (main?.triangles === undefined) return [];
+  const capacity = Math.round(main.triangles.p50).toLocaleString("en-US");
+  if (main.gpuTriangles === undefined)
+    return [`main pass triangles: ${capacity} (three's CPU capacity figure; the GPU-selected count was not reported)`];
+  return [
+    `main pass triangles: ${main.gpuTriangles.toLocaleString("en-US")} GPU-selected, ` +
+      `${capacity} CPU capacity`,
+  ];
+}
+
+
+/**
+ * Where the main pass's draws came from, from the last window that reported the split (PRD-494).
+ *
+ * One line, ranked largest first, because the question this answers is which origin owns the pass —
+ * GPU-scene keys, the world's bundle, terrain tiles, proxies, or the meshes no world system claimed.
+ * A run whose runtime predates the field is named as unreported rather than printed as an empty
+ * ranking, which would read as a measured "nothing was drawn from anywhere".
+ */
+function formatDrawSources(windows: readonly IFrameBudgetWindowJson[]): string[] {
+  const last = [...windows].reverse().find((window) => window.passes?.main?.drawsBySource !== undefined);
+  const bySource = last?.passes?.main?.drawsBySource;
+  if (last === undefined || bySource === undefined)
+    return ["main-pass draws by source: not reported — this runtime predates the per-source split"];
+  const ranked = Object.entries(bySource).sort(([, left], [, right]) => right.p50 - left.p50);
+  const draws = last.passes?.main?.draws?.p50;
+  return [
+    `main-pass draws by source, window ${String(last.window)} p50: ` +
+      ranked.map(([source, sourceSummary]) => `${source} ${sourceSummary.p50.toFixed(0)}`).join(", ") +
+      (draws === undefined ? "" : ` — ${draws.toFixed(0)} draws in the pass`),
+  ];
 }
 
 /**

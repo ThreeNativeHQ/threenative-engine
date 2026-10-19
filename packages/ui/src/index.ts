@@ -4,6 +4,7 @@
  * @situation connect a game canvas to the web UI shell
  * @constraint keep the portable game entry free of React DOM code
  * @example <GameCanvas game={game} />
+ * @requires npm i @threenative/ui
  */
 export { GameCanvas } from "./GameCanvas.js";
 /**
@@ -17,6 +18,7 @@ export { GameCanvas } from "./GameCanvas.js";
  * @constraint the Geometry tab captures only on an explicit press; nothing is collected while idle
  * @constraint per-object numbers are measured submissions reconciled against the frame's own pass totals, and the remainder is reported rather than hidden
  * @example <DebugOverlay />
+ * @requires npm i @threenative/ui
  */
 export { DebugOverlay } from "./DebugOverlay.js";
 /**
@@ -25,6 +27,7 @@ export { DebugOverlay } from "./DebugOverlay.js";
  * @situation select a slice of state for a React panel
  * @constraint use this hook only from the web UI entry
  * @example const score = useGameState(game, (state) => state.score);
+ * @requires npm i @threenative/ui
  */
 export { useGameState } from "./useGameState.js";
 /**
@@ -33,6 +36,7 @@ export { useGameState } from "./useGameState.js";
  * @situation mount a React UI over the game surface on Android or iOS
  * @constraint mark every control the player touches with data-tn-interactive
  * @example <UiLayer><Hud /></UiLayer>
+ * @requires npm i @threenative/ui
  */
 export { UiLayer } from "./UiLayer.js";
 /**
@@ -41,6 +45,7 @@ export { UiLayer } from "./UiLayer.js";
  * @situation show score or health in a UI rendered over the game surface
  * @constraint returns undefined until the game publishes its first state
  * @example const score = useUiState<GameState, number>((state) => state.score);
+ * @requires npm i @threenative/ui
  */
 export { useUiState } from "./UiLayer.js";
 /**
@@ -49,5 +54,6 @@ export { useUiState } from "./UiLayer.js";
  * @situation pause a game from a menu rendered over its surface
  * @constraint the game decides what each intent name means; it may ignore one
  * @example const send = useUiIntent(); send("restart");
+ * @requires npm i @threenative/ui
  */
 export { useUiIntent } from "./UiLayer.js";

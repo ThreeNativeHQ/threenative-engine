@@ -1,0 +1,141 @@
+{
+  "name": "prd476-fluid-particles-native-dam-break",
+  "schemaVersion": 1,
+  "subject": "a released dam-break column runs across the tank and settles on the GPU",
+  "target": "desktop",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "gated",
+      "waitTicks": 30,
+      "release": true,
+      "screenshot": "gated"
+    },
+    {
+      "kind": "wait",
+      "label": "running",
+      "waitTicks": 90,
+      "release": true,
+      "screenshot": "running"
+    },
+    {
+      "kind": "wait",
+      "label": "settle-0",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-1",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-2",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-3",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-4",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-5",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-6",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-7",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-8",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-9",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-10",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-11",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 50,
+      "release": true,
+      "screenshot": "settled"
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "steps",
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "peakFrontX",
+        "gte": 1.0
+      },
+      {
+        "id": "GameState",
+        "path": "maxSpeed",
+        "lte": 1.0
+      },
+      {
+        "id": "GameState",
+        "path": "meanCompression",
+        "lte": 0.05,
+        "allowTrivial": "Native stats readbacks have landed before the first observation, so this held invariant is satisfied from the start; peakFrontX and maxSpeed prove the water moved and settled."
+      },
+      {
+        "id": "GameState",
+        "path": "inBounds",
+        "equals": 1,
+        "allowTrivial": "Native stats readbacks have landed before the first observation, so this held invariant is satisfied from the start; peakFrontX and maxSpeed prove the water moved and settled."
+      }
+    ]
+  }
+}

@@ -81,19 +81,22 @@ enforced contract, not a second prose-only list.
 Native bundles enter through the project's declared `threenative.nativeEntry` (default
 `src/game.ts`), which must default-export the game. `TN_NATIVE_ENTRY_MISSING` and
 `TN_NATIVE_ENTRY_NO_DEFAULT` are entry-contract failures; `TN_NATIVE_WEB_ONLY_UI` means the
-portable graph reached browser UI; `TN_NATIVE_WASM_ON_MOBILE` means Android or iOS reached
-WASM. Do not weaken these guards. Every packager stages the configured asset root (`assets.output`, default `public/`) through
+portable graph reached browser UI; `TN_NATIVE_WASM_ON_MOBILE` means iOS or Android QuickJS reached
+WASM, or Rapier/Recast WASM reached Android V8. Do not weaken these guards. Every packager stages the configured asset root (`assets.output`, default `public/`) through
 `selectManifestAssets` beside the game bundle, and a missing runtime asset must reject game startup rather than fall back to the network.
 
-**Mobile has no compressed-asset decoders.** Android QuickJS and iOS JSC have no WASM engine,
-so three's Basis/zstd transcoder (`KTX2Loader`), its Meshopt decoder and Draco's wasm decoder
-cannot run there. `scripts/bundle.mjs` replaces all three with refusing stubs on the mobile
-targets only — desktop keeps the real ones — which is what keeps a game that ships no
-compressed asset out of `TN_NATIVE_WASM_ON_MOBILE`; their specifiers are static strings inside
-`await import(...)`, so a bundler inlines them whether the game uses them or not. A game whose
-compiled assets do need one is refused by `threenative build` before any bundle exists, with
-`TN_NATIVE_KTX2_UNSUPPORTED` or `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED`. Making mobile decode
-either format is a native decoder question, not a bundler one.
+**Android V8 admits KTX2 and Meshopt; every other mobile codec stays refused.** The Android
+engine is the one `THREENATIVE_GRADLE_ARGS` selects (`-PthreenativeJsEngine`, default `v8`), and
+`scripts/bundle.mjs --decoders ktx2,meshopt` keeps those two real loaders (PRD-485, emulator only).
+Draco stays a refusing stub on Android. Android QuickJS and iOS JSC have no WASM engine. The desktop build resolves and
+hashes its exact package runtime before cooking; QuickJS, JSC and unknown engine probes take the
+decoder-free compiler and bundle path. The existing desktop V8 decoder path stays unchanged.
+`scripts/bundle.mjs --native-backend` selects the refusing stubs on desktop too. A compiled asset
+that needs a missing decoder is refused before packaging with `TN_NATIVE_KTX2_UNSUPPORTED` or
+`TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED`, naming the asset and selected runtime. Authored KTX2,
+embedded Basis textures and shared KTX2 images are all checked. Native cook-cache keys include
+runtime identity and decoder capabilities. iOS artifact resolution and Android Draco qualification
+remain open.
 
 ## Package boundaries
 

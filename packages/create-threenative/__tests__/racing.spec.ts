@@ -135,7 +135,11 @@ describe("the circuit", () => {
     // TN_PLAYTEST_CAPABILITY_MISSING for `runtime.components`.
     const load = race.slice(race.indexOf("override load"), race.indexOf("override enter"));
     expect(load).toContain('texture("sky.jpg")');
-    expect(load).not.toMatch(/\bawait\b/u);
+    // The sampling continuation may await after decode; the load hook itself must still
+    // return immediately so the player registry is populated synchronously.
+    expect(load).toContain("override load(ctx: GameCtx): void");
+    expect(load).toContain('void ctx.assets.texture("sky.jpg").then(');
+    expect(load.split(".then(")[0]).not.toMatch(/\bawait\b/u);
   });
 });
 

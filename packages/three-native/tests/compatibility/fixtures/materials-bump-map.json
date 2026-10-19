@@ -1,0 +1,239 @@
+{
+  "name": "materials-bump-map",
+  "adaptedFrom": "original — MeshStandardMaterial.bumpMap: an 8x8 height texture repeated 3x2 with bumpScale 3 on a lit plate, three's BumpMapNode (height derivatives from three samples, perturbNormalArb)",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 300,
+    "height": 200,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.05, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [45, 1.5, 0.1, 50]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "sun",
+      "class": "DirectionalLight",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.x",
+      "value": 1.5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.y",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.z",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "intensity",
+      "value": 2.5
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sun"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "bumps",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [
+            127, 127, 127, 255, 254, 254, 254, 255, 127, 127, 127, 255, 0, 0, 0, 255, 126, 126, 126,
+            255, 254, 254, 254, 255, 127, 127, 127, 255, 0, 0, 0, 255, 127, 127, 127, 255, 190, 190,
+            190, 255, 127, 127, 127, 255, 63, 63, 63, 255, 126, 126, 126, 255, 190, 190, 190, 255,
+            127, 127, 127, 255, 63, 63, 63, 255, 127, 127, 127, 255, 63, 63, 63, 255, 126, 126, 126,
+            255, 190, 190, 190, 255, 127, 127, 127, 255, 63, 63, 63, 255, 126, 126, 126, 255, 190,
+            190, 190, 255, 127, 127, 127, 255, 0, 0, 0, 255, 126, 126, 126, 255, 254, 254, 254, 255,
+            127, 127, 127, 255, 0, 0, 0, 255, 126, 126, 126, 255, 254, 254, 254, 255, 127, 127, 127,
+            255, 63, 63, 63, 255, 126, 126, 126, 255, 190, 190, 190, 255, 127, 127, 127, 255, 63,
+            63, 63, 255, 126, 126, 126, 255, 190, 190, 190, 255, 127, 127, 127, 255, 190, 190, 190,
+            255, 127, 127, 127, 255, 63, 63, 63, 255, 126, 126, 126, 255, 190, 190, 190, 255, 127,
+            127, 127, 255, 63, 63, 63, 255, 127, 127, 127, 255, 254, 254, 254, 255, 127, 127, 127,
+            255, 0, 0, 0, 255, 126, 126, 126, 255, 254, 254, 254, 255, 127, 127, 127, 255, 0, 0, 0,
+            255, 127, 127, 127, 255, 190, 190, 190, 255, 127, 127, 127, 255, 63, 63, 63, 255, 126,
+            126, 126, 255, 190, 190, 190, 255, 127, 127, 127, 255, 63, 63, 63, 255
+          ],
+          "type": "Uint8Array"
+        },
+        8,
+        8,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "bumps",
+      "path": "wrapS",
+      "value": 1000
+    },
+    {
+      "op": "set",
+      "id": "bumps",
+      "path": "wrapT",
+      "value": 1000
+    },
+    {
+      "op": "set",
+      "id": "bumps",
+      "path": "magFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "bumps",
+      "path": "minFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "bumps",
+      "path": "repeat.x",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "bumps",
+      "path": "repeat.y",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "bumps",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "panel",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "roughness",
+      "value": 0.45
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "metalness",
+      "value": 0.1
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "bumpMap",
+      "value": {
+        "ref": "bumps"
+      }
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "bumpScale",
+      "value": 3
+    },
+    {
+      "op": "new",
+      "id": "plate",
+      "class": "PlaneGeometry",
+      "args": [3, 2]
+    },
+    {
+      "op": "new",
+      "id": "mesh",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "plate"
+        },
+        {
+          "ref": "panel"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "mesh"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

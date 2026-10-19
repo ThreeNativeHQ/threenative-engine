@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <mutex>
@@ -49,211 +50,6 @@
 
 namespace mystral {
 namespace webgpu {
-// ---------------------------------------------------------------------------
-// Presentation ceiling (PRD-218)
-// ---------------------------------------------------------------------------
-//
-// A convention that ships on: a game presents at most `g_presentationCapHz` frames a second, and
-// runs uncapped only when it asks to.
-//
-// The measurement that bought this: on a Pixel 8, a build whose whole scene was a static dark
-// screen with three textures held **119.8 presents per second, indefinitely**. `fifo` vsync was
-// the only ceiling in the runtime, so on a 120 Hz panel a loading screen, a pause menu or a game
-// that has finished drawing burns the SoC at the panel's rate for no visible benefit -- the phone
-// warms and the battery drains to present the same pixels twice. Nothing in the frame was
-// expensive; that was exactly the problem.
-//
-// 60 Hz is the default because it is the rate every game in this repository was authored against
-// and half of the common high-refresh panel, so a frame is presented on every second vsync
-// interval rather than at an unrelated period that would judder against it.
-//
-// Honesty when overridden is part of the convention, not a nicety: the effective cap rides along
-// in every `TN_PRESENTS_TICK`, so a probe that reads 120 presents a second can tell "the game
-// opted out" from "the cap is broken" without reading the game's source.
-static uint32_t g_presentationCapHz = 60;
-
-/** The pacing deadline for the next present. Zero until the first paced frame. */
-static std::chrono::steady_clock::time_point g_nextPresentDeadline{};
-
-// ---------------------------------------------------------------------------
-// Display-synchronized pacing (PRD-399)
-// ---------------------------------------------------------------------------
-//
-// The Android activity feeds its `Choreographer.FrameCallback` here. While those callbacks are
-// live the cap is a target in the display's own timestamp domain -- nanoseconds, never compared
-// with `steady_clock`: the next present is scheduled `1/cap` after the previous target and the
-// render thread waits until a display frame reaches it. The measured cadence, not an assumed
-// 60 Hz, decides, and advancing from the target rather than the frame seen keeps a fractional
-// cap's remainder. A first frame or an already-past target schedules forward, so a slow frame
-// never draws a catch-up burst. With no callbacks -- startup, paused, or signal lost -- the wait
-// is bounded and the pre-existing `steady_clock` deadline below takes over; `maxFps == 0` returns
-// before either path. No new scheduler: the signal is only a better deadline for the existing
-// `paceToPresentationCap()` owner.
-namespace {
-
-struct PresentationPacing {
-    std::mutex mutex;
-    std::condition_variable ready;
-    bool running = false;           // set on resume, cleared on pause; frames require it
-    bool haveFrame = false;         // at least one display frame timestamp has been seen
-    int64_t frameTimeNs = 0;        // latest display frame timestamp, in the display's own domain
-    int64_t nextPresentTargetNs = 0;  // schedule target, in that same domain
-};
-
-PresentationPacing g_presentationPacing;
-
-// Test-only, PRD-399. A display-release test parks the render thread and unblocks it with a
-// synthetic display frame; on a loaded runner that synthetic frame can arrive after the production
-// bounded timeout, so the waiter falls back to the wrong path. Non-zero replaces the bounded
-// allowance with a value the test chooses. Production never calls the setter, and the lifecycle
-// reset clears it, so the production formula below is what ships.
-std::chrono::nanoseconds g_presentationPacingTimeoutOverride{0};
-
-// Reports the effective pacing path once per transition, never per frame. A run can then tell
-// "display-aligned" from "deadline-fallback" without reading the source, and a packaged `.so` can
-// be grepped for the marker to prove the APK actually carries this change.
-void reportPacingPath(const char* path) {
-#if defined(__ANDROID__)
-    __android_log_print(ANDROID_LOG_INFO, "MystralRuntime",
-                        "TN_PRESENTATION_PACING:{\"path\":\"%s\"}", path);
-#else
-    (void)path;
-#endif
-}
-
-// Waits for the display target and reports why the caller may need its software deadline.
-PresentationPacingPath paceToDisplayFrame(std::chrono::nanoseconds interval) {
-    std::unique_lock<std::mutex> lock(g_presentationPacing.mutex);
-    if (!g_presentationPacing.running || !g_presentationPacing.haveFrame)
-        return PresentationPacingPath::SoftwareDeadline;
-
-    const int64_t intervalNs = interval.count();
-    if (g_presentationPacing.nextPresentTargetNs == 0) {
-        // First paced frame: schedule forward from the frame just observed.
-        g_presentationPacing.nextPresentTargetNs = g_presentationPacing.frameTimeNs + intervalNs;
-        return PresentationPacingPath::Display;
-    }
-
-    // One absolute bounded wait tolerates a late callback without extending on spurious wakes.
-    // Only a deadline with no qualifying frame drops the display schedule until a fresh callback.
-    // The production allowance is two intervals plus 50 ms; the test seam only ever widens it.
-    const std::chrono::nanoseconds boundedWait =
-        g_presentationPacingTimeoutOverride.count() > 0
-            ? g_presentationPacingTimeoutOverride
-            : interval * 2 + std::chrono::milliseconds(50);
-    const auto deadline = std::chrono::steady_clock::now() + boundedWait;
-    while (g_presentationPacing.running &&
-           g_presentationPacing.frameTimeNs < g_presentationPacing.nextPresentTargetNs) {
-        if (g_presentationPacing.ready.wait_until(lock, deadline) == std::cv_status::timeout) {
-            // A notified frame can be ready even when the waiting thread runs after the deadline.
-            if (!g_presentationPacing.running) return PresentationPacingPath::SoftwareDeadline;
-            if (g_presentationPacing.frameTimeNs < g_presentationPacing.nextPresentTargetNs) {
-                g_presentationPacing.haveFrame = false;
-                g_presentationPacing.nextPresentTargetNs = 0;
-                return PresentationPacingPath::DisplayTimeoutFallback;
-            }
-        }
-    }
-    if (!g_presentationPacing.running) return PresentationPacingPath::SoftwareDeadline;
-
-    // Advance from the target, not from the frame just seen -- for an already-arrived frame too: a
-    // fractional cap keeps its remainder instead of losing it to the display period. If callbacks
-    // arrived so late that the target is already behind, reschedule from now rather than firing a
-    // burst to catch up.
-    g_presentationPacing.nextPresentTargetNs += intervalNs;
-    if (g_presentationPacing.nextPresentTargetNs <= g_presentationPacing.frameTimeNs) {
-        g_presentationPacing.nextPresentTargetNs = g_presentationPacing.frameTimeNs + intervalNs;
-    }
-    return PresentationPacingPath::Display;
-}
-
-}  // namespace
-
-// Fed from the activity's Choreographer callback. `started`/`stopped` bracket its registration:
-// started on resume, stopped on pause *before* the callback is removed, so a render thread inside
-// paceToPresentationCap() is woken and falls back instead of waiting out its timeout. A frame
-// update is ignored unless the frames are running, so a late callback cannot resurrect a stopped
-// schedule.
-void notePresentationFramesStarted() {
-    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
-    g_presentationPacing.running = true;
-    g_presentationPacing.nextPresentTargetNs = 0;
-    g_presentationPacing.ready.notify_all();
-}
-
-void notePresentationFramesStopped() {
-    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
-    g_presentationPacing.running = false;
-    g_presentationPacing.haveFrame = false;
-    g_presentationPacing.frameTimeNs = 0;
-    g_presentationPacing.nextPresentTargetNs = 0;
-    g_presentationPacingTimeoutOverride = std::chrono::nanoseconds{0};
-    g_presentationPacing.ready.notify_all();
-}
-
-void notePresentationFrame(int64_t frameTimeNs) {
-    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
-    if (!g_presentationPacing.running) return;
-    g_presentationPacing.frameTimeNs = frameTimeNs;
-    g_presentationPacing.haveFrame = true;
-    g_presentationPacing.ready.notify_all();
-}
-
-void setPresentationPacingTimeoutForTest(std::chrono::milliseconds timeout) {
-    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
-    g_presentationPacingTimeoutOverride = std::chrono::duration_cast<std::chrono::nanoseconds>(timeout);
-}
-
-bool setPresentationCapHz(uint32_t hz) {
-    if (hz > 1000) return false;
-    g_presentationCapHz = hz;
-    g_nextPresentDeadline = std::chrono::steady_clock::time_point{};
-    std::lock_guard<std::mutex> lock(g_presentationPacing.mutex);
-    g_presentationPacing.nextPresentTargetNs = 0;
-    return true;
-}
-
-/**
- * Holds the loop back to the presentation ceiling, after a frame that actually presented.
- *
- * Only after a present, and never during startup: the launch stall this same PRD measures has no
- * presents in it at all, and pacing an unpresented loop would add sleep to the twelve seconds a
- * player already waits. A frame that misses its deadline resets the schedule instead of trying to
- * catch up, because a game running below the cap must not then be asked to present a burst.
- */
-PresentationPacingPath paceToPresentationCap() {
-    if (g_presentationCapHz == 0) return PresentationPacingPath::Uncapped;
-    const auto interval = std::chrono::nanoseconds(1000000000ull / g_presentationCapHz);
-
-    static bool reportedDisplay = false;
-    static bool reportedFallback = false;
-    const auto path = paceToDisplayFrame(interval);
-    if (path == PresentationPacingPath::Display) {
-        if (!reportedDisplay) {
-            reportedDisplay = true;
-            reportedFallback = false;
-            reportPacingPath("display-aligned");
-        }
-        return path;
-    }
-    if (!reportedFallback) {
-        reportedFallback = true;
-        reportedDisplay = false;
-        reportPacingPath("deadline-fallback");
-    }
-
-    using clock = std::chrono::steady_clock;
-    const auto now = clock::now();
-    if (g_nextPresentDeadline == clock::time_point{} || now > g_nextPresentDeadline + interval) {
-        // First paced frame, or the loop fell far enough behind that the old schedule is stale.
-        g_nextPresentDeadline = now + interval;
-        return path;
-    }
-    if (now < g_nextPresentDeadline) std::this_thread::sleep_until(g_nextPresentDeadline);
-    g_nextPresentDeadline += interval;
-    return path;
-}
-
 bool isSrgbSurfaceFormat(WGPUTextureFormat format) {
     return format == WGPUTextureFormat_RGBA8UnormSrgb ||
            format == WGPUTextureFormat_BGRA8UnormSrgb;
@@ -302,12 +98,7 @@ static bool readCanvasDimension(
     return true;
 }
 
-/**
- * Keep the native presentation surface in lockstep with renderer.setSize().
- * Three.js changes the canvas backing dimensions directly; unlike a browser
- * GPUCanvasContext, the native surface is not reconfigured by that property
- * write, so acquire must apply the pending size before creating the color view.
- */
+/** Synchronize render resolution separately from the physical presentation extent. */
 bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
     if (!state->surface) return true;
 
@@ -317,32 +108,24 @@ bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
         !readCanvasDimension(state, canvas, "height", height)) {
         return false;
     }
+    int drawableWidth = 0;
+    int drawableHeight = 0;
+    if (!platform::getWindowDrawableSize(state->presentation.surfaceNativeHandle,
+                                         &drawableWidth, &drawableHeight)) {
+        state->engine->throwException("Native drawable dimensions are unavailable");
+        return false;
+    }
+    const uint32_t surfaceWidth = static_cast<uint32_t>(drawableWidth);
+    const uint32_t surfaceHeight = static_cast<uint32_t>(drawableHeight);
+    const bool surfaceChanged = surfaceWidth != state->presentation.surfaceWidth ||
+                                surfaceHeight != state->presentation.surfaceHeight;
+    if (!surfaceChanged && width == state->presentation.canvasWidth &&
+        height == state->presentation.canvasHeight) return true;
 
-    if (width == state->presentation.canvasWidth && height == state->presentation.canvasHeight)
-        return true;
-
-    // On a direct-presentation surface, a swapchain image acquired earlier in this scene's
-    // life may still be held in state->presentation.currentTexture — the frame boundary that presents it has
-    // not run. wgpu-native refuses to reconfigure a surface with an outstanding
-    // SurfaceOutput: its panic reads "`SurfaceOutput` must be dropped before a new `Surface`
-    // is made", and the panic aborts the process (PRD-183: the Android emulator died with a
-    // silent SIGABRT exactly here, 67 ms into the first render after renderer.setSize).
-    //
-    // Discard that image rather than presenting it: the caller is already replacing the
-    // frame's contents at the new size, an extra present would break the one-present-per-
-    // frame invariant the device gates enforce, and releasing the texture back unwinds the
-    // SurfaceOutput so the reconfigure below is accepted. Deferring the reconfigure instead
-    // is worse on both platforms — the current frame would draw new-size depth onto
-    // old-size colour, "attachments have differing sizes", the failure tier-1 day recorded
-    // on desktop.
-    //
-    // The sRGB presentation bridge never holds a raw surface output across frames
-    // (state->presentation.currentTexture is an offscreen linear texture there), so it keeps the immediate
-    // reconfigure it always had.
-    if (state->presentation.currentTexture != nullptr && !state->presentation.requiresSrgbPresentationBridge) {
-        // setSize can be called between two submits in one JavaScript turn. Replay the safe
-        // prefix before dropping view ids that the deferred stream still names, or its later
-        // frame-boundary replay fails closed with an opaque "unknown texture view id".
+    // A canvas change invalidates an offscreen frame just as it invalidates a direct frame.
+    // Replay first: deferred commands still name these view IDs. Drop the old SurfaceOutput
+    // before configuring a real window resize, without adding an extra present.
+    if (state->presentation.currentTexture != nullptr) {
         if (!flushRecordedFrameOps(state)) return false;
         state->presentation.framePresentPending = false;
         releaseCurrentSurfaceTextureViews(state);
@@ -356,27 +139,66 @@ bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
         state->presentation.surfaceRenderPassEnded = false;
     }
 
+    if (surfaceChanged) {
+        WGPUSurfaceConfiguration config = {};
+        config.device = state->device;
+        config.format = state->presentation.nativeSurfaceFormat;
+        config.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc;
+        config.alphaMode = WGPUCompositeAlphaMode_Auto;
+        config.width = surfaceWidth;
+        config.height = surfaceHeight;
+        config.presentMode = state->presentation.presentMode;
+        configurePresentationSurface(state->surface, &config);
+        state->presentation.surfaceWidth = surfaceWidth;
+        state->presentation.surfaceHeight = surfaceHeight;
+    }
+    state->presentation.canvasWidth = width;
+    state->presentation.canvasHeight = height;
+    if (state->verboseLogging) {
+        std::cout << "[WebGPU] Canvas " << width << "x" << height << ", drawable "
+                  << surfaceWidth << "x" << surfaceHeight << std::endl;
+    }
+    return true;
+}
+
+bool requiresPresentationBridge(const BindingsState* state) {
+    return state->presentation.requiresSrgbPresentationBridge ||
+           state->presentation.canvasWidth != state->presentation.surfaceWidth ||
+           state->presentation.canvasHeight != state->presentation.surfaceHeight;
+}
+
+/** Recover a genuinely stale swapchain without touching the canvas being presented. */
+static bool reconfigureSurfaceForAcquire(BindingsState* state) {
+    if (!state || !state->surface || state->presentation.surfaceWidth == 0 ||
+        state->presentation.surfaceHeight == 0) return false;
+    // Direct acquisition normally has no held output; refuse to reconfigure if it does.
+    // Bridge presentation instead holds an offscreen canvas. Its source view has already
+    // been passed to the blit, so releasing its aliases here would use a freed view.
+    if (state->presentation.currentTexture && !requiresPresentationBridge(state)) return false;
+
     WGPUSurfaceConfiguration config = {};
     config.device = state->device;
     config.format = state->presentation.nativeSurfaceFormat;
     config.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc;
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
-    config.width = width;
-    config.height = height;
+    config.width = state->presentation.surfaceWidth;
+    config.height = state->presentation.surfaceHeight;
     config.presentMode = state->presentation.presentMode;
-    wgpuSurfaceConfigure(state->surface, &config);
-
-    reportSurfaceFormatMarker(state->presentation.nativeSurfaceFormat,
-                              state->presentation.surfaceFormat,
-                              state->presentation.requiresSrgbPresentationBridge,
-                              state->presentation.presentMode);
-
-    state->presentation.canvasWidth = width;
-    state->presentation.canvasHeight = height;
-    if (state->verboseLogging) {
-        std::cout << "[WebGPU] Surface resized from canvas: " << width << "x" << height << std::endl;
-    }
+    configurePresentationSurface(state->surface, &config);
     return true;
+}
+
+/**
+ * Acquires the current surface image, rebuilding the swapchain once when it reports itself stale.
+ * Ownership of the returned texture is the caller's, exactly as the raw call's is.
+ */
+static void acquireSurfaceImage(BindingsState* state, WGPUSurfaceTexture* surfaceTexture) {
+    acquirePresentationSurface(state->surface, surfaceTexture);
+    if (!wgpuSurfaceTextureStatusNeedsReconfigure(surfaceTexture->status)) return;
+    if (surfaceTexture->texture) wgpuTextureRelease(surfaceTexture->texture);
+    surfaceTexture->texture = nullptr;
+    if (!reconfigureSurfaceForAcquire(state)) return;
+    acquirePresentationSurface(state->surface, surfaceTexture);
 }
 
 void trackCurrentSurfaceTextureView(BindingsState* state, uint64_t viewId, WGPUTextureView view) {
@@ -436,17 +258,26 @@ static bool ensureSrgbPresentationPipeline(BindingsState* state) {
     if (state->presentation.srgbPresentationPipeline)
         return true;
 
-    const char* shaderCode = R"(
+    const std::string shaderCode = std::string("const decodeSrgb = ") +
+        (state->presentation.requiresSrgbPresentationBridge ? "true;\n" : "false;\n") + R"(
         @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
+        struct VertexOutput {
+            @builtin(position) position: vec4f,
+            @location(0) uv: vec2f,
+        };
 
         @vertex
-        fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4f {
+        fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
             var positions = array<vec2f, 3>(
                 vec2f(-1.0, -1.0),
                 vec2f(3.0, -1.0),
                 vec2f(-1.0, 3.0)
             );
-            return vec4f(positions[vertexIndex], 0.0, 1.0);
+            let position = positions[vertexIndex];
+            var output: VertexOutput;
+            output.position = vec4f(position, 0.0, 1.0);
+            output.uv = position * vec2f(0.5, -0.5) + vec2f(0.5);
+            return output;
         }
 
         fn srgbToLinear(value: vec3f) -> vec3f {
@@ -456,15 +287,18 @@ static bool ensureSrgbPresentationPipeline(BindingsState* state) {
         }
 
         @fragment
-        fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
-            let encoded = textureLoad(sourceTexture, vec2i(position.xy), 0);
-            return vec4f(srgbToLinear(encoded.rgb), encoded.a);
+        fn fs_main(input: VertexOutput) -> @location(0) vec4f {
+            let size = textureDimensions(sourceTexture);
+            let pixel = clamp(vec2i(input.uv * vec2f(size)), vec2i(0), vec2i(size) - vec2i(1));
+            let encoded = textureLoad(sourceTexture, pixel, 0);
+            if (decodeSrgb) { return vec4f(srgbToLinear(encoded.rgb), encoded.a); }
+            return encoded;
         }
     )";
 
     WGPUShaderModuleWGSLDescriptor_Compat wgslDescriptor = {};
     WGPUShaderModuleDescriptor shaderDescriptor = {};
-    setupShaderModuleWGSL(&shaderDescriptor, &wgslDescriptor, shaderCode);
+    setupShaderModuleWGSL(&shaderDescriptor, &wgslDescriptor, shaderCode.c_str());
     WGPUShaderModule shaderModule = wgpuDeviceCreateShaderModule(state->device, &shaderDescriptor);
     if (!shaderModule) return false;
 
@@ -527,28 +361,9 @@ static bool ensureSrgbPresentationPipeline(BindingsState* state) {
     return true;
 }
 
-static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureView sourceView) {
-    if (!sourceView || !ensureSrgbPresentationPipeline(state)) return false;
-
-    WGPUSurfaceTexture surfaceTexture = {};
-    wgpuSurfaceGetCurrentTexture(state->surface, &surfaceTexture);
-    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) return false;
-
-    WGPUTextureViewDescriptor surfaceViewDescriptor = {};
-    surfaceViewDescriptor.format = state->presentation.nativeSurfaceFormat;
-    surfaceViewDescriptor.dimension = WGPUTextureViewDimension_2D;
-    surfaceViewDescriptor.baseMipLevel = 0;
-    surfaceViewDescriptor.mipLevelCount = 1;
-    surfaceViewDescriptor.baseArrayLayer = 0;
-    surfaceViewDescriptor.arrayLayerCount = 1;
-    surfaceViewDescriptor.aspect = WGPUTextureAspect_All;
-    WGPUTextureView surfaceView =
-        wgpuTextureCreateView(surfaceTexture.texture, &surfaceViewDescriptor);
-    if (!surfaceView) {
-        wgpuTextureRelease(surfaceTexture.texture);
-        return false;
-    }
-
+bool blitPresentationTexture(BindingsState* state, WGPUTextureView sourceView,
+                             WGPUTextureView surfaceView) {
+    if (!sourceView || !surfaceView || !ensureSrgbPresentationPipeline(state)) return false;
     WGPUBindGroupEntry bindGroupEntry = {};
     bindGroupEntry.binding = 0;
     bindGroupEntry.textureView = sourceView;
@@ -558,8 +373,6 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
     bindGroupDescriptor.entries = &bindGroupEntry;
     WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(state->device, &bindGroupDescriptor);
     if (!bindGroup) {
-        wgpuTextureViewRelease(surfaceView);
-        wgpuTextureRelease(surfaceTexture.texture);
         return false;
     }
 
@@ -567,8 +380,6 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(state->device, &encoderDescriptor);
     if (!encoder) {
         wgpuBindGroupRelease(bindGroup);
-        wgpuTextureViewRelease(surfaceView);
-        wgpuTextureRelease(surfaceTexture.texture);
         return false;
     }
     WGPURenderPassColorAttachment colorAttachment = {};
@@ -587,8 +398,6 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
     if (!renderPass) {
         wgpuCommandEncoderRelease(encoder);
         wgpuBindGroupRelease(bindGroup);
-        wgpuTextureViewRelease(surfaceView);
-        wgpuTextureRelease(surfaceTexture.texture);
         return false;
     }
     wgpuRenderPassEncoderSetPipeline(renderPass, state->presentation.srgbPresentationPipeline);
@@ -604,13 +413,35 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
     if (encoded) {
         flushUploadStaging(state);
         wgpuQueueSubmit(state->queue, 1, &commandBuffer);
-        wgpuSurfacePresent(state->surface);
     }
 
     if (commandBuffer) wgpuCommandBufferRelease(commandBuffer);
     wgpuCommandEncoderRelease(encoder);
     wgpuBindGroupRelease(bindGroup);
-    wgpuTextureViewRelease(surfaceView);
+    return encoded;
+}
+
+static void reportSurfaceAcquireFailure(uint32_t status);
+
+static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureView sourceView) {
+    if (!sourceView) return false;
+    WGPUSurfaceTexture surfaceTexture = {};
+    acquireSurfaceImage(state, &surfaceTexture);
+    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status) || !surfaceTexture.texture) {
+        if (surfaceTexture.texture) wgpuTextureRelease(surfaceTexture.texture);
+        reportSurfaceAcquireFailure(static_cast<uint32_t>(surfaceTexture.status));
+        return false;
+    }
+    WGPUTextureViewDescriptor surfaceViewDescriptor = {};
+    surfaceViewDescriptor.format = state->presentation.nativeSurfaceFormat;
+    surfaceViewDescriptor.dimension = WGPUTextureViewDimension_2D;
+    surfaceViewDescriptor.mipLevelCount = 1;
+    surfaceViewDescriptor.arrayLayerCount = 1;
+    surfaceViewDescriptor.aspect = WGPUTextureAspect_All;
+    WGPUTextureView surfaceView = wgpuTextureCreateView(surfaceTexture.texture, &surfaceViewDescriptor);
+    const bool encoded = blitPresentationTexture(state, sourceView, surfaceView);
+    if (encoded) wgpuSurfacePresent(state->surface);
+    if (surfaceView) wgpuTextureViewRelease(surfaceView);
     wgpuTextureRelease(surfaceTexture.texture);
     return encoded;
 }
@@ -713,14 +544,17 @@ WGPUTexture getCurrentSwapchainTexture(BindingsState* state) {
         return nullptr;
     }
 
-    if (state->presentation.requiresSrgbPresentationBridge) {
+    if (requiresPresentationBridge(state)) {
         return createLinearPresentationTexture(state);
     }
 
-    WGPUSurfaceTexture surfaceTexture;
-    wgpuSurfaceGetCurrentTexture(state->surface, &surfaceTexture);
+    WGPUSurfaceTexture surfaceTexture = {};
+    acquireSurfaceImage(state, &surfaceTexture);
 
-    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) {
+    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status) || !surfaceTexture.texture) {
+        // The API returns texture ownership even when the caller cannot use the result.
+        // Never strand an acquired image on a rejected status; null remains a named failure.
+        if (surfaceTexture.texture) wgpuTextureRelease(surfaceTexture.texture);
         // Fail by name. A surface that stops handing out images presents nothing, and the loop is
         // no longer paced by presenting, so this fires hundreds of times a second, which is
         // precisely how the resume defect looked from the outside: frames running away, presents
@@ -765,6 +599,7 @@ void detachSurfaceForRebuild(BindingsState* state) {
     state->presentation.surfaceRenderPassEnded = false;
     state->screenshot.screenshotCapturedThisFrame = false;
     state->surface = nullptr;
+    state->presentation.surfaceNativeHandle = nullptr;
 #else
     (void)state;
 #endif
@@ -777,10 +612,20 @@ void detachSurfaceForRebuild(BindingsState* state) {
  * dead one: the resume defect again, one indirection later.
  */
 void republishSurface(BindingsState* state, void* wgpuSurface, uint32_t surfaceFormat,
-                      uint32_t presentMode, uint32_t width, uint32_t height) {
+                      uint32_t presentMode, uint32_t width, uint32_t height,
+                      void* surfaceNativeHandle) {
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
     if (!state) return;
+    if (state->presentation.nativeSurfaceFormat != static_cast<WGPUTextureFormat>(surfaceFormat)) {
+        if (state->presentation.srgbPresentationPipeline)
+            wgpuRenderPipelineRelease(state->presentation.srgbPresentationPipeline);
+        if (state->presentation.srgbPresentationBindGroupLayout)
+            wgpuBindGroupLayoutRelease(state->presentation.srgbPresentationBindGroupLayout);
+        state->presentation.srgbPresentationPipeline = nullptr;
+        state->presentation.srgbPresentationBindGroupLayout = nullptr;
+    }
     state->surface = (WGPUSurface)wgpuSurface;
+    state->presentation.surfaceNativeHandle = surfaceNativeHandle;
     state->presentation.presentMode = static_cast<WGPUPresentMode>(presentMode);
     state->presentation.nativeSurfaceFormat = (WGPUTextureFormat)surfaceFormat;
     state->presentation.requiresSrgbPresentationBridge =
@@ -788,11 +633,9 @@ void republishSurface(BindingsState* state, void* wgpuSurface, uint32_t surfaceF
     state->presentation.surfaceFormat = state->presentation.requiresSrgbPresentationBridge
                                             ? linearSurfaceFormat(state->presentation.nativeSurfaceFormat)
                                             : state->presentation.nativeSurfaceFormat;
-    // The same pairing startup makes: the canvas dimensions name the size the surface is
-    // configured at, so `syncSurfaceSizeToCanvas` reconfigures on the next frame if the game is
-    // rendering at a different one.
-    state->presentation.canvasWidth = width;
-    state->presentation.canvasHeight = height;
+    // A rebuilt drawable does not change the renderer's canvas backing resolution.
+    state->presentation.surfaceWidth = width;
+    state->presentation.surfaceHeight = height;
     reportSurfaceFormatMarker(state->presentation.nativeSurfaceFormat,
                               state->presentation.surfaceFormat,
                               state->presentation.requiresSrgbPresentationBridge,
@@ -801,6 +644,7 @@ void republishSurface(BindingsState* state, void* wgpuSurface, uint32_t surfaceF
               << " (format=" << state->presentation.surfaceFormat << ")" << std::endl;
 #else
     (void)state; (void)wgpuSurface; (void)surfaceFormat; (void)presentMode; (void)width; (void)height;
+    (void)surfaceNativeHandle;
 #endif
 }
 
@@ -820,6 +664,22 @@ void setOffscreenTexture(BindingsState* state, void* texture, void* textureView)
  * is idempotent within a frame (see the canvas `getCurrentTexture` binding) and the present
  * happens here, so both passes land on one image and that image is presented once.
  */
+// TN_PLAYER_METRICS=1: one `TN_PLAYER_FRAME` line per presented frame, the engine player's own marker and
+// fields, so the pair bench reads both arms alike. presentCpuMs is the thread CPU inside the swap call;
+// cpuFrameCpuMs is the thread CPU since the previous line, without it. Same clock (CLOCK_THREAD_CPUTIME_ID)
+// as the player. The first frame has no previous line and prints nothing.
+static void emitPlayerFrameMetrics(uint64_t presentCpuNs, uint64_t presentEndCpuNs) {
+    static const bool enabled = std::getenv("TN_PLAYER_METRICS") != nullptr;
+    static uint64_t previousCpuNs = 0;
+    if (!enabled) return;
+    if (previousCpuNs != 0 && presentEndCpuNs >= previousCpuNs + presentCpuNs) {
+        const double frameCpuMs = double(presentEndCpuNs - previousCpuNs - presentCpuNs) / 1e6;
+        std::cout << "TN_PLAYER_FRAME:{\"cpuFrameCpuMs\":" << frameCpuMs << ",\"presentCpuMs\":" << double(presentCpuNs) / 1e6
+                  << "}" << std::endl;
+    }
+    previousCpuNs = readRenderThreadCpuNs();
+}
+
 void presentPendingSurface(BindingsState* state) {
     // Exactly one acquire and one release per frame, whether or not anything was presented.
     // Returning early without releasing would strand the acquired swapchain image, and because
@@ -838,7 +698,7 @@ void presentPendingSurface(BindingsState* state) {
             std::cout << "[WebGPU] Presenting surface" << std::endl;
         const auto presentStart = std::chrono::steady_clock::now();
         const uint64_t presentThreadCpuStart = readRenderThreadCpuNs();
-        const bool presented = state->presentation.requiresSrgbPresentationBridge
+        const bool presented = requiresPresentationBridge(state)
                                    ? presentLinearTextureToSrgbSurface(state, state->presentation.currentTextureView)
                                    : (wgpuSurfacePresent(state->surface), true);
         const uint64_t presentThreadCpuEnd = readRenderThreadCpuNs();
@@ -847,6 +707,7 @@ void presentPendingSurface(BindingsState* state) {
         state->profiling.lastPresentNs = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - presentStart)
                 .count());
+        emitPlayerFrameMetrics(state->profiling.lastPresentThreadCpuNs, presentThreadCpuEnd);
 #if TN_ANDROID_JS_PROFILE
         state->profiling.presentReportedSinceLastPresent = false;
 #endif
@@ -887,7 +748,7 @@ void presentPendingSurface(BindingsState* state) {
             reportPipelineCheckpoint(state, state->profiling.presentCount);
             pollPipelineCachePersistence(state);
         } else {
-            std::cerr << "[WebGPU] sRGB presentation bridge failed" << std::endl;
+            std::cerr << "[WebGPU] Canvas presentation bridge failed" << std::endl;
         }
     }
 
@@ -923,13 +784,31 @@ void reportPresentTick(BindingsState* state, uint64_t frames) {
     output << "TN_PRESENTS_TICK:{\"frames\":" << frames << ",\"presents\":" << state->profiling.presentCount
            << ",\"textureMB\":" << (state->profiling.textureBytesLive / 1048576)
            << ",\"textures\":" << state->profiling.textureCountLive
-           << ",\"bufferMB\":" << (state->profiling.bufferBytesLive / 1048576) << ",\"capHz\":" << g_presentationCapHz
+           << ",\"bufferMB\":" << (state->profiling.bufferBytesLive / 1048576) << ",\"capHz\":" << getPresentationCapHz()
            << "}";
     const std::string marker = output.str();
     std::cout << marker << std::endl;
 #if defined(__ANDROID__)
     __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", marker.c_str());
 #endif
+    bool transientGranted = false;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    transientGranted = wgpuDeviceHasFeature(state->device, WGPUFeatureName_TransientAttachments);
+#endif
+    uint64_t transientCount = 0, transientNominalBytes = 0;
+    for (const auto& [id, info] : state->registries.textureRegistry) {
+        if (!info.transientAttachment) continue;
+        ++transientCount;
+        transientNominalBytes += info.transientNominalBytes;
+    }
+    std::ostringstream transient;
+    transient << "TN_TRANSIENT_ATTACHMENTS:{\"granted\":" << (transientGranted ? "true" : "false")
+              << ",\"count\":" << transientCount << ",\"nominalBytes\":" << transientNominalBytes << "}";
+    std::cout << transient.str() << std::endl;
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_INFO, "MystralRuntime", "%s", transient.str().c_str());
+#endif
+
     // The per-bucket breakdown is the part that names a cause, so it goes out periodically rather
     // than every tick: the running total above is enough to watch growth, and this answers "which
     // allocation" once a run has settled.
@@ -994,6 +873,14 @@ js::JSValueHandle handleWebGpuPresentedCount(BindingsState* state, BindingDestin
     return state->engine->newNumber(static_cast<double>(state->profiling.presentCount));
 }
 
+js::JSValueHandle handleWebGpuThreadCpuMs(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
+    // The bench's phase clock: this thread's CPU time in ms, the clock presentCpuMs and the frame line use,
+    // so a phase and the frame it sits in are on one instrument. The engine player installs the same name.
+    (void)bindingDestination;
+    (void)args;
+    return state->engine->newNumber(static_cast<double>(readRenderThreadCpuNs()) / 1e6);
+}
+
 js::JSValueHandle handleWebGpuPresentationCap(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
     // Read with no argument, set with one. Hz, where 0 means uncapped and is the only way a game
     // presents above the ceiling. This global is a private diagnostic seam; the supported
@@ -1001,7 +888,7 @@ js::JSValueHandle handleWebGpuPresentationCap(BindingsState* state, BindingDesti
     //
     // Fail closed on a rate the runtime cannot honour: a game that asks for -1 or 5000 has a bug,
     // and silently clamping it would make the next frame-rate measurement a fiction.
-    if (args.empty()) return state->engine->newNumber(static_cast<double>(g_presentationCapHz));
+    if (args.empty()) return state->engine->newNumber(static_cast<double>(getPresentationCapHz()));
     const double requested = state->engine->toNumber(args[0]);
     const int32_t hz = static_cast<int32_t>(requested);
     if (!(requested >= 0.0) || requested > 1000.0 || static_cast<double>(hz) != requested) {
@@ -1011,7 +898,7 @@ js::JSValueHandle handleWebGpuPresentationCap(BindingsState* state, BindingDesti
         return state->engine->newUndefined();
     }
     setPresentationCapHz(static_cast<uint32_t>(hz));
-    return state->engine->newNumber(static_cast<double>(g_presentationCapHz));
+    return state->engine->newNumber(static_cast<double>(getPresentationCapHz()));
 }
 }  // namespace webgpu
 }  // namespace mystral

@@ -7,7 +7,7 @@ The prompt behind it: *"should we port `0beqz/realism-effects` to WebGPU? We sho
 effects that library supports, on all native platforms too."*
 
 This batch is the file-by-file read that
-[docs/PRDs/lighting](../../lighting/README.md) did not do. That batch judged the repo from its
+docs/PRDs/lighting did not do. That batch judged the repo from its
 packaging — GLSL, `WebGLRenderer`, the pmndrs `postprocessing` dependency — and reached the right
 verdict for the wrong reason on two of its rows. **Three of its factual claims are corrected
 below.**
@@ -61,8 +61,8 @@ colour — is a look choice. There is no mechanism in them to own.
 
 ### 1. Skinned motion vectors are not a gap — upstream shipped them
 
-[The lighting README](../../lighting/README.md) and
-[PRD-269](../../lighting/PRD-269-motion-vectors-or-the-temporal-filters-lie.md) both state that
+The lighting README and
+[PRD-269](../PRD-269-motion-vectors-or-the-temporal-filters-lie.md) both state that
 `realism-effects`' one contribution upstream does not hand you is correct motion vectors for
 skinned and instanced geometry.
 
@@ -151,7 +151,7 @@ of a screenshot argument. Then 271, the one actual defect. 273 and 274 run in pa
 other; 273 is a day's work and 274's AO comparison is the only open question in the batch. 275 last
 and gates all of them.
 
-**Relationship to [docs/PRDs/lighting](../../lighting/README.md):** that batch owns the chain seam
+**Relationship to docs/PRDs/lighting:** that batch owns the chain seam
 (PRD-266), the lighting stages and their templates (267, 268), and their native parity (270). This
 batch owns velocity correctness, the non-lighting effects, and native parity for those. PRD-266 is
 a hard dependency for everything here; PRD-269 is superseded by PRD-271.

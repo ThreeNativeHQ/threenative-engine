@@ -783,7 +783,10 @@ describe("rts kit ordinary-frame runtime cost", () => {
       },
       random: { range: (from: number, to: number) => from + 1 },
       renderer: {
-        createRenderChain: () => ({ applied: { dropped: [], stages: ["bloom"] } }),
+        createRenderChain: () => ({
+          applied: { dropped: [], stages: ["bloom"] },
+          dispose: () => undefined,
+        }),
         kind: "webgl",
         raw: { shadowMap: { enabled: false, type: 0 } },
         setOutputNode: () => undefined,

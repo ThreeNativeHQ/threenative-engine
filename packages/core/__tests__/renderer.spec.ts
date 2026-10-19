@@ -1,8 +1,8 @@
-import { Object3D, PerspectiveCamera, Scene } from "three";
+import { Color, Object3D, PerspectiveCamera, Scene } from "three";
 import { pass } from "three/tsl";
-import { RenderPipeline } from "three/webgpu";
+import { NodeFrame, NodeUpdateType, RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
-import { createRenderer, prewarm } from "../src/renderer.js";
+import { beginAsyncPipelines, createRenderer, prewarm } from "../src/renderer.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -15,6 +15,33 @@ function testCanvas(): HTMLCanvasElement {
 }
 
 describe("createRenderer", () => {
+  it("keeps its browser-created canvas layout independent of drawing-buffer scale", async () => {
+    const canvas = testCanvas();
+    const style = { width: "", height: "" };
+    Object.defineProperty(canvas, "style", { value: style });
+    const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: { createElement: () => canvas },
+    });
+    let renderer: Awaited<ReturnType<typeof createRenderer>> | undefined;
+    try {
+      renderer = await createRenderer({
+        preferWebGPU: false,
+        resolutionScale: 0.5,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      expect(style).toEqual({ width: "100%", height: "100%" });
+    } finally {
+      renderer?.dispose();
+      if (documentDescriptor) Object.defineProperty(globalThis, "document", documentDescriptor);
+      else Reflect.deleteProperty(globalThis, "document");
+    }
+  });
   it("reports the age of the resolved GPU frame without treating a repeated duration as fresh", async () => {
     const canvas = testCanvas();
     const info = { frame: 10, render: { timestamp: 6.25 } };
@@ -44,6 +71,37 @@ describe("createRenderer", () => {
       timestampFrames = [309];
       Reflect.deleteProperty(info, "frame");
       expect(renderer.gpuFrameAge?.()).toBeUndefined();
+    } finally {
+      renderer.dispose();
+    }
+  });
+
+  it("keeps reading its own frame id when three's animation loop overwrites info.frame", async () => {
+    // Three's Renderer.init starts its own rAF loop, which writes `info.frame = nodeFrame.frameId`
+    // every animation frame. The timestamp queries are keyed by the engine's counter, so a sample
+    // must stay readable when that loop has just written a smaller number.
+    const canvas = testCanvas();
+    const info = { frame: 0, render: { timestamp: 4.5 } };
+    let timestampFrames: number[] = [];
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        info,
+        backend: { getTimestampFrames: () => timestampFrames },
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      const scene = new Scene();
+      const camera = new PerspectiveCamera();
+      for (let frame = 0; frame < 20; frame += 1) renderer.render(scene, camera);
+      timestampFrames = [16];
+      info.frame = 9;
+      expect(renderer.gpuFrameSample?.()).toEqual({ frame: 16, ms: 4.5 });
+      expect(renderer.gpuFrameAge?.()).toBe(3);
     } finally {
       renderer.dispose();
     }
@@ -707,6 +765,61 @@ describe("createRenderer", () => {
     }
   });
 
+  it("classifies the adapter and prints TN_GPU_CLASS once with the rule and raw fields", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const info = {
+      architecture: "bifrost",
+      description: "Mali-G52 MC2",
+      device: "",
+      vendor: "arm",
+    };
+    const requestAdapter = vi.fn(async () => ({ info }));
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: { requestAdapter } },
+    });
+    const lines: string[] = [];
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        report: (line) => lines.push(line),
+        webgpuFactory: () => ({
+          backend: { gpu: { requestAdapter } },
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+
+      expect(renderer.gpuClass).toEqual({ class: "mobile-low", fields: info, rule: "mali-model" });
+      expect(lines.filter((line) => line.startsWith("TN_GPU_CLASS:"))).toEqual([
+        `TN_GPU_CLASS:${JSON.stringify(renderer.gpuClass)}`,
+      ]);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("reports no gpuClass when the renderer fell back to WebGL2", async () => {
+    const canvas = testCanvas();
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    expect(renderer.gpuClass).toBeUndefined();
+    renderer.dispose();
+  });
+
   it("reports no software adapter for a hardware one rather than claiming a proof", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
@@ -790,6 +903,45 @@ describe("createRenderer", () => {
       expect(size).toEqual([320, 180]);
       renderer.dispose();
       expect(disposed).toBe(true);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("reports a named boot failure when neither WebGPU nor the WebGL fallback can start", async () => {
+    // The native (Wasm) engine binds `WebGLRenderer` to a facade that refuses on use, so the
+    // fallback throws "TN_NATIVE_UNCATALOGUED_WEBGLRENDERER" instead of a WebGL context error. The
+    // player must read a named, human message — never that internal facade code.
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const refusal = (): never => {
+      throw new Error(
+        "TN_NATIVE_UNCATALOGUED_WEBGLRENDERER: WebGLRenderer is not available on the Wasm engine.",
+      );
+    };
+    try {
+      await expect(
+        createRenderer({
+          canvas,
+          preferWebGPU: true,
+          webgl2Factory: refusal,
+          webgpuFactory: () => {
+            throw new Error("no adapter");
+          },
+        }),
+      ).rejects.toThrow(/^TN_NO_RENDERER: WebGPU is not available on this device/u);
+      await expect(
+        createRenderer({
+          canvas,
+          preferWebGPU: true,
+          webgl2Factory: refusal,
+          webgpuFactory: () => {
+            throw new Error("no adapter");
+          },
+        }),
+      ).rejects.not.toThrow(/UNCATALOGUED|Wasm engine/u);
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
       else Object.defineProperty(globalThis, "navigator", descriptor);
@@ -890,6 +1042,209 @@ describe("createRenderer", () => {
     }
   });
 
+  it("does not let an obsolete output owner clear its replacement", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const renderPipeline = vi
+      .spyOn(RenderPipeline.prototype, "render")
+      .mockImplementation(() => {});
+    const rawRender = vi.fn();
+    const renderer = await createRenderer({
+      canvas,
+      webgpuFactory: () => ({
+        domElement: canvas,
+        init: async () => undefined,
+        render: rawRender,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      const first = {};
+      const replacement = {};
+      renderer.setOutputNode(first);
+      renderer.setOutputNode(replacement);
+      renderer.clearOutputNode?.(first);
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(renderPipeline).toHaveBeenCalledTimes(1);
+      expect(rawRender).not.toHaveBeenCalled();
+      renderer.clearOutputNode?.(replacement);
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(rawRender).toHaveBeenCalledTimes(1);
+      // Legacy no-argument calls keep their unconditional behavior.
+      renderer.setOutputNode(first);
+      renderer.clearOutputNode?.();
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(rawRender).toHaveBeenCalledTimes(2);
+    } finally {
+      renderer.dispose();
+      renderPipeline.mockRestore();
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("keeps a direct replacement when an older render chain is disposed", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const renderPipeline = vi
+      .spyOn(RenderPipeline.prototype, "render")
+      .mockImplementation(() => {});
+    const rawRender = vi.fn();
+    const renderer = await createRenderer({
+      canvas,
+      webgpuFactory: () => ({
+        domElement: canvas,
+        init: async () => undefined,
+        render: rawRender,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      const previous = renderer.createRenderChain?.({
+        input: {},
+        request: { stages: ["bloom"], tier: "high" },
+        stages: [{ name: "bloom", build: (input) => input }],
+      });
+      expect(previous?.applied.stages).toEqual(["bloom"]);
+      const direct = {};
+      renderer.setOutputNode(direct);
+      previous?.dispose();
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(renderPipeline).toHaveBeenCalledTimes(1);
+      expect(rawRender).not.toHaveBeenCalled();
+      renderer.clearOutputNode?.(direct);
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(rawRender).toHaveBeenCalledTimes(1);
+    } finally {
+      renderer.dispose();
+      renderPipeline.mockRestore();
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("does not resurrect a superseded automatic chain during budget observation", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const renderPipeline = vi
+      .spyOn(RenderPipeline.prototype, "render")
+      .mockImplementation(() => {});
+    const renderer = await createRenderer({
+      canvas,
+      webgpuFactory: () => ({
+        domElement: canvas,
+        init: async () => undefined,
+        render: () => {},
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      const build = vi.fn((input) => input);
+      const previous = renderer.createRenderChain?.({
+        input: {},
+        request: { stages: ["bloom"], tier: "auto" },
+        stages: [{ name: "bloom", build }],
+      });
+      renderer.setOutputNode({});
+      for (let index = 0; index < 4; index += 1) {
+        renderer.observeRenderChainBudget?.({ phases: { render: { p95: 40 } } });
+        renderer.observeRenderChainFrame?.();
+      }
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(previous?.disposed).toBe(false);
+      previous?.dispose();
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(renderPipeline).toHaveBeenCalledTimes(1);
+    } finally {
+      renderer.dispose();
+      renderPipeline.mockRestore();
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("gives same-node output installations distinct ownership receipts", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const renderPipeline = vi
+      .spyOn(RenderPipeline.prototype, "render")
+      .mockImplementation(() => {});
+    const rawRender = vi.fn();
+    const renderer = await createRenderer({
+      canvas,
+      webgpuFactory: () => ({
+        domElement: canvas,
+        init: async () => undefined,
+        render: rawRender,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      const shared = {};
+      const first = renderer.setOutputNode(shared);
+      const second = renderer.setOutputNode(shared);
+      if (!first || !second) throw new Error("Missing installation receipt");
+      expect(first.isCurrent()).toBe(false);
+      expect(second.isCurrent()).toBe(true);
+      first.dispose();
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(renderPipeline).toHaveBeenCalledTimes(1);
+      second.dispose();
+      second.dispose();
+      expect(second.isCurrent()).toBe(false);
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(rawRender).toHaveBeenCalledTimes(1);
+    } finally {
+      renderer.dispose();
+      renderPipeline.mockRestore();
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("does not observe or clear an obsolete chain after a same-node direct reinstall", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const renderPipeline = vi
+      .spyOn(RenderPipeline.prototype, "render")
+      .mockImplementation(() => {});
+    const renderer = await createRenderer({
+      canvas,
+      webgpuFactory: () => ({
+        domElement: canvas,
+        init: async () => undefined,
+        render: () => {},
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      const shared = {};
+      const build = vi.fn((input) => input);
+      const chain = renderer.createRenderChain?.({
+        input: shared,
+        request: { stages: ["bloom"], tier: "auto" },
+        stages: [{ name: "bloom", build }],
+      });
+      renderer.setOutputNode(shared);
+      for (let index = 0; index < 2; index += 1)
+        renderer.observeRenderChainBudget?.({ phases: { render: { p95: 40 } } });
+      expect(build).toHaveBeenCalledTimes(1);
+      chain?.dispose();
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(renderPipeline).toHaveBeenCalledTimes(1);
+    } finally {
+      renderer.dispose();
+      renderPipeline.mockRestore();
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("replaces and disposes only the framework-owned output pipeline", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
@@ -973,6 +1328,292 @@ describe("createRenderer", () => {
       else Object.defineProperty(globalThis, "navigator", descriptor);
     }
   });
+
+  it.each([
+    { throws: false, nextFrame: false },
+    { throws: false, nextFrame: true },
+    { throws: true, nextFrame: false },
+    { throws: true, nextFrame: true },
+  ])(
+    "refreshes a scoped world warm-up and its following main render in one outer render with nested post passes: %j",
+    async ({ throws, nextFrame }) => {
+      const canvas = testCanvas();
+      const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: { gpu: {} },
+      });
+      const nodeFrame = new NodeFrame();
+      nodeFrame.frameId = 1;
+      const draws: {
+        scene: Object3D;
+        visibleObjects: string[];
+        target: unknown;
+        warm: boolean;
+      }[] = [];
+      const canvasSubmissions: Object3D[] = [];
+      let boundTarget: unknown = null;
+      let boundMrt: unknown = null;
+      let warm = false;
+      let targetScene: Scene | undefined;
+      let worldPass: ReturnType<typeof pass> | undefined;
+      const renderPipeline = vi.spyOn(RenderPipeline.prototype, "render").mockImplementation(() => {
+        nodeFrame.renderId += 1;
+        if (worldPass === undefined) throw new Error("Missing world pass");
+        nodeFrame.updateBeforeNode(worldPass);
+        // Bloom/temporal quads sample the same pass under a new renderId.
+        nodeFrame.renderId += 1;
+        nodeFrame.updateBeforeNode(worldPass);
+        if (!warm) canvasSubmissions.push(worldPass.scene as Object3D);
+      });
+      const rawRender = (scene: Object3D): void => {
+        draws.push({
+          scene,
+          visibleObjects: scene.children
+            .filter((child) => child.visible)
+            .map((child) => child.name),
+          target: boundTarget,
+          warm,
+        });
+        if (throws && warm && scene === targetScene) throw new Error("scoped warm failed");
+      };
+      const raw = {
+        _renderTarget: boundTarget,
+        autoClear: true,
+        contextNode: null,
+        dispose: () => undefined,
+        domElement: canvas,
+        getActiveCubeFace: () => 0,
+        getActiveMipmapLevel: () => 0,
+        getClearAlpha: () => 1,
+        getClearColor: (target: Color) => target.set(0),
+        getDrawingBufferSize: (size: { set: (width: number, height: number) => unknown }) =>
+          size.set(320, 180),
+        getMRT: () => boundMrt,
+        getOutputRenderTarget: () => null,
+        getPixelRatio: () => 1,
+        getRenderObjectFunction: () => null,
+        getRenderTarget: () => boundTarget,
+        getScissorTest: () => false,
+        init: async () => undefined,
+        opaque: false,
+        outputColorSpace: "srgb",
+        render: rawRender,
+        setClearColor: () => undefined,
+        setMRT: (value: unknown) => {
+          boundMrt = value;
+        },
+        setPixelRatio: () => undefined,
+        setRenderObjectFunction: () => undefined,
+        setRenderTarget: (value: unknown) => {
+          boundTarget = value;
+          raw._renderTarget = value;
+        },
+        setScissorTest: () => undefined,
+        setSize: () => undefined,
+        toneMapping: 0,
+        toneMappingExposure: 1,
+        transparent: false,
+        xr: { enabled: false },
+      };
+      nodeFrame.renderer = raw as never;
+
+      try {
+        const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+        const authoredScene = new Scene();
+        const authoredCamera = new PerspectiveCamera();
+        worldPass = pass(authoredScene, authoredCamera);
+        const outputNode = worldPass.add(pass(new Scene(), new PerspectiveCamera()));
+        renderer.setOutputNode(outputNode, worldPass);
+        const authoredUpdateBeforeType = worldPass.updateBeforeType;
+        const authoredUpdateBefore = worldPass.updateBefore;
+        const hadOwnUpdateBefore = Object.hasOwn(worldPass, "updateBefore");
+        expect(authoredUpdateBeforeType).toBe(NodeUpdateType.FRAME);
+        targetScene = new Scene();
+        const terrain = new Object3D();
+        terrain.name = "terrain";
+        targetScene.add(terrain);
+        const worldObject = new Object3D();
+        worldObject.name = "world-object";
+        targetScene.add(worldObject);
+        const chunk = new Object3D();
+        chunk.name = "requested-chunk";
+
+        renderer.render(authoredScene, authoredCamera);
+        const warmStart = canvasSubmissions.length;
+        warm = true;
+        const warmUp = () =>
+          renderer.warmUpWorldPass?.(chunk, new PerspectiveCamera(), targetScene);
+        if (throws) expect(warmUp).toThrow("scoped warm failed");
+        else warmUp();
+        warm = false;
+
+        expect(worldPass.updateBeforeType).toBe(authoredUpdateBeforeType);
+        expect(canvasSubmissions).toHaveLength(warmStart);
+        expect(draws[1]?.scene).toBe(targetScene);
+        expect(draws[1]?.visibleObjects).toEqual(["terrain", "world-object", "requested-chunk"]);
+        expect(draws[1]?.target).not.toBeNull();
+        expect(draws[1]?.warm).toBe(true);
+
+        if (nextFrame) nodeFrame.frameId += 1;
+        renderer.render(authoredScene, authoredCamera);
+        expect(worldPass.updateBefore).toBe(authoredUpdateBefore);
+        expect(Object.hasOwn(worldPass, "updateBefore")).toBe(hadOwnUpdateBefore);
+        expect(draws.map((draw) => draw.scene)).toEqual([
+          authoredScene,
+          targetScene,
+          authoredScene,
+        ]);
+        expect(draws[2]?.visibleObjects).toEqual([]);
+        expect(canvasSubmissions).toEqual([authoredScene, authoredScene]);
+        expect(worldPass.updateBeforeType).toBe(authoredUpdateBeforeType);
+        renderer.dispose();
+      } finally {
+        renderPipeline.mockRestore();
+        if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+        else Object.defineProperty(globalThis, "navigator", descriptor);
+      }
+    },
+  );
+
+  it.each([false, true])(
+    "warms a scoped output pass offscreen and restores state after %s failure",
+    async (throws) => {
+      const canvas = testCanvas();
+      const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: { gpu: {} },
+      });
+      let boundTarget: unknown = "previous-target";
+      let boundMrt: unknown = "previous-mrt";
+      let renderObjectFunction: ((...args: unknown[]) => void) | null = null;
+      let pixelRatio = 1;
+      let clearAlpha = 0.25;
+      let scissorTest = true;
+      const clearColor = new Color(0x123456);
+      const targetCalls: unknown[] = [];
+      let chunk: Object3D | undefined;
+      let worldPass: ReturnType<typeof pass> | undefined;
+      let invokePassUpdate: (() => void) | undefined;
+      let seenScene: unknown;
+      let seenChunkParent: unknown;
+      const originalContextNode = { getFlowContextData: () => ({ original: true }) };
+      const rawRender = vi.fn(() => {
+        seenScene = worldPass?.scene;
+        seenChunkParent = chunk?.parent;
+        const update = invokePassUpdate;
+        invokePassUpdate = undefined;
+        update?.();
+        if (throws) throw new Error("covered output render failed");
+      });
+      const raw = {
+        _renderTarget: boundTarget,
+        autoClear: false,
+        compute: () => undefined,
+        contextNode: originalContextNode,
+        dispose: () => undefined,
+        domElement: canvas,
+        getActiveCubeFace: () => 3,
+        getActiveMipmapLevel: () => 2,
+        getClearAlpha: () => clearAlpha,
+        getClearColor: (target: Color) => target.copy(clearColor),
+        getMRT: () => boundMrt,
+        getPixelRatio: () => pixelRatio,
+        getDrawingBufferSize: (size: { set: (width: number, height: number) => unknown }) =>
+          size.set(320, 180),
+        getOutputRenderTarget: () => null,
+        getRenderObjectFunction: () => renderObjectFunction,
+        // Match compileAsync's temporary getter without changing the bound target.
+        getRenderTarget: () => "compiler-target",
+        getScissorTest: () => scissorTest,
+        init: async () => undefined,
+        opaque: false,
+        outputColorSpace: "original-output-color-space",
+        render: rawRender,
+        setMRT: (value: unknown) => {
+          boundMrt = value;
+        },
+        setClearColor: (value: Color, alpha?: number) => {
+          clearColor.copy(value);
+          if (alpha !== undefined) clearAlpha = alpha;
+        },
+        setPixelRatio: (value: number) => {
+          pixelRatio = value;
+        },
+        setRenderObjectFunction: (value: ((...args: unknown[]) => void) | null) => {
+          renderObjectFunction = value;
+        },
+        setRenderTarget: (value: unknown) => {
+          targetCalls.push(value);
+          boundTarget = value;
+          raw._renderTarget = value;
+        },
+        setScissorTest: (value: boolean) => {
+          scissorTest = value;
+        },
+        setSize: () => undefined,
+        toneMapping: 17,
+        transparent: false,
+        xr: { enabled: true },
+      };
+
+      try {
+        const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+        const authoredScene = new Scene();
+        const authoredCamera = new PerspectiveCamera();
+        worldPass = pass(authoredScene, authoredCamera);
+        const outputNode = worldPass.add(pass(new Scene(), new PerspectiveCamera()));
+        worldPass.name = "warm-world-pass";
+        worldPass.contextNode = { getFlowContextData: () => ({ pass: true }) } as never;
+        worldPass.overrideMaterial = {} as never;
+        worldPass.setLayers({ mask: 2 } as never);
+        renderer.setOutputNode(outputNode, worldPass);
+
+        const targetScene = new Scene();
+        chunk = new Object3D();
+        chunk.position.set(3, 4, 5);
+        const originalMatrix = chunk.matrix.clone();
+        const camera = new PerspectiveCamera();
+        const originalCameraMask = camera.layers.mask;
+        targetScene.name = "target-scene";
+        targetScene.overrideMaterial = {} as never;
+        const originalTargetName = targetScene.name;
+        const targetOverrideMaterial = targetScene.overrideMaterial;
+        invokePassUpdate = () => worldPass?.updateBefore({ renderer: raw } as never);
+
+        const warm = () => renderer.warmUpWorldPass?.(chunk as Object3D, camera, targetScene);
+        if (throws) expect(warm).toThrow("covered output render failed");
+        else warm();
+
+        expect(seenScene).toBe(targetScene);
+        expect(seenChunkParent).toBe(targetScene);
+        expect(worldPass.scene).toBe(authoredScene);
+        expect(worldPass.camera).toBe(authoredCamera);
+        expect(chunk.parent).toBeNull();
+        expect(chunk.matrix.equals(originalMatrix)).toBe(true);
+        expect(boundTarget).toBe("previous-target");
+        expect(boundMrt).toBe("previous-mrt");
+        expect(raw.autoClear).toBe(false);
+        expect(raw.transparent).toBe(false);
+        expect(raw.opaque).toBe(false);
+        expect(raw.contextNode).toBe(originalContextNode);
+        expect(raw.toneMapping).toBe(17);
+        expect(raw.outputColorSpace).toBe("original-output-color-space");
+        expect(raw.xr.enabled).toBe(true);
+        expect(camera.layers.mask).toBe(originalCameraMask);
+        expect(targetScene.name).toBe(originalTargetName);
+        expect(targetScene.overrideMaterial).toBe(targetOverrideMaterial);
+        expect(targetCalls.length).toBeGreaterThan(0);
+        expect(targetCalls).not.toContain(null);
+        expect(rawRender).toHaveBeenCalled();
+        renderer.dispose();
+      } finally {
+        if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+        else Object.defineProperty(globalThis, "navigator", descriptor);
+      }
+    },
+  );
 
   it("rejects an output graph with multiple passes when no world pass is named", async () => {
     const canvas = testCanvas();
@@ -1121,5 +1762,140 @@ describe("renderer info", () => {
     } finally {
       if (descriptor) Object.defineProperty(globalThis, "navigator", descriptor);
     }
+  });
+});
+
+/**
+ * `compileAsync` builds pipelines, not pixels, so a streamed chunk's textures reached the device
+ * inside `_renderObjectDirect` on the frame the chunk first drew. `uploadTextures` moves that to
+ * admission, and through three's own `Textures.updateTexture` rather than the backend's, because that
+ * path owns the bookkeeping (`initialized`, `generation`) the first draw reads to skip the upload.
+ */
+describe("uploadTextures", () => {
+  const textured = (): Scene => {
+    const scene = new Scene();
+    const mesh = new Object3D();
+    const map = { isTexture: true, version: 1 };
+    const normal = { isTexture: true, version: 1 };
+    (mesh as unknown as { material: unknown }).material = { map, normalMap: normal, opacity: 1 };
+    const shader = new Object3D();
+    (shader as unknown as { material: unknown }).material = {
+      uniforms: { albedo: { value: map }, gain: { value: 2 } },
+    };
+    scene.add(mesh, shader);
+    return scene;
+  };
+
+  const withGpu = <T>(raw: unknown): { descriptor?: PropertyDescriptor; restore: () => void } => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    void raw;
+    return {
+      descriptor,
+      restore: () => {
+        if (descriptor) Object.defineProperty(globalThis, "navigator", descriptor);
+      },
+    };
+  };
+
+  it("hands every texture in the subtree to three's own texture path, once each", async () => {
+    const canvas = testCanvas();
+    const asked: unknown[] = [];
+    const gpu = withGpu(undefined);
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: true,
+      webgpuFactory: () => ({
+        _textures: {
+          updateTexture: (texture: unknown, options: object) => {
+            asked.push(texture);
+            // three fills width, height, mip levels and the image list into the object it is handed,
+            // so each texture needs one of its own.
+            expect(options).toEqual({});
+          },
+        },
+        domElement: canvas,
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      expect(renderer.kind).toBe("webgpu");
+      expect(renderer.uploadTextures?.(textured())).toBe(2);
+      expect(asked.length).toBe(2);
+    } finally {
+      renderer.dispose();
+      gpu.restore();
+    }
+  });
+
+  it("answers 0 on a renderer with no texture path instead of throwing", async () => {
+    const canvas = testCanvas();
+    const gpu = withGpu(undefined);
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: true,
+      webgpuFactory: () => ({
+        domElement: canvas,
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      expect(renderer.uploadTextures?.(textured())).toBe(0);
+    } finally {
+      renderer.dispose();
+      gpu.restore();
+    }
+  });
+});
+
+describe("beginAsyncPipelines", () => {
+  it("turns the covered render's pipeline creates into pending tickets and settles them", async () => {
+    const events: string[] = [];
+    let release: (() => void) | undefined;
+    const pipelines = {
+      getForRender(_object: unknown, promises?: Promise<unknown>[] | null): void {
+        if (promises === undefined || promises === null) {
+          events.push("sync");
+          return;
+        }
+        events.push("async");
+        promises.push(
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+        );
+      },
+    };
+    const raw = {
+      _pipelines: pipelines,
+      backend: { device: { createRenderPipelineAsync: () => Promise.resolve() } },
+    };
+    const gate = beginAsyncPipelines(raw);
+    if (gate === undefined) throw new Error("the fake renderer exposes an async pipeline cache");
+
+    pipelines.getForRender({}, null);
+    expect(events).toEqual(["async"]);
+
+    let settled = false;
+    const waiting = gate.settled().then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    release?.();
+    await waiting;
+    expect(settled).toBe(true);
+
+    gate.restore();
+    pipelines.getForRender({}, null);
+    expect(events).toEqual(["async", "sync"]);
+  });
+
+  it("does nothing on a renderer without async device creation", () => {
+    expect(beginAsyncPipelines({})).toBeUndefined();
+    expect(beginAsyncPipelines({ _pipelines: { getForRender: () => undefined } })).toBeUndefined();
   });
 });

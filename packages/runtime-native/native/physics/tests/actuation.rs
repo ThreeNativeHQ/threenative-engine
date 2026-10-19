@@ -185,6 +185,46 @@ fn force_at_point_produces_angular_motion() {
     tn_physics_destroy(simulation);
 }
 
+/// Angle between the rotations of two transform records (id, position xyz, quaternion xyzw).
+fn turned(a: &[f32], b: &[f32]) -> f32 {
+    let dot = (a[4] * b[4] + a[5] * b[5] + a[6] * b[6] + a[7] * b[7])
+        .abs()
+        .min(1.0);
+    2.0 * dot.acos()
+}
+
+#[test]
+fn force_at_point_torque_lasts_one_step() {
+    let simulation = world(0.0);
+    assert!(!simulation.is_null());
+    assert!(tn_physics_add_body(
+        simulation,
+        &body(7, 0, 0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0),
+    ));
+    assert_eq!(
+        tn_physics_apply_body_force_at_point(simulation, 7, 0.0, 20.0, 0.0, 1.0, 0.0, 0.0),
+        ACTUATION_OK
+    );
+    let mut previous = vec![0.0; TRANSFORM_WIDTH];
+    let mut current = vec![0.0; TRANSFORM_WIDTH];
+    let mut spins = Vec::new();
+    for _ in 0..12 {
+        previous.copy_from_slice(&current);
+        assert!(tn_physics_step(simulation, 1.0 / 60.0, std::ptr::null(), 0));
+        tn_physics_read_visible_transforms(simulation, current.as_mut_ptr(), current.len());
+        spins.push(turned(&previous, &current));
+    }
+    // One step of torque leaves a constant spin; a torque the backend kept would spin it up.
+    let early = spins[2];
+    let late = spins[11];
+    assert!(early > 1e-4, "off-centre force did not spin the body: {early}");
+    assert!(
+        (late - early).abs() < early * 0.05,
+        "torque lingered past its step: spin went {early} -> {late}"
+    );
+    tn_physics_destroy(simulation);
+}
+
 #[test]
 fn linear_velocity_round_trips_independently() {
     let simulation = world(0.0);

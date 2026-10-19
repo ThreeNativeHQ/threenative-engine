@@ -1,18 +1,22 @@
+import { fileURLToPath } from "node:url";
 import {
   DoubleSide,
   InstancedBufferAttribute,
   InstancedInterleavedBuffer,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   Texture,
   Vector3,
 } from "three";
-import { MeshStandardNodeMaterial } from "three/webgpu";
+import { MeshStandardNodeMaterial, NodeUpdateType } from "three/webgpu";
+import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import {
   IMPOSTOR_SURFACE_PARALLAX,
   WorldImpostorSurface,
   impostorFrameBasis,
   impostorFrameUv,
+  instanceSyncEvent,
   syncInstanceRanges,
 } from "../src/render/world-impostor-surface.js";
 import {
@@ -22,7 +26,9 @@ import {
   impostorViewCamera,
 } from "../src/render/world-impostor.js";
 
-function makeSurface(source: MeshStandardMaterial = new MeshStandardMaterial()): {
+function makeSurface(
+  source: MeshStandardMaterial | MeshPhysicalMaterial = new MeshStandardMaterial(),
+): {
   readonly surface: WorldImpostorSurface;
   readonly atlas: WorldImpostorAtlas;
 } {
@@ -98,17 +104,45 @@ describe("WorldImpostorSurface material", () => {
     expect(material.normalNode).not.toBeNull();
     expect(material.positionNode).not.toBeNull();
     expect(material.alphaTestNode).not.toBeNull();
-    // The number stays positive for the virtual-shadow alpha caster even though the discard uses the
-    // mip-aware node.
+    // The shadow pass copies the number as its own cutoff and ignores `alphaTestNode`: it must stay
+    // a tiny positive floor, and the mip-aware discard rides on `maskShadowNode` instead. A 0.42
+    // number here discarded every blended fragment in a metres-wide shadow texel.
     expect(material.alphaTest).toBeGreaterThan(0);
-    expect(material.alphaTest).toBeCloseTo(0.42, 6);
+    expect(material.alphaTest).toBeLessThan(0.01);
+    expect(material.maskShadowNode).not.toBeNull();
     expect(material.userData.tnWholeAssetImpostor).toBe(true);
     expect(source.userData.tnWholeAssetImpostor).toBeUndefined();
     expect(material.transparent).toBe(false);
     expect(material.side).toBe(DoubleSide);
     expect(source.map).toBe(sourceMap);
     expect(source.alphaTest).toBeCloseTo(0.42, 6);
-    expect(IMPOSTOR_SURFACE_PARALLAX).toBe(false);
+    expect(IMPOSTOR_SURFACE_PARALLAX).toBe(true);
+    surface.dispose();
+    atlas.dispose();
+  });
+
+  it("clears the physical source's UV maps too, because the quad has no uv to sample them with", () => {
+    // A transmissive or specular source carries maps three samples through `attribute("uv")`, and the
+    // impostor quad is position-only: each one left behind is a build-time
+    // `Vertex attribute "uv" not found on geometry` warning per material per render context, for a
+    // sample the sampler was already returning as zero.
+    const maps = {
+      iridescenceThicknessMap: new Texture(),
+      specularColorMap: new Texture(),
+      specularIntensityMap: new Texture(),
+      thicknessMap: new Texture(),
+      transmissionMap: new Texture(),
+    };
+    const source = new MeshPhysicalMaterial({ transmission: 0.5, ...maps });
+    const { surface, atlas } = makeSurface(source);
+    const material = surface.material as unknown as Record<string, unknown>;
+    for (const [name, map] of Object.entries(maps)) {
+      expect(material[name]).toBeNull();
+      expect((source as unknown as Record<string, unknown>)[name]).toBe(map);
+    }
+    // The scalar the maps modulate survives: a transmissive source is still transmissive, which is
+    // what keeps a bundle from recording this draw.
+    expect((surface.material as unknown as MeshPhysicalMaterial).transmission).toBe(0.5);
     surface.dispose();
     atlas.dispose();
   });
@@ -165,7 +199,10 @@ describe("impostorFrameBasis", () => {
 });
 
 describe("impostorFrameUv", () => {
-  it("projects an offset to the same uv the baker's camera itself projects", () => {
+  // A three render target's texture row 0 is the top of the frame the camera drew (WebGPU writes
+  // top-down and three samples it unflipped; WebGL's flip lands the same place), so the texel the
+  // bake wrote for NDC y sits at v = 0.5 - y/2. The GL-style 0.5 + y/2 drew every impostor upside down.
+  it("projects an offset to the texel the baker's camera wrote it into", () => {
     const center = new Vector3(0.5, -1, 2);
     const radius = 3;
     for (const direction of VIEW_DIRECTIONS) {
@@ -183,7 +220,7 @@ describe("impostorFrameUv", () => {
         const ndc = point.clone().project(camera);
         const uv = impostorFrameUv(point.clone().sub(center), basis, radius);
         expect(uv.u).toBeCloseTo(ndc.x * 0.5 + 0.5, 5);
-        expect(uv.v).toBeCloseTo(ndc.y * 0.5 + 0.5, 5);
+        expect(uv.v).toBeCloseTo(0.5 - ndc.y * 0.5, 5);
       }
     }
   });
@@ -211,6 +248,39 @@ describe("syncInstanceRanges", () => {
     source.needsUpdate = true;
     syncInstanceRanges(source, derived);
     expect(derived.updateRanges).toEqual([]);
+    expect(derived.version).toBe(source.version);
+  });
+});
+
+describe("instanceSyncEvent", () => {
+  it("typechecks the frame event against the installed Three declarations", () => {
+    const file = fileURLToPath(new URL("../src/render/world-impostor-surface.ts", import.meta.url));
+    const program = ts.createProgram([file], {
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      noEmit: true,
+      skipLibCheck: true,
+      strict: true,
+      target: ts.ScriptTarget.ES2022,
+    });
+    const diagnostics = ts
+      .getPreEmitDiagnostics(program)
+      .filter(({ file: source }) => source?.fileName === file);
+    expect(
+      diagnostics.map(({ messageText }) => ts.flattenDiagnosticMessageText(messageText, "\n")),
+    ).toEqual([]);
+  }, 20_000);
+
+  // World batches are `static`, and the patched three skips OBJECT node updates of a settled static
+  // object: an OBJECT-typed sync never ran, the derived buffer kept its first (zeroed) upload, and
+  // every near impostor drew nothing. FRAME is the type three's own `Instance.js` sync uses.
+  it("syncs once per frame, the update a settled static object still runs", () => {
+    const source = new InstancedBufferAttribute(new Float32Array(16 * 2), 16);
+    const derived = new InstancedInterleavedBuffer(source.array as Float32Array, 16, 1);
+    const event = instanceSyncEvent(source, derived);
+    expect(event.updateType).toBe(NodeUpdateType.FRAME);
+    source.needsUpdate = true;
+    event.update({} as never);
     expect(derived.version).toBe(source.version);
   });
 });
@@ -256,5 +326,51 @@ describe("WorldImpostorSurface far cull contract", () => {
     expect(far.cull).toBe(true);
     far.dispose();
     atlas.dispose();
+  });
+});
+
+// Independent geometric oracle for the covered-continuous crossing contract. Hardware captures
+// exercise the actual TSL graph; these controls distinguish intersections from alpha/depth jumps.
+function coveredCrossing(sample: (t: number) => { alpha: number; gap: number }): number | null {
+  let previous = { t: 1.3, ...sample(1.3) };
+  for (let i = 1; i <= 128; i++) {
+    const current = { t: 1.3 * (1 - (2 * i) / 128), ...sample(1.3 * (1 - (2 * i) / 128)) };
+    const before = previous;
+    previous = current;
+    if (before.alpha <= 0.5 || current.alpha <= 0.5 || before.gap <= 0 || current.gap > 0) continue;
+    {
+      let front = before.t;
+      let back = current.t;
+      let valid = true;
+      for (let j = 0; j < 8; j++) {
+        const mid = (front + back) / 2;
+        const value = sample(mid);
+        if (value.alpha <= 0.5) valid = false;
+        if (value.gap > 0) front = mid;
+        else back = mid;
+      }
+      const hit = (front + back) / 2;
+      const value = sample(hit);
+      if (valid && value.alpha > 0.5 && Math.abs(value.gap) <= (2 * 1.3) / 255 / value.alpha)
+        return hit;
+    }
+  }
+  return null;
+}
+
+describe("covered continuous depth geometry controls", () => {
+  it("recovers an oblique plane UV where orthogonal projection is wrong", () => {
+    const hit = coveredCrossing((t) => ({ alpha: 1, gap: (t - 0.75) / Math.sqrt(3) }));
+    expect(hit).not.toBeNull();
+    expect(hit as number).toBeCloseTo(0.75, 4);
+    const expected = (0.6 - 0.75) / Math.sqrt(2);
+    expect((0.6 - (hit as number)) / Math.sqrt(2)).toBeCloseTo(expected, 4);
+    expect(Math.abs(0.6 / Math.sqrt(2) - expected)).toBeGreaterThan(0.5);
+  });
+  it("rejects late coverage behind an alpha hole", () => {
+    expect(coveredCrossing((t) => ({ alpha: t < -0.4 ? 1 : 0, gap: t }))).toBeNull();
+  });
+  it("rejects a depth discontinuity with no surface crossing", () => {
+    expect(coveredCrossing((t) => ({ alpha: 1, gap: t > 0 ? 1 : -1 }))).toBeNull();
   });
 });

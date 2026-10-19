@@ -1,0 +1,24 @@
+{
+  "name": "animation-composition",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "threenative": { "nativeEntry": "src/game.ts" },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "build:desktop": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/animation-composition-native.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "@threenative/physics": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.3",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "@typescript/native": "catalog:"
+  }
+}

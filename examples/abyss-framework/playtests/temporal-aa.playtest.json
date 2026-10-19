@@ -1,0 +1,13 @@
+{
+  "name": "full-resolution-temporal-aa",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 0,
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [{ "kind": "wait", "label": "motion", "waitTicks": 4 }],
+  "assert": {
+    "resources": [{ "id": "temporal", "path": "frame", "gte": 24, "changed": true }],
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true }
+  }
+}

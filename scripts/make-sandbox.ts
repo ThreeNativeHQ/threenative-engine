@@ -445,7 +445,7 @@ function vanillaPackageJson(projectName: string, playtestTarball: string): strin
       devDependencies: {
         "@types/three": "0.185.3",
         playwright: "1.62.1",
-        typescript: "5.9.3",
+        typescript: "7.0.2",
         vite: "8.2.0",
       },
     },

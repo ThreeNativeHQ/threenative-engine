@@ -1,0 +1,31 @@
+{
+  "name": "threenative-avbd-rigging",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "qualify": "tsx qualify.ts"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "@threenative/physics": "workspace:*",
+    "three": "catalog:",
+    "@threenative/playtest": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.3",
+    "@webgpu/types": "0.1.74",
+    "vite": "catalog:",
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:",
+    "tsx": "4.23.5",
+    "playwright": "1.62.1"
+  },
+  "threenative": {
+    "nativeEntry": "src/game.ts"
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 300,
+      "pathLength": 300,
+      "minAxisDelta": {
+        "axis": "x",
+        "min": 300
+      }
+    },
+    "components": [
+      {
+        "component": "maxBlendingTiles",
+        "entity": "terrain",
+        "gte": 1
+      },
+      {
+        "allowTrivial": "TerrainTiles reports its hard tile cap from the first observation.",
+        "component": "residentTiles",
+        "entity": "terrain",
+        "lte": 9
+      },
+      {
+        "allowTrivial": "TerrainTiles reports its hard byte cap from the first observation.",
+        "component": "residentBytes",
+        "entity": "terrain",
+        "lte": 20000000
+      },
+      {
+        "allowTrivial": "TerrainTiles records a nonzero peak resident tile count at startup.",
+        "component": "peakResidentTiles",
+        "entity": "terrain",
+        "gte": 1
+      },
+      {
+        "allowTrivial": "TerrainTiles records a nonzero peak resident byte count at startup.",
+        "component": "peakResidentBytes",
+        "entity": "terrain",
+        "gte": 1
+      },
+      {
+        "allowTrivial": "The validated CPU reference measures seam gaps from its first observation; the bound must hold from startup, not only after movement.",
+        "component": "maxSeamGap",
+        "entity": "terrainCpuReference",
+        "gte": 1e-6,
+        "lte": 64
+      },
+      {
+        "allowTrivial": "TerrainTiles reports no consumer-visible seam after generated skirt coverage.",
+        "component": "maxVisualSeamGap",
+        "entity": "terrainCpuReference",
+        "lte": 0
+      },
+      {
+        "allowTrivial": "The validated CPU reference counts stitched edges from its first observation; the count must stay positive from startup, not only after movement.",
+        "component": "stitchedEdges",
+        "entity": "terrainCpuReference",
+        "gte": 1
+      },
+      {
+        "allowTrivial": "TerrainTiles reports the skirt vertices observed in its rendered geometry.",
+        "component": "skirtVertexCount",
+        "entity": "terrain",
+        "gte": 1
+      },
+      {
+        "allowTrivial": "TerrainTiles keeps the measured LOD mismatch below its declared transition bound from startup.",
+        "changed": true,
+        "component": "maxLodPop",
+        "entity": "terrainCpuReference",
+        "lte": 16
+      },
+      {
+        "component": "maxLodTransitionFrames",
+        "entity": "terrain",
+        "gte": 3
+      },
+      {
+        "changed": true,
+        "component": "lodTransitions",
+        "entity": "terrain"
+      },
+      {
+        "entity": "terrain",
+        "component": "activeMorphFrames",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "terrain",
+        "component": "parityFrames",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "terrain",
+        "component": "parityVertices",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "terrain",
+        "component": "maxPositionError",
+        "lte": 0.001,
+        "allowTrivial": "Every observed visible source vertex is compared with the independent CPU reference; mismatches throw."
+      },
+      {
+        "entity": "terrain",
+        "component": "maxNormalError",
+        "lte": 0.001,
+        "allowTrivial": "Every observed normalized morph normal is compared with the independent CPU reference; mismatches throw."
+      },
+      {
+        "entity": "terrain",
+        "component": "gpuSurfaceSamples",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "terrain",
+        "component": "gpuSurfaceMaxError",
+        "lte": 0.001,
+        "allowTrivial": "Every sampled GPU-rendered world position is compared with a ray cast on a same-frame copy of the CPU reference; an uncovered texel, missed ray, failed readback or error above 1 mm throws."
+      }
+    ],
+    "visibility": [
+      {
+        "allowTrivial": "TerrainTiles is intentionally visible from the initial camera framing so the capture always includes the streamed field.",
+        "entity": "terrain",
+        "minProjectedPixels": 1,
+        "present": true
+      }
+    ]
+  },
+  "name": "terrain-raster",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "holdTicks": 180,
+      "label": "cross-three-chunk-boundaries",
+      "press": ["ArrowRight"],
+      "release": true
+    }
+  ],
+  "subject": "player",
+  "target": "web",
+  "viewport": {
+    "height": 300,
+    "width": 1280
+  },
+  "warmupFrames": 10
+}

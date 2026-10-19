@@ -208,4 +208,25 @@ describe("rapier playtest capability", () => {
     expect(artifact?.primitives).toHaveLength(200);
     expect(JSON.parse(JSON.stringify(observations))).toEqual(observations);
   });
+
+  it("throws on duplicate sample label and when sample limit is reached", async () => {
+    const { contribution, ctx, plugin, setTick } = await physicsHarness();
+    setTick(1);
+    plugin.update?.(ctx, 1 / 60);
+
+    contribution().sample({ include: ["physicsDebugSeries"], label: "step-0" });
+    expect(() =>
+      contribution().sample({ include: ["physicsDebugSeries"], label: "step-0" }),
+    ).toThrow(/TN_PHYSICS_DEBUG_LABEL_DUPLICATE/);
+
+    // Fill up to PHYSICS_DEBUG_SAMPLE_LIMIT (100)
+    for (let index = 1; index < 100; index += 1) {
+      contribution().sample({ include: ["physicsDebugSeries"], label: `step-${index}` });
+    }
+
+    // 101st sample exceeds the sample limit
+    expect(() =>
+      contribution().sample({ include: ["physicsDebugSeries"], label: "overflow-step" }),
+    ).toThrow(/TN_PHYSICS_DEBUG_SAMPLE_LIMIT/);
+  });
 });

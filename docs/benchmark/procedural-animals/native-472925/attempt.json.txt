@@ -1,0 +1,163 @@
+{
+  "candidateHead": "472925d7b42eae2b4c1de89604334a5d7552b693",
+  "preparedAt": "2026-10-06T15:20:52.407759+00:00",
+  "frozenInputs": 2055,
+  "host": {
+    "path": "/home/joao/Documents/Codex/2026-10-05/task-5/shared-linux-host/14bc0aec4ef4/mystral",
+    "sha256": "14bc0aec4ef44b743a65b7cbb24e76bc84037d6564187410739e9234e6885058",
+    "bytes": 101844472
+  },
+  "nativeBundle": {
+    "path": "/home/joao/Documents/Codex/2026-10-05/task-4/animal-native-consumer/game.wall-clock.js",
+    "sha256": "f8912ef0bd5f34245b33e97cdb2121e08e156c2c3448a99096eb7a662f05e096",
+    "bytes": 4465773,
+    "classicScriptSyntax": true,
+    "originalBundleSha256": "098acb1782f14e2100b39ae2eb787a286789c6006e3be2185ab7d7b5c1fb1b4c",
+    "prefixBytes": 58,
+    "originalBytesPreserved": true,
+    "binaryExecuted": true,
+    "actualHostClockVerified": true,
+    "platformQualified": true
+  },
+  "status": "completed",
+  "nativeQualified": true,
+  "gpuLease": "externalcanonical awaited beforechildspawn; evidenceperarm",
+  "parentGrant": "GGEZreleased15:15:02UTC; correctednative nextpriority",
+  "nativeExecuted": true,
+  "completedAt": "2026-10-06T15:29:01.602046+00:00",
+  "arms": [
+    {
+      "name": "animals",
+      "startUtc": "2026-10-06T15:20:52.613056340Z",
+      "endUtc": "2026-10-06T15:21:25.876741455Z",
+      "outerCleanupEndUtc": "2026-10-06T15:21:26.259053756Z",
+      "pass": true,
+      "assertions": 20,
+      "consoleEntries": 803,
+      "consoleErrors": 0,
+      "producerClock": "wall-clock",
+      "producerClockObservations": 181,
+      "rawReportClock": "fixed-step",
+      "rawClockLabelSource": "packages/playtest/src/runner/runner-support.ts:414 derives config.liveClock; report preserved",
+      "captureHolderBeforeHost": {
+        "command": "animal outer shared lease bash -c cat /tmp/threenative-playtest-capture/lock/holder.json > \"$2/capture-holder-before-host.json\"; exec bash \"$1\" \"$3\" \"$2\" _ /home/joao/Documents/Codex/2026-10-05/task-4/animal-native-launch-prep/native-scenario-child.sh /home/joao/Documents/Codex/2026-10-05/task-4/animal-platform-runs/attempt.vRlqpqSr/native-animals animals",
+        "pid": 3439387,
+        "startedAt": "2026-10-06T15:20:52.535Z"
+      },
+      "numericValues": {
+        "resource.GameState.loaded": true,
+        "resource.GameState.wolves": 32,
+        "resource.GameState.rootError": 0,
+        "resource.GameState.vertices": 6999,
+        "resource.GameState.bones": 37,
+        "resource.state.visibleCaptured": true,
+        "resource.state.visibleMainDraws": 32,
+        "resource.state.visibleShadowDraws": 32,
+        "resource.state.gpuCases": 9,
+        "resource.state.gpuPositionError": 6.337275425425687e-07,
+        "resource.state.gpuNormalError": 4.978046099538083e-07
+      },
+      "pngs": [
+        {
+          "path": "/home/joao/Documents/Codex/2026-10-05/task-4/animal-platform-runs/attempt.vRlqpqSr/native-animals/after.png",
+          "width": 1280,
+          "height": 720,
+          "bytes": 697086,
+          "sha256": "9abbb29520b79140d5d25f51da9686acc73920384df1fe70a23f05abba00a732"
+        },
+        {
+          "path": "/home/joao/Documents/Codex/2026-10-05/task-4/animal-platform-runs/attempt.vRlqpqSr/native-animals/posture.png",
+          "width": 1280,
+          "height": 720,
+          "bytes": 697216,
+          "sha256": "cf193a657ca54bb6d5559638e2823f9e93129a1f1559d786186aacae847a2a51"
+        },
+        {
+          "path": "/home/joao/Documents/Codex/2026-10-05/task-4/animal-platform-runs/attempt.vRlqpqSr/native-animals/stopped.png",
+          "width": 1280,
+          "height": 720,
+          "bytes": 565166,
+          "sha256": "773d429a792fc5ed29f21bb8840efdbe2905cf7003f0243829d2e2c0d56155a3"
+        },
+        {
+          "path": "/home/joao/Documents/Codex/2026-10-05/task-4/animal-platform-runs/attempt.vRlqpqSr/native-animals/turn.png",
+          "width": 1280,
+          "height": 720,
+          "bytes": 640026,
+          "sha256": "bbd56f3bbbd05760ddc91b8c01e1a1dfd0d885acaee25a77939760babb728858"
+        },
+        {
+          "path": "/home/joao/Documents/Codex/2026-10-05/task-4/animal-platform-runs/attempt.vRlqpqSr/native-animals/wall.png",
+          "width": 1280,
+          "height": 720,
+          "bytes": 573460,
+          "sha256": "e17d5951a6457f6dc1f992398c7fea115661f42b1559dfdb2ebf69f7b71a5814"
+        }
+      ],
+      "independentImageReview": "review_wall_subject opened all seven actual PNGs; no AC6 visualblocker; exactpaw/sitlie/pixelparity unclaimed"
+    },
+    {
+      "name": "frustum",
+      "startUtc": "2026-10-06T15:21:26.489801912Z",
+      "endUtc": "2026-10-06T15:21:58.908096675Z",
+      "outerCleanupEndUtc": "2026-10-06T15:21:59.288244768Z",
+      "pass": true,
+      "assertions": 19,
+      "consoleEntries": 801,
+      "consoleErrors": 0,
+      "producerClock": "wall-clock",
+      "producerClockObservations": 185,
+      "rawReportClock": "fixed-step",
+      "rawClockLabelSource": "packages/playtest/src/runner/runner-support.ts:414 derives config.liveClock; report preserved",
+      "captureHolderBeforeHost": {
+        "command": "animal outer shared lease bash -c cat /tmp/threenative-playtest-capture/lock/holder.json > \"$2/capture-holder-before-host.json\"; exec bash \"$1\" \"$3\" \"$2\" _ /home/joao/Documents/Codex/2026-10-05/task-4/animal-native-launch-prep/native-scenario-child.sh /home/joao/Documents/Codex/2026-10-05/task-4/animal-platform-runs/attempt.vRlqpqSr/native-frustum frustum",
+        "pid": 3440225,
+        "startedAt": "2026-10-06T15:21:26.409Z"
+      },
+      "numericValues": {
+        "resource.GameState.loaded": true,
+        "resource.GameState.wolves": 32,
+        "resource.GameState.rootError": 0,
+        "resource.GameState.vertices": 6999,
+        "resource.GameState.bones": 37,
+        "resource.state.visibleCaptured": true,
+        "resource.state.visibleMainDraws": 32,
+        "resource.state.visibleShadowDraws": 32,
+        "resource.state.gpuCases": 9,
+        "resource.state.gpuPositionError": 6.337275425425687e-07,
+        "resource.state.gpuNormalError": 4.978046099538083e-07,
+        "resource.state.offFrustumCaptured": true,
+        "resource.state.offFrustumMainDraws": 0
+      },
+      "pngs": [
+        {
+          "path": "/home/joao/Documents/Codex/2026-10-05/task-4/animal-platform-runs/attempt.vRlqpqSr/native-frustum/after.png",
+          "width": 1280,
+          "height": 720,
+          "bytes": 472828,
+          "sha256": "bd216eb054642accc6fb68b2727bb551d24fe6b2e8076920df589fc942c7eb23"
+        },
+        {
+          "path": "/home/joao/Documents/Codex/2026-10-05/task-4/animal-platform-runs/attempt.vRlqpqSr/native-frustum/outside.png",
+          "width": 1280,
+          "height": 720,
+          "bytes": 472828,
+          "sha256": "bd216eb054642accc6fb68b2727bb551d24fe6b2e8076920df589fc942c7eb23"
+        }
+      ],
+      "independentImageReview": "review_wall_subject opened all seven actual PNGs; no AC6 visualblocker; exactpaw/sitlie/pixelparity unclaimed"
+    }
+  ],
+  "cleanup": {
+    "hostUtc": "2026-10-06T15:22:37.674605+00:00",
+    "nativeHosts": [],
+    "canonicalCaptureHolder": null,
+    "foreignProcessesModified": false,
+    "ownedWrapperExitCodes": {
+      "animals": 0,
+      "frustum": 0
+    },
+    "gpu": "1075 MiB, 6718 MiB, 0 %"
+  },
+  "performanceAndLifetimeQualified": false
+}

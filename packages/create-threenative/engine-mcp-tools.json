@@ -1,5 +1,40 @@
 {
   "comment": "The engine capability MCP surface shipped through @threenative/core. The golden path also calls a mechanically explicit cross-system request so a packaged consumer proves full-request discovery without repository source.",
-  "version": "0.2.4",
-  "tools": ["engine_capability_detail", "engine_search_capabilities"]
+  "version": "0.2.5",
+  "tools": ["engine_capability_detail", "engine_search_capabilities"],
+  "inputSchemas": {
+    "engine_search_capabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "description": "Use request for the complete cross-system game request; use mechanic or omit it for one mechanic.",
+          "enum": ["request", "mechanic"],
+          "type": "string"
+        },
+        "situation": {
+          "type": "string"
+        }
+      },
+      "required": ["situation"],
+      "type": "object"
+    },
+    "engine_capability_detail": {
+      "additionalProperties": false,
+      "properties": {
+        "importPath": {
+          "description": "The search result's importPath; required when two packages export the same symbol.",
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        }
+      },
+      "required": ["symbol"],
+      "type": "object"
+    }
+  },
+  "descriptions": {
+    "engine_search_capabilities": "Search the installed engine by concrete gameplay mechanic. Decompose genres first. Use scope \"request\" for the mechanically explicit full request and \"mechanic\" for each focused search; matchedSituation and score explain every result. The response verdict \"none\" is an actionable answer with guidance, not a failed search.",
+    "engine_capability_detail": "Inspect one engine capability's import, signature, example, constraints, and overrides. When several packages export the symbol, every match is returned under `matches`."
+  }
 }

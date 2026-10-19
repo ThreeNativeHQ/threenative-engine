@@ -11,6 +11,7 @@ complaints share one root system: (a) backgrounding a game and coming back repla
 loading sequence; (b) the loading screen shows a static "PREPARING" for seconds before anything
 moves, and the ask is whether results can be cached so loads stop repeating.
 
+**Priority:** P1 — Pixel 8 reloads play on background or rotate; open boxes attribute each reload to K1/K2/K3.
 **Complexity:** +3 for 10+ files across runtime-native/core/templates, +2 for complex state logic
 (lifecycle and memory policy), +2 multi-package = **7 → HIGH mode**, checkpoint after every phase.
 

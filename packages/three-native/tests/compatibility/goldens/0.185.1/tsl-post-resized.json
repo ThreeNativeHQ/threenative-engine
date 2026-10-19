@@ -1,0 +1,35 @@
+{
+  "name": "tsl-post-resized",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — PRD-513: the same post chain, drawn once at 200 x 150 and then at 320 x 240: the captured frame is after a resize, so the pass target follows the new size",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:2d20efd036b37b1982fe3fca6902abd797eafc112651dfa9853b4d44240cdc8f",
+      "decimal": "2d20efd036b37b1982fe3fca6902abd797eafc112651dfa9853b4d44240cdc8f"
+    }
+  ],
+  "render": {
+    "png": "tsl-post-resized.png",
+    "pngSha256": "2d20efd036b37b1982fe3fca6902abd797eafc112651dfa9853b4d44240cdc8f",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

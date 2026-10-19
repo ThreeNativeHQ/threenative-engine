@@ -1,0 +1,1103 @@
+{
+  "name": "math-primitives-frustum",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Frustum.tests.js \u2014 set and copy, then setFromProjectionMatrix in both coordinate systems and reversed depth",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "n01",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p02",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p02",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n01"
+        },
+        0
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n03",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p04",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p04",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n03"
+        },
+        1
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n05",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p06",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p06",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n05"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n07",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p08",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p08",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n07"
+        },
+        3
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n09",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p10",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p10",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n09"
+        },
+        4
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n11",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p12",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p12",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n11"
+        },
+        5
+      ]
+    },
+    {
+      "op": "new",
+      "id": "f13",
+      "class": "Frustum",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "f13",
+      "method": "set",
+      "args": [
+        {
+          "ref": "p02"
+        },
+        {
+          "ref": "p04"
+        },
+        {
+          "ref": "p06"
+        },
+        {
+          "ref": "p08"
+        },
+        {
+          "ref": "p10"
+        },
+        {
+          "ref": "p12"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "f14",
+      "class": "Frustum",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "f14",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "f14"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m15",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m15",
+      "method": "makePerspective",
+      "args": [-1, 1, 1, -1, 1, 100]
+    },
+    {
+      "op": "new",
+      "id": "f16",
+      "class": "Frustum",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "f16",
+      "method": "setFromProjectionMatrix",
+      "args": [
+        {
+          "ref": "m15"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "f17",
+      "class": "Frustum",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v18",
+      "class": "Vector3",
+      "args": [0, 0, -5]
+    },
+    {
+      "op": "call",
+      "id": "f17",
+      "method": "containsPoint",
+      "args": [
+        {
+          "ref": "v18"
+        }
+      ],
+      "result": "r19"
+    },
+    {
+      "op": "new",
+      "id": "v20",
+      "class": "Vector3",
+      "args": [0, 0, -500]
+    },
+    {
+      "op": "call",
+      "id": "f17",
+      "method": "containsPoint",
+      "args": [
+        {
+          "ref": "v20"
+        }
+      ],
+      "result": "r21"
+    },
+    {
+      "op": "new",
+      "id": "c22",
+      "class": "Vector3",
+      "args": [0, 0, -5]
+    },
+    {
+      "op": "new",
+      "id": "s23",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s23",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c22"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f17",
+      "method": "intersectsSphere",
+      "args": [
+        {
+          "ref": "s23"
+        }
+      ],
+      "result": "r24"
+    },
+    {
+      "op": "new",
+      "id": "lo25",
+      "class": "Vector3",
+      "args": [-1, -1, -5]
+    },
+    {
+      "op": "new",
+      "id": "hi26",
+      "class": "Vector3",
+      "args": [1, 1, -4]
+    },
+    {
+      "op": "new",
+      "id": "b27",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b27",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo25"
+        },
+        {
+          "ref": "hi26"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f17",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b27"
+        }
+      ],
+      "result": "r28"
+    },
+    {
+      "op": "new",
+      "id": "lo29",
+      "class": "Vector3",
+      "args": [-1, -1, 50]
+    },
+    {
+      "op": "new",
+      "id": "hi30",
+      "class": "Vector3",
+      "args": [1, 1, 60]
+    },
+    {
+      "op": "new",
+      "id": "b31",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b31",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo29"
+        },
+        {
+          "ref": "hi30"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f17",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b31"
+        }
+      ],
+      "result": "r32"
+    },
+    {
+      "op": "call",
+      "id": "m15",
+      "method": "makePerspective",
+      "args": [-1, 1, 1, -1, 1, 100, 2001, false]
+    },
+    {
+      "op": "new",
+      "id": "f33",
+      "class": "Frustum",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "f33",
+      "method": "setFromProjectionMatrix",
+      "args": [
+        {
+          "ref": "m15"
+        },
+        2001,
+        false
+      ]
+    },
+    {
+      "op": "new",
+      "id": "f34",
+      "class": "Frustum",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v35",
+      "class": "Vector3",
+      "args": [0, 0, -5]
+    },
+    {
+      "op": "call",
+      "id": "f34",
+      "method": "containsPoint",
+      "args": [
+        {
+          "ref": "v35"
+        }
+      ],
+      "result": "r36"
+    },
+    {
+      "op": "new",
+      "id": "v37",
+      "class": "Vector3",
+      "args": [0, 0, -500]
+    },
+    {
+      "op": "call",
+      "id": "f34",
+      "method": "containsPoint",
+      "args": [
+        {
+          "ref": "v37"
+        }
+      ],
+      "result": "r38"
+    },
+    {
+      "op": "new",
+      "id": "c39",
+      "class": "Vector3",
+      "args": [0, 0, -5]
+    },
+    {
+      "op": "new",
+      "id": "s40",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s40",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c39"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f34",
+      "method": "intersectsSphere",
+      "args": [
+        {
+          "ref": "s40"
+        }
+      ],
+      "result": "r41"
+    },
+    {
+      "op": "new",
+      "id": "lo42",
+      "class": "Vector3",
+      "args": [-1, -1, -5]
+    },
+    {
+      "op": "new",
+      "id": "hi43",
+      "class": "Vector3",
+      "args": [1, 1, -4]
+    },
+    {
+      "op": "new",
+      "id": "b44",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b44",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo42"
+        },
+        {
+          "ref": "hi43"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f34",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b44"
+        }
+      ],
+      "result": "r45"
+    },
+    {
+      "op": "new",
+      "id": "lo46",
+      "class": "Vector3",
+      "args": [-1, -1, 50]
+    },
+    {
+      "op": "new",
+      "id": "hi47",
+      "class": "Vector3",
+      "args": [1, 1, 60]
+    },
+    {
+      "op": "new",
+      "id": "b48",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b48",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo46"
+        },
+        {
+          "ref": "hi47"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f34",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b48"
+        }
+      ],
+      "result": "r49"
+    },
+    {
+      "op": "call",
+      "id": "m15",
+      "method": "makePerspective",
+      "args": [-1, 1, 1, -1, 1, 100, 2000, true]
+    },
+    {
+      "op": "new",
+      "id": "f50",
+      "class": "Frustum",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "f50",
+      "method": "setFromProjectionMatrix",
+      "args": [
+        {
+          "ref": "m15"
+        },
+        2000,
+        true
+      ]
+    },
+    {
+      "op": "new",
+      "id": "f51",
+      "class": "Frustum",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v52",
+      "class": "Vector3",
+      "args": [0, 0, -5]
+    },
+    {
+      "op": "call",
+      "id": "f51",
+      "method": "containsPoint",
+      "args": [
+        {
+          "ref": "v52"
+        }
+      ],
+      "result": "r53"
+    },
+    {
+      "op": "new",
+      "id": "v54",
+      "class": "Vector3",
+      "args": [0, 0, -500]
+    },
+    {
+      "op": "call",
+      "id": "f51",
+      "method": "containsPoint",
+      "args": [
+        {
+          "ref": "v54"
+        }
+      ],
+      "result": "r55"
+    },
+    {
+      "op": "new",
+      "id": "c56",
+      "class": "Vector3",
+      "args": [0, 0, -5]
+    },
+    {
+      "op": "new",
+      "id": "s57",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s57",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c56"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f51",
+      "method": "intersectsSphere",
+      "args": [
+        {
+          "ref": "s57"
+        }
+      ],
+      "result": "r58"
+    },
+    {
+      "op": "new",
+      "id": "lo59",
+      "class": "Vector3",
+      "args": [-1, -1, -5]
+    },
+    {
+      "op": "new",
+      "id": "hi60",
+      "class": "Vector3",
+      "args": [1, 1, -4]
+    },
+    {
+      "op": "new",
+      "id": "b61",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b61",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo59"
+        },
+        {
+          "ref": "hi60"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f51",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b61"
+        }
+      ],
+      "result": "r62"
+    },
+    {
+      "op": "new",
+      "id": "lo63",
+      "class": "Vector3",
+      "args": [-1, -1, 50]
+    },
+    {
+      "op": "new",
+      "id": "hi64",
+      "class": "Vector3",
+      "args": [1, 1, 60]
+    },
+    {
+      "op": "new",
+      "id": "b65",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b65",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo63"
+        },
+        {
+          "ref": "hi64"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f51",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b65"
+        }
+      ],
+      "result": "r66"
+    },
+    {
+      "op": "call",
+      "id": "m15",
+      "method": "makePerspective",
+      "args": [-1, 1, 1, -1, 1, 100, 2001, true]
+    },
+    {
+      "op": "new",
+      "id": "f67",
+      "class": "Frustum",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "f67",
+      "method": "setFromProjectionMatrix",
+      "args": [
+        {
+          "ref": "m15"
+        },
+        2001,
+        true
+      ]
+    },
+    {
+      "op": "new",
+      "id": "f68",
+      "class": "Frustum",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v69",
+      "class": "Vector3",
+      "args": [0, 0, -5]
+    },
+    {
+      "op": "call",
+      "id": "f68",
+      "method": "containsPoint",
+      "args": [
+        {
+          "ref": "v69"
+        }
+      ],
+      "result": "r70"
+    },
+    {
+      "op": "new",
+      "id": "v71",
+      "class": "Vector3",
+      "args": [0, 0, -500]
+    },
+    {
+      "op": "call",
+      "id": "f68",
+      "method": "containsPoint",
+      "args": [
+        {
+          "ref": "v71"
+        }
+      ],
+      "result": "r72"
+    },
+    {
+      "op": "new",
+      "id": "c73",
+      "class": "Vector3",
+      "args": [0, 0, -5]
+    },
+    {
+      "op": "new",
+      "id": "s74",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s74",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c73"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f68",
+      "method": "intersectsSphere",
+      "args": [
+        {
+          "ref": "s74"
+        }
+      ],
+      "result": "r75"
+    },
+    {
+      "op": "new",
+      "id": "lo76",
+      "class": "Vector3",
+      "args": [-1, -1, -5]
+    },
+    {
+      "op": "new",
+      "id": "hi77",
+      "class": "Vector3",
+      "args": [1, 1, -4]
+    },
+    {
+      "op": "new",
+      "id": "b78",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b78",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo76"
+        },
+        {
+          "ref": "hi77"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f68",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b78"
+        }
+      ],
+      "result": "r79"
+    },
+    {
+      "op": "new",
+      "id": "lo80",
+      "class": "Vector3",
+      "args": [-1, -1, 50]
+    },
+    {
+      "op": "new",
+      "id": "hi81",
+      "class": "Vector3",
+      "args": [1, 1, 60]
+    },
+    {
+      "op": "new",
+      "id": "b82",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b82",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo80"
+        },
+        {
+          "ref": "hi81"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "f68",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b82"
+        }
+      ],
+      "result": "r83"
+    }
+  ],
+  "observe": [
+    {
+      "id": "f13",
+      "kind": "number",
+      "path": "planes.0.constant"
+    },
+    {
+      "id": "f13",
+      "kind": "number",
+      "path": "planes.5.normal.x"
+    },
+    {
+      "id": "f14",
+      "kind": "number",
+      "path": "planes.3.constant"
+    },
+    {
+      "id": "f16",
+      "kind": "number",
+      "path": "planes.4.constant"
+    },
+    {
+      "id": "f16",
+      "kind": "number",
+      "path": "planes.4.normal.z"
+    },
+    {
+      "id": "f16",
+      "kind": "number",
+      "path": "planes.5.constant"
+    },
+    {
+      "id": "f16",
+      "kind": "number",
+      "path": "planes.0.normal.x"
+    },
+    {
+      "id": "r19",
+      "kind": "boolean"
+    },
+    {
+      "id": "r21",
+      "kind": "boolean"
+    },
+    {
+      "id": "r24",
+      "kind": "boolean"
+    },
+    {
+      "id": "r28",
+      "kind": "boolean"
+    },
+    {
+      "id": "r32",
+      "kind": "boolean"
+    },
+    {
+      "id": "f33",
+      "kind": "number",
+      "path": "planes.4.constant"
+    },
+    {
+      "id": "f33",
+      "kind": "number",
+      "path": "planes.4.normal.z"
+    },
+    {
+      "id": "f33",
+      "kind": "number",
+      "path": "planes.5.constant"
+    },
+    {
+      "id": "f33",
+      "kind": "number",
+      "path": "planes.0.normal.x"
+    },
+    {
+      "id": "r36",
+      "kind": "boolean"
+    },
+    {
+      "id": "r38",
+      "kind": "boolean"
+    },
+    {
+      "id": "r41",
+      "kind": "boolean"
+    },
+    {
+      "id": "r45",
+      "kind": "boolean"
+    },
+    {
+      "id": "r49",
+      "kind": "boolean"
+    },
+    {
+      "id": "f50",
+      "kind": "number",
+      "path": "planes.4.constant"
+    },
+    {
+      "id": "f50",
+      "kind": "number",
+      "path": "planes.4.normal.z"
+    },
+    {
+      "id": "f50",
+      "kind": "number",
+      "path": "planes.5.constant"
+    },
+    {
+      "id": "f50",
+      "kind": "number",
+      "path": "planes.0.normal.x"
+    },
+    {
+      "id": "r53",
+      "kind": "boolean"
+    },
+    {
+      "id": "r55",
+      "kind": "boolean"
+    },
+    {
+      "id": "r58",
+      "kind": "boolean"
+    },
+    {
+      "id": "r62",
+      "kind": "boolean"
+    },
+    {
+      "id": "r66",
+      "kind": "boolean"
+    },
+    {
+      "id": "f67",
+      "kind": "number",
+      "path": "planes.4.constant"
+    },
+    {
+      "id": "f67",
+      "kind": "number",
+      "path": "planes.4.normal.z"
+    },
+    {
+      "id": "f67",
+      "kind": "number",
+      "path": "planes.5.constant"
+    },
+    {
+      "id": "f67",
+      "kind": "number",
+      "path": "planes.0.normal.x"
+    },
+    {
+      "id": "r70",
+      "kind": "boolean"
+    },
+    {
+      "id": "r72",
+      "kind": "boolean"
+    },
+    {
+      "id": "r75",
+      "kind": "boolean"
+    },
+    {
+      "id": "r79",
+      "kind": "boolean"
+    },
+    {
+      "id": "r83",
+      "kind": "boolean"
+    }
+  ]
+}

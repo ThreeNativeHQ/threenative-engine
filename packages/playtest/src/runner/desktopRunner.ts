@@ -1,3 +1,4 @@
+import { completionWindowEnvironment } from "./steps.js";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -40,6 +41,10 @@ export async function runDesktopPlaytest(
   config: IStandalonePlaytestConfig,
   dependencies: IDesktopPlaytestDependencies = {},
 ): Promise<IStandalonePlaytestReport> {
+  if (config.liveClock !== true && process.env.TN_PLAYTEST_CLOCK !== undefined) {
+    throw new Error("TN_PLAYTEST_CLOCK: a counted run must not inherit a wall clock; unset TN_PLAYTEST_CLOCK or pass --live-clock.");
+  }
+  if (process.env.TN_PLAYTEST_COMPLETION_WINDOW_LABEL !== undefined) completionWindowEnvironment("desktop", config.headless);
   const executable = config.desktop?.executable;
   if (executable === undefined) {
     throw new Error("Desktop playtest requires --executable <native-game-executable>.");
@@ -100,6 +105,7 @@ export async function runDesktopPlaytest(
       cwd: config.projectPath,
       ...(providedDisplay === undefined ? {} : { env: providedDisplay.env }),
       executable,
+      liveClock: config.liveClock === true,
       mailboxRoot: root,
       screenshotTimeoutMs: config.timeoutMs,
     });

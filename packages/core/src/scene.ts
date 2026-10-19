@@ -150,15 +150,37 @@ export interface IStartupStatus {
    * Throws on an empty or duplicate label, and on a hold registered after startup already
    * resolved — each means the caller believes it is gating something it is not.
    *
+   * `progress` optionally observes monotonically completed work units (textures, placements or
+   * cells), so a fixed display percentage cannot falsely report a stall. Use completed work,
+   * never time or frame counts. Regressing/invalid values receive no credit, settlement freezes
+   * the count, and the hold's original deadline still applies.
+   * `work` may instead be a predicate, polled once per rendered frame until it returns true, for a
+   * readiness the game measures rather than awaits (spawn cells loaded). It needs no simulation
+   * step, so it also settles under a playtest's deterministic clock, which advances no fixed step
+   * while startup is held. A throwing predicate counts as settled.
+   *
    * @situation hold the loading screen until the game's own asset tier has landed
    */
-  hold(label: string, work: Promise<unknown>, budgetMs?: number): void;
+  hold(
+    label: string,
+    work: Promise<unknown> | (() => boolean),
+    budgetMs?: number,
+    progress?: () => number,
+  ): void;
 }
 
 export interface ICtx<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
 > {
+  /** Fraction of the next simulation tick accumulated for the presented frame, in [0, 1). */
+  readonly alpha: number;
+  /** The current frame callback timestamp in milliseconds, shared by web and native. */
+  readonly frameTime: number;
+  /** Opt a transform into draw-only fixed-step interpolation; returns scene-owned removal. */
+  readonly interpolate: (object: Object3D) => () => void;
+  /** Reset history after a game-driven teleport. */
+  readonly resetInterpolation: (object: Object3D) => void;
   readonly fps: number;
   readonly renderer: IRendererLike;
   readonly viewport: Viewport;

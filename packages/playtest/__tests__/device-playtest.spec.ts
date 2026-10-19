@@ -1,8 +1,9 @@
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PNG } from "pngjs";
 import { expect, test } from "vitest";
 
 import {
@@ -271,6 +272,57 @@ test("native screenshot evidence fails closed when the driver does not produce a
     "player",
     "after",
   )).rejects.toThrow(/ENOENT|no such file/u);
+});
+
+test("desktop wheel, media and the fixed UI clock reach the native host", async () => {
+  const moving = movingBridge();
+  const wheels: number[][] = [];
+  const media: number[][] = [];
+  const clock: number[] = [];
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: {
+      advanceClock: (ticks: number) => { clock.push(ticks); return true; },
+      keyboard: () => undefined,
+      media: (dark: number, reducedMotion: number) => { media.push([dark, reducedMotion]); return true; },
+      pointer: () => undefined,
+      wheel: (x: number, y: number, deltaX: number, deltaY: number) => { wheels.push([x, y, deltaX, deltaY]); return true; },
+    },
+  } as never;
+  try {
+    const result = await runDesktopDevice(new FakeAndroidDriver(moving.bridge), [
+      { media: { colorScheme: "dark" }, waitTicks: 1 },
+      { wheel: { deltaY: 50, x: 0.25, y: 0.5 }, waitTicks: 7 },
+      { media: { reducedMotion: "reduce" }, wheel: { deltaX: 3, deltaY: -20 }, waitTicks: 1 },
+    ]);
+    expect(result.pass).toBe(true);
+    expect(wheels).toEqual([[160, 180, 0, 50], [320, 180, 3, -20]]);
+    expect(media).toEqual([[1, -1], [-1, 1]]);
+    // Every advance the run made is handed to the host clock, tick for tick.
+    expect(clock).toContain(7);
+    expect(clock.reduce((sum, ticks) => sum + ticks, 0)).toBe(moving.tick());
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
+});
+
+test("a desktop media step fails closed when the host has no CSS UI to take it", async () => {
+  const host = globalThis as typeof globalThis & INativeHost;
+  const previous = host.__THREENATIVE_NATIVE__;
+  host.__THREENATIVE_NATIVE__ = {
+    playtestInput: { keyboard: () => undefined, media: () => false, pointer: () => undefined },
+  } as never;
+  try {
+    const outcome = await runDesktopDevice(new FakeAndroidDriver(movingBridge().bridge), [
+      { media: { colorScheme: "dark" }, waitTicks: 1 },
+    ]).then((report) => JSON.stringify(report), (error: unknown) => String(error));
+    expect(outcome).toMatch(/media emulation is unavailable/u);
+  } finally {
+    if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
+    else host.__THREENATIVE_NATIVE__ = previous;
+  }
 });
 
 test("buttonless native pointer movement drives anonymous evidence", async () => {
@@ -943,6 +995,131 @@ async function runDevice(
   return runAndroidPlaytest(config, { driver, transport: new DeviceBridgeTransport(endpoint) });
 }
 
+async function runDesktopDevice(driver: FakeAndroidDriver, steps: unknown[]) {
+  const projectPath = await makeTempDir("playtest-desktop-device-");
+  await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
+    artifacts: { screenshots: false },
+    assert: { movement: { entity: "player", maxDistance: 10 } },
+    name: "desktop-device-input",
+    schemaVersion: 1,
+    steps,
+    subject: "player",
+    target: "desktop",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  }));
+  const port = await availablePort();
+  const endpoint = `http://127.0.0.1:${port}/playtest`;
+  return runDevicePlaytest({
+    artifactDirectory: join(projectPath, "artifacts"),
+    endpoint,
+    headless: true,
+    projectPath,
+    scenarioPath: "scenario.json",
+    target: "desktop",
+    timeoutMs: 1_000,
+    trace: false,
+    url: "http://127.0.0.1:5173",
+  }, {
+    driver,
+    mailboxPaths: { request: "request", response: "response" },
+    name: "desktop",
+    processName: "desktop-input-test",
+    transport: new DeviceBridgeTransport(endpoint),
+  });
+}
+
+/**
+ * A 128 by 128 frame with eight shades of dark background and one 16 by 16 bright cloud. The
+ * cloud is 256 of 16384 pixels: below the browser bright-pixel floor (0.05), above the desktop
+ * content floor (0.001). Background luminance stays under 0.05, so it is not bright either.
+ */
+function cloudPng(): Buffer {
+  const png = new PNG({ width: 128, height: 128 });
+  for (let y = 0; y < 128; y += 1) {
+    for (let x = 0; x < 128; x += 1) {
+      const cloud = x >= 56 && x < 72 && y >= 56 && y < 72;
+      const shade = cloud ? 255 : 4 + ((x + y) % 8);
+      png.data.set([shade, shade, shade, 255], (y * 128 + x) * 4);
+    }
+  }
+  return PNG.sync.write(png);
+}
+
+class PngDriver extends FakeAndroidDriver {
+  readonly written: string[] = [];
+
+  constructor(bridge: IPlaytestBridgeV1, private readonly png: Buffer) {
+    super(bridge);
+  }
+
+  override async screenshot(path?: string) {
+    if (path === undefined) return;
+    this.written.push(path);
+    await writeFile(path, this.png);
+  }
+}
+
+test("a device screenshot on desktop passes the content floor, and android still fails the bright-pixel floor", async () => {
+  const cloud = cloudPng();
+  const steps = [{ waitTicks: 1 }];
+  const desktop = new PngDriver(movingBridge().bridge, cloud);
+  const desktopOutcome = await runScreenshotDevice("desktop", desktop, steps).then(
+    (result) => JSON.stringify(result),
+    (error: unknown) => String(error),
+  );
+  expect(desktopOutcome).not.toContain("TN_CAPTURE_BLANK");
+  expect(desktop.written).toHaveLength(2);
+
+  const android = new PngDriver(movingBridge().bridge, cloud);
+  const androidOutcome = await runScreenshotDevice("android", android, steps).then(
+    (result) => JSON.stringify(result),
+    (error: unknown) => String(error),
+  );
+  expect(androidOutcome).toContain("bright pixel ratio");
+  expect(android.written.length).toBeGreaterThanOrEqual(1);
+});
+
+async function runScreenshotDevice(name: "android" | "desktop", driver: PngDriver, steps: unknown[]) {
+  const projectPath = await makeTempDir("playtest-device-capture-");
+  const artifactDirectory = join(projectPath, "artifacts");
+  await mkdir(artifactDirectory, { recursive: true });
+  await writeFile(join(projectPath, "scenario.json"), JSON.stringify({
+    artifacts: { screenshots: "before-after" },
+    assert: { movement: { entity: "player", maxDistance: 10 } },
+    name: `${name}-device-capture`,
+    schemaVersion: 1,
+    steps,
+    subject: "player",
+    target: name === "desktop" ? "desktop" : "web",
+    viewport: { height: 128, width: 128 },
+    warmupFrames: 0,
+  }));
+  const port = await availablePort();
+  const endpoint = `http://127.0.0.1:${port}/playtest`;
+  const config: IStandalonePlaytestConfig = {
+    android: { activity: ".MystralActivity", packageName: "com.mystral.engine" },
+    artifactDirectory,
+    endpoint,
+    headless: true,
+    projectPath,
+    scenarioPath: "scenario.json",
+    target: name,
+    timeoutMs: 1_000,
+    trace: false,
+    url: "http://127.0.0.1:5173",
+  };
+  const transport = new DeviceBridgeTransport(endpoint);
+  if (name === "android") return runAndroidPlaytest(config, { driver, transport });
+  return runDevicePlaytest(config, {
+    driver,
+    mailboxPaths: { request: "request", response: "response" },
+    name,
+    processName: "desktop-capture-test",
+    transport,
+  });
+}
+
 async function runDeviceScenario(
   scenarioFile: string,
   driver: FakeAndroidDriver,
@@ -1021,6 +1198,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
           ...(options.setup === true ? ["entity.setup"] : []),
           "runtime.fixedStep",
           "runtime.diagnostics",
+          "runtime.network",
           ...(resourceReadyAtTick === undefined ? [] : ["runtime.resources"]),
           ...(options.startupPolls === undefined ? [] : ["runtime.startup"]),
           "scene.nodes",
@@ -1056,6 +1234,7 @@ function movingBridge(options: { clearHeldAfterAdvance?: boolean; entity?: strin
         return {
           clock: { mode: "fixed-step", tick },
           diagnostics: [],
+          network: { requests: 0, entries: [] },
           entities: [
             { id: options.entity ?? "player", transform: { position: [x, options.height ?? 0, 0] }, visible: true },
             { bounds: { height: 40, width: 40, x: 300, y: 160 }, id: "cube", visible: true },
@@ -1196,4 +1375,35 @@ test("Android launches the playtest activity in the current foreground user", as
     "10",
     "com.example.game",
   ]);
+});
+
+/**
+ * The native-css UI's own test knobs cross the launch as intent extras, because `am start` passes an
+ * app no environment and the host reads both with `getenv`. Absent by default, so a run that asked
+ * for neither launches exactly as it did before.
+ */
+test("Android launch carries the native-css UI's clock and state trace when the environment sets them", async () => {
+  const calls: string[][] = [];
+  const driver = new AdbAndroidDriver({
+    activity: "com.threenative.runtime.MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.example.game",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (args) => {
+    calls.push([...args]);
+    if (args.join(" ") === "shell am get-current-user") return "0\n";
+    return "";
+  };
+
+  process.env.TN_CSS_UI_FIXED_STEP_MS = "0.1";
+  process.env.TN_CSS_UI_STATE_TRACE = "1";
+  try {
+    await driver.prepare("http://127.0.0.1:41777/playtest", "/sdcard/Android/data/com.example.game/files");
+  } finally {
+    delete process.env.TN_CSS_UI_FIXED_STEP_MS;
+    delete process.env.TN_CSS_UI_STATE_TRACE;
+  }
+  const launch = calls.find((args) => args[0] === "shell" && args[1] === "am" && args[2] === "start");
+  expect(launch?.join(" ")).toContain("--es TN_CSS_UI_FIXED_STEP_MS 0.1 --es TN_CSS_UI_STATE_TRACE 1");
+  await driver.stop();
 });

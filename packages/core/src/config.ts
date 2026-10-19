@@ -1,7 +1,7 @@
 export type ThreeNativeOrientation = "landscape" | "portrait" | "sensor";
 
 /** Which renderer draws a game's `src/ui/`. @see IThreeNativeConfig.ui */
-export type ThreeNativeUiRenderer = "native" | "web";
+export type ThreeNativeUiRenderer = "native" | "native-css" | "web";
 
 /** What the native host does with the render loop while the app is off-screen. */
 export type ThreeNativeBackgroundMode = "continue" | "pause";
@@ -84,8 +84,10 @@ export interface IThreeNativeAudioConfig {
 
 /** Texture compression options for the asset compile step; `"none"` ships sources verbatim. */
 export interface IThreeNativeTexturesConfig {
-  /** Integer at least 4; caps the longest edge, preserving aspect and 4x4 alignment; never upscales. */
-  readonly maxSize?: number;
+  /** Automatic compression floor; omitted fields default to SSIM 0.95 and mean ΔE00 3. */
+  readonly floor?: { readonly ssim?: number; readonly meanDeltaE00?: number };
+  /** Scalar or glTF slot map (e.g. baseColorTexture/normalTexture). Integer at least 4; caps the longest edge, preserving aspect and 4x4 alignment; never upscales. */
+  readonly maxSize?: number | Readonly<Record<string, number>>;
   readonly overrides?: readonly {
     readonly codec: "etc1s" | "none" | "uastc";
     readonly glob: string;
@@ -151,7 +153,9 @@ export interface IThreeNativeModelsConfig {
   readonly textures?:
     | "none"
     | {
-        readonly maxSize?: number;
+        readonly floor?: { readonly ssim?: number; readonly meanDeltaE00?: number };
+        /** Scalar or glTF slot map; unlisted slots retain the 2048 default. Shared images use the largest cap. */
+        readonly maxSize?: number | Readonly<Record<string, number>>;
         readonly quality?: number;
         readonly overrides?: readonly {
           readonly slot: string;
@@ -312,6 +316,12 @@ export type ThreeNativeFramePhase = "hostGap" | "overlay" | "render" | "residual
 export type ThreeNativeRenderPassKind = "main" | "shadow" | "reflection" | "nested";
 
 export interface IThreeNativeConfig {
+  /**
+   * The engine that draws the game on web and desktop. Defaults to ThreeNative's own C++ engine
+   * (`"threenative"`): compiled to Wasm on web, the V8 engine player on desktop. `"threejs"` is the named
+   * override: it keeps upstream Three.js on web and the legacy host on desktop. Android and iOS still run the legacy host.
+   */
+  readonly engine?: "threejs" | "threenative";
   readonly app?: {
     readonly id?: string;
     readonly name?: string;
@@ -339,7 +349,8 @@ export interface IThreeNativeConfig {
      * What the native host does when the player leaves the app — presses the power button,
      * switches away, minimizes the window. `"pause"` (the default) stops running frames and
      * suspends audio until the app comes back; `"continue"` keeps rendering off-screen, which a
-     * server-shaped or split-screen game may genuinely want.
+     * server-shaped or split-screen game may genuinely want. On Android the operating system
+     * stops the app whatever this says, so `"continue"` takes effect on desktop only.
      *
      * Turning the pause off does not turn the reporting off: `TN_LIFECYCLE` markers are emitted
      * either way and name the mode that executed.
@@ -432,6 +443,12 @@ export interface IThreeNativeConfig {
      */
     readonly lod?: boolean | IThreeNativeLodConfig;
     readonly models?: "none" | IThreeNativeModelsConfig;
+    /**
+     * Also emit the native cooked package (`<output>/native/assets.tnpk`, TNPK v1) beside the
+     * existing outputs, for a native-engine build that loads its assets without a JS `GLTFLoader`.
+     * Absent or `false` leaves the output set unchanged.
+     */
+    readonly nativePackage?: boolean;
     readonly output?: string;
     readonly source?: string;
     readonly targets?: {
@@ -490,9 +507,16 @@ export interface IThreeNativeConfig {
      *   it when a game would rather pay the per-frame cost than accept the bound.
      *
      * Any other value throws at startup rather than falling back to a default nobody asked for.
+     *
+     * `"js"` names the mirror on a host that would not build one. The native engine player batches
+     * the authored scene in its own renderer and reports `hostProjected`, so core builds no mirror and
+     * reads no object across the boundary. `"js"` forces the mirror there anyway (for a comparison, or
+     * a game that depends on it), and the report states `path: "js"` and `pathOverridden: true`. On
+     * three the mirror is the only path, so `"js"` changes nothing.
      */
     readonly projection?:
       | boolean
+      | "js"
       | {
           readonly materialChecks?: "spread" | "everyFrame";
         };
@@ -556,6 +580,10 @@ export interface IThreeNativeConfig {
      * process. Choose it for a UI that is part of the rendered frame, or a target with no web
      * view, or zero extra processes — and own the appearance difference, which is the trade
      * being made rather than something to discover in a screenshot.
+     *
+     * `"native-css"` runs the same React tree in the game's own JS realm — no web view, no second
+     * process — with a native CSS engine painting it and the stylesheet coming from the same Vite +
+     * Tailwind build the web renderer uses. Desktop only, experimental, and opt-in.
      *
      * Which surface `"web"` lands on is the platform's business and never a game's: no config,
      * type or document names the engine underneath.

@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-400 — The frame gets cheaper one measured, removable cost at a time
 
 **Status:** IN PROGRESS
+**Priority:** P1 — Active campaign: one measured cost at a time with native and Pixel 8 acceptance.
 **Progress:** 0/5 phases (Phase 1: skill and judge plumbing landed; live baseline pending)
 **Complexity:** 7 → HIGH; 11+ implementation files across core, the three.js patch, the native
 recorder and the C++ replay (+3), retained projection and command-plan state (+2), crosses the native
@@ -14,7 +15,7 @@ host build (+2); risk override: none.
 **Depends on:** nothing to start. Absorbs, never repeats: [PRD-388](critical/PRD-388-an-automatic-optimizer-must-price-its-own-cost.md)
 (projection prices its own cost), [PRD-389](critical/PRD-389-the-frame-budgets-instruments-do-not-lie.md)
 (instrument honesty), PRD-395/396 (render-phase attribution, branch-only), and
-[native compiled frame plans](../PRD-native-compiled-frame-plans.md) (recorder transport). Hands lanes
+[native compiled frame plans](PRD-native-compiled-frame-plans.md) (recorder transport). Hands lanes
 4–6 to their owning PRDs (see *Out of scope*).
 **Source:** a code-informed prioritization the owner supplied on 2026-09-22, inspected at
 `develop@fac2f7149`. It ranked systems from reading code; it measured nothing.

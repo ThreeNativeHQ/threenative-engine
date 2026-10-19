@@ -1,0 +1,79 @@
+{
+  "name": "materials-props-lambert",
+  "adaptedFrom": "original \u2014 MeshLambertMaterial's members: lit-render's colour, plus emissive and emissiveIntensity",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "fresh",
+      "class": "MeshLambertMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m",
+      "class": "MeshLambertMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.r",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.g",
+      "value": 0.35
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.b",
+      "value": 0.2
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "emissive.r",
+      "value": 0.1
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "emissive.g",
+      "value": 0.05
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "emissive.b",
+      "value": 0.02
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "emissiveIntensity",
+      "value": 0.5
+    }
+  ],
+  "observe": [
+    { "id": "fresh", "path": "type", "kind": "string" },
+    { "id": "fresh", "path": "color.r", "kind": "number" },
+    { "id": "fresh", "path": "emissive.r", "kind": "number" },
+    { "id": "fresh", "path": "emissive.g", "kind": "number" },
+    { "id": "fresh", "path": "emissive.b", "kind": "number" },
+    { "id": "fresh", "path": "emissiveIntensity", "kind": "number" },
+    { "id": "m", "path": "type", "kind": "string" },
+    { "id": "m", "path": "color.r", "kind": "number" },
+    { "id": "m", "path": "color.g", "kind": "number" },
+    { "id": "m", "path": "color.b", "kind": "number" },
+    { "id": "m", "path": "emissive.r", "kind": "number" },
+    { "id": "m", "path": "emissive.g", "kind": "number" },
+    { "id": "m", "path": "emissive.b", "kind": "number" },
+    { "id": "m", "path": "emissiveIntensity", "kind": "number" }
+  ]
+}

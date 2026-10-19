@@ -1,0 +1,324 @@
+{
+  "scope": "Owner-approved exact40-file combined cleanup on2026-10-03; PR397 partition owns39 present files and5 prose historical-link updates. The absent PR416 gameplay log is not changed here. Original proposal approvalStatus is retained unchanged as historical metadata.",
+  "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+  "grossDeletionBytes": 39281304,
+  "prosePatchSha256": "ffaef916b78e6bf5917018bdefb832a77da13857b1ad870720cbea2ce23e6d17",
+  "removedFiles": [
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-01.png",
+      "bytes": 580203,
+      "sha256": "3182e787b04a44f84c36da0378846f8c158f7b9cc2f5c820dec32a6c85794fae",
+      "gitBlob": "213aa9af8f26f8e9fe5f5d84922b36e24c99212a",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-01.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-02.png",
+      "bytes": 1035837,
+      "sha256": "a906760f5c2bc4a8975e5ac4c0af869f67c748da171680fe5812e1d491fc8d39",
+      "gitBlob": "6f8a37d23d645c87a57f9f703e16d8e3d52efe81",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-02.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-03.png",
+      "bytes": 1055132,
+      "sha256": "7ce60609142e4aa98dcf4fb9a8227414a1cf362b02eda8ca435d6324ecda807d",
+      "gitBlob": "35c3c8351987d1060407e83530870a206e4d75b8",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-03.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-04.png",
+      "bytes": 1101841,
+      "sha256": "b7dd97d66d8b524fd2773f7900ddbb8422437898b8a9e4aac6e3a03257ef407f",
+      "gitBlob": "3406fcc6f3e74ce81b227203da87bc09f3883a5a",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-04.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-05.png",
+      "bytes": 1126007,
+      "sha256": "f313cfe6e195569ea46e436cb7911ae9c8218e5da74403c9e73e5381f91d9e52",
+      "gitBlob": "d20a9f3ff38fa5241a4835aa1f7be997bc7fa915",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-05.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-06.png",
+      "bytes": 1079077,
+      "sha256": "8f846a7a1765fe647d4f9e9175f50829182b42889d95f76c0d2d84157d71f6d4",
+      "gitBlob": "20cfbec6e31cee4bec03f0b7601685c9fca10477",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-06.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-07.png",
+      "bytes": 1076080,
+      "sha256": "8eaff488368f76ec8fee9a430b6bc0e6eff475771ca52a4a154607bb8d392e26",
+      "gitBlob": "b792da60dc49b806d0f015944d60136408fd8c7f",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-07.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-08.png",
+      "bytes": 1078360,
+      "sha256": "84af307041fd8b24127d4d2a2b7e7319e3def18db199a167d7c1c05bef29b04c",
+      "gitBlob": "d28cb11608ca8afc08ca47673e77151438fabf41",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-08.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-09.png",
+      "bytes": 1078197,
+      "sha256": "ea09518933b5d6667f0eeb3682a15eea773c7a970106031fa1d61c07f4f8f92b",
+      "gitBlob": "2e2d0f68992167b5bef891914b85da5a534cfb8e",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-09.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-10.png",
+      "bytes": 1043951,
+      "sha256": "c400e47ffc50896a2b826682a6f3d49fe85ca26fdd118baafef40f402bc1ec50",
+      "gitBlob": "e7e4ca2b964dba6f609e8f4b6d6bbd488658c7ef",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-10.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-11.png",
+      "bytes": 1078800,
+      "sha256": "2adffbbe4c57c7ffd227077c06910d3004526a52292a57efe2513ecfed87fd75",
+      "gitBlob": "8c14df6861689f18386ad515238546e8ef9de2a7",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-11.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-12.png",
+      "bytes": 1079517,
+      "sha256": "f7cb6c75f67456f46c76bff5be63ed4015385dfa45556bb41e375ba0d3708744",
+      "gitBlob": "edbc19394493fdc9574c1e3c73548a9180e8e115",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-12.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-13.png",
+      "bytes": 1078499,
+      "sha256": "414f5741fbd2c3651d9b0c4ee4309bc7786df1b220b77a69717077b35f018c2a",
+      "gitBlob": "806e6c79f74d86b8b8c0b99470085cdeb8770656",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-17/screenshots/iter-13.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-01.png",
+      "bytes": 32862,
+      "sha256": "4f8beeb446c3409253e8b04449493e8e53c5f4673b86ba74a69e9c68ef4ee821",
+      "gitBlob": "dbd750e9b557f3e04e10de40bd242ce60428cebe",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-01.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-02.png",
+      "bytes": 33202,
+      "sha256": "301f9d29d3010c59c516d61d67a05465d2d59593dc85e1538ed494f6488edbe3",
+      "gitBlob": "af9b41804a75613ea7baa81793e581f14280987c",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-02.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-03.png",
+      "bytes": 628736,
+      "sha256": "796a29b28474433f49e6d0913a37151d9c96bb5c182cc7c921902315b949f8eb",
+      "gitBlob": "b6e2502e93083a1cebaa73a798e810765a48593a",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-03.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-04.png",
+      "bytes": 618789,
+      "sha256": "fa1590f5fe4dd9dabb89d64097cb4e9d06b978685569ec0b718ce80de3c7fabc",
+      "gitBlob": "2840d32b0e45c3943498c6c06ab0056ffb5c7225",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-04.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-05.png",
+      "bytes": 1159613,
+      "sha256": "293845c6c11451986b64f13261078898c51a50a0021f601b9c5da372133eab83",
+      "gitBlob": "15186db85b302fe941286f53ce76eb0e69c5f8c8",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-05.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-06.png",
+      "bytes": 1172625,
+      "sha256": "318f295804fc0ec063b913286f09e7020919b2a56d82106a64143de429f8075b",
+      "gitBlob": "4192ff24789ed5474f208342675b077762263ee2",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-06.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-07.png",
+      "bytes": 1236052,
+      "sha256": "0d2522887e6cc4a25be1705453ceb08932f5c0b08cecf199cb069276d925298b",
+      "gitBlob": "3fba0246c86ecf72051658c746d5d84c2e768b67",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-07.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-08.png",
+      "bytes": 1174484,
+      "sha256": "1d69a43756a62a35d44af069a6b57bea715c270e144c0060c97c9675e7ba9a73",
+      "gitBlob": "234401d64918364e08727fc4bea865ef9353455b",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-08.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-09.png",
+      "bytes": 1138378,
+      "sha256": "9e2fdee4a8bafd4262557b7ab864b766f4a00ac9bead2112e5636c9ccffde0a8",
+      "gitBlob": "bee8a873e1bed8c6142a9744ab11bd3cd9ff7452",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-09.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-10.png",
+      "bytes": 1118120,
+      "sha256": "08a11f2718c3b2be3bed4bb2edfe7d2aa295ddafded731eb24a0183b385f8c89",
+      "gitBlob": "8173cdc6ed3dbf181318c6f930232971f9c8c742",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-10.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-11.png",
+      "bytes": 1157082,
+      "sha256": "6e8bb7d46966f7019bfa54913fc1004ca6954177dedb6e0ed54924267dd45b7c",
+      "gitBlob": "ecfbe3f1d2b174f926274767867a9322bf75475f",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-11.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-12.png",
+      "bytes": 1147366,
+      "sha256": "9f1f625a5cbf4e6f44723125d72e709a7cedf1abd4a872c46d7fb0edcde298ea",
+      "gitBlob": "4a99fd99dc094f70f694eca2502f23943652df29",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-12.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-13.png",
+      "bytes": 1146040,
+      "sha256": "471191b5bbdd54947f66706f627537323da962e71bb4fb4920962e760bc52ff7",
+      "gitBlob": "2b1f4116d24f28fe420ead58e2cc2fcd443b27e0",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-13.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-14.png",
+      "bytes": 1147031,
+      "sha256": "0d4bdb52a6bc1a635121b4c2299ec2c44337450bce7794369047fa02b21da1ab",
+      "gitBlob": "9b9323f4e78f104866d92932591be70b169282c2",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-14.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-15.png",
+      "bytes": 1161044,
+      "sha256": "fdd7646353614d6f75d77fe640ee954ee044f5a06a958a67937aabb7564db01c",
+      "gitBlob": "ae67517cd0af99c7400d2cc1e4f331aa6dddb558",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-15.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-16.png",
+      "bytes": 1160434,
+      "sha256": "14e5a7ba1a96bf22664937c43e69dd2f99e0dc0018dfb65beb2c52c4b043a9c1",
+      "gitBlob": "e4a2b224fe445154861976244fe9b973642654fc",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-16.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-17.png",
+      "bytes": 1161034,
+      "sha256": "631ced4bb0b3033499cc94ebdb839c9bfa4b985f4312534d87aafe66126723be",
+      "gitBlob": "fcf24f8e19fa342c2c4406811337528c9e881361",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-17.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-18.png",
+      "bytes": 1165154,
+      "sha256": "af708287a9805220a4f7b984e5c94b23bac0e078fd1fb4973a44cd77e4d197aa",
+      "gitBlob": "2c60a30134b9f13a1d4282ba89266ffdda56300c",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-18.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-19.png",
+      "bytes": 1164487,
+      "sha256": "f2cf4147e758b726861326381b4d0eb99823995166d0eabe7df708d9efc08542",
+      "gitBlob": "8a85ef9df9770075f865009034c7382c67229d3e",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-19.png"
+    },
+    {
+      "path": "docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-20.png",
+      "bytes": 1163656,
+      "sha256": "aa3aa830634c3078e315392e319af294e2a4d7d10e21a412e4f8dfe13184655f",
+      "gitBlob": "fd42481d3af50acd3891beaef4c25a2c0e2377f0",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/benchmark/sweeps/fps-2026-08-18/screenshots/iter-20.png"
+    },
+    {
+      "path": "docs/verification/wildwood-shadow-cache/noise-after.png",
+      "bytes": 1889667,
+      "sha256": "29c01f6a8b54df510145f5f02a4bca860c0d4a1d7dae40d9d4675353770c8834",
+      "gitBlob": "61a7ff74c03fd5bda48897e489c6a3fb3f734eb3",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/verification/wildwood-shadow-cache/noise-after.png"
+    },
+    {
+      "path": "docs/verification/wildwood-shadow-cache/noise-before.png",
+      "bytes": 2028628,
+      "sha256": "28c44f0141a2e402adb7288d70a83ad5d49d3ca4e8fb1d8eeecfbb9daae4d6d7",
+      "gitBlob": "b30453a86bb72990add6c3fb98b9d61dd69ce384",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/verification/wildwood-shadow-cache/noise-before.png"
+    },
+    {
+      "path": "docs/verification/capability-discovery-after-final-run-1.jsonl",
+      "bytes": 533680,
+      "sha256": "31c7b33f2939162320eeba4394bd2082b6a8f61b682119d0ffd2a78cfb21df45",
+      "gitBlob": "43ef509dbd7ddf8ea893d49087e3b31e56fa208c",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/verification/capability-discovery-after-final-run-1.jsonl"
+    },
+    {
+      "path": "docs/verification/capability-discovery-baseline-aborted-opus.jsonl",
+      "bytes": 759570,
+      "sha256": "d69c13c684416c9f659d5ee3898cef903293c5a03aea0904d8fd8235d9cdcfb9",
+      "gitBlob": "597d6f9fe9fb50865853a36322bf83fd75bac972",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/verification/capability-discovery-baseline-aborted-opus.jsonl"
+    },
+    {
+      "path": "docs/verification/capability-discovery-baseline-aborted-sonnet.jsonl",
+      "bytes": 327872,
+      "sha256": "397bd7e958b465ba7b9316fe9c050c166c149935d5c83d68bc63a5a587617711",
+      "gitBlob": "2f16d14859f04f54d785114c102e786506c69cc0",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/verification/capability-discovery-baseline-aborted-sonnet.jsonl"
+    },
+    {
+      "path": "docs/verification/starter-blank-canvas-739f2436-warmed.png",
+      "bytes": 364197,
+      "sha256": "b9973de7626cc100468535ff8f0c8c8a80b9cef6f03737bb233030264838521c",
+      "gitBlob": "b0fb0cbb6a390f930df125c394fdd0a0e0132c1b",
+      "recoveryCommit": "4ce93bcd7e2568746b86564bcd4238111833d01e",
+      "recoveryUrl": "https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/verification/starter-blank-canvas-739f2436-warmed.png"
+    }
+  ],
+  "protectedEvidence": "All92 immutable referenced evidence files and every26-row lossless-preservation current hash were verified unchanged. The remaining PRD339 root receives its approved current-proof qualification extension; historical measurements and immutable original anchors remain intact.",
+  "newEvidence": "prd339-exposure-proof/current-base-9f41cb0.json",
+  "originalProposalRecoveryCommit": "c7ce7500d72ea3304c20c385a8273ad4a7defe8e",
+  "recoveryQualification": "The original proposal c7ce anchor is local and unpublished (GitHub commit lookup reported absent). All39 original payload hashes and Git blobs were independently verified at already-published PR397 head4ce; every recovery link now uses that actual immutable public anchor. Original proposal metadata remains unchanged."
+}

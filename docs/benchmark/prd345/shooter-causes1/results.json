@@ -1,0 +1,929 @@
+[
+  {
+    "round": 1,
+    "position": 1,
+    "arm": "current",
+    "pass": false,
+    "p95": {
+      "actual": 48.29999999999927,
+      "expected": 33,
+      "sampleCount": 372,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 48.29999999999927.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  },
+  {
+    "round": 1,
+    "position": 2,
+    "arm": "runtime-zero",
+    "pass": false,
+    "p95": {
+      "actual": 46.099999999998545,
+      "expected": 33,
+      "sampleCount": 452,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 46.099999999998545.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/runtime-zero/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/runtime-zero/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  },
+  {
+    "round": 1,
+    "position": 3,
+    "arm": "copy-only",
+    "pass": true,
+    "p95": {
+      "actual": 29.399999999997817,
+      "expected": 33,
+      "sampleCount": 625,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": []
+  },
+  {
+    "round": 1,
+    "position": 4,
+    "arm": "material-emissive",
+    "pass": true,
+    "p95": {
+      "actual": 28.69999999999709,
+      "expected": 33,
+      "sampleCount": 665,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": []
+  },
+  {
+    "round": 1,
+    "position": 5,
+    "arm": "compiled-rim-only",
+    "pass": false,
+    "p95": {
+      "actual": 46.69999999999709,
+      "expected": 33,
+      "sampleCount": 502,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 46.69999999999709.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/compiled-rim-only/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/compiled-rim-only/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  },
+  {
+    "round": 1,
+    "position": 6,
+    "arm": "shared-graph",
+    "pass": true,
+    "p95": {
+      "actual": 30.30000000000291,
+      "expected": 33,
+      "sampleCount": 521,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": []
+  },
+  {
+    "round": 1,
+    "position": 7,
+    "arm": "current",
+    "pass": false,
+    "p95": {
+      "actual": 47.5,
+      "expected": 33,
+      "sampleCount": 400,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 47.5.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  },
+  {
+    "round": 2,
+    "position": 1,
+    "arm": "current",
+    "pass": false,
+    "p95": {
+      "actual": 46.89999999999782,
+      "expected": 33,
+      "sampleCount": 406,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 46.89999999999782.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  },
+  {
+    "round": 2,
+    "position": 2,
+    "arm": "shared-graph",
+    "pass": true,
+    "p95": {
+      "actual": 30.599999999998545,
+      "expected": 33,
+      "sampleCount": 560,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": []
+  },
+  {
+    "round": 2,
+    "position": 3,
+    "arm": "compiled-rim-only",
+    "pass": false,
+    "p95": {
+      "actual": 45.30000000000291,
+      "expected": 33,
+      "sampleCount": 458,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 45.30000000000291.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/compiled-rim-only/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/compiled-rim-only/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  },
+  {
+    "round": 2,
+    "position": 4,
+    "arm": "material-emissive",
+    "pass": true,
+    "p95": {
+      "actual": 28.099999999998545,
+      "expected": 33,
+      "sampleCount": 659,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": []
+  },
+  {
+    "round": 2,
+    "position": 5,
+    "arm": "copy-only",
+    "pass": true,
+    "p95": {
+      "actual": 30.599999999998545,
+      "expected": 33,
+      "sampleCount": 531,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": []
+  },
+  {
+    "round": 2,
+    "position": 6,
+    "arm": "runtime-zero",
+    "pass": false,
+    "p95": {
+      "actual": 62.70000000000073,
+      "expected": 33,
+      "sampleCount": 327,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 62.70000000000073.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/runtime-zero/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/runtime-zero/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  },
+  {
+    "round": 2,
+    "position": 7,
+    "arm": "current",
+    "pass": false,
+    "p95": {
+      "actual": 50.79999999999927,
+      "expected": 33,
+      "sampleCount": 376,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 50.79999999999927.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  },
+  {
+    "round": 3,
+    "position": 1,
+    "arm": "current",
+    "pass": false,
+    "p95": {
+      "actual": 45.89999999999782,
+      "expected": 33,
+      "sampleCount": 426,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 45.89999999999782.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  },
+  {
+    "round": 3,
+    "position": 2,
+    "arm": "material-emissive",
+    "pass": true,
+    "p95": {
+      "actual": 29.899999999997817,
+      "expected": 33,
+      "sampleCount": 609,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": []
+  },
+  {
+    "round": 3,
+    "position": 3,
+    "arm": "compiled-rim-only",
+    "pass": false,
+    "p95": {
+      "actual": 45.599999999998545,
+      "expected": 33,
+      "sampleCount": 414,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 45.599999999998545.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/compiled-rim-only/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/compiled-rim-only/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  },
+  {
+    "round": 3,
+    "position": 4,
+    "arm": "shared-graph",
+    "pass": true,
+    "p95": {
+      "actual": 30.399999999997817,
+      "expected": 33,
+      "sampleCount": 527,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": []
+  },
+  {
+    "round": 3,
+    "position": 5,
+    "arm": "runtime-zero",
+    "pass": false,
+    "p95": {
+      "actual": 46.10000000000218,
+      "expected": 33,
+      "sampleCount": 399,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 46.10000000000218.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/runtime-zero/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/runtime-zero/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  },
+  {
+    "round": 3,
+    "position": 6,
+    "arm": "copy-only",
+    "pass": true,
+    "p95": {
+      "actual": 28.099999999998545,
+      "expected": 33,
+      "sampleCount": 541,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": []
+  },
+  {
+    "round": 3,
+    "position": 7,
+    "arm": "current",
+    "pass": false,
+    "p95": {
+      "actual": 42.20000000000073,
+      "expected": 33,
+      "sampleCount": 478,
+      "unit": "ms"
+    },
+    "capture": {
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan",
+        "--disable-frame-rate-limit",
+        "--disable-gpu-vsync"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 1080,
+        "width": 1920
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+        "message": "performance.maxFrameMsP95 expected at most 33 ms, observed 42.20000000000073.",
+        "observedRuntimePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json/observations.json/performanceSeries",
+        "severity": "error",
+        "sourcePath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current/playtests/performance.playtest.json",
+        "suggestion": "Inspect the recorded frame-cost series and reduce the authored scene cost that owns the regression."
+      }
+    ]
+  }
+]

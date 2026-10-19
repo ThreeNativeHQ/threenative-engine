@@ -1,0 +1,20 @@
+{
+  "coordinateSpace": "decoded PNG physical pixels, top-left origin; no HUD mask/DPR/rescale",
+  "selection": "Exploratory end-pose image inspection identified interior calf edge and chest. Bounds and thresholds frozen before fresh assertion-bearing positive/negative captures. Mid pose remains separate visual witness; these end-pose crops are not claimed for every pose.",
+  "edge": {
+    "x": 624,
+    "y": 447,
+    "width": 7,
+    "height": 21
+  },
+  "body": {
+    "x": 618,
+    "y": 322,
+    "width": 28,
+    "height": 26
+  },
+  "edgeMargin": 30,
+  "fillP1Max": 5,
+  "fillP99Min": 30,
+  "negativeControls": ["rimGain-zero", "black-fill", "omitted-report"]
+}

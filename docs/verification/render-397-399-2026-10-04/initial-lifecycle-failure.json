@@ -1,0 +1,488 @@
+{
+  "lockRoot": "/tmp/threenative-playtest-capture",
+  "holderPath": "/tmp/threenative-playtest-capture/lock/holder.json",
+  "leaseRecords": [
+    {
+      "arm": "off",
+      "holderPath": "/tmp/threenative-playtest-capture/lock/holder.json",
+      "holder": {
+        "command": "/home/joao/Documents/Codex/2026-10-03/task-8/render-397-399/scripts/verify-fog-exposure.ts",
+        "pid": 724932,
+        "startedAt": "2026-10-04T03:42:07.112Z"
+      },
+      "observedAt": "2026-10-04T03:42:07.354Z"
+    },
+    {
+      "arm": "fog",
+      "holderPath": "/tmp/threenative-playtest-capture/lock/holder.json",
+      "holder": {
+        "command": "/home/joao/Documents/Codex/2026-10-03/task-8/render-397-399/scripts/verify-fog-exposure.ts",
+        "pid": 724932,
+        "startedAt": "2026-10-04T03:42:09.927Z"
+      },
+      "observedAt": "2026-10-04T03:42:10.111Z"
+    },
+    {
+      "arm": "exposure",
+      "holderPath": "/tmp/threenative-playtest-capture/lock/holder.json",
+      "holder": {
+        "command": "/home/joao/Documents/Codex/2026-10-03/task-8/render-397-399/scripts/verify-fog-exposure.ts",
+        "pid": 724932,
+        "startedAt": "2026-10-04T03:42:13.406Z"
+      },
+      "observedAt": "2026-10-04T03:42:13.415Z"
+    },
+    {
+      "arm": "both",
+      "holderPath": "/tmp/threenative-playtest-capture/lock/holder.json",
+      "holder": {
+        "command": "/home/joao/Documents/Codex/2026-10-03/task-8/render-397-399/scripts/verify-fog-exposure.ts",
+        "pid": 724932,
+        "startedAt": "2026-10-04T03:42:17.303Z"
+      },
+      "observedAt": "2026-10-04T03:42:17.421Z"
+    },
+    {
+      "arm": "repeat",
+      "holderPath": "/tmp/threenative-playtest-capture/lock/holder.json",
+      "holder": {
+        "command": "/home/joao/Documents/Codex/2026-10-03/task-8/render-397-399/scripts/verify-fog-exposure.ts",
+        "pid": 724932,
+        "startedAt": "2026-10-04T03:42:21.235Z"
+      },
+      "observedAt": "2026-10-04T03:42:21.424Z"
+    },
+    {
+      "arm": "rebuild-resize",
+      "holderPath": "/tmp/threenative-playtest-capture/lock/holder.json",
+      "holder": {
+        "command": "/home/joao/Documents/Codex/2026-10-03/task-8/render-397-399/scripts/verify-fog-exposure.ts",
+        "pid": 724932,
+        "startedAt": "2026-10-04T03:42:25.137Z"
+      },
+      "observedAt": "2026-10-04T03:42:25.179Z"
+    }
+  ],
+  "sourceSha": "fea52b9c7d16e4be229273f8bf113cd70152d018",
+  "pass": false,
+  "outcomes": [
+    {
+      "name": "off",
+      "sourceSha": "fea52b9c7d16e4be229273f8bf113cd70152d018",
+      "bundleIndexSha256": "a1c7c89aefd619f64c52e1905108f4f2106eb0ab19845108fde92fb346260480",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "turing",
+          "vendor": "nvidia",
+          "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "16384",
+          "limit.maxStorageBufferBindingSize": "2147483644"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "exposureEnabled": false,
+        "exposureApplied": false,
+        "exposureMeasured": false,
+        "exposureSettled": false,
+        "exposureLuminance": 0,
+        "exposureStops": 0,
+        "releasedExposures": 0,
+        "mode": "off",
+        "ready": true,
+        "builds": 1,
+        "disposedGraphs": 0,
+        "createdTargets": 0,
+        "releasedTargets": 0,
+        "releasedMaterials": 0,
+        "liveTargets": 0,
+        "scatteringOnly": false,
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3,
+        "targetWidth": 0,
+        "targetHeight": 0,
+        "targets": 0,
+        "pixels": 0,
+        "steps": 0,
+        "inside": false,
+        "sun": true,
+        "point": true,
+        "overlaps": false,
+        "shadowOutside": false,
+        "streamedWall": false,
+        "sceneEntries": 1,
+        "sceneExits": 0,
+        "exitReleasedTargets": 0,
+        "exitReleasedMaterials": 0
+      }
+    },
+    {
+      "name": "fog",
+      "sourceSha": "fea52b9c7d16e4be229273f8bf113cd70152d018",
+      "bundleIndexSha256": "a1c7c89aefd619f64c52e1905108f4f2106eb0ab19845108fde92fb346260480",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "turing",
+          "vendor": "nvidia",
+          "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "16384",
+          "limit.maxStorageBufferBindingSize": "2147483644"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "exposureEnabled": false,
+        "exposureApplied": false,
+        "exposureMeasured": false,
+        "exposureSettled": false,
+        "exposureLuminance": 0,
+        "exposureStops": 0,
+        "releasedExposures": 0,
+        "mode": "fog",
+        "ready": true,
+        "builds": 1,
+        "disposedGraphs": 0,
+        "createdTargets": 1,
+        "releasedTargets": 0,
+        "releasedMaterials": 0,
+        "liveTargets": 1,
+        "scatteringOnly": false,
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3,
+        "targetWidth": 640,
+        "targetHeight": 400,
+        "targets": 1,
+        "pixels": 256000,
+        "steps": 48,
+        "inside": false,
+        "sun": true,
+        "point": true,
+        "overlaps": false,
+        "shadowOutside": false,
+        "streamedWall": false,
+        "sceneEntries": 1,
+        "sceneExits": 0,
+        "exitReleasedTargets": 0,
+        "exitReleasedMaterials": 0
+      }
+    },
+    {
+      "name": "exposure",
+      "sourceSha": "fea52b9c7d16e4be229273f8bf113cd70152d018",
+      "bundleIndexSha256": "a1c7c89aefd619f64c52e1905108f4f2106eb0ab19845108fde92fb346260480",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "turing",
+          "vendor": "nvidia",
+          "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "16384",
+          "limit.maxStorageBufferBindingSize": "2147483644"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "exposureEnabled": true,
+        "exposureApplied": true,
+        "exposureMeasured": true,
+        "exposureSettled": true,
+        "exposureLuminance": 0.07339506596326828,
+        "exposureStops": 1.130305528640747,
+        "releasedExposures": 0,
+        "mode": "off",
+        "ready": true,
+        "builds": 2,
+        "disposedGraphs": 1,
+        "createdTargets": 0,
+        "releasedTargets": 0,
+        "releasedMaterials": 0,
+        "liveTargets": 0,
+        "scatteringOnly": false,
+        "textures": 14,
+        "settledRenderFrames": 41,
+        "stableTextureFrames": 41,
+        "targetWidth": 0,
+        "targetHeight": 0,
+        "targets": 0,
+        "pixels": 0,
+        "steps": 0,
+        "inside": false,
+        "sun": true,
+        "point": true,
+        "overlaps": false,
+        "shadowOutside": false,
+        "streamedWall": false,
+        "sceneEntries": 1,
+        "sceneExits": 0,
+        "exitReleasedTargets": 0,
+        "exitReleasedMaterials": 0
+      }
+    },
+    {
+      "name": "both",
+      "sourceSha": "fea52b9c7d16e4be229273f8bf113cd70152d018",
+      "bundleIndexSha256": "a1c7c89aefd619f64c52e1905108f4f2106eb0ab19845108fde92fb346260480",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "turing",
+          "vendor": "nvidia",
+          "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "16384",
+          "limit.maxStorageBufferBindingSize": "2147483644"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "exposureEnabled": true,
+        "exposureApplied": true,
+        "exposureMeasured": true,
+        "exposureSettled": true,
+        "exposureLuminance": 0.08703452348709106,
+        "exposureStops": 0.914508581161499,
+        "releasedExposures": 0,
+        "mode": "fog",
+        "ready": true,
+        "builds": 2,
+        "disposedGraphs": 1,
+        "createdTargets": 2,
+        "releasedTargets": 1,
+        "releasedMaterials": 1,
+        "liveTargets": 1,
+        "scatteringOnly": false,
+        "textures": 17,
+        "settledRenderFrames": 42,
+        "stableTextureFrames": 42,
+        "targetWidth": 640,
+        "targetHeight": 400,
+        "targets": 1,
+        "pixels": 256000,
+        "steps": 48,
+        "inside": false,
+        "sun": true,
+        "point": true,
+        "overlaps": false,
+        "shadowOutside": false,
+        "streamedWall": false,
+        "sceneEntries": 1,
+        "sceneExits": 0,
+        "exitReleasedTargets": 0,
+        "exitReleasedMaterials": 0
+      }
+    },
+    {
+      "name": "repeat",
+      "sourceSha": "fea52b9c7d16e4be229273f8bf113cd70152d018",
+      "bundleIndexSha256": "a1c7c89aefd619f64c52e1905108f4f2106eb0ab19845108fde92fb346260480",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "turing",
+          "vendor": "nvidia",
+          "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "16384",
+          "limit.maxStorageBufferBindingSize": "2147483644"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "exposureEnabled": true,
+        "exposureApplied": true,
+        "exposureMeasured": true,
+        "exposureSettled": true,
+        "exposureLuminance": 0.08703452348709106,
+        "exposureStops": 0.9182299375534058,
+        "releasedExposures": 0,
+        "mode": "fog",
+        "ready": true,
+        "builds": 2,
+        "disposedGraphs": 1,
+        "createdTargets": 2,
+        "releasedTargets": 1,
+        "releasedMaterials": 1,
+        "liveTargets": 1,
+        "scatteringOnly": false,
+        "textures": 17,
+        "settledRenderFrames": 43,
+        "stableTextureFrames": 43,
+        "targetWidth": 640,
+        "targetHeight": 400,
+        "targets": 1,
+        "pixels": 256000,
+        "steps": 48,
+        "inside": false,
+        "sun": true,
+        "point": true,
+        "overlaps": false,
+        "shadowOutside": false,
+        "streamedWall": false,
+        "sceneEntries": 1,
+        "sceneExits": 0,
+        "exitReleasedTargets": 0,
+        "exitReleasedMaterials": 0
+      }
+    },
+    {
+      "name": "rebuild-resize",
+      "sourceSha": "fea52b9c7d16e4be229273f8bf113cd70152d018",
+      "bundleIndexSha256": "a1c7c89aefd619f64c52e1905108f4f2106eb0ab19845108fde92fb346260480",
+      "pass": false,
+      "capture": {
+        "adapter": {
+          "architecture": "turing",
+          "vendor": "nvidia",
+          "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "16384",
+          "limit.maxStorageBufferBindingSize": "2147483644"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_COMPONENT_ASSERTION_FAILED",
+          "message": "Component 'settledRenderFrames' on entity 'fog' did not satisfy the assertion.",
+          "observedRuntimePath": "observations.json/components/fog/settledRenderFrames",
+          "severity": "error",
+          "suggestion": "Expected {\"component\":\"settledRenderFrames\",\"entity\":\"fog\",\"allowTrivial\":\"Resource counts must be observed stable over completed rendered frames.\",\"gte\":3}, observed before=1 after=1. Check the owning script and runtime component synchronization."
+        },
+        {
+          "code": "TN_PLAYTEST_COMPONENT_ASSERTION_FAILED",
+          "message": "Component 'stableTextureFrames' on entity 'fog' did not satisfy the assertion.",
+          "observedRuntimePath": "observations.json/components/fog/stableTextureFrames",
+          "severity": "error",
+          "suggestion": "Expected {\"component\":\"stableTextureFrames\",\"entity\":\"fog\",\"allowTrivial\":\"Resource counts must be observed stable over completed rendered frames.\",\"gte\":3}, observed before=1 after=1. Check the owning script and runtime component synchronization."
+        }
+      ],
+      "state": {
+        "exposureEnabled": true,
+        "exposureApplied": true,
+        "exposureMeasured": true,
+        "exposureSettled": true,
+        "exposureLuminance": 0.08703452348709106,
+        "exposureStops": 0.9155485033988953,
+        "releasedExposures": 1,
+        "mode": "fog",
+        "ready": true,
+        "builds": 3,
+        "disposedGraphs": 2,
+        "createdTargets": 3,
+        "releasedTargets": 2,
+        "releasedMaterials": 2,
+        "liveTargets": 1,
+        "scatteringOnly": false,
+        "textures": 17,
+        "settledRenderFrames": 1,
+        "stableTextureFrames": 1,
+        "targetWidth": 640,
+        "targetHeight": 400,
+        "targets": 1,
+        "pixels": 256000,
+        "steps": 48,
+        "inside": false,
+        "sun": true,
+        "point": true,
+        "overlaps": false,
+        "shadowOutside": false,
+        "streamedWall": false,
+        "sceneEntries": 1,
+        "sceneExits": 0,
+        "exitReleasedTargets": 0,
+        "exitReleasedMaterials": 0
+      }
+    }
+  ],
+  "qualification": "Actual browser WebGPU functional integration; adapter recorded per arm, no performance or native claim."
+}

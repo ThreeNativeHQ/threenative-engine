@@ -1,8 +1,15 @@
 import path from "node:path";
 import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
+import { type IWebEnginePlugin, createWebEnginePlugin } from "./web-engine.js";
 
 export interface IWebBrandVitePlugin {
   readonly name: string;
+  readonly enforce: "pre";
+  config(config: { readonly root?: string }): Promise<
+    { optimizeDeps: { exclude: string[] } } | undefined
+  >;
+  resolveId(source: string): string | null;
+  load(id: string): Promise<string | null>;
   configResolved(config: { readonly root: string }): Promise<void>;
   transformIndexHtml(html: string): string;
   generateBundle(this: {
@@ -92,7 +99,8 @@ function updateLaunchMarkup(
     );
   }
   const links = metadataLinks(root, config);
-  output = output.replace(/\s*<link\s+rel="icon"[^>]*>/giu, "");
+  if (publicUrl(root, config.app.icons?.web?.favicon ?? config.app.icon) !== undefined)
+    output = output.replace(/\s*<link\s+rel="icon"[^>]*>/giu, "");
   output = output.replace(/\s*<link\s+rel="apple-touch-icon"[^>]*>/giu, "");
   output = output.replace(/\s*<link\s+rel="manifest"[^>]*>/giu, "");
   output = output.replace(/(<\/head>)/iu, `    ${links}\n  $1`);
@@ -102,11 +110,31 @@ function updateLaunchMarkup(
 export function createWebBrandPlugin(): IWebBrandVitePlugin {
   let root = process.cwd();
   let config: IResolvedThreeNativeConfig | undefined;
+  let engine: IWebEnginePlugin | undefined;
   return {
     name: "threenative-web-brand",
+    enforce: "pre",
+    async config(vite) {
+      const loaded = await loadConfig(path.resolve(vite.root ?? process.cwd()));
+      // The dep optimizer does not run resolveId, so a pre-bundled dependency (core) would inline the
+      // upstream packages the engine replaces; three-mesh-bvh builds a refused Line3 at module scope.
+      if (loaded.engine === "threenative")
+        return {
+          optimizeDeps: { exclude: ["three", "three/webgpu", "three/tsl", "three-mesh-bvh"] },
+        };
+      return undefined;
+    },
+    resolveId(source) {
+      return engine?.resolveId(source) ?? null;
+    },
+    async load(id) {
+      return engine?.load(id) ?? null;
+    },
     async configResolved(resolved) {
       root = resolved.root;
       config = await loadConfig(root);
+      if (config.engine === "threenative")
+        engine = createWebEnginePlugin({ root, engine: config.engine });
     },
     transformIndexHtml(html) {
       if (config === undefined) throw new Error("TN_WEB_BRAND_CONFIG_MISSING");

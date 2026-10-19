@@ -13,7 +13,7 @@ feature is finished and the unrun targets are named rather than inferred.
 Source: [`DennisSmolek/SebH-TSL-Sky`](https://github.com/DennisSmolek/SebH-TSL-Sky), MIT, cloned at
 depth 1 on 2026-08-28 — 3 895 lines across `src/`, all read for the split below. **Nothing copied.**
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 
 **Complexity:** +2 new subsystem, +2 an LUT bake plus a depth-coupled render pass, +2 multi-package,
 +1 public TSL surface = **7 → HIGH mode.**

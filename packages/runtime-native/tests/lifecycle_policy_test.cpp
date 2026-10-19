@@ -98,7 +98,8 @@ bool surfaceBindingStateFollowsRebuild() {
     const bool published = state->surface == reinterpret_cast<WGPUSurface>(replacement) &&
                            state->presentation.surfaceFormat == WGPUTextureFormat_BGRA8Unorm &&
                            state->presentation.presentMode == WGPUPresentMode_Fifo &&
-                           state->presentation.canvasWidth == 720 && state->presentation.canvasHeight == 1280;
+                           state->presentation.surfaceWidth == 720 && state->presentation.surfaceHeight == 1280 &&
+                           state->presentation.canvasWidth == 800 && state->presentation.canvasHeight == 600;
     state->presentation.framePresentPending = true;
     mystral::webgpu::detachSurfaceForRebuild(state);
     const bool detached = state->surface == nullptr && !state->presentation.framePresentPending;

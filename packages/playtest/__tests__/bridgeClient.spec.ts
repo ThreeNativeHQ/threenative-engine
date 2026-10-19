@@ -8,6 +8,7 @@ import { initStandalonePlaytest } from "../src/runner/init.js";
 import {
   connectPlaytestBridgeTransport,
   advanceTimeoutMs,
+  bridgeWaitTimeoutMs,
   type IBridgeTransport,
 } from "../src/runner/bridgeClient.js";
 import {
@@ -155,8 +156,10 @@ test("the WebGPU browser recipe expands to the sealed Chromium flags", () => {
     "--enable-unsafe-webgpu",
     "--disable-gpu-sandbox",
     "--ignore-gpu-blocklist",
-    // Dropping this returns every WebGPU run to SwiftShader without any error to notice.
     "--enable-features=Vulkan",
+    ...(process.env.TN_PLAYTEST_HOST_DISPLAY === "1"
+      ? ["--use-angle=vulkan", "--use-vulkan", "--disable-vulkan-surface"]
+      : []),
   ]);
   expect(() =>
     parseStandalonePlaytestArgs(["playtests/move.json", "--browser-recipe", "unknown"], "/project"),
@@ -185,6 +188,24 @@ test("standalone args fail with a concrete first command", () => {
   expect(
     () => parseStandalonePlaytestArgs([], "/project"),
   ).toThrow(/threenative-playtest --scenario/);
+});
+
+test.each([
+  ["an unknown target", ["playtests/move.json", "--target", "tvos"], /Unknown target 'tvos'/u],
+  ["a port that conflicts with the URL port", ["playtests/move.json", "--url", "http://127.0.0.1:5173", "--port", "4000"], /conflicts with the port in --url \(5173\)/u],
+  ["an unknown iOS transport", ["playtests/move.json", "--ios-transport", "usb"], /Unknown iOS transport 'usb'/u],
+  ["a browser recipe with a browser arg", ["playtests/move.json", "--browser-recipe", "webgpu", "--browser-arg", "--enable-unsafe-webgpu"], /Choose --browser-recipe or --browser-arg, not both/u],
+  ["a judge marker URL that does not parse", ["playtests/move.json", "--judge-marker-url", "not a url"], /--judge-marker-url must be a canonical/u],
+  ["a judge marker URL with a query", ["playtests/move.json", "--judge-marker-url", "http://127.0.0.1:4000/first-frame?run=1"], /--judge-marker-url must be a canonical/u],
+  ["a browser recipe on a device run", ["playtests/move.json", "--device", "emulator-5554", "--browser-recipe", "webgpu"], /cannot honor --browser-recipe/u],
+  ["a browser arg on a device run", ["playtests/move.json", "--device", "emulator-5554", "--browser-arg", "--enable-unsafe-webgpu"], /cannot honor --browser-arg/u],
+  ["--headed on a device run", ["playtests/move.json", "--device", "emulator-5554", "--headed"], /cannot honor --headed/u],
+  ["a touch rotation outside 0 to 3", ["playtests/move.json", "--touch-rotation", "4"], /TN_PLAYTEST_ANDROID_ROTATION_INVALID/u],
+  ["a build report without an artifact", ["playtests/move.json", "--build-report", "build.json"], /--build-report on the browser target also needs --artifact/u],
+  ["a port outside the TCP range", ["playtests/move.json", "--port", "70000"], /Expected a TCP port from 0 to 65535/u],
+  ["a zero timeout", ["playtests/move.json", "--timeout", "0"], /Expected a positive integer, received '0'/u],
+])("standalone args refuse %s", (_case, argv, message) => {
+  expect(() => parseStandalonePlaytestArgs(argv, "/project")).toThrow(message);
 });
 
 test("init creates only config scenario and adapter examples", async () => {
@@ -246,11 +267,33 @@ test("routes bulk advance and ordinary bridge calls through their intended timeo
   await client.sample({});
   await client.readiness();
 
+  // The handshake is answered while the page is still booting, so it carries the startup budget;
+  // a later readiness poll, a sample and any other round trip stay on the operation budget.
   expect(calls).toEqual([
-    { method: "describe", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
-    { method: "ready", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
+    { method: "describe", timeoutMs: bridgeWaitTimeoutMs() },
+    { method: "ready", timeoutMs: bridgeWaitTimeoutMs() },
     { argument: 600, method: "advance", timeoutMs: advanceTimeoutMs(600) },
     { argument: {}, method: "sample", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
     { method: "ready", timeoutMs: PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs },
   ]);
+});
+
+
+test("startTick alone requires the fixed-step provider during the handshake", async () => {
+  const description: IPlaytestBridgeDescription = {
+    capabilities: [], limits: PLAYTEST_PROTOCOL_LIMITS, name: "anchor", protocolVersion: PLAYTEST_PROTOCOL_VERSION,
+  };
+  const transport: IBridgeTransport = {
+    capabilities: [],
+    call: async <T>(method: string) => (method === "describe" ? description : { ready: true }) as T,
+    close: async () => undefined,
+    waitForBridge: async () => true,
+  };
+  const scenario: IPlaytestScenario = {
+    artifacts: { screenshots: false }, name: "anchor", schemaVersion: 1, startTick: 0,
+    steps: [{ release: true, waitFrames: 1 }], target: "web", viewport: { height: 180, width: 320 }, warmupFrames: 0,
+  };
+  await expect(connectPlaytestBridgeTransport(transport, scenario)).rejects.toThrow("runtime.fixedStep");
+  description.capabilities = ["runtime.fixedStep"];
+  await expect(connectPlaytestBridgeTransport(transport, scenario)).resolves.toBeDefined();
 });

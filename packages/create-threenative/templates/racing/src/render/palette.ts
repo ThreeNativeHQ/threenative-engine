@@ -7,7 +7,7 @@
 //
 // The two `sky*` roles are the loading screen's backdrop and progress track (`loading.ts` reads
 // them by name); `horizon` is the photographed sky's own haze, which is what distance fades into.
-import { BoxGeometry, Group, Mesh, MeshStandardMaterial } from "three";
+import { MeshStandardMaterial } from "three";
 
 export const palette = {
   /** Loading screen backdrop. */
@@ -33,13 +33,4 @@ export function toon(color: number, roughness = 0.72): MeshStandardMaterial {
   const material = new MeshStandardMaterial({ color, roughness, metalness: 0.05 });
   materials.set(key, material);
   return material;
-}
-
-export function curbBlock(width: number, height: number, depth: number, color: number): Group {
-  const group = new Group();
-  const mesh = new Mesh(new BoxGeometry(width, height, depth), toon(color, 0.55));
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  group.add(mesh);
-  return group;
 }

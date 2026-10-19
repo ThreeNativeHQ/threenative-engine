@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-273 — the three effects with no upstream node ship as template source, not as package code
 
 **Status:** PROPOSED — filed 2026-08-30, measured at `1eeecf1e`. Depends on
-[PRD-266](../../useful-defaults/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) for the chain
+PRD-266 for the chain
 seam these attach to. Batch: [docs/PRDs/realism-effects](./README.md).
 
 **Goal: every covered effect `0beqz/realism-effects` exports has a working equivalent here.** Ten

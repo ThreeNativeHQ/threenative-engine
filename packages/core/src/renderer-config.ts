@@ -1,6 +1,7 @@
 import type { IThreeNativeConfig } from "./config.js";
 import type { MatrixWorldMode } from "./matrix-world.js";
 import type { PlatformOS } from "./platform.js";
+import { RESOLUTION_SCALER } from "./resolution-scaler.js";
 
 type RendererConfig = NonNullable<IThreeNativeConfig["renderer"]>;
 
@@ -46,12 +47,30 @@ export function resolveRendererScaleSetting(
   );
   const portable = requireScale(config?.resolutionScale, "renderer.resolutionScale");
   const selected = os === "android" && android !== undefined ? android : (portable ?? fallback);
-  if (selected === "auto") return { resolutionScale: AUTO_SCALE_START, scaleSource: "auto" };
-  if (selected === undefined) return { resolutionScale: 1, scaleSource: "pinned" };
+  // Silence is "auto", not a pin. The engine measures the frame budget where the scale is used, so
+  // a game that named nothing gets the loop that holds it; a pinned full-resolution buffer on a
+  // HiDPI desktop is 4x MSAA over 4527x2207 until the GPU device is lost, and asking a game to
+  // write the key to avoid it is a constant it has to revisit later. A number still pins, and an
+  // explicit "auto" is still the same answer it always was.
+  if (selected === "auto" || selected === undefined)
+    return { resolutionScale: AUTO_SCALE_START, scaleSource: "auto" };
   return {
     resolutionScale: requireScale(selected, "renderer.resolutionScale") as number,
     scaleSource: "pinned",
   };
+}
+
+/**
+ * The lowest rung a platform's scaler may take, or `undefined` for the whole ladder.
+ *
+ * Android and iOS keep every rung: those rungs are what the device arm measured, and a phone buys
+ * the pixels back in ways a desktop does not. Everything else stops at
+ * `RESOLUTION_SCALER.desktopFloorScale`, because a desktop with nothing reconstructing the frame
+ * from fewer pixels turns the bottom of that ladder into blocky mush rather than a faster frame.
+ * A desktop whose render chain does reconstruct it lifts the floor itself, per step.
+ */
+export function resolvePlatformResolutionFloor(os: PlatformOS): number | undefined {
+  return os === "android" || os === "ios" ? undefined : RESOLUTION_SCALER.desktopFloorScale;
 }
 
 /**

@@ -1,17 +1,27 @@
 import {
+  DataTexture,
+  EquirectangularReflectionMapping,
   Group,
   InstancedMesh,
   Mesh,
   MeshBasicMaterial,
   OrthographicCamera,
   PerspectiveCamera,
+  PlaneGeometry,
   SphereGeometry,
 } from "three";
+import { MeshBasicNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { type IGamePlatformSource, defineGame } from "../src/game.js";
 import { InputMap } from "../src/input.js";
+import {
+  type ILaunchFailure,
+  onLaunchFailure,
+  resetLaunchFailures,
+} from "../src/launch-diagnostics.js";
 import type { IRenderPerformanceSample } from "../src/loop.js";
 import { type ICtx, Scene } from "../src/scene.js";
+import { SoftBody3D } from "../src/softbody.js";
 import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";
 import { subscribeUiState } from "../src/ui-state.js";
 
@@ -58,6 +68,38 @@ class EmptyScene extends Scene {
 }
 
 describe("IGame", () => {
+  it("reports render traps once per scene entry, including re-entry", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    class Traps extends Scene {
+      override enter(ctx: ICtx): void {
+        const texture = new DataTexture(new Uint8Array(8 * 65 * 4), 8, 65);
+        texture.mapping = EquirectangularReflectionMapping;
+        ctx.scene.environment = texture;
+        ctx.scene.add(new Mesh(undefined, new MeshBasicMaterial({ opacity: 0.5 })));
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      renderer: renderer(testCanvas()),
+      scenes: { traps: Traps },
+      start: "traps",
+    });
+    const markers = (): string[] =>
+      error.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => /TN_ENVIRONMENT_TOO_SMALL|TN_OPACITY_IGNORED/u.test(line));
+    try {
+      await game.start();
+      await Promise.resolve();
+      expect(markers()).toHaveLength(2);
+      await game.goto("traps");
+      expect(markers()).toHaveLength(4);
+    } finally {
+      game.stop();
+      error.mockRestore();
+    }
+  });
+
   it.each([false, true])(
     "releases the UI bridge when renderer startup fails (host: %s)",
     async (host) => {
@@ -78,7 +120,11 @@ describe("IGame", () => {
         start: "test",
       });
       try {
-        await expect(game.start()).rejects.toBe(boom);
+        // Boot names the failure (TN_NO_RENDERER) and keeps the renderer's own error as its cause.
+        await expect(game.start()).rejects.toMatchObject({
+          cause: boom,
+          message: expect.stringContaining("TN_NO_RENDERER"),
+        });
         if (host) {
           expect((globalThis as Record<string, unknown>).__tnUiGameReceive).toBeUndefined();
         } else {
@@ -224,17 +270,16 @@ describe("IGame", () => {
     }
   });
 
-  // Compute dispatch waits for the first rendered world; gameplay does not. Holding gameplay back
-  // as well was tried and reverted: it read well as one startup policy, and it stopped every
-  // template's playtest dead — chasers never left the spawn, coins were never collected, the
-  // player never rose. Ten golden-path and template lanes are the evidence, so what this asserts
-  // is the split, not the symmetry.
-  it("keeps startup compute behind the first rendered world while gameplay keeps running", async () => {
+  it("keeps fixed compute in the gameplay and physics cadence behind the startup loader", async () => {
     const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
     const trace: string[] = [];
-    const computePhases: string[] = [];
+    const computeNodes: unknown[] = [];
     const gameplayPhases: string[] = [];
     let frame: ((time: number) => void) | undefined;
+    let advance: ((ticks: number) => void) | undefined;
+    let cloth: SoftBody3D | undefined;
     class StartupTraceScene extends Scene {
       static override readonly initialState = {};
 
@@ -244,35 +289,51 @@ describe("IGame", () => {
       }
 
       override enter(ctx: ICtx): void {
-        const driven = new Group() as Group & {
-          readonly released: boolean;
-          readonly warmupNodes: readonly unknown[];
-          attachRenderer: () => void;
-          detach: () => void;
-          process: () => void;
-        };
-        Object.assign(driven, {
-          released: false,
-          warmupNodes: [],
-          attachRenderer: () => undefined,
-          detach: () => undefined,
-          process: () => {
-            trace.push("computeDispatched");
-            computePhases.push(ctx.startup.phase);
-          },
+        cloth = new SoftBody3D(new Mesh(new PlaneGeometry(1, 1), new MeshBasicNodeMaterial()), {
+          pinned: [0],
+          stiffness: 35,
+          damping: 1.8,
+          gravity: [0, 0, 0],
+          wind: [0, 0, 0],
         });
-        ctx.add(driven);
+        ctx.add(cloth);
+        let releaseHold: () => void = () => undefined;
+        ctx.startup.hold(
+          "simulation initialization",
+          new Promise<void>((resolve) => {
+            releaseHold = resolve;
+          }),
+        );
+        ctx.afterPhysics(() => {
+          trace.push("physicsAdvanced");
+          releaseHold();
+        });
         ctx.canvasLayer.scene.name = "overlay";
         ctx.canvasLayer.scene.add(new Mesh());
         ctx.canvasLayer.opaque = true;
       }
     }
     const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            runtime?.freezeClock?.();
+            advance = runtime?.fixedStep;
+            return undefined;
+          },
+        },
+      ],
       renderer: {
         canvas,
-        preferWebGPU: false,
-        webgl2Factory: () => ({
+        webgpuFactory: () => ({
+          dispose: () => undefined,
+          init: async () => undefined,
           compileAsync: () => Promise.resolve(),
+          computeAsync: () => Promise.resolve(),
+          compute: (node: unknown) => {
+            computeNodes.push(node);
+            trace.push("computeDispatched");
+          },
           domElement: canvas,
           render: (scene: { name?: string }) => {
             trace.push(scene.name === "overlay" ? "overlayRendered" : "worldRendered");
@@ -294,23 +355,39 @@ describe("IGame", () => {
 
     try {
       await game.start();
-      if (frame === undefined || game.ctx === undefined)
-        throw new Error("Game did not start its loop.");
-
+      if (
+        frame === undefined ||
+        game.ctx === undefined ||
+        cloth === undefined ||
+        advance === undefined
+      )
+        throw new Error("Game did not start its loop and solver.");
+      const solver = cloth;
       const firstTime = (globalThis.performance?.now() ?? 0) + 16;
       frame(firstTime);
-      // What the first frame has to prove is that nothing was dispatched and no world was drawn
-      // behind the opaque loader — not the exact contents of the frame. `toEqual([...])` also
-      // pinned whether a fixed-step gameplay update ran inside this frame, and that is a function
-      // of the wall-clock gap between the loop starting and this timestamp, not of the startup
-      // policy. A CI runner produces a longer first frame than a quiet machine, runs one fixed
-      // step before the render, and the assertion failed with
-      // ["gameplayUpdated", "overlayRendered"] while every invariant below still held.
-      // Gameplay's ordering is asserted by index at the end of this test, where it belongs.
+      expect({
+        scene: trace.filter((event) => event === "gameplayUpdated").length,
+        afterPhysics: trace.filter((event) => event === "physicsAdvanced").length,
+        solver: cloth.steps,
+      }).toEqual({ scene: 60, afterPhysics: 60, solver: 60 });
+      expect(computeNodes).toHaveLength(60 * solver.warmupNodes.length);
+      computeNodes.forEach((node, index) =>
+        expect(node).toBe(solver.warmupNodes[index % solver.warmupNodes.length]),
+      );
+      expect(trace.indexOf("gameplayUpdated")).toBeLessThan(trace.indexOf("computeDispatched"));
+      expect(trace.indexOf("computeDispatched")).toBeLessThan(trace.indexOf("physicsAdvanced"));
       expect(trace).toContain("overlayRendered");
-      expect(trace).not.toContain("computeDispatched");
       expect(trace).not.toContain("worldRendered");
       expect(game.ctx.startup.phase).toBe("collapsing");
+      expect(gameplayPhases[0]).not.toBe("ready");
+      advance(3);
+      expect(cloth.steps).toBe(63);
+      expect(trace.filter((event) => event === "gameplayUpdated")).toHaveLength(63);
+      expect(trace.filter((event) => event === "physicsAdvanced")).toHaveLength(63);
+      expect(computeNodes).toHaveLength(63 * solver.warmupNodes.length);
+      computeNodes.forEach((node, index) =>
+        expect(node).toBe(solver.warmupNodes[index % solver.warmupNodes.length]),
+      );
 
       for (let time = firstTime + 16; time <= firstTime + 304; time += 16) {
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -319,30 +396,15 @@ describe("IGame", () => {
       }
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       frame(firstTime + 320);
-      await Promise.resolve();
-
-      const firstCompute = trace.indexOf("computeDispatched");
-      const firstGameplay = trace.indexOf("gameplayUpdated");
-      const firstWorld = trace.indexOf("worldRendered");
-      const firstOverlay = trace.indexOf("overlayRendered");
       expect(game.ctx.startup.phase).toBe("ready");
-      expect(firstGameplay).toBeGreaterThanOrEqual(0);
-      expect(firstCompute).toBeGreaterThanOrEqual(0);
-      expect(firstWorld).toBeGreaterThanOrEqual(0);
-      expect(firstOverlay).toBeGreaterThanOrEqual(0);
-      expect(firstGameplay).toBeLessThan(firstCompute);
-      // Gameplay runs while the loader is still up, so it is seen before readiness arrives.
-      // Requiring "ready" here is what broke the templates.
-      expect(gameplayPhases[0], "gameplay was held back until startup finished").not.toBe("ready");
-      // The gate on compute is the first rendered world, not the readiness phase — a warm-up
-      // dispatch before anything has been drawn is the cost this exists to avoid.
-      expect(firstCompute).toBeGreaterThan(firstWorld);
-      expect(computePhases).not.toHaveLength(0);
-      expect(firstOverlay).toBeLessThan(firstWorld);
+      expect(trace.indexOf("overlayRendered")).toBeLessThan(trace.indexOf("worldRendered"));
+      expect(cloth.steps).toBe(63);
     } finally {
       game.stop();
       if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
       else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
     }
   });
 
@@ -396,6 +458,65 @@ describe("IGame", () => {
       else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
     }
   });
+
+  it.each([undefined, false])(
+    "interpolates the camera by default and restores tick state (override %s)",
+    async (physicsInterpolation) => {
+      const canvas = testCanvas();
+      let frame: ((time: number) => void) | undefined;
+      let context: ICtx | undefined;
+      const drawn: number[] = [];
+      class MovingCamera extends Scene {
+        static override readonly initialState = {};
+        override enter(ctx: ICtx): void {
+          context = ctx;
+        }
+        override update(ctx: ICtx): void {
+          ctx.camera.position.x += 2;
+        }
+      }
+      const game = defineGame({
+        physicsInterpolation,
+        renderer: {
+          canvas,
+          preferWebGPU: false,
+          webgl2Factory: () => ({
+            domElement: canvas,
+            render: () => drawn.push(context?.camera.position.x ?? Number.NaN),
+            setSize: () => undefined,
+          }),
+        },
+        scenes: { test: MovingCamera },
+        start: "test",
+      });
+      const requestFrame = globalThis.requestAnimationFrame;
+      const nowSpy = vi.spyOn(globalThis.performance, "now").mockReturnValue(0);
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: (callback: (time: number) => void) => {
+          frame = callback;
+          return 1;
+        },
+      });
+      try {
+        await game.start();
+        if (frame === undefined || context === undefined) throw new Error("Loop did not start.");
+        const initialX = context.camera.position.x;
+        frame(25);
+        expect(context.alpha).toBeCloseTo(0.5);
+        expect(drawn.at(-1)).toBeCloseTo(initialX + (physicsInterpolation === false ? 2 : 1));
+        expect(context.camera.position.x).toBe(initialX + 2);
+        context.resetInterpolation(context.camera);
+        frame(26);
+        expect(drawn.at(-1)).toBe(initialX + 2);
+      } finally {
+        game.stop();
+        nowSpy.mockRestore();
+        if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+        else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+      }
+    },
+  );
 
   it("runs ctx.beforeRender once per world draw after the frame's last fixed update", async () => {
     const canvas = testCanvas();
@@ -801,7 +922,7 @@ describe("IGame", () => {
       expect(ctx.startup.progress).toBeLessThan(1); // still not ready after one frame
       expect(ctx.canvasLayer.opaque).toBe(true);
 
-      await Promise.resolve();
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
       const compileAsync = (game.ctx?.renderer.raw as { compileAsync: ReturnType<typeof vi.fn> })
         .compileAsync;
       expect(compileAsync).toHaveBeenCalledWith(ctx.scene, ctx.camera);
@@ -1186,9 +1307,20 @@ describe("IGame", () => {
       expect(renderHooks).toBe(3);
       const series = diagnostics?.() ?? [];
       // The frame budget ships on by default, so every sample carries its phase split; the
-      // render-metric fields below are what this test is about.
+      // render-metric fields below are what this test is about. `sequence` and `completedAtMs` are the
+      // presentation completion every sample now carries (PRD-610 AC-19).
       expect(series.every((sample) => sample.phases !== undefined)).toBe(true);
-      expect(series.map(({ passes: _passes, phases: _phases, ...sample }) => sample)).toEqual([
+      expect(
+        series.map(
+          ({
+            completedAtMs: _completedAtMs,
+            passes: _passes,
+            phases: _phases,
+            sequence: _sequence,
+            ...sample
+          }) => sample,
+        ),
+      ).toEqual([
         { drawCalls: 4, frameMs: 16, triangles: 32 },
         { drawCalls: 4, frameMs: 16, triangles: 32 },
         { drawCalls: 3, frameMs: 16, triangles: 30 },
@@ -1554,6 +1686,52 @@ describe("IGame", () => {
     expect(game.ctx).toBeUndefined();
   });
 
+  it("releases plugins, setup hooks and renderer when scene exit throws", async () => {
+    const events: string[] = [];
+    const original = new Error("scene exit exploded");
+    const canvas = testCanvas();
+    class ThrowingExit extends Scene {
+      static override readonly initialState = {};
+      override exit(): void {
+        events.push("exit");
+        throw original;
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: () => () => {
+            events.push("restore hooks");
+          },
+          dispose: () => {
+            events.push("plugin dispose");
+            throw new Error("later disposal");
+          },
+        },
+      ],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+          dispose: () => {
+            events.push("renderer dispose");
+          },
+        }),
+      },
+      scenes: { test: ThrowingExit },
+      start: "test",
+    });
+    await game.start();
+    expect(() => game.stop()).toThrow(original);
+    expect(events).toEqual(["exit", "plugin dispose", "restore hooks", "renderer dispose"]);
+    expect(game.ctx).toBeUndefined();
+    expect(() => game.stop()).not.toThrow();
+    expect(events).toHaveLength(4);
+  });
+
   it("should run every cleanup when an earlier cleanup throws", async () => {
     const events: string[] = [];
     let disposed = 0;
@@ -1878,6 +2056,74 @@ describe("IGame", () => {
       start: "test",
     });
     await expect(invalid.start()).rejects.toThrow("frame function");
+  });
+
+  it("reports a scene whose load() rejects by name instead of stalling the launch", async () => {
+    resetLaunchFailures();
+    const failures: ILaunchFailure[] = [];
+    const off = onLaunchFailure((failure) => failures.push(failure));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    class Boot extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        void ctx.goto("play");
+      }
+    }
+
+    class Play extends Scene {
+      override load(): Promise<void> {
+        return Promise.reject(new Error("TN_TEST_LOAD: the model refused"));
+      }
+    }
+
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { boot: Boot, play: Play },
+      start: "boot",
+    });
+    await game.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    off();
+    errors.mockRestore();
+    game.stop();
+    expect(failures).toEqual([
+      {
+        kind: "scene-load-failed",
+        message: "Scene 'play' failed to load: TN_TEST_LOAD: the model refused",
+      },
+    ]);
+  });
+
+  it("reports a start scene whose enter() throws, even when start() is not awaited", async () => {
+    resetLaunchFailures();
+    const failures: ILaunchFailure[] = [];
+    const off = onLaunchFailure((failure) => failures.push(failure));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    class Broken extends Scene {
+      static override readonly initialState = {};
+
+      override enter(): void {
+        throw new Error("TN_TEST_ENTER: the renderer has no shadowMap");
+      }
+    }
+
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { broken: Broken },
+      start: "broken",
+    });
+    await expect(game.start()).rejects.toThrow("TN_TEST_ENTER");
+    off();
+    errors.mockRestore();
+    expect(failures).toEqual([
+      {
+        kind: "start-failed",
+        message: "The game failed to start: TN_TEST_ENTER: the renderer has no shadowMap",
+      },
+    ]);
   });
 
   it("preserves the destination frame when enter navigates synchronously", async () => {

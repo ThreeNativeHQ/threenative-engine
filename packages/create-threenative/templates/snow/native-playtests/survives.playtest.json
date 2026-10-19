@@ -1,0 +1,47 @@
+{
+  "name": "native-snow-smoke",
+  "target": "desktop",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "hands-off",
+      "press": "KeyP",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "ArrowUp",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "observe-movement",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "movement": {
+      "entity": "player",
+      "minDistance": 1
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "steps",
+        "gte": 2,
+        "allowTrivial": "The explorer plants boots in the snow on the native host too."
+      }
+    ]
+  }
+}

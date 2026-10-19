@@ -24,11 +24,19 @@
  * this is why the counters ride the same opt-in flag as the spans rather than being always on.
  */
 
-/** One frame's boundary counts. Every field is absent when the platform cannot report it. */
+/**
+ * One frame's boundary counts, plus the simulation tick it closed on.
+ *
+ * Every boundary field is absent when the platform cannot report it. `simulationTick` is not a
+ * platform reading: it is the loop's fixed-step count, absent when the caller fed none, and it
+ * rides here so a plain frame-budget window can be joined to the simulation without the spans flag.
+ */
 export interface IFrameCounters {
   readonly gpuBytes?: number;
   readonly hostCalls?: number;
   readonly jsAllocBytes?: number;
+  /** The loop's fixed-step count at the frame's end; absent when the caller did not feed one. */
+  readonly simulationTick?: number;
 }
 
 /** The slice of a WebGPU device this reads. Structural, so a test can stand in a fake. */

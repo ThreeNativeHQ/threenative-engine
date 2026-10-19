@@ -234,6 +234,18 @@ describe("threenative doctor", () => {
     expect(check(report, "dependencies").fix).toMatch(/install/i);
   });
 
+  it("accepts a patch difference inside one 0.x series", () => {
+    const report = diagnoseProject(
+      snapshot({
+        installedVersions: new Map([
+          ["@threenative/core", "0.3.4"],
+          ["@threenative/physics", "0.3.5"],
+        ]),
+      }),
+    );
+    expect(check(report, "versions").status).toBe("ok");
+  });
+
   it("fails when installed @threenative packages disagree on version, naming both", () => {
     const report = diagnoseProject(
       snapshot({
@@ -363,7 +375,7 @@ describe("threenative doctor", () => {
         },
         packageJson: {
           ...(HEALTHY.packageJson as Record<string, unknown>),
-          scripts: { "build:android": "threenative build --target android" },
+          scripts: { "build:ios": "threenative build --target ios" },
         },
       }),
     );
@@ -379,7 +391,7 @@ describe("threenative doctor", () => {
         config: { nativeEntry: "src/game.ts" },
         packageJson: {
           ...(HEALTHY.packageJson as Record<string, unknown>),
-          scripts: { "build:android": "threenative build --target android" },
+          scripts: { "build:ios": "threenative build --target ios" },
         },
       }),
     );
@@ -388,6 +400,26 @@ describe("threenative doctor", () => {
     expect(check(report, "asset pipeline").detail).toMatch(
       /TN_NATIVE_KTX2_UNSUPPORTED.*TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED/u,
     );
+  });
+
+  it("follows the Android engine: V8 admits the default passes, QuickJS warns", () => {
+    const android = () =>
+      diagnoseProject(
+        snapshot({
+          config: { nativeEntry: "src/game.ts" },
+          packageJson: {
+            ...(HEALTHY.packageJson as Record<string, unknown>),
+            scripts: { "build:android": "threenative build --target android" },
+          },
+        }),
+      );
+    vi.stubEnv("THREENATIVE_GRADLE_ARGS", "-PthreenativeJsEngine=v8");
+    expect(check(android(), "asset pipeline")).toMatchObject({ status: "ok" });
+    vi.stubEnv("THREENATIVE_GRADLE_ARGS", "-PthreenativeJsEngine=quickjs");
+    expect(check(android(), "asset pipeline").detail).toMatch(
+      /TN_NATIVE_KTX2_UNSUPPORTED.*android.*TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED/u,
+    );
+    vi.unstubAllEnvs();
   });
 
   it("warns for an omitted asset pass in a partial mobile config", () => {
@@ -433,7 +465,7 @@ describe("threenative doctor", () => {
       path.join(root, "public", "assets.manifest.json"),
       JSON.stringify({ entries: { "hero.png": { output: "hero.ktx2" } } }),
     );
-    await expect(assertNativeAssetsCompatible(root, "android", {} as never)).rejects.toThrow(
+    await expect(assertNativeAssetsCompatible(root, "ios", {} as never)).rejects.toThrow(
       /TN_NATIVE_KTX2_UNSUPPORTED/u,
     );
   });
@@ -983,6 +1015,8 @@ describe("threenative doctor edge coverage", () => {
   });
 
   it("handles empty manifests and configured target arrays and strings", () => {
+    // Android QuickJS lacks both decoders, so both mobile targets must appear in the warning.
+    vi.stubEnv("THREENATIVE_GRADLE_ARGS", "-PthreenativeJsEngine=quickjs");
     const report = diagnoseProject(
       snapshot({
         config: {
@@ -1011,6 +1045,7 @@ describe("threenative doctor edge coverage", () => {
     });
     expect(check(report, "versions")).toMatchObject({ detail: "nothing installed to compare" });
     expect(check(report, "asset pipeline").detail).toMatch(/android.*ios|ios.*android/u);
+    vi.unstubAllEnvs();
   });
 
   it("rejects unreadable, malformed, and hand-edited MCP configuration", () => {

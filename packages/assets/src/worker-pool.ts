@@ -92,11 +92,20 @@ export function createPassPool(
   }> = [];
   const pending = new Map<
     number,
-    { reject: (error: Error) => void; resolve: (reply: IWorkerReply) => void }
+    { owner: Worker; reject: (error: Error) => void; resolve: (reply: IWorkerReply) => void }
   >();
   const workers: Worker[] = [];
   let nextId = 0;
   let disposed = false;
+
+  // Rejects only the job a worker owns, so one crash never fails a healthy worker's job.
+  const settleOwned = (worker: Worker, error: Error): void => {
+    for (const [id, waiter] of pending) {
+      if (waiter.owner !== worker) continue;
+      pending.delete(id);
+      waiter.reject(error);
+    }
+  };
 
   const launch = (): Worker => {
     const worker = new Worker(workerUrl);
@@ -110,15 +119,18 @@ export function createPassPool(
         dispatch();
       }
     });
-    worker.on("error", (error) => {
-      for (const [, waiter] of pending) waiter.reject(error);
-      pending.clear();
-    });
+    worker.on("error", (error) => settleOwned(worker, error));
     worker.on("exit", () => {
       const index = idle.indexOf(worker);
       if (index >= 0) idle.splice(index, 1);
       const workerIndex = workers.indexOf(worker);
       if (workerIndex >= 0) workers.splice(workerIndex, 1);
+      // A worker that exits before it replies never answers its job. Settle that job here.
+      settleOwned(
+        worker,
+        new Error("TN_ASSETS_POOL_WORKER_EXITED: a compile worker exited before it replied."),
+      );
+      dispatch();
     });
     worker.postMessage(bootstrap);
     idle.push(worker);
@@ -126,13 +138,17 @@ export function createPassPool(
   };
 
   const dispatch = (): void => {
+    // With no idle worker and room under the bound, replace a dead one so queued jobs still run.
+    if (!disposed && idle.length === 0 && waiting.length > 0 && workers.length < concurrency) {
+      launch();
+    }
     while (idle.length > 0 && waiting.length > 0 && !disposed) {
       const job = waiting.shift();
       const worker = idle.pop();
       if (job === undefined || worker === undefined) return;
       const id = nextId;
       nextId += 1;
-      pending.set(id, { reject: job.reject, resolve: job.resolve });
+      pending.set(id, { owner: worker, reject: job.reject, resolve: job.resolve });
       worker.postMessage({ id, input: job.input, logical: job.logical });
     }
   };
@@ -159,6 +175,13 @@ export function createPassPool(
       }),
     dispose: async () => {
       disposed = true;
+      for (const job of waiting.splice(0)) {
+        job.reject(
+          new Error(
+            "TN_ASSETS_POOL_DISPOSED: the compile pool was disposed before the job started.",
+          ),
+        );
+      }
       for (const [, waiter] of pending) {
         waiter.reject(new Error("TN_ASSETS_POOL_DISPOSED: the compile pool was disposed mid-job."));
       }

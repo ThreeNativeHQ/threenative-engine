@@ -126,6 +126,19 @@ export class ClusteredBatchRoot extends Object3D {
   constructor(readonly batch: ClusteredBatch) {
     super();
   }
+
+  /**
+   * A copy that is still being cut.
+   *
+   * three builds one through `new this.constructor()`, which left the copy's `batch` undefined
+   * and quietly stopped cutting it — a frozen cut that still drew. Sharing the batch is what
+   * keeps a copy alive: the batch owns the bands and their index buffers, so the copy draws the
+   * same cut as the root it was copied from, which is the same thing `Mesh.copy` does with
+   * geometry and `VirtualGeometryPlugin` does with a baked table.
+   */
+  override clone(recursive = true): this {
+    return new ClusteredBatchRoot(this.batch).copy(this, recursive) as this;
+  }
 }
 
 function placementMatrix(placement: IClusteredPlacement): Matrix4 {

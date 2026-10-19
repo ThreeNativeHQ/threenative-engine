@@ -167,6 +167,11 @@ describe("progressOf", () => {
     expect(progressOf(FINISHED).label).toEqual({ color: "#0e8a16", name: "prd:100% — ready" });
   });
 
+  it("should read a numbered acceptance heading as acceptance criteria", () => {
+    const numbered = FINISHED.replace("## Acceptance criteria", "## 7. Acceptance criteria");
+    expect(progressOf(numbered).label.name).toBe("prd:100% — ready");
+  });
+
   it("should refuse to reach 100% when a PRD has no acceptance criteria to satisfy", () => {
     const noAcceptance = FINISHED.slice(0, FINISHED.indexOf("## Acceptance criteria"));
     expect(progressOf(noAcceptance).percent).toBe(75);

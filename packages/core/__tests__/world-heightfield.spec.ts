@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import {
+  BufferAttribute,
+  BufferGeometry,
+  InterleavedBuffer,
+  InterleavedBufferAttribute,
+} from "three";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Heightfield } from "../src/world.js";
 
 function terrain(seed: number, x: number, z: number): number {
@@ -33,6 +39,10 @@ function hash(values: Float32Array): string {
 }
 
 describe("Heightfield", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("should produce an identical field for an identical game seed", () => {
     expect(hash(field(1337).heights)).toBe(hash(field(1337).heights));
   });
@@ -72,6 +82,159 @@ describe("Heightfield", () => {
     geometry.dispose();
 
     expect(maximumError).toBeLessThanOrEqual(1e-6);
+  });
+
+  it("should bulk-write plain float geometry without per-vertex setters", () => {
+    const value = field(1337);
+    const geometry = value.toGeometry();
+    const position = geometry.getAttribute("position");
+    const normal = geometry.getAttribute("normal");
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    const originalX = Float32Array.from({ length: position.count }, (_, i) => position.getX(i));
+    const originalY = Float32Array.from({ length: position.count }, (_, i) => position.getY(i));
+    const originalZ = Float32Array.from({ length: position.count }, (_, i) => position.getZ(i));
+    const originalNormal = new Float32Array(position.count * 3);
+    for (let lane = 0; lane < position.count * 3; lane += 1)
+      originalNormal[lane] = normal.array[lane] as number;
+
+    const setY = vi.spyOn(BufferAttribute.prototype, "setY");
+    const setXYZ = vi.spyOn(BufferAttribute.prototype, "setXYZ");
+
+    // Columns span both borders; rows start at the z border and stop short of the far one.
+    const region = { column: 0, columns: value.columns, row: 0, rows: 6 };
+    value.updateHeights({
+      ...region,
+      heights: Float32Array.from({ length: region.columns * region.rows }, (_, i) => (i % 7) - 3),
+    });
+    value.refreshGeometry(geometry, region);
+
+    expect(setY).not.toHaveBeenCalled();
+    expect(setXYZ).not.toHaveBeenCalled();
+
+    const heights = value.heights;
+    const cellWidth = value.width / (value.columns - 1);
+    const cellDepth = value.depth / (value.rows - 1);
+    const sample = (row: number, column: number): number =>
+      heights[row * value.columns + column] as number;
+    const inWindow = (row: number, column: number): boolean =>
+      row >= region.row &&
+      row < region.row + region.rows &&
+      column >= region.column &&
+      column < region.column + region.columns;
+
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    let maximumError = 0;
+    for (let row = 0; row < value.rows; row += 1) {
+      for (let column = 0; column < value.columns; column += 1) {
+        const vertex = row * value.columns + column;
+        const worldX = position.getX(vertex) + value.origin.x;
+        const worldZ = position.getZ(vertex) + value.origin.z;
+        const expectedHeight = value.heightAt(worldX, worldZ);
+        minY = Math.min(minY, expectedHeight);
+        maxY = Math.max(maxY, expectedHeight);
+        maximumError = Math.max(maximumError, Math.abs(position.getY(vertex) - expectedHeight));
+        // Only the y lane moves; x and z must survive the bulk write untouched.
+        expect(position.getX(vertex)).toBe(originalX[vertex]);
+        expect(position.getZ(vertex)).toBe(originalZ[vertex]);
+
+        if (!inWindow(row, column)) {
+          expect(position.getY(vertex)).toBe(originalY[vertex]);
+          for (let lane = 0; lane < 3; lane += 1)
+            expect(normal.array[vertex * 3 + lane]).toBe(originalNormal[vertex * 3 + lane]);
+          continue;
+        }
+
+        // The declared refresh normal is the grid central difference, not `normalAt`'s bilinear one.
+        const left = Math.max(0, column - 1);
+        const right = Math.min(value.columns - 1, column + 1);
+        const near = Math.max(0, row - 1);
+        const far = Math.min(value.rows - 1, row + 1);
+        const slopeX = (sample(row, right) - sample(row, left)) / ((right - left) * cellWidth);
+        const slopeZ = (sample(far, column) - sample(near, column)) / ((far - near) * cellDepth);
+        const length = Math.hypot(slopeX, 1, slopeZ);
+        maximumError = Math.max(
+          maximumError,
+          Math.abs(normal.getX(vertex) - -slopeX / length),
+          Math.abs(normal.getY(vertex) - 1 / length),
+          Math.abs(normal.getZ(vertex) - -slopeZ / length),
+        );
+      }
+    }
+
+    expect(maximumError).toBeLessThanOrEqual(1e-6);
+
+    const box = geometry.boundingBox;
+    expect(box).not.toBeNull();
+    expect(geometry.boundingSphere).not.toBeNull();
+    expect(box?.min.y ?? Number.NaN).toBeLessThanOrEqual(minY + 1e-6);
+    expect(box?.max.y ?? Number.NaN).toBeGreaterThanOrEqual(maxY - 1e-6);
+    geometry.dispose();
+  });
+
+  it("should upload only the refreshed rows, and never shrink a pending full refresh", () => {
+    const value = field(1337);
+    const geometry = value.toGeometry();
+    const position = geometry.getAttribute("position") as BufferAttribute;
+    const normal = geometry.getAttribute("normal") as BufferAttribute;
+    position.clearUpdateRanges();
+    normal.clearUpdateRanges();
+
+    // Rows 2..4, columns 3..7 of a 17-column field: one span from (2,3) to the end of (4,7).
+    value.refreshGeometry(geometry, { column: 3, columns: 5, row: 2, rows: 3 });
+    const window = { count: (4 * 17 + 8 - (2 * 17 + 3)) * 3, start: (2 * 17 + 3) * 3 };
+    expect(position.updateRanges).toEqual([window]);
+    expect(normal.updateRanges).toEqual([window]);
+
+    // A full refresh in the same frame records the whole buffer, so the upload covers it.
+    value.refreshGeometry(geometry);
+    expect(position.updateRanges).toContainEqual({ count: position.array.length, start: 0 });
+    expect(normal.updateRanges).toContainEqual({ count: normal.array.length, start: 0 });
+  });
+
+  it("should keep per-vertex setters for interleaved and normalized geometry", () => {
+    const value = field(1337);
+    const count = value.rows * value.columns;
+    const interleaved = new InterleavedBuffer(new Float32Array(count * 4), 4);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new InterleavedBufferAttribute(interleaved, 3, 0));
+    geometry.setAttribute("normal", new BufferAttribute(new Int16Array(count * 3), 3, true));
+    const position = geometry.getAttribute("position");
+    const normal = geometry.getAttribute("normal");
+    const setY = vi.spyOn(position, "setY");
+    const setXYZ = vi.spyOn(normal, "setXYZ");
+
+    const region = { column: 2, columns: 3, row: 4, rows: 2 };
+    value.refreshGeometry(geometry, region);
+
+    expect(setY).toHaveBeenCalledTimes(region.columns * region.rows);
+    expect(setXYZ).toHaveBeenCalledTimes(region.columns * region.rows);
+    const vertex = 4 * value.columns + 2;
+    // The fallback still writes the canonical sample at that grid vertex.
+    expect(position.getY(vertex)).toBe(value.heights[vertex]);
+  });
+
+  it("should keep per-vertex setters for a custom attribute that overrides setY", () => {
+    const value = field(1337);
+    const count = value.rows * value.columns;
+    class SurfaceAttribute extends BufferAttribute {
+      override setY(index: number, y: number): this {
+        return super.setY(index, y);
+      }
+    }
+    const geometry = new BufferGeometry();
+    const position = new SurfaceAttribute(new Float32Array(count * 3), 3);
+    geometry.setAttribute("position", position);
+    const setY = vi.spyOn(SurfaceAttribute.prototype, "setY");
+
+    const region = { column: 2, columns: 3, row: 4, rows: 2 };
+    value.refreshGeometry(geometry, region);
+
+    expect(setY).toHaveBeenCalledTimes(region.columns * region.rows);
+    const vertex = 4 * value.columns + 2;
+    expect(position.getY(vertex)).toBe(value.heights[vertex]);
+    geometry.dispose();
   });
 
   it("should reject a heights buffer whose length is not rows times columns", () => {
@@ -325,5 +488,61 @@ describe("Heightfield", () => {
     value.detach();
     expect(() => value.attachRenderer({} as never)).toThrow("cannot be attached after release");
     value.process();
+  });
+});
+
+describe("Heightfield change trackers", () => {
+  const flat = () =>
+    Heightfield.fromSampler({
+      columns: 9,
+      depth: 8,
+      origin: { x: 0, z: 0 },
+      rows: 9,
+      sampleHeight: () => 0,
+      width: 8,
+    });
+
+  it("hands each tracker the union of the windows written since its own last take", () => {
+    const field = flat();
+    const first = field.trackChanges();
+    const second = field.trackChanges();
+    expect(first.take()).toBeUndefined();
+    field.updateHeights({
+      column: 1,
+      columns: 2,
+      row: 1,
+      rows: 1,
+      heights: new Float32Array([1, 1]),
+    });
+    field.updateHeights({
+      column: 5,
+      columns: 1,
+      row: 6,
+      rows: 2,
+      heights: new Float32Array([2, 2]),
+    });
+    expect(first.take()).toEqual({ column: 1, columns: 5, row: 1, rows: 7 });
+    expect(first.take()).toBeUndefined();
+    // The second tracker never took, so it still holds both writes.
+    expect(second.take()).toEqual({ column: 1, columns: 5, row: 1, rows: 7 });
+    second.dispose();
+    field.updateHeights({ column: 0, columns: 1, row: 0, rows: 1, heights: new Float32Array([3]) });
+    expect(second.take()).toBeUndefined();
+    expect(first.take()).toEqual({ column: 0, columns: 1, row: 0, rows: 1 });
+  });
+
+  it("reads one collider sample without copying the field", () => {
+    const field = flat();
+    field.updateHeights({
+      column: 3,
+      columns: 1,
+      row: 5,
+      rows: 1,
+      heights: new Float32Array([0.7]),
+    });
+    const copy = field.toColliderHeights();
+    expect(field.colliderHeight(5, 3)).toBeCloseTo(0.7, 6);
+    expect(field.colliderHeight(5, 3)).toBe(copy[3 * field.rows + 5]);
+    expect(() => field.colliderHeight(9, 0)).toThrow(/outside/);
   });
 });

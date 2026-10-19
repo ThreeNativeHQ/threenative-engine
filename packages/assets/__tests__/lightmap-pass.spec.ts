@@ -2,7 +2,7 @@ import { Document, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, KHRLightsPunctual } from "@gltf-transform/extensions";
 import { read as readKtx2 } from "ktx-parse";
 import { describe, expect, it } from "vitest";
-import { lightmapPass } from "../src/passes/lightmap.js";
+import { createLightmapPass, lightmapPass } from "../src/passes/lightmap.js";
 import { modelPass } from "../src/passes/model.js";
 
 async function staticGlb(animated = false, indexed = true): Promise<Buffer> {
@@ -95,6 +95,14 @@ function uniquePositions(primitive: Awaited<ReturnType<typeof readPrimitive>>): 
 }
 
 describe("lightmapPass", () => {
+  it("separates mobile lightmap cache keys while preserving the public Basis key", () => {
+    const options = { atlasSize: 128, padding: 2 };
+    const basis = lightmapPass(options);
+    expect(basis.cacheKey).toBe(JSON.stringify(options));
+    expect(createLightmapPass(options, false).cacheKey).toBe(basis.cacheKey);
+    expect(createLightmapPass(options, true).cacheKey).not.toBe(basis.cacheKey);
+  });
+
   it("writes TEXCOORD_1 for every baked primitive and preserves TEXCOORD_0", async () => {
     const input = await staticGlb();
     const source = await readPrimitive(input);
@@ -170,5 +178,70 @@ describe("lightmapPass", () => {
     expect(compiled.getAttribute("NORMAL")?.getCount()).toBeGreaterThan(0);
     expect(compiled.getAttribute("TEXCOORD_0")?.getCount()).toBeGreaterThan(0);
     expect(compiled.getAttribute("TEXCOORD_1")?.getCount()).toBeGreaterThan(0);
+  });
+});
+
+describe("lightmapPass config validation", () => {
+  it("rejects an atlas size that is not a multiple of four", () => {
+    expect(() => lightmapPass({ atlasSize: 130, padding: 2 })).toThrow(
+      "TN_ASSETS_LIGHTMAP_CONFIG_INVALID",
+    );
+  });
+
+  it("rejects a non-positive atlas size or padding", () => {
+    expect(() => lightmapPass({ atlasSize: 0, padding: 2 })).toThrow(
+      "TN_ASSETS_LIGHTMAP_CONFIG_INVALID",
+    );
+    expect(() => lightmapPass({ atlasSize: 128, padding: 0 })).toThrow(
+      "TN_ASSETS_LIGHTMAP_CONFIG_INVALID",
+    );
+  });
+
+  it("names an unreadable GLB with the lightmap error code", async () => {
+    await expect(
+      lightmapPass({ atlasSize: 128, padding: 2 }).apply(Buffer.from("garbage"), "room.glb"),
+    ).rejects.toThrow("TN_ASSETS_LIGHTMAP_UNREADABLE");
+  });
+
+  /** One lit primitive whose POSITION accessor is the given array, so the geometry guards see it. */
+  async function primitiveGlb(positions: Float32Array | Int16Array): Promise<Buffer> {
+    const document = new Document();
+    const buffer = document.createBuffer("primitive");
+    const accessor = document
+      .createAccessor("positions")
+      .setType("VEC3")
+      .setArray(positions)
+      .setBuffer(buffer);
+    const primitive = document.createPrimitive().setAttribute("POSITION", accessor);
+    const mesh = document.createMesh("primitive").addPrimitive(primitive);
+    const lights = document.createExtension(KHRLightsPunctual);
+    const light = lights.createLight("bake-light").setType("point").setIntensity(1);
+    const scene = document
+      .createScene("scene")
+      .addChild(document.createNode("primitive").setMesh(mesh));
+    scene.addChild(
+      document
+        .createNode("bake-light")
+        .setTranslation([0, 3, 0])
+        .setExtension("KHR_lights_punctual", light),
+    );
+    return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
+  }
+
+  it("rejects positions that are not Float32 with the geometry code", async () => {
+    const input = await primitiveGlb(new Int16Array([0, 0, 0, 1, 0, 0, 0, 1, 0]));
+
+    await expect(
+      lightmapPass({ atlasSize: 128, padding: 2 }).apply(input, "quantized.glb"),
+    ).rejects.toThrow("TN_ASSETS_LIGHTMAP_GEOMETRY_UNSUPPORTED");
+  });
+
+  it("rejects a primitive past the 65,535-vertex limit of the atlas packer", async () => {
+    // 65,538 vertices is a whole number of triangles and one past the Uint16 index range.
+    const input = await primitiveGlb(new Float32Array(65_538 * 3));
+
+    await expect(
+      lightmapPass({ atlasSize: 128, padding: 2 }).apply(input, "dense.glb"),
+    ).rejects.toThrow("TN_ASSETS_LIGHTMAP_GEOMETRY_UNSUPPORTED");
   });
 });

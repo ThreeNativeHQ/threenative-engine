@@ -40,7 +40,7 @@ function authoredPng() {
 
 // Exercise the real staging and resolver. Only OS resource tools/archive transport are replaced;
 // these unit cases do not claim a Windows/macOS native launch or signing proof.
-function fixture(platform = 'linux', { icon = false, convertIcon = false, config = defaultConfig } = {}) {
+function fixture(platform = 'linux', { icon = false, convertIcon = false, config = defaultConfig, uiRenderer = 'web' } = {}) {
   const directory = makeTempDirSync('threenative-container-regression-');
   const executable = join(directory, 'input');
   const captured = join(directory, 'relocated container');
@@ -56,6 +56,7 @@ function fixture(platform = 'linux', { icon = false, convertIcon = false, config
   writeFileSync(bundle, authoredBundle());
   mkdirSync(uiDirectory);
   writeFileSync(join(uiDirectory, 'index.html'), '<main>HUD</main>');
+  writeFileSync(join(uiDirectory, 'index-abc123.css'), '.hud{color:#fff}');
   const invocations = [];
   const run = (command, args, options) => {
     // Capture the icon bytes at call time: packaging deletes its temporary .ico once rcedit
@@ -88,7 +89,7 @@ function fixture(platform = 'linux', { icon = false, convertIcon = false, config
     return { status: 0, stdout: '', stderr: '' };
   };
   const packed = packageDesktopContainer({
-    platform, arch: 'x64', bundle, executable, config, uiDirectory, uiRenderer: 'web',
+    platform, arch: 'x64', bundle, executable, config, uiDirectory, uiRenderer,
     dependencies: [{ name: 'sidecar.bin', source: dependency }],
     ...(icon ? { icon: iconPath } : {}), output: join(directory, 'game'), run,
   });
@@ -257,6 +258,30 @@ test('macOS stages the web UI where the runtime resolves it, under Contents/Reso
   assert.equal(manifest.ui.entry, 'Contents/Resources/ui/index.html');
   assert.ok(manifest.resources['Contents/Resources/ui/index.html']);
   assert.equal(existsSync(join(root, 'Contents/MacOS/ui')), false);
+});
+
+// The CSS renderer stages stylesheets and no page. The manifest still has to name one entry it
+// hashed, or `resolveContainer` would report a native-css container as incomplete.
+test('a native-css container stages its stylesheets and names one as the entry', () => {
+  const { root, manifest } = fixture('linux', { uiRenderer: 'native-css' });
+  assert.ok(existsSync(join(root, 'ui/index-abc123.css')));
+  assert.equal(manifest.ui.directory, 'ui');
+  assert.equal(manifest.ui.entry, 'ui/index-abc123.css');
+  assert.deepEqual(resolveContainer(root, { platform: 'linux' }), manifest);
+});
+
+test('a native-css container with no stylesheet is refused before anything is staged', () => {
+  const directory = makeTempDirSync('threenative-container-css-missing-');
+  const executable = join(directory, 'input');
+  const uiDirectory = join(directory, 'ui');
+  writeFileSync(executable, 'executable');
+  mkdirSync(uiDirectory);
+  writeFileSync(join(uiDirectory, 'index.html'), '<main>HUD</main>');
+  assert.throws(() => packageDesktopContainer({
+    platform: 'linux', arch: 'x64',
+    bundle: join(directory, 'game.bundle'), executable, uiDirectory, uiRenderer: 'native-css',
+    output: join(directory, 'game'),
+  }), /TN_UI_BUNDLE_MISSING/u);
 });
 
 test('macOS plist names the icon that was actually staged', () => {

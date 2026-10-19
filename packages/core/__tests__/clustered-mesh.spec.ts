@@ -1,6 +1,7 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  Group,
   MeshBasicMaterial,
   PerspectiveCamera,
   Vector3,
@@ -440,5 +441,83 @@ describe("ClusteredMesh", () => {
     expect(() =>
       mesh.update({ matrixWorld: camera.matrixWorld, updateWorldMatrix: () => {} } as never, 1080),
     ).toThrow(/needs a perspective camera/u);
+  });
+});
+
+describe("ClusteredMesh cloning", () => {
+  const camera = new PerspectiveCamera(60, 16 / 9, 0.1, 1000);
+
+  /** This mesh's triangles, with the camera `z` units out from where it stands. */
+  function cutAt(mesh: ClusteredMesh, z: number): number {
+    camera.position.set(0, 0, z);
+    return mesh.update(camera, 1080);
+  }
+
+  // three clones through `new this.constructor().copy(source)`, so any game that stands a second
+  // copy of a cooked model where it wants a statue used to die in `assertTable` before it drew
+  // anything. Lumen-hall's authored statues did, from the first model the default cook produced.
+  it("clones into a mesh that draws the same thing", () => {
+    const mesh = new ClusteredMesh(geometry(), new MeshBasicMaterial(), table);
+    const triangles = cutAt(mesh, 6);
+    const clone = mesh.clone();
+
+    expect(clone.table).toBe(mesh.table);
+    // A copy starts at the authored detail, exactly as a fresh mesh does, and only gives it up
+    // once something cuts it.
+    expect(clone.drawnTriangles).toBe(body.indices.length / 3);
+    expect(cutAt(clone, 6)).toBe(triangles);
+    expect(clone.geometry.drawRange).toEqual(mesh.geometry.drawRange);
+    expect(clone.geometry.getIndex()?.array).not.toBe(mesh.geometry.getIndex()?.array);
+  });
+
+  it("clones inside a group, which is how a game places a second copy", () => {
+    const figure = new Group();
+    figure.add(new ClusteredMesh(geometry(), new MeshBasicMaterial(), table));
+    const clone = figure.clone(true);
+    const copied = clone.children[0] as ClusteredMesh;
+
+    expect(copied).toBeInstanceOf(ClusteredMesh);
+    expect(copied.table).toBe((figure.children[0] as ClusteredMesh).table);
+  });
+
+  it("keeps the vertices shared and the cut its own, so the two are placed independently", () => {
+    // Sharing the geometry wholesale would be cheaper still and wrong: the cut lives in the
+    // geometry's index buffer, so two meshes on one geometry would overwrite each other's index
+    // every frame and both would draw whichever one spoke last. Sharing the vertex buffers by
+    // reference keeps one copy of them on the GPU — three keys its attributes on the attribute —
+    // and still lets each mesh hold a cut of its own.
+    const mesh = new ClusteredMesh(geometry(), new MeshBasicMaterial(), table);
+    const beside = mesh.clone();
+
+    expect(beside.geometry).not.toBe(mesh.geometry);
+    expect(beside.geometry.attributes.position).toBe(mesh.geometry.attributes.position);
+
+    const near = cutAt(mesh, 6);
+    expect(cutAt(beside, 6)).toBe(near);
+
+    const across = mesh.clone();
+    across.position.set(0, 0, 400);
+    expect(cutAt(across, 6)).toBeLessThan(near);
+    // And cutting the far copy left the near one drawing what it was drawing.
+    expect(cutAt(mesh, 6)).toBe(near);
+  });
+
+  it("disposes without taking the source's shared data with it", () => {
+    // The rule, since sharing is the point: a clone shares the baked table and the vertex
+    // attributes, and the geometry that owns them disposes them for everyone — exactly as three's
+    // own `Mesh.copy` shares geometry and material. What a clone owns outright is its cut.
+    const mesh = new ClusteredMesh(geometry(), new MeshBasicMaterial(), table);
+    const clone = mesh.clone();
+    let sourceDisposed = false;
+    mesh.geometry.addEventListener("dispose", () => {
+      sourceDisposed = true;
+    });
+
+    clone.geometry.dispose();
+
+    expect(sourceDisposed).toBe(false);
+    expect(clone.geometry.attributes.position).toBe(mesh.geometry.attributes.position);
+    expect(mesh.table).toBe(table);
+    expect(mesh.drawnTriangles).toBe(body.indices.length / 3);
   });
 });

@@ -1,7 +1,5 @@
 import { BatchedMesh, DataTexture, type Matrix4, type Texture } from "three";
 
-/** The property consumed by the patched Three.js `Batch` TSL accessor. */
-export const BATCHED_PREVIOUS_MATRICES_PROPERTY = "_previousMatricesTexture";
 const THREE_NATIVE_BATCHED_VELOCITY_PATCH = "threeNativeBatchedVelocityPatch";
 
 interface IBatchedMeshVelocityState {

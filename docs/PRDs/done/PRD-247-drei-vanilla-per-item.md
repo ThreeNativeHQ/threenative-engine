@@ -14,7 +14,7 @@ PASS. **Native execution is UNVERIFIED.**
 Source: [`pmndrs/drei-vanilla`](https://github.com/pmndrs/drei-vanilla), MIT, cloned at depth 1 on
 2026-08-28. `src/core/` is 4 170 lines across 19 files, all read for the verdict table below.
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 
 **This PRD reverses a bad refusal.** The first draft of the batch README refused drei-vanilla
 wholesale — *"`Billboard`, `Stars`, `Sparkles`, `CameraShake`, `Outlines`, `Grid` are all look"*.

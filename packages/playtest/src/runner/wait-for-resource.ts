@@ -15,6 +15,12 @@ export interface IWaitForResourceOptions {
   id: string;
   now?: () => number;
   path: string;
+  /**
+   * Cheap witness used while waiting. It must expose the waited resource, but need not carry the
+   * full observation surface. When it passes, `sample` is called once to confirm the resource and
+   * the returned snapshot is that full witness. Omit it to sample fully on every poll.
+   */
+  poll?: () => Promise<IPlaytestObservationSnapshot>;
   predicate: IWaitForResourcePredicate;
   sample: () => Promise<IPlaytestObservationSnapshot>;
   signal?: AbortSignal;
@@ -38,6 +44,10 @@ export async function waitForResource(options: IWaitForResourceOptions): Promise
     ...options.predicate,
   };
 
+  // While waiting, poll with the cheap witness when one is given. A full `sample` is requested
+  // once its predicate passes, so a per-object geometry capture is not rearmed every 16 ms.
+  const poll = options.poll ?? options.sample;
+  let minimal = options.poll !== undefined;
   for (;;) {
     if (options.signal?.aborted) {
       throw waitFailure(
@@ -46,7 +56,7 @@ export async function waitForResource(options: IWaitForResourceOptions): Promise
         `resources.${options.id}`,
       );
     }
-    const snapshot = await options.sample();
+    const snapshot = await (minimal ? poll() : options.sample());
     const resources = snapshot.resources;
     if (resources === undefined || !Object.hasOwn(resources, options.id)) {
       throw waitFailure(
@@ -71,13 +81,23 @@ export async function waitForResource(options: IWaitForResourceOptions): Promise
     const elapsedMs = now() - startedAt;
     const remainingMs = options.timeoutMs - elapsedMs;
     if (pathValuePass(assertion, value)) {
-      if (remainingMs >= 0) return snapshot;
-      throw waitFailure(
-        `Resource wait for '${options.id}.${options.path}' timed out after ${Math.max(0, Math.round(elapsedMs))} ms; predicate ${json(options.predicate)} was satisfied only after the ${options.timeoutMs} ms budget, so the transition is slower than this step allows.`,
-        "Increase timeoutMs only when the transition is expected to take longer; otherwise fix the producer or resource path.",
-        options.id,
-      );
+      if (remainingMs < 0) {
+        throw waitFailure(
+          `Resource wait for '${options.id}.${options.path}' timed out after ${Math.max(0, Math.round(elapsedMs))} ms; predicate ${json(options.predicate)} was satisfied only after the ${options.timeoutMs} ms budget, so the transition is slower than this step allows.`,
+          "Increase timeoutMs only when the transition is expected to take longer; otherwise fix the producer or resource path.",
+          options.id,
+        );
+      }
+      // A passing minimal poll is only a candidate. Confirm it once with the full witness so the
+      // returned snapshot carries the complete observation surface; a full witness that no longer
+      // passes resumes minimal polls, and one arriving late fails above.
+      if (minimal) {
+        minimal = false;
+        continue;
+      }
+      return snapshot;
     }
+    if (!minimal && options.poll !== undefined) minimal = true;
     if (remainingMs <= 0) {
       throw waitFailure(
         `Resource wait for '${options.id}.${options.path}' timed out after ${Math.max(0, Math.round(elapsedMs))} ms; predicate ${json(options.predicate)}, last observation ${json(value)}.`,

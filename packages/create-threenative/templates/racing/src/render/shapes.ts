@@ -488,31 +488,6 @@ export function treeGeometry(): { canopy: BufferGeometry; trunk: BufferGeometry 
   return { canopy: merged(tiers), trunk: merged([stem]) };
 }
 
-/** A sponsor hoarding: two posts and a rail in one piece, the board in another. */
-export function hoardingGeometry(width = 5): {
-  board: BufferGeometry;
-  frame: BufferGeometry;
-} {
-  const frame: Mesh[] = [];
-  for (const side of [-1, 1]) {
-    const post = new Mesh(new CylinderGeometry(0.06, 0.06, 1.3, 5));
-    post.position.set(0, 0.65, (side * width) / 2.6);
-    frame.push(post);
-  }
-  const rail = new Mesh(new BoxGeometry(0.12, 0.08, width));
-  rail.position.y = 1.32;
-  frame.push(rail);
-  // Upright, not raked. A tilt looked like a fallen board once the row was rotated to face the
-  // road, because the tilt is applied in the board's own frame and turns into a lean.
-  //
-  // The panel reaches the **tarmac**. It used to float 580 mm above it, which read as a fence on
-  // legs and was worse than that: the board is the barrier's collider, so the gap underneath was a
-  // gap a car drove straight through and out of the circuit.
-  const panel = new Mesh(new BoxGeometry(0.08, 1.3, width));
-  panel.position.y = 0.65;
-  return { board: merged([panel]), frame: merged(frame) };
-}
-
 /** A grandstand: a raked deck on legs with a canopy, and a crowd placed into its own batch. */
 export function grandstand(
   structure: Material,

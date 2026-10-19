@@ -17,6 +17,7 @@ another tenant holds 6.2 GiB of VRAM. Where the mass actually is: `bindings.upda
 attribution table is not required to start, but is required before Acceptance).
 **PR:** (open as draft before Phase 1) — label `prd:0`
 
+**Priority:** P3 — Its own measurement argues against the remaining 37 boxes.
 ## Problem
 
 Of the 5.22 ms of the render phase we can currently name, **3.71 ms is traversal**

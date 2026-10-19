@@ -1,0 +1,594 @@
+{
+  "name": "avbd-rigging-correctness",
+  "schemaVersion": 1,
+  "subject": "the pinned secondary rope/sail solver survives the original 10000-tick diagnostic ladder",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 300,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "reset-before-ladder",
+      "press": "KeyR",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "reset-retirement-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "zero-wind",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "hanging-load",
+      "waitTicks": 1200,
+      "release": true
+    },
+    {
+      "label": "hanging-observation",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "measured",
+        "equals": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "step-wind",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "step-settled",
+      "waitTicks": 1800,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "gust-wind",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "gust-contact",
+      "waitTicks": 1800,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "translate-anchor",
+      "press": "KeyA",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "translated",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "label": "accepted-moving-anchor",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "acceptedAnchorVelocity",
+        "gte": 0.24
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "fast-stop",
+      "press": "KeyS",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fast-stop-settled",
+      "waitTicks": 1200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "pause",
+      "press": "KeyP",
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "pause-render-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "paused",
+        "equals": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "pause-render-observed-release-key",
+      "press": [],
+      "release": true
+    },
+    {
+      "label": "pause-render-observed-release-key-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "pauseKeyHeld",
+        "equals": 0
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "paused",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "resume",
+      "press": "KeyP",
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "resume-render-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "paused",
+        "equals": 0
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "resume-render-observed-release-key",
+      "press": [],
+      "release": true
+    },
+    {
+      "label": "resume-render-observed-release-key-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "pauseKeyHeld",
+        "equals": 0
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "return-to-steady-load",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "steady-load-after-ladder",
+      "waitTicks": 3500,
+      "release": true
+    },
+    {
+      "label": "ten-thousand-steps-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "steps",
+        "gte": 10000
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "request-every-tick-finite-counters",
+      "press": "KeyC",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "finite-observation",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "finiteTicks",
+        "gte": 10000
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "recent-physical-observation",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "staleTicks",
+        "lte": 120
+      },
+      "timeoutMs": 120000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "mode",
+        "equals": "candidate",
+        "throughoutSteps": true,
+        "allowTrivial": "Candidate ownership is held across the complete ladder; every retained checkpoint must remain the candidate arm."
+      },
+      {
+        "id": "GameState",
+        "path": "measured",
+        "equals": 1,
+        "allowTrivial": "Warmup can already be measured; reset must explicitly clear readiness and hanging/final phases must restore a real observation.",
+        "atSteps": [
+          {
+            "label": "reset-before-ladder",
+            "equals": 0
+          },
+          {
+            "label": "hanging-observation",
+            "equals": 1
+          },
+          {
+            "label": "recent-physical-observation",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "steps",
+        "gte": 10000
+      },
+      {
+        "id": "GameState",
+        "path": "finiteTicks",
+        "gte": 10000
+      },
+      {
+        "id": "GameState",
+        "path": "nonfinitePositions",
+        "equals": 0,
+        "allowTrivial": "Zero nonfinite-position errors is a held safety invariant, checked at every retained checkpoint; finiteTicks must independently reach 10000.",
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "nonfiniteRotations",
+        "equals": 0,
+        "allowTrivial": "Zero nonfinite-rotation errors is a held safety invariant, checked at every retained checkpoint; finiteTicks must independently reach 10000.",
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "overflow",
+        "equals": 0,
+        "allowTrivial": "Zero bounded-buffer overflow is required from startup through every retained ladder checkpoint.",
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "colorClashes",
+        "equals": 0,
+        "allowTrivial": "The validated fixed color graph must remain clash-free at every retained ladder checkpoint.",
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "ropeExtension",
+        "lte": 0.03,
+        "allowTrivial": "Warmup can satisfy the 3 percent bound; explicit measured hanging and settled-load checkpoints recheck the unchanged bound after reset."
+      },
+      {
+        "id": "GameState",
+        "path": "sailStretch",
+        "lte": 0.05,
+        "allowTrivial": "Warmup can satisfy the 5 percent bound; explicit measured post-step/gust/stop settled checkpoints recheck the unchanged bound."
+      },
+      {
+        "id": "GameState",
+        "path": "penetrationMaximum",
+        "lte": 0.02,
+        "allowTrivial": "Warmup can be contact-free; each measured contact-ladder checkpoint and the final cumulative maximum must retain the original 20 mm bound."
+      },
+      {
+        "id": "GameState",
+        "path": "staleTicks",
+        "lte": 120,
+        "allowTrivial": "Warmup can have a fresh readback; the final named physical observation must explicitly satisfy the original 120-tick freshness bound."
+      },
+      {
+        "id": "GameState",
+        "path": "anchorX",
+        "gte": 0.49,
+        "lte": 0.55
+      },
+      {
+        "id": "GameState",
+        "path": "windSpeed",
+        "equals": 0,
+        "allowTrivial": "Both endpoints are calm; named step/gust phases must actually reach 6 m/s before the return-to-steady phase restores zero.",
+        "atSteps": [
+          {
+            "label": "step-wind",
+            "equals": 6
+          },
+          {
+            "label": "gust-wind",
+            "equals": 6
+          },
+          {
+            "label": "return-to-steady-load",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "paused",
+        "equals": 0,
+        "atSteps": [
+          {
+            "label": "paused",
+            "equals": 1
+          },
+          {
+            "label": "resume-render-observed",
+            "equals": 0
+          }
+        ],
+        "allowTrivial": "Both endpoints are running; named pause and resume observations must show the actual 0-to-1-to-0 transition."
+      },
+      {
+        "id": "GameState",
+        "path": "pausedAdditionalSteps",
+        "equals": 0,
+        "atSteps": [
+          {
+            "label": "paused",
+            "equals": 0
+          }
+        ],
+        "allowTrivial": "No additional solver step is permitted at any retained paused checkpoint or after the solver resumes.",
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "readbackBytes",
+        "gte": 1,
+        "allowTrivial": "Warmup may already have read bytes; changed total bytes and required measured phase flags prove post-reset readback progress.",
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "readbackFailures",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "A healthy initial readback must remain healthy at every retained checkpoint, while measured readiness is independently required after reset."
+      },
+      {
+        "id": "GameState",
+        "path": "observationFailures",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Zero observation failures is a held invariant at every retained checkpoint, with mandatory measured phase observations."
+      },
+      {
+        "id": "GameState",
+        "path": "cleanupFailed",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Zero cleanup failures is required across the reset and all retained checkpoints, with retirement observed by the original wait step."
+      },
+      {
+        "id": "GameState",
+        "path": "rendererControl.solverAllocations",
+        "equals": 0,
+        "allowTrivial": "Renderer-only control must allocate zero solver resources throughout the retained candidate checkpoints.",
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "acceptedAnchorVelocity",
+        "equals": 0,
+        "allowTrivial": "Both endpoints have zero accepted velocity; accepted-moving-anchor must observe actual post-Rapier motion before the stop restores zero.",
+        "atSteps": [
+          {
+            "label": "fast-stop-settled",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "contactsMaximum",
+        "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "fixedColorsValidated",
+        "equals": 1,
+        "allowTrivial": "Fixed graph validation must be present after reset and at every retained candidate checkpoint.",
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "sampleChecks.readback",
+        "atSteps": [
+          {
+            "label": "hanging-observation",
+            "equals": true
+          },
+          {
+            "label": "recent-physical-observation",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "sampleChecks.ropeExtension",
+        "atSteps": [
+          {
+            "label": "hanging-observation",
+            "equals": true
+          },
+          {
+            "label": "steady-load-after-ladder",
+            "equals": true
+          },
+          {
+            "label": "recent-physical-observation",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "sampleChecks.sailStretch",
+        "atSteps": [
+          {
+            "label": "step-settled",
+            "equals": true
+          },
+          {
+            "label": "gust-contact",
+            "equals": true
+          },
+          {
+            "label": "fast-stop-settled",
+            "equals": true
+          },
+          {
+            "label": "steady-load-after-ladder",
+            "equals": true
+          },
+          {
+            "label": "recent-physical-observation",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "sampleChecks.penetrationMaximum",
+        "atSteps": [
+          {
+            "label": "hanging-observation",
+            "equals": true
+          },
+          {
+            "label": "step-settled",
+            "equals": true
+          },
+          {
+            "label": "gust-contact",
+            "equals": true
+          },
+          {
+            "label": "translated",
+            "equals": true
+          },
+          {
+            "label": "fast-stop-settled",
+            "equals": true
+          },
+          {
+            "label": "paused",
+            "equals": true
+          },
+          {
+            "label": "steady-load-after-ladder",
+            "equals": true
+          },
+          {
+            "label": "recent-physical-observation",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "sampleChecks.fresh",
+        "atSteps": [
+          {
+            "label": "recent-physical-observation",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "acceptedAnchorMoving",
+        "atSteps": [
+          {
+            "label": "reset-before-ladder",
+            "equals": false
+          },
+          {
+            "label": "accepted-moving-anchor",
+            "equals": true
+          },
+          {
+            "label": "fast-stop-settled",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "gustStrength",
+        "atSteps": [
+          {
+            "label": "step-wind",
+            "equals": 0
+          },
+          {
+            "label": "gust-wind",
+            "equals": 0.4
+          },
+          {
+            "label": "return-to-steady-load",
+            "equals": 0
+          }
+        ]
+      }
+    ]
+  }
+}

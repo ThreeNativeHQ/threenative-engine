@@ -1,0 +1,22 @@
+{
+  "name": "prd339-exposure-cold-boot-three-updates",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "artifacts": { "screenshots": "before-after", "console": true },
+  "steps": [
+    {
+      "label": "boot",
+      "waitForResource": { "id": "state", "path": "sampleFrames", "equals": 3 },
+      "timeoutMs": 60000
+    }
+  ],
+  "assert": {
+    "diagnostics": { "runtimeReady": true, "noConsoleErrors": true, "noNetworkErrors": true },
+    "tone": [{ "atStep": "boot", "p99": { "min": 1 } }],
+    "visual": [
+      { "region": { "x": 0, "y": 0, "width": 640, "height": 360, "minNonblankPixelRatio": 0.15 } }
+    ]
+  }
+}

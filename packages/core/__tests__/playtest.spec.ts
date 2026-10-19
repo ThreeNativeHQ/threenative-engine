@@ -62,6 +62,7 @@ describe("playtest plugin", () => {
         "runtime.state",
         "runtime.performance",
         "runtime.renderChain",
+        "runtime.renderOnly",
         "runtime.startup",
         "runtime.contacts",
         "runtime.tags",
@@ -112,6 +113,7 @@ describe("playtest plugin", () => {
         "runtime.state",
         "runtime.performance",
         "runtime.renderChain",
+        "runtime.renderOnly",
         "runtime.startup",
         "runtime.contacts",
         "runtime.tags",
@@ -236,9 +238,13 @@ describe("playtest plugin", () => {
           .runtimeDiagnosticsSeries ?? [];
       // The frame budget is on by default, so each sample also carries its phase split.
       expect(series.every(({ phases }) => phases !== undefined)).toBe(true);
-      expect(series.map(({ passes: _passes, phases: _phases, ...sample }) => sample)).toEqual([
-        { drawCalls: 7, frameMs: 16, triangles: 42 },
-      ]);
+      expect(
+        series.map((sample) => ({
+          drawCalls: sample.drawCalls,
+          frameMs: sample.frameMs,
+          triangles: sample.triangles,
+        })),
+      ).toEqual([{ drawCalls: 7, frameMs: 16, triangles: 42 }]);
     } finally {
       game.stop();
       if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
@@ -305,6 +311,7 @@ describe("playtest plugin", () => {
         "runtime.state",
         "runtime.performance",
         "runtime.renderChain",
+        "runtime.renderOnly",
         "runtime.startup",
         "runtime.contacts",
         "runtime.tags",
@@ -352,6 +359,7 @@ describe("playtest plugin", () => {
       });
       // `assets` is the loader's own ledger and is empty for a scene that loads none.
       expect(snapshot.resources).toEqual({
+        __threenativeFrameCounts: { updates: 0, renders: 0 },
         GameState: { score: 0 },
         assets: {},
         state: { score: 0 },
@@ -492,12 +500,21 @@ describe("playtest plugin", () => {
     }
   });
 
-  it("advances the running game through the fixed-step bridge", async () => {
+  it("advances four ordered update/world-render pairs when asked to render, and suppresses queued automatic draws", async () => {
     const canvas = testCanvas();
-    let updates = 0;
+    const events: string[] = [];
+    let failUpdate = false;
+    let failRender = false;
+    const callbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
     class TestScene extends Scene<Record<string, unknown>> {
       override update(): void {
-        updates += 1;
+        if (failUpdate) throw new Error("scene update failed");
+        events.push("update");
       }
     }
     const game = defineGame({
@@ -510,7 +527,10 @@ describe("playtest plugin", () => {
           dispose: () => undefined,
           domElement: canvas,
           getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
-          render: () => undefined,
+          render: () => {
+            if (failRender) throw new Error("world render failed");
+            events.push("world");
+          },
           setSize: () => undefined,
         }),
       },
@@ -521,12 +541,90 @@ describe("playtest plugin", () => {
     await game.start();
     try {
       const installed = bridge();
-      await installed.advance?.(4);
-
-      expect(updates).toBe(4);
-      expect((await installed.sample({})).clock).toEqual({ mode: "fixed-step", tick: 4 });
+      await installed.advance?.(4, { render: true });
+      expect(events).toEqual(Array.from({ length: 4 }, () => ["update", "world"]).flat());
+      const sample = await installed.sample({ resources: ["__threenativeFrameCounts"] });
+      expect(sample.clock).toEqual({ mode: "fixed-step", tick: 4 });
+      expect(sample.resources?.__threenativeFrameCounts).toEqual({ updates: 4, renders: 4 });
+      const scheduled = callbacks.length;
+      callbacks[0]?.(1_000);
+      expect(callbacks).toHaveLength(scheduled);
+      expect(events).toHaveLength(8);
+      await installed.advance?.(1, { render: false });
+      expect(events.at(-1)).toBe("update");
+      expect(
+        (await installed.sample({ resources: ["__threenativeFrameCounts"] })).resources
+          ?.__threenativeFrameCounts,
+      ).toEqual({ updates: 5, renders: 4 });
+      expect(sample.resources?.__threenativeFrameCounts).toEqual({ updates: 4, renders: 4 });
+      game.pause();
+      await installed.advance?.(1, { render: true });
+      expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
+        updates: 5,
+        renders: 5,
+      });
+      game.resume();
+      failUpdate = true;
+      await expect(installed.advance?.(1, { render: true })).rejects.toThrow("scene update failed");
+      expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
+        updates: 5,
+        renders: 5,
+      });
+      failUpdate = false;
+      failRender = true;
+      await expect(installed.advance?.(1, { render: true })).rejects.toThrow("world render failed");
+      expect((await installed.sample({})).resources?.__threenativeFrameCounts).toEqual({
+        updates: 6,
+        renders: 5,
+      });
     } finally {
       game.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("advances without drawing a world frame unless the caller asks for one", async () => {
+    const canvas = testCanvas();
+    const events: string[] = [];
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    class TestScene extends Scene<Record<string, unknown>> {
+      override update(): void {
+        events.push("update");
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          getDrawingBufferSize: (target: Vector2) => target.set(320, 180),
+          render: () => {
+            events.push("world");
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: TestScene },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      const installed = bridge();
+      const drawn = events.filter((event) => event === "world").length;
+      await installed.advance?.(4);
+      expect(events.filter((event) => event === "update")).toHaveLength(4);
+      expect(events.filter((event) => event === "world")).toHaveLength(drawn);
+      await installed.advance?.(2, { render: true });
+      expect(events.filter((event) => event === "world")).toHaveLength(drawn + 2);
+    } finally {
+      game.stop();
+      vi.unstubAllGlobals();
     }
   });
 
@@ -778,9 +876,11 @@ describe("playtest holdUntilAttached", () => {
       expect(events).toEqual(["load"]);
       const installed = bridge();
       if (installed.applySetup === undefined) throw new Error("Setup channel was not installed.");
-      await installed.applySetup({
+      const confirmation = await installed.applySetup({
         entities: [{ entity: "player", transform: { position: [7, 2.5, -3] } }],
       });
+      // The held wrapper hands the bridge's read-back to the runner (a desktop mailbox needs JSON, not void).
+      expect(confirmation).toEqual({ entities: ["player"], resources: [] });
       const description = await installed.describe();
       events.push("describe returned");
       await started;
@@ -965,6 +1065,98 @@ describe("playtest holdUntilAttached", () => {
       });
       if (previousEndpoint === undefined) Reflect.deleteProperty(host, "TN_PLAYTEST_ENDPOINT");
       else host.TN_PLAYTEST_ENDPOINT = previousEndpoint;
+    }
+  });
+
+  it("negotiates an autonomous pose window and restores the fixed clock on teardown", async () => {
+    const host = globalThis as Record<string, unknown>;
+    const previousEndpoint = host[PLAYTEST_RUNNER_EXPECTED_GLOBAL];
+    host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = true;
+    const callbacks = new Map<number, (time: number) => void>();
+    let handle = 0;
+    const requestFrame = globalThis.requestAnimationFrame;
+    const cancelFrame = globalThis.cancelAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        callbacks.set(++handle, callback);
+        return handle;
+      },
+    });
+    Object.defineProperty(globalThis, "cancelAnimationFrame", {
+      configurable: true,
+      value: (id: number) => {
+        callbacks.delete(id);
+      },
+    });
+    const canvas = testCanvas();
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: false })],
+      renderer: stubRenderer(canvas),
+      scenes: { test: class extends Scene {} },
+      start: "test",
+    });
+    try {
+      await game.start();
+      await bridge().advance?.(2);
+      const control = bridge() as IPlaytestBridgeV1 & {
+        _clockEpoch: number;
+        _setClockMode(mode: unknown): { mode: string; tick: number; epoch: number };
+      };
+      const pump = (time: number): void => {
+        const entry = callbacks.entries().next().value;
+        expect(entry).toBeDefined();
+        if (entry === undefined) return;
+        callbacks.delete(entry[0]);
+        entry[1](time);
+      };
+      expect(control._setClockMode("wall-clock")).toEqual({
+        mode: "wall-clock",
+        tick: 2,
+        epoch: 1,
+      });
+      expect(callbacks.size).toBe(1);
+      pump(100_000);
+      pump(100_020);
+      expect(control._setClockMode("wall-clock")).toEqual({
+        mode: "wall-clock",
+        tick: 3,
+        epoch: 1,
+      });
+      expect((await bridge().sample({})).clock).toMatchObject({ mode: "wall-clock", tick: 3 });
+      expect((await bridge().describe()).capabilities).toContain("runtime.fixedStep");
+      expect(await bridge().ready?.()).toMatchObject({ ready: true });
+      expect(control._clockEpoch).toBe(1);
+      expect(() => control._setClockMode("invalid")).toThrow(/clock mode/iu);
+      expect(control._setClockMode("fixed-step")).toEqual({
+        mode: "fixed-step",
+        tick: 3,
+        epoch: 2,
+      });
+      pump(200_000);
+      await bridge().advance?.(2);
+      expect((await bridge().sample({})).clock).toMatchObject({ mode: "fixed-step", tick: 5 });
+      expect((await bridge().describe()).capabilities).toContain("runtime.fixedStep");
+      expect(await bridge().ready?.()).toMatchObject({ ready: true });
+      control._setClockMode("wall-clock");
+      game.stop();
+      expect(control._clockEpoch).toBe(4);
+      expect(callbacks.size).toBe(0);
+      expect(() => control._setClockMode("wall-clock")).toThrow(/disposed/iu);
+    } finally {
+      game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      Object.defineProperty(globalThis, "cancelAnimationFrame", {
+        configurable: true,
+        value: cancelFrame,
+      });
+      if (previousEndpoint === undefined)
+        Reflect.deleteProperty(host, PLAYTEST_RUNNER_EXPECTED_GLOBAL);
+      else host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = previousEndpoint;
     }
   });
 
@@ -1153,6 +1345,7 @@ describe("playtest holdUntilAttached", () => {
     host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = true;
     host.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
     let updates = 0;
+    let slowUpdates = 0;
     const requestFrame = globalThis.requestAnimationFrame;
     const cancelFrame = globalThis.cancelAnimationFrame;
     class CountingScene extends Scene {
@@ -1160,9 +1353,18 @@ describe("playtest holdUntilAttached", () => {
         updates += 1;
       }
     }
+    // A second host with its own frame counter, so a frame it presented is counted on it and not on
+    // whichever host happens to share the counter above.
+    class SlowCountingScene extends Scene {
+      override update(): void {
+        slowUpdates += 1;
+      }
+    }
     // A host whose own pump presents every `gapMs`. 25 ms is a third later than the 16.67 ms one
-    // tick names — the host the pair failed on — and a million is a pump that never presents again.
-    const lateHost = (gapMs: number) => {
+    // tick names — the host the pair failed on — 60 ms is the cadence the 2026-10-04 auto-exposure
+    // CI host measured before run 37183659465 refused its ninth case, and a million is a pump that
+    // never presents again. The scene is a parameter so each host is counted on its own counter.
+    const lateHost = (gapMs: number, HostScene: typeof CountingScene = CountingScene) => {
       let handles = 0;
       Object.defineProperty(globalThis, "requestAnimationFrame", {
         configurable: true,
@@ -1181,11 +1383,13 @@ describe("playtest holdUntilAttached", () => {
         initialState: {},
         plugins: [playtest({ holdUntilAttached: false })],
         renderer: stubRenderer(testCanvas()),
-        scenes: { test: CountingScene },
+        scenes: { test: HostScene },
         start: "test",
       });
     };
     const game = lateHost(25);
+    let slow: ReturnType<typeof lateHost> | undefined;
+    let batch: ReturnType<typeof lateHost> | undefined;
     let stopped: ReturnType<typeof lateHost> | undefined;
 
     try {
@@ -1200,6 +1404,37 @@ describe("playtest holdUntilAttached", () => {
       // Host-driven, not stepped here: the tick the report names is one this host's pump ran.
       expect(updates).toBeGreaterThan(before);
 
+      // The same one-tick request on a host presenting at 60 ms, which is the cadence the 2026-10-04
+      // CI host measured. The span a tick names is 16.67 ms, so the wait has to outlive one whole
+      // frame at that cadence and not just the 25 ms pair's: four half-step slices ended at 50 ms
+      // and the bridge read that slow pump as a dead one, failing the run on its ninth case. This
+      // host is built after the first one has been measured, because building it is what takes over
+      // the cadence of the one pump both share.
+      slow = lateHost(60, SlowCountingScene);
+      await slow.start();
+      // Read the baseline the instant this host's first frame lands rather than after a fixed
+      // settle, so the wait below always begins with a whole frame interval left to present the next
+      // one. Sleeping instead would start the advance at an arbitrary point of the 60 ms cadence and
+      // pass half the time against the four slices this case exists to fail.
+      while (slowUpdates === 0) await new Promise((resolve) => setTimeout(resolve, 1));
+      const beforeSlow = slowUpdates;
+      const slowAdvanced = await bridge().advance?.(1);
+      expect(slowAdvanced?.clock.mode).toBe("wall-clock");
+      expect(slowAdvanced?.ticks ?? 0).toBeGreaterThanOrEqual(1);
+      expect(slowUpdates).toBeGreaterThan(beforeSlow);
+
+      // And a batch on a host slower than the room the wait buys past its span. The runner counts a
+      // wait in ten-tick pieces, so the 166 ms span of `advance(10)` asked a host presenting every
+      // 400 ms for a tick inside 200 ms — the failure Machinefall's map-walk standing scene reported
+      // under `--live-clock` at load average 142. A measurement whose subject is a slow machine
+      // cannot refuse to measure one.
+      batch = lateHost(400);
+      await batch.start();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const batched = await bridge().advance?.(10);
+      expect(batched?.clock.mode).toBe("wall-clock");
+      expect(batched?.ticks ?? 0).toBeGreaterThanOrEqual(1);
+
       // The bound is real, so a pump that has stopped is still a failed run rather than a wait: the
       // bridge reports the zero this hands back.
       stopped = lateHost(1e6);
@@ -1207,7 +1442,96 @@ describe("playtest holdUntilAttached", () => {
       await expect(bridge().advance?.(1)).rejects.toThrow(/moved no tick in 1 step/u);
     } finally {
       stopped?.stop();
+      batch?.stop();
+      slow?.stop();
       game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      Object.defineProperty(globalThis, "cancelAnimationFrame", {
+        configurable: true,
+        value: cancelFrame,
+      });
+      if (previousAnnouncement === undefined)
+        Reflect.deleteProperty(host, PLAYTEST_RUNNER_EXPECTED_GLOBAL);
+      else host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = previousAnnouncement;
+      if (previousClock === undefined)
+        Reflect.deleteProperty(globalThis, "__THREENATIVE_PLAYTEST_CLOCK__");
+      else host.__THREENATIVE_PLAYTEST_CLOCK__ = previousClock;
+    }
+  });
+
+  it("names the clock this loop really runs on, so no request can make a frozen loop report the wall clock", async () => {
+    // The browser half of the production profile: `--live-clock` puts the request in an
+    // `addInitScript`, ahead of every page script, so it is set before the game's own module
+    // evaluates — which is the only moment this decision can be taken for the whole run. Set there,
+    // the host's pump drives the loop and `advance` names the ticks that pump really ran. Set later
+    // (a page whose own script installs a bridge, a hand-edited index.html the runner never saw),
+    // the loop is already frozen, and the honest answer is still `fixed-step`: the same verdict the
+    // bridge used to derive for itself, and the only one a rate read off it deserves.
+    const host = globalThis as Record<string, unknown>;
+    const previousAnnouncement = host[PLAYTEST_RUNNER_EXPECTED_GLOBAL];
+    const previousClock = host.__THREENATIVE_PLAYTEST_CLOCK__;
+    host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = true;
+    let updates = 0;
+    class CountingScene extends Scene {
+      override update(): void {
+        updates += 1;
+      }
+    }
+    // A host whose own pump presents frames, so "the clock ran" is measurable rather than assumed.
+    const requestFrame = globalThis.requestAnimationFrame;
+    const cancelFrame = globalThis.cancelAnimationFrame;
+    let handles = 0;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        handles += 1;
+        const handle = handles;
+        setTimeout(() => callback(performance.now()), 16);
+        return handle;
+      },
+    });
+    Object.defineProperty(globalThis, "cancelAnimationFrame", {
+      configurable: true,
+      value: () => undefined,
+    });
+    const countingGame = () =>
+      defineGame({
+        initialState: {},
+        plugins: [playtest({ holdUntilAttached: false })],
+        renderer: stubRenderer(testCanvas()),
+        scenes: { test: CountingScene },
+        start: "test",
+      });
+    const live = countingGame();
+    const late = countingGame();
+
+    try {
+      // Set before the game starts: the wall clock, and the ticks its pump ran rather than the count
+      // asked for.
+      host.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
+      await live.start();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const advanced = await bridge().advance?.(1);
+      expect(advanced?.clock.mode).toBe("wall-clock");
+      expect(advanced?.ticks ?? 0).toBeGreaterThanOrEqual(1);
+      live.stop();
+
+      // Set after it: the loop was frozen by the install, so the count is the exact one requested.
+      Reflect.deleteProperty(host, "__THREENATIVE_PLAYTEST_CLOCK__");
+      await late.start();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const frozen = updates;
+      host.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
+      const stepped = await bridge().advance?.(1);
+      expect(stepped?.clock.mode).toBe("fixed-step");
+      expect(stepped?.ticks).toBe(1);
+      expect(updates).toBe(frozen + 1);
+    } finally {
+      late.stop();
+      live.stop();
       Object.defineProperty(globalThis, "requestAnimationFrame", {
         configurable: true,
         value: requestFrame,

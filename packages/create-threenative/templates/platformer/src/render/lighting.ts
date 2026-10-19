@@ -6,7 +6,7 @@
 // flattens exactly the shadow side the sun was there to make. The low-poly geometry keeps its own
 // separation through `flatShading` and baked vertex mottle, which is why this level reads as
 // facetted without a second light.
-import { DirectionalLight, PCFSoftShadowMap, type Scene, type Vector3 } from "three";
+import { Color, DirectionalLight, PCFSoftShadowMap, type Scene, Vector3 } from "three";
 import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
@@ -51,5 +51,30 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = f
       key.target.updateMatrixWorld();
     },
     key,
+  };
+}
+
+/** Material conventions are game-owned; each scene gets independent mutable controls. */
+export interface ILightingConvention {
+  rimGain: number;
+  fillGain: number;
+  fillColor: Color;
+  fillDirection: Vector3;
+  fillAngularSize: number;
+  darkThreshold: number;
+  maxSourceTexels: number;
+}
+export function createLightingConvention(
+  overrides: Partial<ILightingConvention> = {},
+): ILightingConvention {
+  return {
+    rimGain: 0.12,
+    fillGain: 1,
+    fillColor: new Color(0x667b9d),
+    fillDirection: new Vector3(0, 1, 1).normalize(),
+    fillAngularSize: 0.7,
+    darkThreshold: 0.001,
+    maxSourceTexels: 65536,
+    ...overrides,
   };
 }

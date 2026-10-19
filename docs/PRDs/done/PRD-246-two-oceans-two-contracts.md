@@ -23,7 +23,7 @@ Sources read at depth 1 on 2026-08-28, both MIT:
 [`owenyuwono/poseidon`](https://github.com/owenyuwono/poseidon) and
 [`reed-soul/SeedOcean`](https://github.com/reed-soul/SeedOcean).
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 **Does not replace [PRD-236](./starter-kits/PRD-236-sailing-starter-kit.md).** Both ship, under
 different names, because they make different promises — which is the whole point of this document.
 

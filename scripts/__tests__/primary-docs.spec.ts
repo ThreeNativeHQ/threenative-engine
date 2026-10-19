@@ -274,4 +274,20 @@ describe("primary documentation agrees with the shipped surfaces", () => {
     expect(quality).toContain("No visual inspection was performed");
     expect(quality).not.toMatch(/\binspected\b/iu);
   });
+  it("names material controls or the explicit custom-storm exception in generated instructions", async () => {
+    const root = path.join(repoRoot, "packages/create-threenative/templates");
+    for (const entry of await readdir(root, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const instructions = await readFile(path.join(root, entry.name, "AGENTS.md"), "utf8");
+      expect(instructions, entry.name).toContain("rimGain");
+      expect(instructions, entry.name).toContain("fillGain");
+      if (entry.name === "rain") {
+        expect(instructions).toContain("conversion is unqualified");
+        expect(instructions).toContain("radiance is unknown until sampled");
+      } else {
+        expect(instructions, entry.name).toContain("TN_ENVIRONMENT_CONTRIBUTION");
+        expect(instructions, entry.name).toMatch(/original materials|retain originals/u);
+      }
+    }
+  });
 });

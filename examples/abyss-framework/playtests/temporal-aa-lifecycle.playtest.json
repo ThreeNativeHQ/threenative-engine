@@ -1,0 +1,264 @@
+{
+  "name": "temporal-lifecycle-history-invalidation",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 34
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "temporal",
+        "path": "frame",
+        "gte": 39,
+        "changed": true
+      },
+      {
+        "id": "temporal",
+        "path": "resets",
+        "equals": 5,
+        "allowTrivial": "One reset per lifecycle step on this route: the opening frame, the height-only display resize at 20, the authored teleport at 24, the authored projection change at 28 and the input-only scale change at 32."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.1.resetReason",
+        "equals": "resize",
+        "allowTrivial": "The reason is recorded per reset frame, so the display resize at 20 reports itself instead of the opening frame's own reason."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.2.resetReason",
+        "equals": "camera-cut"
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.3.resetReason",
+        "equals": "projection-change",
+        "allowTrivial": "The authored FOV change at 28 requests no reset anywhere in the fixture, so this reason is the provider's own projection-discontinuity decision."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.4.resetReason",
+        "equals": "resize",
+        "allowTrivial": "Only the input raster moves at 32, so the provider names the raster move itself."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.1.visited",
+        "equals": 614400,
+        "allowTrivial": "Every reset after the opening counts the 1280x480 display the fixture resized to, so the GPU must report visiting that whole raster."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.2.fraction",
+        "equals": 1,
+        "allowTrivial": "A reset frame carries no legal history at any pixel, so the whole counted display must be reported rejected."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.3.fraction",
+        "equals": 1,
+        "allowTrivial": "The projection-change reset carries no legal history either, on the same counted display."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.4.fraction",
+        "equals": 1,
+        "allowTrivial": "The input-scale reset carries no legal history either, on the same counted display."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionFrames.24.historyValid",
+        "equals": false,
+        "allowTrivial": "One measured row per rendered frame; the row at the fixture's own frame 24 is the teleport frame."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionFrames.25.historyValid",
+        "equals": true,
+        "allowTrivial": "The frame after the teleport must reuse history again, so the cut reset does not leak into the next frame."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionFrames.28.historyValid",
+        "equals": false,
+        "allowTrivial": "The row at the fixture's own frame 28 is the authored projection change."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionFrames.29.historyValid",
+        "equals": true,
+        "allowTrivial": "The frame after the projection change must reuse history again."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionFrames.32.historyValid",
+        "equals": false,
+        "allowTrivial": "The row at the fixture's own frame 32 is the input-only scale change."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionFrames.33.historyValid",
+        "equals": true,
+        "allowTrivial": "The frame after the input-scale change must reuse history again."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionFrames.33.fraction",
+        "lte": 0.99,
+        "allowTrivial": "A frame that legitimately reuses history rejects only its own pixels, so the share is below the whole-raster reset value."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.displayWidth",
+        "equals": 1280,
+        "allowTrivial": "The input-only step must leave the physical display raster exactly where the height-only resize left it."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.displayHeight",
+        "equals": 480
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.inputWidth",
+        "equals": 640,
+        "allowTrivial": "The authored half scale on the 1280-wide display is the 640-pixel input raster the lattice and the resolve must both follow."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.inputHeight",
+        "equals": 240
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.2.outside",
+        "equals": 0,
+        "allowTrivial": "One whole-display comparison per reset frame; the teleport frame is the third of them, and nothing later can change a recorded comparison."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.3.outside",
+        "equals": 0,
+        "allowTrivial": "The projection-change frame is the fourth whole-display comparison."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.4.pixels",
+        "equals": 1843200,
+        "allowTrivial": "The input-only reset frame still compares every RGB channel of the unchanged 1280x480 display."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.4.outside",
+        "equals": 0,
+        "allowTrivial": "The same frame the lattice assertion below shares."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.4.jitterMatchesInput",
+        "equals": true,
+        "allowTrivial": "The lattice the scene drew on is the real 640x240 pass raster, not the display raster the scene never rendered into."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.4.viewWidth",
+        "equals": 640,
+        "allowTrivial": "The lattice width is the input raster's, which is the raster the authored half scale produced."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.4.viewHeight",
+        "equals": 240
+      },
+      {
+        "id": "temporal",
+        "path": "historyWitness.instance.samples",
+        "gte": 1,
+        "allowTrivial": "A witness with no sample proves nothing, so the moving instance must be observed at least once before its error can be quoted."
+      },
+      {
+        "id": "temporal",
+        "path": "historyWitness.instance.movingFrames",
+        "gte": 1,
+        "allowTrivial": "The measured vector must exceed the fixture's 0.5-pixel moving threshold on at least one frame, so the reprojection being checked is real motion."
+      },
+      {
+        "id": "temporal",
+        "path": "historyWitness.instance.maxMeasuredPixels",
+        "gte": 0.5,
+        "allowTrivial": "The measured MRT velocity must carry at least the moving threshold in pixels; a stationary vector would make the reprojection check vacuous."
+      },
+      {
+        "id": "temporal",
+        "path": "historyWitness.instance.maxMisregistration",
+        "lte": 0.05,
+        "allowTrivial": "The history coordinate the measured vector reprojects to must land within 0.05 pixel of the instance's independently projected previous location on every frame that reused history."
+      },
+      {
+        "id": "temporal",
+        "path": "historyWitness.skinned.samples",
+        "gte": 1,
+        "allowTrivial": "A witness with no sample proves nothing, so the skinned limb must be observed at least once."
+      },
+      {
+        "id": "temporal",
+        "path": "historyWitness.skinned.movingFrames",
+        "gte": 1,
+        "allowTrivial": "The skinned limb's measured vector must exceed the fixture's 0.5-pixel moving threshold, so the bone history is under test rather than a frozen pose."
+      },
+      {
+        "id": "temporal",
+        "path": "historyWitness.skinned.maxMeasuredPixels",
+        "gte": 0.5,
+        "allowTrivial": "The skinned limb's measured MRT velocity must itself carry real motion, not a static pose's zero."
+      },
+      {
+        "id": "temporal",
+        "path": "historyWitness.skinned.maxMisregistration",
+        "lte": 0.05,
+        "allowTrivial": "The skinned limb's reprojected history coordinate must land within 0.05 pixel of where the limb independently projected last frame on every frame that reused history."
+      },
+      {
+        "id": "temporal",
+        "path": "historyWitness.rigid.maxMisregistration",
+        "lte": 0.05,
+        "allowTrivial": "The rigid body is the camera-independent control beside the two deforming and instanced points, held to the same 0.05-pixel bound."
+      },
+      {
+        "id": "temporal",
+        "path": "aa.historyValid",
+        "equals": true,
+        "allowTrivial": "The run settles on a frame that reuses history, so no reset gate is left engaged."
+      },
+      {
+        "id": "temporal",
+        "path": "stages.0",
+        "equals": "traa",
+        "allowTrivial": "The applied stage list is decided when the chain is built, before the first observation."
+      },
+      {
+        "id": "temporal",
+        "path": "velocity.source",
+        "equals": "mrt",
+        "allowTrivial": "The velocity route is decided when the chain is built, before the first observation, and the moving witnesses are read from that same attachment."
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    }
+  }
+}

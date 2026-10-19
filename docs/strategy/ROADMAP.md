@@ -72,9 +72,9 @@ change does not land. Rows 3–5 are the beta blockers.
 install is not a feature. The exception is a correctness defect under an already-shipped capability,
 which is maintenance and outranks new work — item 1 below is exactly that.
 
-The UE5-class research lives in [`docs/PRDs/unreal-like-features/`](../PRDs/unreal-like-features/),
+The UE5-class research lives in [`docs/PRDs/open-world/`](../PRDs/open-world/),
 and its ranking must be read through
-[00-REPO-GROUNDING.md](../PRDs/unreal-like-features/00-REPO-GROUNDING.md), which applies the charter
+[00-REPO-GROUNDING.md](../PRDs/Unreal/research/00-REPO-GROUNDING.md), which applies the charter
 filter and re-estimates every effort number against this tree. Two things that document settles and
 the research could not know: `packages/core/src/render/chain.ts` **already is** the tiered,
 self-reporting post spine that four of the research's top features assume must be built; and
@@ -84,7 +84,7 @@ tracing, gated off by PRD-198 behind one named seam.
 | # | Item | Why it ranks here |
 |---|---|---|
 | 1 | **PRD-269 — motion vectors for skinned and instanced geometry** | `RenderChain` already runs `ssgi`, `ssr`, `denoise`, `temporalReproject`, `taa`, `traa` and `motionBlur`. All seven are temporal, and on skinned or instanced content their velocity input is wrong. This is a correctness bug under seven shipped stages, not a new feature — and it is the precondition for any upscaler |
-| 2 | **Execute the filed lighting batch** ([PRD-266…270](../PRDs/lighting/)) | Filed 2026-08-29, all five still `PROPOSED`. PRD-270 — *no lighting node ships web-only* — is the charter's portability rule made into a gate. Executing a filed batch beats opening a new one |
+| 2 | **Execute the filed lighting batch** (PRD-266…270, now in [`rendering/`](../PRDs/rendering/) and [`useful-defaults/`](../PRDs/useful-defaults/)) | Filed 2026-08-29, all five still `PROPOSED`. PRD-270 — *no lighting node ships web-only* — is the charter's portability rule made into a gate. Executing a filed batch beats opening a new one |
 | 3 | **Virtual Shadow Maps** | The largest true greenfield gap: templates use ordinary `shadowMap`, and there is no cascade or page table anywhere in `packages/`. Pure mechanism, no charter tension, and it inherits page-table and dirty-tracking machinery from the virtual geometry that landed 2026-08-30 |
 | 4 | **One native conformance case for `SpectralOcean`** | `PRD-246` is DONE **web only, with named gaps**, and *a feature that works on web only is unfinished*. This is a standing charter violation, not a feature gap, and it is the cheapest row in this table |
 | 5 | **PRD-198's buffer-to-texture copy-out interop** | Unblocks 5,476 already-written lines and changes the shape of dynamic GI, many-light rendering and any reference renderer at once. Scope it as an interop seam, not as a renderer |

@@ -4,7 +4,7 @@
 // One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
 // sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
 // The torch point lights in `dungeon.ts` are the only other sources, and they carry no shadows.
-import { DirectionalLight, Object3D, PCFSoftShadowMap, type Scene } from "three";
+import { Color, DirectionalLight, Object3D, PCFSoftShadowMap, type Scene, Vector3 } from "three";
 import { DUNGEON_CENTRE } from "./dungeon.js";
 import { SUN_DIRECTION } from "./sky.js";
 
@@ -51,4 +51,29 @@ export function setupLighting(
   // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
   // shadow map, so `setupPost` needs the light itself.
   return { key };
+}
+
+/** Material conventions are game-owned; each scene gets independent mutable controls. */
+export interface ILightingConvention {
+  rimGain: number;
+  fillGain: number;
+  fillColor: Color;
+  fillDirection: Vector3;
+  fillAngularSize: number;
+  darkThreshold: number;
+  maxSourceTexels: number;
+}
+export function createLightingConvention(
+  overrides: Partial<ILightingConvention> = {},
+): ILightingConvention {
+  return {
+    rimGain: 0.12,
+    fillGain: 1,
+    fillColor: new Color(0x667b9d),
+    fillDirection: new Vector3(0, 1, 1).normalize(),
+    fillAngularSize: 0.7,
+    darkThreshold: 0.001,
+    maxSourceTexels: 65536,
+    ...overrides,
+  };
 }

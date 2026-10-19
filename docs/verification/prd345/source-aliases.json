@@ -1,0 +1,58 @@
+{
+  "edge-enabled": {
+    "pose-end": {
+      "file": "rim-enabled.png",
+      "decodedRGBA": "0bfaa5c2d1d243bade27b849c91691bed35147933698e91ef95ec2870b093d21",
+      "originalCapturePNG": "cb644b741f27de82bc1940224d955213f0426ee312202e549de8a36da48ef048",
+      "originalPath": "artifacts/backlight-defaults/edge-enabled-acceptance1/pose-end.png"
+    },
+    "pose-rest": {
+      "file": "rim-enabled.png",
+      "decodedRGBA": "0bfaa5c2d1d243bade27b849c91691bed35147933698e91ef95ec2870b093d21",
+      "originalCapturePNG": "cb644b741f27de82bc1940224d955213f0426ee312202e549de8a36da48ef048",
+      "originalPath": "artifacts/backlight-defaults/edge-enabled-acceptance1/pose-rest.png"
+    }
+  },
+  "edge-rim-zero": {
+    "pose-end": {
+      "file": "rim-zero.png",
+      "decodedRGBA": "266d617691ae4bb76a6e626b8085bf6ebfc42f3761433dfe1c1d14c5eae96990",
+      "originalCapturePNG": "b17f933a6213e55b6bc1dcb77d727117ed8cf8074f296062a2f11881c4b8fad5",
+      "originalPath": "artifacts/backlight-defaults/edge-rim-zero-acceptance1/pose-end.png"
+    },
+    "pose-rest": {
+      "file": "rim-zero.png",
+      "decodedRGBA": "266d617691ae4bb76a6e626b8085bf6ebfc42f3761433dfe1c1d14c5eae96990",
+      "originalCapturePNG": "b17f933a6213e55b6bc1dcb77d727117ed8cf8074f296062a2f11881c4b8fad5",
+      "originalPath": "artifacts/backlight-defaults/edge-rim-zero-acceptance1/pose-rest.png"
+    }
+  },
+  "fill-enabled": {
+    "pose-end": {
+      "file": "fill-enabled.png",
+      "decodedRGBA": "3551e3a2c46ee8e5654418bd1133108832ba96e6b0da145238d48e6c3de7fd69",
+      "originalCapturePNG": "5de30aa4f5ab319fa8f8c710bb03c6b42d1cb4480f2dc72a4e90048d75bdc081",
+      "originalPath": "artifacts/backlight-defaults/fill-enabled-acceptance1/pose-end.png"
+    },
+    "pose-rest": {
+      "file": "fill-enabled.png",
+      "decodedRGBA": "3551e3a2c46ee8e5654418bd1133108832ba96e6b0da145238d48e6c3de7fd69",
+      "originalCapturePNG": "5de30aa4f5ab319fa8f8c710bb03c6b42d1cb4480f2dc72a4e90048d75bdc081",
+      "originalPath": "artifacts/backlight-defaults/fill-enabled-acceptance1/pose-rest.png"
+    }
+  },
+  "fill-fill-black": {
+    "pose-end": {
+      "file": "fill-black.png",
+      "decodedRGBA": "887289ba0a91988fdc6f74353753113e6cf7cfd26005a03cd1486ec14dcb9241",
+      "originalCapturePNG": "9ee0ff3e1c9edd8d011bec966bd5d95fbf4973ffc242fd6e975ba6114eb7a289",
+      "originalPath": "artifacts/backlight-defaults/fill-fill-black-acceptance1/pose-end.png"
+    },
+    "pose-rest": {
+      "file": "fill-black.png",
+      "decodedRGBA": "887289ba0a91988fdc6f74353753113e6cf7cfd26005a03cd1486ec14dcb9241",
+      "originalCapturePNG": "9ee0ff3e1c9edd8d011bec966bd5d95fbf4973ffc242fd6e975ba6114eb7a289",
+      "originalPath": "artifacts/backlight-defaults/fill-fill-black-acceptance1/pose-rest.png"
+    }
+  }
+}

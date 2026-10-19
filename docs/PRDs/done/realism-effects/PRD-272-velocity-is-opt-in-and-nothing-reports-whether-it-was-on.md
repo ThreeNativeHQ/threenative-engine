@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-272 — velocity is opt-in through a flag nobody sets, and nothing reports whether it was on
 
 **Status:** PROPOSED — filed 2026-08-30, measured at `1eeecf1e`. Depends on
-[PRD-266](../../useful-defaults/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) — this is the
+PRD-266 — this is the
 velocity row of that PRD's honest-tier report. Lands with or before
 [PRD-271](./PRD-271-batchedmesh-reports-its-whole-batching-transform-as-velocity.md), which needs
 the same guard to prove it did not regress. Batch:
@@ -16,7 +16,7 @@ Today the difference between "reprojection is working" and "reprojection is diff
 geometry positions" is invisible from outside the frame.
 
 **Complexity:** one probe, one report field, one negative-control spec = **LOW**. It is small
-because [PRD-266](../../useful-defaults/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) builds
+because PRD-266 builds
 the marker it reports through; filed separately because it is the criterion that keeps
 PRD-271's fix from silently rotting.
 

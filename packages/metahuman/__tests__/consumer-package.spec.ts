@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -54,7 +54,8 @@ beforeAll(async () => {
       .split("\n")
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0),
-    root: path.join(archiveDirectory, "package"),
+    // Node resolves import.meta URLs through a symlinked TMPDIR to physical paths.
+    root: await realpath(path.join(archiveDirectory, "package")),
   };
   // Created in beforeAll, outside any test, so makeTempDir can only register process-exit cleanup,
   // which a vitest worker does not reliably reach: remove the one sandbox directory explicitly.

@@ -163,7 +163,7 @@ cell `unmeasured`, because the owner capped it at framework-arm builds.
 
 The benchmark deliberately gives the vanilla arm the scaffolding and the `playtest` bridge,
 so **axes 1 and 3 win no benchmark column by construction**. That is a scoring artifact, not
-a verdict on their worth, and it is recorded as one in [OPPORTUNITY-AREAS.md](../PRDs/OPPORTUNITY-AREAS.md) #2. Read the
+a verdict on their worth, and it is recorded as one in OPPORTUNITY-AREAS.md #2. Read the
 benchmark for what it is: a control on cost and polish, not a census of what ships.
 
 ## The seven claims that are actually defensible

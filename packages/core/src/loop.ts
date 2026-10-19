@@ -1,4 +1,5 @@
 import type { FrameBudget, IFramePhaseSample } from "./frame-budget.js";
+import type { PhysicsInterpolation } from "./interpolation.js";
 import type { SpanRecorder } from "./profiling/Spans.js";
 import type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
 
@@ -62,14 +63,17 @@ export function afterPhysics(
 }
 
 export interface IFixedStepLoopOptions {
+  readonly interpolation?: PhysicsInterpolation;
   readonly step?: number;
   readonly maxSteps?: number;
   /** Collect per-frame render samples for diagnostics consumers. Default false. */
   readonly collectMetrics?: boolean;
+  /** Runs once per presented frame, before any fixed-step simulation dispatches. */
+  readonly onBeginFrame?: () => void;
   readonly onUpdate: (dt: number) => void;
   /** Runs after `onUpdate` has completed and before `onRender` starts. */
   readonly onAfterPhysics?: (dt: number) => void;
-  readonly onRender?: () => undefined | IRenderPerformanceMetrics;
+  readonly onRender?: (alpha: number) => undefined | IRenderPerformanceMetrics;
   /** Actual wall time spent in one simulation+render callback, for startup gates and diagnostics. */
   readonly onFrame?: (frameMs: number) => void;
   readonly requestFrame?: (callback: (time: number) => void) => number;
@@ -100,6 +104,10 @@ export interface IRenderPerformanceMetrics {
 
 export interface IRenderPerformanceSample extends IRenderPerformanceMetrics {
   readonly frameMs: number;
+  /** Successful render-callback completion ID; absolute across clears and retention. */
+  readonly sequence?: number;
+  /** Completion boundary from the monotonic phase clock, not the rAF timestamp or render-body cost. */
+  readonly completedAtMs?: number;
   /** Where this frame's milliseconds went. Present whenever a frame budget is installed. */
   readonly phases?: IFramePhaseSample;
 }
@@ -147,24 +155,29 @@ const FROZEN_SETTLE_STEPS = 60;
 export class FixedStepLoop {
   readonly step: number;
   readonly maxSteps: number;
+  #onBeginFrame: (() => void) | undefined;
   #onUpdate: (dt: number) => void;
   #onAfterPhysics: (dt: number) => void;
-  #onRender: () => undefined | IRenderPerformanceMetrics;
+  #onRender: (alpha: number) => undefined | IRenderPerformanceMetrics;
   #onFrame: (frameMs: number) => void;
   #requestFrame: (callback: (time: number) => void) => number;
   #cancelFrame: (handle: number) => void;
+  readonly #interpolation: PhysicsInterpolation | undefined;
   #accumulator = 0;
   #lastTime: number | undefined;
+  #frameTime = 0;
   #frameHandle: number | undefined;
   #running = false;
   #held = false;
   #clockFrozen = false;
+  #driven = false;
   #primePending = false;
   #settleSteps = FROZEN_SETTLE_STEPS;
   #tick = 0;
   #fps = 0;
   #lastRenderTime: number | undefined;
   #renderPerformanceSamples: IRenderPerformanceSample[] = [];
+  #renderCompletionSequence = 0;
   #frameCallback: (time: number) => void;
   #budget: FrameBudget | undefined;
   #spans: SpanRecorder | undefined;
@@ -181,6 +194,7 @@ export class FixedStepLoop {
       );
     }
     this.step = step;
+    this.#interpolation = options.interpolation;
     // A maxSteps below one passed the while-loop bound `updates < maxSteps` zero
     // times per frame: the game rendered but never simulated, silently.
     const maxSteps = options.maxSteps ?? 5;
@@ -194,6 +208,7 @@ export class FixedStepLoop {
     this.#budget = options.budget;
     this.#spans = options.spans;
     this.#now = options.now ?? (() => globalThis.performance?.now() ?? Date.now());
+    this.#onBeginFrame = options.onBeginFrame;
     this.#onUpdate = options.onUpdate;
     this.#onAfterPhysics = options.onAfterPhysics ?? (() => undefined);
     this.#onRender = options.onRender ?? (() => undefined);
@@ -211,6 +226,16 @@ export class FixedStepLoop {
           globalThis.cancelAnimationFrame(handle);
       });
     this.#frameCallback = (time) => this.#frame(time);
+  }
+
+  /** Frame callback timestamp in milliseconds. */
+  get frameTime(): number {
+    return this.#frameTime;
+  }
+
+  /** Fraction of the next fixed step accumulated for this presented frame. */
+  get alpha(): number {
+    return Math.max(0, Math.min(1 - Number.EPSILON, this.#accumulator / this.step));
   }
 
   get running(): boolean {
@@ -256,6 +281,22 @@ export class FixedStepLoop {
   setHeld(held: boolean): void {
     this.#held = held;
   }
+  /** Reserved playtest seam: transition without banking elapsed wall time. */
+  _setClockMode(mode: "fixed-step" | "wall-clock"): void {
+    if (mode !== "fixed-step" && mode !== "wall-clock") throw new Error("Unknown clock mode.");
+    const frozen = mode === "fixed-step";
+    if (this.#clockFrozen === frozen) return;
+    this.#clockFrozen = frozen;
+    this.#primePending = false;
+    this.#accumulator = 0;
+    this.#lastTime = frozen ? Number.POSITIVE_INFINITY : undefined;
+    this.#lastRenderTime = undefined;
+    this.#driven = false;
+    this.clearRuntimeDiagnostics();
+    if (this.#running && this.#frameHandle === undefined)
+      this.#frameHandle = this.#requestFrame(this.#frameCallback);
+  }
+
   /**
    * Stop the live clock: from here a rendered frame draws and simulates nothing, and banks no
    * time. `advance()` is then the only thing that moves the simulation.
@@ -301,6 +342,7 @@ export class FixedStepLoop {
   start(now = globalThis.performance?.now() ?? 0): void {
     if (this.#running) return;
     this.#running = true;
+    this.#driven = false;
     // A freeze asked for before the loop ran outranks the start timestamp, or a playtest bridge
     // that installs first would be undone by the boot it is supposed to cover.
     this.#lastTime = this.#clockFrozen ? Number.POSITIVE_INFINITY : now;
@@ -333,8 +375,10 @@ export class FixedStepLoop {
     this.#accumulator += elapsed;
     let updates = 0;
     while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
+      this.#interpolation?.beginTick();
       this.#onUpdate(this.step);
       this.#onAfterPhysics(this.step);
+      this.#interpolation?.endTick();
       this.#tick += 1;
       this.#accumulator -= this.step;
       updates += 1;
@@ -377,21 +421,29 @@ export class FixedStepLoop {
     return frameMs;
   }
 
-  stepFrame(now: number): number {
+  stepFrame(now: number, driven: boolean | "render-only" = false): number {
+    this.#frameTime = now;
     const callbackStartedAt = this.#now();
     const budget = this.#budget;
     budget?.beginFrame(now, this.#now());
     let updates = 0;
     let frameMs: number | undefined;
     let callbackMs: number | undefined;
+    let callbackFinishedAt = Number.NaN;
     let metrics: IRenderPerformanceMetrics | undefined;
     let phases: IFramePhaseSample | undefined;
     try {
-      updates = this.#advanceSimulation(now);
+      this.#onBeginFrame?.();
+      if (driven === true) {
+        this.#onUpdate(this.step);
+        this.#onAfterPhysics(this.step);
+        this.#tick += 1;
+        updates = 1;
+      } else if (driven !== "render-only") updates = this.#advanceSimulation(now);
       budget?.markSimulationEnd(this.#now(), updates);
       frameMs = this.#recordFrameTiming(now);
       // onRender does the rendering itself; only its metrics return value is optional.
-      metrics = this.#onRender();
+      metrics = this.#onRender(this.alpha);
     } finally {
       // A renderer can throw before it returns (for example, when SwiftShader rejects a buffer).
       // Close the budget before propagating that error so later frames report the real failure
@@ -410,15 +462,19 @@ export class FixedStepLoop {
         if (renderMs !== undefined && spans.depth === 0) spans.endFrame(renderMs);
         else spans.abandonFrame();
       }
-      const callbackFinishedAt = this.#now();
+      callbackFinishedAt = this.#now();
       if (Number.isFinite(callbackStartedAt) && Number.isFinite(callbackFinishedAt)) {
         callbackMs = Math.max(0, callbackFinishedAt - callbackStartedAt);
       }
     }
+    // Reached only after successful rendering; IDs also reveal gaps across disabled collection.
+    const sequence = ++this.#renderCompletionSequence;
     if (callbackMs !== undefined) this.#onFrame(callbackMs);
     if (this.#collectMetrics && frameMs !== undefined && frameMs > 0) {
       const sample: IRenderPerformanceSample = {
         frameMs,
+        sequence,
+        completedAtMs: callbackFinishedAt,
         ...(metrics === undefined || metrics.drawCalls === undefined
           ? {}
           : { drawCalls: metrics.drawCalls }),
@@ -437,7 +493,7 @@ export class FixedStepLoop {
     return updates;
   }
 
-  advance(ticks: number): number {
+  advance(ticks: number, options?: { render?: boolean }): number {
     if (!this.#running) throw new Error("Cannot advance a stopped loop.");
     if (!Number.isInteger(ticks) || ticks <= 0)
       throw new Error("advance ticks must be a positive integer.");
@@ -445,23 +501,62 @@ export class FixedStepLoop {
     // racing it. `freezeClock()` exists for the frames *before* that statement, which is where a
     // boot's wall clock used to reach the simulation. The prime is not armed from here: this line
     // has just delivered a real update, so the game has had its pass, and arming it would spend
-    // one more zero-dt update after every step a run counts.
+    // one more zero-dt update after every step a run counts. For the same reason a settle still
+    // pending is spent: it would otherwise land inside a later counted step as extra ticks.
+    this.#primePending = false;
     this.#clockFrozen = true;
     this.#lastTime = Number.POSITIVE_INFINITY;
+    if (options?.render === true && !this.#held) {
+      // Held startup still needs automatic loading/warmup frames.
+      this.#driven = true;
+      if (this.#frameHandle !== undefined) this.#cancelFrame(this.#frameHandle);
+      this.#frameHandle = undefined;
+      for (let index = 0; index < ticks; index += 1) this.stepFrame(this.#now(), true);
+      return ticks;
+    }
+    // A counted batch is metered, because a tick-counted run — which is what a playtest run is — is
+    // simulated entirely by `advance()` and reported `update 0 ms`, `substeps 0` and one boot window
+    // followed by nothing but hitches, a blocking batch having pushed the next live timestamp past
+    // `hitchMs`. It is charged as simulation, not as a frame: it presents nothing, so counting it as
+    // one put zero-millisecond frames that drew nothing into half of every window's frame and render
+    // percentiles. `addSimulation` decides which it is from the frame it lands in, so an `advance()`
+    // from inside a live frame — the frozen prime's settle — is charged there exactly once.
+    const startedAt = this.#now();
     for (let index = 0; index < ticks; index += 1) {
+      this.#interpolation?.beginTick();
       this.#onUpdate(this.step);
       this.#onAfterPhysics(this.step);
+      this.#interpolation?.endTick();
       this.#tick += 1;
     }
+    const finishedAt = this.#now();
+    const budget = this.#budget;
+    if (budget !== undefined && Number.isFinite(startedAt) && Number.isFinite(finishedAt))
+      budget.addSimulation(Math.max(0, finishedAt - startedAt), ticks);
     return ticks;
   }
 
+  /**
+   * Draw the world once without stepping it, for a native deterministic screenshot: the automatic
+   * frame pump is off between ticks, so nothing presents and a desktop capture would time out.
+   * `render-only` runs the render hooks but skips the frozen startup settle, so the copy is the
+   * standing world rather than a simulation change; a live clock fails closed.
+   */
+  renderCurrentFrame(): number {
+    if (!this.#running) throw new Error("Cannot render a stopped loop.");
+    if (!this.#clockFrozen)
+      throw new Error(
+        "renderCurrentFrame requires a frozen clock; a live loop advances through its own frames.",
+      );
+    return this.stepFrame(this.#now(), "render-only");
+  }
+
   #frame(time: number): void {
-    if (!this.#running) return;
+    if (!this.#running || this.#driven) return;
     try {
       this.stepFrame(time);
     } finally {
-      if (this.#running) {
+      if (this.#running && !this.#driven) {
         this.#frameHandle = this.#requestFrame(this.#frameCallback);
       }
     }

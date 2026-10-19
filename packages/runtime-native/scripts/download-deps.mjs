@@ -14,8 +14,8 @@
  *   node scripts/download-deps.mjs --rebuild-wgpu-cache-api  # Rebuild patched wgpu-native from source
  *   node scripts/download-deps.mjs --force      # Re-download even if exists
  *
- * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, webp, skia, swc
- * iOS deps: wgpu-ios, skia-ios (for cross-compilation from macOS)
+ * Desktop deps: wgpu, sdl3, dawn, v8, quickjs, stb, cgltf, webp, webp-source, skia, swc
+ * iOS deps: wgpu-ios, skia-ios, webp-source (for cross-compilation from macOS)
  * Android deps: sdl3 (Java glue), wgpu-android, sdl3-android, webp-source
  */
 
@@ -29,6 +29,7 @@ import { tmpdir } from 'node:os';
 import { SDL3_ANDROID_VERSION } from './package-android.mjs';
 import { SDL3_IOS_VERSION } from './package-ios.mjs';
 import { provisionAndroidV8 } from './build-android-v8.mjs';
+import { verifyLinuxArm64V8Installation } from './build-linux-arm64-v8.mjs';
 import { assertAndroid16KbAlignment } from './check-android-16kb-alignment.mjs';
 import { resolveWgpuCacheToolchain } from './wgpu-cache-toolchain.mjs';
 
@@ -84,6 +85,11 @@ const WGPU_DEPS = new Set(['wgpu', 'wgpu-ios', 'wgpu-android']);
 let wgpuVersionOverride = null;
 
 // Dependency versions and URLs
+// Linux arm64 pins. x64 stays on the tags above; these are the first library-builder
+// releases that publish a linux arm64 archive for the dependency named in the comment.
+const LINUX_ARM64_QUICHE = 'quiche-0.24.6-4';
+const LINUX_ARM64_SWC = 'swc-41';
+
 const DEPS = {
   wgpu: {
     version: DEFAULT_WGPU_VERSION,
@@ -141,7 +147,7 @@ const DEPS = {
     extractTo: 'sdl3-ios',
   },
   dawn: {
-    // Dawn prebuilts from official releases: https://github.com/google/dawn/releases
+    // Official Dawn prebuilts; Linux uses our same-revision Wayland+X11 dependency cache.
     // Naming: Dawn-{commit}-{platform}-Release.tar.gz
     // Headers: dawn-headers-{commit}.tar.gz
     //
@@ -158,7 +164,7 @@ const DEPS = {
         const variant = ARCH === 'arm64' ? 'macos-latest' : 'macos-15-intel';
         return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-${variant}-Release.tar.gz`;
       }if (platformName === 'linux') {
-        return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-ubuntu-latest-Release.tar.gz`;
+        return `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/dawn-linux-x64-v1/Dawn-${commit}-ubuntu-latest-Release.tar.gz`;
       }if (platformName === 'windows') {
         return `https://github.com/google/dawn/releases/download/${DEPS.dawn.version}/Dawn-${commit}-windows-latest-Release.tar.gz`;
       }
@@ -173,16 +179,20 @@ const DEPS = {
     needsHeaders: true,
   },
   v8: {
-    // V8 prebuilts from kuoruan/libv8 (see docs/V8_PREBUILTS.md for fork info)
-    // https://github.com/kuoruan/libv8/releases
+    // Linux arm64 uses the locked source-built cache; other targets use kuoruan/libv8.
     version: 'v13.1.201.22',
-    getUrl: () => {
+    getUrl: (lock) => {
+      if (platformName === 'linux' && ARCH === 'arm64') {
+        const payload = lock.payloads.get('v8-linux-arm64');
+        if (!payload) throw new Error('TN_NATIVE_DEP_LOCK_MISSING: v8-linux-arm64 requires the verified cached archive descriptor; refusing x64 fallback or a source build.');
+        return payload.url;
+      }
       // Platform mapping for kuoruan/libv8 releases
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x64';
         return `https://github.com/kuoruan/libv8/releases/download/${DEPS.v8.version}/v8_macOS_${arch}.tar.xz`;
       }if (platformName === 'linux') {
-        // Only x64 available for Linux
+        // Linux x64 keeps the upstream prebuilt.
         return `https://github.com/kuoruan/libv8/releases/download/${DEPS.v8.version}/v8_Linux_x64.tar.xz`;
       }if (platformName === 'windows') {
         // Only x64 available for Windows (7z format)
@@ -214,11 +224,16 @@ const DEPS = {
     // https://github.com/mystralengine/library-builder/releases
     version: 'quiche-0.24.6-3',
     getUrl: () => {
-      const baseUrl = 'https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3';
+      // Linux arm64 first reached a published prebuilt at -4; x64 stays on -3.
+      const tag = platformName === 'linux' && ARCH === 'arm64' ? LINUX_ARM64_QUICHE : DEPS.quiche.version;
+      const baseUrl = `https://github.com/mystralengine/library-builder/releases/download/${tag}`;
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/quiche-mac-${arch}.zip`;
       }if (platformName === 'linux') {
+        if (ARCH === 'arm64') {
+          return `${baseUrl}/quiche-linux-arm64.zip`;
+        }
         if (ARCH !== 'x64') {
           console.warn(`quiche prebuilts not available for ${platformName}-${archName}`);
           return null;
@@ -271,6 +286,7 @@ const DEPS = {
     version: 'master',
     // stb doesn't use archives - we download individual headers
     getUrl: () => null,  // Special handling below
+    headerUrl: (header) => `https://raw.githubusercontent.com/nothings/stb/master/${header}`,
     extractTo: 'stb',
     headers: [
       'stb_image.h',
@@ -283,6 +299,15 @@ const DEPS = {
       'stb_vorbis.c',
     ],
   },
+  cgltf: {
+    // cgltf parses glTF/GLB for the native engine's loader (PRD-515); parsing only, construction
+    // is owned code. One header, pinned to a release tag.
+    version: '1.15',
+    getUrl: () => null,
+    headerUrl: (header) => `https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.15/${header}`,
+    extractTo: 'cgltf',
+    headers: ['cgltf.h'],
+  },
   webp: {
     // libwebp for WebP image decoding (used by GLTF EXT_texture_webp extension)
     // https://developers.google.com/speed/webp/download
@@ -293,7 +318,8 @@ const DEPS = {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86-64';
         return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-mac-${arch}.tar.gz`;
       }if (platformName === 'linux') {
-        return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-linux-x86-64.tar.gz`;
+        const arch = ARCH === 'arm64' ? 'aarch64' : 'x86-64';
+        return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-linux-${arch}.tar.gz`;
       }if (platformName === 'windows') {
         return `https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-${version}-windows-x64.zip`;
       }
@@ -304,7 +330,8 @@ const DEPS = {
   },
   'webp-source': {
     // libwebp upstream source, for platforms with no prebuilt release (Android,
-    // iOS). Games embed WebP textures in glTF (EXT_texture_webp); without this a
+    // iOS) and for the native engine's glTF loader on every platform (NativeEngineCore.cmake
+    // builds it once). Games embed WebP textures in glTF (EXT_texture_webp); without this a
     // native build silently reports "WebP format support: NO" and GLTFLoader
     // drops every model texture, which renders as untextured white meshes.
     // The runtime's CMakeLists builds the extracted tree with the cross toolchain.
@@ -333,12 +360,17 @@ const DEPS = {
     //
     version: 'chrome/m145',
     getUrl: () => {
-      const baseUrl = 'https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145';
+      // olilarkin/skia-builder publishes Linux x64 only; library-builder mirrors the same
+      // chrome/m145 build for linux arm64, which is the arm64 archive this project pins.
+      const baseUrl = ARCH === 'arm64' && platformName === 'linux'
+        ? 'https://github.com/mystralengine/library-builder/releases/download/chrome%2Fm145'
+        : 'https://github.com/olilarkin/skia-builder/releases/download/chrome%2Fm145';
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/skia-build-mac-${arch}-gpu-release.zip`;
       }if (platformName === 'linux') {
-        return `${baseUrl}/skia-build-linux-x64-gpu-release.zip`;
+        const arch = ARCH === 'arm64' ? 'arm64' : 'x64';
+        return `${baseUrl}/skia-build-linux-${arch}-gpu-release.zip`;
       }if (platformName === 'windows') {
         return `${baseUrl}/skia-build-win-x64-gpu-release.zip`;
       }
@@ -350,11 +382,16 @@ const DEPS = {
   swc: {
     version: 'swc-11',
     getUrl: () => {
-      const baseUrl = 'https://github.com/mystralengine/library-builder/releases/download/swc-11';
+      // swc-41 is the first library-builder tag with swc-linux-arm64.zip; x64 stays on swc-11.
+      const tag = platformName === 'linux' && ARCH === 'arm64' ? LINUX_ARM64_SWC : DEPS.swc.version;
+      const baseUrl = `https://github.com/mystralengine/library-builder/releases/download/${tag}`;
       if (platformName === 'macos') {
         const arch = ARCH === 'arm64' ? 'arm64' : 'x86_64';
         return `${baseUrl}/swc-mac-${arch}.zip`;
       }if (platformName === 'linux') {
+        if (ARCH === 'arm64') {
+          return `${baseUrl}/swc-linux-arm64.zip`;
+        }
         if (ARCH !== 'x64') {
           console.warn(`SWC prebuilts not available for ${platformName}-${archName}`);
           return null;
@@ -784,7 +821,21 @@ function lockPayloadForUrl(payloads, url) {
 }
 
 function receiptPathFor(destDir) {
+  // The frozen V8 build receipt covers every file in its installation tree.
+  if (platformName === 'linux' && ARCH === 'arm64' && destDir === join(THIRD_PARTY, 'v8')) {
+    return join(THIRD_PARTY, LOCK_RECEIPT_DIRNAME, 'v8-linux-arm64.json');
+  }
   return join(destDir, LOCK_RECEIPT_DIRNAME, 'receipt.json');
+}
+
+function verifyLockedLinuxArm64V8(destDir, payload) {
+  const expected = payload.provenance?.receiptSha256;
+  if (!/^[a-f0-9]{64}$/u.test(expected ?? ''))
+    throw new Error(`TN_V8_RECEIPT_PIN_MISSING: ${payload.id} requires a locked producer receipt SHA-256.`);
+  const actual = sha256Bytes(readFileSync(join(destDir, 'build-receipt.json')));
+  if (actual !== expected)
+    throw new Error(`TN_V8_RECEIPT_PIN_MISMATCH: ${payload.id} producer receipt differs from the locked archive.`);
+  return verifyLinuxArm64V8Installation(destDir);
 }
 
 function readReceipt(destDir, lockHash) {
@@ -1228,7 +1279,7 @@ export async function downloadDep(name, options = {}) {
     return false;
   }
 
-  console.log(`\n=== Downloading ${name} ${dep.version} ===`);
+  console.log(`\n=== Downloading ${name} ===`);
   const lock = options.lockContext ?? readNativeDepsLockContext();
 
   if (name === 'v8-android') {
@@ -1251,8 +1302,8 @@ export async function downloadDep(name, options = {}) {
 
   const destDir = destinationFor(name, dep);
 
-  // Special handling for stb (individual header downloads)
-  if (name === 'stb' && dep.headers) {
+  // Header-only dependencies (stb, cgltf): individual files, each verified against the lock.
+  if (dep.headers) {
     // Per header, not per directory. Testing the directory meant that adding a header to the list
     // above provisioned nothing on any checkout that already had the others: `stb_vorbis.c` was
     // added for Ogg decode and every existing tree reported "already exists" and skipped it, so
@@ -1274,11 +1325,11 @@ export async function downloadDep(name, options = {}) {
     try {
       const verified = [];
       for (const header of missing) {
-        const url = `https://raw.githubusercontent.com/nothings/stb/master/${header}`;
+        const url = dep.headerUrl(header);
         const quarantine = mkdtempSync(join(tmpdir(), 'threenative-dep-'));
         try {
           const staged = join(quarantine, header);
-          const payload = await downloadLockedArchive(lock.payloads, lock.lockHash, `stb ${header}`, url, staged);
+          const payload = await downloadLockedArchive(lock.payloads, lock.lockHash, `${name} ${header}`, url, staged);
           copyFileSync(staged, join(destDir, header));
           verified.push(payload.id);
         } finally {
@@ -1297,17 +1348,21 @@ export async function downloadDep(name, options = {}) {
     }
   }
 
-  const url = dep.getUrl();
+  const url = dep.getUrl(lock);
   if (!url) {
     console.warn(`Skipping ${name} - no prebuilt available for this platform`);
     return false;
   }
-  if (!lockPayloadForUrl(lock.payloads, url)) {
+  // Same-lock receipts can name another architecture; require the selected payload too.
+  const selectedPayload = lockPayloadForUrl(lock.payloads, url);
+  if (!selectedPayload) {
     console.error(
       `TN_NATIVE_DEP_LOCK_MISSING: no lock payload covers ${url} (requested as '${name}'). Refusing an unreviewed download.`,
     );
     return false;
   }
+
+  console.log(`Selected locked payload ${selectedPayload.id}: ${url}`);
 
   // Check if already downloaded
   if (existsSync(destDir)) {
@@ -1315,9 +1370,12 @@ export async function downloadDep(name, options = {}) {
     if (!process.argv.includes('--force')) {
       if (!WGPU_DEPS.has(name)) {
         const receipt = readReceipt(destDir, lock.lockHash);
-        if (!receipt) {
-          console.warn(`${name} has no receipt for the current lock; replacing the stale dependency cache`);
+        if (!receipt || !Array.isArray(receipt.payloads) || !receipt.payloads.includes(selectedPayload.id)) {
+          console.warn(`${name} has no receipt for ${selectedPayload.id} under the current lock; replacing the stale dependency cache`);
         } else {
+          if (name === 'v8' && platformName === 'linux' && ARCH === 'arm64') {
+            verifyLockedLinuxArm64V8(destDir, selectedPayload);
+          }
           console.log('Skipping (use --force to re-download)');
           return true;
         }
@@ -1377,6 +1435,9 @@ export async function downloadDep(name, options = {}) {
         rmSync(headersTempDir, { recursive: true });
         console.log(`Headers merged into ${destDir}`);
       }
+    }
+    if (name === 'v8' && platformName === 'linux' && ARCH === 'arm64') {
+      verifyLockedLinuxArm64V8(destDir, payload);
     }
     writeReceipt(destDir, {
       schemaVersion: 1, dependency: name, lockHash: lock.lockHash,
@@ -1545,22 +1606,15 @@ async function main() {
   if (requestedBackend === 'dawn') assertDawnAndroidArchive();
   if (requestedWgpuVersion) configureWgpuOverride(requestedWgpuVersion);
 
-  // Linux arm64 has no prebuilt for the x64 desktop stack: kuoruan/libv8 ships Linux x64 only,
-  // Dawn's `ubuntu-latest` release asset is x64, and skia/swc/quiche/webp publish no arm64 Linux
-  // archive. A source V8 build is not allowed in CI. The arm64 desktop host is therefore built with
-  // the QuickJS engine over wgpu-native, whose `wgpu-linux-aarch64` prebuilt is already in the
-  // dependency lock; the CMake build disables the optional features whose libraries are absent
-  // (Canvas2D/Skia, WebTransport/quiche, TS/SWC) instead of linking a foreign architecture. libuv
-  // has no arm64 prebuilt either, so arm64 also fetches the architecture-independent `libuv-source`
-  // and CMake builds it from that pinned source (see CMakeLists.txt). See scripts/native-build.mjs
-  // for the matching configure overrides.
+  // Linux arm64 uses cached V8 over wgpu-native; QuickJS remains available for paired builds.
+  // Keep the desktop feature set; libuv builds from locked source where no prebuilt exists.
   const linuxArm64 = platformName === 'linux' && ARCH === 'arm64';
   const desktopDeps = linuxArm64
-    ? ['wgpu', 'sdl3', 'quickjs', 'stb', 'libuv-source']
-    : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'webp', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
+    ? ['wgpu', 'sdl3', 'v8', 'quickjs', 'stb', 'cgltf', 'webp', 'webp-source', 'skia', 'swc', 'quiche', 'libuv-source']
+    : ['wgpu', 'sdl3', 'dawn', 'v8', 'quickjs', 'stb', 'cgltf', 'webp', 'webp-source', platformName === 'windows' ? 'skia-win-static' : 'skia', 'swc', 'libuv', 'libuv-source', 'quiche'];
 
   // iOS deps (only downloaded with --only or --ios)
-  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios', 'sdl3-ios'];
+  const iosDeps = ['wgpu-ios', 'skia-ios', 'quiche-ios', 'sdl3-ios', 'webp-source'];
 
   // Android deps (only downloaded with --only or --android)
   const androidDeps = ['sdl3', 'wgpu-android', 'sdl3-android', 'quiche-android', 'v8-android', 'webp-source'];
@@ -1578,7 +1632,9 @@ async function main() {
 
   // Downloadable dependencies and the complete --only allowlist.
   const allDeps = [...new Set([...desktopDeps, ...iosDeps, ...androidDeps, ...windowsDeps])];
-  const availableDeps = [...new Set([...allDeps, ...sourceBuildDeps, 'openriglogic'])];
+  // gradle-wrapper is one checksummed file the published package ships in `files`; the release packs
+  // without any Android payload, so it is reachable on its own.
+  const availableDeps = [...new Set([...allDeps, ...sourceBuildDeps, 'openriglogic', 'gradle-wrapper'])];
 
   let depsToDownload;
   if (onlyIndex !== -1) {
@@ -1587,6 +1643,11 @@ async function main() {
       console.error(`Unknown dependency: ${depName}`);
       console.error(`Available: ${availableDeps.join(', ')}`);
       process.exit(1);
+    }
+    if (depName === 'gradle-wrapper') {
+      await ensureGradleWrapper();
+      console.log('\n=== Summary ===\n  gradle-wrapper: OK');
+      return;
     }
     if (depName === 'skia-android') {
       const { buildSkiaAndroidFromStagedSource } = await import('./build-skia-android.mjs');

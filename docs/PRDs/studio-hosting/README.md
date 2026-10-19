@@ -31,9 +31,9 @@ vibe-codes them in a browser.
 | [100](../done/PRD-100-studio-sandbox-image.md) | Studio runs inside a container against a cloned repo, identical loop to `pnpm studio` | — | COMPLETE |
 | [101](../done/PRD-101-accounts-and-project-crud.md) | Sign up, log in, create/rename/fork/delete games; they survive a restart | — | COMPLETE |
 | [102](../done/PRD-102-session-broker.md) | A live Studio with preview, and create/load/rename/delete of games from inside it | 100, 101 | COMPLETE |
-| [103](./PRD-103-sandbox-boundary.md) | Every session runs in its own microVM with default-deny egress; production cannot boot without it | 102 | PARTIAL — guard + containment proved, no microVM booted |
+| [103](../BLOCKED/requires-release-credentials/PRD-103-sandbox-boundary.md) | Every session runs in its own microVM with default-deny egress; production cannot boot without it | 102 | PARTIAL — guard + containment proved, no microVM booted |
 | [104](../done/PRD-104-codex-openrouter-gateway.md) | Chat is answered by Codex over OpenRouter, on a platform key the sandbox never sees, metered per user | 102 | COMPLETE |
-| [105](./PRD-105-production-lane.md) | Deployed, backed up, restorable; account settings and visible spend; open to public signup | 103, 104 | PARTIAL — quotas + signup gate done; deploy blocked |
+| [105](../BLOCKED/requires-release-credentials/PRD-105-production-lane.md) | Deployed, backed up, restorable; account settings and visible spend; open to public signup | 103, 104 | PARTIAL — quotas + signup gate done; deploy blocked |
 
 **The service is not deployable today and must not be.** 103's containment is real and proved by
 probes that run — a sandbox cannot reach the database, holds no capabilities, and is capped on
@@ -139,11 +139,11 @@ are not the rules for a framework.
 
 | Public-signup risk | Answered by |
 |---|---|
-| Agent-written code executes on your machines by design — this is RCE as a feature | [103](./PRD-103-sandbox-boundary.md): microVM per session, non-root, disposable filesystem |
-| A sandbox reaching the control plane, Postgres, or cloud metadata at `169.254.169.254` | [103](./PRD-103-sandbox-boundary.md): default-deny egress, allowlist of gateway and registry only |
+| Agent-written code executes on your machines by design — this is RCE as a feature | [103](../BLOCKED/requires-release-credentials/PRD-103-sandbox-boundary.md): microVM per session, non-root, disposable filesystem |
+| A sandbox reaching the control plane, Postgres, or cloud metadata at `169.254.169.254` | [103](../BLOCKED/requires-release-credentials/PRD-103-sandbox-boundary.md): default-deny egress, allowlist of gateway and registry only |
 | A stranger burning the platform OpenRouter key | [104](../done/PRD-104-codex-openrouter-gateway.md): key never in the sandbox, per-account budget, hard cutoff |
-| Miners and abuse consuming compute | [103](./PRD-103-sandbox-boundary.md) caps and idle reap; [105](./PRD-105-production-lane.md) quotas |
-| Losing a customer's game | [101](../done/PRD-101-accounts-and-project-crud.md) git as source of truth; [105](./PRD-105-production-lane.md) restore drill |
+| Miners and abuse consuming compute | [103](../BLOCKED/requires-release-credentials/PRD-103-sandbox-boundary.md) caps and idle reap; [105](../BLOCKED/requires-release-credentials/PRD-105-production-lane.md) quotas |
+| Losing a customer's game | [101](../done/PRD-101-accounts-and-project-crud.md) git as source of truth; [105](../BLOCKED/requires-release-credentials/PRD-105-production-lane.md) restore drill |
 
 ---
 

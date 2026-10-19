@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "paths": { "@threenative/core": ["../../packages/core/src/index.ts"] }
+  },
+  "include": ["velocity-main.ts", "velocity-cost-main.ts"]
+}

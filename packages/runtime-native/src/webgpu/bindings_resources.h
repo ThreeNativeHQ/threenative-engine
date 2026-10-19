@@ -7,6 +7,8 @@ namespace mystral::webgpu {
 
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
 
+void startDeferredBufferMaps(BindingsState* state);
+
 const char* formatToString(WGPUTextureFormat format);
 WGPUTextureFormat stringToFormat(const std::string& format);
 WGPUTextureViewDimension stringToTextureViewDimension(const std::string& dim);

@@ -1,17 +1,28 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
+  absolutesVerdict,
   assessPerfMarkers,
+  computeLinuxCpu,
   formatPerfReport,
+  newestProcessLines,
   parsePerformanceMarkers,
   parsePerfArgs,
+  parseProcStatusMemory,
+  parseTotalPssMb,
   perfCommand,
   rankExactReasons,
+  readHostLoad,
+  readLinuxCpuSnapshot,
+  SOAK_MIN_FRAMES,
+  soakVerdict,
   type IFrameBudgetWindowJson,
+  type ILinuxCpuSnapshot,
+  type ISoakSample,
 } from "../src/runner/perf.js";
 import { PlaytestCliUsageError } from "../src/runner/config.js";
 
@@ -175,15 +186,15 @@ describe("assessPerfMarkers", () => {
 });
 
 describe("a frame rate the run cannot vouch for", () => {
-  const VIRTUAL = { strategy: "private-xvfb", virtual: true } as const;
-  const HOST = { strategy: "host", virtual: false } as const;
+  const virtual = { strategy: "private-xvfb", virtual: true } as const;
+  const host = { strategy: "host", virtual: false } as const;
 
   it("refuses an fps bound on a private Xvfb instead of satisfying it with a wrong number", () => {
     // Measured on midway's desktop build under the capture-lock Xvfb: window 2 reported 1123.60 fps
     // and window 3 20000.00, and `--min-fps 55` PASSED. Same package's `trace` refuses to print a
     // frame rate from a private display at all (13.3 fps there against 57.7 on the real one).
     const parsed = parsePerformanceMarkers(sampleStream());
-    const report = assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", VIRTUAL);
+    const report = assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", virtual);
     expect(report.violations).toEqual([
       expect.objectContaining({ code: "TN_PERF_VIRTUAL_DISPLAY", observed: undefined, bound: 55 }),
     ]);
@@ -202,7 +213,7 @@ describe("a frame rate the run cannot vouch for", () => {
       parsed,
       { allowVirtualDisplay: true, minFps: 55, requireWindows: 2 },
       "test",
-      VIRTUAL,
+      virtual,
     );
     // The windows in this fixture are 20.55 and 20.9 fps, so the bound genuinely fails — the point
     // is that it is assessed rather than refused, and the number is presented.
@@ -217,7 +228,7 @@ describe("a frame rate the run cannot vouch for", () => {
 
   it("leaves a run on a vouched-for display exactly as it was", () => {
     const parsed = parsePerformanceMarkers(sampleStream());
-    const report = assessPerfMarkers(parsed, { minFps: 20, requireWindows: 2 }, "test", HOST);
+    const report = assessPerfMarkers(parsed, { minFps: 20, requireWindows: 2 }, "test", host);
     expect(report.violations).toEqual([]);
     expect(report.display).toEqual({ fpsSuppressed: false, strategy: "host", virtual: false });
     // A source that carries no display knowledge — a log file from elsewhere — is untouched.
@@ -226,7 +237,7 @@ describe("a frame rate the run cannot vouch for", () => {
 
   it("still assesses a frame-duration bound, which the run did measure", () => {
     const parsed = parsePerformanceMarkers(sampleStream());
-    const report = assessPerfMarkers(parsed, { maxFrameMsP95: 45.0, requireWindows: 2 }, "test", VIRTUAL);
+    const report = assessPerfMarkers(parsed, { maxFrameMsP95: 45.0, requireWindows: 2 }, "test", virtual);
     // Both steady windows carry a 45.7 ms frame p95, and a bound is checked against every steady
     // window rather than the median — so two violations, and the frame rate never enters it.
     expect(report.violations.map(({ code }) => code)).toEqual([
@@ -239,7 +250,7 @@ describe("a frame rate the run cannot vouch for", () => {
   it("prints no frame-rate column, and says why rather than leaving it blank", () => {
     const parsed = parsePerformanceMarkers(sampleStream());
     const text = formatPerfReport(
-      assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", VIRTUAL),
+      assessPerfMarkers(parsed, { minFps: 55, requireWindows: 2 }, "test", virtual),
     );
     expect(text).toContain("fps suppressed");
     expect(text).toContain("private-xvfb");
@@ -256,7 +267,7 @@ describe("a frame rate the run cannot vouch for", () => {
   it("prints the frame rate again once the operator has acknowledged the display", () => {
     const parsed = parsePerformanceMarkers(sampleStream());
     const text = formatPerfReport(
-      assessPerfMarkers(parsed, { allowVirtualDisplay: true, requireWindows: 2 }, "test", VIRTUAL),
+      assessPerfMarkers(parsed, { allowVirtualDisplay: true, requireWindows: 2 }, "test", virtual),
     );
     expect(text).not.toContain("fps suppressed");
     expect(text).toMatch(/^window\s+fps/mu);
@@ -283,9 +294,46 @@ describe("parsePerfArgs", () => {
     expect(args.timeoutSeconds).toBe(180);
     expect(args.hostArgs).toEqual([]);
   });
+
+  it("refuses a value-taking flag that has no value instead of dropping it", () => {
+    expect(() => parsePerfArgs(["--executable", "host", "--host-arg"])).toThrow(/--host-arg needs a value/u);
+    expect(() => parsePerfArgs(["--file", "a.log", "--min-fps", ""])).toThrow(/--min-fps needs a number/u);
+  });
+});
+
+describe("a logcat buffer that holds an earlier launch", () => {
+  it("reads only the markers of the newest process", () => {
+    const earlier = [budgetLine(1, 12, 55, 25), budgetLine(2, 12, 55, 25)].map((line) => `I/MystralStdio( 1111): ${line}`);
+    const later = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10)].map((line) => `I/MystralStdio( 2222): ${line}`);
+    const parsed = parsePerformanceMarkers(newestProcessLines([...earlier, ...later].join("\n")));
+    expect(parsed.budgets.map(({ fps }) => fps)).toEqual([60, 60]);
+  });
 });
 
 describe("perfCommand", () => {
+  it("exits 2 preserving an explicit host-display failure before starting the executable", async () => {
+    const errors: string[] = [];
+    const errSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      errors.push(String(chunk));
+      return true;
+    });
+    vi.stubGlobal("process", {
+      ...process,
+      env: { ...process.env, DISPLAY: undefined, TN_PLAYTEST_HOST_DISPLAY: "1" },
+      platform: "linux",
+    });
+    try {
+      const code = await perfCommand(["--executable", "/must-not-launch"]);
+      expect(code).toBe(2);
+      const report = JSON.parse(errors.join(""));
+      expect(report.pass).toBe(false);
+      expect(report.diagnostics[0].code).toBe("TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE");
+    } finally {
+      vi.unstubAllGlobals();
+      errSpy.mockRestore();
+    }
+  });
+
   it("exits 0 on a passing file source and prints the report as JSON", async () => {
     const dir = await makeTempDir("tn-perf-");
     const path = join(dir, "host.log");
@@ -333,6 +381,114 @@ describe("perfCommand", () => {
     errSpy.mockRestore();
     expect(code).toBe(2);
     expect(errors.join("")).toContain("TN_PERF_MARKER_MALFORMED");
+  });
+
+  it.runIf(process.platform === "linux")("launches the host on the run's private display, never the session's", async () => {
+    // The host prints the display it was given. A private Xvfb run must hand it the Xvfb's DISPLAY
+    // and no Wayland variable, or a native player opens a window on the operator's desktop. The session
+    // display is a number Xvfb never picks first: on a CI host with no X server the private Xvfb is :0.
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+    const envFile = join(await makeTempDir("tn-perf-display-"), "host-env.json");
+    const script = `require("node:fs").writeFileSync(${JSON.stringify(envFile)}, JSON.stringify({ d: process.env.DISPLAY ?? null, w: process.env.WAYLAND_DISPLAY ?? null })); process.stdout.write(${JSON.stringify(`${output}\n`)}); setInterval(() => {}, 1000);`;
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const errSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.stubGlobal("process", {
+      ...process,
+      env: { ...process.env, DISPLAY: ":4242", TN_PLAYTEST_HOST_DISPLAY: undefined, WAYLAND_DISPLAY: "wayland-0" },
+    });
+    try {
+      await perfCommand(["--executable", process.execPath, "--host-arg", "-e", "--host-arg", script, "--allow-virtual-display", "--text"]);
+    } finally {
+      vi.unstubAllGlobals();
+      spy.mockRestore();
+      errSpy.mockRestore();
+    }
+    const env = JSON.parse(await readFile(envFile, "utf8")) as { d: string | null; w: string | null };
+    expect(env.w).toBeNull();
+    expect(env.d).toMatch(/^:\d+$/u);
+    expect(env.d).not.toBe(":4242");
+  });
+
+  it.runIf(process.platform === "linux")("leaves no process of the host's behind when the run ends", async () => {
+    // A host whose helper child ignores SIGTERM (WebKit's web process is one) must not outlive the
+    // run: the stop reaches the host's whole process group and escalates to SIGKILL.
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+    const pidFile = join(await makeTempDir("tn-perf-group-"), "helper.pid");
+    const helper = `process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);`;
+    const script = `const h = require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(helper)}], { stdio: "ignore" }); require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(h.pid)); setTimeout(() => process.stdout.write(${JSON.stringify(`${output}\n`)}), 300); setInterval(() => {}, 1000);`;
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const errSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await perfCommand(["--executable", process.execPath, "--host-arg", "-e", "--host-arg", script, "--allow-virtual-display", "--timeout", "30"]);
+    } finally {
+      spy.mockRestore();
+      errSpy.mockRestore();
+    }
+    const helperPid = Number(await readFile(pidFile, "utf8"));
+    let alive = true;
+    try {
+      process.kill(helperPid, 0);
+    } catch {
+      alive = false;
+    }
+    if (alive) process.kill(helperPid, "SIGKILL");
+    expect(alive, "the host's helper child outlived the run").toBe(false);
+  }, 30_000);
+
+  it.runIf(process.platform === "linux")("ends the run and fails it when the host ignores SIGTERM", async () => {
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+    const script = `process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); process.stdout.write(${JSON.stringify(`${output}\n`)});`;
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const errSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    let code: number;
+    try {
+      code = await perfCommand(["--executable", process.execPath, "--host-arg", "-e", "--host-arg", script, "--allow-virtual-display", "--timeout", "30"]);
+    } finally {
+      spy.mockRestore();
+      errSpy.mockRestore();
+    }
+    expect(code).toBe(1);
+    const report = JSON.parse(written.join("")) as { violations: Array<{ code: string; observed?: number }> };
+    expect(report.violations).toContainEqual(expect.objectContaining({ code: "TN_PERF_HOST_EXIT", observed: 137 }));
+  }, 30_000);
+
+  it("fails a host that exits non-zero after enough windows, even though its markers pass", async () => {
+    // Three windows cover the default two steady windows. The runner then stops the host, and the
+    // host answers that SIGTERM by exiting 139. A plain signal kill would read as the runner's own stop.
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+    const script = `process.on("SIGTERM", () => process.exit(139)); setInterval(() => {}, 1000); process.stdout.write(${JSON.stringify(`${output}\n`)});`;
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const code = await perfCommand(["--executable", process.execPath, "--host-arg", "-e", "--host-arg", script]);
+    spy.mockRestore();
+    expect(code).toBe(1);
+    const report = JSON.parse(written.join("")) as { pass: boolean; violations: Array<{ code: string; observed?: number }> };
+    expect(report.pass).toBe(false);
+    expect(report.violations).toContainEqual(expect.objectContaining({ code: "TN_PERF_HOST_EXIT", observed: 139 }));
+  });
+});
+
+describe("perfCommand --executable memory", () => {
+  it("reports the game process's peak RSS, read from /proc while it is still alive", async () => {
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+    const script = `setInterval(() => {}, 1000); process.stdout.write(${JSON.stringify(`${output}\n`)});`;
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const code = await perfCommand(["--executable", process.execPath, "--host-arg", "-e", "--host-arg", script]);
+    spy.mockRestore();
+    expect(code).toBe(0);
+    const report = JSON.parse(written.join("")) as { memory?: { rssPeakMb?: number } };
+    expect(report.memory?.rssPeakMb).toBeGreaterThan(0);
   });
 });
 
@@ -398,10 +554,79 @@ describe("formatPerfReport", () => {
     expect(text).toContain("late sync compile: none — every window reported pipelineCompileCalls 0");
   });
 
+  it("prints the GPU-selected main-pass triangle count and names the CPU capacity figure", () => {
+    // Three counts an indirect batch at its merged geometry's capacity, so the CPU figure is the
+    // ceiling over what the kernel can select. Quoting only that one put 338 million triangles on
+    // a scene that drew 402 thousand.
+    const withPasses = (gpu: boolean): string =>
+      `${budgetLine(1, 30, 40, 20)}\n` +
+      `TN_FRAME_BUDGET:{"window":2,"frames":300,"hitches":0,"fps":30,${withPassesBody(gpu)}}\n`;
+    const withPassesBody = (gpu: boolean): string =>
+      `"passes":{"main":{"frames":300,"draws":{"mean":30,"p50":30,"p95":30},` +
+      `"triangles":{"mean":338000000,"p50":338000000,"p95":338000000}` +
+      (gpu ? `,"gpuTriangles":402000}}` : "}}");
+
+    const gpuText = formatPerfReport(
+      assessPerfMarkers(parsePerformanceMarkers(withPasses(true)), { requireWindows: 1 }, "log"),
+    );
+    expect(gpuText).toContain("main pass triangles: 402,000 GPU-selected, 338,000,000 CPU capacity");
+
+    const cpuText = formatPerfReport(
+      assessPerfMarkers(parsePerformanceMarkers(withPasses(false)), { requireWindows: 1 }, "log"),
+    );
+    expect(cpuText).toContain("the GPU-selected count was not reported");
+  });
+
+  it("prints no triangle line for a window that submitted no pass", () => {
+    const text = formatPerfReport(assessPerfMarkers(parsePerformanceMarkers(sampleStream()), { requireWindows: 1 }, "log"));
+    expect(text).not.toContain("main pass triangles");
+  });
+
   it("prints no hitch section for a stream without hitch lines", () => {
     const parsed = parsePerformanceMarkers(sampleStream());
     const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 2 }, "test"));
     expect(text).not.toContain("hitch windows");
+  });
+});
+
+/** `TN_FRAME_BUDGET` as PRD-494 reports it: the main pass split by origin, beside its own draws. */
+const drawSourceLine =
+  'TN_FRAME_BUDGET:{"window":3,"frames":300,"hitches":0,"fps":20.9,' +
+  '"passes":{"main":{"draws":{"samples":300,"mean":323.0,"p50":323,"p95":337,"p99":340,"max":344},' +
+  '"drawsBySource":{"gpuScene":{"samples":300,"mean":211.0,"p50":211,"p95":219,"p99":222,"max":228},' +
+  '"chunks":{"samples":300,"mean":30.0,"p50":30,"p95":32,"p99":33,"max":34},' +
+  '"terrain":{"samples":300,"mean":62.0,"p50":62,"p95":64,"p99":65,"max":66},' +
+  '"other":{"samples":300,"mean":20.0,"p50":20,"p95":22,"p99":23,"max":24}},"frames":300},' +
+  '"shadow":{"draws":{"samples":300,"mean":316.0,"p50":316,"p95":330,"p99":335,"max":340},' +
+  '"frames":300}},"gpuStale":0}';
+
+describe("main-pass draws by source in the perf report", () => {
+  it("reports triangle capacity, selected work and draw origins from the same pass", () => {
+    const jointLine = drawSourceLine.replace(
+      '"main":{',
+      '"main":{"triangles":{"mean":338000000,"p50":338000000,"p95":338000000},"gpuTriangles":402000,',
+    );
+    const parsed = parsePerformanceMarkers(`${budgetLine(1, 30, 40, 20)}\n${jointLine}\n`);
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+    expect(text).toContain("main pass triangles: 402,000 GPU-selected, 338,000,000 CPU capacity");
+    expect(text).toContain("gpuScene 211, terrain 62, chunks 30, other 20 — 323 draws in the pass");
+  });
+
+  it("should print one line, ranked, against the pass's own draws", () => {
+    const parsed = parsePerformanceMarkers(`${budgetLine(1, 30, 40, 20)}\n${drawSourceLine}\n`);
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+    const line = text.split("\n").find((row) => row.includes("main-pass draws by source")) ?? "";
+
+    expect(line).toBe(
+      "main-pass draws by source, window 3 p50: gpuScene 211, terrain 62, chunks 30, other 20 — 323 draws in the pass",
+    );
+  });
+
+  it("should say the split was not reported rather than print an empty ranking", () => {
+    const parsed = parsePerformanceMarkers(`${budgetLine(1, 30, 40, 20)}\n`);
+    const text = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "log"));
+
+    expect(text).toContain("main-pass draws by source: not reported");
   });
 });
 
@@ -789,4 +1014,319 @@ describe("windows too short to carry a display rate", () => {
       expect.objectContaining({ code: "TN_PERF_MIN_FPS", observed: 60.4, window: 3 }),
     ]);
   });
+});
+
+/** `/proc/<pid>/status`, the shape a Linux host reports. */
+const PROC_STATUS =
+  "Name:\tthreenative\nVmPeak:\t  8123456 kB\nVmSize:\t  8123456 kB\n" +
+  "VmHWM:\t    307200 kB\nVmRSS:\t    245760 kB\nThreads:\t9\n";
+
+/** The summary block of `adb shell dumpsys meminfo <pid>`. */
+const DUMPSYS_MEMINFO =
+  "Applications Memory Usage (in Kilobytes):\nUptime: 12345 Realtime: 12345\n\n" +
+  "** MEMINFO in pid 4321 [com.three.game] **\n" +
+  " TOTAL PSS:   100352      TOTAL RSS:   181983      TOTAL SWAP PSS:        0\n";
+
+describe("perf carries the host load it ran under", () => {
+  it("reads the cores and one-minute load from the injected source", () => {
+    expect(readHostLoad({ cores: () => 8, loadavg: () => [1.5, 1.4, 1.3] })).toEqual({ cores: 8, load1: 1.5 });
+  });
+
+  it("marks absolutes invalid once the one-minute load passes half the cores", () => {
+    expect(absolutesVerdict({ cores: 8, load1: 4 })).toBe("valid");
+    expect(absolutesVerdict({ cores: 8, load1: 4.1 })).toBe("invalid-absolute");
+  });
+
+  it("fails closed instead of vouching for absolutes it could not read", () => {
+    expect(() => readHostLoad({ cores: () => 0, loadavg: () => [1] })).toThrow(/TN_PERF_HOST_LOAD_UNREADABLE/u);
+    expect(() => readHostLoad({ cores: () => 8, loadavg: () => [] })).toThrow(/TN_PERF_HOST_LOAD_UNREADABLE/u);
+  });
+
+  it("prints the reading and the verdict, so an absolute number carries what it cost", () => {
+    const loaded = formatPerfReport({
+      ...assessPerfMarkers(parsePerformanceMarkers(sampleStream()), { requireWindows: 2 }, "test"),
+      hostLoad: { cores: 8, load1: 5.4, absolutes: "invalid-absolute" },
+    });
+    expect(loaded).toContain("host load: 1-minute 5.40 on 8 core(s) — absolutes invalid-absolute");
+  });
+});
+
+describe("perf memory readings", () => {
+  it("reads current and peak resident set out of /proc/<pid>/status, in MB", () => {
+    expect(parseProcStatusMemory(PROC_STATUS)).toEqual({ rssMb: 240, rssPeakMb: 300 });
+  });
+
+  it("fails closed on a status file with no VmHWM rather than reporting zero", () => {
+    expect(() => parseProcStatusMemory("Name:\tthreenative\nVmRSS:\t    245760 kB\n")).toThrow(
+      /TN_PERF_RSS_UNREADABLE.*VmHWM/u,
+    );
+  });
+
+  it("reads TOTAL PSS out of dumpsys meminfo, in MB", () => {
+    expect(parseTotalPssMb(DUMPSYS_MEMINFO)).toBe(98);
+  });
+
+  it("fails closed on dumpsys output with no TOTAL PSS line", () => {
+    expect(() => parseTotalPssMb("Applications Memory Usage (in Kilobytes):\n")).toThrow(
+      /TN_PERF_PSS_UNREADABLE/u,
+    );
+  });
+});
+
+/** One RSS sample per 100 frames of a soak, shaped by `rssMb`. */
+function soakSamples(rssMb: (frame: number) => number): ISoakSample[] {
+  return Array.from({ length: SOAK_MIN_FRAMES / 100 }, (_, index) => {
+    const frame = (index + 1) * 100;
+    return { frame, rssMb: rssMb(frame) };
+  });
+}
+
+describe("soakVerdict", () => {
+  it("passes a flat series", () => {
+    const verdict = soakVerdict({ frames: SOAK_MIN_FRAMES, samples: soakSamples(() => 240) });
+    expect(verdict).toMatchObject({ pass: true, growthPct: 0, baselineMb: 240, endMb: 240 });
+  });
+
+  it("passes a series that grows inside the ten percent limit", () => {
+    const verdict = soakVerdict({
+      frames: SOAK_MIN_FRAMES,
+      samples: soakSamples((frame) => (frame <= 300 ? 240 : 240 + (frame - 300) / 150)),
+    });
+    expect(verdict.pass).toBe(true);
+    expect(verdict.growthPct).toBeCloseTo(4.17, 1);
+  });
+
+  it("fails a series that outgrows the baseline after the first 300 frames", () => {
+    const verdict = soakVerdict({
+      frames: SOAK_MIN_FRAMES,
+      samples: soakSamples((frame) => (frame <= 300 ? 240 : 240 + (frame - 300) / 20)),
+    });
+    expect(verdict).toMatchObject({ pass: false, code: "TN_SOAK_RSS_GROWTH", baselineMb: 240, endMb: 315 });
+  });
+
+  it("fails a run whose process died before the requested frames", () => {
+    const verdict = soakVerdict({ frames: SOAK_MIN_FRAMES, samples: soakSamples(() => 240).slice(0, 6) });
+    expect(verdict).toMatchObject({ pass: false, code: "TN_SOAK_CRASH", framesReported: 600 });
+  });
+
+  it("fails a run that produced no sample at all", () => {
+    expect(soakVerdict({ frames: SOAK_MIN_FRAMES, samples: [] })).toMatchObject({
+      pass: false,
+      code: "TN_SOAK_CRASH",
+    });
+  });
+
+  it("rejects a soak shorter than the minimum, from the flag and from the verdict", () => {
+    expect(() => soakVerdict({ frames: 900, samples: [] })).toThrow(/at least 1800 frames/u);
+    expect(() => parsePerfArgs(["--executable", "host", "--soak", "900"])).toThrow(/at least 1800 frames/u);
+    expect(parsePerfArgs(["--executable", "host", "--soak", String(SOAK_MIN_FRAMES)]).soakFrames).toBe(SOAK_MIN_FRAMES);
+  });
+
+  it("needs an executable host to run frames against", () => {
+    expect(() => parsePerfArgs(["--file", "a.log", "--soak", "1800"])).toThrow(/needs --executable/u);
+  });
+});
+
+describe("perfCommand --soak", () => {
+  it("fails a soak whose host stopped short of the requested frames, named", async () => {
+    // Two windows of 300 frames, then the host exits 0 on its own. One steady window is enough
+    // (`--require-windows 1`) so the only finding left is the crash the soak exists to catch.
+    const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10)].join("\n");
+    const script = `process.stdout.write(${JSON.stringify(`${output}\n`)});`;
+    const written: string[] = [];
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
+    const code = await perfCommand([
+      "--executable", process.execPath,
+      "--host-arg", "-e",
+      "--host-arg", script,
+      "--soak", String(SOAK_MIN_FRAMES),
+      "--require-windows", "1",
+    ]);
+    spy.mockRestore();
+    expect(code).toBe(1);
+    const report = JSON.parse(written.join("")) as {
+      pass: boolean;
+      soak?: { pass: boolean; code?: string; samples: number };
+      violations: Array<{ code: string }>;
+    };
+    expect(report.pass).toBe(false);
+    expect(report.soak?.code).toBe("TN_SOAK_CRASH");
+    expect(report.soak?.samples).toBeGreaterThan(0);
+    expect(report.violations).toContainEqual(expect.objectContaining({ code: "TN_SOAK_CRASH" }));
+  });
+});
+
+/** A fake `/proc/<pid>/task/<tid>/{schedstat,comm}` tree, shaped as the kernel reports it. */
+async function fakeProcTree(
+  root: string,
+  pid: number,
+  threads: Record<number, { name: string; cpuNs: number }>,
+): Promise<void> {
+  const taskDir = join(root, String(pid), "task");
+  for (const [tid, thread] of Object.entries(threads)) {
+    await mkdir(join(taskDir, tid), { recursive: true });
+    await writeFile(join(taskDir, tid, "schedstat"), `${thread.cpuNs} 0 0\n`, "utf8");
+    await writeFile(join(taskDir, tid, "comm"), `${thread.name}\n`, "utf8");
+  }
+}
+
+describe("per-frame CPU from the kernel's thread accounting", () => {
+  it("measures process and main-thread ms/frame across a 60-frame window", async () => {
+    const dir = await makeTempDir("tn-perf-cpu-");
+    const pid = 1000;
+    await fakeProcTree(dir, pid, {
+      1000: { name: "main", cpuNs: 1_000_000 },
+      1001: { name: "renderer", cpuNs: 500_000 },
+    });
+    const before = readLinuxCpuSnapshot(pid, dir);
+    await fakeProcTree(dir, pid, {
+      1000: { name: "main", cpuNs: 7_000_000 },
+      1001: { name: "renderer", cpuNs: 5_500_000 },
+    });
+    const after = readLinuxCpuSnapshot(pid, dir);
+
+    const cpu = computeLinuxCpu(
+      [{ window: 0, frames: 300 }, { window: 1, frames: 60 }],
+      [before, after],
+      pid,
+    );
+
+    expect(cpu.method).toBe("linux-schedstat");
+    expect(cpu.windows).toHaveLength(1);
+    expect(cpu.windows[0]?.frames).toBe(60);
+    // Process delta 6,000,000 + 5,000,000 ns over 60 frames.
+    expect(cpu.windows[0]?.processCpuMsPerFrame).toBeCloseTo(11_000_000 / 1e6 / 60, 6);
+    expect(cpu.summary.processCpuMsPerFrameMedian).toBeCloseTo(11_000_000 / 1e6 / 60, 6);
+    // Main thread is the one whose tid equals the pid: 6,000,000 ns / 60.
+    expect(cpu.summary.mainThread).toEqual({ name: "main", cpuMsPerFrameMedian: 0.1 });
+    expect(cpu.windows[0]?.threads.map((thread) => thread.name)).toEqual(["main", "renderer"]);
+  });
+
+  it("names the busiest single thread when the game loop is not the process leader", async () => {
+    const dir = await makeTempDir("tn-perf-cpu-busiest-");
+    const pid = 2000;
+    // A host whose leader idles while a same-named worker thread runs the game loop.
+    await fakeProcTree(dir, pid, {
+      2000: { name: "engine", cpuNs: 0 },
+      2001: { name: "engine", cpuNs: 0 },
+      2002: { name: "audio", cpuNs: 0 },
+    });
+    const before = readLinuxCpuSnapshot(pid, dir);
+    await fakeProcTree(dir, pid, {
+      2000: { name: "engine", cpuNs: 600_000 },
+      2001: { name: "engine", cpuNs: 6_000_000 },
+      2002: { name: "audio", cpuNs: 3_000_000 },
+    });
+    const after = readLinuxCpuSnapshot(pid, dir);
+
+    const cpu = computeLinuxCpu([{ window: 0, frames: 60 }, { window: 1, frames: 60 }], [before, after], pid);
+
+    expect(cpu.summary.mainThread).toEqual({ name: "engine", cpuMsPerFrameMedian: 0.01 });
+    // One thread, not the 0.11 ms/frame both "engine" threads sum to.
+    expect(cpu.summary.busiestThread).toEqual({ name: "engine", cpuMsPerFrameMedian: 0.1 });
+  });
+
+  it("skips and counts a thread that started inside the window", async () => {
+    const dir = await makeTempDir("tn-perf-cpu-");
+    const pid = 2000;
+    await fakeProcTree(dir, pid, { 2000: { name: "main", cpuNs: 1_000_000 } });
+    const before = readLinuxCpuSnapshot(pid, dir);
+    await fakeProcTree(dir, pid, {
+      2000: { name: "main", cpuNs: 2_000_000 },
+      2001: { name: "late", cpuNs: 9_999_999 },
+    });
+    const after = readLinuxCpuSnapshot(pid, dir);
+
+    const cpu = computeLinuxCpu(
+      [{ window: 0, frames: 60 }, { window: 1, frames: 60 }],
+      [before, after],
+      pid,
+    );
+
+    expect(cpu.windows[0]?.skippedThreads).toBe(1);
+    // The late thread's impossible total is not booked: only main's 1,000,000 ns count.
+    expect(cpu.windows[0]?.processCpuMsPerFrame).toBeCloseTo(1_000_000 / 1e6 / 60, 6);
+    expect(cpu.windows[0]?.threads.map((thread) => thread.name)).toEqual(["main"]);
+  });
+
+  it("fails closed on a malformed schedstat rather than reading a zero", async () => {
+    const dir = await makeTempDir("tn-perf-cpu-");
+    const pid = 3000;
+    await fakeProcTree(dir, pid, { 3000: { name: "main", cpuNs: 1 } });
+    await writeFile(join(dir, String(pid), "task", String(pid), "schedstat"), "not a counter\n", "utf8");
+    expect(() => readLinuxCpuSnapshot(pid, dir)).toThrow(/schedstat/u);
+  });
+
+  it("fails closed when a window does not state its frame count", () => {
+    const snapshot: ILinuxCpuSnapshot = { threads: new Map([[7, { name: "main", cpuNs: 1_000 }]]) };
+    const next: ILinuxCpuSnapshot = { threads: new Map([[7, { name: "main", cpuNs: 2_000 }]]) };
+    expect(() => computeLinuxCpu([{ window: 0 }, { window: 1 }], [snapshot, next], 7)).toThrow(
+      /TN_PERF_CPU_FRAME_COUNT_UNREADABLE/u,
+    );
+  });
+
+  it("prints the summary and the busiest threads, and names when it could not measure", () => {
+    const base = assessPerfMarkers(parsePerformanceMarkers(sampleStream()), { requireWindows: 2 }, "test");
+    const text = formatPerfReport({
+      ...base,
+      cpu: {
+        method: "linux-schedstat",
+        summary: {
+          busiestThread: { cpuMsPerFrameMedian: 0.12, name: "renderer" },
+          mainThread: { cpuMsPerFrameMedian: 0.1, name: "main" },
+          processCpuMsPerFrameMedian: 0.2,
+        },
+        windows: [
+          {
+            frames: 60,
+            processCpuMsPerFrame: 0.2,
+            skippedThreads: 1,
+            threads: [
+              { cpuMsPerFrame: 0.1, name: "main" },
+              { cpuMsPerFrame: 0.08, name: "renderer" },
+            ],
+          },
+        ],
+      },
+    });
+    expect(text).toContain("cpu: 0.200 ms/frame process median (linux-schedstat), main thread main 0.100");
+    expect(text).toContain("busiest thread renderer 0.120 ms/frame");
+    expect(text).toContain("renderer");
+    expect(text).toContain("skipped, not counted as zero");
+
+    expect(formatPerfReport({ ...base, cpuUnavailable: "on-CPU time needs Linux" })).toContain(
+      "cpu: not reported — on-CPU time needs Linux",
+    );
+  });
+});
+
+describe("perfCommand --executable CPU", () => {
+  it.runIf(process.platform === "linux")(
+    "reports per-frame CPU from the host's own threads",
+    async () => {
+      const output = [budgetLine(1, 60, 20, 10), budgetLine(2, 60, 20, 10), budgetLine(3, 60, 20, 10)].join("\n");
+      const script = `setInterval(() => {}, 1000); process.stdout.write(${JSON.stringify(`${output}\n`)});`;
+      const written: string[] = [];
+      const spy = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+        written.push(String(chunk));
+        return true;
+      });
+      const code = await perfCommand([
+        "--executable", process.execPath,
+        "--host-arg", "-e",
+        "--host-arg", script,
+      ]);
+      spy.mockRestore();
+      expect(code).toBe(0);
+      const report = JSON.parse(written.join("")) as {
+        cpu?: { method: string; windows: unknown[]; summary: { mainThread: { name: string } } };
+      };
+      expect(report.cpu?.method).toBe("linux-schedstat");
+      expect(report.cpu?.windows).toHaveLength(2);
+      expect(report.cpu?.summary.mainThread.name.length).toBeGreaterThan(0);
+    },
+  );
 });

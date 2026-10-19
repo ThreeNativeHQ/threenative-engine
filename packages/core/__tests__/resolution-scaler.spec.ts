@@ -124,6 +124,38 @@ describe("ResolutionScaler", () => {
     expect(scaler.scale).toBe(0.85);
   });
 
+  // PRD-563: a class start is a guess, and measurement always wins over it.
+  describe("starting on the rung an adapter class names", () => {
+    const start = RESOLUTION_SCALER.startScaleByGpuClass["mobile-low"];
+
+    it("starts one rung down for mobile-low and at the ceiling for every other class", () => {
+      expect(start).toBe(0.85);
+      expect(new ResolutionScaler({ start, targetFps: 60 }).scale).toBe(0.85);
+      for (const unnamed of [
+        "discrete",
+        "integrated",
+        "software",
+        "unknown",
+        "mobile-high",
+      ] as const)
+        expect(RESOLUTION_SCALER.startScaleByGpuClass[unnamed]).toBeUndefined();
+      expect(new ResolutionScaler({ targetFps: 60 }).scale).toBe(1.0);
+    });
+
+    it("steps down from the class rung on the first measured miss", () => {
+      const scaler = new ResolutionScaler({ start, targetFps: 60 });
+      feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows);
+      expect(scaler.observe(budget(UNDER_TARGET))).toBeLessThan(0.85);
+    });
+
+    it("climbs back to the ceiling after four clean windows when the GPU holds the target", () => {
+      const scaler = new ResolutionScaler({ start, targetFps: 60 });
+      feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows + 3);
+      expect(scaler.scale).toBe(0.85);
+      expect(scaler.observe(budget(AT_TARGET))).toBe(1.0);
+    });
+  });
+
   it("climbs only after four consecutive windows at the target, and slowly", () => {
     const scaler = new ResolutionScaler({ start: 0.61, targetFps: 60 });
     feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows + 3);
@@ -195,6 +227,26 @@ describe("ResolutionScaler", () => {
     expect(scaler.observe(budget(UNDER_TARGET))).toBeLessThan(1);
   });
 
+  it("emits the lower pinned rung when timer-less oscillation ends on an upward step", () => {
+    const scaler = new ResolutionScaler({ targetFps: 60, start: 0.85 });
+    feed(scaler, AT_TARGET, RESOLUTION_SCALER.warmupWindows);
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      feed(scaler, AT_TARGET, RESOLUTION_SCALER.upWindows);
+      expect(scaler.scale).toBe(1);
+      scaler.observe(budget(AT_TARGET)); // resize cooldown
+      expect(scaler.observe(budget(58))).toBe(0.85);
+      scaler.observe(budget(AT_TARGET)); // resize cooldown
+    }
+    feed(scaler, AT_TARGET, RESOLUTION_SCALER.upWindows - 1);
+    expect(scaler.observe(budget(AT_TARGET))).toBe(0.85);
+    expect(scaler.scale).toBe(0.85);
+    expect(scaler.scaleSource).toBe("auto-pinned");
+    feed(scaler, AT_TARGET, RESOLUTION_SCALER.oscillationWindows - 1);
+    expect(scaler.scale).toBe(0.85);
+    expect(scaler.observe(budget(AT_TARGET))).toBe(0.85);
+    expect(scaler.scaleSource).toBe("auto");
+  });
+
   it("scales its triggers to the configured target rather than assuming 60", () => {
     const scaler = new ResolutionScaler({ targetFps: 30 });
     feed(scaler, 30, RESOLUTION_SCALER.warmupWindows, 33.3);
@@ -212,5 +264,75 @@ describe("ResolutionScaler", () => {
       );
     }
     expect(() => new ResolutionScaler({ start: 0.5, targetFps: 60 })).toThrow(/rung/u);
+  });
+
+  it("judges a stalled window on its ordinary frame when that frame alone misses the budget", () => {
+    // PRD-549, Intel Iris Xe: shadow redraws stall every window (p99 ~16x p50), and the ordinary
+    // frame is still slow (p50 11 ms, GPU 25 ms against 8.33). Deferring every such window held
+    // the scale at 1.0 for the whole walk.
+    const weak = new ResolutionScaler({ targetFps: 120 });
+    weak.observe({ fps: 120, presented: { p50: 8.3, p95: 8.3, p99: 8.3, max: 8.3 } });
+    const stalledSlow = {
+      fps: 37,
+      gpuAgeFrames: 0,
+      gpuMs: 25,
+      presented: { p50: 11, p95: 60, p99: 180, max: 350 },
+    };
+    expect(weak.observe(stalledSlow)).toBeLessThan(1);
+
+    // The laptop's measured window (live11, Iris Xe): the presented median reads 7 ms because the
+    // GPU-bound frame does not show in the present interval, while the main pass is 30 ms and the
+    // window runs at 35 fps. The GPU is the evidence, not the present median.
+    const igpu = new ResolutionScaler({ targetFps: 120 });
+    igpu.observe({ fps: 120, presented: { p50: 8.3, p95: 8.3, p99: 8.3, max: 8.3 } });
+    expect(
+      igpu.observe({
+        fps: 35,
+        gpuAgeFrames: 0,
+        gpuMs: 30,
+        presented: { p50: 7, p95: 40, p99: 230, max: 900 },
+      }),
+    ).toBeLessThan(1);
+
+    // live12 on the same laptop: the last resolve at window close is 438 frames old, past
+    // `maxGpuAgeFrames`, yet the window holds 25 GPU samples of its own at a 39 ms median. Those
+    // samples are this window's, so they are fresh however late the last one resolved.
+    const lagged = new ResolutionScaler({ targetFps: 120 });
+    lagged.observe({ fps: 120, presented: { p50: 8.3, p95: 8.3, p99: 8.3, max: 8.3 } });
+    expect(
+      lagged.observe({
+        fps: 41,
+        gpu: { p50: 39, samples: 25 },
+        gpuAgeFrames: 438,
+        gpuMs: 38.9,
+        presented: { p50: 10.6, p95: 101, p99: 235, max: 900 },
+      }),
+    ).toBeLessThan(1);
+
+    // A game whose ordinary frame meets its target keeps the stall deferral: its hitches are not
+    // a frame rate, and fewer pixels would not bring them back.
+    const hitchy = new ResolutionScaler({ targetFps: 60 });
+    hitchy.observe({ fps: 60, presented: { p50: 16.6, p95: 16.7, p99: 16.7, max: 16.7 } });
+    expect(
+      hitchy.observe({
+        fps: 55,
+        gpuAgeFrames: 0,
+        gpuMs: 7,
+        presented: { p50: 16.6, p95: 17, p99: 400, max: 420 },
+      }),
+    ).toBeUndefined();
+    expect(hitchy.scale).toBe(1);
+
+    // And a stalled window is never grounds to climb, whatever its GPU says.
+    const low = new ResolutionScaler({ start: 0.72, targetFps: 120 });
+    low.observe({ fps: 120, presented: { p50: 8.3, p95: 8.3, p99: 8.3, max: 8.3 } });
+    for (let window = 0; window < 8; window += 1)
+      low.observe({
+        fps: 150,
+        gpuAgeFrames: 0,
+        gpuMs: 2,
+        presented: { p50: 6, p95: 7, p99: 90, max: 120 },
+      });
+    expect(low.scale).toBe(0.72);
   });
 });

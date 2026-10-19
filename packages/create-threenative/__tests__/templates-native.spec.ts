@@ -53,10 +53,25 @@ async function bundle(
 }
 
 /** A project with a stub runtime-native whose desktop packager is `packager`. */
+/** Package entry is both the selected-runtime resolver and a subprocess executable. */
+async function writePackager(runtime: string, target: string, source: string): Promise<void> {
+  await writeFile(path.join(runtime, `scripts/package-${target}-execute.mjs`), source);
+  await writeFile(
+    path.join(runtime, `scripts/package-${target}.mjs`),
+    `
+import { pathToFileURL } from "node:url";
+export async function resolveDesktopRuntime() { return import.meta.filename; }
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await import("./package-${target}-execute.mjs");
+}
+`,
+  );
+}
+
 async function stubRuntime(
   project: string,
   packager: string,
-  config = 'export default { ui: { renderer: "native" } };\n',
+  config = 'export default { engine: "threejs", ui: { renderer: "native" } };\n',
 ): Promise<void> {
   const runtime = path.join(project, "node_modules/@threenative/runtime-native");
   await mkdir(path.join(runtime, "scripts"), { recursive: true });
@@ -79,7 +94,7 @@ await mkdir(path.dirname(output), { recursive: true });
 await writeFile(output, "globalThis.__nativeProof = true;\\n");
 `,
   );
-  await writeFile(path.join(runtime, "scripts/package-desktop.mjs"), packager);
+  await writePackager(runtime, "desktop", packager);
 }
 
 /** The packager the staged-publish tests share: a complete run that writes its output. */
@@ -94,6 +109,7 @@ await writeFile(output, "a complete package");
 function budgetedProject(severity: "error" | "warn", limit = 17): string {
   return [
     "export default {",
+    '  engine: "threejs",',
     `  buildProfiles: { defaults: { desktop: "capped" }, profiles: { capped: { artifactBudget: { artifactBytes: { limit: ${limit}, severity: "${severity}" } } } } },`,
     '  ui: { renderer: "native" },',
     "};",
@@ -379,6 +395,7 @@ export default { start: async () => console.info(marker) };
       path.join(project, "threenative.config.ts"),
       [
         "export default {",
+        '  engine: "threejs",',
         '  assets: { output: "cooked" },',
         '  display: { orientation: "portrait" },',
         '  ui: { renderer: "native" },',
@@ -408,8 +425,9 @@ await writeFile(output, "globalThis.__nativeProof = true;\\n");
 `,
     );
     for (const target of ["desktop", "android", "ios"] as const) {
-      await writeFile(
-        path.join(runtime, `scripts/package-${target}.mjs`),
+      await writePackager(
+        runtime,
+        target,
         `import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 const output = process.argv[process.argv.indexOf("--output") + 1];
@@ -433,8 +451,12 @@ await writeFile(new URL("../${target}-args.json", import.meta.url), JSON.stringi
     }
   });
 
-  it("builds a project with no config file through all native targets using defaults", async () => {
+  it("builds a project with only the legacy engine named through all native targets using defaults", async () => {
     const project = await projectRoot("threenative-native-no-config-");
+    await writeFile(
+      path.join(project, "threenative.config.ts"),
+      'export default { engine: "threejs" };\n',
+    );
     await mkdir(path.join(project, "src/ui"), { recursive: true });
     await writeFile(
       path.join(project, "src/ui/main.tsx"),
@@ -462,8 +484,9 @@ await writeFile(output, "export default { start() {} };\\n");
 `,
     );
     for (const target of ["desktop", "android", "ios"] as const) {
-      await writeFile(
-        path.join(runtime, `scripts/package-${target}.mjs`),
+      await writePackager(
+        runtime,
+        target,
         `import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 const output = process.argv[process.argv.indexOf("--output") + 1];

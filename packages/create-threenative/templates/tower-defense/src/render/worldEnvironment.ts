@@ -18,9 +18,13 @@ import {
   AgXToneMapping,
   type Camera,
   type DirectionalLight,
+  MaterialBlending,
   NeutralToneMapping,
   type PerspectiveCamera,
+  type RenderTarget,
   type Scene,
+  type Texture,
+  Vector2,
 } from "three";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
@@ -32,6 +36,7 @@ import { ssgi } from "three/addons/tsl/display/SSGINode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import {
+  clamp,
   color,
   convertToTexture,
   float,
@@ -42,11 +47,15 @@ import {
   output,
   pass,
   roughness,
-  screenUV,
   smoothstep,
+  uniform,
+  uv,
   vec2,
+  vec4,
 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
+import { AutoExposureNode, applyExposure } from "./autoExposure.js";
+import { type IExposureSettings, exposureSettings } from "./exposure.js";
 
 /** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
 export type ScreenSpaceAA = "smaa" | "fxaa" | "disabled";
@@ -74,6 +83,8 @@ const TONEMAP: Record<TonemapMode, number> = {
 };
 
 export interface IWorldEnvironmentOptions {
+  /** World-pass MSAA samples. Omit to inherit the renderer; 0 leaves post AA in charge. */
+  readonly samples?: number;
   /** Screen-space indirect diffuse light. Godot calls this `ssil_enabled`. */
   readonly ssgiEnabled?: boolean;
   readonly ssgiQuality?: SsgiQuality;
@@ -243,6 +254,10 @@ export interface IWorldEnvironmentOptions {
    * class falls back to that scalar; when any stage runs, this multiply is the shutter.
    */
   readonly exposure?: number;
+  /** Cost opt-in. False retains the direct constant-exposure path. */
+  readonly autoExposureEnabled?: boolean;
+  /** Editable game policy; disabled application still measures when cost is opted in. */
+  readonly exposurePolicy?: Readonly<IExposureSettings>;
 }
 
 export interface IWorldEnvironmentTarget {
@@ -266,6 +281,10 @@ export interface IWorldEnvironmentTarget {
  * compiler checks the composition instead of taking a cast's word for it.
  */
 type ChainNode = Node<"vec4">;
+type ResolutionSubrectView = {
+  readonly viewFraction: Vector2;
+  readonly halfTexel: Vector2;
+};
 /**
  * The scene pass's depth texture, as the pass itself types it.
  *
@@ -276,6 +295,15 @@ export type DepthTextureNode = ReturnType<ReturnType<typeof pass>["getTextureNod
 type ChainTier = "high" | "medium" | "low" | "off";
 type ChainContext = {
   readonly tier: ChainTier;
+  readonly resolutionSubrect?: ResolutionSubrectView;
+  /**
+   * The sampled velocity texture, present only when this chain request provisioned one.
+   *
+   * Distinct from the accessor TRAANode wants: the chain passes the texture here and installs the
+   * accessor on the graph separately, so a stage that handed this node over as the accessor would
+   * sample a texture that no fragment stage writes.
+   */
+  readonly velocityNode?: Node;
 };
 /**
  * What a kit's `authoredStages` factory is handed. The depth node is the scene pass's, so a
@@ -284,15 +312,35 @@ type ChainContext = {
 export interface IWorldEnvironmentStageContext {
   readonly depthNode: DepthTextureNode;
   readonly tier: ChainTier;
+  /** The camera the scene pass renders with, which is the one a temporal stage must jitter. */
+  readonly camera: Camera;
 }
 
 export type ChainStage = {
   readonly name: string;
+  readonly supportsResolutionSubrect?: boolean;
   readonly before?: string;
   readonly after?: string;
+  /**
+   * This stage reads display-referred colour — tone-mapped and sRGB-encoded — so the chain
+   * installs the graph with the renderer's automatic output transform switched off and the stage
+   * applies that transform itself (`renderOutput` from `three/tsl`).
+   *
+   * For effects authored against the picture rather than against light: a `.cube` table, an
+   * sRGB-space edge filter. Such a stage runs last and may not declare an anchor, and the chain
+   * only hands the renderer its transform back when the stage was actually refused.
+   */
+  readonly afterOutputTransform?: boolean;
   readonly available?: (context: ChainContext) => boolean | string;
   readonly dispose?: () => void;
   readonly minimumTier?: ChainTier;
+  /**
+   * A temporal stage's completed rejection measurement. Its shape is the engine's velocity
+   * contract, restated here so this file keeps importing nothing, and it is asked once per frame
+   * after rendering. A stage that has not built, or has nothing landed yet, answers `undefined` —
+   * which the chain reports as absent rather than as zero.
+   */
+  readonly rejectionMeasurement?: () => { frame: number; rejectionFraction: number } | undefined;
   /** The chain plumbing is stage-agnostic, so it names the node it carries `unknown`. */
   readonly build: (input: unknown, context: ChainContext) => unknown;
 };
@@ -307,6 +355,7 @@ export type ChainStage = {
  */
 function stage(definition: {
   readonly name: ChainStage["name"];
+  readonly supportsResolutionSubrect?: boolean;
   readonly dispose?: () => void;
   readonly available?: (context: ChainContext) => boolean | string;
   readonly build: (input: ChainNode, context: ChainContext) => ChainNode;
@@ -327,20 +376,109 @@ function stage(definition: {
 function denoised(node: ReturnType<typeof denoise>): ChainNode {
   return node as unknown as ChainNode;
 }
+type OutputInstallation = { isCurrent(): boolean; dispose(): void };
+type ResolutionSubrectTarget = {
+  setSize(width: number, height: number, depth?: number): void;
+};
+type ResolutionSubrectController = {
+  readonly active?: boolean;
+  readonly view?: ResolutionSubrectView;
+  retain(node: ResolutionSubrectTarget, targets: readonly RenderTarget[]): void;
+  release(node: ResolutionSubrectTarget): void;
+  textureView(texture: Texture): ResolutionSubrectView | undefined;
+  dispose(): void;
+};
+type OutputSetter =
+  | ((node: unknown, worldPass?: unknown) => void)
+  | ((node: unknown, worldPass?: unknown) => OutputInstallation);
+
+type SampledTexture = TextureNode & {
+  setupUV(builder: NodeBuilder, coordinates: Node<"vec2">): Node<"vec2">;
+};
+
+/** Cloned neighbourhood samplers retain the same per-texture viewport clamp. */
+function bindSubrectSampler(
+  node: TextureNode,
+  view: ResolutionSubrectController,
+  bound: WeakSet<object>,
+): void {
+  if (bound.has(node)) return;
+  bound.add(node);
+  const sampled = node as SampledTexture;
+  const full = new Vector2(1, 1);
+  const zero = new Vector2();
+  const fraction = uniform(full).onRenderUpdate(() =>
+    view.active ? (view.textureView(node.value)?.viewFraction ?? full) : full,
+  );
+  const half = uniform(zero).onRenderUpdate(() =>
+    view.active ? (view.textureView(node.value)?.halfTexel ?? zero) : zero,
+  );
+  const setup = sampled.setupUV;
+  sampled.uvNode ??= uv();
+  sampled.setupUV = function (builder, coordinates) {
+    return setup.call(this, builder, coordinates.mul(fraction).clamp(half, fraction.sub(half)));
+  };
+  const clone = sampled.clone;
+  sampled.clone = function () {
+    const next = clone.call(this);
+    bindSubrectSampler(next, view, bound);
+    return next;
+  };
+}
+
+function bindSubrectTexture(
+  node: TextureNode,
+  view: ResolutionSubrectController,
+  bound: WeakSet<object>,
+): void {
+  if (Reflect.get(node, "isRTTNode") === true && !bound.has(node)) {
+    const rtt = node as TextureNode & {
+      width: number | null;
+      setSize(w: number, h: number): void;
+      renderTarget: RenderTarget;
+      updateBefore(frame: unknown): void;
+    };
+    view.retain(rtt, [rtt.renderTarget]);
+    const update = rtt.updateBefore;
+    rtt.updateBefore = function (frame) {
+      // Stock RTT bypasses setSize during auto-resize; the controller owns it while active.
+      this.width = view.active ? 1 : null;
+      update.call(this, frame);
+    };
+  }
+  bindSubrectSampler(node, view, bound);
+}
+
 export type OutputRenderer = {
   kind: string;
   raw: unknown;
+  createResolutionSubrect?: () => ResolutionSubrectController;
   /**
    * Installs a node graph directly. Only reached when a `baseColour` is composed and every
    * stage is off: the chain installs nothing for an empty stage list, and dropping the game's
    * own composition on the floor would be the silent no-op this class exists to prevent.
    */
-  setOutputNode?: (node: unknown) => void;
+  setOutputNode?: OutputSetter;
+  /** Legacy node-only clear. The returned receipt distinguishes same-node reinstalls. */
+  clearOutputNode?: (expectedNode?: unknown) => void;
   createRenderChain?: (options: {
     input?: unknown;
     worldPass?: unknown;
-    request?: { stages?: readonly string[]; tier?: ChainContext["tier"] };
+    request?: {
+      stages?: readonly string[];
+      tier?: ChainContext["tier"];
+      /**
+       * The scene pass that owns the shared velocity output, for a temporal stage to read. Its
+       * shape is the engine's velocity contract, restated here so this file keeps importing
+       * nothing: `pass(scene, camera)` returns exactly this.
+       */
+      velocity?: {
+        pass?: ReturnType<typeof pass>;
+        rejectionMeasurement?: () => { frame: number; rejectionFraction: number } | undefined;
+      };
+    };
     stages?: readonly ChainStage[];
+    resolutionSubrect?: ResolutionSubrectController;
   }) => {
     applied: { dropped: readonly { name: string; reason: string }[]; stages: readonly string[] };
     dispose(): void;
@@ -356,7 +494,8 @@ export type OutputRenderer = {
  * unless it reads that line.
  */
 export class WorldEnvironment {
-  readonly #options: Required<IWorldEnvironmentOptions>;
+  readonly #options: Required<Omit<IWorldEnvironmentOptions, "samples">> &
+    Pick<IWorldEnvironmentOptions, "samples">;
 
   constructor(options: IWorldEnvironmentOptions = {}) {
     const quality = options.ssgiQuality ?? "medium";
@@ -380,6 +519,7 @@ export class WorldEnvironment {
       );
     }
     this.#options = {
+      samples: options.samples,
       // A kit with no stages of its own is the common case, so both default to empty rather
       // than to a branch every call site has to remember.
       authoredStageNames: options.authoredStageNames ?? [],
@@ -415,6 +555,8 @@ export class WorldEnvironment {
       renderChainTier,
       tonemapMode,
       exposure: options.exposure ?? 1,
+      autoExposureEnabled: options.autoExposureEnabled ?? false,
+      exposurePolicy: options.exposurePolicy ?? exposureSettings,
     };
   }
 
@@ -431,6 +573,7 @@ export class WorldEnvironment {
     dropped: readonly { name: string; reason: string }[];
     stages: readonly string[];
     dispose?: () => void;
+    exposure?: AutoExposureNode;
   } {
     const options = this.#options;
     const raw = renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
@@ -461,20 +604,50 @@ export class WorldEnvironment {
     // applied as a multiply on the scene pass instead: scene-referred, so every downstream
     // stage sees the exposed image and the bloom threshold means the same thing at any
     // exposure. Both land at the same point in the graph — before the tone curve.
-    if (requested.length === 0 && target.baseColour === undefined) {
+    if (requested.length === 0 && target.baseColour === undefined && !options.autoExposureEnabled) {
       raw.toneMappingExposure = options.exposure;
       this.#reportApplied([], []);
       return { dropped: [], stages: [] };
     }
+    if (options.autoExposureEnabled && renderer.kind !== "webgpu")
+      throw new Error(`Automatic exposure requires WebGPU; renderer:${renderer.kind}`);
+    if (requested.length === 0 && renderer.kind !== "webgpu") {
+      const dropped = [{ name: "baseColour", reason: `renderer:${renderer.kind}` }];
+      this.#reportApplied([], dropped);
+      return { dropped, stages: [] };
+    }
+    const resolutionSubrectRefusal =
+      target.baseColour !== undefined
+        ? { name: "baseColour", reason: "custom base colour sampling is not supported" }
+        : options.autoExposureEnabled
+          ? { name: "autoExposure", reason: "automatic exposure sampling is not supported" }
+          : undefined;
+    if (resolutionSubrectRefusal !== undefined)
+      console.info(
+        `TN_RESOLUTION_SUBRECT ${JSON.stringify({ applied: [], refused: [resolutionSubrectRefusal] })}`,
+      );
     raw.toneMappingExposure = 1;
 
-    const scenePass = pass(scene, camera);
+    const scenePass = pass(scene, camera, { samples: options.samples });
+    const resolutionSubrect =
+      requested.length === 0 || resolutionSubrectRefusal !== undefined
+        ? undefined
+        : renderer.createResolutionSubrect?.();
+    resolutionSubrect?.retain(scenePass, [scenePass.renderTarget]);
+    const boundSamplers = new WeakSet<object>();
+    const sample = (node: TextureNode): void => {
+      if (resolutionSubrect) bindSubrectTexture(node, resolutionSubrect, boundSamplers);
+    };
     // Normals come from the multi-render-target alongside the colour. SSGI can derive them
     // from depth alone, but the derived normal is flat across a triangle, which shows up as
     // faceted bounce on exactly the smooth surfaces GI is bought for. Metalness and
     // roughness ride along so SSR knows which pixels are supposed to reflect.
     if (options.ssgiEnabled || options.ssrEnabled || options.gtaoEnabled) {
-      scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
+      // The normal target uses the material blend mode. Its alpha is zero, so a transparent card
+      // keeps the opaque normal beneath it. GTAO then does not darken a square behind the card.
+      const sceneMrt = mrt({ output, normal: vec4(normalView, 0), metalness, roughness });
+      sceneMrt.setBlendMode("normal", new BlendMode(MaterialBlending));
+      scenePass.setMRT(sceneMrt);
     }
     // Requested lazily, and this is not a micro-optimisation. **Asking a pass for `normal`,
     // `metalness` or `roughness` is what creates the extra render target.** A tier that runs none
@@ -488,6 +661,7 @@ export class WorldEnvironment {
       const cached = nodes.get(name);
       if (cached !== undefined) return cached;
       const node = scenePass.getTextureNode(name);
+      sample(node);
       nodes.set(name, node);
       return node;
     };
@@ -500,11 +674,44 @@ export class WorldEnvironment {
     const view = camera as PerspectiveCamera;
 
     const base = target.baseColour?.(scenePass) ?? scenePass.getTextureNode("output");
-    const exposed = convertToTexture(base).mul(options.exposure);
+    const colour = convertToTexture(base);
+    sample(colour);
+    const exposure = options.autoExposureEnabled
+      ? new AutoExposureNode(colour, options.exposurePolicy, options.exposure)
+      : undefined;
+    const exposed =
+      exposure === undefined
+        ? colour.mul(options.exposure)
+        : applyExposure(colour, exposure.exposureNode);
+    let released = false;
+    const releaseGraph = (): void => {
+      if (released) return;
+      released = true;
+      exposure?.dispose();
+      // Only a newly created RTT is ours. A PassNode converts to a borrowed PassTextureNode;
+      // supplied TextureNodes/RTTs belong to the caller even when their resources are shared.
+      if (colour !== base && Reflect.get(colour, "isRTTNode") === true) {
+        const owned = colour as unknown as {
+          renderTarget: { dispose(): void };
+          _quadMesh: { material: { dispose(): void } };
+        };
+        owned.renderTarget.dispose();
+        owned._quadMesh.material.dispose();
+      }
+      resolutionSubrect?.dispose();
+      scenePass.dispose();
+    };
+    const subrectTexture = (input: ChainNode): ReturnType<typeof convertToTexture> => {
+      const texture = convertToTexture(input);
+      sample(texture);
+      return texture;
+    };
     const giDenoise = (node: ChainNode): ChainNode =>
       options.denoiseEnabled ? denoised(denoise(node, depth(), normal(), view)) : node;
 
     let releaseBloom = (): void => {};
+    let releaseAo = (): void => {};
+    let releaseAa = (): void => {};
     const stages: ChainStage[] = [
       stage({
         name: "ssgi",
@@ -553,12 +760,27 @@ export class WorldEnvironment {
       }),
       stage({
         name: "ambientOcclusion",
+        supportsResolutionSubrect: true,
+        dispose: () => {
+          releaseAo();
+          releaseAo = () => {};
+        },
         build: (input) => {
-          const contact = ao(depth(), normal(), view);
+          const contact = ao(subrectTexture(depth()), subrectTexture(normal()), view);
           contact.radius.value = options.gtaoRadius;
           contact.scale.value = options.gtaoScale;
           contact.samples.value = options.gtaoSamples;
           contact.resolutionScale = options.gtaoResolutionScale;
+          const retained = contact as unknown as {
+            setSize(w: number, h: number): void;
+            _aoRenderTarget: RenderTarget;
+          };
+          resolutionSubrect?.retain(retained, [retained._aoRenderTarget]);
+          sample(contact.getTextureNode());
+          releaseAo = () => {
+            resolutionSubrect?.release(retained);
+            contact.dispose();
+          };
           // `RedFormat`, like SSGI's AO target: `.r` is the whole occlusion term, and
           // multiplying by the vec4 would zero green and blue and render the scene red.
           // Applied before SSGI by the chain's canonical order; composing it after the GI
@@ -568,9 +790,25 @@ export class WorldEnvironment {
           // Denoised with the same depth-aware filter as the GI gather: GTAO's interleaved
           // sampling otherwise reads as a speckled halo around every contact — around feet on a
           // plain floor most of all — which is exactly the "not smooth" a player notices first.
-          const occlusion = options.denoiseEnabled
-            ? denoised(denoise(contact.getTextureNode(), depth(), normal(), view))
-            : contact;
+          const filter = options.denoiseEnabled
+            ? denoise(contact.getTextureNode(), depth(), normal(), view)
+            : undefined;
+          if (filter && resolutionSubrect) {
+            const denoiser = filter as unknown as {
+              textureNode: TextureNode;
+              _resolution: { value: Vector2 };
+              updateBefore(): void;
+            };
+            const update = denoiser.updateBefore;
+            denoiser.updateBefore = function () {
+              update.call(this);
+              const fraction = resolutionSubrect.active
+                ? resolutionSubrect.textureView(this.textureNode.value)?.viewFraction
+                : undefined;
+              if (fraction) this._resolution.value.multiply(fraction);
+            };
+          }
+          const occlusion = filter ? denoised(filter) : contact;
           return input.mul(occlusion.r);
         },
       }),
@@ -657,19 +895,83 @@ export class WorldEnvironment {
       }),
       stage({
         name: "bloom",
+        supportsResolutionSubrect: true,
         dispose: () => {
           releaseBloom();
           releaseBloom = () => {};
         },
         build: (input) => {
-          const texture = convertToTexture(input);
+          const texture = subrectTexture(input);
+          const colour = input;
           const effect = bloom(
             texture,
             options.bloomStrength,
             options.bloomRadius,
             options.bloomThreshold,
           );
+          if (resolutionSubrect) {
+            const retained = effect as unknown as {
+              setSize(w: number, h: number): void;
+              setup(builder: NodeBuilder): unknown;
+              getResolutionScale(): number;
+              _separableBlurMaterials: { invSize: { value: Vector2 } }[];
+              _renderTargetBright: RenderTarget;
+              _renderTargetsHorizontal: RenderTarget[];
+              _renderTargetsVertical: RenderTarget[];
+              _textureOutput: TextureNode;
+              _textureNodeBright: TextureNode;
+              _textureNodeBlur0: TextureNode;
+              _textureNodeBlur1: TextureNode;
+              _textureNodeBlur2: TextureNode;
+              _textureNodeBlur3: TextureNode;
+              _textureNodeBlur4: TextureNode;
+              _getSeparableBlurMaterial(
+                builder: NodeBuilder,
+                radius: number,
+              ): { colorTexture: TextureNode };
+            };
+            // Stock bloom floors its last mip to zero on small views; clamp both target and texel size.
+            retained.setSize = function (width, height) {
+              let x = Math.max(1, Math.floor(width * this.getResolutionScale()));
+              let y = Math.max(1, Math.floor(height * this.getResolutionScale()));
+              this._renderTargetBright.setSize(x, y);
+              for (const [index, horizontal] of this._renderTargetsHorizontal.entries()) {
+                horizontal.setSize(x, y);
+                this._renderTargetsVertical[index]?.setSize(x, y);
+                this._separableBlurMaterials[index]?.invSize.value.set(1 / x, 1 / y);
+                x = Math.max(1, Math.floor(x / 2));
+                y = Math.max(1, Math.floor(y / 2));
+              }
+            };
+            const setup = retained.setup;
+            retained.setup = function (builder) {
+              const result = setup.call(this, builder);
+              resolutionSubrect.retain(retained, [
+                retained._renderTargetBright,
+                ...retained._renderTargetsHorizontal,
+                ...retained._renderTargetsVertical,
+              ]);
+              return result;
+            };
+            for (const node of [
+              retained._textureNodeBright,
+              retained._textureNodeBlur0,
+              retained._textureNodeBlur1,
+              retained._textureNodeBlur2,
+              retained._textureNodeBlur3,
+              retained._textureNodeBlur4,
+              retained._textureOutput,
+            ])
+              sample(node);
+            const material = retained._getSeparableBlurMaterial;
+            retained._getSeparableBlurMaterial = function (builder, radius) {
+              const result = material.call(this, builder, radius);
+              sample(result.colorTexture);
+              return result;
+            };
+          }
           releaseBloom = () => {
+            resolutionSubrect?.release(effect as unknown as ResolutionSubrectTarget);
             effect.dispose();
             // convertToTexture may return its input. Only the newly allocated RTT is ours.
             const scratch = texture as unknown as {
@@ -678,23 +980,26 @@ export class WorldEnvironment {
               _quadMesh: { material: { dispose(): void } };
             };
             if (texture !== input && scratch.isRTTNode === true) {
+              resolutionSubrect?.release(texture as unknown as ResolutionSubrectTarget);
               scratch.renderTarget.dispose();
               scratch._quadMesh.material.dispose();
             }
           };
-          return input.add(effect);
+          return colour.add(effect);
         },
       }),
       stage({
         name: "vignette",
+        supportsResolutionSubrect: true,
         build: (input) => {
+          const colour = input;
           // Radius measured from the centre in screen-diagonal units, so the corner is 1
           // and the falloff does not change shape when the window does. It starts at 0.55 —
           // well outside the subject in a 16:9 frame — so the vignette is a corner, not a
           // spotlight.
-          const radius = screenUV.sub(vec2(0.5, 0.5)).mul(vec2(1.78, 1)).length().mul(1.04);
+          const radius = uv().sub(vec2(0.5, 0.5)).mul(vec2(1.78, 1)).length().mul(1.04);
           const fall = smoothstep(float(0.55), float(1.02), radius).mul(options.vignetteAmount);
-          return input.mul(fall.oneMinus());
+          return colour.mul(fall.oneMinus());
         },
       }),
       {
@@ -702,6 +1007,11 @@ export class WorldEnvironment {
         // stage after it would put the stairsteps back.
         name: "antialias",
         after: "gradualBackground",
+        supportsResolutionSubrect: true,
+        dispose: () => {
+          releaseAa();
+          releaseAa = () => {};
+        },
         build: (input) => {
           const colour = input as ChainNode;
           // SMAA and FXAA find edges by local contrast and expect display-range colour, but this is
@@ -710,9 +1020,58 @@ export class WorldEnvironment {
           // for the filter and expands it back afterwards, so edges resolve without the halo.
           const peak = max(colour.r, max(colour.g, colour.b));
           const squeezed = colour.div(peak.add(1));
-          const filtered = (options.screenSpaceAA === "fxaa"
-            ? fxaa(squeezed)
-            : smaa(squeezed)) as unknown as ChainNode;
+          const texture = convertToTexture(squeezed);
+          sample(texture);
+          const effect = options.screenSpaceAA === "fxaa" ? fxaa(texture) : smaa(texture);
+          if (resolutionSubrect && options.screenSpaceAA !== "fxaa") {
+            const retained = effect as unknown as {
+              setSize(w: number, h: number): void;
+              _renderTargetEdges: RenderTarget;
+              _renderTargetWeights: RenderTarget;
+              _renderTargetBlend: RenderTarget;
+              _edgesTextureUniform: TextureNode;
+              _weightsTextureUniform: TextureNode;
+              _textureNode: TextureNode;
+            };
+            resolutionSubrect.retain(retained, [
+              retained._renderTargetEdges,
+              retained._renderTargetWeights,
+              retained._renderTargetBlend,
+            ]);
+            for (const node of [
+              retained._edgesTextureUniform,
+              retained._weightsTextureUniform,
+              retained._textureNode,
+            ])
+              sample(node);
+          } else if (resolutionSubrect) {
+            const filter = effect as unknown as {
+              updateBefore(): void;
+              _invSize: { value: Vector2 };
+            };
+            const update = filter.updateBefore;
+            filter.updateBefore = function () {
+              update.call(this);
+              const fraction = resolutionSubrect.active
+                ? resolutionSubrect.textureView(texture.value)?.viewFraction
+                : undefined;
+              if (fraction) this._invSize.value.divide(fraction);
+            };
+          }
+          releaseAa = () => {
+            resolutionSubrect?.release(effect as unknown as ResolutionSubrectTarget);
+            effect.dispose();
+            if (Reflect.get(texture, "isRTTNode") === true) {
+              resolutionSubrect?.release(texture as unknown as ResolutionSubrectTarget);
+              const owned = texture as unknown as {
+                renderTarget: RenderTarget;
+                _quadMesh: { material: { dispose(): void } };
+              };
+              owned.renderTarget.dispose();
+              owned._quadMesh.material.dispose();
+            }
+          };
+          const filtered = effect as unknown as ChainNode;
           const back = max(filtered.r, max(filtered.g, filtered.b));
           return filtered.div(float(1).sub(back).max(1e-4));
         },
@@ -722,36 +1081,80 @@ export class WorldEnvironment {
     // The kit's own stages, composed after the built-ins. The factory is called with the two
     // things only this file can produce — the scene pass's depth texture and the resolved tier —
     // and returns the complete authored graph plus the subset to run.
-    stages.push(...options.authoredStages({ depthNode: depth(), tier: options.renderChainTier }));
+    stages.push(
+      ...options.authoredStages({
+        depthNode: depth(),
+        tier: options.renderChainTier,
+        camera,
+      }),
+    );
 
     // A composed base colour with every stage off still has to reach the frame. The chain
     // installs nothing for an empty stage list, so this is the one path that goes direct.
     if (requested.length === 0) {
-      if (renderer.kind !== "webgpu") {
-        this.#reportApplied([], [{ name: "baseColour", reason: `renderer:${renderer.kind}` }]);
-        return { dropped: [], stages: [] };
+      if (renderer.setOutputNode === undefined || renderer.clearOutputNode === undefined) {
+        releaseGraph();
+        throw new Error("Output node installation and ownership-aware disposal are required.");
       }
-      if (renderer.setOutputNode === undefined)
-        throw new Error("setOutputNode is unavailable, so the composed base colour cannot run.");
-      renderer.setOutputNode(exposed);
+      let installation: OutputInstallation | undefined;
+      try {
+        const returned = renderer.setOutputNode(exposed, scenePass);
+        installation =
+          returned &&
+          typeof returned.isCurrent === "function" &&
+          typeof returned.dispose === "function"
+            ? returned
+            : undefined;
+      } catch (error) {
+        releaseGraph();
+        throw error;
+      }
       this.#reportApplied([], []);
-      return { dropped: [], stages: [] };
+      return {
+        exposure,
+        dropped: [],
+        stages: [],
+        dispose: () => {
+          if (released) return;
+          if (installation) installation.dispose();
+          // Legacy adapters returning void retain node-only, not installation-level safety.
+          else renderer.clearOutputNode?.(exposed);
+          releaseGraph();
+        },
+      };
     }
 
     if (renderer.createRenderChain === undefined) throw new Error("RenderChain is unavailable.");
+    // One stage owns the measurement, so the chain is asked for the one that published a callback
+    // rather than every stage in turn. A stage that dropped keeps answering `undefined`.
+    const rejectionMeasurement = stages.find(
+      (entry) => entry.rejectionMeasurement !== undefined,
+    )?.rejectionMeasurement;
     const chain = renderer.createRenderChain({
       input: exposed,
-      request: { stages: requested, tier: options.renderChainTier },
+      request: {
+        stages: requested,
+        tier: options.renderChainTier,
+        // Asked for on every chain and paid for only when a temporal stage is named: the chain
+        // provisions nothing while no requested stage needs velocity.
+        velocity: {
+          pass: scenePass,
+          ...(rejectionMeasurement === undefined ? {} : { rejectionMeasurement }),
+        },
+      },
       stages,
+      resolutionSubrect,
       worldPass: scenePass,
     });
     this.#reportApplied(chain.applied.stages, chain.applied.dropped);
     return {
+      exposure,
       dropped: chain.applied.dropped,
       stages: chain.applied.stages,
       dispose: () => {
+        if (released) return;
         chain.dispose();
-        scenePass.dispose();
+        releaseGraph();
       },
     };
   }

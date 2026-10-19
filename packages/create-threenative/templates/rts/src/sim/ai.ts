@@ -82,7 +82,6 @@ const _nodes: IResourceNode[] = [];
 const _gasSites: IResourceNode[] = [];
 const _bunkers: IEntity[] = [];
 const _rangers: IEntity[] = [];
-const _repair: IEntity[] = [];
 const _built: IEntity[] = [];
 const _candidates: IEntity[] = [];
 const _expanded: IEntity[] = [];

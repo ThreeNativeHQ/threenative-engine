@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8" /><link rel="icon" href="data:," /><title>Fluid collision regression</title></head>
+  <body style="margin:0;overflow:hidden"><script type="module">
+    import proof from "/src/collision-proof.ts";
+    document.body.appendChild(await proof.start({ gateClosed: new URLSearchParams(location.search).get("gate") !== "off" }));
+  </script></body>
+</html>

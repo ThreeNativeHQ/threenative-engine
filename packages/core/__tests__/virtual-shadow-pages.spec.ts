@@ -207,6 +207,63 @@ describe("DirectionalClipmap", () => {
     expect(first.pageWorldSize).toBe(4);
   });
 
+  it("keeps every origin on its texel grid with independent refresh thresholds", () => {
+    const clipmap = new DirectionalClipmap({
+      direction: { x: 0, y: 1, z: 0 },
+      clipExtents: [24, 96, 320],
+      pagesPerAxis: 512,
+      refreshStep: [0.25, 0.125, 0.164],
+    });
+    clipmap.updateCenter(clipmap.unproject({ u: 100, v: -100 }));
+    const origins = clipmap.clipExtents.map((_, level) => clipmap.getWindow(level));
+    const fine = origins[0];
+    if (!fine) throw new Error("missing finest window");
+    clipmap.updateCenter(
+      clipmap.unproject({
+        u: 100 + fine.refreshPages * fine.pageWorldSize + fine.pageWorldSize,
+        v: -100,
+      }),
+    );
+    expect(clipmap.getWindow(0).minX).not.toBe(fine.minX);
+    for (const level of [1, 2]) {
+      expect(clipmap.getWindow(level)).toEqual(origins[level]);
+    }
+    for (const u of [123.456, -321.789, -1000, 1000]) {
+      for (const window of clipmap.updateCenter(clipmap.unproject({ u, v: -u }))) {
+        for (const origin of [window.minX, window.minY, window.maxX, window.maxY]) {
+          expect(Number.isInteger(origin)).toBe(true);
+          const worldOrigin = origin * window.pageWorldSize;
+          expect(worldOrigin / window.pageWorldSize).toBeCloseTo(origin, 9);
+        }
+      }
+    }
+  });
+
+  it("does not move a stationary window when its refresh threshold shrinks below its drift", () => {
+    const clipmap = new DirectionalClipmap({
+      direction: { x: 0, y: 1, z: 0 },
+      clipExtents: [320],
+      pagesPerAxis: 512,
+      refreshStep: 0.164,
+    });
+    clipmap.updateCenter(clipmap.unproject({ u: 100, v: -100 }));
+    const origin = clipmap.getWindow(0);
+    const followed = clipmap.unproject({ u: 110, v: -110 });
+    clipmap.updateCenter(followed);
+    clipmap.setRefreshStep(0, 0);
+    clipmap.updateCenter(followed);
+    expect(clipmap.getWindow(0)).toMatchObject({ minX: origin.minX, minY: origin.minY });
+    clipmap.updateCenter(clipmap.unproject({ u: 110 + origin.pageWorldSize, v: -110 }));
+    expect(clipmap.getWindow(0).minX).not.toBe(origin.minX);
+    expect(clipmap.getWindow(0).minY).toBe(Math.floor(-110 / origin.pageWorldSize) - 256);
+  });
+
+  it("changes only the requested level when a scalar refresh step was supplied", () => {
+    const clipmap = verticalClipmap([24, 96, 320], 512);
+    clipmap.setRefreshStep(1, 0.164);
+    expect(clipmap.refreshStep).toEqual([0.125, 0.164, 0.125]);
+  });
+
   it("uses floor addressing for negative virtual page coordinates", () => {
     const clipmap = verticalClipmap([16]);
     expect(clipmap.worldToPage({ x: -0.01, y: 0, z: 0.01 }, 0)).toEqual({

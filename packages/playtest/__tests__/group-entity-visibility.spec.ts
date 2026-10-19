@@ -101,3 +101,32 @@ test("an observation snapshot retains optional diagnostics and partial render pe
   expect(snapshot.performance).toEqual({ drawCalls: 3 });
   expect(snapshot.renderChain).toEqual({ tier: "high" });
 });
+
+test("a box that crosses the near plane is bounded by its visible part, not by corners behind the eye", () => {
+  // The box spans x 0.5 to 1.5, y -1 to 1, and z -2 to 0.5. The near plane is at z -1.
+  // The visible part is z -2 to -1. Corners at z 0.5 sit behind the eye and must not flip the result.
+  const scene = new Scene();
+  const camera = new PerspectiveCamera(90, 1, 1, 100);
+  const slab = new Mesh(new BoxGeometry(1, 2, 2.5), new MeshBasicMaterial());
+  slab.position.set(1, 0, -0.75);
+  scene.add(slab, camera);
+  const registry = new ThreePlaytestEntityRegistry();
+  registry.register({ id: "slab", object: slab });
+  const snapshot = sampleThreeObservations(
+    {
+      camera,
+      clockMode: "fixed-step",
+      registry,
+      renderer: { getDrawingBufferSize: (target: Vector2) => target.set(100, 100) },
+      scene,
+      tick: 1,
+    },
+    { entities: ["slab"] },
+  );
+  const bounds = snapshot.entities?.find(({ id }) => id === "slab")?.bounds;
+  // The visible NDC span is x 0.25 to 1.5 and y -1 to 1, on a 100 px viewport.
+  expect(bounds?.x).toBeCloseTo(62.5);
+  expect(bounds?.width).toBeCloseTo(62.5);
+  expect(bounds?.y).toBeCloseTo(0);
+  expect(bounds?.height).toBeCloseTo(100);
+});

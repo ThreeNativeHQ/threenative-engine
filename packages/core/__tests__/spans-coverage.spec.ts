@@ -181,6 +181,10 @@ describe("the frame record carries the boundary counts", () => {
     const counters = FrameCounters.install(device);
     expect(counters).toBeDefined();
 
+    // The tick moves by more than one fixed step per frame. The window reports the last tick it
+    // saw, not the sum across frames and not the frame count, so the join to the simulation is
+    // independent of how many frames the window happened to render.
+    let tick = 0;
     for (let frame = 0; frame < 2; frame += 1) {
       device.createCommandEncoder().drawIndexed();
       device.queue.writeBuffer({}, 0, new Uint8Array(1_024));
@@ -188,13 +192,16 @@ describe("the frame record carries the boundary counts", () => {
       budget.beginFrame(frame * 16, frame * 16);
       budget.markSimulationEnd(frame * 16 + 1, 1);
       budget.addRender(10);
-      budget.addCounters((counters as FrameCounters).read());
+      tick += frame === 0 ? 2 : 3;
+      budget.addCounters({ ...(counters as FrameCounters).read(), simulationTick: tick });
       budget.endFrame(frame * 16 + 12);
     }
 
     const window = JSON.parse(lines[0]?.slice("TN_FRAME_BUDGET:".length) ?? "{}");
     expect(window.counters.hostCalls.p50).toBe(4);
     expect(window.counters.gpuBytes.p50).toBe(1_024);
+    // 5 is the end tick; the frame count is 2 and the sum of the ticks is 7.
+    expect(window.counters.simulationTick).toBe(5);
     counters?.uninstall();
   });
 
@@ -207,6 +214,27 @@ describe("the frame record carries the boundary counts", () => {
     budget.endFrame(12);
     const window = JSON.parse(lines[0]?.slice("TN_FRAME_BUDGET:".length) ?? "{}");
     expect(window.counters).toBeUndefined();
+  });
+
+  it("keeps the boundary counts but omits the tick when a frame fed counts without one", () => {
+    const lines: string[] = [];
+    const budget = new FrameBudget({ report: (line) => lines.push(line), reportEvery: 1 });
+    budget.beginFrame(0, 0);
+    budget.markSimulationEnd(1, 1);
+    budget.addRender(10);
+    budget.addCounters({ hostCalls: 3 });
+    budget.endFrame(12);
+    const window = JSON.parse(lines[0]?.slice("TN_FRAME_BUDGET:".length) ?? "{}");
+    expect(window.counters.hostCalls.p50).toBe(3);
+    expect(window.counters.simulationTick).toBeUndefined();
+  });
+
+  it("rejects a tick that is not a non-negative integer", () => {
+    const budget = new FrameBudget({ report: () => undefined, reportEvery: 2 });
+    budget.beginFrame(0, 0);
+    expect(() => budget.addCounters({ simulationTick: 1.5 })).toThrow(/simulationTick/u);
+    expect(() => budget.addCounters({ simulationTick: -1 })).toThrow(/simulationTick/u);
+    budget.endFrame(1);
   });
 });
 

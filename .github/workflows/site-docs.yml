@@ -1,18 +1,32 @@
 name: site-docs
 
 # threenative.com renders these files at build time, so a change to any of them redeploys the site:
-# the guides, the agent-docs recipes, the package READMEs, the capability manifest behind the API
-# reference, and the recorded MCP tool surfaces.
+# the guides, the agent-docs recipes, the package READMEs, and the recorded MCP tool surfaces. The API
+# reference behind `/docs/api` is the engine's generated capability manifest, and the site regenerates
+# it from this repository's source on every build, so the paths below are the manifest generator's
+# real inputs: each public package's export map and source, the template closure, the generator's own
+# sources, and the manifest itself. `scripts/__tests__/capability-site-docs.spec.ts` derives the list
+# from `scripts/build-capability-manifest.ts`, so a new import fails here instead of shipping quietly.
 on:
   push:
     branches: [develop]
     paths:
       - "docs/guides/**"
+      - "docs/verification/realism-effects-*.md"
       - "packages/create-threenative/agent-docs/references/**"
       - "packages/create-threenative/*.json"
-      - "packages/create-threenative/templates/starter/.mcp.json"
+      - "packages/core/capabilities.json"
+      - "packages/create-threenative/templates/**"
       - "packages/*/package.json"
       - "packages/*/README.md"
+      - "packages/*/src/**"
+      - "packages/engine-mcp/src/**"
+      - "scripts/build-capability-manifest.ts"
+      - "scripts/check-capability-docs.ts"
+      - "scripts/not-owned-capabilities.ts"
+      - "scripts/realism-effects-coverage.ts"
+      - "scripts/render-chain-capabilities.ts"
+      - "scripts/workspace-packages.ts"
 
 jobs:
   redeploy:

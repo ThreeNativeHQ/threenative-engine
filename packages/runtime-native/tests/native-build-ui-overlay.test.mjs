@@ -48,8 +48,15 @@ test.runIf(process.platform === 'linux' || process.platform === 'darwin')(
     mkdirSync(scripts, { recursive: true });
     mkdirSync(bin, { recursive: true });
     // The real plan and the real overlay build, so the library path asserted below is the one the
-    // script derives rather than one the test wrote.
-    for (const name of ['native-build.mjs', 'build-native-ui-overlay.mjs']) {
+    // script derives rather than one the test wrote. The CSS builder and desktop profile helpers
+    // are copied too because the merged native build imports them before selecting the plan.
+    for (const name of [
+      'native-build.mjs',
+      'build-native-ui-overlay.mjs',
+      'build-native-css-ui.mjs',
+      'native-test-lane.mjs',
+      'desktop-build-profile.mjs',
+    ]) {
       copyFileSync(
         new URL(`../scripts/${name}`, import.meta.url),
         join(scripts, name),
@@ -90,6 +97,62 @@ test.runIf(process.platform === 'linux' || process.platform === 'darwin')(
       commands,
       /-DTHREENATIVE_UI_OVERLAY_LIBRARY=.*libthreenative_ui_overlay\.a/u,
     );
+    assert.doesNotMatch(commands, /TN_ENABLE_CSS_UI/u);
+
+    // The CSS UI backend is opt-in, and opting in has to build the crate before CMake asks for it —
+    // otherwise the configure fails naming a static library nobody compiled.
+    const opted = spawnSync(process.execPath, [join(scripts, 'native-build.mjs')], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${bin}${delimiter}${process.env.PATH ?? ''}`,
+        TN_TEST_LOG: log,
+        TN_ENABLE_CSS_UI: '1',
+      },
+    });
+    assert.equal(opted.status, 0, opted.stderr);
+    const optedCommands = readFileSync(log, 'utf8');
+    assert.match(
+      optedCommands,
+      /cargo build --release --manifest-path .*native\/css-ui\/Cargo\.toml --lib/u,
+    );
+    assert.match(optedCommands, /-DTN_ENABLE_CSS_UI=ON/u);
+    assert.match(
+      optedCommands,
+      /-DTHREENATIVE_CSS_UI_LIBRARY=.*libthreenative_css_ui\.a/u,
+    );
+
+    // `TN_ENABLE_UI_OVERLAY=0` is the opt-out that makes the CSS UI the only UI: a host with no
+    // web view in it at all. It must not build the overlay crate on the way to saying so, because
+    // on Linux that build is the step that needs webkit2gtk.
+    const withoutOverlayLog = join(root, 'without-overlay.log');
+    const withoutOverlay = spawnSync(process.execPath, [join(scripts, 'native-build.mjs')], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${bin}${delimiter}${process.env.PATH ?? ''}`,
+        TN_TEST_LOG: withoutOverlayLog,
+        TN_ENABLE_UI_OVERLAY: '0',
+        TN_ENABLE_CSS_UI: '1',
+      },
+    });
+    assert.equal(withoutOverlay.status, 0, withoutOverlay.stderr);
+    const withoutOverlayCommands = readFileSync(withoutOverlayLog, 'utf8');
+    assert.doesNotMatch(
+      withoutOverlayCommands,
+      /native\/ui-overlay\/Cargo\.toml/u,
+      'the web overlay crate must not be built',
+    );
+    assert.doesNotMatch(withoutOverlayCommands, /THREENATIVE_UI_OVERLAY_LIBRARY/u);
+    assert.match(withoutOverlayCommands, /-DTN_ENABLE_UI_OVERLAY=OFF/u);
+    // The CSS UI is still there — that is the point of the opt-out.
+    assert.match(
+      withoutOverlayCommands,
+      /cargo build --release --manifest-path .*native\/css-ui\/Cargo\.toml --lib/u,
+    );
+    assert.match(withoutOverlayCommands, /-DTN_ENABLE_CSS_UI=ON/u);
   },
 );
 

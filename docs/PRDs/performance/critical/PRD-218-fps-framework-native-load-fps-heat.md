@@ -7,10 +7,11 @@ prd_contract: v1
 **Status:** PARTIAL — worked 2026-08-24 on the physical Pixel 8. Evidence:
 `docs/verification/runtime-perf-state.md`.
 
+**Priority:** P1 — Criterion unmet: first frame 14.4-14.8 s, warm-up path about 35 s on Pixel 8.
 | criterion | state |
 | --- | --- |
 | 1. Stall named | **short** — the stall is named and reproducible (`pipelineCompile` 8,038 ms across 105 calls, 67.5 % of an 11.7 s gap) but attribution is **73.5 %**, under the required 80 %. Re-measured 2026-09-03 on the current runtime: 8,300 ms / 103 calls, attribution 72.4 % — still short. The residual is JS inside the first frame and is reported as residual, not absorbed. |
-| 2. Load time ≤ 8 s, live overlay | **not met** — re-measured 2026-09-03: first frame 14.4–14.8 s on the current runtime, and the warm-up opt-in path regresses to ~35 s (see PRD-327's device acceptance and [PRD-339](PRD-339-the-compile-walk-leaves-the-main-thread.md)). |
+| 2. Load time ≤ 8 s, live overlay | **not met** — re-measured 2026-09-03: first frame 14.4–14.8 s on the current runtime, and the warm-up opt-in path regresses to ~35 s (see PRD-327's device acceptance and [PRD-540](PRD-540-the-compile-walk-leaves-the-main-thread.md)). |
 | 3. No uncapped idle presentation | **met at the mechanism** — 119.8 presents/s red, 60 Hz convention with `__tnPresentationCap` override and `capHz` in every tick. The forced-cheap-frame re-reading after the cap landed was not re-taken. |
 | 4. Batching decided by measurement | **met** — declining is arithmetically correct for an `InstancedMesh`-shaped key against 835 unique geometries; the material-keyed `BatchedMesh` lever is filed into PRD-214's lever list. |
 | 5. Guard-rails | **partial** — storage root fixed with a bindings-level red-green needing no device; applicationId documented in both AGENTS chains. The 32 `map: undefined` material warnings are still unattributed. |

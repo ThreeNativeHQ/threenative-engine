@@ -28,10 +28,14 @@ export function setupPost(
     mobile?: boolean;
     /** The renderer named a software adapter; this game's answer is its `low` tier. */
     software?: boolean;
+    /** The renderer's GPU family (`ctx.renderer.gpuClass?.class`); `quality.ts` maps it to a start tier. */
+    gpuClass?: string;
     /** Forces a tier, ignoring `mobile`. An unknown name throws rather than falling back. */
     tier?: QualityTier;
+    /** Scene-owned material assignments follow the resolved tier. */
+    onTierChanged?: (tier: QualityTier) => void;
   } = {},
-): void {
+): { readonly tier: QualityTier; dispose(): void } {
   // The native production collector explicitly marks a software-only hosted smoke run. This is
   // a profile input, not a host fact: the normal desktop game remains high, while this run uses
   // the existing low look so screenshot and lifecycle evidence can settle on a CPU adapter.
@@ -41,6 +45,7 @@ export function setupPost(
     environment.tier ?? (hostedSoftware ? "low" : undefined);
   const tier = resolveQualityTier({
     mobile: environment.mobile,
+    gpuClass: environment.gpuClass,
     software: environment.software,
     tier: requestedTier,
   });
@@ -52,5 +57,15 @@ export function setupPost(
     } source=${source}`,
   );
   const world = new WorldEnvironment(qualityPreset(tier));
-  world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
+  const applied = world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
+  environment.onTierChanged?.(tier);
+  let disposed = false;
+  return {
+    tier,
+    dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      applied.dispose?.();
+    },
+  };
 }

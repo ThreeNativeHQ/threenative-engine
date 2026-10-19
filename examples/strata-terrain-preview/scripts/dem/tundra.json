@@ -1,0 +1,31 @@
+{
+  "site": "Trail Ridge alpine tundra, Rocky Mountain National Park, Colorado",
+  "size": 512,
+  "resolution": 257,
+  "spacing": 2,
+  "encoding": "int16-le-decimetres-relative-to-elevationOffset",
+  "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
+  "crs": "EPSG:26913",
+  "verticalCRS": "NAVD88 metres",
+  "sourceCRS": "EPSG:26913",
+  "center": [432798, 4475400],
+  "bbox": [432542, 4475144, 433054, 4475656],
+  "bboxWGS84": [-105.79527205130721, 40.424194909277524, -105.78918264275795, 40.428848503343914],
+  "elevationOffset": 3420,
+  "relativeElevationRange": [9.3, 57.4],
+  "tileIds": ["USGS_1M_13_x43y448_CO_NorthwestCO_2020_D20"],
+  "acquisitionDate": {
+    "begin": "2020-06-20",
+    "end": "2021-08-28",
+    "basis": "USGS project metadata temporal extent"
+  },
+  "acquisitionDateNote": "Project temporal extent, not a claim that every crop pixel was flown on one day.",
+  "downloadURL": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/CO_NorthwestCO_2020_D20/TIFF/USGS_1M_13_x43y448_CO_NorthwestCO_2020_D20.tif",
+  "metadataURL": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/CO_NorthwestCO_2020_D20/metadata/USGS_1M_13_x43y448_CO_NorthwestCO_2020_D20.xml",
+  "accessed": "2026-10-03",
+  "filter": "2×2 1 m area/box filter at each 2 m vertex; rounded to 0.1 m; no vertical exaggeration",
+  "sha256": "f9435b995b0b203e993f30e1ee1a29b030f7220d3d5019d5dda77afbc14e1373",
+  "citation": "U.S. Geological Survey, 3D Elevation Program (3DEP), The National Map, 1 meter and 1/3 arc-second Digital Elevation Models, accessed October 3, 2026. Cropped, filtered, translated vertically and quantized by this example; not endorsed by USGS.",
+  "license": "U.S. Government public domain",
+  "licenseURL": "https://data.usgs.gov/datacatalog/data/USGS:77ae0551-c61e-4979-aedd-d797abdcde0e"
+}

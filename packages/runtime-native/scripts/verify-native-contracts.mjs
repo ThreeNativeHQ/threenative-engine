@@ -23,6 +23,19 @@ const metahumanTarget = "threenative-metahuman-bindings-test";
 const videoTarget = "threenative-video-recorder-state-test";
 
 export const executionContracts = {
+  "threenative-transient-attachments-test": {
+    invocations: [
+      { args: [], passLine: "native transient attachments host contract passed:" },
+      { args: ["--feature-off"], passLine: "native transient attachments host contract passed:" },
+      { args: ["--direct"], passLine: "native transient attachments host contract passed:" },
+    ],
+  },
+  "threenative-exposure-graph-test": {
+    invocations: [
+      { args: [], passLine: "native exposure graph contract passed" },
+      { args: ["--inject-validation"], passLine: "native exposure validation negative control passed" },
+    ],
+  },
   "threenative-pipeline-cache-test": {
     invocations: [{ args: [], passLine: "pipeline cache filesystem contract passed:" }],
   },
@@ -51,6 +64,13 @@ export const executionContracts = {
   },
   "threenative-render-pass-class-table-test": {
     invocations: [{ args: [], passLine: "render-pass-class-table: prototype=shared" }],
+  },
+  // One pass line for both lanes. With `TN_ENABLE_CSS_UI=ON` it is the CSS backend's own contract
+  // (frames, hit test, one click in the game's queue); with the option off, which is what these two
+  // configurations are, it is the refusal contract — the renderer is refused by name and the host
+  // reports no overlay. Neither arm is a no-op that passes by printing.
+  "threenative-css-ui-overlay-test": {
+    invocations: [{ args: [], passLine: "native-css overlay contract passed: " }],
   },
   "threenative-crash-handler-policy-test": {
     // POSIX only. The test drives `sigaction` and `siginfo_t` directly, which MSVC does not
@@ -103,6 +123,12 @@ export const executionContracts = {
   "threenative-presentation-pacing-test": {
     invocations: [{ args: [], passLine: "PRESENTATION_PACING_OK" }],
   },
+  "threenative-canvas-presentation-test": {
+    invocations: [{ args: [], passLine: "native canvas presentation pixels passed" }],
+  },
+  "threenative-surface-texture-status-test": {
+    invocations: [{ args: [], passLine: "native surface acquisition status contract passed" }],
+  },
   "threenative-local-storage-test": {
     invocations: [{ args: [], passLine: "local_storage bindings: all assertions passed" }],
   },
@@ -122,7 +148,7 @@ export const executionContracts = {
     invocations: [
       {
         args: [],
-        passLine: "shader-module-metadata: wrapper=erase+release-once teardown=release-survivors",
+        passLine: "shader-module-metadata: wrapper=erase+release-once duplicate-wrapper-refs=release-each teardown=release-survivors",
       },
     ],
   },

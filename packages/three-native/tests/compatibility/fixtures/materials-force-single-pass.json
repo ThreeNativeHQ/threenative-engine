@@ -1,0 +1,279 @@
+{
+  "name": "materials-force-single-pass",
+  "adaptedFrom": "original \u2014 two transparent DoubleSide torus knots: the left draws three's back-then-front two passes, the right sets forceSinglePass and draws once",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 160,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 2, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 4.5
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "light",
+      "class": "DirectionalLight",
+      "args": [16777215, 3]
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.x",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.y",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.z",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "light"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [11189137, 2236962, 0.6]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "geo",
+      "class": "TorusKnotGeometry",
+      "args": [0.6, 0.2, 96, 12]
+    },
+    {
+      "op": "new",
+      "id": "twoPassColor",
+      "class": "Color",
+      "args": [0.9, 0.5, 0.2]
+    },
+    {
+      "op": "new",
+      "id": "twoPassMat",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "twoPassMat",
+      "path": "color",
+      "value": {
+        "ref": "twoPassColor"
+      }
+    },
+    {
+      "op": "set",
+      "id": "twoPassMat",
+      "path": "transparent",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "twoPassMat",
+      "path": "opacity",
+      "value": 0.55
+    },
+    {
+      "op": "set",
+      "id": "twoPassMat",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "new",
+      "id": "twoPass",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geo"
+        },
+        {
+          "ref": "twoPassMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "twoPass",
+      "path": "position.x",
+      "value": -1.2
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "twoPass"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "singleColor",
+      "class": "Color",
+      "args": [0.9, 0.5, 0.2]
+    },
+    {
+      "op": "new",
+      "id": "singleMat",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "singleMat",
+      "path": "color",
+      "value": {
+        "ref": "singleColor"
+      }
+    },
+    {
+      "op": "set",
+      "id": "singleMat",
+      "path": "transparent",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "singleMat",
+      "path": "opacity",
+      "value": 0.55
+    },
+    {
+      "op": "set",
+      "id": "singleMat",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "singleMat",
+      "path": "forceSinglePass",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "single",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geo"
+        },
+        {
+          "ref": "singleMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "single",
+      "path": "position.x",
+      "value": 1.2
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "single"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "singleMat",
+      "path": "forceSinglePass",
+      "kind": "boolean"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { UEFormatError, type UEFormatErrorCode, parseUEModel } from "../src/index.js";
 import {
@@ -10,9 +10,27 @@ import {
   triangleLod,
 } from "./fixture-builder.js";
 
-function expectCode(bytes: Uint8Array, code: UEFormatErrorCode): void {
+/** The size of every buffer the GZIP inflater returned, so a test can see how much it kept. */
+const inflated = vi.hoisted(() => [] as number[]);
+vi.mock("fflate", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fflate")>();
+  return {
+    ...actual,
+    gunzipSync: (...args: Parameters<typeof actual.gunzipSync>) => {
+      const output = actual.gunzipSync(...args);
+      inflated.push(output.length);
+      return output;
+    },
+  };
+});
+
+function expectCode(
+  bytes: Uint8Array,
+  code: UEFormatErrorCode,
+  options?: Parameters<typeof parseUEModel>[1],
+): void {
   try {
-    parseUEModel(bytes);
+    parseUEModel(bytes, options);
     expect.unreachable(`expected UEFormatError ${code}`);
   } catch (error) {
     expect(error).toBeInstanceOf(UEFormatError);
@@ -188,6 +206,33 @@ describe("parseUEModel", () => {
     const last = valid.length - 1;
     valid[last] = (valid[last] ?? 0) ^ 0xff;
     expectCode(valid, "DECOMPRESSION_FAILED");
+  });
+
+  it("keeps no more than the declared size of a GZIP body that inflates far past it", () => {
+    // Four MiB of zeros deflates to a few kilobytes; the header declares one KiB.
+    const body = new Uint8Array(4 * 1024 * 1024);
+    inflated.length = 0;
+    expectCode(
+      modelFile({ body, compressed: "GZIP", declaredUncompressedSize: 1024 }),
+      "SIZE_MISMATCH",
+    );
+    expect(Math.max(0, ...inflated)).toBeLessThanOrEqual(1024 + 1);
+  });
+
+  it("rejects a string longer than the configured byte limit", () => {
+    expectCode(modelFile({ body: staticModelBody() }), "INVALID_LENGTH", { maxStringBytes: 2 });
+  });
+
+  it("rejects an array longer than the configured element limit", () => {
+    expectCode(modelFile({ body: staticModelBody() }), "INVALID_COUNT", { maxArrayElements: 2 });
+  });
+
+  it("rejects an attribute set larger than the configured attribute limit", () => {
+    const body = attributeSet({
+      LODS: new Writer().int32(0).finish(),
+      FUTURE_ROOT_FIELD: Uint8Array.of(4, 5),
+    });
+    expectCode(modelFile({ body }), "INVALID_COUNT", { maxAttributes: 1 });
   });
 
   it("rejects declared compressed-size mismatches", () => {

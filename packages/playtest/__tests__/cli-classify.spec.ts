@@ -14,8 +14,16 @@ test.each([
   [new Error("Playtest scenario 'playtests/boot-to-play.playtest.json' could not be read."), "TN_PLAYTEST_SCENARIO_UNREADABLE"],
   [new Error("TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED: --cpu-prof is not supported on the android target; use the browser or desktop target."), "TN_PLAYTEST_CPU_PROFILE_UNSUPPORTED"],
   [new Error("TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED: ENOENT: no such file or directory, open '/missing/out.cpuprofile'"), "TN_PLAYTEST_CPU_PROFILE_WRITE_FAILED"],
+  [new Error("TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE: the requested host display requires DISPLAY."), "TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE"],
+  [new Error("TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE: cannot verify DISPLAY=:0: xdpyinfo spawnSync xdpyinfo ENOENT."), "TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE"],
 ] as const)("classifies %s as %s", (error, code) => {
   expect(classifyRunnerError(error, { cwd: "/project" }).code).toBe(code);
+});
+
+test("an unavailable host display points to the display and probe rather than the scenario", () => {
+  const result = classifyRunnerError(new Error("TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE: DISPLAY=:0 is unavailable."));
+  expect(result.fix.instruction).toContain("DISPLAY");
+  expect(result.fix.instruction).toContain("xdpyinfo");
 });
 
 test("an invalid scenario keeps its existing diagnostic code", () => {

@@ -60,7 +60,7 @@ a gate nobody runs.
 It does not say where the fix belongs. Preserving scene and entity state across a module update is
 a framework concern (`acceptHotUpdate` in core), a template concern (`main.ts` restarting at the
 menu), or both, and this record deliberately stops at the measurement. See
-[PRD-266](../PRDs/performance/PRD-266-the-hot-reload-proof-and-the-browser-lane-run-anywhere.md).
+[PRD-266](../PRDs/tooling/PRD-266-the-hot-reload-proof-and-the-browser-lane-run-anywhere.md).
 
 ## The fix, and the same measurement afterwards
 

@@ -1,0 +1,425 @@
+{
+  "reports": [
+    {
+      "file": "reports/1-1-current-report.json.gz",
+      "rawBytes": 1469804,
+      "rawSha256": "53f0346d3e473e546bb7ea29072dfc164ad626e373ef1f2ea4194f7ca32eddbc",
+      "gzBytes": 110852,
+      "gzSha256": "e9f17d1f5e96ac46eb735f2767a552e09d043cbfea8d5c433e62c88c806b3d98"
+    },
+    {
+      "file": "reports/1-2-runtime-zero-report.json.gz",
+      "rawBytes": 1521698,
+      "rawSha256": "1526144716554f7fc7b0374919b3bb59216cc206a5f7685716965c360cee0ece",
+      "gzBytes": 111432,
+      "gzSha256": "83a01cac136814cf6e9dff6e23a6c8c3fdb7f0990f0e4bc3fedc12294eaf6c37"
+    },
+    {
+      "file": "reports/1-3-copy-only-report.json.gz",
+      "rawBytes": 1631532,
+      "rawSha256": "fbaabfd1ac9e45fdc5dbf91e0de45ddfdf2a44af0cd300d442898df12a11ea54",
+      "gzBytes": 112274,
+      "gzSha256": "ec1136c47fa57e39b12164c826309829d21ffac9d178990b5c0c330b60bf4ddc"
+    },
+    {
+      "file": "reports/1-4-material-emissive-report.json.gz",
+      "rawBytes": 1656354,
+      "rawSha256": "ba523d51763b3bb405de0aa90a32bcc4a4b093e2b13a748e1ac01202569b25fa",
+      "gzBytes": 112361,
+      "gzSha256": "8486ecd8e9cf76f99ae50cd44c9c42b90e9a82394f5353f46d0500c551ff62e9"
+    },
+    {
+      "file": "reports/1-5-compiled-rim-only-report.json.gz",
+      "rawBytes": 1555852,
+      "rawSha256": "6768fba7f09c7df610cd614720ebe645bf1676e6b72a17908162a1a1edb50b93",
+      "gzBytes": 112310,
+      "gzSha256": "5818e4a715ebd100f8d1fd3f8fae6056490c649a0dd84cef86483dbce1419348"
+    },
+    {
+      "file": "reports/1-6-shared-graph-report.json.gz",
+      "rawBytes": 1562733,
+      "rawSha256": "6cca23a71ac619b475bc459aabc2eb0e600db7c500588ff42395c605dcf149cc",
+      "gzBytes": 111262,
+      "gzSha256": "1e1a928a2cb132f73db6b3a4d9ff54e6c4188d5c1bacde24db1b97052e510dd7"
+    },
+    {
+      "file": "reports/1-7-current-report.json.gz",
+      "rawBytes": 1489615,
+      "rawSha256": "cc019114f31dd8fb26f05cb70a2a300df25c5464c701c7c896b106d71cfdbdd8",
+      "gzBytes": 111381,
+      "gzSha256": "708a5c2acfe0e3249128a7f33fdb2979b0d56514508db5170782ab2e26c1cc2c"
+    },
+    {
+      "file": "reports/2-1-current-report.json.gz",
+      "rawBytes": 1493228,
+      "rawSha256": "f4fc09440572fca6890128519a56db2a04b456dac3afeedce246bf27c3ab2a0a",
+      "gzBytes": 111050,
+      "gzSha256": "bfebe7bacce86c1007761c9acb6f657a9530e1dc6f3a02bc27fc1795af1a9a02"
+    },
+    {
+      "file": "reports/2-2-shared-graph-report.json.gz",
+      "rawBytes": 1588460,
+      "rawSha256": "ec4dc67d2fbf993a9b0251cc6b4dac200a921afbcef32d9c01703f4a3fbaefcb",
+      "gzBytes": 111795,
+      "gzSha256": "25ebbf443f75e06222397c458255e17d866fa81d91d17f014a03d4acead12954"
+    },
+    {
+      "file": "reports/2-3-compiled-rim-only-report.json.gz",
+      "rawBytes": 1526437,
+      "rawSha256": "3616daef6fa7f9f56d263a1708406627c1ceb773521bda0488f2e707f843a7e4",
+      "gzBytes": 111723,
+      "gzSha256": "b196ac5c04acca67e161c1660a200db71a7da88004b89d87ec080ba252e7301b"
+    },
+    {
+      "file": "reports/2-4-material-emissive-report.json.gz",
+      "rawBytes": 1653015,
+      "rawSha256": "3a18301c1b6db730f78a58dfbbc0ee8d9f3a2e6ea4f7d031e732048dbe868c80",
+      "gzBytes": 112206,
+      "gzSha256": "de01eaf38bf7dc7eb447311ea2d0fe7923d6bae011bb2440efc49f50b8128e0b"
+    },
+    {
+      "file": "reports/2-5-copy-only-report.json.gz",
+      "rawBytes": 1568228,
+      "rawSha256": "a467341498cc9c6e34e15c9121483d2397610b971d6e06837382b1c2d78e6bfd",
+      "gzBytes": 111415,
+      "gzSha256": "767d78b2c929b677987f0cdad8b395503791750be57ff7af141488acdd28f8d5"
+    },
+    {
+      "file": "reports/2-6-runtime-zero-report.json.gz",
+      "rawBytes": 1440714,
+      "rawSha256": "77495abb4201348a9e6121e2608ccd3303ce04b841deef99691c365cb2c240c5",
+      "gzBytes": 110395,
+      "gzSha256": "cbbd9fde74320488b693355fcbcc72ed80c6d078ef211fee0df1ffd91b967004"
+    },
+    {
+      "file": "reports/2-7-current-report.json.gz",
+      "rawBytes": 1470616,
+      "rawSha256": "3dae36009d8cf5d29056c2dea95e91a27d5dbcf22da39880a41970fab695033a",
+      "gzBytes": 110872,
+      "gzSha256": "7a1ae30165cabf6a953e66467f8e12b550dc4a47e390bbd087d20af9d9d0bc13"
+    },
+    {
+      "file": "reports/3-1-current-report.json.gz",
+      "rawBytes": 1503888,
+      "rawSha256": "2d9238241cdcb50dd117926ea3191876728dd1ff8b92398abfe2ae55f9a37119",
+      "gzBytes": 111077,
+      "gzSha256": "94c684c8e126cdf32c0efbcf627203b1df1c183cca3456aac57db93d0ffd08e8"
+    },
+    {
+      "file": "reports/3-2-material-emissive-report.json.gz",
+      "rawBytes": 1620673,
+      "rawSha256": "ab66260c79d7e50acb94163a44296641c2df7b318d1524203fc0083624a411ac",
+      "gzBytes": 112129,
+      "gzSha256": "17622ffdfc8997a0b1bd7d28059a3f4822a9f6c7a75856c2e6bf9caa560990ff"
+    },
+    {
+      "file": "reports/3-3-compiled-rim-only-report.json.gz",
+      "rawBytes": 1498350,
+      "rawSha256": "0f13bb6b785db69215386f600ff49e93ef7f1fa25d4a6c902ce8229df38c3df1",
+      "gzBytes": 111073,
+      "gzSha256": "0f3e8333d946ec389dc97bf60c7bea02946cc81f1e440f79cc8b2f52ca339735"
+    },
+    {
+      "file": "reports/3-4-shared-graph-report.json.gz",
+      "rawBytes": 1568781,
+      "rawSha256": "843e67f32707b29628bbbb0ac5fff8d9c43892aa237ea81893fab1661eb44769",
+      "gzBytes": 111520,
+      "gzSha256": "2919a45c29a20ae05c6a89014b56b583a0e4819da873a7ca8fd83a967215a404"
+    },
+    {
+      "file": "reports/3-5-runtime-zero-report.json.gz",
+      "rawBytes": 1490997,
+      "rawSha256": "f4baa6f7a1cd5d18da6c99e0ad2851dc7118bdf03b18aaefeb8a7797767c109e",
+      "gzBytes": 111005,
+      "gzSha256": "bbeeacc37faa73e743a425f01511a037bae8fd83a8a53bbc0395ae00632dc458"
+    },
+    {
+      "file": "reports/3-6-copy-only-report.json.gz",
+      "rawBytes": 1579685,
+      "rawSha256": "73bce5f7cb711d110bfb4b4ec05efb85061c24c02e58c6168f9a99db580d9718",
+      "gzBytes": 111567,
+      "gzSha256": "91e437dfa8e9f666cc475489cef191e5bb5b578becbbb7aa38f1405e727a5e20"
+    },
+    {
+      "file": "reports/3-7-current-report.json.gz",
+      "rawBytes": 1542581,
+      "rawSha256": "af7498fba6e8afe1ccda5ad631c6ac482bd9b9035b757d4189b70e5dca3706a1",
+      "gzBytes": 111709,
+      "gzSha256": "3239820a32e96a3b75ecb0cdd3d70fa45979f69958659d7eab88f879e53da1ed"
+    }
+  ],
+  "pngs": [
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-1-current/after.png",
+      "sha256": "99618e371432bb285920d0921459105b4a0db5e3bd84248ba31d0f016bd007ed",
+      "bytes": 1595751
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-1-current/performance.png",
+      "sha256": "99618e371432bb285920d0921459105b4a0db5e3bd84248ba31d0f016bd007ed",
+      "bytes": 1595751
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-2-runtime-zero/after.png",
+      "sha256": "e692fbb2b9702d2e04d38bb9ad9627c2007805644e578ef1b1a5924820833f39",
+      "bytes": 1602199
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-2-runtime-zero/performance.png",
+      "sha256": "e692fbb2b9702d2e04d38bb9ad9627c2007805644e578ef1b1a5924820833f39",
+      "bytes": 1602199
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-3-copy-only/after.png",
+      "sha256": "e07ecdabf722661fe7857805bcf062e68bc8dcdca047f604440c53582a08e039",
+      "bytes": 1600731
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-3-copy-only/performance.png",
+      "sha256": "e07ecdabf722661fe7857805bcf062e68bc8dcdca047f604440c53582a08e039",
+      "bytes": 1600731
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-4-material-emissive/after.png",
+      "sha256": "717afa1b4007a887bd49081a31b99234dca953f9a78485d2813f0bdd782ad07a",
+      "bytes": 1595727
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-4-material-emissive/performance.png",
+      "sha256": "717afa1b4007a887bd49081a31b99234dca953f9a78485d2813f0bdd782ad07a",
+      "bytes": 1595727
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-5-compiled-rim-only/after.png",
+      "sha256": "66a5669f7bd147c9afd595e6a6e88b8f91def768b42d18a3fe48392c76bc46cf",
+      "bytes": 1601644
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-5-compiled-rim-only/performance.png",
+      "sha256": "66a5669f7bd147c9afd595e6a6e88b8f91def768b42d18a3fe48392c76bc46cf",
+      "bytes": 1601644
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-6-shared-graph/after.png",
+      "sha256": "c7f022c78e219c1fafe844075761f9e00d0c42cb0fdb450e008bf2741dd760b9",
+      "bytes": 1594736
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-6-shared-graph/performance.png",
+      "sha256": "c7f022c78e219c1fafe844075761f9e00d0c42cb0fdb450e008bf2741dd760b9",
+      "bytes": 1594736
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-7-current/after.png",
+      "sha256": "4d73f058cd8928e019c18556c37a789313b75f2509354cf2240094dcdf18b912",
+      "bytes": 1595101
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-7-current/performance.png",
+      "sha256": "4d73f058cd8928e019c18556c37a789313b75f2509354cf2240094dcdf18b912",
+      "bytes": 1595101
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-1-current/after.png",
+      "sha256": "78c94c366ab1e71ce3711dcdbdeba5a50fa3205b74faa9cdc0c4485707f6b4e3",
+      "bytes": 1598860
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-1-current/performance.png",
+      "sha256": "78c94c366ab1e71ce3711dcdbdeba5a50fa3205b74faa9cdc0c4485707f6b4e3",
+      "bytes": 1598860
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-2-shared-graph/after.png",
+      "sha256": "588026182efb61e969f3af7277125a0f4c417ced723cd55a7795403bae9c4e68",
+      "bytes": 1601502
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-2-shared-graph/performance.png",
+      "sha256": "588026182efb61e969f3af7277125a0f4c417ced723cd55a7795403bae9c4e68",
+      "bytes": 1601502
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-3-compiled-rim-only/after.png",
+      "sha256": "a04223b2d219ce50bd9ece7950ca5c067f7fdafb6c2abbf0eb832af2e541e712",
+      "bytes": 1600183
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-3-compiled-rim-only/performance.png",
+      "sha256": "a04223b2d219ce50bd9ece7950ca5c067f7fdafb6c2abbf0eb832af2e541e712",
+      "bytes": 1600183
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-4-material-emissive/after.png",
+      "sha256": "677af73f4cd889edc7715dad1c5403e22c84a56fc45ab762709cab2ace8c12d6",
+      "bytes": 1597565
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-4-material-emissive/performance.png",
+      "sha256": "677af73f4cd889edc7715dad1c5403e22c84a56fc45ab762709cab2ace8c12d6",
+      "bytes": 1597565
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-5-copy-only/after.png",
+      "sha256": "733eee9be89ce2772cc5c176f3357ec89cbf7d85e4eef9eb13eae114889db7d7",
+      "bytes": 1596519
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-5-copy-only/performance.png",
+      "sha256": "733eee9be89ce2772cc5c176f3357ec89cbf7d85e4eef9eb13eae114889db7d7",
+      "bytes": 1596519
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-6-runtime-zero/after.png",
+      "sha256": "2ae92437ac2c95803dc479e28a33471dc7a882910dfa6d3a2a7771e79845cc86",
+      "bytes": 1597275
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-6-runtime-zero/performance.png",
+      "sha256": "2ae92437ac2c95803dc479e28a33471dc7a882910dfa6d3a2a7771e79845cc86",
+      "bytes": 1597275
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-7-current/after.png",
+      "sha256": "5e0a8a3eceadb97a709be51da4ee4da5a314e1935e871ce6d2f84db703d8751d",
+      "bytes": 1597542
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-7-current/performance.png",
+      "sha256": "5e0a8a3eceadb97a709be51da4ee4da5a314e1935e871ce6d2f84db703d8751d",
+      "bytes": 1597542
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-1-current/after.png",
+      "sha256": "dda1f4072e3c9bbdf4ebadca06cc6281035ccbfb930d42a2c39a50d336229513",
+      "bytes": 1598688
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-1-current/performance.png",
+      "sha256": "dda1f4072e3c9bbdf4ebadca06cc6281035ccbfb930d42a2c39a50d336229513",
+      "bytes": 1598688
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-2-material-emissive/after.png",
+      "sha256": "b4b3485964a36e939fd0e302dd4bebdd1c3f0abd3e317b50e88e8b66f53f7a4d",
+      "bytes": 1597561
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-2-material-emissive/performance.png",
+      "sha256": "b4b3485964a36e939fd0e302dd4bebdd1c3f0abd3e317b50e88e8b66f53f7a4d",
+      "bytes": 1597561
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-3-compiled-rim-only/after.png",
+      "sha256": "2c179fc168e7bd3d0c569f634121f0c00dad011418716fae9ddb18c95cf5116a",
+      "bytes": 1598158
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-3-compiled-rim-only/performance.png",
+      "sha256": "2c179fc168e7bd3d0c569f634121f0c00dad011418716fae9ddb18c95cf5116a",
+      "bytes": 1598158
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-4-shared-graph/after.png",
+      "sha256": "91b6fef4d5795cd9b5501a7c73c359ea623f1293262ad4ccd33b025f80a205f0",
+      "bytes": 1599483
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-4-shared-graph/performance.png",
+      "sha256": "91b6fef4d5795cd9b5501a7c73c359ea623f1293262ad4ccd33b025f80a205f0",
+      "bytes": 1599483
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-5-runtime-zero/after.png",
+      "sha256": "4281572e9ba99fd5ab65709fa37feb6b58a26f05b840e678925f3d49a004e578",
+      "bytes": 1599834
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-5-runtime-zero/performance.png",
+      "sha256": "4281572e9ba99fd5ab65709fa37feb6b58a26f05b840e678925f3d49a004e578",
+      "bytes": 1599834
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-6-copy-only/after.png",
+      "sha256": "28669f8e317dbd802c31b8b4e7874f97bc8aab6c5b4aa00a0dc957b3021b7560",
+      "bytes": 1596959
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-6-copy-only/performance.png",
+      "sha256": "28669f8e317dbd802c31b8b4e7874f97bc8aab6c5b4aa00a0dc957b3021b7560",
+      "bytes": 1596959
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-7-current/after.png",
+      "sha256": "39477133863838f194160c79e413a7b2f36ab026199ad217f58f87a8b676baf5",
+      "bytes": 1603116
+    },
+    {
+      "originalRetainedPath": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-7-current/performance.png",
+      "sha256": "39477133863838f194160c79e413a7b2f36ab026199ad217f58f87a8b676baf5",
+      "bytes": 1603116
+    }
+  ],
+  "selected": [
+    {
+      "file": "images/1-1-current-after.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-1-current/after.png",
+      "sha256": "99618e371432bb285920d0921459105b4a0db5e3bd84248ba31d0f016bd007ed"
+    },
+    {
+      "file": "images/1-1-current-performance.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-1-current/performance.png",
+      "sha256": "99618e371432bb285920d0921459105b4a0db5e3bd84248ba31d0f016bd007ed"
+    },
+    {
+      "file": "images/1-6-shared-graph-after.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-6-shared-graph/after.png",
+      "sha256": "c7f022c78e219c1fafe844075761f9e00d0c42cb0fdb450e008bf2741dd760b9"
+    },
+    {
+      "file": "images/1-6-shared-graph-performance.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-1-6-shared-graph/performance.png",
+      "sha256": "c7f022c78e219c1fafe844075761f9e00d0c42cb0fdb450e008bf2741dd760b9"
+    },
+    {
+      "file": "images/2-1-current-after.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-1-current/after.png",
+      "sha256": "78c94c366ab1e71ce3711dcdbdeba5a50fa3205b74faa9cdc0c4485707f6b4e3"
+    },
+    {
+      "file": "images/2-1-current-performance.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-1-current/performance.png",
+      "sha256": "78c94c366ab1e71ce3711dcdbdeba5a50fa3205b74faa9cdc0c4485707f6b4e3"
+    },
+    {
+      "file": "images/2-2-shared-graph-after.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-2-shared-graph/after.png",
+      "sha256": "588026182efb61e969f3af7277125a0f4c417ced723cd55a7795403bae9c4e68"
+    },
+    {
+      "file": "images/2-2-shared-graph-performance.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-2-2-shared-graph/performance.png",
+      "sha256": "588026182efb61e969f3af7277125a0f4c417ced723cd55a7795403bae9c4e68"
+    },
+    {
+      "file": "images/3-1-current-after.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-1-current/after.png",
+      "sha256": "dda1f4072e3c9bbdf4ebadca06cc6281035ccbfb930d42a2c39a50d336229513"
+    },
+    {
+      "file": "images/3-1-current-performance.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-1-current/performance.png",
+      "sha256": "dda1f4072e3c9bbdf4ebadca06cc6281035ccbfb930d42a2c39a50d336229513"
+    },
+    {
+      "file": "images/3-4-shared-graph-after.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-4-shared-graph/after.png",
+      "sha256": "91b6fef4d5795cd9b5501a7c73c359ea623f1293262ad4ccd33b025f80a205f0"
+    },
+    {
+      "file": "images/3-4-shared-graph-performance.png",
+      "source": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/capture-3-4-shared-graph/performance.png",
+      "sha256": "91b6fef4d5795cd9b5501a7c73c359ea623f1293262ad4ccd33b025f80a205f0"
+    }
+  ]
+}

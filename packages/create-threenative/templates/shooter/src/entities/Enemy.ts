@@ -224,18 +224,6 @@ const ROUTE_START = ROUTE[0] ?? new Vector3();
  * the worst single frame each stage has ever cost across all five soldiers together.
  */
 /**
- * Seconds between line-of-sight raycasts for one soldier.
- *
- * The cheap half of `#canSee` — range and view cone — still runs every frame, so a soldier turning
- * away or stepping out of range loses sight instantly. Only the raycast is rationed, because it is
- * a `raycastAll` against every solid in the town and five soldiers doing that at 60 Hz measured at
- * 15.9 ms of a 16.3 ms frame: the entire mid-round hitch, in one call.
- *
- * A tenth of a second of staleness on "can he see me" is invisible next to `REACTION_SECONDS`,
- * which already holds fire for far longer than this after a soldier first spots the player.
- */
-const LOS_INTERVAL_SECONDS = 0;
-/**
  * Shortest gap between two grid searches for one soldier when only the goal has drifted.
  *
  * `NAV_REPLAN_SECONDS` (0.4) is the gap for a route that has become obstructed. Reusing it for
@@ -250,9 +238,6 @@ const LOS_INTERVAL_SECONDS = 0;
  * per-frame cost.
  */
 const GOAL_REPLAN_SECONDS = 0.15;
-/** Spreads the squad's raycasts across frames, so five soldiers never all test on the same one. */
-const losStagger = 0;
-
 /** Blocked-cell bitmaps per collider set, so the squad pays for the nav grid once. */
 const NAV_GRIDS = new WeakMap<object, Map<string, Uint8Array>>();
 

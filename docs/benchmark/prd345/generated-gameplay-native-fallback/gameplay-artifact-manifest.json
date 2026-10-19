@@ -1,0 +1,2717 @@
+[
+  {
+    "path": "action-rpg/artifacts/playtest/01-playtests-combat.playtest.json/after.png",
+    "bytes": 918653,
+    "sha256": "24b11e0fe52bff4ec5ff4e1ca7e1d90ee0e0ff6f8e4d7b1c2b10c5c5b045c563"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/01-playtests-combat.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/01-playtests-combat.playtest.json/console.json",
+    "bytes": 5726,
+    "sha256": "51f4e7798aca1ff1deb476b92aff899dc0ef3fe7d82582a2e99f1d3c2e253556"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/02-playtests-fail.playtest.json/after.png",
+    "bytes": 919802,
+    "sha256": "b20433534e07cfe8f42060d638581ac48c9c35f7a8fed5eb17da7f3532f1155e"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/02-playtests-fail.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/02-playtests-fail.playtest.json/console.json",
+    "bytes": 5726,
+    "sha256": "3b8a249d0f5ffa86567f7b5131e906ee61a8ce7aaebe4699cccfe644734c6ab7"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/03-playtests-inventory.playtest.json/after.png",
+    "bytes": 909346,
+    "sha256": "2d03d91ece0762695c597ebb96ad746fe29e1a6ad5b86d3b1dbfc8fbdd4af56d"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/03-playtests-inventory.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/03-playtests-inventory.playtest.json/console.json",
+    "bytes": 5726,
+    "sha256": "3b0e72565e15d96fb535cb9bc73260d9cb68ebd7156fdaa1dd1cc673a84bd59e"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/04-playtests-performance.playtest.json/after.png",
+    "bytes": 2154147,
+    "sha256": "866fafbe0d7ca9ad19a6d83af275336ba78a635780ece29354203c70c5fb46f0"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/04-playtests-performance.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/04-playtests-performance.playtest.json/console.json",
+    "bytes": 47843,
+    "sha256": "d816e41bb647807d3db97c02d62a83c37a8b2c75c28b8216663fd8ac3ebc9052"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/05-playtests-progress.playtest.json/after.png",
+    "bytes": 946158,
+    "sha256": "0f1d44d859a4adc8e467a19ede381dfcb3342f06a53d145613c5d24ae0ce7141"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/05-playtests-progress.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/05-playtests-progress.playtest.json/console.json",
+    "bytes": 10074,
+    "sha256": "f31048c9add8222026e2998294989488b08e90ef0048db7e84e4a4a70186f9e7"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/06-playtests-survives.playtest.json/after.png",
+    "bytes": 914716,
+    "sha256": "6273515717dde626178999f79faf3867f6c87eeddb1e2e9861df7a2bd00ed347"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/06-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/06-playtests-survives.playtest.json/console.json",
+    "bytes": 5726,
+    "sha256": "ecf2db09b175fc84e5f22dbc9cd11757497bb22ea7ea0b2eba48d40ef64069c5"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/07-playtests-touch-controls.playtest.json/after.png",
+    "bytes": 950373,
+    "sha256": "e5d3193d57334af62ab7d0e18f42e2f1fb50929cba993ed9e59b3bfa01b15929"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/07-playtests-touch-controls.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/07-playtests-touch-controls.playtest.json/console.json",
+    "bytes": 5490,
+    "sha256": "d1f6e0af12c9f53827e507c4ac5eae38ebd0093bbd6889d3ae3aa05cffeec4ed"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/08-playtests-win.playtest.json/after.png",
+    "bytes": 934286,
+    "sha256": "67617c973a2d4c926fd4cf2b35aa1a090a4348728e4ac0deeea4db185f01d268"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/08-playtests-win.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/08-playtests-win.playtest.json/console.json",
+    "bytes": 5726,
+    "sha256": "6e592abbb7735bdfd153c8bd967fd1986a39636cdae016105f5355fb029ff083"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/after.png",
+    "bytes": 194883,
+    "sha256": "338c0fbbeef11816d4065a20e4481153935602bf2ce9653b237621eabdb22d6b"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "action-rpg/artifacts/playtest/console.json",
+    "bytes": 6117,
+    "sha256": "10672f19d9266d770bf8d906b0f356df03025154e357aa8f1197210cb0697d00"
+  },
+  {
+    "path": "minimal/artifacts/playtest/01-playtests-play.playtest.json/after.png",
+    "bytes": 1897559,
+    "sha256": "e361b34c21df30d569ea0c208cb6ee993e1c015f1354a663bca9e2c5df20bad5"
+  },
+  {
+    "path": "minimal/artifacts/playtest/01-playtests-play.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "minimal/artifacts/playtest/01-playtests-play.playtest.json/console.json",
+    "bytes": 12394,
+    "sha256": "f029c328db7310ed655c9fa1bfac8a19caa394a093d0a5b39c582085ecc15231"
+  },
+  {
+    "path": "minimal/artifacts/playtest/02-playtests-sky.playtest.json/after.png",
+    "bytes": 861599,
+    "sha256": "8c1b6a8177a6845beef01ae074edfbb6f3b77c4502fd626651d4b2ba1ae442d5"
+  },
+  {
+    "path": "minimal/artifacts/playtest/02-playtests-sky.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "minimal/artifacts/playtest/02-playtests-sky.playtest.json/console.json",
+    "bytes": 4084,
+    "sha256": "93264f7c7aba25a0c10183e713e9014c2cca98bbb12a491d440f67751418f1c4"
+  },
+  {
+    "path": "minimal/artifacts/playtest/03-playtests-survives.playtest.json/after.png",
+    "bytes": 879528,
+    "sha256": "c56dd8afc83e50b1e864e051063d6243cf4772e3eafefd2317eed0472cce1028"
+  },
+  {
+    "path": "minimal/artifacts/playtest/03-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "minimal/artifacts/playtest/03-playtests-survives.playtest.json/console.json",
+    "bytes": 4084,
+    "sha256": "93264f7c7aba25a0c10183e713e9014c2cca98bbb12a491d440f67751418f1c4"
+  },
+  {
+    "path": "minimal/artifacts/playtest/04-playtests-touch-controls.playtest.json/after.png",
+    "bytes": 874601,
+    "sha256": "08c50378490ad55349ae715f71beda85fe650100aa15690fb4a7273cb466da13"
+  },
+  {
+    "path": "minimal/artifacts/playtest/04-playtests-touch-controls.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "minimal/artifacts/playtest/04-playtests-touch-controls.playtest.json/console.json",
+    "bytes": 3848,
+    "sha256": "2de154546326e06419a5fba8fa061412aa3deb7fbcbf0d6619e40a5edbcbd132"
+  },
+  {
+    "path": "minimal/artifacts/playtest/after.png",
+    "bytes": 239311,
+    "sha256": "52c6b46354db43aa0d0affc8f4ad3b53ab0ed9b235bc34cc4acf4bc9d2e3775b"
+  },
+  {
+    "path": "minimal/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "minimal/artifacts/playtest/console.json",
+    "bytes": 4277,
+    "sha256": "b5aeb0a0ea974264762328f85c3a244e739edc82130b69e3fe1bf551b1865fe3"
+  },
+  {
+    "path": "platformer/artifacts/playtest/01-playtests-branding.playtest.json/after.png",
+    "bytes": 641154,
+    "sha256": "5f7b02468889d20347a71daee5958bbfe1e6fd013d7038295a18ebac96505e2d"
+  },
+  {
+    "path": "platformer/artifacts/playtest/01-playtests-branding.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/01-playtests-branding.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "6958a5e1fe077482c79a86060ca1a5c06108462b3c19f16cc3e7620596e90d75"
+  },
+  {
+    "path": "platformer/artifacts/playtest/02-playtests-buffer.playtest.json/after.png",
+    "bytes": 693814,
+    "sha256": "128422dd20aadc0004b468d9c7a5cbca121ed12b6f02fefb2b1d5c0e63261399"
+  },
+  {
+    "path": "platformer/artifacts/playtest/02-playtests-buffer.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/02-playtests-buffer.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "d0dda6087b1a69e5566d2109e07f38742459796c5aa43f34aa416372f0c87191"
+  },
+  {
+    "path": "platformer/artifacts/playtest/03-playtests-collect.playtest.json/after.png",
+    "bytes": 721478,
+    "sha256": "3fc243dfe34a5867bd011cf262d4123cf6ae1974c07dc7caef01995ce8637f99"
+  },
+  {
+    "path": "platformer/artifacts/playtest/03-playtests-collect.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/03-playtests-collect.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "aced131cc9ea6505fdb9d9476ecee8a972a7224c578db18e89c38cb079e59661"
+  },
+  {
+    "path": "platformer/artifacts/playtest/04-playtests-coyote.playtest.json/after.png",
+    "bytes": 653862,
+    "sha256": "ecd44b4b5aadd82ff340f5b71adc01c092cb85b61f9e633aef2a0f1c617379ce"
+  },
+  {
+    "path": "platformer/artifacts/playtest/04-playtests-coyote.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/04-playtests-coyote.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "c6d9d609607bad2a3d5dfbb4d9810e0ef83221196841b0bdd09623176752423f"
+  },
+  {
+    "path": "platformer/artifacts/playtest/05-playtests-damage.playtest.json/after.png",
+    "bytes": 695582,
+    "sha256": "5f38b42bcf062c9bb7c661817926b603634a117b5827a2303b796462c563e4f7"
+  },
+  {
+    "path": "platformer/artifacts/playtest/05-playtests-damage.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/05-playtests-damage.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "22e249d0be868f9a436f8820e67b688dd3221e18f2405e1b7c90640154beeaa1"
+  },
+  {
+    "path": "platformer/artifacts/playtest/06-playtests-dash.playtest.json/after.png",
+    "bytes": 746627,
+    "sha256": "7db18899a07bc0b13d5b45fde3ff7919a751a0fded8b8561e197f77876360d7c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/06-playtests-dash.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/06-playtests-dash.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "4fa5a6003211779fdfb5312084e6d7057a71a89675327a908dacc998d4748b6b"
+  },
+  {
+    "path": "platformer/artifacts/playtest/07-playtests-hud.playtest.json/after.png",
+    "bytes": 760487,
+    "sha256": "a0c2555e5d62f40635ade17d665417560bd633ea7294501d9188bf0aee2df74e"
+  },
+  {
+    "path": "platformer/artifacts/playtest/07-playtests-hud.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/07-playtests-hud.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "2cac47b9b6a8c6eb38b081b73095bdbd117164f97b3a7f6105c4628a2e73bf3b"
+  },
+  {
+    "path": "platformer/artifacts/playtest/08-playtests-jump.playtest.json/after.png",
+    "bytes": 683702,
+    "sha256": "05d07024726b09166d1ccc4ec7ba907b80bf21cad1237303f8480292d4ad89a1"
+  },
+  {
+    "path": "platformer/artifacts/playtest/08-playtests-jump.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/08-playtests-jump.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "3e058f27f22400d198fd081835565ce757e6f80c98f49399df24b5d8db41a83c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/09-playtests-move.playtest.json/after.png",
+    "bytes": 721590,
+    "sha256": "fd897b5b62dae4e9f57665e71b02f58ec149e7175406589b6860333f2062660c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/09-playtests-move.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/09-playtests-move.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "c17139c72a874e851b4e03ee1324f9d97b05b19bc564c7bb8af92ede70f3a35f"
+  },
+  {
+    "path": "platformer/artifacts/playtest/10-playtests-performance.playtest.json/after.png",
+    "bytes": 1377279,
+    "sha256": "90b42ce927feb3eabe825ba296a8944b775e8e024b2f9fdd3c77f9ebdb3f5e62"
+  },
+  {
+    "path": "platformer/artifacts/playtest/10-playtests-performance.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "platformer/artifacts/playtest/10-playtests-performance.playtest.json/console.json",
+    "bytes": 80298,
+    "sha256": "a70bdf601fc02154bfc6980328e25d4081c158ad8d11b4d4d8644df284511f3d"
+  },
+  {
+    "path": "platformer/artifacts/playtest/11-playtests-respawn.playtest.json/after.png",
+    "bytes": 745585,
+    "sha256": "ad59d872c1b93969e0d2ffb83f9a91e414a07793f4a9bfc4489a53dfa50578b3"
+  },
+  {
+    "path": "platformer/artifacts/playtest/11-playtests-respawn.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/11-playtests-respawn.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "87ee7bf811cf0ecfc55acfb5bbf79576d5d39fe7ccdeb28fdd1e3e17ddcb20b4"
+  },
+  {
+    "path": "platformer/artifacts/playtest/12-playtests-stomp.playtest.json/after.png",
+    "bytes": 689347,
+    "sha256": "8d24c1aff156a0c103ebcd17a21ef8977a6926e54cd16febd2a8b199c41a526f"
+  },
+  {
+    "path": "platformer/artifacts/playtest/12-playtests-stomp.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/12-playtests-stomp.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "80bd16aff05ed76fa4c60327d3f4f0aac62e3147e630333a2bb617ca1bb5f94c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/13-playtests-survives.playtest.json/after.png",
+    "bytes": 341600,
+    "sha256": "50f029f275bf151bbfedd40004045abe747702e45afd33a748678880e5b6287d"
+  },
+  {
+    "path": "platformer/artifacts/playtest/13-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/13-playtests-survives.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "45ee3e07953d3921002aca73311056eb5d95b13827cacff4bed3d48740d66182"
+  },
+  {
+    "path": "platformer/artifacts/playtest/14-playtests-touch-controls-web.playtest.json/after.png",
+    "bytes": 465733,
+    "sha256": "005c0bd35fd6e717e53d7187043426ee51516e67d80713e9c76013a16d61f9e9"
+  },
+  {
+    "path": "platformer/artifacts/playtest/14-playtests-touch-controls-web.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/14-playtests-touch-controls-web.playtest.json/console.json",
+    "bytes": 4774,
+    "sha256": "95f3ceedc36c9b75f8e8ff71aec34bebaa9a99ba313a11fba83d07b28a9b5d87"
+  },
+  {
+    "path": "platformer/artifacts/playtest/15-playtests-world.playtest.json/after.png",
+    "bytes": 644133,
+    "sha256": "2a0ab07b4dd7463d19648d39cf37f68f29b3f49398052e5ab7836246a21b83a3"
+  },
+  {
+    "path": "platformer/artifacts/playtest/15-playtests-world.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "platformer/artifacts/playtest/15-playtests-world.playtest.json/console.json",
+    "bytes": 5010,
+    "sha256": "cc5152704ff0715337da9f90b71ee1768fe621e7c42ee2dd264be67352ce1dfa"
+  },
+  {
+    "path": "platformer/artifacts/playtest/after.png",
+    "bytes": 212743,
+    "sha256": "65bf6bdc5dc2b5811d67118c091ce0a267bf1c62aeb772f694781b8eff093620"
+  },
+  {
+    "path": "platformer/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "platformer/artifacts/playtest/console.json",
+    "bytes": 5401,
+    "sha256": "6649f57b8c71b6af524dcf9ac01c7a45b1d5d1759bd603043e65698c90bcf02a"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/01-playtests-axis.playtest.json/after.png",
+    "bytes": 471294,
+    "sha256": "1420d534fca837e0fd41fe76fe765a97ea249cf78c684cd84890d458f50904c2"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/01-playtests-axis.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/01-playtests-axis.playtest.json/console.json",
+    "bytes": 4672,
+    "sha256": "ef0902b12cc063ab5d23e4aa8b8c2a78b3d884313d29a8e4fc8ed88717b6cfbb"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/02-playtests-blocked.playtest.json/after.png",
+    "bytes": 478489,
+    "sha256": "79a80ece762044092bf8158a435599e6b60e5d7cc9b848fc8efd527b4343704d"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/02-playtests-blocked.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/02-playtests-blocked.playtest.json/console.json",
+    "bytes": 4672,
+    "sha256": "1101feb9ab0dc5fe5f8f69c19dae3bba5fa8c332d172aa7739f01586057f5a70"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/03-playtests-boot-failure.playtest.json/after.png",
+    "bytes": 12782,
+    "sha256": "f9d814180c9095c4e6b1e7077f513f22370e19c187f829cc9f534903a6a7cdb5"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/03-playtests-boot-failure.playtest.json/console.json",
+    "bytes": 308,
+    "sha256": "c0223ae408a253fee3a74bf6cefb3c6e80e175158eb51eeff5733f62cc5b87eb"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/04-playtests-caused.playtest.json/after.png",
+    "bytes": 505289,
+    "sha256": "9072909b9ac851f2f0998509a946254fda04e49739fa10e6d22894d91f408f8d"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/04-playtests-caused.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/04-playtests-caused.playtest.json/console.json",
+    "bytes": 4672,
+    "sha256": "943efc7a62c7560191adbf79f7d67b8be2fdf973b9b977d2eb19fee714a18e3a"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/05-playtests-lit.playtest.json/after.png",
+    "bytes": 476230,
+    "sha256": "f60ea8dabea0f76a0db03cf46f899abb1bde2db34a9c949b7f4a27c92b6e396d"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/05-playtests-lit.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/05-playtests-lit.playtest.json/console.json",
+    "bytes": 4672,
+    "sha256": "b7222832811484d15169c4ef36bfa4b6e947c13cda5be20a3a91ebf2519cd98a"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/06-playtests-pause.playtest.json/after.png",
+    "bytes": 478270,
+    "sha256": "2a41cf72ae989447e1e5e4aa5775bd4971468af4921836566af0f5e820b83804"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/06-playtests-pause.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/06-playtests-pause.playtest.json/console.json",
+    "bytes": 4672,
+    "sha256": "70976604b46bacf0eee53e7faf0baa83317ef96465ce6c6a1dc80642d5706bc8"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/07-playtests-performance.playtest.json/after.png",
+    "bytes": 861827,
+    "sha256": "0bd2089d930b16f095380c57feb0bcc8d7bd92131c987661bfe6eb23428ef43c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/07-playtests-performance.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/07-playtests-performance.playtest.json/console.json",
+    "bytes": 49939,
+    "sha256": "d38499fc09f42a01380bad878e7a65e0892df692741ec4343ec889eedaa8e797"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/08-playtests-push.playtest.json/after.png",
+    "bytes": 476255,
+    "sha256": "9e6db08b19bc2e0d794a07f882be571ff5e6737437a93389d82bfc47dab1a31a"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/08-playtests-push.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/08-playtests-push.playtest.json/console.json",
+    "bytes": 4672,
+    "sha256": "97a861924652c725655d846cb4f9066c0d77b0dd3a45e76ba7aa85e9028c3503"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/09-playtests-replay.playtest.json/after.png",
+    "bytes": 478538,
+    "sha256": "e5b45331703f33800d7f476f16b4d559dc00d218160a4d6824a3ad7f2e13cf46"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/09-playtests-replay.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/09-playtests-replay.playtest.json/console.json",
+    "bytes": 4801,
+    "sha256": "a1a73b7b7d55f1592b5a3a8a41c8680af9c5ac6867f9b168f8fabe61c642d8ca"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/10-playtests-restart.playtest.json/after.png",
+    "bytes": 478709,
+    "sha256": "7cf31b68c20f553cdd763b1326f188cd334391eddfc26cb07aa5d1d9b03dbc78"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/10-playtests-restart.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/10-playtests-restart.playtest.json/console.json",
+    "bytes": 8411,
+    "sha256": "1dba98257e5de0526d0a739f803a5c62ba6c7d596bd55c9860315a8f1e6a80aa"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/11-playtests-seal.playtest.json/after.png",
+    "bytes": 505724,
+    "sha256": "eea0392065d4ac2e50261c4eefa4d47547e96a6ee4b545c29dbfd191e9229b36"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/11-playtests-seal.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/11-playtests-seal.playtest.json/console.json",
+    "bytes": 4672,
+    "sha256": "fcd73df650c4b785217537e63b75526ea7c3e101858dbed3797fcc5ad8f0f597"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/12-playtests-settle.playtest.json/after.png",
+    "bytes": 478262,
+    "sha256": "9153d7e29fa52fe3f083b6260aa36117c2b4513bba5c210c79ae4b1e3fcf5d0b"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/12-playtests-settle.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/12-playtests-settle.playtest.json/console.json",
+    "bytes": 4672,
+    "sha256": "9aa9e96dfc4734e823612d7aa2c39b4883619762de1a0d39ae397e48b2346b8f"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/13-playtests-survives.playtest.json/after.png",
+    "bytes": 476456,
+    "sha256": "b4053b00c2ab0908f1cf611dffa4e7a76ef7dc09e02fbe97a8db95ff38b72cd7"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/13-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/13-playtests-survives.playtest.json/console.json",
+    "bytes": 4672,
+    "sha256": "74cbd22dbdb30d127028064062e38b5c87b716840bfe3a1e52b10a5b7bbca782"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/14-playtests-travel.playtest.json/after.png",
+    "bytes": 476385,
+    "sha256": "0162a38b572924b310d7618715e373f7f90666b7a7401d45cbd8e6e410e1eca2"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/14-playtests-travel.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/14-playtests-travel.playtest.json/console.json",
+    "bytes": 4672,
+    "sha256": "5e3e0093f12240b8dd84d48c7a4f1a2a95422cd088c3ce0aa70e2422cf617bfc"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/14-playtests-travel.playtest.json/network.json",
+    "bytes": 3,
+    "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/14-playtests-travel.playtest.json/runtime-trace.json",
+    "bytes": 406,
+    "sha256": "ff86a1fa181a670628785013e17e6231a6a41b9e56d408d342c46535513e9cf5"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/after.png",
+    "bytes": 170736,
+    "sha256": "5cdf217916274dc8d4cfe8d03f5cff369473578216fa3a1f19449f41167ee522"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "puzzle/artifacts/playtest/console.json",
+    "bytes": 5062,
+    "sha256": "d9e0e6bbe80fd037e0bc3ad7938da16e55875d3d18f0aa9544f2b6d9a98d7897"
+  },
+  {
+    "path": "racing/artifacts/playtest/01-playtests-boost.playtest.json/after.png",
+    "bytes": 704493,
+    "sha256": "fdb482053c6cc09bdcef7c554374d520f0f03be2d09ddc40d3ea43f2a433bd7d"
+  },
+  {
+    "path": "racing/artifacts/playtest/01-playtests-boost.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "racing/artifacts/playtest/01-playtests-boost.playtest.json/console.json",
+    "bytes": 5302,
+    "sha256": "368714ece43b3272ad76200351a40cfdca1c1ea77d1bc5169b16f4d6e72ff563"
+  },
+  {
+    "path": "racing/artifacts/playtest/02-playtests-outcome.playtest.json/after.png",
+    "bytes": 810647,
+    "sha256": "c1f7086720a0a17f1f666f52230c3ba767f00aadcca86596e68133f5d0065697"
+  },
+  {
+    "path": "racing/artifacts/playtest/02-playtests-outcome.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "racing/artifacts/playtest/02-playtests-outcome.playtest.json/console.json",
+    "bytes": 5302,
+    "sha256": "c8c0f78ed7ba9306349b952cc87f9427d51340f94dce147e30489e676c0bdd8d"
+  },
+  {
+    "path": "racing/artifacts/playtest/03-playtests-performance.playtest.json/after.png",
+    "bytes": 1473475,
+    "sha256": "7d7b63ee13c381dd29bae62355099376da3ee2677387e50f3870caa736b64ad8"
+  },
+  {
+    "path": "racing/artifacts/playtest/03-playtests-performance.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "racing/artifacts/playtest/03-playtests-performance.playtest.json/console.json",
+    "bytes": 61166,
+    "sha256": "550965d5bae1552592a0dd9ce29bd99a7194010de768b4affd0c332f7e815240"
+  },
+  {
+    "path": "racing/artifacts/playtest/04-playtests-ranking.playtest.json/after.png",
+    "bytes": 751653,
+    "sha256": "a7606886287c29062b6c1822aeea9635d93974e0f02f2d853ea94fa640cf7605"
+  },
+  {
+    "path": "racing/artifacts/playtest/04-playtests-ranking.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "racing/artifacts/playtest/04-playtests-ranking.playtest.json/console.json",
+    "bytes": 5302,
+    "sha256": "a385524f065fea233573cf11d9e2af9139e1b75ad73309f6d8f2cb6077cb671f"
+  },
+  {
+    "path": "racing/artifacts/playtest/05-playtests-rescue.playtest.json/after.png",
+    "bytes": 751336,
+    "sha256": "ea8d5ef70688cef57794725182e8e714c980bebb47a0d6022fde04639a9ea4f0"
+  },
+  {
+    "path": "racing/artifacts/playtest/05-playtests-rescue.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "racing/artifacts/playtest/05-playtests-rescue.playtest.json/console.json",
+    "bytes": 5302,
+    "sha256": "da9072e9ca713a211c071dbe7aa49e5f37afe02a3f054db599310af2322bbc81"
+  },
+  {
+    "path": "racing/artifacts/playtest/06-playtests-reverse.playtest.json/after.png",
+    "bytes": 771939,
+    "sha256": "eeed8d3e4ff49734ba413ce2508ce7e41d739ff15d8ad77f07f06b6d3cd7b781"
+  },
+  {
+    "path": "racing/artifacts/playtest/06-playtests-reverse.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "racing/artifacts/playtest/06-playtests-reverse.playtest.json/console.json",
+    "bytes": 5302,
+    "sha256": "ac39c092876be25ba316885a6cf670ec16401889d9348048b59f2b68ffc905cd"
+  },
+  {
+    "path": "racing/artifacts/playtest/07-playtests-shortcut.playtest.json/after.png",
+    "bytes": 715454,
+    "sha256": "fcf9080af0b73e18f9b7e8f365d0f62938e8bb7ecd2e3bc5ff8666cca1822572"
+  },
+  {
+    "path": "racing/artifacts/playtest/07-playtests-shortcut.playtest.json/before.png",
+    "bytes": 725943,
+    "sha256": "b3c27711421107484633c219e5dc1679f378bbe3e9bbfecdee26aeb0b19c3a87"
+  },
+  {
+    "path": "racing/artifacts/playtest/07-playtests-shortcut.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "racing/artifacts/playtest/07-playtests-shortcut.playtest.json/console.json",
+    "bytes": 5302,
+    "sha256": "97ed14dd3c23e723524ad09c4ae7dcbcae5eabaf32e0c0fddf50c59748922aa9"
+  },
+  {
+    "path": "racing/artifacts/playtest/08-playtests-survives.playtest.json/after.png",
+    "bytes": 719548,
+    "sha256": "5e5fff3de571a4a14f3be367105b4e0eb5dce691f73e2086a7f89f55bed38404"
+  },
+  {
+    "path": "racing/artifacts/playtest/08-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "racing/artifacts/playtest/08-playtests-survives.playtest.json/console.json",
+    "bytes": 5302,
+    "sha256": "d78983d681435ddb5fab4f66c18406b93898ffc6237b46ccc6ca5678c64c20e4"
+  },
+  {
+    "path": "racing/artifacts/playtest/09-playtests-touch-controls.playtest.json/after.png",
+    "bytes": 606166,
+    "sha256": "dc3a23d75823bfd5cffc4c27cb8042964af19ac251454f6831074df9adb7b9d3"
+  },
+  {
+    "path": "racing/artifacts/playtest/09-playtests-touch-controls.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "racing/artifacts/playtest/09-playtests-touch-controls.playtest.json/console.json",
+    "bytes": 5024,
+    "sha256": "95012047bbf86ea1f661d9ee2187570480859819c891bad062d82c78295e9785"
+  },
+  {
+    "path": "racing/artifacts/playtest/after.png",
+    "bytes": 220066,
+    "sha256": "82d017b3487ccf11af8d9940b35d73a6e935782783b7f4ed665e6caf937b4120"
+  },
+  {
+    "path": "racing/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "racing/artifacts/playtest/console.json",
+    "bytes": 5693,
+    "sha256": "1af9e4170d4e5a8df28f5f0802f2933fcf5a515fd551f80e99a893d27c5a6186"
+  },
+  {
+    "path": "rain/artifacts/playtest/01-playtests-auto-lightning-clear.playtest.json/after.png",
+    "bytes": 1389882,
+    "sha256": "fa9ea4b0c8f77bcc45efce8d1fb1a57bd7ec7a58be36aafc05a69f37c30ab025"
+  },
+  {
+    "path": "rain/artifacts/playtest/01-playtests-auto-lightning-clear.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "e1819e23d4480adb81afef610be26b320906e1122d8ef29c9b37073f2a6ad5d2"
+  },
+  {
+    "path": "rain/artifacts/playtest/01-playtests-auto-lightning-clear.playtest.json/console.json",
+    "bytes": 3260,
+    "sha256": "2a0305f4c64cbfd2da5f6d2528eb0268924c526c2b96f03e7e93a5c767eb8c36"
+  },
+  {
+    "path": "rain/artifacts/playtest/02-playtests-auto-lightning.playtest.json/after.png",
+    "bytes": 1381796,
+    "sha256": "24892b81a166476926677427cbad671d52db0f3de7759280d76f150c0161e207"
+  },
+  {
+    "path": "rain/artifacts/playtest/02-playtests-auto-lightning.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "e1819e23d4480adb81afef610be26b320906e1122d8ef29c9b37073f2a6ad5d2"
+  },
+  {
+    "path": "rain/artifacts/playtest/02-playtests-auto-lightning.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "950bda1433622f0c2d3f96fe5921fe73fcf0782b5a7b39834c31b4d74d5d77be"
+  },
+  {
+    "path": "rain/artifacts/playtest/03-playtests-automation.playtest.json/after.png",
+    "bytes": 364033,
+    "sha256": "afc7e2d9d41913dfb0016632c05c5c2f5a5cf2a1fff0a11db1b9ea8e3c8049e1"
+  },
+  {
+    "path": "rain/artifacts/playtest/03-playtests-automation.playtest.json/capture.json",
+    "bytes": 1069,
+    "sha256": "d47a8af813e4e8d3637a0d8c4b94643968609e4b5af45fcc5d3c77185461ad41"
+  },
+  {
+    "path": "rain/artifacts/playtest/03-playtests-automation.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "b789b0b5c684a3e0163a3802ed4fd3dafac23dc0b983d6bf89eb90451e0a5f79"
+  },
+  {
+    "path": "rain/artifacts/playtest/04-playtests-cinematic.playtest.json/after.png",
+    "bytes": 1345352,
+    "sha256": "68dd7be7cc20fe3bcb7b8d3d8cbbf810fd4f2284bf9435073d6c3107f6706a6c"
+  },
+  {
+    "path": "rain/artifacts/playtest/04-playtests-cinematic.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "e1819e23d4480adb81afef610be26b320906e1122d8ef29c9b37073f2a6ad5d2"
+  },
+  {
+    "path": "rain/artifacts/playtest/04-playtests-cinematic.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "a28b7354933d9f8a820c575cbc6569431ed8c3d1be4bc615cc943ae7d8215e51"
+  },
+  {
+    "path": "rain/artifacts/playtest/05-playtests-flash.playtest.json/after.png",
+    "bytes": 1473572,
+    "sha256": "2324c9a96f17a76e62012c9674e98e2177f2aac4aaa28e977bca2847c8cef3bb"
+  },
+  {
+    "path": "rain/artifacts/playtest/05-playtests-flash.playtest.json/before.png",
+    "bytes": 1376047,
+    "sha256": "3c3814c5b6d4f73d4f1993b0e2118f0c185116a0909e057c14fcc947e1e900e1"
+  },
+  {
+    "path": "rain/artifacts/playtest/05-playtests-flash.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "e1819e23d4480adb81afef610be26b320906e1122d8ef29c9b37073f2a6ad5d2"
+  },
+  {
+    "path": "rain/artifacts/playtest/05-playtests-flash.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "a5614e3533398b05be8eaf1503ff3ab67e39fe65efe0e8a830089a99acd635c7"
+  },
+  {
+    "path": "rain/artifacts/playtest/06-playtests-fly.playtest.json/after.png",
+    "bytes": 1343572,
+    "sha256": "f45d620205c4766393c8aef666da59b5427efd7d8897e33c2fdd25078fef7393"
+  },
+  {
+    "path": "rain/artifacts/playtest/06-playtests-fly.playtest.json/before.png",
+    "bytes": 1376047,
+    "sha256": "3c3814c5b6d4f73d4f1993b0e2118f0c185116a0909e057c14fcc947e1e900e1"
+  },
+  {
+    "path": "rain/artifacts/playtest/06-playtests-fly.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "e1819e23d4480adb81afef610be26b320906e1122d8ef29c9b37073f2a6ad5d2"
+  },
+  {
+    "path": "rain/artifacts/playtest/06-playtests-fly.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "edb11cf25efb8aeed811641753ed504d6e17d12ef389262bc743cbb76b64644d"
+  },
+  {
+    "path": "rain/artifacts/playtest/07-playtests-lightning.playtest.json/after.png",
+    "bytes": 1371067,
+    "sha256": "e8f00b2b94d0a9b880a31c3ea1f3ba0bc8296ee7e79dfe9635f68cc0af648aa4"
+  },
+  {
+    "path": "rain/artifacts/playtest/07-playtests-lightning.playtest.json/before.png",
+    "bytes": 1376047,
+    "sha256": "3c3814c5b6d4f73d4f1993b0e2118f0c185116a0909e057c14fcc947e1e900e1"
+  },
+  {
+    "path": "rain/artifacts/playtest/07-playtests-lightning.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "e1819e23d4480adb81afef610be26b320906e1122d8ef29c9b37073f2a6ad5d2"
+  },
+  {
+    "path": "rain/artifacts/playtest/07-playtests-lightning.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "3f35571665f7fb98128778d1f0048e96da28fc1b69dab791933dad330dc6f104"
+  },
+  {
+    "path": "rain/artifacts/playtest/07-playtests-lightning.playtest.json/strike.png",
+    "bytes": 1393336,
+    "sha256": "799dfdfa1b7999cf383203cca87eeb05cc47c4df56f6d871c5a0792c8c1c08ca"
+  },
+  {
+    "path": "rain/artifacts/playtest/08-playtests-loading.playtest.json/after.png",
+    "bytes": 861601,
+    "sha256": "93351cde45b6ae5c940985a3e1f8da6419903caf1517efe94fe5cadcb27351b4"
+  },
+  {
+    "path": "rain/artifacts/playtest/08-playtests-loading.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "c0faa5c42be171d779acb67b1c080e8f7f4242992c5bb5ac3e37adf106ab1f00"
+  },
+  {
+    "path": "rain/artifacts/playtest/08-playtests-loading.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "b55687dcbe2d4d3298f07881505e1ba1ec7d4fb0cfbec6769fd583be1168cf7b"
+  },
+  {
+    "path": "rain/artifacts/playtest/09-playtests-paused.playtest.json/after.png",
+    "bytes": 1376301,
+    "sha256": "767a8389814abc1c76b205491b159744b4a51d94308f0d9c9872397e0b3575c9"
+  },
+  {
+    "path": "rain/artifacts/playtest/09-playtests-paused.playtest.json/before.png",
+    "bytes": 1376047,
+    "sha256": "3c3814c5b6d4f73d4f1993b0e2118f0c185116a0909e057c14fcc947e1e900e1"
+  },
+  {
+    "path": "rain/artifacts/playtest/09-playtests-paused.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "e1819e23d4480adb81afef610be26b320906e1122d8ef29c9b37073f2a6ad5d2"
+  },
+  {
+    "path": "rain/artifacts/playtest/09-playtests-paused.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "2b5e21dbcaf682e065d333ceea8b605b1f29b028549a44d67916658d70047e15"
+  },
+  {
+    "path": "rain/artifacts/playtest/10-playtests-performance.playtest.json/after.png",
+    "bytes": 2163265,
+    "sha256": "3c9d7500c185cb526394a2da010309adc7be07ce1a74ceca113b468b479fb23e"
+  },
+  {
+    "path": "rain/artifacts/playtest/10-playtests-performance.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "rain/artifacts/playtest/10-playtests-performance.playtest.json/console.json",
+    "bytes": 23595,
+    "sha256": "eba92a1ed868be7e9540cbe31da44408ac7e0cd2088cb973d18858d2fd7778b3"
+  },
+  {
+    "path": "rain/artifacts/playtest/11-playtests-reduced-motion.playtest.json/after.png",
+    "bytes": 1378439,
+    "sha256": "ebc23d26cbe252ead44b55473d1c0ecabd70468e7350502f70936d27300d612e"
+  },
+  {
+    "path": "rain/artifacts/playtest/11-playtests-reduced-motion.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "e1819e23d4480adb81afef610be26b320906e1122d8ef29c9b37073f2a6ad5d2"
+  },
+  {
+    "path": "rain/artifacts/playtest/11-playtests-reduced-motion.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "3c051bab757b6f4e6351a8cedbb9019a649dea25199eb90c859c51e12ac60fa9"
+  },
+  {
+    "path": "rain/artifacts/playtest/12-playtests-simulation.playtest.json/after.png",
+    "bytes": 1005872,
+    "sha256": "79fd8c9861a3bd2246ed4008472a14872a5cd17266f22a1647a853afacb74c60"
+  },
+  {
+    "path": "rain/artifacts/playtest/12-playtests-simulation.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "rain/artifacts/playtest/12-playtests-simulation.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "7f4dd7d088c38f441f7bcc079d7d6e1755856c818dc6b0fdbeadf7449552d60c"
+  },
+  {
+    "path": "rain/artifacts/playtest/13-playtests-storm.playtest.json/after.png",
+    "bytes": 1453124,
+    "sha256": "f07216fc6683f454ef8c9b07b30927b5790c6097d88adf5166b67e4933aaa30b"
+  },
+  {
+    "path": "rain/artifacts/playtest/13-playtests-storm.playtest.json/before.png",
+    "bytes": 1376047,
+    "sha256": "3c3814c5b6d4f73d4f1993b0e2118f0c185116a0909e057c14fcc947e1e900e1"
+  },
+  {
+    "path": "rain/artifacts/playtest/13-playtests-storm.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "e1819e23d4480adb81afef610be26b320906e1122d8ef29c9b37073f2a6ad5d2"
+  },
+  {
+    "path": "rain/artifacts/playtest/13-playtests-storm.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "7b7944e053da25d00828a508993e87614ff0925d824975bb9af45851abbea4d1"
+  },
+  {
+    "path": "rain/artifacts/playtest/14-playtests-survives.playtest.json/after.png",
+    "bytes": 1010139,
+    "sha256": "4437a1445382d49c6719844bc104de3fe38c29382ef942f44e03e33b1c67d689"
+  },
+  {
+    "path": "rain/artifacts/playtest/14-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "rain/artifacts/playtest/14-playtests-survives.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "a9e9fed9fa3671e0d4d3c1b8c975ee5e03752d2d08340bcb1b81192b1a9041fb"
+  },
+  {
+    "path": "rain/artifacts/playtest/15-playtests-tiers.playtest.json/after.png",
+    "bytes": 1365905,
+    "sha256": "bb9e8d21f95ab0c244fd242d370b386bf1a4ed5c1c30487ee74e9ea612ace941"
+  },
+  {
+    "path": "rain/artifacts/playtest/15-playtests-tiers.playtest.json/before.png",
+    "bytes": 1376047,
+    "sha256": "3c3814c5b6d4f73d4f1993b0e2118f0c185116a0909e057c14fcc947e1e900e1"
+  },
+  {
+    "path": "rain/artifacts/playtest/15-playtests-tiers.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "e1819e23d4480adb81afef610be26b320906e1122d8ef29c9b37073f2a6ad5d2"
+  },
+  {
+    "path": "rain/artifacts/playtest/15-playtests-tiers.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "6d0d15c9832612fb6d8d4b426b1b1f63c614513322dedfc33291b9125167805b"
+  },
+  {
+    "path": "rain/artifacts/playtest/15-playtests-tiers.playtest.json/tier-balanced.png",
+    "bytes": 1389597,
+    "sha256": "07c2fac42f096505e922ae69021cf7e3d808bd165c0c556356fc3290f615327f"
+  },
+  {
+    "path": "rain/artifacts/playtest/15-playtests-tiers.playtest.json/tier-high.png",
+    "bytes": 1375520,
+    "sha256": "9854370451ba34db5efb39bb7d611b7f86a30a58d5ac78866b31566667f64ca3"
+  },
+  {
+    "path": "rain/artifacts/playtest/15-playtests-tiers.playtest.json/tier-low.png",
+    "bytes": 1361037,
+    "sha256": "d546349be35919957540b2cf362338b0bb3a681b2b6e3cd2b0ac356c6c67d18b"
+  },
+  {
+    "path": "rain/artifacts/playtest/15-playtests-tiers.playtest.json/tier-ultra.png",
+    "bytes": 1365905,
+    "sha256": "bb9e8d21f95ab0c244fd242d370b386bf1a4ed5c1c30487ee74e9ea612ace941"
+  },
+  {
+    "path": "rain/artifacts/playtest/16-playtests-weather.playtest.json/after.png",
+    "bytes": 1072755,
+    "sha256": "81a569fca386485a0731b5721602f2b95774a2c1a3c9852ab0cfa2b8bfc5d063"
+  },
+  {
+    "path": "rain/artifacts/playtest/16-playtests-weather.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "rain/artifacts/playtest/16-playtests-weather.playtest.json/console.json",
+    "bytes": 3259,
+    "sha256": "dc5aa32f9e1a1f48cf164912b4593cad2f1744b2b74ff2eaa6e9b791208d2a19"
+  },
+  {
+    "path": "rain/artifacts/playtest/after.png",
+    "bytes": 274946,
+    "sha256": "991d37785ffe5322b98dccce6111c8e813c8423c1b6fae272ff6f593113ceb40"
+  },
+  {
+    "path": "rain/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "rain/artifacts/playtest/console.json",
+    "bytes": 3650,
+    "sha256": "95de854ed96ccb5c1273c6667c14eb94f6d54881c62b64330cd8afe57aad3ca7"
+  },
+  {
+    "path": "rts/artifacts/playtest/01-playtests-performance.playtest.json/after.png",
+    "bytes": 1897870,
+    "sha256": "625ef2d86f7f9008a370b96fc903e1e4bdd67a4cc05ac87181864594eb9535e1"
+  },
+  {
+    "path": "rts/artifacts/playtest/01-playtests-performance.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "rts/artifacts/playtest/01-playtests-performance.playtest.json/console.json",
+    "bytes": 7696,
+    "sha256": "2228cfa593a89b9905f9f30bfcb1e04b19086ff69b9c63367cf382fecc54bc36"
+  },
+  {
+    "path": "rts/artifacts/playtest/02-playtests-rts-ai-attack.playtest.json/after.png",
+    "bytes": 1026432,
+    "sha256": "c8e70260e4dfb420f90a36c637a0812ae9b66abfd0afb0227d3b28ef99ec6be3"
+  },
+  {
+    "path": "rts/artifacts/playtest/02-playtests-rts-ai-attack.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "rts/artifacts/playtest/02-playtests-rts-ai-attack.playtest.json/console.json",
+    "bytes": 4771,
+    "sha256": "bac5dbe0fe791d7ce6fb22100dd47b62c9c91ac9273a603bf1457b4d40be4372"
+  },
+  {
+    "path": "rts/artifacts/playtest/03-playtests-rts-attack.playtest.json/after.png",
+    "bytes": 1038514,
+    "sha256": "70554de0e1563c1237985e14bef6498cf7e84a41caf7a40581cd78cba2be0dd7"
+  },
+  {
+    "path": "rts/artifacts/playtest/03-playtests-rts-attack.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "rts/artifacts/playtest/03-playtests-rts-attack.playtest.json/console.json",
+    "bytes": 4771,
+    "sha256": "ab7c06f2472668eab33d2bcea53625d01d0dc21bae4a3410fa8177638ccbe406"
+  },
+  {
+    "path": "rts/artifacts/playtest/04-playtests-rts-build.playtest.json/after.png",
+    "bytes": 1025007,
+    "sha256": "e0d037d3b4cc5fd4e4834426b02d48a6775f0a07aa495da3c6d7e25cafc7fc43"
+  },
+  {
+    "path": "rts/artifacts/playtest/04-playtests-rts-build.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "rts/artifacts/playtest/04-playtests-rts-build.playtest.json/console.json",
+    "bytes": 4771,
+    "sha256": "9e6ea8d2f9d081d95deb6baeb8d36f48446edc0ec5f018fd5ab6f05a01b11975"
+  },
+  {
+    "path": "rts/artifacts/playtest/05-playtests-rts-orders.playtest.json/after.png",
+    "bytes": 1045086,
+    "sha256": "94f74db5208ab9d370f55c7ff2cad4f267336babf1fa046e24b2eddb70fdfd79"
+  },
+  {
+    "path": "rts/artifacts/playtest/05-playtests-rts-orders.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "rts/artifacts/playtest/05-playtests-rts-orders.playtest.json/console.json",
+    "bytes": 4771,
+    "sha256": "b9fd70b2794ac2756a2891230fdf058d4bf26c28a0c6ff6aac2df27a0edc271b"
+  },
+  {
+    "path": "rts/artifacts/playtest/06-playtests-rts-train.playtest.json/after.png",
+    "bytes": 1023451,
+    "sha256": "511ec7027513e4a413b7d58d20b5e41f3dd9295dcdc4eb91402ca812cd8cd1c9"
+  },
+  {
+    "path": "rts/artifacts/playtest/06-playtests-rts-train.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "rts/artifacts/playtest/06-playtests-rts-train.playtest.json/console.json",
+    "bytes": 4771,
+    "sha256": "b9fd70b2794ac2756a2891230fdf058d4bf26c28a0c6ff6aac2df27a0edc271b"
+  },
+  {
+    "path": "rts/artifacts/playtest/07-playtests-survives.playtest.json/after.png",
+    "bytes": 998877,
+    "sha256": "0abe62f3ca82ac87b147ac69b4d2bfc75285005985008a14f2a8cf7b4a52f60f"
+  },
+  {
+    "path": "rts/artifacts/playtest/07-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "rts/artifacts/playtest/07-playtests-survives.playtest.json/console.json",
+    "bytes": 4771,
+    "sha256": "eb5103e08f06f6a74c403d2a9117bf98a56eb8a3a0f9133b877bc23f527e136d"
+  },
+  {
+    "path": "rts/artifacts/playtest/after.png",
+    "bytes": 253933,
+    "sha256": "8a8154092940d2b1815dea3e15f00050a7f931cef848aff77af782e94aa7fc08"
+  },
+  {
+    "path": "rts/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "rts/artifacts/playtest/console.json",
+    "bytes": 5162,
+    "sha256": "20432c16d480d66cbc57329c921050c8862ca7f26c8c0fc727403a71a3f1749e"
+  },
+  {
+    "path": "runner/artifacts/playtest/01-playtests-performance.playtest.json/after.png",
+    "bytes": 1507613,
+    "sha256": "e7f4e6e18e886145ee09a301d98c9d707170e37dd9007d2e06e73bff8f1db45d"
+  },
+  {
+    "path": "runner/artifacts/playtest/01-playtests-performance.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "runner/artifacts/playtest/01-playtests-performance.playtest.json/console.json",
+    "bytes": 38580,
+    "sha256": "ce753a4b953604183770a5641a2f77dc10a4b142a147f8ba6aba481ec26c719d"
+  },
+  {
+    "path": "runner/artifacts/playtest/02-playtests-streams.playtest.json/after.png",
+    "bytes": 750457,
+    "sha256": "37c994fe31c62dad605b5b2afe47e3c61906b03b10c2d121f1c97e3054ecac13"
+  },
+  {
+    "path": "runner/artifacts/playtest/02-playtests-streams.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "runner/artifacts/playtest/02-playtests-streams.playtest.json/console.json",
+    "bytes": 5571,
+    "sha256": "bf15d3238e83f429fa05c9153369eb5c0cec87c14f1ddf10245f6f7ee99e8b35"
+  },
+  {
+    "path": "runner/artifacts/playtest/03-playtests-survives.playtest.json/after.png",
+    "bytes": 741444,
+    "sha256": "f1ef38b07fc12e577b5d15361b924746ec6316d1374520630a3b465efd882bed"
+  },
+  {
+    "path": "runner/artifacts/playtest/03-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "runner/artifacts/playtest/03-playtests-survives.playtest.json/console.json",
+    "bytes": 5571,
+    "sha256": "d87ffe0a2d2e151b5fe989a2b0184df1a5e66e1bf5c3308d8b928f3297b8bcf6"
+  },
+  {
+    "path": "runner/artifacts/playtest/after.png",
+    "bytes": 223321,
+    "sha256": "8afe2415dd60903b30f249b7808758efc449eedb5f7bb89b19bd41bb08ebc7c6"
+  },
+  {
+    "path": "runner/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "runner/artifacts/playtest/console.json",
+    "bytes": 5961,
+    "sha256": "0506de6f53f60cea3fb047fa78a91c7ce60458f306178016d93c6a10473480e2"
+  },
+  {
+    "path": "sailing/artifacts/playtest/01-playtests-fail.playtest.json/after.png",
+    "bytes": 435913,
+    "sha256": "de4c8d6c8f896aa82d8f2d00e8032d6a2bfc49bf801a2f5b0324ef65a3e5e978"
+  },
+  {
+    "path": "sailing/artifacts/playtest/01-playtests-fail.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "sailing/artifacts/playtest/01-playtests-fail.playtest.json/console.json",
+    "bytes": 5471,
+    "sha256": "2d01eb75a19e09985e306312897c6fa35e5ed6aaad2226c5f3c680f60105ae39"
+  },
+  {
+    "path": "sailing/artifacts/playtest/02-playtests-float-after-the-run-ends.playtest.json/after.png",
+    "bytes": 452275,
+    "sha256": "fd6dd94c6209266b23a5de95be89ab2a068ecef0a9a287030c43c8c8573f4d39"
+  },
+  {
+    "path": "sailing/artifacts/playtest/02-playtests-float-after-the-run-ends.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "sailing/artifacts/playtest/02-playtests-float-after-the-run-ends.playtest.json/console.json",
+    "bytes": 5763,
+    "sha256": "c80bee58c1b300b02c81d044bb3876af6f225cc0d8ec2d4f32dada5eca70a88d"
+  },
+  {
+    "path": "sailing/artifacts/playtest/03-playtests-float.playtest.json/after.png",
+    "bytes": 446477,
+    "sha256": "3b6bae7193e9aa00211d3d676e720281532024e268deb31d894c8b3961529c79"
+  },
+  {
+    "path": "sailing/artifacts/playtest/03-playtests-float.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "sailing/artifacts/playtest/03-playtests-float.playtest.json/console.json",
+    "bytes": 5471,
+    "sha256": "8012a73483b25ca0ad79d2e56a1b9b249832a46c91cc91958a686197ad2aca97"
+  },
+  {
+    "path": "sailing/artifacts/playtest/04-playtests-performance.playtest.json/after.png",
+    "bytes": 870618,
+    "sha256": "c271197ded0b85a264575d9d32fc93c2a8a9a441f0f76aeb231a2eb92c0757dc"
+  },
+  {
+    "path": "sailing/artifacts/playtest/04-playtests-performance.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "sailing/artifacts/playtest/04-playtests-performance.playtest.json/console.json",
+    "bytes": 36998,
+    "sha256": "dcf173901d4419a9372026ebe42ed55055ceaa63ea6131c3087fc18be04d8fc2"
+  },
+  {
+    "path": "sailing/artifacts/playtest/05-playtests-sails.playtest.json/after.png",
+    "bytes": 471273,
+    "sha256": "3b26ad0043f9013a1b45eb3f1c5fa2083a65fe66a09b3de4899cd428a78468f9"
+  },
+  {
+    "path": "sailing/artifacts/playtest/05-playtests-sails.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "sailing/artifacts/playtest/05-playtests-sails.playtest.json/console.json",
+    "bytes": 5763,
+    "sha256": "9575097f51be516374631885a7e672f9329d4cae5936e514dd9980a3202798c3"
+  },
+  {
+    "path": "sailing/artifacts/playtest/06-playtests-survives.playtest.json/after.png",
+    "bytes": 472272,
+    "sha256": "a0ffc47b685f0444702c6fa55607e8abc4099268d7d9c2358e00f6f27cc1b006"
+  },
+  {
+    "path": "sailing/artifacts/playtest/06-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "sailing/artifacts/playtest/06-playtests-survives.playtest.json/console.json",
+    "bytes": 5471,
+    "sha256": "f884141fd00efcca6519c2b45e5761af6d6eb16446b51192f49229beaadb1914"
+  },
+  {
+    "path": "sailing/artifacts/playtest/07-playtests-touch-controls.playtest.json/after.png",
+    "bytes": 497491,
+    "sha256": "74d031ee78fedd8b732652393eb3738ecdde38259ce7dece61577a4ffee9c3b1"
+  },
+  {
+    "path": "sailing/artifacts/playtest/07-playtests-touch-controls.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "sailing/artifacts/playtest/07-playtests-touch-controls.playtest.json/console.json",
+    "bytes": 5295,
+    "sha256": "016b96b70681deb3ddfc7c13268b4962ebe7a480db4f7fa3585832dceb859537"
+  },
+  {
+    "path": "sailing/artifacts/playtest/08-playtests-win.playtest.json/after.png",
+    "bytes": 503783,
+    "sha256": "113c6a7649e4123129937c0a8a07d59e993ae5b764de78718872d6eb2462237a"
+  },
+  {
+    "path": "sailing/artifacts/playtest/08-playtests-win.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "sailing/artifacts/playtest/08-playtests-win.playtest.json/console.json",
+    "bytes": 5471,
+    "sha256": "c8a6de9e57cdb363475e049c0f7a8c1070b61b3a47724ad54079b9b64dab655d"
+  },
+  {
+    "path": "sailing/artifacts/playtest/after.png",
+    "bytes": 146799,
+    "sha256": "3d8fc5f122afde7b4dd11a0db5b667a87a3e1d4bc5920ee44b46666ab68ebe06"
+  },
+  {
+    "path": "sailing/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "sailing/artifacts/playtest/console.json",
+    "bytes": 5862,
+    "sha256": "db7124ff9b99c9333f5413ce287ec2cf0e03963e72be9e2b7196eb69eab1b7ad"
+  },
+  {
+    "path": "shooter/artifacts/playtest/01-playtests-aim-alignment.playtest.json/after.png",
+    "bytes": 853894,
+    "sha256": "9ee9d740325b1fb4a643836d419e9fb49ad5712b2ea3932ebe18d9c5f7203b63"
+  },
+  {
+    "path": "shooter/artifacts/playtest/01-playtests-aim-alignment.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/01-playtests-aim-alignment.playtest.json/console.json",
+    "bytes": 9780,
+    "sha256": "c2242b8d840341b25339ba90848476b675642dd1e8914dc3ee795e295e1845e0"
+  },
+  {
+    "path": "shooter/artifacts/playtest/02-playtests-breakable-shatters.playtest.json/after.png",
+    "bytes": 844654,
+    "sha256": "b4a1212a147de8d2b31e7341f5bfa19164202dacc2dd28b251563062769e3897"
+  },
+  {
+    "path": "shooter/artifacts/playtest/02-playtests-breakable-shatters.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/02-playtests-breakable-shatters.playtest.json/console.json",
+    "bytes": 9780,
+    "sha256": "7e17647230181502fd911c0338ea4d0abf5877f7f4a9ad3a50b68203990fd05e"
+  },
+  {
+    "path": "shooter/artifacts/playtest/03-playtests-bullet-holes.playtest.json/after.png",
+    "bytes": 843027,
+    "sha256": "19a0be1009db599b1b898085dfc66b6cb7793ff8d284c23fedac59a793900878"
+  },
+  {
+    "path": "shooter/artifacts/playtest/03-playtests-bullet-holes.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/03-playtests-bullet-holes.playtest.json/console.json",
+    "bytes": 9779,
+    "sha256": "ec1451a00d796a10a0d64e5cb91fd2b6eea3e34d29a8f44a1731f475c6b6c0e2"
+  },
+  {
+    "path": "shooter/artifacts/playtest/04-playtests-camera-tracks-body-vertically.playtest.json/after.png",
+    "bytes": 764087,
+    "sha256": "f0b880358016e443cf489c583364389f8f7795bbcdf378cf0bf0dc04334136e9"
+  },
+  {
+    "path": "shooter/artifacts/playtest/04-playtests-camera-tracks-body-vertically.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/04-playtests-camera-tracks-body-vertically.playtest.json/console.json",
+    "bytes": 9779,
+    "sha256": "5dfd32da188facb533c74106119ac40810cbd8d7cf62663c5c3e78919f9357e7"
+  },
+  {
+    "path": "shooter/artifacts/playtest/05-playtests-crouch-lowers-the-eye.playtest.json/after.png",
+    "bytes": 828060,
+    "sha256": "b1f9165f1352386e8b8a7926f86270c288712a74ef437ae6a6e05b0d602d4771"
+  },
+  {
+    "path": "shooter/artifacts/playtest/05-playtests-crouch-lowers-the-eye.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/05-playtests-crouch-lowers-the-eye.playtest.json/console.json",
+    "bytes": 9780,
+    "sha256": "5dd16edfd1fc0e645e59b226862e27e48d382ec1f2b74279b62073947524e578"
+  },
+  {
+    "path": "shooter/artifacts/playtest/06-playtests-death-no-snap.playtest.json/after.png",
+    "bytes": 786700,
+    "sha256": "56f77af990256a9eaafd14c327f783c32fde9117594b9c6947320aa41537cb49"
+  },
+  {
+    "path": "shooter/artifacts/playtest/06-playtests-death-no-snap.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/06-playtests-death-no-snap.playtest.json/console.json",
+    "bytes": 12730,
+    "sha256": "18fa2d88957b25fc0964fadcdacd3631be24bdecd75828750f9ed050eb3ddb2e"
+  },
+  {
+    "path": "shooter/artifacts/playtest/07-playtests-debug-ads.playtest.json/after.png",
+    "bytes": 784728,
+    "sha256": "9cefd233556ff7d71db85cf540e6a87a4f5aab0b73facb1107674e1933fa2827"
+  },
+  {
+    "path": "shooter/artifacts/playtest/07-playtests-debug-ads.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/07-playtests-debug-ads.playtest.json/console.json",
+    "bytes": 9780,
+    "sha256": "52617bc1aa49f504a8f0cc4aefcf57aec757ab0de6dac45f61e76c434194822e"
+  },
+  {
+    "path": "shooter/artifacts/playtest/08-playtests-debug-clear.playtest.json/after.png",
+    "bytes": 562923,
+    "sha256": "92485313a6adf7961a7ffd3c7b98db7795b8e44b9120868d24d653fdf50743c6"
+  },
+  {
+    "path": "shooter/artifacts/playtest/08-playtests-debug-clear.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/08-playtests-debug-clear.playtest.json/console.json",
+    "bytes": 12749,
+    "sha256": "2999bc5f02312e396f387b4d578f7c8190f4e3e21c152eefd99ce12bb68413e6"
+  },
+  {
+    "path": "shooter/artifacts/playtest/09-playtests-debug-endurance.playtest.json/after.png",
+    "bytes": 812587,
+    "sha256": "1d6b2fe238006d73f8278a68609b4fc45a208d9f4e349168fa2a74f1615924a5"
+  },
+  {
+    "path": "shooter/artifacts/playtest/09-playtests-debug-endurance.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/09-playtests-debug-endurance.playtest.json/console.json",
+    "bytes": 12753,
+    "sha256": "ac4cd2d2f260118aff084e42a866513d731af7242c427329311e3803bc76a0e5"
+  },
+  {
+    "path": "shooter/artifacts/playtest/10-playtests-debug-fire.playtest.json/after.png",
+    "bytes": 825330,
+    "sha256": "21fbf2af7979f304b103d7f6cf415480903315e370c204f6099f55e509c87e26"
+  },
+  {
+    "path": "shooter/artifacts/playtest/10-playtests-debug-fire.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/10-playtests-debug-fire.playtest.json/console.json",
+    "bytes": 9778,
+    "sha256": "7478310453a0b2f24875987f1eadf20cb9f7acb8fdc1244c820170d6e2bdcf4b"
+  },
+  {
+    "path": "shooter/artifacts/playtest/11-playtests-debug-restart.playtest.json/after.png",
+    "bytes": 855747,
+    "sha256": "b2dc06fee5776421e7d7066b717f6d4b1aa91f99eb7b6b7f22b5569ff92294c3"
+  },
+  {
+    "path": "shooter/artifacts/playtest/11-playtests-debug-restart.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/11-playtests-debug-restart.playtest.json/console.json",
+    "bytes": 18099,
+    "sha256": "e090d1ca8393a5fa48ecab9de4b2fd53324d1079f12e788ea48f04d271c474b7"
+  },
+  {
+    "path": "shooter/artifacts/playtest/12-playtests-enemy-body-is-a-body.playtest.json/after.png",
+    "bytes": 824265,
+    "sha256": "290ff77f584b024b0821389d1a82b144c363c401b20ef7faba8389a7f93a2efe"
+  },
+  {
+    "path": "shooter/artifacts/playtest/12-playtests-enemy-body-is-a-body.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/12-playtests-enemy-body-is-a-body.playtest.json/console.json",
+    "bytes": 12754,
+    "sha256": "8b1beeaad9a9a7a3dedec5da43cc5e1a44108691d348a9fb6289fbf61929e825"
+  },
+  {
+    "path": "shooter/artifacts/playtest/12-playtests-enemy-body-is-a-body.playtest.json/running.png",
+    "bytes": 824265,
+    "sha256": "290ff77f584b024b0821389d1a82b144c363c401b20ef7faba8389a7f93a2efe"
+  },
+  {
+    "path": "shooter/artifacts/playtest/12-playtests-enemy-body-is-a-body.playtest.json/standing.png",
+    "bytes": 837983,
+    "sha256": "e47728d01e7ead9c8eb0198bcc4f519f853356eed442e54130d9216bbfed50d3"
+  },
+  {
+    "path": "shooter/artifacts/playtest/13-playtests-enemy-death-settles.playtest.json/after.png",
+    "bytes": 788826,
+    "sha256": "ee930f7da6ed3d68404fe9d0368ee847a4a899b90b9290b06f2afd5c2970ae19"
+  },
+  {
+    "path": "shooter/artifacts/playtest/13-playtests-enemy-death-settles.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/13-playtests-enemy-death-settles.playtest.json/console.json",
+    "bytes": 12727,
+    "sha256": "89d63d601299e3a53a312401a3484eb2c841b2ab9fd807adb57ed1b3ee96d0eb"
+  },
+  {
+    "path": "shooter/artifacts/playtest/14-playtests-enemy-flinches-when-hit.playtest.json/after.png",
+    "bytes": 862420,
+    "sha256": "2aa04157151abce7774e0700b937a7e77198b3cab004dc8746ac7dab75bb1f1b"
+  },
+  {
+    "path": "shooter/artifacts/playtest/14-playtests-enemy-flinches-when-hit.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/14-playtests-enemy-flinches-when-hit.playtest.json/console.json",
+    "bytes": 12735,
+    "sha256": "bfb33a44f9d126156af153cf8b61374fab1ab02c95e29b5cdfcac7fd263cde3b"
+  },
+  {
+    "path": "shooter/artifacts/playtest/15-playtests-enemy-foot-contact.playtest.json/after.png",
+    "bytes": 823367,
+    "sha256": "ded7bb917eebeffbd3a379ed0430cda669d8844c703622f603e6b962674d554d"
+  },
+  {
+    "path": "shooter/artifacts/playtest/15-playtests-enemy-foot-contact.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/15-playtests-enemy-foot-contact.playtest.json/console.json",
+    "bytes": 9780,
+    "sha256": "1a21cf6a31359a0ee10a4f4816f84be658354b9c4cd24ae42da822cb8bd7df7b"
+  },
+  {
+    "path": "shooter/artifacts/playtest/16-playtests-enemy-material-is-not-shared.playtest.json/after.png",
+    "bytes": 801641,
+    "sha256": "7f3abcc86ef213b0001b468c353ac068ae774cdc8ca00022e6583212c108014e"
+  },
+  {
+    "path": "shooter/artifacts/playtest/16-playtests-enemy-material-is-not-shared.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/16-playtests-enemy-material-is-not-shared.playtest.json/console.json",
+    "bytes": 12730,
+    "sha256": "648cdd1484b28916e0d38ff6584cc05415ffb1bf12eaff2c334ed7fc0c56d401"
+  },
+  {
+    "path": "shooter/artifacts/playtest/17-playtests-enemy-reaches-walkway.playtest.json/after.png",
+    "bytes": 549097,
+    "sha256": "d6e8ef2c8f54fa6750cea286b663975607dee78e992b88930fe106daa781f311"
+  },
+  {
+    "path": "shooter/artifacts/playtest/17-playtests-enemy-reaches-walkway.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/17-playtests-enemy-reaches-walkway.playtest.json/console.json",
+    "bytes": 12721,
+    "sha256": "a3feeb54b29273ccd533869c3b17ad7363304f22b6c3abd456c8470d66c76c5d"
+  },
+  {
+    "path": "shooter/artifacts/playtest/18-playtests-enemy-rifle-grip.playtest.json/after.png",
+    "bytes": 864443,
+    "sha256": "4dd7f59d99b0dbcb3560f5614fac65619c4b68a7e0d3ed6811ed4e445f2eb134"
+  },
+  {
+    "path": "shooter/artifacts/playtest/18-playtests-enemy-rifle-grip.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/18-playtests-enemy-rifle-grip.playtest.json/console.json",
+    "bytes": 12727,
+    "sha256": "3da768fdee4e405f20cc7b5163152cc7eed33b3bcc59cd0add473075a2945173"
+  },
+  {
+    "path": "shooter/artifacts/playtest/19-playtests-enemy-scale.playtest.json/after.png",
+    "bytes": 823631,
+    "sha256": "b581af74b8958f0235c4d7b376e040bea9f89210e74e0da5a0c7cd1694f97fb7"
+  },
+  {
+    "path": "shooter/artifacts/playtest/19-playtests-enemy-scale.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/19-playtests-enemy-scale.playtest.json/console.json",
+    "bytes": 9780,
+    "sha256": "f4e8ea7cd0332bcea736fade5a0db56b236cbf7e5f88feed1237641d27a18688"
+  },
+  {
+    "path": "shooter/artifacts/playtest/20-playtests-enemy-stops-without-snapping.playtest.json/after.png",
+    "bytes": 820416,
+    "sha256": "a1160bb5b9313de0e01ecccca2265f1b7f4dcce49e622aeaa28ab34c44c63f93"
+  },
+  {
+    "path": "shooter/artifacts/playtest/20-playtests-enemy-stops-without-snapping.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/20-playtests-enemy-stops-without-snapping.playtest.json/console.json",
+    "bytes": 50512,
+    "sha256": "4cad0be09a354bc0a47637cac50da3c4e5198625d87daaf0b4c71bf2ae2f39f6"
+  },
+  {
+    "path": "shooter/artifacts/playtest/21-playtests-enemy-stride-matches-speed.playtest.json/after.png",
+    "bytes": 819442,
+    "sha256": "1c3525b22ec398371e196ccd979a3dcc356e9b0b7b6cc876a7e320d5966b66d6"
+  },
+  {
+    "path": "shooter/artifacts/playtest/21-playtests-enemy-stride-matches-speed.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/21-playtests-enemy-stride-matches-speed.playtest.json/console.json",
+    "bytes": 24386,
+    "sha256": "ea6203cdcf56d40a7b3fbe84fc9f7e9ed28d7caa005e1da11824677b5735cd95"
+  },
+  {
+    "path": "shooter/artifacts/playtest/22-playtests-enemy-stride-under-crouch.playtest.json/after.png",
+    "bytes": 839958,
+    "sha256": "6edf31a31c985324f9d9ce240033247c820fe3b1e057f9279fa402cf6d3b0c0a"
+  },
+  {
+    "path": "shooter/artifacts/playtest/22-playtests-enemy-stride-under-crouch.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/22-playtests-enemy-stride-under-crouch.playtest.json/console.json",
+    "bytes": 15666,
+    "sha256": "117a3c001a2fe19e6eca0112e0d5e5c2365800639d9f6ffdf41c0565431b7668"
+  },
+  {
+    "path": "shooter/artifacts/playtest/23-playtests-enemy-uses-crouch-clips.playtest.json/after.png",
+    "bytes": 838620,
+    "sha256": "f5a732c51d4ce0c826b0ee4aad348a081e14c8183c2aadfe0a3eacaef449c48a"
+  },
+  {
+    "path": "shooter/artifacts/playtest/23-playtests-enemy-uses-crouch-clips.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/23-playtests-enemy-uses-crouch-clips.playtest.json/console.json",
+    "bytes": 15661,
+    "sha256": "e58e83a8df54dd763ce6e7a1fd4b855427bb894ea6033ae6be61c981b9db3fab"
+  },
+  {
+    "path": "shooter/artifacts/playtest/24-playtests-five-soldiers.playtest.json/after.png",
+    "bytes": 823104,
+    "sha256": "43996b7d850988eaa8c24e462b8afa47c1ec28930aa8cf2882d8c219b604fc1d"
+  },
+  {
+    "path": "shooter/artifacts/playtest/24-playtests-five-soldiers.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/24-playtests-five-soldiers.playtest.json/console.json",
+    "bytes": 9780,
+    "sha256": "3fe0af7d41c514503ada4b6b0287fc829aca3f54958fd627a4df50766b1d7191"
+  },
+  {
+    "path": "shooter/artifacts/playtest/25-playtests-flash-retires.playtest.json/after.png",
+    "bytes": 850996,
+    "sha256": "177aad544b71580c40b2d62dda5155b04f17c6bc38de2f1266c367fc3f4f9b52"
+  },
+  {
+    "path": "shooter/artifacts/playtest/25-playtests-flash-retires.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/25-playtests-flash-retires.playtest.json/console.json",
+    "bytes": 9780,
+    "sha256": "ef5dd4da3d1232d4b1edb5ac0097a15e157b78384341cc86e8a2fd6fc6ed571d"
+  },
+  {
+    "path": "shooter/artifacts/playtest/26-playtests-headshot-hits-head.playtest.json/after.png",
+    "bytes": 983993,
+    "sha256": "2351456acc18872c310edc6ac2bafe22ee96be3127526d0cdbe3e1c287b0a66f"
+  },
+  {
+    "path": "shooter/artifacts/playtest/26-playtests-headshot-hits-head.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/26-playtests-headshot-hits-head.playtest.json/console.json",
+    "bytes": 15654,
+    "sha256": "cade738b504d8fb090172fa3e5fc947860cb0dbb7482c4145bbc0081c0920864"
+  },
+  {
+    "path": "shooter/artifacts/playtest/27-playtests-hold-to-fire.playtest.json/after.png",
+    "bytes": 853550,
+    "sha256": "bfead1fa827ff07e426edb2be32f868ecea8f4f27a86935063b0b5fc3e33086d"
+  },
+  {
+    "path": "shooter/artifacts/playtest/27-playtests-hold-to-fire.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/27-playtests-hold-to-fire.playtest.json/console.json",
+    "bytes": 9780,
+    "sha256": "379dac082eeeb80082c645064db4a5fb0eb76fbb8bfe96abddc71d40f8323857"
+  },
+  {
+    "path": "shooter/artifacts/playtest/28-playtests-input-control.playtest.json/after.png",
+    "bytes": 750332,
+    "sha256": "c2d8e7fc06d11f846265d9763630967b203c321f44affeb3cd7409162d9ced6b"
+  },
+  {
+    "path": "shooter/artifacts/playtest/28-playtests-input-control.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/28-playtests-input-control.playtest.json/console.json",
+    "bytes": 18100,
+    "sha256": "1af20809dd610dc781e69902cfcca20758a475e22470cdc62d30f703a9dda0e6"
+  },
+  {
+    "path": "shooter/artifacts/playtest/28-playtests-input-control.playtest.json/input-look-right.png",
+    "bytes": 750332,
+    "sha256": "c2d8e7fc06d11f846265d9763630967b203c321f44affeb3cd7409162d9ced6b"
+  },
+  {
+    "path": "shooter/artifacts/playtest/29-playtests-minimap-state.playtest.json/after.png",
+    "bytes": 843748,
+    "sha256": "2299eae08a9e2c5b5037ffce3d9583637916e0c57ac26bfb442bf8edd79efe6d"
+  },
+  {
+    "path": "shooter/artifacts/playtest/29-playtests-minimap-state.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/29-playtests-minimap-state.playtest.json/console.json",
+    "bytes": 9779,
+    "sha256": "22753d2fe049ca31899104fb95043e8612932ca3d6ec9e874f5c9fdf40199d4c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/30-playtests-performance.playtest.json/after.png",
+    "bytes": 1601570,
+    "sha256": "b3949f24bb044e580e8e2cb8b52f50eccb741fbe840eb7ac79cfc3650af59d01"
+  },
+  {
+    "path": "shooter/artifacts/playtest/30-playtests-performance.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "shooter/artifacts/playtest/30-playtests-performance.playtest.json/console.json",
+    "bytes": 96050,
+    "sha256": "e1aab9dacc80ba3609d592dd2d3ac855a091fb5190b639b4f0651fee051f3b3d"
+  },
+  {
+    "path": "shooter/artifacts/playtest/30-playtests-performance.playtest.json/performance.png",
+    "bytes": 1601570,
+    "sha256": "b3949f24bb044e580e8e2cb8b52f50eccb741fbe840eb7ac79cfc3650af59d01"
+  },
+  {
+    "path": "shooter/artifacts/playtest/31-playtests-round-clock.playtest.json/after.png",
+    "bytes": 823073,
+    "sha256": "04a1f0819b1d0a919954f048181a2fea971b27805414bf261b17c13f86c8fd8f"
+  },
+  {
+    "path": "shooter/artifacts/playtest/31-playtests-round-clock.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/31-playtests-round-clock.playtest.json/console.json",
+    "bytes": 9779,
+    "sha256": "8468818e8c6d7e32a781dbb8dd55cd7a2ca7494bf7cdec589246eec84a64e528"
+  },
+  {
+    "path": "shooter/artifacts/playtest/32-playtests-shot-tracks-crosshair.playtest.json/after.png",
+    "bytes": 792577,
+    "sha256": "eee80e7595e8b20cea9da4e228f07dd6d6aa9022ba37805caf681c7982b01d51"
+  },
+  {
+    "path": "shooter/artifacts/playtest/32-playtests-shot-tracks-crosshair.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/32-playtests-shot-tracks-crosshair.playtest.json/console.json",
+    "bytes": 9779,
+    "sha256": "8e47d6df740390d3261c998956e122e802d2f1b2d1693c059671b3d2f2f4b4e9"
+  },
+  {
+    "path": "shooter/artifacts/playtest/33-playtests-survives.playtest.json/after.png",
+    "bytes": 841026,
+    "sha256": "cf6db7a17982be13539341d9c1c3c3be4e5accd17f4c1d52f5f9cb311c0fd1a6"
+  },
+  {
+    "path": "shooter/artifacts/playtest/33-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/33-playtests-survives.playtest.json/console.json",
+    "bytes": 9778,
+    "sha256": "c25ad7621beeae4f41c2f0498096b48ebed7e2e9df9059c0926893e8c6710262"
+  },
+  {
+    "path": "shooter/artifacts/playtest/34-playtests-walkway-reachable.playtest.json/after.png",
+    "bytes": 818025,
+    "sha256": "7a297d0513a96c77e830a06a7d431998c0f6a0321ed481ffde7833ce12d12380"
+  },
+  {
+    "path": "shooter/artifacts/playtest/34-playtests-walkway-reachable.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "shooter/artifacts/playtest/34-playtests-walkway-reachable.playtest.json/console.json",
+    "bytes": 9778,
+    "sha256": "2f89e8014f875af6d361875d8baf85b4a0dfd7d76bf8fdedf17aef261c1f3441"
+  },
+  {
+    "path": "shooter/artifacts/playtest/after.png",
+    "bytes": 253955,
+    "sha256": "7d919d620fa0875e6bf73a71f168f9ec7d14d73b5b472c2a54c958a77eeb99d4"
+  },
+  {
+    "path": "shooter/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "shooter/artifacts/playtest/console.json",
+    "bytes": 10169,
+    "sha256": "2cf670939aa5e3a45dd82a01caee30b56b5cb8ad6e41f4459211826ee4a9102a"
+  },
+  {
+    "path": "snow/artifacts/playtest/01-playtests-footsteps.playtest.json/after.png",
+    "bytes": 415056,
+    "sha256": "917e41ef08d492fef97e812f386b3e0fee1a35d518dfdb93314848c0e4ae5911"
+  },
+  {
+    "path": "snow/artifacts/playtest/01-playtests-footsteps.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "snow/artifacts/playtest/01-playtests-footsteps.playtest.json/console.json",
+    "bytes": 4230,
+    "sha256": "e834f68b0351d6eeb66f0d8b8d2bb50f055d5466293598e63e10e557df5ccf0a"
+  },
+  {
+    "path": "snow/artifacts/playtest/02-playtests-performance.playtest.json/after.png",
+    "bytes": 808358,
+    "sha256": "e6853dd3963c071c8576f96330557b0316f46b36e15cee17c42ec38cc2a1f0a2"
+  },
+  {
+    "path": "snow/artifacts/playtest/02-playtests-performance.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "snow/artifacts/playtest/02-playtests-performance.playtest.json/console.json",
+    "bytes": 55339,
+    "sha256": "833004f898a62e006068c510e55e9ece7da4b468c75ac82d996a798f5e5bffee"
+  },
+  {
+    "path": "snow/artifacts/playtest/03-playtests-snow-physics.playtest.json/after.png",
+    "bytes": 423894,
+    "sha256": "9f330a4c063fcc53ccee053d67e3d3ddf0895a7f169ae4b0c727ead3981452d6"
+  },
+  {
+    "path": "snow/artifacts/playtest/03-playtests-snow-physics.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "snow/artifacts/playtest/03-playtests-snow-physics.playtest.json/console.json",
+    "bytes": 4230,
+    "sha256": "bad4b2467347fa8349dc0527c33ec736b0fbe65501d7bbc8ce6bc638d92d6cee"
+  },
+  {
+    "path": "snow/artifacts/playtest/04-playtests-survives.playtest.json/after.png",
+    "bytes": 413728,
+    "sha256": "53c2894f921dc851f9534e2f8edc236754676a5fceb2f47d81e3342ee3e8ed9f"
+  },
+  {
+    "path": "snow/artifacts/playtest/04-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "snow/artifacts/playtest/04-playtests-survives.playtest.json/console.json",
+    "bytes": 4230,
+    "sha256": "0cb664cd09df58532a0313a4183091dbd62897800554b891a8ce0488622bedfb"
+  },
+  {
+    "path": "snow/artifacts/playtest/05-playtests-touch-controls.playtest.json/after.png",
+    "bytes": 218335,
+    "sha256": "912251024d454e37010d4b5067c8f39c1117b241a9864b1693854faa8fe59679"
+  },
+  {
+    "path": "snow/artifacts/playtest/05-playtests-touch-controls.playtest.json/capture.json",
+    "bytes": 1069,
+    "sha256": "d47a8af813e4e8d3637a0d8c4b94643968609e4b5af45fcc5d3c77185461ad41"
+  },
+  {
+    "path": "snow/artifacts/playtest/05-playtests-touch-controls.playtest.json/console.json",
+    "bytes": 4232,
+    "sha256": "4a743f438dc62aecaafa6e751093f2038822e0350a6156d0d27b38747a26e3d6"
+  },
+  {
+    "path": "snow/artifacts/playtest/06-playtests-weather.playtest.json/after.png",
+    "bytes": 509060,
+    "sha256": "64e66b17d993ac8142ba70a48d421c1bf264c9801d5248aec75ca9119190d126"
+  },
+  {
+    "path": "snow/artifacts/playtest/06-playtests-weather.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "snow/artifacts/playtest/06-playtests-weather.playtest.json/console.json",
+    "bytes": 4230,
+    "sha256": "d3444d25ec60fe08081715cee21b72d0ab7c6371362be4838599cafd30d82d0e"
+  },
+  {
+    "path": "snow/artifacts/playtest/after.png",
+    "bytes": 156060,
+    "sha256": "65d7e9084202bda8b6f9cc65e602ff12d0b7870b6f3ed8aa3d9f17287972c025"
+  },
+  {
+    "path": "snow/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "snow/artifacts/playtest/console.json",
+    "bytes": 4620,
+    "sha256": "3cf083030e1a6ba1d37ca8aae016c230413d5cb44c8a4c3fa5f74d67b73d8a77"
+  },
+  {
+    "path": "starter/artifacts/playtest/01-playtests-assets.playtest.json/after.png",
+    "bytes": 937499,
+    "sha256": "8380dc1e1bd6579531ec975ee763cb1bb2ff106dd534179b2cc3ae9b694eed36"
+  },
+  {
+    "path": "starter/artifacts/playtest/01-playtests-assets.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/01-playtests-assets.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "ae9243d9c2bf9a685dd6c252b480ada3b8b02550e0e7355db820e56779859a94"
+  },
+  {
+    "path": "starter/artifacts/playtest/02-playtests-boot-failure.playtest.json/after.png",
+    "bytes": 12839,
+    "sha256": "30164918c7867c1e62bef48f5dda2592a7e08d20d98b1e79a35c0af443d44e78"
+  },
+  {
+    "path": "starter/artifacts/playtest/02-playtests-boot-failure.playtest.json/console.json",
+    "bytes": 308,
+    "sha256": "c0223ae408a253fee3a74bf6cefb3c6e80e175158eb51eeff5733f62cc5b87eb"
+  },
+  {
+    "path": "starter/artifacts/playtest/03-playtests-buffer.playtest.json/after.png",
+    "bytes": 936213,
+    "sha256": "36e67578b533982e62943808c2a8d06238268ffbfd5642de7774f919cba0ed08"
+  },
+  {
+    "path": "starter/artifacts/playtest/03-playtests-buffer.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/03-playtests-buffer.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "62512d62eb79160763dcbc8985f84b34b3c7b5719388293edcfe7f02defc0006"
+  },
+  {
+    "path": "starter/artifacts/playtest/04-playtests-cloth.playtest.json/after.png",
+    "bytes": 964595,
+    "sha256": "03e7271bb46afb67545120327d6d88979eb69a1747b90460b4d2684ae86d70c0"
+  },
+  {
+    "path": "starter/artifacts/playtest/04-playtests-cloth.playtest.json/before.png",
+    "bytes": 964618,
+    "sha256": "10052014fde71b93b5008c3b601dcbee454abc32703ed7d46ad7a5298be167c5"
+  },
+  {
+    "path": "starter/artifacts/playtest/04-playtests-cloth.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/04-playtests-cloth.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "7a0b69c3f3b3a7e1c1e909ca7a89df18e31c0aa9a5b8289d0676d24d5b8ffa11"
+  },
+  {
+    "path": "starter/artifacts/playtest/05-playtests-coyote.playtest.json/after.png",
+    "bytes": 941458,
+    "sha256": "15b7584a6e8b3b9272e553a2051f56b66272a018557deb4a9d9d9e369e468a7b"
+  },
+  {
+    "path": "starter/artifacts/playtest/05-playtests-coyote.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/05-playtests-coyote.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "e96525f8cd9b94ac51e1c3ba4f31775dd82eaa97b23ac3cf9fcaef6acf15ed7d"
+  },
+  {
+    "path": "starter/artifacts/playtest/06-playtests-forward.playtest.json/after.png",
+    "bytes": 961264,
+    "sha256": "8575de37da6026c5cfd6fb60a10abadbc155b1ecd61a0dae0dfd36a7b04c5c59"
+  },
+  {
+    "path": "starter/artifacts/playtest/06-playtests-forward.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/06-playtests-forward.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "8d76eeafab13f956eb420b1cc080c6a0e74b16259205505ca237307e52c9e874"
+  },
+  {
+    "path": "starter/artifacts/playtest/07-playtests-gameover.playtest.json/after.png",
+    "bytes": 969695,
+    "sha256": "efa4ba804d66a58998142f0306e3645348cc3c491cb1d3f72fa54a193edde0df"
+  },
+  {
+    "path": "starter/artifacts/playtest/07-playtests-gameover.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/07-playtests-gameover.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "e8e3d99d180cfc7d47cdd271503c398bb1464150323f338c34c14affb8f74b3d"
+  },
+  {
+    "path": "starter/artifacts/playtest/08-playtests-goal.playtest.json/after.png",
+    "bytes": 935475,
+    "sha256": "420da3ee2b9ec1e516ef1e2095786ce2bdaf976307e9aa8aa255f08c066ea32e"
+  },
+  {
+    "path": "starter/artifacts/playtest/08-playtests-goal.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/08-playtests-goal.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "62be1577a809780770ababfa2e19523020309c4b1f866d9118a2bda812abafbc"
+  },
+  {
+    "path": "starter/artifacts/playtest/09-playtests-hot-reload.playtest.json/after.png",
+    "bytes": 947617,
+    "sha256": "cf55c31311f2c9c3dae514b1da60a23839913bc2d5fffedae2978593a28a10ea"
+  },
+  {
+    "path": "starter/artifacts/playtest/09-playtests-hot-reload.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/09-playtests-hot-reload.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "b2d236f999381e568f3cc83ef55db1fc0e55a16b5e36ec8e10713d061fa27311"
+  },
+  {
+    "path": "starter/artifacts/playtest/09-playtests-hot-reload.playtest.json/network.json",
+    "bytes": 3,
+    "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+  },
+  {
+    "path": "starter/artifacts/playtest/09-playtests-hot-reload.playtest.json/runtime-trace.json",
+    "bytes": 408,
+    "sha256": "a07fce3fea4e9fcfe26f706a7baf0b0878c3db6d82a7e4fb87e144d58add8aab"
+  },
+  {
+    "path": "starter/artifacts/playtest/10-playtests-look.playtest.json/after.png",
+    "bytes": 947637,
+    "sha256": "ef954107e890189111c811dc176e42661ea72cb197c9cb763a5fd18c2c035671"
+  },
+  {
+    "path": "starter/artifacts/playtest/10-playtests-look.playtest.json/before.png",
+    "bytes": 964866,
+    "sha256": "1b011b3087055d906108110a1a2c1360ac4c19740ed0fbbfc46d973e55fd6a7e"
+  },
+  {
+    "path": "starter/artifacts/playtest/10-playtests-look.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/10-playtests-look.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "f58d203ddbd5f9c8bf2b0ed799f8cc5a1334fbf62efb4db0880ed1bbbbb7ae1e"
+  },
+  {
+    "path": "starter/artifacts/playtest/11-playtests-models.playtest.json/after.png",
+    "bytes": 935797,
+    "sha256": "33515c6928895100d0a20a2d51e64c3eb584aeac2accf323eab7bb65a230edfd"
+  },
+  {
+    "path": "starter/artifacts/playtest/11-playtests-models.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/11-playtests-models.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "e4c75a447a55b325feed031622bae64f2c8203486a4076fa66c96a350e41e227"
+  },
+  {
+    "path": "starter/artifacts/playtest/12-playtests-monitoring.playtest.json/after.png",
+    "bytes": 949728,
+    "sha256": "82b798ba2e68a20a77d0d96067a1a13b6497ff508fef9cc8ce2f588bac2ddb26"
+  },
+  {
+    "path": "starter/artifacts/playtest/12-playtests-monitoring.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/12-playtests-monitoring.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "95bdf450b11007389722435253382592463bb5328ba3f3197e2700066ba04e06"
+  },
+  {
+    "path": "starter/artifacts/playtest/13-playtests-odometer.playtest.json/after.png",
+    "bytes": 961249,
+    "sha256": "f660b9b43b2e1e2755f8f06945e739266817a2570de5553b658aae28130d46fe"
+  },
+  {
+    "path": "starter/artifacts/playtest/13-playtests-odometer.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/13-playtests-odometer.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "2013d69d871b4d04c03a7e04beb7a1a404c3b52634093aee145666b9ca6174fb"
+  },
+  {
+    "path": "starter/artifacts/playtest/14-playtests-pause.playtest.json/after.png",
+    "bytes": 965469,
+    "sha256": "57fe762f82bc602c8c7712f5936540896b475e1a7f785fb9009c2022fd90d748"
+  },
+  {
+    "path": "starter/artifacts/playtest/14-playtests-pause.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/14-playtests-pause.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "198137622bbc51f47a8ed99d7d2a5a5fb09cc56b0b7996ef49ada4d6fb6e0d80"
+  },
+  {
+    "path": "starter/artifacts/playtest/15-playtests-play.playtest.json/after.png",
+    "bytes": 2049394,
+    "sha256": "d30cb4ccd0de9a5a7fd72da43fc3466a97d69657014dd412c0d54025659dbebd"
+  },
+  {
+    "path": "starter/artifacts/playtest/15-playtests-play.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "starter/artifacts/playtest/15-playtests-play.playtest.json/console.json",
+    "bytes": 56166,
+    "sha256": "2a2610c1b166bfda535817dc789d695a01f64327c6a4c45a315ea9c81302b366"
+  },
+  {
+    "path": "starter/artifacts/playtest/16-playtests-production-readiness.playtest.json/after.png",
+    "bytes": 1026403,
+    "sha256": "22f0220913d10b7ffd8f593ee330116253c0f825210024f870422de844eca0ad"
+  },
+  {
+    "path": "starter/artifacts/playtest/16-playtests-production-readiness.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/16-playtests-production-readiness.playtest.json/console.json",
+    "bytes": 9128,
+    "sha256": "96cc93af20566ac65934f2b4ab98e6807fbf06e2f0e79696911a379d475c339d"
+  },
+  {
+    "path": "starter/artifacts/playtest/17-playtests-respawn.playtest.json/after.png",
+    "bytes": 963985,
+    "sha256": "4c6ef2c66eda3da1a912e67f360a6927da6e6361c900d6ce44bd7838100eba4b"
+  },
+  {
+    "path": "starter/artifacts/playtest/17-playtests-respawn.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/17-playtests-respawn.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "0deb2f94b017a149861dd6e919071c749e52b0c848baaec219825e8606ae8fe1"
+  },
+  {
+    "path": "starter/artifacts/playtest/18-playtests-restart.playtest.json/after.png",
+    "bytes": 965883,
+    "sha256": "83782b57eb808ae0fac0dac76e5961a3975c31960afb78a9c024f7689bfd169c"
+  },
+  {
+    "path": "starter/artifacts/playtest/18-playtests-restart.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/18-playtests-restart.playtest.json/console.json",
+    "bytes": 9128,
+    "sha256": "4a4c7688a64e26ded490a34f740c0807c21069c305d68b132ef9f2a2520b8669"
+  },
+  {
+    "path": "starter/artifacts/playtest/19-playtests-seed.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/19-playtests-seed.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "72deb01e76961eeb8700a7dcb390d59239ebeddacadf6f7a531949a50543044b"
+  },
+  {
+    "path": "starter/artifacts/playtest/19-playtests-seed.playtest.json/runtime-trace.json",
+    "bytes": 407,
+    "sha256": "04f59e50b0520e6b4ebd20ff3be9ac36b2c1adeafd2b362cfd3abc2c8876dd1d"
+  },
+  {
+    "path": "starter/artifacts/playtest/20-playtests-survives.playtest.json/after.png",
+    "bytes": 962221,
+    "sha256": "7386635603458a4d38d2aa0318ce640248ee40b279c99a1d5b62b75696747c76"
+  },
+  {
+    "path": "starter/artifacts/playtest/20-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/20-playtests-survives.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "d5f1a3ec467ccd2d785a0671500496a14336e0b5cb8e5bff979567bbd1232069"
+  },
+  {
+    "path": "starter/artifacts/playtest/21-playtests-textures.playtest.json/after.png",
+    "bytes": 936622,
+    "sha256": "eadf3aa80ffa75479903ae9aadb29170bc701eba4afe9c4041b2ee27d64776b6"
+  },
+  {
+    "path": "starter/artifacts/playtest/21-playtests-textures.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/21-playtests-textures.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "e341d3e9999503c907b307241b46b8723628d4bbee806a76a453f197126fb06a"
+  },
+  {
+    "path": "starter/artifacts/playtest/22-playtests-touch-controls.playtest.json/after.png",
+    "bytes": 930255,
+    "sha256": "cebc6f313ea2cbecd6959e6142ad8594f2e2e3846ce7d34065308b02bfa3e18b"
+  },
+  {
+    "path": "starter/artifacts/playtest/22-playtests-touch-controls.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/22-playtests-touch-controls.playtest.json/console.json",
+    "bytes": 4755,
+    "sha256": "c9c7e0945cd150cf36afc6955a547547b7eec57039abb527adbb588976903e50"
+  },
+  {
+    "path": "starter/artifacts/playtest/23-playtests-zoom-pinch.playtest.json/after.png",
+    "bytes": 966275,
+    "sha256": "1ff9fd526a1587cf0698e0e0ed617726d2d4d94e7c763dc647d568e37c9ef331"
+  },
+  {
+    "path": "starter/artifacts/playtest/23-playtests-zoom-pinch.playtest.json/before.png",
+    "bytes": 965458,
+    "sha256": "41dc487e688211ec9593bae9ec6bac5d0bd91d7e9305b8ccad61eb0f6dff118c"
+  },
+  {
+    "path": "starter/artifacts/playtest/23-playtests-zoom-pinch.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/23-playtests-zoom-pinch.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "f58d203ddbd5f9c8bf2b0ed799f8cc5a1334fbf62efb4db0880ed1bbbbb7ae1e"
+  },
+  {
+    "path": "starter/artifacts/playtest/24-playtests-zoom-wheel.playtest.json/after.png",
+    "bytes": 967002,
+    "sha256": "a0344e48d85ea501944cd3159aa8ba5eb45d326c75629a1f14ac0c07ab76d093"
+  },
+  {
+    "path": "starter/artifacts/playtest/24-playtests-zoom-wheel.playtest.json/before.png",
+    "bytes": 964734,
+    "sha256": "58cc3c9c622dac832cf2f436bc59c762d6a7fb81d4186daf86030d143a59d435"
+  },
+  {
+    "path": "starter/artifacts/playtest/24-playtests-zoom-wheel.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "starter/artifacts/playtest/24-playtests-zoom-wheel.playtest.json/console.json",
+    "bytes": 4991,
+    "sha256": "51e185e3a786bffd0fc6aea2869dc735ef930bfb48f1dec5598474bd4f395b38"
+  },
+  {
+    "path": "starter/artifacts/playtest/after.png",
+    "bytes": 244310,
+    "sha256": "8397a4c93aebb4e6ba030bdf74c6af9d3330e06f0fdd2b25e6753c3bc89a3e13"
+  },
+  {
+    "path": "starter/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "starter/artifacts/playtest/console.json",
+    "bytes": 5381,
+    "sha256": "1b6eda580d0b4dc987449021481eccf723dd88ce22332242e98a4da750e4684f"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/01-playtests-arsenal.playtest.json/after.png",
+    "bytes": 488262,
+    "sha256": "f32d5886691a433e2ac436f576ccd8d61469e2247da41153bf5f71389e40cdcc"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/01-playtests-arsenal.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/01-playtests-arsenal.playtest.json/console.json",
+    "bytes": 9237,
+    "sha256": "25c978c932d26af9dd7eeb73b09ce9c37aa1396a2c1e5bdf1d2c8c6fc2b22019"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/02-playtests-defeat.playtest.json/after.png",
+    "bytes": 314004,
+    "sha256": "f8fdda8ed06010fa3fdf3eb59fc62ac24d5ff27dc60fd0492107e460a39d6325"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/02-playtests-defeat.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/02-playtests-defeat.playtest.json/console.json",
+    "bytes": 9781,
+    "sha256": "e4c3a25ee8af1144ba5e1ce695f5331f2a03f31fec92f6fa3dfaa860af30a550"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/03-playtests-look.playtest.json/after.png",
+    "bytes": 494006,
+    "sha256": "46ed443f6c6c5a41fcfeb2c2daf66e1f26a19330a49e0e258990a5c468200c7c"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/03-playtests-look.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/03-playtests-look.playtest.json/console.json",
+    "bytes": 9237,
+    "sha256": "16d5cb813a6256ee54a59b67c8858eb168f0cbd80939dff9a6fe634c71fe6427"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/03-playtests-look.playtest.json/fight.png",
+    "bytes": 494709,
+    "sha256": "4bada38155584906258f9511b1b51324d0202a248f09c83ea99f0ba2635cea08"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/04-playtests-performance.playtest.json/after.png",
+    "bytes": 873623,
+    "sha256": "e751006e0df7cb767d318630addc9d318e8720c781c4fd8d964ad703a032ea49"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/04-playtests-performance.playtest.json/capture.json",
+    "bytes": 1132,
+    "sha256": "0f6a7bee58e6b7afd279a594fe15717f5a5228a723b448f6b01baac0539d2de6"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/04-playtests-performance.playtest.json/console.json",
+    "bytes": 70198,
+    "sha256": "cd71ceebc4cc121930d46e98cf35ea973ebb6183d2cc3079d30e816e00f732c5"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/05-playtests-placement.playtest.json/after.png",
+    "bytes": 479232,
+    "sha256": "ecb191281dfa5624ad25190a4de5300f39e7b54ecdf3af3bc4ee42e0e76fd727"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/05-playtests-placement.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/05-playtests-placement.playtest.json/console.json",
+    "bytes": 8421,
+    "sha256": "4be94ec663e1349161d6a423a2e1f19e701120eb3e1c7d43632f33913588bc58"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/06-playtests-pointer-placement.playtest.json/after.png",
+    "bytes": 485382,
+    "sha256": "e7ac33f9d47428edb82b4c7be17cf02576c9dd4da80f5e601d6e7faa566f6a67"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/06-playtests-pointer-placement.playtest.json/before.png",
+    "bytes": 461630,
+    "sha256": "e03380abb05fb6b9587bedeb0643f35368eb0a8ce005b2921e55bbf302583a99"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/06-playtests-pointer-placement.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/06-playtests-pointer-placement.playtest.json/console.json",
+    "bytes": 8285,
+    "sha256": "ebeb8fcc17d6c1d16a8455e6a716d28d3fd8b3519d74c07c65ea96209a6ffaee"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/06-playtests-pointer-placement.playtest.json/hovered.png",
+    "bytes": 475514,
+    "sha256": "1382806f18a15d4b77be66a29d7a9f25ef31f8d5ce70148393b477525a0dbe0e"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/06-playtests-pointer-placement.playtest.json/touch-held.png",
+    "bytes": 475004,
+    "sha256": "43dcd661315dad86f9f695954ea5a1f3238ae12f5a5b1c13732ce01d5d618a5d"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/07-playtests-strike.playtest.json/after.png",
+    "bytes": 500610,
+    "sha256": "a5c24afbdf48144c32abda757301cb27652f85c704937246a2de66ec172fe6a5"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/07-playtests-strike.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/07-playtests-strike.playtest.json/console.json",
+    "bytes": 8693,
+    "sha256": "b64609f17dab67d5208e8b491b44252c7409de6c0b45660521305a943a5ab02f"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/07-playtests-strike.playtest.json/strike.png",
+    "bytes": 471238,
+    "sha256": "ac1455f31c5f874551f0c19e05a30e39e87fa0388d276e18f4fc91efbc6e382b"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/08-playtests-survives.playtest.json/after.png",
+    "bytes": 422895,
+    "sha256": "3c8e1e8e18b0f68e3ab01d8411ac3fb85391a233824fea8c28bdb610816c8445"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/08-playtests-survives.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/08-playtests-survives.playtest.json/console.json",
+    "bytes": 9101,
+    "sha256": "022dfdc2d01245c29df7545e26cd13ae65acd4b3452a99a59826a5e030412c8d"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/09-playtests-target-priority.playtest.json/after.png",
+    "bytes": 501497,
+    "sha256": "49f3020e6ec5c47e832ab9b13f037661d8c6f6ddd60f096f8cdaf5504d822545"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/09-playtests-target-priority.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/09-playtests-target-priority.playtest.json/console.json",
+    "bytes": 9645,
+    "sha256": "988730a9ed798474ea5fa76eca65e304d44ac93889195be1a31090be54e0d751"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/10-playtests-upgrade-recycle.playtest.json/after.png",
+    "bytes": 465507,
+    "sha256": "63324fc76f4397984057c66d9566649896d4161f96bd48f0f2e10fcd1edc7b7f"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/10-playtests-upgrade-recycle.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/10-playtests-upgrade-recycle.playtest.json/console.json",
+    "bytes": 8421,
+    "sha256": "8c8f712a7d05b74deeb0aabc43aad45c9012271f5a4ac3043d4e060e4bb29ae6"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/11-playtests-victory.playtest.json/after.png",
+    "bytes": 325772,
+    "sha256": "1e79a4daeb9799e083ff264d802d6a5a754a7f95d902f1470988e4d63fd9078d"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/11-playtests-victory.playtest.json/capture.json",
+    "bytes": 1070,
+    "sha256": "20d070bfc7a8646eeeb01588f0d41349d49990fe14bb5cf30b06d4816310059c"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/11-playtests-victory.playtest.json/console.json",
+    "bytes": 13164,
+    "sha256": "c6911181115ff382144c886e286697359f9ff9bd65f33151a2f7bb77a83160cd"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/after.png",
+    "bytes": 146300,
+    "sha256": "cc07ff4a1033f23537855ce6d711f1c8ef98f1d03218ed482a4e7d10f0d350ec"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/capture.json",
+    "bytes": 1069,
+    "sha256": "b66a82dbc862a9785c59b385e6aae4c7e3ddde235b2b8680ab72f55c62ec5a7b"
+  },
+  {
+    "path": "tower-defense/artifacts/playtest/console.json",
+    "bytes": 8540,
+    "sha256": "8e99d5f2b88fbd5e22a8fad3aada4c24175bcb3853204e960ea037b0c5161e74"
+  }
+]

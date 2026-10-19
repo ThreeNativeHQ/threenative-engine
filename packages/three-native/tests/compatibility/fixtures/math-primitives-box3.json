@@ -1,0 +1,1166 @@
+{
+  "name": "math-primitives-box3",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Box3.tests.js \u2014 the whole surface except setFromPoints, whose point array the line protocol cannot carry",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "p01",
+      "class": "Vector3",
+      "args": [2, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "lo02",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi03",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b04",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b04",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo02"
+        },
+        {
+          "ref": "hi03"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b05",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "lo06",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi07",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b08",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b08",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo06"
+        },
+        {
+          "ref": "hi07"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b08",
+      "method": "makeEmpty",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "lo09",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi10",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b11",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b11",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo09"
+        },
+        {
+          "ref": "hi10"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b11",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "b08"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b12",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "lo13",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi14",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "call",
+      "id": "b12",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo13"
+        },
+        {
+          "ref": "hi14"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "b15",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "size16",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "call",
+      "id": "b15",
+      "method": "setFromCenterAndSize",
+      "args": [
+        {
+          "ref": "p01"
+        },
+        {
+          "ref": "size16"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "lo17",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi18",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b19",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b19",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo17"
+        },
+        {
+          "ref": "hi18"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b19",
+      "method": "expandByPoint",
+      "args": [
+        {
+          "ref": "p01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "lo20",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi21",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b22",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b22",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo20"
+        },
+        {
+          "ref": "hi21"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v23",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "call",
+      "id": "b22",
+      "method": "expandByVector",
+      "args": [
+        {
+          "ref": "v23"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "lo24",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi25",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b26",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b26",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo24"
+        },
+        {
+          "ref": "hi25"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b26",
+      "method": "expandByScalar",
+      "args": [2]
+    },
+    {
+      "op": "new",
+      "id": "t27",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b26",
+      "method": "getSize",
+      "args": [
+        {
+          "ref": "t27"
+        }
+      ],
+      "result": "r28"
+    },
+    {
+      "op": "new",
+      "id": "lo29",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi30",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b31",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b31",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo29"
+        },
+        {
+          "ref": "hi30"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b31",
+      "method": "containsPoint",
+      "args": [
+        {
+          "ref": "p01"
+        }
+      ],
+      "result": "r32"
+    },
+    {
+      "op": "call",
+      "id": "b31",
+      "method": "containsBox",
+      "args": [
+        {
+          "ref": "b08"
+        }
+      ],
+      "result": "r33"
+    },
+    {
+      "op": "call",
+      "id": "b31",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b08"
+        }
+      ],
+      "result": "r34"
+    },
+    {
+      "op": "call",
+      "id": "b31",
+      "method": "distanceToPoint",
+      "args": [
+        {
+          "ref": "p01"
+        }
+      ],
+      "result": "r35"
+    },
+    {
+      "op": "new",
+      "id": "lo36",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi37",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b38",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b38",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo36"
+        },
+        {
+          "ref": "hi37"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c39",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "s40",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s40",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c39"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b38",
+      "method": "intersectsSphere",
+      "args": [
+        {
+          "ref": "s40"
+        }
+      ],
+      "result": "r41"
+    },
+    {
+      "op": "new",
+      "id": "n42",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "p43",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p43",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n42"
+        },
+        2
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b38",
+      "method": "intersectsPlane",
+      "args": [
+        {
+          "ref": "p43"
+        }
+      ],
+      "result": "r44"
+    },
+    {
+      "op": "new",
+      "id": "t45",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b38",
+      "method": "getCenter",
+      "args": [
+        {
+          "ref": "t45"
+        }
+      ],
+      "result": "r46"
+    },
+    {
+      "op": "new",
+      "id": "lo47",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi48",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b49",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b49",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo47"
+        },
+        {
+          "ref": "hi48"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t50",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b49",
+      "method": "getSize",
+      "args": [
+        {
+          "ref": "t50"
+        }
+      ],
+      "result": "r51"
+    },
+    {
+      "op": "new",
+      "id": "lo52",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi53",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b54",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b54",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo52"
+        },
+        {
+          "ref": "hi53"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t55",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b54",
+      "method": "getParameter",
+      "args": [
+        {
+          "ref": "p01"
+        },
+        {
+          "ref": "t55"
+        }
+      ],
+      "result": "r56"
+    },
+    {
+      "op": "new",
+      "id": "lo57",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi58",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b59",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b59",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo57"
+        },
+        {
+          "ref": "hi58"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v60",
+      "class": "Vector3",
+      "args": [9, 9, 9]
+    },
+    {
+      "op": "new",
+      "id": "t61",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b59",
+      "method": "clampPoint",
+      "args": [
+        {
+          "ref": "v60"
+        },
+        {
+          "ref": "t61"
+        }
+      ],
+      "result": "r62"
+    },
+    {
+      "op": "new",
+      "id": "lo63",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi64",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b65",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b65",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo63"
+        },
+        {
+          "ref": "hi64"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c66",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "s67",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s67",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c66"
+        },
+        0
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b65",
+      "method": "getBoundingSphere",
+      "args": [
+        {
+          "ref": "s67"
+        }
+      ],
+      "result": "r68"
+    },
+    {
+      "op": "new",
+      "id": "lo69",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi70",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b71",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b71",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo69"
+        },
+        {
+          "ref": "hi70"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b71",
+      "method": "intersect",
+      "args": [
+        {
+          "ref": "b08"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "lo72",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi73",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b74",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b74",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo72"
+        },
+        {
+          "ref": "hi73"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b74",
+      "method": "union",
+      "args": [
+        {
+          "ref": "b08"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m75",
+      "class": "Matrix4",
+      "args": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    },
+    {
+      "op": "new",
+      "id": "lo76",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi77",
+      "class": "Vector3",
+      "args": [1, 1, 1]
+    },
+    {
+      "op": "new",
+      "id": "b78",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b78",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo76"
+        },
+        {
+          "ref": "hi77"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b78",
+      "method": "applyMatrix4",
+      "args": [
+        {
+          "ref": "m75"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "lo79",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi80",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b81",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b81",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo79"
+        },
+        {
+          "ref": "hi80"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v82",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "b81",
+      "method": "translate",
+      "args": [
+        {
+          "ref": "v82"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "lo83",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "new",
+      "id": "hi84",
+      "class": "Vector3",
+      "args": [4, 5, 6]
+    },
+    {
+      "op": "new",
+      "id": "b85",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b85",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo83"
+        },
+        {
+          "ref": "hi84"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "b85",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "b08"
+        }
+      ],
+      "result": "r86"
+    },
+    {
+      "op": "new",
+      "id": "s87",
+      "class": "Vector3",
+      "args": [-1, -2, -3]
+    },
+    {
+      "op": "call",
+      "id": "s87",
+      "method": "toArray",
+      "args": [],
+      "result": "arr"
+    },
+    {
+      "op": "new",
+      "id": "b88",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b88",
+      "method": "setFromArray",
+      "args": [
+        {
+          "ref": "arr"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "b04",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "b04",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "b04",
+      "kind": "boolean",
+      "method": "isEmpty"
+    },
+    {
+      "id": "b05",
+      "kind": "boolean",
+      "method": "isEmpty"
+    },
+    {
+      "id": "b05",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "b08",
+      "kind": "boolean",
+      "method": "isEmpty"
+    },
+    {
+      "id": "b11",
+      "kind": "boolean",
+      "method": "isEmpty"
+    },
+    {
+      "id": "b12",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "b12",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "b15",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "b15",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "b19",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "b19",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "b22",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "r28",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r32",
+      "kind": "boolean"
+    },
+    {
+      "id": "r33",
+      "kind": "boolean"
+    },
+    {
+      "id": "r34",
+      "kind": "boolean"
+    },
+    {
+      "id": "r35",
+      "kind": "number"
+    },
+    {
+      "id": "r41",
+      "kind": "boolean"
+    },
+    {
+      "id": "r44",
+      "kind": "boolean"
+    },
+    {
+      "id": "r46",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r51",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r56",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r62",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r68",
+      "kind": "number",
+      "path": "center.x"
+    },
+    {
+      "id": "r68",
+      "kind": "number",
+      "path": "radius"
+    },
+    {
+      "id": "b71",
+      "kind": "boolean",
+      "method": "isEmpty"
+    },
+    {
+      "id": "b74",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "b74",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "b78",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "b78",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "b81",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "r86",
+      "kind": "boolean"
+    },
+    {
+      "id": "arr",
+      "kind": "numbers"
+    },
+    {
+      "id": "b88",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "b88",
+      "kind": "number",
+      "path": "max.z"
+    }
+  ]
+}

@@ -4,6 +4,7 @@
 source, and deliberately not fixed there: the change has blast radius across every template's tick
 accounting and CI was mid-repair.
 
+**Priority:** P1 — Unfinished: one startup signal for gameplay, compute and bridge, with tick accounting re-measured.
 ## The split
 
 `packages/core/src/game.ts`, inside one `onUpdate`:

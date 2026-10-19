@@ -173,6 +173,9 @@ async function loadWorld(
   return WorldCells.load({
     admissionBudgetMs: Number.POSITIVE_INFINITY,
     budgets,
+    // Off, because this file's subject is the coarse per-key window: a bundled mesh is never hidden
+    // again, so a record — not `mesh.count` — is what decides what a frame draws.
+    bundles: false,
     clusterSize,
     follow,
     shadows,

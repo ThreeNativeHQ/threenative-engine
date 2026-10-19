@@ -1,0 +1,108 @@
+{
+  "name": "authored-batch-and-instance-velocity-history",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 960,
+    "height": 540
+  },
+  "warmupFrames": 2,
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "moved",
+      "waitTicks": 8
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    },
+    "resources": [
+      {
+        "id": "motion",
+        "path": "frame",
+        "gte": 9,
+        "allowTrivial": "One initial GPU frame and eight requested deterministic frames must complete, including reversals and a stop.",
+        "changed": true
+      },
+      {
+        "id": "motion",
+        "path": "firstFrameMax",
+        "gte": 0,
+        "lte": 1e-5,
+        "allowTrivial": "The first actual GPU frame has current equal to previous."
+      },
+      {
+        "id": "motion",
+        "path": "staticMax",
+        "lte": 1e-5,
+        "allowTrivial": "The static sub-draw must have zero measured velocity."
+      },
+      {
+        "id": "motion",
+        "path": "movingPixels",
+        "gte": 100,
+        "allowTrivial": "The moved authored sub-draw must cover at least 100 non-zero velocity pixels."
+      },
+      {
+        "id": "motion",
+        "path": "oracleMaxErrorPixels",
+        "gte": 0,
+        "lte": 0.05,
+        "allowTrivial": "Every rendered frame must match signed current-minus-previous NDC within 0.05 pixel, allowing half-float quantization."
+      },
+      {
+        "id": "motion",
+        "path": "stoppedMax",
+        "gte": 0,
+        "lte": 1e-5,
+        "allowTrivial": "The moving instance stops on frame seven; no extra stale frame of motion is allowed."
+      },
+      {
+        "id": "motion",
+        "path": "stationaryMax",
+        "gte": 0,
+        "lte": 1e-5,
+        "allowTrivial": "Pixels outside the conservative moving-sphere rectangle, including the static geometry, must remain still."
+      },
+      {
+        "id": "motion",
+        "path": "colourMaxErrorPixels",
+        "gte": 0,
+        "lte": 0.5,
+        "allowTrivial": "The rendered moving colour silhouette must agree with the current pose within half a pixel on every frame."
+      },
+      {
+        "id": "motion",
+        "path": "footprintPixels",
+        "gte": 100,
+        "allowTrivial": "The independently rasterized binary coverage must contain the moving surface in every actual frame."
+      },
+      {
+        "id": "motion",
+        "path": "footprintMaxErrorPixels",
+        "gte": 0,
+        "lte": 0.05,
+        "allowTrivial": "Every covered moving-surface pixel must match signed current-minus-previous NDC within the fixed half-float allowance, independently of lighting and colour intensity."
+      },
+      {
+        "id": "motion",
+        "path": "outsideFootprintMax",
+        "gte": 0,
+        "lte": 1e-5,
+        "allowTrivial": "Every pixel outside the exact moving coverage attachment, including all visible wall pixels at the silhouette, must have zero velocity."
+      },
+      {
+        "id": "motion",
+        "path": "darkFootprintPixels",
+        "gte": 1,
+        "allowTrivial": "Every actual frame must include covered shaded pixels that the rejected brightness/chroma mask would have excluded."
+      }
+    ]
+  }
+}

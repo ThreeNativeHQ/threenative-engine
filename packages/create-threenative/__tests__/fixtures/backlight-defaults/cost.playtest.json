@@ -1,0 +1,22 @@
+{
+  "name": "backlight-live-engine-window-readiness",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "readiness-only",
+      "waitFrames": 1
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "runtimeReady": true
+    }
+  }
+}

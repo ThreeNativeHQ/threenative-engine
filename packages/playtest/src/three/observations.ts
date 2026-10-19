@@ -7,7 +7,7 @@ import type {
   JsonValue,
   PlaytestClockMode,
 } from "../protocol.js";
-import { Box3, Frustum, Matrix4, Vector2, Vector3, type Camera, type Object3D, type Scene } from "three";
+import { Box3, Frustum, Matrix4, Vector2, Vector3, type Camera, type Object3D, type OrthographicCamera, type PerspectiveCamera, type Scene } from "three";
 
 import type { ThreePlaytestEntityRegistry } from "./entities.js";
 import { observeSceneNodes } from "./scene-nodes.js";
@@ -38,7 +38,26 @@ export interface IThreePlaytestRenderer {
   };
 }
 
+/** Explicit empty entities and a single resource channel identify a wait poll, not a full witness. */
+export function isResourceOnlySample(request: IPlaytestSampleRequest): boolean {
+  return request.entities?.length === 0 && request.include?.length === 1 &&
+    request.include[0] === "resources" && request.resources !== undefined &&
+    request.geometry === undefined && request.sceneNodes === undefined;
+}
+
+function sampleClock(input: IThreeObservationInput): IPlaytestObservationSnapshot["clock"] {
+  return {
+    mode: input.clockMode,
+    ...(input.tick === undefined ? { timeMs: performance.now() } : { tick: input.tick }),
+    // Live observations carry wall time even when the producer also supplies its tick.
+    ...(input.clockMode === "wall-clock" ? { timeMs: performance.now() } : {}),
+  };
+}
+
 export function sampleThreeObservations(input: IThreeObservationInput, request: IPlaytestSampleRequest): IPlaytestObservationSnapshot {
+  if (isResourceOnlySample(request)) {
+    return { clock: sampleClock(input), ...(input.resources === undefined ? {} : { resources: input.resources() }) };
+  }
   input.scene.updateMatrixWorld(true);
   input.camera.updateMatrixWorld(true);
   const rendererSize = input.renderer.getDrawingBufferSize(new Vector2());
@@ -47,14 +66,7 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
   const renderPerformance = rendererPerformance(input.renderer);
   const renderChain = input.renderChain?.();
   return {
-    clock: {
-      mode: input.clockMode,
-      ...(input.tick === undefined ? { timeMs: performance.now() } : { tick: input.tick }),
-      // A live run is measured in seconds: the runner reads `timeMs` for any mode that is not
-      // fixed-step, so a wall-clock producer that reported only a tick would leave every
-      // seconds-based rate unmeasured rather than measured.
-      ...(input.clockMode === "wall-clock" ? { timeMs: performance.now() } : {}),
-    },
+    clock: sampleClock(input),
     ...(input.diagnostics === undefined ? {} : { diagnostics: input.diagnostics() }),
     entities,
     ...(input.gameplay === undefined ? {} : { gameplay: input.gameplay() }),
@@ -125,14 +137,30 @@ function projectedBounds(
   if (worldBounds.isEmpty()) return undefined;
   const projection = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   if (!new Frustum().setFromProjectionMatrix(projection).intersectsBox(worldBounds)) return undefined;
-  const min = worldBounds.min;
-  const max = worldBounds.max;
-  const points = [
-    new Vector3(min.x, min.y, min.z), new Vector3(min.x, min.y, max.z),
-    new Vector3(min.x, max.y, min.z), new Vector3(min.x, max.y, max.z),
-    new Vector3(max.x, min.y, min.z), new Vector3(max.x, min.y, max.z),
-    new Vector3(max.x, max.y, min.z), new Vector3(max.x, max.y, max.z),
-  ].map((point) => point.project(camera));
+  const { near } = camera as PerspectiveCamera | OrthographicCamera;
+  // Clip the box to the near plane in view space before projecting it.
+  // A corner behind the eye divides by a non-positive w and flips. Project only the corners in front
+  // and the points where an edge crosses the near plane.
+  const inFront = (point: Vector3): boolean => point.z <= -near;
+  const viewCorner = (bits: number): Vector3 => new Vector3(
+    bits & 4 ? worldBounds.max.x : worldBounds.min.x,
+    bits & 2 ? worldBounds.max.y : worldBounds.min.y,
+    bits & 1 ? worldBounds.max.z : worldBounds.min.z,
+  ).applyMatrix4(camera.matrixWorldInverse);
+  const clipped: Vector3[] = [];
+  for (let bits = 0; bits < 8; bits += 1) {
+    const corner = viewCorner(bits);
+    if (inFront(corner)) clipped.push(corner);
+    for (const bit of [1, 2, 4]) {
+      if (bits & bit) continue;
+      const other = viewCorner(bits | bit);
+      if (inFront(corner) !== inFront(other)) {
+        clipped.push(corner.clone().lerp(other, (-near - corner.z) / (other.z - corner.z)));
+      }
+    }
+  }
+  if (clipped.length === 0) return undefined;
+  const points = clipped.map((point) => point.applyMatrix4(camera.projectionMatrix));
   const minX = Math.min(...points.map(({ x }) => x));
   const maxX = Math.max(...points.map(({ x }) => x));
   const minY = Math.min(...points.map(({ y }) => y));

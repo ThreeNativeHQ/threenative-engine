@@ -4,6 +4,7 @@ import {
   AnimationMixer,
   LoopOnce,
   LoopRepeat,
+  Matrix4,
   type Object3D,
   Vector3,
   type VectorKeyframeTrack,
@@ -133,24 +134,33 @@ function clipRootMotionSpeed(clip: AnimationClip): number {
 function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
   const objects: Object3D[] = [];
   root.traverse((object) => objects.push(object));
-  const restore = objects.map((object) => ({
-    object,
-    position: object.position.clone(),
-    quaternion: object.quaternion.clone(),
-    scale: object.scale.clone(),
-  }));
+
+  // The root belongs to the game, which turns it with `rotation.y +=`. A quaternion restore
+  // rewrites `rotation` as the equivalent Euler, so a yaw of PI comes back as (PI, 0, PI) and the
+  // next increment turns the figure the mirrored way. Bones keep the exact quaternion: a round trip
+  // through Euler would lose precision on every joint.
+  const rootRotation = root.rotation.clone();
 
   const mixer = new AnimationMixer(root);
   const action = mixer.clipAction(clip);
   action.play();
   const paths = objects.map(() => [] as { x: number; y: number; z: number }[]);
   const step = clip.duration / PLANT_SAMPLES;
+  // The mixer animates only the rig, so its ancestors need one refresh, not one per sample.
+  root.parent?.updateWorldMatrix(true, false);
   try {
     for (let frame = 0; frame <= PLANT_SAMPLES; frame += 1) {
       mixer.setTime(frame * step);
       root.updateMatrixWorld(true);
       for (let index = 0; index < objects.length; index += 1) {
-        (objects[index] as Object3D).getWorldPosition(scratchWorld);
+        // The frame's updateMatrixWorld already holds every bone; getWorldPosition re-walks ancestors.
+        const object = objects[index] as Object3D & {
+          __tnCopyMatrixWorld?: (target: Matrix4) => void;
+        };
+        if (object.__tnCopyMatrixWorld !== undefined) {
+          object.__tnCopyMatrixWorld(scratchMatrixWorld);
+          scratchWorld.setFromMatrixPosition(scratchMatrixWorld);
+        } else scratchWorld.setFromMatrixPosition(object.matrixWorld);
         (paths[index] as { x: number; y: number; z: number }[]).push({
           x: scratchWorld.x,
           y: scratchWorld.y,
@@ -159,13 +169,10 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
       }
     }
   } finally {
+    // Stopping restores every animated binding saved by this isolated mixer when it played.
     action.stop();
     mixer.uncacheClip(clip);
-    for (const entry of restore) {
-      entry.object.position.copy(entry.position);
-      entry.object.quaternion.copy(entry.quaternion);
-      entry.object.scale.copy(entry.scale);
-    }
+    root.rotation.copy(rootRotation);
     root.updateMatrixWorld(true);
   }
 
@@ -234,11 +241,18 @@ export class AnimationPlayer {
   #mode: AnimationMode = "loop";
   #advancedFrames = 0;
   #finished = false;
+  #posed = false;
   #fadeOut: { action: AnimationAction; from: number }[] = [];
   #fadeElapsed = 0;
   #fadeDuration = 0;
+  #fadeInFrom = 0;
   #clips = new Map<string, AnimationClip>();
   #clipGroundSpeed = new Map<string, IClipStride>();
+  /** Weights `playWeighted` is heading towards. Undefined whenever single-clip `play` owns the rig. */
+  #blendTargets: Map<string, number> | undefined;
+  #blendDuration = 0;
+  #blendElapsed = 0;
+  #blendStarts = new Map<string, number>();
   #preparation: RigPreparation | undefined;
   #strideSync: boolean;
   #strideRoot: Object3D;
@@ -251,6 +265,9 @@ export class AnimationPlayer {
   #strideSynced = false;
   #strideOverridden = false;
   #strideInPlace = false;
+  readonly #onFinished = ({ action }: { action: AnimationAction }) => {
+    if (action === this.#actions.get(this.#current ?? "")) this.#finished = true;
+  };
 
   constructor(options: IAnimationPlayerOptions) {
     const owner = new.target.name || "AnimationPlayer";
@@ -290,9 +307,7 @@ export class AnimationPlayer {
           `${owner}: clip '${name}' binds 0 tracks to '${options.root.name || options.root.type}'.`,
         );
     }
-    this.mixer.addEventListener("finished", ({ action }) => {
-      if (action === this.#actions.get(this.#current ?? "")) this.#finished = true;
-    });
+    this.mixer.addEventListener("finished", this.#onFinished);
   }
 
   get current(): string | undefined {
@@ -399,13 +414,16 @@ export class AnimationPlayer {
 
   #uniformWorldScale(): number | undefined {
     const root = this.mixer.getRoot() as Object3D;
-    const owner = root.parent ?? root;
+    const owner = (root.parent ?? root) as Object3D & {
+      __tnCopyMatrixWorld?: (target: Matrix4) => void;
+    };
     owner.updateWorldMatrix(true, false);
+    if (owner.__tnCopyMatrixWorld !== undefined) {
+      // Native copies into owned storage so this read cannot escape the live transform alias.
+      owner.__tnCopyMatrixWorld(scratchMatrixWorld);
+      return uniformYawScale(scratchMatrixWorld);
+    }
     return uniformYawScale(owner.matrixWorld);
-  }
-
-  #groundSpeedOf(name: string): number {
-    return this.#measureOf(name).groundSpeed;
   }
 
   /**
@@ -445,6 +463,9 @@ export class AnimationPlayer {
     const measured = this.#measureOf(name);
     const clipGroundSpeed = measured.groundSpeed;
     const groundSpeed = moved / dt;
+    // A dominant idle must not leave a contributing walk at its authored speed.
+    if (this.#blendTargets !== undefined && this.#strideSync && this.#mode === "loop")
+      this.#syncBlendParticipants(groundSpeed);
     if (clipGroundSpeed < CLIP_GROUND_FLOOR) {
       // Not locomotion. An idle, a reload or a death is authored at the rate it is authored at,
       // and warping it by how fast the body happens to be sliding is a bug, not a convention.
@@ -470,6 +491,23 @@ export class AnimationPlayer {
     this.#strideSynced = applies;
     this.#strideOverridden = !this.#strideSync;
     this.#strideInPlace = measured.inPlace;
+  }
+
+  /**
+   * Hold every contributing locomotion clip of a blend against the ground the body covered.
+   *
+   * One body covers one ground speed, and each clip carries its own distance per clip-second, so
+   * each participant gets the rate its own stride implies. Without this the minority clip of a
+   * blend slides: it plays at its authored rate against a body moving at another clip's speed.
+   */
+  #syncBlendParticipants(groundSpeed: number): void {
+    for (const [name, action] of this.#actions) {
+      if (!action.isScheduled() || action.getEffectiveWeight() <= 0) continue;
+      const ground = this.#measureOf(name).groundSpeed;
+      if (ground < CLIP_GROUND_FLOOR) continue;
+      const wanted = groundSpeed < STRIDE_SPEED_FLOOR ? STRIDE_RATE_MIN : groundSpeed / ground;
+      action.setEffectiveTimeScale(Math.min(STRIDE_RATE_MAX, Math.max(STRIDE_RATE_MIN, wanted)));
+    }
   }
 
   #playAction(action: AnimationAction, mode: AnimationMode, weight: number): void {
@@ -501,9 +539,11 @@ export class AnimationPlayer {
   }
 
   #playNext(name: string, next: AnimationAction, options: IAnimationPlayOptions): void {
-    const previous = this.#current === undefined ? undefined : this.#actions.get(this.#current);
     const fade = Math.max(0, options.fade ?? 0);
     const once = options.mode === "once";
+    const from = fade > 0 && next.isScheduled() ? next.getEffectiveWeight() : 0;
+    // A loop that is still visible keeps its gait; explicit one-shots and mode changes replay.
+    const time = from > 0 && !once && next.loop === LoopRepeat ? next.time : 0;
 
     // Every clip still contributing ramps out together, from the weight it currently holds.
     //
@@ -515,15 +555,12 @@ export class AnimationPlayer {
     for (const action of this.#actions.values()) {
       if (action === next) continue;
       const weight = action.getEffectiveWeight();
-      if (weight > 1e-4) outgoing.push({ action, from: weight });
+      if (action.isScheduled() && weight > 0) outgoing.push({ action, from: weight });
       else action.setEffectiveWeight(0).stop();
     }
-    if (previous !== undefined && !outgoing.some((entry) => entry.action === previous)) {
-      previous.setEffectiveWeight(1).play();
-      outgoing.push({ action: previous, from: 1 });
-    }
 
-    this.#playAction(next, once ? "once" : "loop", fade > 0 && outgoing.length > 0 ? 0 : 1);
+    this.#playAction(next, once ? "once" : "loop", fade > 0 && outgoing.length > 0 ? from : 1);
+    next.time = time;
     if (outgoing.length === 0 || fade === 0) {
       for (const entry of outgoing) entry.action.setEffectiveWeight(0).stop();
       this.#fadeOut = [];
@@ -532,6 +569,7 @@ export class AnimationPlayer {
       this.#fadeOut = outgoing;
       this.#fadeElapsed = 0;
       this.#fadeDuration = fade;
+      this.#fadeInFrom = from;
     }
     this.#current = name;
     this.#mode = once ? "once" : "loop";
@@ -540,13 +578,198 @@ export class AnimationPlayer {
   }
 
   play(name: string, options: IAnimationPlayOptions = {}): void {
+    this.#start(name, options);
+    this.#poseAtStart();
+  }
+
+  /**
+   * Whether a clip has posed the skeleton. False until the first `play` or `playWeighted`, so a
+   * rig that never plays a clip stays observably in its bind pose.
+   */
+  get posed(): boolean {
+    return this.#posed;
+  }
+
+  /**
+   * Pose the skeleton from the clip that just started, before any `update`. `play` only schedules
+   * an action, and three applies a pose only inside `mixer.update`, so a character added to the
+   * scene on the frame it starts would otherwise render once in its bind pose (a T-pose) and snap
+   * to its clip on the next tick. A zero step applies the pose and advances nothing.
+   */
+  #poseAtStart(): void {
+    if (this.#posed) return;
+    this.mixer.update(0);
+    this.#posed = true;
+  }
+
+  #start(name: string, options: IAnimationPlayOptions): void {
     const next = this.#actions.get(name);
     if (next === undefined) throw new Error(`Unknown animation clip '${name}'.`);
+    // One owner at a time. A single-clip request takes the rig back from a weighted blend, exactly
+    // as it took it back from a crossfade.
+    const weighted = this.#blendTargets !== undefined;
+    this.#blendTargets = undefined;
+    this.#blendDuration = 0;
+    this.#blendStarts.clear();
     if (this.#current === name) {
-      this.#playCurrent(next, options.mode);
+      if (weighted) {
+        const time = next.time;
+        const keepPhase = this.#mode === "loop" && options.mode !== "once";
+        this.#playNext(name, next, options);
+        if (keepPhase) next.time = time;
+      } else this.#playCurrent(next, options.mode);
       return;
     }
     this.#playNext(name, next, options);
+  }
+
+  /**
+   * Play several clips at once, at weights the game computed — the plumbing half of a locomotion
+   * blend space. The samples, the thresholds and the interpolation domain stay the game's: this
+   * takes the answer (`{ clip, weight }[]`) and owns what happens to the actions.
+   *
+   * What it guarantees, because every blend space needs the same four things:
+   *
+   * - **One mixer, one updater, one action per clip.** Nothing here creates an `AnimationMixer`.
+   * - **A still-contributing clip keeps its phase.** Returning to a walk mid-cycle does not
+   *   restart it — the same convention `play` follows.
+   * - **An entering clip joins the gait.** Its normalized time is set to the dominant
+   *   contributor's, so a walk→run change does not cross the feet mid-stride. Pass
+   *   `phaseSync: false` for authored cycles that are deliberately out of phase with each other.
+   * - **Weights stay finite, non-negative and summing to 1.** Malformed input throws rather than
+   *   producing a pose nobody can explain.
+   *
+   * `transition` is the bounded authored transition: weights move linearly towards the request
+   * over that many seconds, so a large instantaneous intent change cannot pop the pose, and `0`
+   * snaps them on the call. A clip that drops out of the request fades to zero and is then
+   * stopped, so repeated blends release their actions.
+   *
+   * Entries are played as loops. Events — a hit, a death, a reload — are `play`'s job.
+   */
+  playWeighted(
+    entries: readonly { readonly clip: string; readonly weight: number }[],
+    options: { readonly transition?: number; readonly phaseSync?: boolean } = {},
+  ): void {
+    const transition = options.transition ?? 0;
+    if (!Number.isFinite(transition) || transition < 0)
+      throw new Error("AnimationPlayer.playWeighted requires a finite non-negative transition.");
+    const targets = blendTargets(this.#actions, entries);
+    const phaseSync = options.phaseSync ?? true;
+    // Per-frame evaluators may repeat their answer; retain the original fade deadline.
+    if (
+      this.#blendTargets !== undefined &&
+      this.#blendDuration === transition &&
+      this.#blendTargets.size === targets.size &&
+      [...targets].every(([name, weight]) => this.#blendTargets?.get(name) === weight)
+    )
+      return;
+    // Any crossfade in flight stops owning the rig; its outgoing actions join the blend ramp below
+    // as participants with a target of zero, so they leave the same bounded way they arrived.
+    this.#fadeOut = [];
+    const phase = this.#dominantPhase();
+    let current = "";
+    let heaviest = -1;
+    for (const [name, action] of this.#actions) {
+      const target = targets.get(name);
+      if (target === undefined) continue;
+      if (target > heaviest) {
+        heaviest = target;
+        current = name;
+      }
+      this.#startBlendParticipant(action, phase, phaseSync);
+    }
+
+    this.#blendStarts.clear();
+    let initialWeight = 0;
+    for (const [name, action] of this.#actions) {
+      if (!action.isScheduled()) continue;
+      const weight = action.getEffectiveWeight();
+      this.#blendStarts.set(name, weight);
+      initialWeight += weight;
+    }
+    this.#blendTargets = targets;
+    // With no contributing pose there is nothing to fade from: start at the requested blend.
+    this.#blendDuration = initialWeight > 0 ? transition : 0;
+    this.#blendElapsed = 0;
+    this.#current = current;
+    this.#mode = "loop";
+    this.#finished = false;
+    this.#advancedFrames = 0;
+    // A zero transition is the caller's request for these weights right now, not on the next
+    // frame; a positive one leaves them where the previous request left them and ramps from there.
+    this.#advanceBlend(0);
+    this.#poseAtStart();
+  }
+
+  /**
+   * The normalized gait phase an entering clip joins: the dominant contributor's own.
+   *
+   * A returning action is deliberately left alone — its phase is the continuity the reversal
+   * repair exists to protect, and re-deriving it here would restart a walk the player is watching.
+   */
+  #dominantPhase(): number {
+    let phase = 0;
+    let dominant = 0;
+    for (const action of this.#actions.values()) {
+      if (!action.isScheduled()) continue;
+      const weight = action.getEffectiveWeight();
+      if (weight > dominant) {
+        dominant = weight;
+        const duration = action.getClip().duration;
+        phase = duration > 0 ? action.time / duration : 0;
+      }
+    }
+    return phase;
+  }
+
+  #startBlendParticipant(action: AnimationAction, phase: number, phaseSync: boolean): void {
+    const weight = action.isScheduled() ? action.getEffectiveWeight() : 0;
+    const returning = action.isScheduled() && action.loop === LoopRepeat && !action.paused;
+    if (!returning) action.reset();
+    action.setLoop(LoopRepeat, Number.POSITIVE_INFINITY).setEffectiveWeight(weight);
+    action.clampWhenFinished = false;
+    action.play();
+    if (returning) return;
+    const duration = action.getClip().duration;
+    action.time = phaseSync && duration > 0 ? phase * duration : 0;
+  }
+
+  /**
+   * Move every contributing action one step towards its requested weight.
+   *
+   * `dt` is the frame's own time, so the ramp is linear in real time whatever the frame rate is.
+   */
+  #advanceBlend(dt: number): void {
+    const targets = this.#blendTargets;
+    if (targets === undefined) return;
+    this.#blendElapsed = Math.min(this.#blendDuration, this.#blendElapsed + dt);
+    const progress = this.#blendDuration > 0 ? this.#blendElapsed / this.#blendDuration : 1;
+    let total = 0;
+    for (const [name, action] of this.#actions) {
+      if (!action.isScheduled()) continue;
+      const target = targets.get(name) ?? 0;
+      const from = this.#blendStarts.get(name) ?? 0;
+      const next = progress === 1 ? target : from + (target - from) * progress;
+      action.setEffectiveWeight(next);
+      total += next;
+    }
+    this.#settleBlend(targets, total);
+  }
+
+  /**
+   * Release every action the request no longer includes, then restore the sum-to-one invariant.
+   *
+   * The renormalization is what keeps the sum at 1 while a blend swaps one clip for another: the
+   * arriving clip grows from zero at the same rate the departing one shrinks, so without it the
+   * rig under-weights toward the bind pose for the length of the transition.
+   */
+  #settleBlend(targets: ReadonlyMap<string, number>, total: number): void {
+    const scale = total > 0 && total !== 1 ? 1 / total : 1;
+    for (const [name, action] of this.#actions) {
+      if (!action.isScheduled()) continue;
+      if ((targets.get(name) ?? 0) === 0 && action.getEffectiveWeight() === 0) action.stop();
+      else if (scale !== 1) action.setEffectiveWeight(action.getEffectiveWeight() * scale);
+    }
   }
 
   update(dt: number): void {
@@ -567,7 +790,9 @@ export class AnimationPlayer {
       for (const entry of this.#fadeOut) {
         entry.action.setEffectiveWeight(entry.from * (1 - progress));
       }
-      this.#actions.get(this.#current ?? "")?.setEffectiveWeight(progress);
+      this.#actions
+        .get(this.#current ?? "")
+        ?.setEffectiveWeight(this.#fadeInFrom + (1 - this.#fadeInFrom) * progress);
       if (linear >= 1) {
         for (const entry of this.#fadeOut) entry.action.setEffectiveWeight(0).stop();
         this.#fadeOut = [];
@@ -577,6 +802,7 @@ export class AnimationPlayer {
     // pose is frozen, so counting there would report idle frames as animation progress.
     if (this.#current !== undefined && !wasFinished && this.mixer.time !== before)
       this.#advancedFrames += 1;
+    this.#advanceBlend(dt);
     this.#syncStride(dt);
   }
 
@@ -587,6 +813,10 @@ export class AnimationPlayer {
     this.#finished = false;
     this.#advancedFrames = 0;
     this.#fadeOut = [];
+    this.#blendTargets = undefined;
+    this.#blendDuration = 0;
+    this.#blendElapsed = 0;
+    this.#blendStarts.clear();
     this.#resetStride();
   }
 
@@ -602,12 +832,60 @@ export class AnimationPlayer {
   dispose(): void {
     this.stop();
     this.mixer.uncacheRoot(this.mixer.getRoot());
+    this.mixer.removeEventListener("finished", this.#onFinished);
+    this.#actions.clear();
+    this.#clips.clear();
+    this.#clipGroundSpeed.clear();
+    this.#preparation = undefined;
   }
 }
 
 /** Reused so a per-frame stride read costs no allocation. See PRD-189. */
 const scratchWorld = new Vector3();
 const scratchScale = new Vector3();
+const scratchMatrixWorld = new Matrix4();
+
+/**
+ * Validate one weighted request into normalized, non-zero target weights.
+ *
+ * Fail closed on everything malformed — an unknown clip, a non-finite or negative weight, a clip
+ * listed twice, a request with nothing in it — because a blend that silently drops a sample reads
+ * as a rig problem long after the request that caused it. Zero weights are dropped rather than
+ * rejected: an evaluation over a grid naturally reports every cell it did not pick, and those
+ * clips simply leave the blend. The remaining weights are scaled to sum to 1, so the engine holds
+ * the invariant the caller does not have to.
+ */
+function blendTargets(
+  actions: ReadonlyMap<string, AnimationAction>,
+  entries: readonly { readonly clip: string; readonly weight: number }[],
+): Map<string, number> {
+  if (entries.length === 0)
+    throw new Error("AnimationPlayer.playWeighted requires at least one clip.");
+  const targets = new Map<string, number>();
+  const seen = new Set<string>();
+  let largest = 0;
+  for (const entry of entries) {
+    if (!actions.has(entry.clip)) throw new Error(`Unknown animation clip '${entry.clip}'.`);
+    if (!Number.isFinite(entry.weight) || entry.weight < 0)
+      throw new Error(
+        `AnimationPlayer.playWeighted: '${entry.clip}' has weight ${entry.weight}; weights must be finite and non-negative.`,
+      );
+    if (seen.has(entry.clip))
+      throw new Error(
+        `AnimationPlayer.playWeighted: '${entry.clip}' is listed twice; give each clip one weight.`,
+      );
+    seen.add(entry.clip);
+    if (entry.weight === 0) continue;
+    targets.set(entry.clip, entry.weight);
+    largest = Math.max(largest, entry.weight);
+  }
+  if (!(largest > 0))
+    throw new Error("AnimationPlayer.playWeighted requires at least one clip above weight zero.");
+  let total = 0;
+  for (const weight of targets.values()) total += weight / largest;
+  for (const [name, weight] of targets) targets.set(name, weight / largest / total);
+  return targets;
+}
 
 function requiredClipNames(value: IAnimationPlayerOptions["requiredClips"]): readonly string[] {
   if (value === undefined) return [];

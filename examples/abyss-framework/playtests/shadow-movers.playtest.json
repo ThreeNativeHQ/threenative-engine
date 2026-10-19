@@ -1,0 +1,79 @@
+{
+  "name": "shadow-movers",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 60,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "label": "swing-a",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 40
+    },
+    {
+      "label": "swing-b",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 40
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "release": true,
+      "waitTicks": 800
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "component": "shadowLevels",
+        "entity": "world",
+        "equals": 3,
+        "allowTrivial": "The node has three levels from construction; the run is what makes any of them render."
+      },
+      {
+        "component": "shadowPeakAutoMovers",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "The peak is read at the end of the run; the load-bearing half is that nothing called trackCaster, so only the node's own measurement can have raised it."
+      },
+      {
+        "component": "shadowAutoTransitions",
+        "entity": "world",
+        "gte": 2,
+        "allowTrivial": "A cumulative count read at the end of the run; the sphere has to become a mover and then settle for it to reach 2."
+      },
+      {
+        "component": "shadowAutoMovers",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "The settle phase is what returns the sphere to static; at the baseline nothing has moved yet either."
+      },
+      {
+        "component": "shadowRendersSinceMover",
+        "entity": "world",
+        "lte": 12,
+        "allowTrivial": "A full redraw per moving frame would be hundreds of renders; the bound is what separates one region redraw per transition from that."
+      },
+      {
+        "component": "shadowAutoScanMs",
+        "entity": "world",
+        "lte": 0.05,
+        "allowTrivial": "The mean scan time is a lifetime figure; the run is what gives it enough frames to be a mean."
+      }
+    ]
+  }
+}

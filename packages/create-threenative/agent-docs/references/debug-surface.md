@@ -48,6 +48,11 @@ Present only under the native runtime. The host injects its side; core's viewpor
 `@threenative/playtest/three`'s device reporting read it (adapter identity, host snapshot).
 On web this global does not exist — do not probe for it in portable code.
 
+## Scene-entry markers
+
+`TN_ENVIRONMENT_TOO_SMALL`: scene-entry console error; use an equirectangular environment at least 64 pixels wide for PMREM.
+`TN_OPACITY_IGNORED`: scene-entry console error; set `transparent: true` or `alphaHash: true` on visible materials with `opacity < 1`.
+
 ## Runner-side markers
 
 Two further globals are set by tooling, not the game, and are named here so a stray

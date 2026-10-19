@@ -6,7 +6,12 @@ import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { ILadderArm, MeasurementClock } from "../../examples/engine-load-test/src/driver.js";
 import {
+  downscaleFrame,
+  drawnFrameReader,
+} from "../../examples/engine-load-test/src/frame-read.js";
+import {
   type ILoadTestHarness,
+  countPipelineCreates,
   initInstanceMatrices,
   writeInstanceMatrices,
 } from "../../examples/engine-load-test/src/game.js";
@@ -26,6 +31,12 @@ import {
   foxScale,
 } from "../../examples/engine-load-test/src/ladder.js";
 import {
+  PHASES,
+  createPhaseRecorder,
+  threadCpuClock,
+  topCrossings,
+} from "../../examples/engine-load-test/src/phases.js";
+import {
   CULLED_OFFSET_X,
   DEFAULT_AXES,
   type IWorkloadAxes,
@@ -44,12 +55,23 @@ import {
   resolveAxes,
   uniqueMaterialColor,
 } from "../../examples/engine-load-test/src/workload.js";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import {
   assertHardwareAdapter,
   assertPlainThreePilot,
   browserLaunchArgs,
 } from "../engine-load-test/browser.js";
+import { HostCpuRecorder, parseProcStat, withHostCpu } from "../engine-load-test/host-cpu.js";
 import {
+  HOST_PROJECTION_CROSSING_BUDGET,
+  pairRows,
+  pairVerdict,
+  renderPairMarkdown,
+  reportFacets,
+  seriesFamilies,
+} from "../engine-load-test/pair.js";
+import {
+  ARMS,
   type IRunReport,
   PERFORMANCE_BASELINES,
   PERFORMANCE_REGRESSION_TOLERANCE,
@@ -59,11 +81,20 @@ import {
   knee,
   looksVsyncPinned,
   parseRunReport,
+  readHostLoad,
   renderArmMarkdown,
+  scoreboardRows,
   summarize,
+  withHostLoad,
 } from "../engine-load-test/report.js";
 import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
-import { KILL_GRACE_MS, runCapturing } from "../engine-load-test/run-desktop.js";
+import { KILL_GRACE_MS, benchDisplay, runCapturing } from "../engine-load-test/run-desktop.js";
+import { engineDefines, engineEnvironment, playerSurface } from "../engine-load-test/run-engine.js";
+import {
+  WEB_ENGINE_WASM,
+  freshWasm,
+  webArtifactBytes,
+} from "../engine-load-test/run-web-engine.js";
 
 const BEGIN_MARKER = "ENGINE_LOAD_TEST_JSON_BEGIN";
 const END_MARKER = "ENGINE_LOAD_TEST_JSON_END";
@@ -604,7 +635,7 @@ describe("engine load test workload", () => {
     // Both entries install the projection for L4 as they do for L3; only L3 keeps the two guards
     // that refuse to publish an un-projected frame, because a decline is L4's answer, not a fault.
     // PRD-464's R1-R5 are L3's authoring, so they keep both guards too.
-    for (const entry of ["driver.ts", "native.ts"]) {
+    for (const entry of ["driver.ts", "native-run.ts"]) {
       const source = await readFile(
         path.join(process.cwd(), "examples/engine-load-test/src", entry),
         "utf8",
@@ -626,7 +657,7 @@ describe("engine load test workload", () => {
     const [cli, web, native, vite, game, driver] = await Promise.all([
       load("scripts/engine-load-test/cli.ts"),
       load("examples/engine-load-test/src/main.ts"),
-      load("examples/engine-load-test/src/native.ts"),
+      load("examples/engine-load-test/src/native-run.ts"),
       load("examples/engine-load-test/vite.config.ts"),
       load("examples/engine-load-test/src/game.ts"),
       load("examples/engine-load-test/src/driver.ts"),
@@ -636,7 +667,7 @@ describe("engine load test workload", () => {
     // The axes are read where the page is, in the driver both web arms drive.
     expect(driver).toMatch(/parseAxesRecord\(Object\.fromEntries\(parameters\.entries\(\)\)\)/u);
     expect(driver).toMatch(/createLoadTestHarness\([\s\S]*arm\.createCollapse/u);
-    expect(web).toMatch(/createCollapse: \(scene, options\) => new SceneRenderProjection/u);
+    expect(web).toMatch(/createCollapse: \(scene, options\) =>\s+new SceneRenderProjection/u);
     expect(native).toMatch(/parseAxesRecord\(config\.axes\)/u);
     expect(native).toMatch(/createLoadTestHarness\([\s\S]*axes,[\s\S]*new SceneRenderProjection/u);
     expect(vite).toMatch(/TN_BENCH_SHADOW_CASTER_SHARE/u);
@@ -3107,6 +3138,7 @@ describe("plain three.js control arm", () => {
       "examples/engine-load-test/src/game.ts",
       "examples/engine-load-test/src/identity.ts",
       "examples/engine-load-test/src/ladder.ts",
+      "examples/engine-load-test/src/phases.ts",
       "examples/engine-load-test/src/plain.ts",
       "examples/engine-load-test/src/workload.ts",
     ]);
@@ -3247,6 +3279,38 @@ describe("the completed-work measurement boundary", () => {
     vi.unstubAllGlobals();
   });
 
+  it("captures the last measured web frame after closing the completed-work window", async () => {
+    const { measureRung } = await loadDriver();
+    const { clock, advance } = virtualClock();
+    const capture = vi.fn(async () => {
+      advance(1000);
+      return "fixture-png";
+    });
+    vi.stubGlobal("__TN_BENCH_CAPTURE__", capture);
+    try {
+      const result = await measureRung(
+        stubHarness(
+          {
+            onSubmittedWorkDone: async () => {
+              advance(POST_DRAIN_MS);
+            },
+          },
+          advance,
+        ),
+        ARM,
+        { mode: "L1", objectCount: 1 },
+        0,
+        KNOBS,
+        clock,
+      );
+      expect(result.framePng).toBe("fixture-png");
+      expect(capture).toHaveBeenCalledOnce();
+      expect(result.completedWorkMeanMs).toBe(28.5);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   // The driver reads the page's query string at module scope, which node has no `location` for.
   async function loadDriver(): Promise<
     typeof import("../../examples/engine-load-test/src/driver.js")
@@ -3298,6 +3362,7 @@ describe("the completed-work measurement boundary", () => {
       dispose: () => {},
       foxMeasurement: () => undefined,
       ladderCounts: () => undefined,
+      pipelineCompiles: () => 0,
       placementBytes: new Uint8Array(8),
       positionHash: "00000000",
       // The stub draws no pixels; the driver only probes a rung that asked to be a ladder rung, and
@@ -3370,6 +3435,33 @@ describe("the completed-work measurement boundary", () => {
     expect(report.stepMs).toEqual([STEP_MS, STEP_MS]);
   });
 
+  it("captures a no-post rung strictly after its measured window closes", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock();
+    const { harness } = drainingHarness(advance);
+    const capture = vi.fn(async () => {
+      advance(1000);
+      return "small-frame";
+    });
+    vi.stubGlobal("__TN_BENCH_CAPTURE__", capture);
+    try {
+      const result = await measureRung(
+        harness,
+        ARM,
+        { mode: "L1", objectCount: 64 },
+        0,
+        KNOBS,
+        clock,
+      );
+      expect(capture).toHaveBeenCalledOnce();
+      expect(result.framePng).toBe("small-frame");
+      expect(result.completedWorkMeanMs).toBe(28.5);
+      expect(result.frameMs).toEqual([26, 26]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("reports the same window on a clock with no cadence, where it equals the submit sum", async () => {
     const { measureRung } = await loadDriver();
     const { advance, clock } = virtualClock(0);
@@ -3420,5 +3512,1110 @@ describe("the completed-work measurement boundary", () => {
         /TN_BENCH_WARMUP_GE_FRAMES/u,
       );
     }
+  });
+
+  it("records the pipelines the measured window compiled, not the warmup's", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock();
+    let frame = 0;
+    // Four pipelines compile while warming up (frames 0-1) and two more inside the window.
+    const harness: ILoadTestHarness = {
+      ...stubHarness(undefined, advance),
+      pipelineCompiles: () => (frame < 2 ? 4 : frame < 3 ? 5 : 6),
+      step: (index) => {
+        frame = index;
+      },
+    };
+    const result = await measureRung(
+      harness,
+      ARM,
+      { mode: "L1", objectCount: 64 },
+      0,
+      KNOBS,
+      clock,
+    );
+    expect(result.pipelineCompiles).toBe(2);
+  });
+});
+
+describe("the scoreboard counters", () => {
+  // Eight frames at 10 ms and two spikes: a hitch is a frame over twice the rung's own p50.
+  const spiky = [...series(10, 8), 25, 40];
+
+  it("carries p95, p99, the hitch count, draw calls and pipeline compiles on every row", () => {
+    const [row] = scoreboardRows(
+      report({ rungs: [rung({ frameMs: spiky, pipelineCompiles: 3 })] }),
+    );
+    expect(row).toMatchObject({
+      drawCalls: 4097,
+      hitches: 2,
+      mode: "L1",
+      objectCount: 4096,
+      p50: 10,
+      p95: 40,
+      p99: 40,
+      pipelineCompiles: 3,
+    });
+  });
+
+  it("reports Godot/native p50 on R2, R3 and R5 without inventing unsupported Godot rows", () => {
+    const modes = ["R2", "R3", "R5"] as const;
+    const native = report({
+      arm: "tn-desktop",
+      rungs: modes.map((mode) => rung({ mode, frameMs: series(10), pipelineCompiles: 0 })),
+    });
+    const godot = report({
+      arm: "godot-desktop",
+      engine: { name: "godot", version: "4.7.1" },
+      rungs: modes.map((mode) => rung({ mode, frameMs: series(25) })),
+    });
+    const rows = scoreboardRows(native, godot);
+    expect(rows.map((row) => row.godotRatio)).toEqual([2.5, 2.5, 2.5]);
+    const unsupported = { ...godot, rungs: godot.rungs.slice(0, 2) };
+    expect(scoreboardRows(native, unsupported).map((row) => row.godotRatio)).toEqual([
+      2.5,
+      2.5,
+      undefined,
+    ]);
+    expect(scoreboardRows(unsupported)).toHaveLength(2);
+    expect(scoreboardRows(native).every((row) => row.godotRatio === undefined)).toBe(true);
+  });
+  it("counts no hitch on a flat series", () => {
+    const [row] = scoreboardRows(report({ rungs: [rung({ pipelineCompiles: 0 })] }));
+    expect(row?.hitches).toBe(0);
+  });
+
+  it("fails closed on a rung whose pipeline-compile counter is missing", () => {
+    expect(() => scoreboardRows(report())).toThrow(/TN_BENCH_COUNTER_MISSING.*pipelineCompiles/u);
+  });
+
+  it("lets a Godot row omit pipelineCompiles, because the Godot load test cannot count them", () => {
+    const godot = report({
+      arm: "godot-desktop",
+      engine: { name: "godot", version: "4.7.1" },
+      rungs: [rung()],
+    });
+    const [row] = scoreboardRows(godot);
+    expect(row?.pipelineCompiles).toBeUndefined();
+    // The exemption is the one counter only: a Godot rung with no draw call still fails.
+    expect(() => scoreboardRows({ ...godot, rungs: [rung({ drawCalls: 0 })] })).toThrow(
+      /TN_BENCH_COUNTER_MISSING.*drawCalls/u,
+    );
+  });
+
+  it("fails closed on a counter that is not a count", () => {
+    for (const bad of [-1, 1.5, Number.NaN]) {
+      expect(() => scoreboardRows(report({ rungs: [rung({ pipelineCompiles: bad })] }))).toThrow(
+        /TN_BENCH_COUNTER_MISSING/u,
+      );
+    }
+  });
+
+  it("fails closed on a rung that submitted no draw call", () => {
+    expect(() =>
+      scoreboardRows(report({ rungs: [rung({ drawCalls: 0, pipelineCompiles: 0 })] })),
+    ).toThrow(/TN_BENCH_COUNTER_MISSING.*drawCalls/u);
+  });
+
+  it("still parses a report from before the counter existed, and rejects a malformed one", () => {
+    expect(() => parseRunReport(JSON.parse(JSON.stringify(report())))).not.toThrow();
+    const bad = JSON.parse(JSON.stringify(report({ rungs: [rung({ pipelineCompiles: 2 })] })));
+    bad.rungs[0].pipelineCompiles = "two";
+    expect(() => parseRunReport(bad)).toThrow(/TN_BENCH_BAD_SHAPE.*pipelineCompiles/u);
+  });
+
+  it("prints the new columns in the arm table", () => {
+    const text = renderArmMarkdown(
+      report({ rungs: [rung({ frameMs: spiky, pipelineCompiles: 3 })] }),
+    );
+    expect(text).toContain("| p99 ms | hitches |");
+    expect(text).toContain("| compiles |");
+  });
+});
+
+describe("the pipeline-compile counter", () => {
+  it("counts each pipeline the backend is asked to create, and still creates it", () => {
+    const created: string[] = [];
+    const backend = {
+      createComputePipeline: (name: string) => created.push(name),
+      createRenderPipeline: (name: string) => created.push(name),
+    };
+    const count = countPipelineCreates({ backend } as never);
+    backend.createRenderPipeline("a");
+    backend.createRenderPipeline("b");
+    backend.createComputePipeline("c");
+    expect(count()).toBe(3);
+    expect(created).toEqual(["a", "b", "c"]);
+  });
+
+  it("fails closed on a backend that moved the seam", () => {
+    expect(() => countPipelineCreates({ backend: {} } as never)).toThrow(
+      /TN_BENCH_NO_PIPELINE_COUNTER/u,
+    );
+    expect(() => countPipelineCreates({} as never)).toThrow(/TN_BENCH_NO_PIPELINE_COUNTER/u);
+  });
+});
+
+describe("the host-load verdict", () => {
+  const source = (load1: number, cores: number) => ({
+    cores: () => cores,
+    loadavg: () => [load1, 0, 0],
+  });
+  const baseline = {
+    evidence: "docs/verification/prd-130-phase-6-2026-08-16.md",
+    rungs: { "L1@4096": 10 },
+  };
+
+  it("reads the one-minute load and the core count from its source", () => {
+    expect(readHostLoad(source(3.5, 12))).toEqual({ cores: 12, load1: 3.5 });
+  });
+
+  it("keeps absolutes valid at or below half the core count", () => {
+    const stamped = withHostLoad(report(), readHostLoad(source(6, 12)));
+    expect(stamped.hostLoad).toEqual({ absolutes: "valid", cores: 12, load1: 6 });
+  });
+
+  it("marks absolutes invalid-absolute above half the core count", () => {
+    const stamped = withHostLoad(report(), readHostLoad(source(6.01, 12)));
+    expect(stamped.hostLoad?.absolutes).toBe("invalid-absolute");
+    expect(renderArmMarkdown(stamped)).toContain("invalid-absolute");
+  });
+
+  it("fails closed on a load source that reports nothing usable", () => {
+    expect(() => readHostLoad(source(Number.NaN, 12))).toThrow(/TN_BENCH_HOST_LOAD_UNREADABLE/u);
+    expect(() => readHostLoad(source(1, 0))).toThrow(/TN_BENCH_HOST_LOAD_UNREADABLE/u);
+  });
+
+  it("round-trips through the parser and rejects a verdict that disagrees with its numbers", () => {
+    const stamped = withHostLoad(report(), readHostLoad(source(20, 12)));
+    expect(parseRunReport(JSON.parse(JSON.stringify(stamped))).hostLoad).toEqual(stamped.hostLoad);
+    const lying = JSON.parse(JSON.stringify(stamped));
+    lying.hostLoad.absolutes = "valid";
+    expect(() => parseRunReport(lying)).toThrow(/TN_BENCH_BAD_SHAPE.*hostLoad/u);
+  });
+
+  it("keeps a loaded run out of an absolute baseline gate, and lets a quiet one through", () => {
+    const loaded = withHostLoad(report(), readHostLoad(source(20, 12)));
+    expect(() => checkPerformance(loaded, { "tn-web": baseline })).toThrow(
+      /TN_BENCH_INVALID_ABSOLUTE/u,
+    );
+    const quiet = withHostLoad(report(), readHostLoad(source(1, 12)));
+    expect(checkPerformance(quiet, { "tn-web": baseline })?.regressions).toEqual([]);
+  });
+});
+
+// PRD-573 v1.10: the owned engine as a bench arm, and the guard that lets two arms be compared at all.
+describe("the tn-engine-desktop arm", () => {
+  const engineReport = (overrides: Partial<IRunReport> = {}): IRunReport =>
+    report({ arm: "tn-engine-desktop", ...overrides });
+
+  it("is a registered arm that reports as ThreeNative and cannot be filed as another engine", () => {
+    expect(ARMS).toContain("tn-engine-desktop");
+    const parsed = parseRunReport(JSON.parse(JSON.stringify(engineReport())));
+    expect(parsed.arm).toBe("tn-engine-desktop");
+    expect(() =>
+      parseRunReport({ ...engineReport(), engine: { name: "godot", version: "4.7.1" } }),
+    ).toThrow(/TN_BENCH/u);
+  });
+
+  it("is reachable from --arm and --pair, and its entry is the shared run with the engine's Fox", async () => {
+    const [cli, entry, run] = await Promise.all([
+      readFile(path.join(process.cwd(), "scripts/engine-load-test/cli.ts"), "utf8"),
+      readFile(path.join(process.cwd(), "examples/engine-load-test/src/native-engine.ts"), "utf8"),
+      readFile(path.join(process.cwd(), "examples/engine-load-test/src/native-run.ts"), "utf8"),
+    ]);
+    expect(cli).toMatch(/arm === "tn-engine-desktop"[\s\S]*runTnEngineDesktop/u);
+    expect(cli).toMatch(/PAIRABLE_ARMS = \[\s*"tn-desktop",\s*"tn-engine-desktop"/u);
+    expect(cli).toMatch(/renderPairMarkdown\(/u);
+    expect(entry).toMatch(/runNative\(/u);
+    expect(run).toMatch(/onEngine/u);
+  });
+
+  it("builds the engine bundle from the same options as the legacy bundle", () => {
+    const options = {
+      axes: DEFAULT_AXES,
+      frames: 160,
+      height: 1080,
+      ladder: "4096",
+      modes: "R2,R5",
+      repeats: 1,
+      sourceSha: "abc123",
+      warmup: 40,
+      width: 1920,
+    };
+    const defines = engineDefines(options, "/fox.glb");
+    expect(JSON.parse(defines.__TN_PLATFORM__ as string)).toBe("engine-desktop");
+    const config = JSON.parse(defines.__TN_BENCH_CONFIG__ as string);
+    expect(config).toMatchObject({
+      frames: 160,
+      height: 1080,
+      ladder: [4096],
+      modes: ["R2", "R5"],
+      repeats: 1,
+      sourceSha: "abc123",
+      warmup: 40,
+      width: 1920,
+    });
+  });
+
+  it("puts both desktop arms on one display, so a pair never splits between :0 and Xvfb", () => {
+    expect(benchDisplay({ DISPLAY: ":0" })).toBe(":0");
+    expect(benchDisplay({ DISPLAY: ":0", TN_BENCH_DISPLAY: ":7" })).toBe(":7");
+    expect(benchDisplay({})).toBe("");
+  });
+
+  it("opens the player at the requested surface, uncapped, and reads per-frame CPU only on request", () => {
+    const options = {
+      axes: DEFAULT_AXES,
+      frames: 1,
+      height: 1080,
+      ladder: "1",
+      modes: "R5",
+      repeats: 1,
+      warmup: 1,
+      width: 1920,
+    };
+    expect(engineEnvironment(options, {})).toMatchObject({
+      TN_PLAYER_HEIGHT: "1080",
+      TN_PLAYER_VSYNC: "0",
+      TN_PLAYER_WIDTH: "1920",
+    });
+    expect(engineEnvironment(options, {}).TN_PLAYER_METRICS).toBeUndefined();
+    expect(engineEnvironment(options, { TN_BENCH_ENGINE_METRICS: "1" }).TN_PLAYER_METRICS).toBe(
+      "1",
+    );
+    expect(engineEnvironment(options, { TN_BENCH_VSYNC: "on" }).TN_PLAYER_VSYNC).toBe("1");
+    expect(
+      playerSurface(
+        "[Playtest] threenative-native-engine ready: game x, runtime v8, 1920x1080, mailbox off",
+      ),
+    ).toEqual({ height: 1080, width: 1920 });
+    expect(playerSurface("[Playtest] No presentable surface; running headless.")).toBeUndefined();
+  });
+});
+
+describe("the runner's host CPU reading", () => {
+  const stat = (name: string, group: number, user: number, system: number): string =>
+    `4242 (${name}) S 1 ${group} ${group} 0 -1 4194560 100 0 0 0 ${user} ${system} 0 0 20 0 9 0 12345 1000 100`;
+
+  it("reads utime, stime and the group past a command name with spaces and parentheses", () => {
+    expect(parseProcStat(stat("tn native (v8) x", 777, 120, 30))).toEqual({
+      cpuTicks: 150,
+      group: 777,
+    });
+    expect(() => parseProcStat("garbage")).toThrow(/TN_BENCH_PROC_STAT/u);
+  });
+
+  const recorderFor = (readings: Array<number | undefined>): HostCpuRecorder => {
+    const queue = [...readings];
+    return new HostCpuRecorder({ read: () => queue.shift() });
+  };
+
+  it("brackets a window between its two markers and keeps the player's frame samples inside it", () => {
+    const recorder = recorderFor([1000, 1480]);
+    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":9}');
+    recorder.line("window R2@4096");
+    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":2.5,"presentCpuMs":30,"bridgeCalls":900}');
+    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":3.5,"presentCpuMs":31}');
+    recorder.line("rung R2@4096 frame p50 3.00 | step p50 1.00");
+    expect(recorder.windows).toEqual([
+      {
+        begin: 1000,
+        cpuMs: 480,
+        crossingsPerFrame: [900],
+        key: "R2@4096",
+        presentFrameMs: [30, 31],
+        renderFrameMs: [],
+        threadFrameMs: [2.5, 3.5],
+      },
+    ]);
+  });
+
+  it("carries the present call's CPU and the crossings onto the rung, for either arm's lines", () => {
+    const recorder = recorderFor([0, 40]);
+    recorder.line("window R2@4096");
+    for (const present of [30.0004, 32])
+      recorder.line(`TN_PLAYER_FRAME:{"cpuFrameCpuMs":4,"presentCpuMs":${present}}`);
+    recorder.line("rung R2@4096 frame p50 1 | step");
+    const page = { rungs: [{ frameMs: series(1, 2), mode: "R2", objectCount: 4096 }] };
+    const stamped = withHostCpu(page, recorder, true) as {
+      rungs: Array<{ bridgeCalls?: number[]; presentCpuMs: number[]; threadCpuMs: number[] }>;
+    };
+    expect(stamped.rungs[0]).toMatchObject({ presentCpuMs: [30, 32], threadCpuMs: [4, 4] });
+    expect(stamped.rungs[0]?.bridgeCalls).toBeUndefined();
+  });
+
+  it("adds cpuMsPerFrame to the matching rung and refuses windows that do not pair with rungs", () => {
+    const recorder = recorderFor([0, 160]);
+    recorder.line("window R2@4096");
+    recorder.line("rung R2@4096 frame p50 1 | step");
+    const page = { rungs: [{ frameMs: series(1, 8), mode: "R2", objectCount: 4096 }] };
+    const stamped = withHostCpu(page, recorder) as { rungs: Array<{ cpuMsPerFrame: number }> };
+    expect(stamped.rungs[0]?.cpuMsPerFrame).toBe(20);
+    expect(() => withHostCpu({ rungs: [page.rungs[0], page.rungs[0]] }, recorder)).toThrow(
+      /TN_BENCH_CPU_WINDOWS/u,
+    );
+    expect(() => withHostCpu({ rungs: [{ ...page.rungs[0], mode: "R3" }] }, recorder)).toThrow(
+      /TN_BENCH_CPU_WINDOWS/u,
+    );
+    expect(() => withHostCpu(page, recorder, true)).toThrow(/player frame samples/u);
+  });
+
+  it("round-trips the present series, summarizes it and rejects an empty one", () => {
+    const withPresent = report({
+      rungs: [
+        rung({ bridgeCalls: [10, 20, 30], presentCpuMs: [30, 32, 31], threadCpuMs: [1, 2, 3] }),
+      ],
+    });
+    const parsed = parseRunReport(JSON.parse(JSON.stringify(withPresent)));
+    expect(summarize(parsed)[0]).toMatchObject({
+      crossingsP50: 20,
+      presentCpuP50: 31,
+      threadCpuP50: 2,
+    });
+    expect(() =>
+      parseRunReport({ ...withPresent, rungs: [{ ...withPresent.rungs[0], presentCpuMs: [] }] }),
+    ).toThrow(/presentCpuMs/u);
+  });
+
+  it("fails when the host process cannot be found at a marker", () => {
+    expect(() => recorderFor([undefined]).line("window R2@4096")).toThrow(
+      /TN_BENCH_CPU_UNREADABLE/u,
+    );
+  });
+
+  it("round-trips through the report parser and rejects a negative reading", () => {
+    const withCpu = report({ rungs: [rung({ cpuMsPerFrame: 4.2, threadCpuMs: [1, 2, 3] })] });
+    const parsed = parseRunReport(JSON.parse(JSON.stringify(withCpu)));
+    expect(parsed.rungs[0]).toMatchObject({ cpuMsPerFrame: 4.2, threadCpuMs: [1, 2, 3] });
+    expect(summarize(parsed)[0]).toMatchObject({ cpuMsPerFrame: 4.2, threadCpuP50: 2 });
+    expect(() =>
+      parseRunReport({ ...withCpu, rungs: [{ ...withCpu.rungs[0], cpuMsPerFrame: -1 }] }),
+    ).toThrow(/cpuMsPerFrame/u);
+    expect(() =>
+      parseRunReport({ ...withCpu, rungs: [{ ...withCpu.rungs[0], threadCpuMs: [] }] }),
+    ).toThrow(/threadCpuMs/u);
+  });
+});
+
+const frames = 8;
+const column = (value: number): number[] => series(value, frames);
+/** The page's five phases for `frames` frames, then the host's lines for the same frames. */
+const phased = (
+  page: Record<string, number>,
+  host: { present: number; thread: number; render?: number },
+) => ({
+  phases: Object.fromEntries(PHASES.map((name) => [name, column(page[name] ?? 0)])) as NonNullable<
+    IRunReport["rungs"][number]["phases"]
+  >,
+  presentCpuMs: column(host.present),
+  ...(host.render === undefined ? {} : { renderCpuMs: column(host.render) }),
+  threadCpuMs: column(host.thread),
+});
+const phasedRung = (extra: Partial<IRunReport["rungs"][number]>): IRunReport["rungs"][number] =>
+  rung({ frameMs: series(10, frames), ...extra });
+
+describe("the per-frame phase telemetry", () => {
+  it("splits a frame exclusively: a nested phase pauses its parent", () => {
+    let now = 0;
+    const phases = createPhaseRecorder(() => now);
+    phases.begin(1);
+    now = 2;
+    phases.begin(2);
+    now = 5;
+    phases.end();
+    now = 6;
+    phases.end();
+    now = 100;
+    expect(phases.take()).toEqual([0, 3, 3, 0, 0]);
+    expect(phases.take()).toEqual([0, 0, 0, 0, 0]);
+    phases.begin(0);
+    expect(() => phases.take()).toThrow(/TN_BENCH_PHASE_OPEN: game/u);
+    phases.end();
+    expect(() => phases.end()).toThrow(/TN_BENCH_PHASE_UNOPENED/u);
+  });
+
+  it("fails closed when the host has no thread CPU clock, and reads it when it has", () => {
+    expect(() => threadCpuClock()).toThrow(/TN_BENCH_PHASES_NO_CLOCK/u);
+    const host = globalThis as { __tnThreadCpuMs?: () => number };
+    host.__tnThreadCpuMs = () => -1;
+    try {
+      expect(() => threadCpuClock()).toThrow(/no thread CPU clock/u);
+      host.__tnThreadCpuMs = () => 12.5;
+      expect(threadCpuClock()()).toBe(12.5);
+    } finally {
+      host.__tnThreadCpuMs = undefined;
+    }
+  });
+
+  it("names the most crossed names between two snapshots, per frame", () => {
+    const before = { copy: 10, geometry: 5 };
+    const after = { copy: 110, geometry: 5, material: 50, position: 20, scale: 1, y: 300, z: 6 };
+    expect(topCrossings(before, after, 10)).toEqual([
+      ["y", 30],
+      ["copy", 10],
+      ["material", 5],
+      ["position", 2],
+      ["z", 0.6],
+    ]);
+  });
+
+  it("keeps the host's render call, when it reports one, and stamps it onto the rung", () => {
+    const recorder = new HostCpuRecorder({ read: () => 0 });
+    recorder.line("window R2@4096");
+    recorder.line('TN_PLAYER_FRAME:{"cpuFrameCpuMs":4,"presentCpuMs":30,"renderCpuMs":1.5}');
+    recorder.line("rung R2@4096 frame p50 1 | step");
+    const page = { rungs: [{ frameMs: series(1, 1), mode: "R2", objectCount: 4096 }] };
+    const stamped = withHostCpu(page, recorder, true) as {
+      rungs: Array<{ renderCpuMs?: number[] }>;
+    };
+    expect(stamped.rungs[0]?.renderCpuMs).toEqual([1.5]);
+  });
+
+  it("round-trips the phases and sums them with the host's lines into present and other", () => {
+    const parsed = parseRunReport(
+      JSON.parse(
+        JSON.stringify(
+          report({
+            rungs: [
+              phasedRung(
+                phased(
+                  { animation: 0.5, game: 1, matrixWorld: 0.25, projection: 2, render: 0.5 },
+                  { present: 30, render: 1.5, thread: 8 },
+                ),
+              ),
+            ],
+          }),
+        ),
+      ),
+    );
+    const stats = summarize(parsed)[0]?.phases;
+    // The engine player's draw is reported by the host, so `render` is the page's 0.5 plus 1.5.
+    expect(stats?.render).toEqual({ mean: 2, p50: 2 });
+    expect(stats?.present).toEqual({ mean: 30, p50: 30 });
+    // 8 ms of thread CPU less the five phases (1 + 0.5 + 0.25 + 2 + 2).
+    expect(stats?.other).toEqual({ mean: 2.25, p50: 2.25 });
+    expect(stats?.game).toEqual({ mean: 1, p50: 1 });
+  });
+
+  it("reports only the page's phases when the run carries no host lines, and skips runs without phases", () => {
+    const stats = summarize(
+      parseRunReport(
+        report({
+          rungs: [phasedRung({ phases: phased({ game: 3 }, { present: 0, thread: 0 }).phases })],
+        }),
+      ),
+    )[0]?.phases;
+    expect(stats?.game?.p50).toBe(3);
+    expect(stats?.present).toBeUndefined();
+    expect(stats?.other).toBeUndefined();
+    expect(
+      summarize(parseRunReport(report({ rungs: [phasedRung({})] })))[0]?.phases,
+    ).toBeUndefined();
+  });
+
+  it("fails closed on malformed phases and crossings", () => {
+    const good = phased({ game: 1 }, { present: 1, thread: 5 });
+    const parse = (extra: Record<string, unknown>) =>
+      parseRunReport({
+        ...report({ rungs: [phasedRung({})] }),
+        rungs: [{ ...phasedRung({}), ...extra }],
+      });
+    expect(parse({ phases: good.phases }).rungs[0]?.phases).toEqual(good.phases);
+    expect(() => parse({ phases: { ...good.phases, game: undefined } })).toThrow(/phases\.game/u);
+    expect(() => parse({ phases: { ...good.phases, game: [1, 2] } })).toThrow(/phases\.game/u);
+    expect(() => parse({ phases: { ...good.phases, render: column(-1) } })).toThrow(
+      /phases\.render/u,
+    );
+    expect(() => parse({ phases: { ...good.phases, render: column(Number.NaN) } })).toThrow(
+      /phases\.render/u,
+    );
+    expect(() => parse({ phases: { ...good.phases, physics: column(1) } })).toThrow(
+      /unknown phases: physics/u,
+    );
+    expect(() => parse({ phases: [] })).toThrow(/phases must be an object/u);
+    expect(() => parse({ renderCpuMs: [] })).toThrow(/renderCpuMs/u);
+    expect(parse({ crossingTop: [["y", 2.5]] }).rungs[0]?.crossingTop).toEqual([["y", 2.5]]);
+    for (const bad of [
+      [["y"]],
+      [["", 1]],
+      [["y", -1]],
+      [["y", "1"]],
+      "y",
+      Array.from({ length: 6 }, () => ["y", 1]),
+    ])
+      expect(() => parse({ crossingTop: bad })).toThrow(/crossingTop/u);
+  });
+
+  it("turns the page's telemetry and the crossing histogram on only when asked", () => {
+    const options = {
+      axes: DEFAULT_AXES,
+      frames: 1,
+      height: 1080,
+      ladder: "1",
+      modes: "R5",
+      repeats: 1,
+      warmup: 1,
+      width: 1920,
+    };
+    const phases = (): unknown =>
+      JSON.parse(engineDefines(options, undefined).__TN_BENCH_CONFIG__ as string).phases;
+    vi.stubEnv("TN_BENCH_PHASES", undefined);
+    expect(phases()).toBe(false);
+    vi.stubEnv("TN_BENCH_PHASES", "1");
+    expect(phases()).toBe(true);
+    vi.unstubAllEnvs();
+    expect(engineEnvironment(options, {}).TN_PLAYER_CROSSINGS).toBeUndefined();
+    expect(engineEnvironment(options, { TN_BENCH_CROSSINGS: "1" }).TN_PLAYER_CROSSINGS).toBe("1");
+  });
+});
+
+describe("the same-run pair guard", () => {
+  const framePath = path.resolve("scripts/__tests__/fixtures/engine-load-test/scene.png");
+  const wobble = (base: number): number[] => [
+    base,
+    base + 1,
+    base + 2,
+    base,
+    base + 1,
+    base + 2,
+    base,
+    base + 1,
+  ];
+  const scene = {
+    pointLights: 8,
+    postPasses: 0,
+    resolution: "1280x720",
+    shadowCasters: 4096,
+    skinnedMeshes: 0,
+    tonemapping: 0,
+  };
+  const arm = (
+    name: IRunReport["arm"],
+    options: {
+      cpu?: number;
+      frame?: number;
+      ladder?: Partial<typeof scene>;
+      load?: number;
+      overrides?: Partial<IRunReport>;
+      rung?: Partial<IRunReport["rungs"][number]>;
+    } = {},
+  ): IRunReport =>
+    withHostLoad(
+      report({
+        arm: name,
+        rungs: [
+          rung({
+            framePath,
+            cpuMsPerFrame: options.cpu ?? 10,
+            drawCalls: 40,
+            frameMs: wobble(options.frame ?? 10),
+            ladder: { ...scene, ...options.ladder },
+            mode: "R2",
+            pipelineCompiles: 0,
+            triangles: 49_154,
+            ...options.rung,
+          }),
+        ],
+        ...options.overrides,
+      }),
+      readHostLoad({ cores: () => 12, loadavg: () => [options.load ?? 1, 0, 0] }),
+    );
+  const labels = ["tn-desktop", "tn-engine-desktop"] as const;
+
+  it("records identical and noisy PNG parity in JSON rows and markdown", () => {
+    const left = arm("tn-desktop");
+    const right = arm("tn-engine-desktop");
+    expect(pairRows([left], [right], labels)[0]?.visual).toMatchObject({ score: 0, waived: false });
+    (right.rungs[0] as IRunReport["rungs"][number]).framePath = path.resolve(
+      "scripts/__tests__/fixtures/engine-load-test/noise.png",
+    );
+    expect(pairRows([left], [right], labels)[0]?.visual?.score).toBeLessThan(0.02);
+    expect(renderPairMarkdown([left], [right], labels)).toContain("| visual |");
+  });
+
+  it("rejects color loss with similar luminance and checks every round and repeat", async () => {
+    const { visualParity } = await import("../engine-load-test/visual.js");
+    const left = arm("tn-desktop");
+    const right = arm("tn-engine-desktop");
+    (right.rungs[0] as IRunReport["rungs"][number]).framePath = path.resolve(
+      "scripts/__tests__/fixtures/engine-load-test/tinted.png",
+    );
+    expect(() => pairRows([left], [right], labels)).toThrow(/TN_BENCH_VISUAL_PARITY/u);
+    expect(visualParity([left], [left, right])).toHaveLength(2);
+    expect(visualParity([left], [left, right])[1]?.error).toBe("TN_BENCH_VISUAL_MISSING");
+    vi.stubEnv("TN_BENCH_WAIVE", "drawCalls");
+    try {
+      expect(() => pairRows([left], [right], labels)).toThrow(/TN_BENCH_VISUAL_PARITY/u);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("refuses a blocked windscreen even when scene counters match", () => {
+    const right = arm("tn-engine-desktop");
+    (right.rungs[0] as IRunReport["rungs"][number]).framePath = path.resolve(
+      "scripts/__tests__/fixtures/engine-load-test/blocked.png",
+    );
+    expect(pairVerdict([arm("tn-desktop")], [right], labels).problem).toContain(
+      "TN_BENCH_VISUAL_PARITY",
+    );
+    expect(() => pairRows([arm("tn-desktop")], [right], labels)).toThrow(/TN_BENCH_VISUAL_PARITY/u);
+  });
+
+  it("fails closed for absent, unreadable and malformed frames unless visual is explicitly waived", () => {
+    for (const frame of [undefined, "/missing/frame.png", path.resolve("package.json")]) {
+      const right = arm("tn-engine-desktop");
+      (right.rungs[0] as IRunReport["rungs"][number]).framePath = frame;
+      expect(() => pairRows([arm("tn-desktop")], [right], labels)).toThrow(
+        /TN_BENCH_VISUAL_MISSING/u,
+      );
+      vi.stubEnv("TN_BENCH_WAIVE", "drawCalls,visual");
+      try {
+        expect(pairRows([arm("tn-desktop")], [right], labels)[0]?.visual).toMatchObject({
+          waived: true,
+        });
+        expect(renderPairMarkdown([arm("tn-desktop")], [right], labels)).toContain(
+          "TN_BENCH_WAIVE=visual",
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    }
+  });
+
+  it("persists PNG and native RGBA transports beside JSON without retaining transport pixels", async () => {
+    const { saveFrames } = await import("../engine-load-test/visual.js");
+    const { PNG } = await import("pngjs");
+    const directory = makeTempDirSync("bench-frames-");
+    try {
+      const raw = fs.readFileSync(framePath);
+      const decoded = PNG.sync.read(raw);
+      const run = arm("tn-desktop");
+      (run.rungs[0] as IRunReport["rungs"][number]).frameRgba = {
+        width: decoded.width,
+        height: decoded.height,
+        data: decoded.data.toString("hex"),
+      };
+      (run.rungs[0] as IRunReport["rungs"][number]).framePath = undefined;
+      const parsed = parseRunReport({
+        ...run,
+        rungs: run.rungs.map((rung) => ({ ...rung, mode: "L1", ladder: undefined })),
+      });
+      await saveFrames(parsed, path.join(directory, "native.json"));
+      expect(
+        PNG.sync.read(
+          fs.readFileSync((parsed.rungs[0] as IRunReport["rungs"][number]).framePath as string),
+        ).data,
+      ).toEqual(decoded.data);
+      expect((parsed.rungs[0] as IRunReport["rungs"][number]).frameRgba).toBeUndefined();
+      (run.rungs[0] as IRunReport["rungs"][number]).framePng = raw.toString("base64");
+      (run.rungs[0] as IRunReport["rungs"][number]).frameRgba = undefined;
+      await saveFrames(run, path.join(directory, "web.json"));
+      expect(
+        fs.readFileSync((run.rungs[0] as IRunReport["rungs"][number]).framePath as string),
+      ).toEqual(raw);
+      expect((run.rungs[0] as IRunReport["rungs"][number]).framePng).toBeUndefined();
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects report frames larger than 160x90 and preserves fixture verdicts after downscaling", async () => {
+    const { saveFrames, visualParity } = await import("../engine-load-test/visual.js");
+    const { PNG } = await import("pngjs");
+    const directory = makeTempDirSync("bench-small-frames-");
+    try {
+      const oversized = new PNG({ width: 161, height: 90 });
+      const run = arm("tn-desktop", {
+        rung: { framePng: PNG.sync.write(oversized).toString("base64") },
+      });
+      await expect(saveFrames(run, path.join(directory, "oversized.json"))).rejects.toThrow(
+        "TN_BENCH_VISUAL_MISSING",
+      );
+      for (const fixture of ["scene", "noise", "tinted", "blocked"]) {
+        const right = arm("tn-engine-desktop", {
+          rung: {
+            framePath: path.resolve(`scripts/__tests__/fixtures/engine-load-test/${fixture}.png`),
+          },
+        });
+        const before = visualParity([arm("tn-desktop")], [right])[0];
+        const smallReports = [arm("tn-desktop"), right];
+        for (const [index, smallReport] of smallReports.entries()) {
+          const image = PNG.sync.read(fs.readFileSync(smallReport.rungs[0]?.framePath as string));
+          const small = new PNG({ width: 160, height: 90 });
+          small.data = Buffer.from(downscaleFrame(image.data, image.width, image.height));
+          (smallReport.rungs[0] as IRunReport["rungs"][number]).framePng = PNG.sync
+            .write(small)
+            .toString("base64");
+          await saveFrames(smallReport, path.join(directory, `${fixture}-${index}.json`));
+          const saved = PNG.sync.read(fs.readFileSync(smallReport.rungs[0]?.framePath as string));
+          expect(saved.width).toBeLessThanOrEqual(160);
+          expect(saved.height).toBeLessThanOrEqual(90);
+        }
+        const after = visualParity(
+          [smallReports[0] as IRunReport],
+          [smallReports[1] as IRunReport],
+        )[0];
+        expect(after?.error).toBe(before?.error);
+        expect(Math.abs((after?.score as number) - (before?.score as number))).toBeLessThan(0.003);
+      }
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("derives FPS from mean frame time and 1% low from p99", () => {
+    const left = arm("tn-desktop", { rung: { frameMs: [10, 10, 10, 20] } });
+    const right = arm("tn-engine-desktop", { rung: { frameMs: [5, 5, 5, 10] } });
+    const [row] = pairRows([left], [right], labels);
+    expect(row?.left).toMatchObject({ fps: 80, fpsLow1: 50 });
+    expect(row?.right).toMatchObject({ fps: 160, fpsLow1: 100 });
+    expect(row?.ratio.fps).toBe(2);
+    const markdown = renderPairMarkdown([left], [right], labels);
+    expect(markdown).toContain("| fps | 1% low fps |");
+    expect(markdown).toContain("| 80.00 | 50.00 |");
+    expect(() =>
+      pairRows([arm("tn-desktop", { rung: { frameMs: [] } })], [right], labels),
+    ).toThrow();
+  });
+
+  it("prints a ratio when both arms drew the same scene, and carries the load beside it", () => {
+    const rows = pairRows(
+      [arm("tn-desktop", { cpu: 10 })],
+      [arm("tn-engine-desktop", { cpu: 4, frame: 5 })],
+      labels,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.ratio.cpu).toBeCloseTo(2.5);
+    expect(rows[0]?.ratio.p50).toBeGreaterThan(1.5);
+    const markdown = renderPairMarkdown(
+      [arm("tn-desktop", { load: 9 })],
+      [arm("tn-engine-desktop")],
+      labels,
+    );
+    expect(markdown).toContain("9.0!");
+    expect(markdown).toContain("present cpu p50");
+    expect(markdown).toContain("ratio thread cpu");
+  });
+
+  it("prints a per-phase table with the right arm over the left, and the top crossings", () => {
+    const withPhases = (
+      name: "tn-desktop" | "tn-engine-desktop",
+      page: Record<string, number>,
+      top?: Array<[string, number]>,
+    ) =>
+      arm(name, {
+        rung: {
+          ...phased(page, { present: 30, thread: 10 }),
+          ...(top === undefined ? {} : { crossingTop: top }),
+        },
+      });
+    const markdown = renderPairMarkdown(
+      [withPhases("tn-desktop", { game: 1, projection: 1, render: 4 })],
+      [withPhases("tn-engine-desktop", { game: 1, projection: 3, render: 1 }, [["y", 513]])],
+      labels,
+    );
+    expect(markdown).toContain("#### Where the frame goes");
+    expect(markdown).toContain("| R2@4096 | projection | 1.000 | 1.000 | 3.000 | 3.000 | 3.00 |");
+    expect(markdown).toContain("| R2@4096 | render | 4.000 | 4.000 | 1.000 | 1.000 | 0.25 |");
+    expect(markdown).toContain("| R2@4096 | present | 30.000 | 30.000 | 30.000 | 30.000 | 1.00 |");
+    expect(markdown).toContain("Top crossings per frame, R2@4096 tn-engine-desktop: y 513");
+    expect(
+      pairRows(
+        [withPhases("tn-desktop", { game: 2 })],
+        [withPhases("tn-engine-desktop", { game: 1 })],
+        labels,
+      )[0]?.phaseRatio.game,
+    ).toBe(0.5);
+  });
+
+  it("names the web arms' phase clock as page wall time, not thread CPU", () => {
+    const markdown = renderPairMarkdown(
+      [arm("tn-web", { rung: phased({ game: 1 }, { present: 1, thread: 5 }) })],
+      [arm("tn-engine-web", { rung: phased({ game: 2 }, { present: 1, thread: 5 }) })],
+      ["tn-web", "tn-engine-web"],
+    );
+    expect(markdown).toContain("performance.now()");
+    expect(markdown).not.toContain("CLOCK_THREAD_CPUTIME_ID");
+  });
+
+  it("leaves the phase block out when either arm carries no phases", () => {
+    const phasedArm = arm("tn-desktop", { rung: phased({ game: 1 }, { present: 1, thread: 5 }) });
+    expect(renderPairMarkdown([phasedArm], [arm("tn-engine-desktop")], labels)).not.toContain(
+      "Where the frame goes",
+    );
+  });
+
+  it("refuses a ratio when the engine drew fewer lights or no bloom, and names what differs", () => {
+    const fewer = pairVerdict(
+      [arm("tn-desktop")],
+      [arm("tn-engine-desktop", { ladder: { pointLights: 0 } })],
+      labels,
+    );
+    expect(fewer.problem).toContain("R2@4096 scene");
+    expect(() =>
+      pairRows(
+        [arm("tn-desktop")],
+        [arm("tn-engine-desktop", { ladder: { postPasses: 1 } })],
+        labels,
+      ),
+    ).toThrow(/TN_BENCH_PARITY/u);
+    expect(() =>
+      pairRows(
+        [arm("tn-desktop")],
+        [arm("tn-engine-desktop", { ladder: { shadowCasters: 0 } })],
+        labels,
+      ),
+    ).toThrow(/TN_BENCH_PARITY/u);
+  });
+
+  it("refuses an R rung whose engine arm crosses the bridge like core's JS mirror did", () => {
+    const hosted = pairVerdict(
+      [arm("tn-desktop")],
+      [arm("tn-engine-desktop", { rung: { bridgeCalls: series(62) } })],
+      labels,
+    );
+    expect(hosted.problem).toBeUndefined();
+    const mirrored = pairVerdict(
+      [arm("tn-desktop")],
+      [arm("tn-engine-desktop", { rung: { bridgeCalls: series(17_669) } })],
+      labels,
+    );
+    expect(mirrored.problem).toContain(
+      `R2@4096 crossings per frame (budget ${HOST_PROJECTION_CROSSING_BUDGET})`,
+    );
+  });
+
+  it("records the engine page's crossings every measured frame, census or not", async () => {
+    const driver = await readFile(
+      path.join(process.cwd(), "examples/engine-load-test/src/driver.ts"),
+      "utf8",
+    );
+    const entry = await readFile(
+      path.join(process.cwd(), "packages/three-native/src/browser-entry.ts"),
+      "utf8",
+    );
+    expect(entry).toMatch(/__tnCrossingCount = crossings/u);
+    expect(driver).toMatch(/__tnCrossingCount\?\.\(\)/u);
+    expect(driver).toMatch(
+      /if \(crossed !== undefined\) bridgeCalls\.push\(crossed - callsBefore\)/u,
+    );
+    expect(driver).toMatch(/bridgeCalls\.length === 0 \? \{\} : \{ bridgeCalls \}/u);
+  });
+
+  it("holds the web engine arm to the same crossing budget, on its page's bridgeCalls", () => {
+    const web = ["tn-web", "tn-engine-web"] as const;
+    const engine = (bridgeCalls: number) =>
+      arm("tn-engine-web", { rung: { bridgeCalls: series(bridgeCalls) } });
+    // 52: the web R5 frame on the host projection report (web-final-2-crossings).
+    expect(pairVerdict([arm("tn-web")], [engine(52)], web).problem).toBeUndefined();
+    // 38,308: the same page on core's JS mirror (web-baseline-crossings).
+    expect(pairVerdict([arm("tn-web")], [engine(38_308)], web).problem).toContain(
+      `R2@4096 crossings per frame (budget ${HOST_PROJECTION_CROSSING_BUDGET})`,
+    );
+  });
+
+  it("refuses arms whose surface, present mode, frame clock or rasteriser differ", () => {
+    const surface = pairVerdict(
+      [arm("tn-desktop")],
+      [
+        arm("tn-engine-desktop", {
+          overrides: { display: { height: 1080, refreshHz: 60, vsync: false, width: 1920 } },
+        }),
+      ],
+      labels,
+    );
+    expect(surface.problem).toContain("surface");
+    const capped = pairVerdict(
+      [arm("tn-desktop")],
+      [
+        arm("tn-engine-desktop", {
+          overrides: { display: { height: 720, refreshHz: 60, vsync: true, width: 1280 } },
+        }),
+      ],
+      labels,
+    );
+    expect(capped.problem).toContain("vsync");
+    const frozenRung = { ...arm("tn-engine-desktop").rungs[0], frameMs: series(16.667) };
+    const frozen = pairVerdict(
+      [arm("tn-desktop")],
+      [arm("tn-engine-desktop", { overrides: { rungs: [frozenRung as never] } })],
+      labels,
+    );
+    expect(frozen.problem).toContain("frame clock");
+    const software = pairVerdict(
+      [arm("tn-desktop")],
+      [
+        arm("tn-engine-desktop", {
+          overrides: { driver: { adapter: "SwiftShader", renderer: "x" } },
+        }),
+      ],
+      labels,
+    );
+    expect(software.problem).toContain("adapter class");
+  });
+
+  it("refuses when one arm carries a timing series the other lacks, and when a triangle count drifts", () => {
+    const stepped = arm("tn-engine-desktop");
+    const withStep = {
+      ...stepped,
+      rungs: [{ ...(stepped.rungs[0] as object), stepMs: wobble(1) }],
+    } as IRunReport;
+    expect(seriesFamilies(withStep)).toEqual(["frameMs", "stepMs"]);
+    expect(pairVerdict([arm("tn-desktop")], [withStep], labels).problem).toContain(
+      "series families",
+    );
+    const drift = arm("tn-engine-desktop");
+    const fewerTriangles = {
+      ...drift,
+      rungs: [{ ...(drift.rungs[0] as object), triangles: 20_000 }],
+    } as IRunReport;
+    expect(pairVerdict([arm("tn-desktop")], [fewerTriangles], labels).problem).toMatch(
+      /triangle/iu,
+    );
+  });
+
+  it("refuses to compare when an arm has no runs", () => {
+    expect(() => pairVerdict([], [arm("tn-engine-desktop")], labels)).toThrow(/TN_BENCH_PARITY/u);
+    expect(reportFacets(arm("tn-desktop"))["R2@4096 frames"]).toBe("8");
+  });
+});
+
+describe("the probe's read-back on a host that draws after the frame callback", () => {
+  it("stores at most 160x90 RGBA in a report, with box averages rather than sampled pixels", () => {
+    const pixels = new Uint8Array(1920 * 1080 * 4);
+    for (let y = 0; y < 1080; y++)
+      for (let x = 0; x < 1920; x++)
+        pixels.set(x % 2 === 0 ? [0, 20, 40, 60] : [200, 220, 240, 160], (y * 1920 + x) * 4);
+    const small = downscaleFrame(pixels, 1920, 1080);
+    const parsed = parseRunReport(
+      report({
+        rungs: [
+          rung({
+            frameRgba: { width: 160, height: 90, data: Buffer.from(small).toString("hex") },
+          }),
+        ],
+      }),
+    );
+    expect(parsed.rungs[0]?.frameRgba?.data).toHaveLength(160 * 90 * 8);
+    expect(Array.from(small.slice(0, 4))).toEqual([100, 120, 140, 110]);
+    expect(small.slice(-4)).toEqual(small.slice(0, 4));
+    expect(
+      downscaleFrame(new Uint8Array([0, 0, 0, 0, 255, 255, 255, 255]), 2, 1).slice(79 * 4, 81 * 4),
+    ).toEqual(new Uint8Array([0, 0, 0, 0, 255, 255, 255, 255]));
+    expect(() => downscaleFrame(pixels, 1, 1)).toThrow("TN_BENCH_PROBE_SIZE");
+  });
+
+  it("reads the frame the callback stepped, not the one before it", async () => {
+    const stepped = 4;
+    let drawn = 3; // the player draws what a callback left only once that callback returns
+    let wake: (() => void) | undefined;
+    const nextFrame = (): Promise<void> =>
+      new Promise((resolve) => {
+        wake = resolve;
+      });
+    const read = async (): Promise<number> => drawn;
+    // Inside the callback that stepped frame 4, a plain read sees frame 3: the lag the probe picture had.
+    expect(await read()).toBe(3);
+    const result = drawnFrameReader(nextFrame, read)();
+    drawn = stepped; // the callback returns and the player draws frame 4
+    wake?.();
+    expect(await result).toBe(4);
+  });
+});
+
+describe("the tn-engine-web arm (PRD-573 slice 7)", () => {
+  const web = {
+    startup: { entryMs: 812.5, firstFrameMs: 1340.2, wasmInstantiateMs: [96.4] },
+    memory: { jsHeapUsedBytes: 48_000_000, wasmMemoryBytes: 67_108_864 },
+    artifact: {
+      jsBytes: 900_000,
+      jsGzipBytes: 220_000,
+      wasmBytes: 3_311_074,
+      wasmGzipBytes: 1_067_000,
+    },
+    engineWasm: { mtime: "2026-10-12T21:36:54.969Z", sha256: "ab".repeat(32) },
+  };
+
+  it("parses an engine-web report with its startup, memory and byte counts", () => {
+    const parsed = parseRunReport(report({ arm: "tn-engine-web", web }));
+    expect(parsed.arm).toBe("tn-engine-web");
+    expect(parsed.web).toEqual(web);
+    expect(parseRunReport(report()).web).toBeUndefined();
+  });
+
+  it("fails closed on a malformed web block", () => {
+    for (const bad of [
+      { ...web, startup: { ...web.startup, entryMs: -1 } },
+      { ...web, startup: { ...web.startup, wasmInstantiateMs: ["fast"] } },
+      { ...web, memory: { ...web.memory, wasmMemoryBytes: "64 MB" } },
+      { ...web, artifact: { ...web.artifact, wasmGzipBytes: undefined } },
+      { ...web, engineWasm: { mtime: "x" } },
+    ])
+      expect(() => parseRunReport({ ...report({ arm: "tn-engine-web" }), web: bad })).toThrow(
+        /TN_BENCH_BAD_SHAPE|report\.web/u,
+      );
+  });
+
+  it("refuses a Wasm older than the engine sources it is built from", async () => {
+    const root = makeTempDirSync("tn-web-engine-");
+    const wasm = path.join(root, WEB_ENGINE_WASM);
+    const source = path.join(root, "packages/runtime-native/src/engine/scene/object3d.cpp");
+    fs.mkdirSync(path.dirname(wasm), { recursive: true });
+    fs.mkdirSync(path.dirname(source), { recursive: true });
+    fs.mkdirSync(path.join(root, "packages/runtime-native/include"), { recursive: true });
+    fs.writeFileSync(source, "// engine");
+    fs.writeFileSync(wasm, "wasm");
+    fs.utimesSync(source, new Date(1_000_000), new Date(1_000_000));
+    fs.utimesSync(wasm, new Date(2_000_000), new Date(2_000_000));
+    expect((await freshWasm(root)).sha256).toBe(createHash("sha256").update("wasm").digest("hex"));
+    fs.utimesSync(source, new Date(3_000_000), new Date(3_000_000));
+    await expect(freshWasm(root)).rejects.toThrow("TN_BENCH_STALE_WASM");
+    fs.rmSync(wasm);
+    await expect(freshWasm(root)).rejects.toThrow("TN_BENCH_WASM_MISSING");
+    fs.rmSync(root, { force: true, recursive: true });
+  });
+
+  it("counts the shipped .js and .wasm bytes, raw and gzip", async () => {
+    const dist = makeTempDirSync("tn-web-dist-");
+    fs.mkdirSync(path.join(dist, "assets"));
+    fs.writeFileSync(path.join(dist, "assets/a.js"), "x".repeat(1000));
+    fs.writeFileSync(path.join(dist, "assets/b.wasm"), "y".repeat(500));
+    fs.writeFileSync(path.join(dist, "assets/c.css"), "z");
+    const bytes = await webArtifactBytes(dist);
+    expect(bytes.jsBytes).toBe(1000);
+    expect(bytes.wasmBytes).toBe(500);
+    expect(bytes.jsGzipBytes).toBeGreaterThan(0);
+    expect(bytes.jsGzipBytes).toBeLessThan(1000);
+    fs.rmSync(path.join(dist, "assets/a.js"));
+    await expect(webArtifactBytes(dist)).rejects.toThrow("TN_BENCH_TN_BUILD_MISSING");
+    fs.rmSync(dist, { force: true, recursive: true });
+  });
+
+  it("launches every web arm with the playtest WebGPU recipe when asked, and refuses an unknown one", () => {
+    const recipe = browserLaunchArgs(undefined, "webgpu");
+    expect(recipe).toContain("--enable-features=Vulkan");
+    expect(recipe).toContain("--disable-gpu-vsync");
+    expect(browserLaunchArgs(undefined, undefined)).not.toContain("--enable-features=Vulkan");
+    expect(() => browserLaunchArgs(undefined, "metal")).toThrow("TN_BENCH_BAD_FLAG");
+  });
+
+  it("pairs the web arms only with each other, as production builds, and builds the engine page", async () => {
+    const [cli, config, main] = await Promise.all([
+      readFile(path.join(process.cwd(), "scripts/engine-load-test/cli.ts"), "utf8"),
+      readFile(path.join(process.cwd(), "examples/engine-load-test/vite.config.ts"), "utf8"),
+      readFile(path.join(process.cwd(), "examples/engine-load-test/src/main.ts"), "utf8"),
+    ]);
+    expect(cli).toMatch(/arm === "tn-engine-web"\) return runTnEngineWeb/u);
+    expect(cli).toMatch(/never mixes a web arm and a desktop arm/u);
+    expect(cli).toMatch(/a web pair runs production builds only/u);
+    expect(config).toMatch(
+      /createWebEnginePlugin\(\{ engine: "threenative", wasm: WASM_ENGINE \}\)/u,
+    );
+    expect(config).toMatch(
+      /__TN_WEB_ARM__: JSON\.stringify\(webEngine \? "tn-engine-web" : "tn-web"\)/u,
+    );
+    expect(main).toMatch(/arm: __TN_WEB_ARM__/u);
   });
 });

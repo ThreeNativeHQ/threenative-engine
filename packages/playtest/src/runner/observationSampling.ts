@@ -153,18 +153,35 @@ export async function readCaptureProvenance(
   const observed = await page.evaluate(async () => {
     type Adapter = {
       features?: Iterable<string>;
-      info?: Record<string, unknown>;
-      limits?: Record<string, number | undefined>;
-      requestAdapterInfo?: () => Promise<Record<string, unknown>>;
+      info?: Partial<Record<"architecture" | "description" | "device" | "vendor", unknown>>;
+      limits?: Partial<Record<"maxBindGroups" | "maxTextureDimension2D" | "maxStorageBufferBindingSize", number>>;
+      requestAdapterInfo?: () => Promise<Partial<Record<"architecture" | "description" | "device" | "vendor", unknown>>>;
     };
     const gpu = (globalThis.navigator as Navigator & { gpu?: { requestAdapter(): Promise<Adapter | null> } }).gpu;
-    const adapter = gpu === undefined ? null : await gpu.requestAdapter().catch(() => null);
+    // Which of the four ways an adapter can be unavailable actually happened is the diagnosis:
+    // `.catch(() => null)` reported a rejected request and a request that resolved null as the
+    // same unexplained "no adapter description".
+    let adapter: Adapter | null = null;
+    let rejection: string | undefined;
+    if (gpu !== undefined) {
+      adapter = await gpu.requestAdapter().catch((reason: unknown) => {
+        rejection = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason);
+        return null;
+      });
+    }
+    const adapterRequest = rejection !== undefined
+      ? `rejected: ${rejection}`
+      : gpu === undefined
+        ? "navigator.gpu absent"
+        : adapter === null
+          ? "resolved null"
+          : "resolved";
     const infoCandidate = adapter?.info;
     const legacyInfo = await adapter?.requestAdapterInfo?.().catch(() => undefined);
     const info = infoCandidate === undefined || Object.keys(infoCandidate).length === 0
       ? legacyInfo ?? infoCandidate
       : infoCandidate;
-    const adapterIdentityKeys = ["architecture", "description", "device", "vendor"];
+    const adapterIdentityKeys = ["architecture", "description", "device", "vendor"] as const;
     const adapterIdentityEntries: Array<[string, string]> = info === undefined
       ? []
       : adapterIdentityKeys.flatMap((key) => {
@@ -178,7 +195,7 @@ export async function readCaptureProvenance(
       if (features.length > 0) webgpuAdapterEntries.push(["features", features.join(",")]);
     }
     if (adapterIdentityEntries.length > 0) {
-      for (const key of ["maxBindGroups", "maxTextureDimension2D", "maxStorageBufferBindingSize"]) {
+      for (const key of ["maxBindGroups", "maxTextureDimension2D", "maxStorageBufferBindingSize"] as const) {
         const value = adapter?.limits?.[key];
         if (typeof value === "number" && Number.isFinite(value)) webgpuAdapterEntries.push([`limit.${key}`, String(value)]);
       }
@@ -222,13 +239,14 @@ export async function readCaptureProvenance(
     }
     return {
       adapter: rendererKind === "webgl" ? webglAdapterInfo : webgpuAdapterInfo,
+      adapterRequest,
       rendererKind,
     };
   });
   if (observed.adapter === undefined || Object.keys(observed.adapter).length === 0) {
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING",
-      `Visual capture could not read a renderer adapter description (kind=${observed.rendererKind ?? "unknown"}).`,
+      `Visual capture could not read a renderer adapter description (kind=${observed.rendererKind ?? "unknown"}, adapter request ${observed.adapterRequest}).`,
       "Run the visual playtest with a working GPU/WebGPU adapter or WebGL renderer; the runner will not write unknown adapter provenance.",
     ));
   }

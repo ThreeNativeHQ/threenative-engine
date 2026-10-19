@@ -32,8 +32,16 @@ resolves; **static transforms as a first-class engine concept the engine never o
 **frame-cost budget in the scaffold's default playtest**; and the **template `AGENTS.md` entry** that
 makes the capability exist.
 
-**Status:** NOT STARTED — specification only; this document enables and qualifies no feature.
-**Date:** 2026-09-15.
+**Status:** PARTIAL — mechanisms shipped, gates unticked. **Evidence:** `8c182343f` (PR #263,
+"render-camera cull by default, projection fixes, honest frame instruments, AutoLOD sibling join")
+landed `packages/core/src/render-camera-cull.ts` (+ `render-camera-cull.spec.ts`),
+`packages/core/src/render-pass-budget.ts`, the `matrixWorldAutoUpdate` static-transform contract in
+`renderProjection.ts`, and the entry in every template `AGENTS.md`. The phase boxes below are
+therefore stale, not unmet: they were never ticked because the PRD was written as a specification.
+The gates still open are the ones the shipped work does not cover — mobile evidence, the native
+`--target` leg, and the second in-repo consumer. Tick each box against its own proof before this
+PRD moves to `done/`.
+**Date:** filed 2026-09-15.
 **Scope:** Engine render-visibility policy and the static-transform contract in `@threenative/core`,
 plus the template's default playtest and `AGENTS.md`. No game code, no new package, no new scene format.
 **Complexity:** HIGH — the default changes what every existing game draws, which the charter treats as
@@ -44,6 +52,7 @@ tuning pass") are the whole PRD; §5b (never own the look) is the boundary. No I
 preset/genre system, code-first ECS or bespoke CLI vocabulary is introduced. Vocabulary is borrowed from
 Three.js, WebGPU and Godot before anything is invented.
 
+**Priority:** P1 — Shipped mechanisms still carry the open gates: mobile evidence, the native `--target` leg and the second in-repo consumer.
 ## Closure Gates
 
 Every box requires evidence from an implementation revision. Merging this PRD completes none of them.

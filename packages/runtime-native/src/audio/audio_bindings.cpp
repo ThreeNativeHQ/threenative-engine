@@ -23,6 +23,8 @@ static std::unordered_map<void*, std::unique_ptr<AudioBufferSourceNode>> g_sourc
 static std::unordered_map<void*, js::JSValueHandle> g_sourceHandles;
 static std::unordered_map<void*, std::unique_ptr<GainNode>> g_gainNodes;
 static std::unordered_map<void*, std::unique_ptr<PannerNode>> g_pannerNodes;
+static std::unordered_map<void*, std::unique_ptr<BiquadFilterNode>> g_biquadNodes;
+static std::unordered_map<void*, std::unique_ptr<DynamicsCompressorNode>> g_compressorNodes;
 
 static js::Engine* g_jsEngine = nullptr;
 
@@ -99,6 +101,73 @@ static js::JSValueHandle createPassiveAudioParamJS(js::Engine* engine, float ini
         );
     }
     return param;
+}
+
+/**
+ * One Web Audio AudioParam over a native one.
+ *
+ * It carries the native setters and the native default; `audio-param.js` turns that into the `value`
+ * accessor a Web Audio param has, because the engine has no accessor support. Every write lands in
+ * C++, which is the difference between a filter that filters and one that remembers a number.
+ */
+static js::JSValueHandle audioParamJS(js::Engine* engine, AudioParam* param) {
+    auto obj = engine->newObject();
+    engine->setProperty(obj, "_default", engine->newNumber(param->value()));
+    engine->setProperty(obj, "_setValue",
+        engine->newFunction("_setValue", [param](void*, const std::vector<js::JSValueHandle>& args) {
+            if (!args.empty()) param->setValue(static_cast<float>(g_jsEngine->toNumber(args[0])));
+            return g_jsEngine->newUndefined();
+        })
+    );
+    engine->setProperty(obj, "_setValueAtTime",
+        engine->newFunction("_setValueAtTime", [param](void*, const std::vector<js::JSValueHandle>& args) {
+            if (args.size() >= 2) {
+                param->setValueAtTime(static_cast<float>(g_jsEngine->toNumber(args[0])),
+                                       g_jsEngine->toNumber(args[1]));
+            }
+            return g_jsEngine->newUndefined();
+        })
+    );
+    engine->setProperty(obj, "_linearRampToValueAtTime",
+        engine->newFunction("_linearRampToValueAtTime", [param](void*, const std::vector<js::JSValueHandle>& args) {
+            if (args.size() >= 2) {
+                param->linearRampToValueAtTime(static_cast<float>(g_jsEngine->toNumber(args[0])),
+                                               g_jsEngine->toNumber(args[1]));
+            }
+            return g_jsEngine->newUndefined();
+        })
+    );
+    engine->setProperty(obj, "_setTargetAtTime",
+        engine->newFunction("_setTargetAtTime", [param](void*, const std::vector<js::JSValueHandle>& args) {
+            if (args.size() >= 3) {
+                param->setTargetAtTime(static_cast<float>(g_jsEngine->toNumber(args[0])),
+                                       g_jsEngine->toNumber(args[1]), g_jsEngine->toNumber(args[2]));
+            }
+            return g_jsEngine->newUndefined();
+        })
+    );
+    return obj;
+}
+
+/**
+ * Hand the raw params, and optionally the nodes that need a property of their own, to
+ * `audio-param.js`. The global is cleared so one node's bundle cannot leak into the next.
+ */
+static void wrapAudioParams(js::Engine& engine, const std::vector<js::JSValueHandle>& params,
+                            js::JSValueHandle type = {}, js::JSValueHandle reduction = {}) {
+    auto bundle = engine.newObject();
+    auto array = engine.newArray(params.size());
+    for (size_t i = 0; i < params.size(); i++) {
+        engine.setPropertyIndex(array, static_cast<uint32_t>(i), params[i]);
+    }
+    engine.setProperty(bundle, "params", array);
+    // An absent handle is a null pointer, and the engine dereferences whatever it is given — so
+    // the optional entries are only written when the caller has one.
+    if (type.ptr) engine.setProperty(bundle, "type", type);
+    if (reduction.ptr) engine.setProperty(bundle, "reduction", reduction);
+    engine.setGlobalProperty("__tnAudioParamBundle", bundle);
+    evalAudioScript(engine, "audio-param", "audio-param.js");
+    engine.setGlobalProperty("__tnAudioParamBundle", engine.newUndefined());
 }
 
 // Track the current AudioContext being operated on (set via closure capture)
@@ -393,6 +462,61 @@ js::JSValueHandle createPannerNodeJS(js::Engine* engine, PannerNode* nodePtr,
 }
 
 /**
+ * Create the bounded BiquadFilterNode surface, which is what `AudioBus`'s `lowpassHz` builds.
+ *
+ * The low-pass is the only implemented type, and `audio-param.js` makes the setter refuse the other
+ * five rather than accept a name and pass the signal through unfiltered.
+ */
+js::JSValueHandle createBiquadFilterJS(js::Engine* engine, BiquadFilterNode* nodePtr,
+                                       js::JSValueHandle contextJS) {
+    auto jsNode = engine->newObject();
+    installAudioNodeBindings(engine, jsNode, nodePtr);
+    engine->setProperty(jsNode, "context", contextJS);
+    engine->setProperty(jsNode, "_setType",
+        engine->newFunction("_setType", [nodePtr](void*, const std::vector<js::JSValueHandle>& args) {
+            if (args.empty()) return g_jsEngine->newBoolean(false);
+            return g_jsEngine->newBoolean(nodePtr->setType(g_jsEngine->toString(args[0])));
+        })
+    );
+    auto frequency = audioParamJS(engine, &nodePtr->frequency());
+    auto q = audioParamJS(engine, &nodePtr->q());
+    wrapAudioParams(*engine, {frequency, q}, jsNode);
+    engine->setProperty(jsNode, "frequency", frequency);
+    engine->setProperty(jsNode, "Q", q);
+    return jsNode;
+}
+
+/**
+ * Create the DynamicsCompressorNode surface, which is what `AudioBus`'s `compressor` builds.
+ *
+ * `connect(destination)` is what puts it post-mix; see `AudioNode::postMix`. `reduction` is the
+ * readout that answers "is the compressor doing anything".
+ */
+js::JSValueHandle createDynamicsCompressorJS(js::Engine* engine, DynamicsCompressorNode* nodePtr,
+                                             js::JSValueHandle contextJS) {
+    auto jsNode = engine->newObject();
+    installAudioNodeBindings(engine, jsNode, nodePtr);
+    engine->setProperty(jsNode, "context", contextJS);
+    engine->setProperty(jsNode, "_getReduction",
+        engine->newFunction("_getReduction", [nodePtr](void*, const std::vector<js::JSValueHandle>&) {
+            return g_jsEngine->newNumber(nodePtr->reduction());
+        })
+    );
+    auto threshold = audioParamJS(engine, &nodePtr->threshold());
+    auto knee = audioParamJS(engine, &nodePtr->knee());
+    auto ratio = audioParamJS(engine, &nodePtr->ratio());
+    auto attack = audioParamJS(engine, &nodePtr->attack());
+    auto release = audioParamJS(engine, &nodePtr->release());
+    wrapAudioParams(*engine, {threshold, knee, ratio, attack, release}, {}, jsNode);
+    engine->setProperty(jsNode, "threshold", threshold);
+    engine->setProperty(jsNode, "knee", knee);
+    engine->setProperty(jsNode, "ratio", ratio);
+    engine->setProperty(jsNode, "attack", attack);
+    engine->setProperty(jsNode, "release", release);
+    return jsNode;
+}
+
+/**
  * Create AudioContext JS object
  */
 js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr) {
@@ -502,6 +626,28 @@ js::JSValueHandle createAudioContextJS(js::Engine* engine, AudioContext* ctxPtr)
             auto* nodePtr = node.get();
             auto jsNode = createPannerNodeJS(g_jsEngine, nodePtr, g_jsEngine->newUndefined());
             g_pannerNodes[nodePtr] = std::move(node);
+            return jsNode;
+        })
+    );
+
+    // createBiquadFilter() - the low-pass `AudioBus` builds for `lowpassHz`
+    engine->setProperty(jsCtx, "createBiquadFilter",
+        engine->newFunction("createBiquadFilter", [ctxPtr](void*, const std::vector<js::JSValueHandle>&) {
+            auto node = ctxPtr->createBiquadFilter();
+            auto* nodePtr = node.get();
+            auto jsNode = createBiquadFilterJS(g_jsEngine, nodePtr, g_jsEngine->newUndefined());
+            g_biquadNodes[nodePtr] = std::move(node);
+            return jsNode;
+        })
+    );
+
+    // createDynamicsCompressor() - the bus master compressor
+    engine->setProperty(jsCtx, "createDynamicsCompressor",
+        engine->newFunction("createDynamicsCompressor", [ctxPtr](void*, const std::vector<js::JSValueHandle>&) {
+            auto node = ctxPtr->createDynamicsCompressor();
+            auto* nodePtr = node.get();
+            auto jsNode = createDynamicsCompressorJS(g_jsEngine, nodePtr, g_jsEngine->newUndefined());
+            g_compressorNodes[nodePtr] = std::move(node);
             return jsNode;
         })
     );
@@ -695,6 +841,8 @@ void cleanupAudioBindings() {
     g_sourceNodes.clear();
     g_gainNodes.clear();
     g_pannerNodes.clear();
+    g_biquadNodes.clear();
+    g_compressorNodes.clear();
     g_audioBuffers.clear();
     g_jsEngine = nullptr;
 }

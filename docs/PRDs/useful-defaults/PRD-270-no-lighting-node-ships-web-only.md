@@ -4,13 +4,19 @@ prd_contract: v1
 
 # PRD-270 — no lighting node ships web-only
 
-**Status:** PROPOSED — filed 2026-08-29, measured at `7e5a9fe1`. Depends on
-[PRD-266](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) and
+**Status: SUPERSEDED 2026-10-03 — folded into
+[PRD-267](./PRD-267-screen-space-gi-ships-in-the-templates.md) at runbook row C6, which carries this
+native proof as its Phase 2 and its "gates PRD-268/269" role as Phase 3's entry. Kept in place with
+its text: `docs/PRDs/AGENTS.md` archives *finished* work in `done/`, and a superseded proposal with 0
+ticked boxes is not finished. The file below is PROPOSED — filed 2026-08-29, measured at `7e5a9fe1`.
+Depends on PRD-266 (landed as
+[PRD-278](../done/PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md)) and
 [PRD-267](./PRD-267-screen-space-gi-ships-in-the-templates.md); gates
-[PRD-268](../lighting/PRD-268-light-that-comes-from-off-screen.md) and
-[PRD-269](../lighting/PRD-269-motion-vectors-or-the-temporal-filters-lie.md). Batch:
+[PRD-268](../rendering/PRD-268-light-that-comes-from-off-screen.md) and
+[PRD-269](../done/PRD-269-motion-vectors-or-the-temporal-filters-lie.md). Batch:
 [docs/PRDs/lighting](./README.md).
 
+**Priority:** P2 — Its registry guard and conformance-case chain are unwritten, so PRD-268 and PRD-269 stay ungated.
 **Goal: every lighting stage this batch turns on is proved to execute on native in the commit that
 turns it on.** The root charter's rule — a feature that works on web only is unfinished — is what
 disqualified four of the seven shortlisted repos. It has to bind this batch's own work too, or the

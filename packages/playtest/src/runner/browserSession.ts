@@ -52,8 +52,9 @@ export function openRunnerPage(
   const navigationUrl = remoteBrowser?.navigationUrl(config) ?? config.url;
   // This copy is navigation-only. Reports and operator diagnostics retain the URL supplied on
   // the command line, while Android Chrome reaches the same server through its reverse tunnel.
-  return installBootFailure(page, scenario).then(() =>
-    openPageAndConnectBridge(page, { ...config, url: navigationUrl }, scenario));
+  return installBootFailure(page, scenario)
+    .then(() => (scenario.reducedMotion === undefined ? undefined : page.emulateMedia({ reducedMotion: scenario.reducedMotion })))
+    .then(() => openPageAndConnectBridge(page, { ...config, url: navigationUrl }, scenario));
 }
 
 async function installBootFailure(page: Page, scenario: IPlaytestScenario): Promise<void> {

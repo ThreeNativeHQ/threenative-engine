@@ -1,6 +1,6 @@
 # Lighting chain — measured on a sandbox cathedral, 2026-08-30
 
-Evidence for the [lighting PRD batch](../PRDs/lighting/README.md). Everything below was run
+Evidence for the lighting PRD batch. Everything below was run
 against `../sandbox/lumen-hall`, a game built outside this repository and installed from
 tarballs, so nothing here benefits from the workspace.
 

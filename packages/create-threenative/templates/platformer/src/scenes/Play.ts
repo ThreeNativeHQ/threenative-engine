@@ -4,6 +4,7 @@ import {
   Scene,
   type SceneFrame,
   afterPhysics,
+  getPlatform,
   isMobile,
   isTouchscreenAvailable,
   mergeByMaterial,
@@ -25,13 +26,21 @@ import { Checkpoints } from "../level/Checkpoints.js";
 import { buildStage, makeRng } from "../level/Stage.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { followCamera, setupCamera } from "../render/camera.js";
+import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { flat } from "../render/materials.js";
 import { C } from "../render/palette.js";
 import { burst, coinArc } from "../render/pickups.js";
 import { setupPost } from "../render/postprocessing.js";
-import { cloudLobes, setupSky, skyFloor } from "../render/sky.js";
+import {
+  type QualityTier,
+  isWebGLFallbackRenderer,
+  materialLightingEnabled,
+} from "../render/quality.js";
+import { cloudLobes, setupSky, skyFloor, skyTexture } from "../render/sky.js";
+import { skyEnvironment } from "../render/skyEnvironment.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
@@ -95,14 +104,19 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   };
 
   #sky: Texture | undefined;
+  #skyEnvironment: Texture | undefined;
   #walkers: Walker[] = [];
 
   /**
-   * The sky photograph and the walkers are both built here, and the walkers are registered here
+   * The sky gradient and the walkers are both built here, and the walkers are registered here
    * too — a scenario's `setup.place` is applied between `load()` and `enter()`, so an entity that
    * only appears in `enter()` cannot be placed. That is what makes a stomp reproducible: the
    * walker is where the scenario put it, not where boot time left it.
    */
+  #post: ReturnType<typeof setupPost> | undefined;
+  #environmentSample: IEnvironmentSample | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+
   override async load(ctx: GameCtx): Promise<void> {
     // Registered before the first `await`, because that is the whole window a scenario's
     // `setup.place` has to find them in: the bridge applies setup between `load()` starting and
@@ -113,7 +127,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.entities.add(`walker.${this.#walkers.length}`, walker);
       this.#walkers.push(walker);
     }
-    this.#sky = await ctx.assets.texture("sky.jpg");
+    this.#sky = skyTexture();
+    this.#skyEnvironment = skyEnvironment();
+    setupSky(ctx.scene, this.#sky, this.#skyEnvironment);
+    this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -126,8 +149,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       predicate: (object) => object.userData.solid === true,
     });
     collapseStage(stage.group);
-    if (this.#sky === undefined) throw new Error("Play.enter ran before load() loaded sky.jpg.");
-    setupSky(ctx.scene, this.#sky);
+    if (this.#sky === undefined || this.#skyEnvironment === undefined)
+      throw new Error("Play.enter ran before load() created the sky texture.");
+    setupSky(ctx.scene, this.#sky, this.#skyEnvironment);
     ctx.scene.add(skyFloor());
     const lighting = setupLighting(
       ctx.scene,
@@ -136,10 +160,23 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+    const materialEnvironment = {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
+    let materialTier: QualityTier = "low";
+    this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      onTierChanged: (tier) => {
+        materialTier = tier;
+        this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment));
+      },
       godraysLight: lighting.key,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
@@ -225,6 +262,24 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       followCamera(camera, fox.mesh.position, fox.body.velocity.x, dt);
       lighting.follow(fox.mesh.position);
     });
+
+    // Collect only after the loaded character and scene receivers are attached.
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, lighting.key, {
+        ...materialEnvironment,
+        enabled: materialLightingEnabled(materialTier, materialEnvironment),
+      }),
+    );
+    if (this.#environmentSample !== undefined) {
+      const sample = this.#environmentSample;
+      this.#materialLighting.setEnvironmentMeasurement(
+        sample.measurement,
+        sample.source,
+        sample.intensity,
+        sample,
+      );
+    }
 
     return (frameCtx, dt) => {
       loading.update();
@@ -323,6 +378,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       );
       frameCtx.state.set(statePatch);
     };
+  }
+
+  override exit(ctx: GameCtx): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
+    this.#environmentSample = undefined;
+    super.exit(ctx);
   }
 }
 

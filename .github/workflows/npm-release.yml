@@ -16,6 +16,10 @@ on:
         description: Pack every package and run the preflight without publishing
         type: boolean
         default: true
+      clean_room_only:
+        description: Skip gates and publish; run only the clean room against the published latest cohort
+        type: boolean
+        default: false
 
 concurrency:
   group: npm-release
@@ -27,6 +31,7 @@ permissions:
 
 jobs:
   gates:
+    if: inputs.clean_room_only != true
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -42,6 +47,11 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+      # The release packs runtime-native, whose `files` list the built web engine. pnpm pack drops a
+      # missing entry silently, so the engine is built first and publish:check fails if it is absent.
+      - uses: ./.github/actions/native-engine-wasm
+      # Also listed in runtime-native `files` and downloaded, not tracked.
+      - run: node packages/runtime-native/scripts/download-deps.mjs --only gradle-wrapper
       # CI already ran the generic gates on this exact tree. Query that immutable result instead of
       # rebuilding the workspace and running the same typecheck, lint and unit suite a second time.
       # A manual dry run remains useful before a commit reaches main, so only a publishing run
@@ -83,6 +93,9 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/native-engine-wasm
+      # Also listed in runtime-native `files` and downloaded, not tracked.
+      - run: node packages/runtime-native/scripts/download-deps.mjs --only gradle-wrapper
       - run: pnpm build
       - name: Install native desktop runtime dependencies for the guarded verifier
         run: |
@@ -139,8 +152,11 @@ jobs:
       #   @threenative/metahuman
       #   @threenative/physics
       #   @threenative/playtest
+      #   @threenative/procedural-animals
       #   @threenative/raw-unreal
       #   @threenative/runtime-native
+      #   @threenative/terrain
+      #   @threenative/three-native
       #   @threenative/ueformat
       #   @threenative/ui
       #   create-threenative
@@ -162,12 +178,17 @@ jobs:
 
   clean-room:
     needs: publish
-    if: github.event_name == 'push' || inputs.dry_run == false
+    # `!cancelled()` lets a clean_room_only dispatch run with `publish` skipped; every other run
+    # still requires a successful publish first.
+    if: >-
+      !cancelled() && (inputs.clean_room_only == true ||
+      ((github.event_name == 'push' || inputs.dry_run == false) && needs.publish.result == 'success'))
     runs-on: ubuntu-latest
-    # Raised from 20 when the `android` step joined this job: the same evidence now costs a Gradle
-    # build and its first-run dependency download, and a job killed by its own clock reports a
+    # Raised from 20 when the `android` step joined this job, then from 30 when the first hosted
+    # run (37709499660) was killed by its own clock inside the verifier: both managers each pay a
+    # Gradle build and a software-adapter gameplay run, and a job killed by its own clock reports a
     # failure nobody earned.
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -190,11 +211,22 @@ jobs:
         with:
           packages: platform-tools
       - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      # The default debug key Android Studio leaves on a developer machine. runtime-native 0.3.4
+      # re-signs with it and refuses when it is absent; the packager creates it itself from the
+      # next cohort on (PRD-196). Remove this step once `latest` carries that packager.
+      - name: Create the default Android debug keystore
+        run: |
+          mkdir -p ~/.android
+          test -f ~/.android/debug.keystore || keytool -genkeypair -keystore ~/.android/debug.keystore \
+            -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+            -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
       - run: pnpm install --frozen-lockfile
+      # `libwebkit2gtk-4.1-0` is the desktop prebuilt's overlay webview: without it the host exits
+      # 127 before `--version`, and doctor and the native step both fail on a loader error.
       - name: Install native desktop runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers libwebkit2gtk-4.1-0
       - name: Install the pinned Blender used by the MCP conversion proof
         env:
           BLENDER_VERSION: 5.2.0

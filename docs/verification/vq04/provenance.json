@@ -1,0 +1,362 @@
+{
+  "sourceSha": "a53db062fec7b1b3ae99268470dfa06d15ee3494",
+  "workflowRun": "https://github.com/ThreeNativeHQ/threenative/actions/runs/36996637583",
+  "workflowConclusion": "success",
+  "artifactId": 11222156451,
+  "artifactZipSha256": "ba1e0cff8e340330f98096695bd9e84840a3e0c15f5659a00e70a08475c91e08",
+  "correctnessOnly": true,
+  "scope": "Real CC0 mannequin interrupted-crossfade regression on headed browser WebGPU. Not 1D/2D blend-space qualification, native execution, hardware performance or human aesthetic approval.",
+  "visualInspection": "All five unchanged runtime PNGs inspected: full articulated mannequin visible, gait poses differ, final idle settles; no blank or missing rig.",
+  "frames": [
+    {
+      "tick": 24,
+      "image": "tick-24.png",
+      "sha256": "26de9efac6b525b43efbf5f525db11a8bb7e2693f77b3cbb7712c180d289fb79",
+      "reportSha256": "54a55cefe853619ff52dba77f40b71e55699c8d76b501096256442b94a426eb3",
+      "pass": true,
+      "diagnostics": [],
+      "assertions": [
+        {
+          "id": "visual.0.region",
+          "pass": true
+        },
+        {
+          "id": "visual.1.region",
+          "pass": true
+        },
+        {
+          "id": "visual.1.region.maxDarkPixels",
+          "pass": true
+        },
+        {
+          "id": "resource.state.tick",
+          "pass": true
+        },
+        {
+          "id": "resource.state.bones",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxWeightError",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPhaseJump",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPoseJumpMetres",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPoseJumpRadians",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxAnimatedRadians",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].count",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].visible",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].inFrustum",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].minTriangles",
+          "pass": true
+        },
+        {
+          "id": "diagnostics",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "tick": 25,
+      "image": "tick-25.png",
+      "sha256": "f8371da3ad956a946cdfde635d0faeb3772be994bb909f3b362cf6657d7845f5",
+      "reportSha256": "e4b724a20c86123af1274a278568401e44f9426a6368149a4c99a1c85716fbab",
+      "pass": true,
+      "diagnostics": [],
+      "assertions": [
+        {
+          "id": "visual.0.region",
+          "pass": true
+        },
+        {
+          "id": "visual.1.region",
+          "pass": true
+        },
+        {
+          "id": "visual.1.region.maxDarkPixels",
+          "pass": true
+        },
+        {
+          "id": "resource.state.tick",
+          "pass": true
+        },
+        {
+          "id": "resource.state.bones",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxWeightError",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPhaseJump",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPoseJumpMetres",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPoseJumpRadians",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxAnimatedRadians",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].count",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].visible",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].inFrustum",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].minTriangles",
+          "pass": true
+        },
+        {
+          "id": "diagnostics",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "tick": 26,
+      "image": "tick-26.png",
+      "sha256": "bd9f0bae6a19ba7b3d79d98bed37a9d96e68c3b642b85dfff1bb3ee2e2b34b4b",
+      "reportSha256": "c9da0b8cbdb851acc36a0c529ec5f396890ee2ed9ddbce57b39889548976e498",
+      "pass": true,
+      "diagnostics": [],
+      "assertions": [
+        {
+          "id": "visual.0.region",
+          "pass": true
+        },
+        {
+          "id": "visual.1.region",
+          "pass": true
+        },
+        {
+          "id": "visual.1.region.maxDarkPixels",
+          "pass": true
+        },
+        {
+          "id": "resource.state.tick",
+          "pass": true
+        },
+        {
+          "id": "resource.state.bones",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxWeightError",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPhaseJump",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPoseJumpMetres",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPoseJumpRadians",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxAnimatedRadians",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].count",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].visible",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].inFrustum",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].minTriangles",
+          "pass": true
+        },
+        {
+          "id": "diagnostics",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "tick": 48,
+      "image": "tick-48.png",
+      "sha256": "b5099ddd1c34d3b59fde863bf871909780c8ae28552f6e950ec487403b3d9745",
+      "reportSha256": "9183c5f96cdffa36feaa2b3b0afda6a71d20351a17f0b1bfb3c510e50113ddbb",
+      "pass": true,
+      "diagnostics": [],
+      "assertions": [
+        {
+          "id": "visual.0.region",
+          "pass": true
+        },
+        {
+          "id": "visual.1.region",
+          "pass": true
+        },
+        {
+          "id": "visual.1.region.maxDarkPixels",
+          "pass": true
+        },
+        {
+          "id": "resource.state.tick",
+          "pass": true
+        },
+        {
+          "id": "resource.state.bones",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxWeightError",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPhaseJump",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPoseJumpMetres",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPoseJumpRadians",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxAnimatedRadians",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].count",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].visible",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].inFrustum",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].minTriangles",
+          "pass": true
+        },
+        {
+          "id": "diagnostics",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "tick": 108,
+      "image": "tick-108.png",
+      "sha256": "e51d58fb8e61d968055468c32faaa998862642b0d3151dbae8bb9f5f820356fd",
+      "reportSha256": "46d81fdcfd09f74134c9abe4bb66831108c5446a57388f521ff5b161693dc20f",
+      "pass": true,
+      "diagnostics": [],
+      "assertions": [
+        {
+          "id": "visual.0.region",
+          "pass": true
+        },
+        {
+          "id": "visual.1.region",
+          "pass": true
+        },
+        {
+          "id": "visual.1.region.maxDarkPixels",
+          "pass": true
+        },
+        {
+          "id": "resource.state.tick",
+          "pass": true
+        },
+        {
+          "id": "resource.state.bones",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxWeightError",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPhaseJump",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPoseJumpMetres",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxPoseJumpRadians",
+          "pass": true
+        },
+        {
+          "id": "resource.state.maxAnimatedRadians",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].count",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].visible",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].inFrustum",
+          "pass": true
+        },
+        {
+          "id": "sceneNodes[0].minTriangles",
+          "pass": true
+        },
+        {
+          "id": "diagnostics",
+          "pass": true
+        }
+      ]
+    }
+  ]
+}

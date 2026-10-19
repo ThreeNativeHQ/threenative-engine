@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "name": "animation-composition-baseline",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 5,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "label": "measured",
+      "timeoutMs": 120000,
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmark.measuredFrames",
+        "equals": 1800
+      },
+      "release": true
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "benchmark.mode",
+        "equals": "baseline",
+        "allowTrivial": "The build selects this paired arm; frame and rig assertions separately require actual execution."
+      },
+      {
+        "id": "GameState",
+        "path": "benchmark.rigs",
+        "equals": 100,
+        "allowTrivial": "Both arms deliberately retain all 100 cloned rigs; frame observations require all measured renders."
+      },
+      {
+        "id": "GameState",
+        "path": "benchmark.bones",
+        "lte": 80,
+        "allowTrivial": "The authored rig has 9 bones; this ceiling preserves the original at most 80 bone contract."
+      },
+      {
+        "id": "GameState",
+        "path": "benchmark.actions",
+        "lte": 8,
+        "allowTrivial": "Actions are bounded at initialization; this census is paired with 100 rigs and1,800 measured renders."
+      },
+      {
+        "id": "GameState",
+        "path": "benchmark.warmupFrames",
+        "equals": 300,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "benchmark.measuredFrames",
+        "equals": 1800,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "benchmark.cpuP95Ms",
+        "gte": 0,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "benchmark.warmupUpdates",
+        "gte": 300,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "benchmark.measuredUpdates",
+        "gte": 1800,
+        "changed": true
+      }
+    ],
+    "performance": {
+      "maxDrawCalls": 110,
+      "maxTriangles": 10000
+    },
+    "sceneNodes": [
+      {
+        "select": {
+          "name": "characterSkin",
+          "limit": 100
+        },
+        "minCount": 100,
+        "maxCount": 100,
+        "visible": true,
+        "minTriangles": 9600
+      }
+    ]
+  }
+}

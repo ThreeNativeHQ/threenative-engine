@@ -70,6 +70,15 @@
         "atSteps": [{ "label": "armed", "equals": "attack" }, { "label": "ordered", "equals": "" }]
       }
     ],
-    "renderChain": { "tier": "high", "perAdapter": { "software": { "tier": "low" } } }
+    "renderChain": {
+      "tier": "high",
+      "perAdapter": {
+        "integrated": { "tier": "medium" },
+        "mobile-high": { "tier": "medium" },
+        "mobile-low": { "tier": "low" },
+        "mobile-mid": { "tier": "low" },
+        "software": { "tier": "low" }
+      }
+    }
   }
 }

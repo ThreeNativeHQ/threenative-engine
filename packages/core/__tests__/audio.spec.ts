@@ -1,6 +1,11 @@
 import { AudioContext, Object3D, PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { AudioBus, audioRuntimeSnapshot, resetAudioCueLedger } from "../src/audio.js";
+import {
+  AudioBus,
+  type IAudioCompressorOptions,
+  audioRuntimeSnapshot,
+  resetAudioCueLedger,
+} from "../src/audio.js";
 
 interface IFakeAudioParam {
   value: number;
@@ -43,15 +48,42 @@ interface IFakeSource {
 }
 
 /**
- * @param browser Give the context the parts only a browser has — a biquad filter factory and
- * cancellable params. The default is the native host's narrower surface.
+ * Every edge the fake graph was asked to make, in order.
+ *
+ * Routing is the whole question a compressor and a per-voice low-pass turn on — which node feeds
+ * which — and a fake whose `connect` returns `undefined` can only prove a node was built. These
+ * two record the edge, so a test can read the chain the bus actually wired.
+ */
+let graphEdges: Array<{ from: unknown; to: unknown }> = [];
+
+/** Every gain node the fake handed out, in order: the listener's first, then one per pooled voice. */
+let madeGains: unknown[] = [];
+
+function connect(this: unknown, to: unknown): void {
+  graphEdges.push({ from: this, to });
+}
+
+function disconnect(this: unknown): void {
+  graphEdges.push({ from: this, to: null });
+}
+
+/** Did `from` feed `to` at any point? */
+function wired(from: unknown, to: unknown): boolean {
+  return graphEdges.some((edge) => edge.from === from && edge.to === to);
+}
+
+/**
+ * @param browser Give the context the parts only a browser has — cancellable params. The default
+ * is the native host's narrower surface, which now carries the filter and the compressor.
  */
 function audioContext(browser = false): globalThis.AudioContext {
+  graphEdges = [];
+  madeGains = [];
   const context = {
     createBufferSource: () => ({
-      connect: () => undefined,
+      connect,
       detune: parameter(0, browser),
-      disconnect: () => undefined,
+      disconnect,
       loop: false,
       loopEnd: 0,
       loopStart: 0,
@@ -63,15 +95,33 @@ function audioContext(browser = false): globalThis.AudioContext {
       },
       stop: () => undefined,
     }),
-    createGain: () => ({
-      connect: () => undefined,
-      disconnect: () => undefined,
-      gain: parameter(1, browser),
+    createGain: () => {
+      const node = { connect, disconnect, gain: parameter(1, browser) };
+      madeGains.push(node);
+      return node;
+    },
+    createDynamicsCompressor: () => ({
+      attack: parameter(0.003),
+      connect,
+      disconnect,
+      knee: parameter(30),
+      ratio: parameter(12),
+      release: parameter(0.25),
+      threshold: parameter(-24),
+    }),
+    // The native host binds this once the low-pass gap closed, so the "narrow surface" fake
+    // carries it. Its params are inert like every other native param: they take a write and
+    // report it back, which is all the portable contract reads.
+    createBiquadFilter: () => ({
+      connect,
+      disconnect,
+      frequency: parameter(350),
+      type: "lowpass" as const,
     }),
     createPanner: () => ({
-      connect: () => undefined,
+      connect,
       distanceModel: "inverse" as const,
-      disconnect: () => undefined,
+      disconnect,
       maxDistance: 10_000,
       panningModel: "HRTF" as const,
       refDistance: 1,
@@ -83,8 +133,8 @@ function audioContext(browser = false): globalThis.AudioContext {
     ...(browser
       ? {
           createBiquadFilter: () => ({
-            connect: () => undefined,
-            disconnect: () => undefined,
+            connect,
+            disconnect,
             frequency: parameter(20_000, true),
             type: "lowpass" as const,
           }),
@@ -588,16 +638,120 @@ describe("AudioBus", () => {
 
     try {
       bus.play(buffer, { detune: 40, lowpassHz: 900 });
-      // Both are accepted and both do nothing on the native host. Reporting is the difference
-      // between a mix that is quietly flat everywhere and one a build can be failed on.
-      expect(bus.unsupported).toEqual(["detune", "lowpassHz"]);
-      expect(audioRuntimeSnapshot().unsupported).toEqual(["detune", "lowpassHz"]);
+      // `lowpassHz` is honoured on the native host now, because it binds a biquad. `detune` is
+      // still an inert stand-in there, and reporting it is the difference between a mix that is
+      // quietly flat everywhere and one a build can be failed on.
+      expect(bus.unsupported).toEqual(["detune"]);
+      expect(audioRuntimeSnapshot().unsupported).toEqual(["detune"]);
     } finally {
       bus.dispose();
     }
   });
 
-  it("should report nothing unsupported on a runtime that honours the shaping", async () => {
+  it("sums every voice into a game-configured compressor ahead of the bus volume", async () => {
+    const context = audioContext();
+    const made: Array<Record<string, IFakeAudioParam>> = [];
+    const original = context.createDynamicsCompressor as unknown as () => unknown;
+    context.createDynamicsCompressor = () => {
+      const node = original.call(context) as Record<string, IFakeAudioParam>;
+      made.push(node);
+      return node as unknown as DynamicsCompressorNode;
+    };
+    const bus = new AudioBus({
+      camera: new PerspectiveCamera(),
+      compressor: { attack: 0.004, knee: 6, ratio: 5, release: 0.18, threshold: -15 },
+      gestureTarget: new EventTarget(),
+    });
+
+    try {
+      await bus.unlock();
+      // The mix the source ran: a compressor holding three summed voices down. Every number is
+      // the game's, so the bus must not invent one.
+      expect(made).toHaveLength(1);
+      const node = made[0];
+      const values = Object.fromEntries(
+        Object.entries(node ?? {}).map(([name, p]) => [name, p.value]),
+      );
+      expect(values).toEqual({ attack: 0.004, knee: 6, ratio: 5, release: 0.18, threshold: -15 });
+      // The compressor is reachable so a mixer can read `reduction` off it.
+      expect(bus.compressor).toBe(node);
+
+      // The routing, which is the part that was wrong: voices reach the compressor, the
+      // compressor reaches the bus volume gain. Three's own `listener.filter` slot would have put
+      // it on the far side of that gain, compressing a level the volume had already moved.
+      const masterGain = bus.listener.gain;
+      expect(madeGains[0]).toBe(masterGain);
+      expect(wired(node, masterGain)).toBe(true);
+      bus.play(buffer);
+      expect(madeGains[1]).not.toBe(masterGain);
+      expect(wired(madeGains[1], node)).toBe(true);
+      expect(bus.listener.getFilter()).toBeNull();
+
+      bus.dispose();
+      // And it leaves with the bus, so a disposed bus is not still holding voices.
+      expect(graphEdges).toContainEqual({ from: node, to: null });
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should fail closed on a compressor option it cannot honour", () => {
+    audioContext();
+    const camera = new PerspectiveCamera();
+    const at = (over: Partial<IAudioCompressorOptions>) => () =>
+      new AudioBus({
+        camera,
+        compressor: { attack: 0.01, knee: 6, ratio: 5, release: 0.2, threshold: -15, ...over },
+      });
+
+    expect(at({ attack: Number.NaN })).toThrow(/compressor\.attack/u);
+    expect(at({ attack: 1.5 })).toThrow(/compressor\.attack/u);
+    expect(at({ release: 1.5 })).toThrow(/compressor\.release/u);
+    expect(at({ release: Number.POSITIVE_INFINITY })).toThrow(/compressor\.release/u);
+    expect(at({ knee: -1 })).toThrow(/compressor\.knee/u);
+    expect(at({ knee: 41 })).toThrow(/compressor\.knee/u);
+    expect(at({ ratio: 0.5 })).toThrow(/compressor\.ratio/u);
+    expect(at({ ratio: 21 })).toThrow(/compressor\.ratio/u);
+    expect(at({ threshold: 12 })).toThrow(/compressor\.threshold/u);
+    expect(at({ threshold: -140 })).toThrow(/compressor\.threshold/u);
+    // A half-spelled compressor is not a compressor with defaults; it is a mistake.
+    expect(
+      () =>
+        new AudioBus({
+          camera,
+          compressor: {
+            knee: 6,
+            ratio: 5,
+            release: 0.2,
+            threshold: -15,
+          } as unknown as IAudioCompressorOptions,
+        }),
+    ).toThrow(/compressor\.attack/u);
+
+    // Zero is inside the platform's range for attack and release — an instant response, not a
+    // mistake — so refusing it would be this engine being stricter than the Web Audio it mirrors.
+    for (const instant of [0, 1]) {
+      const bus = new AudioBus({
+        camera,
+        compressor: { attack: instant, knee: 0, ratio: 20, release: instant, threshold: -100 },
+      });
+      expect(bus.compressor).toBeDefined();
+      bus.dispose();
+    }
+
+    // A runtime with no dynamics node is named, not silently left uncompressed.
+    const bare = audioContext();
+    Reflect.deleteProperty(bare, "createDynamicsCompressor");
+    const bus = new AudioBus({
+      camera,
+      compressor: { attack: 0.01, knee: 6, ratio: 5, release: 0.2, threshold: -15 },
+    });
+    expect(bus.unsupported).toEqual(["compressor"]);
+    expect(bus.compressor).toBeUndefined();
+    bus.dispose();
+  });
+
+  it("reports nothing unsupported for a bus that honours the shaping", async () => {
     audioContext(true);
     const bus = new AudioBus({ camera: new PerspectiveCamera() });
     await bus.unlock();

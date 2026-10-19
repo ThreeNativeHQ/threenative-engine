@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "captureSourceSha": "ae44ab8df3a6f6596465d408e13660905fc853fd",
+  "qualifiedSourceSha": "8bc45bd3c917978f061dc9628e5bbfeac3bf9ef5",
+  "baseSha": "9f41cb0ed171f335fc18d988dac27eeed4211122",
+  "publicBundle": {
+    "artifact": "current-consumer-ae44ab8d.json.xz",
+    "encoding": "XZ-compressed JSON; exact PNG payloads encoded as base64",
+    "sha256": "6bcaa1956f946bbb7b451765d63fb6f1ec6f21dc6afd3d5dfb63129583e84634",
+    "bytes": 324716,
+    "decompressedSha256": "0853717fae7d25fa540da39cfc62ff50eb853592f9ad326c18f5bdf3bea88ea3",
+    "decompressedBytes": 5832230
+  },
+  "sourceInputs": {
+    "coreSrcGitTree": "980661c6a0bc452d41c9f3c92410c0e20c933bd2",
+    "playtestSrcGitTree": "8a6451f4ed1ce8a210bea91a2d78b91dc677db86",
+    "nativeSrcGitTree": "50cf798dd03c8bb6055ce4ca1dc58517503bd0ee",
+    "coreDistSha256": "4f2e6afc12cdcb29be6a3b0fc31abfbc3da6289453a989d6e3e90b3afeca3ac4",
+    "playtestRunnerDistSha256": "224b092237d78909fa6e3b1067aa15098e850446dcf9f30f0bf6cd5e110de973",
+    "nativeExecutableSha256": "bc0b9d8eaebc811014133e79f240ea90cd98e5440fa2ce0d4191ae7d504d34f1"
+  },
+  "nativeCoverageSourceDigest": "26e52aa0d7cade3c712d4e4054e9a014d7f07709558b3146196827780580d713",
+  "controlledResolution": {
+    "requested": 1,
+    "effective": 1,
+    "scaleSource": "pinned",
+    "productionDefault": "auto",
+    "drawingBuffer": [640, 360],
+    "lifecycleResizedBuffer": [320, 180],
+    "DPR": 1
+  },
+  "datasets": {
+    "snap-gain1": {
+      "markerCount": 1090,
+      "meteringSamples": 360,
+      "pairedSamples": 360,
+      "runId": "5aaab92f-93c8-4421-866b-35ba0062da8a",
+      "reportSha256": "1a60f9fbe39079ea74c545938e321a1acc44de1c2831babfdc00f2013073ee49"
+    },
+    "snap-gain0": {
+      "markerCount": 1090,
+      "meteringSamples": 360,
+      "pairedSamples": 360,
+      "runId": "5aaab92f-93c8-4421-866b-35ba0062da8a",
+      "reportSha256": "cac93e41d5774a957c574eb840d6eab331baad30a15d339c507783c2aafea12b"
+    },
+    "consumer-missing-wire": {
+      "markerCount": 1090,
+      "meteringSamples": 360,
+      "pairedSamples": 360,
+      "runId": "5aaab92f-93c8-4421-866b-35ba0062da8a",
+      "reportSha256": "78b595551ff88b5f81f76bde4cb9b21651bcd88ad50f71c5c0e7564b461ceefc"
+    },
+    "lifecycle": {
+      "markerCount": 2177,
+      "meteringSamples": 720,
+      "pairedSamples": 720,
+      "runId": "2b51da34-949f-4c5d-a337-2dcc5d1da1cf",
+      "reportSha256": "a265333dbab83b86dadcf99a5bf2c916eeaca80a0e4734157f1b487db8dedb57"
+    },
+    "native-positive": {
+      "markerCount": 548,
+      "meteringSamples": 180,
+      "pairedSamples": 180,
+      "runId": null,
+      "reportSha256": "3440bd1947a1dd5f487ee8c0c521043936e551b2c6819f00e2888ff5c220bb6b"
+    },
+    "native-validation-negative": {
+      "markerCount": 547,
+      "meteringSamples": 180,
+      "pairedSamples": 180,
+      "runId": null,
+      "reportSha256": "36b5c5cdccdd540258e4d2d06111bff509ed3c32448ed2d654f6b214f405ba39"
+    }
+  },
+  "qualifiedControls": [
+    "gain0 fails same first-update accuracy gate",
+    "missing wire fails ownership only after response qualification",
+    "actual injected GPU validation fails scope cleanliness"
+  ],
+  "sourceMapping": "8bc45bd3c917978f061dc9628e5bbfeac3bf9ef5 differs from captured ae44ab8df3a6f6596465d408e13660905fc853fd only by import ordering; actual marker/graph/clock behavior unchanged. Later cleanup and receipt commits change documentation/evidence only.",
+  "scaffold": "13 actual trees byte-identical to4ce; unchanged66-test whole guard passes",
+  "historicalEvidence": "all retained; source-identical native coverage reused, not remeasured or restamped",
+  "remoteCI": "pending new normal publication; no bypass",
+  "checks": {
+    "typecheck": "pass",
+    "lint": "pass; existing warnings retained",
+    "exposureTests": 176,
+    "routingAndPinTests": 37,
+    "scaffoldTests": 66,
+    "ciFast": "pass",
+    "exactHeadCI": "pending normal publication"
+  },
+  "publicationBaseSha": "9cf95535565b5621ea73029ad4810396d08cdad6",
+  "publicationBaseDelta": "The later9f41\u21929cf develop advance adds11 PRD/runbook documents only. Qualified core, playtest, native, exposure templates, dependencies and actual fixture producer behavior remain unchanged; no captures or coverage receipts are restamped."
+}

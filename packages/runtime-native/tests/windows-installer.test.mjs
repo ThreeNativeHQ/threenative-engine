@@ -25,9 +25,12 @@ test('uninstall verification preserves and inventories unowned data but refuses 
     writeFileSync(join(profile, 'save.dat'), 'player data');
     writeFileSync(join(outside, 'sentinel'), 'outside data');
     symlinkSync(outside, join(directory, 'linked'), 'junction');
+    symlinkSync(join(root, 'missing'), join(directory, 'dangling'), 'junction');
     const remaining = verifyWindowsUninstall(directory, files);
     assert.ok(remaining.some((entry) => entry.path === 'game/profile/save.dat' && entry.type === 'file'));
     assert.ok(remaining.some((entry) => entry.path === 'linked' && entry.type === 'link'));
+    assert.ok(remaining.some((entry) => entry.path === 'dangling' && entry.type === 'link'));
+    assert.deepEqual(remaining.map((entry) => entry.path), [...remaining.map((entry) => entry.path)].sort((a, b) => a.localeCompare(b)));
     assert.equal(remaining.some((entry) => entry.path.includes('sentinel')), false);
     assert.equal(readFileSync(join(profile, 'save.dat'), 'utf8'), 'player data');
     assert.equal(readFileSync(join(outside, 'sentinel'), 'utf8'), 'outside data');

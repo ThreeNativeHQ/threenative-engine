@@ -90,9 +90,14 @@ export function readPackageSummary(bytes: Uint8Array): IPackageSummary {
   const legacyFileVersion = view.getInt32(4, true);
   const legacyUE3Version = view.getInt32(8, true);
   const fileVersionUE4 = view.getInt32(12, true);
-  // FileVersionUE5 exists only from LegacyFileVersion −8 onward.
-  const fileVersionUE5 = legacyFileVersion <= -8 ? view.getInt32(16, true) : undefined;
+  // FileVersionUE5 exists only from LegacyFileVersion −8 onward, and it moves the licensee field.
   const licenseeOffset = legacyFileVersion <= -8 ? 20 : 16;
+  if (bytes.byteLength < licenseeOffset + 4) {
+    throw new UAssetError("TRUNCATED_PACKAGE", "Unreal package summary is truncated", {
+      byteLength: bytes.byteLength,
+    });
+  }
+  const fileVersionUE5 = legacyFileVersion <= -8 ? view.getInt32(16, true) : undefined;
   const licenseeVersion = view.getInt32(licenseeOffset, true);
 
   const afterLicensee = licenseeOffset + 4;
@@ -226,6 +231,7 @@ function walkSummary(bytes: Uint8Array, summary: IPackageSummary): IPackageLayou
   }
   if (legacyFileVersion > -7) reader.skip(4, "NumTextureAllocations");
   reader.skip(4, "AssetRegistryDataOffset");
+  reader.ensure(8, "BulkDataStartOffset");
   const bulkDataStartOffset = Number(
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigInt64(reader.pos, true),
   );

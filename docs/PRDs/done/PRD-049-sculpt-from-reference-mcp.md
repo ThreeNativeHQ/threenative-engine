@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status:** **SHIPPED — owner accepted the recorded release evidence and directed closure
 (2026-08-09).** `threenative-sculpt-mcp@0.1.0` is public on npm and its source is public at
-`github.com/jonit-dev/threenative-sculpt-mcp`. All three starters install and launch it beside
+`github.com/ThreeNativeHQ/threenative-sculpt-mcp`. All three starters install and launch it beside
 the asset MCP; the generated docs route conventional assets, trivial geometry, bespoke objects,
 landmarks, scenery, and environment set pieces to the correct path. A brand-new generated
 starter installed both servers from npm, returned exactly five sculpt tools plus 31
@@ -447,7 +447,7 @@ $ npm view threenative-sculpt-mcp version dist.tarball dist.shasum --json
 ```
 
 The separate public source repository is
-`https://github.com/jonit-dev/threenative-sculpt-mcp`; verified HEAD is `bcb9ec2`. The local
+`https://github.com/ThreeNativeHQ/threenative-sculpt-mcp`; verified HEAD is `bcb9ec2`. The local
 packed tarball SHA-256 is
 `cad6082d09fc2db69f8bb849654fc0b942884fc3b84c11d88a94add5d47bf614`.
 

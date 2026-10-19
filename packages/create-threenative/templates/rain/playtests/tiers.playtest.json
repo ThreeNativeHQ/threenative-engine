@@ -1,0 +1,194 @@
+{
+  "name": "rain-four-tiers-render-the-storm",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "warmupFrames": 30,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "click",
+      "at": { "element": { "id": "quality" } },
+      "waitTicks": 2,
+      "release": true
+    },
+    { "kind": "input", "press": "Escape", "waitTicks": 2, "release": true },
+    { "kind": "input", "press": "End", "waitTicks": 2, "release": true },
+    {
+      "kind": "input",
+      "press": "ArrowUp",
+      "label": "requested-high",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "high",
+      "waitTicks": 30,
+      "screenshot": "tier-high",
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "quality"
+        }
+      },
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Escape",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "ArrowUp",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "balanced",
+      "waitTicks": 20,
+      "screenshot": "tier-balanced",
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "ArrowUp",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "performance",
+      "waitTicks": 20,
+      "screenshot": "tier-low",
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "ArrowDown",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "ArrowDown",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "ArrowDown",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ultra",
+      "waitTicks": 20,
+      "screenshot": "tier-ultra",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "quality",
+        "atSteps": [
+          {
+            "equals": "high",
+            "label": "high"
+          },
+          {
+            "equals": "balanced",
+            "label": "balanced"
+          },
+          {
+            "equals": "performance",
+            "label": "performance"
+          },
+          {
+            "equals": "ultra",
+            "label": "ultra"
+          }
+        ],
+        "equals": "ultra"
+      },
+      {
+        "id": "state",
+        "path": "cloudPass.steps",
+        "atSteps": [
+          {
+            "equals": 64,
+            "label": "high"
+          },
+          {
+            "equals": 48,
+            "label": "balanced"
+          },
+          {
+            "equals": 32,
+            "label": "performance"
+          },
+          {
+            "equals": 88,
+            "label": "ultra"
+          }
+        ],
+        "equals": 88
+      },
+      {
+        "id": "state",
+        "path": "dropCount",
+        "atSteps": [
+          {
+            "equals": 9120,
+            "label": "high"
+          },
+          {
+            "equals": 9120,
+            "label": "balanced"
+          },
+          {
+            "equals": 4940,
+            "label": "performance"
+          },
+          {
+            "equals": 12160,
+            "label": "ultra"
+          }
+        ],
+        "equals": 12160
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 900,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

@@ -1,5 +1,6 @@
 import {
   Box3,
+  BufferAttribute,
   BufferGeometry,
   InterleavedBufferAttribute,
   Mesh,
@@ -7,7 +8,7 @@ import {
   Object3D,
   Vector3,
 } from "three";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TerrainTiles } from "../src/world-tiles.js";
 import { terrainValidationRequested } from "../src/world-validate.js";
 import { Heightfield } from "../src/world.js";
@@ -24,18 +25,178 @@ import { Heightfield } from "../src/world.js";
  */
 const bench = process.env.TN_BENCH === "1";
 
+/** The name a merged super-tile carries; an unmerged tile has no name of its own. */
+const BLOCK_PREFIX = "tn-terrain-block:";
+
 const sampleHeight = (x: number, z: number): number =>
   Math.sin(x * 0.017) * 12 + Math.cos(z * 0.013) * 9 + Math.sin((x + z) * 0.007) * 4;
 
-/** Every resident tile's rendered positions, so "unchanged" is a number and not a claim. */
+describe("TerrainTiles construction admission", () => {
+  afterEach(() => vi.restoreAllMocks());
+  function construction(sampler = sampleHeight, streamRadius = 0): TerrainTiles {
+    return new TerrainTiles({
+      mergeTiles: false,
+      residentByteBudget: 100_000_000,
+      residentTileBudget: (streamRadius * 2 + 1) ** 2,
+      sampleHeight: sampler,
+      streamRadius,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 65,
+      tileSize: 64,
+    });
+  }
+
+  it("bounds even the progress floor instead of forcing a whole high-resolution tile", () => {
+    let samples = 0;
+    const tiles = construction((x, z) => {
+      samples += 1;
+      return sampleHeight(x, z);
+    });
+    tiles.follow({ x: 0, z: 0 }, { admit: () => false });
+    expect(samples).toBeLessThanOrEqual(256);
+    expect(tiles.residentTileCount).toBe(0);
+    expect(tiles.deferredAdmissions).toBe(1);
+    tiles.dispose();
+  });
+
+  it("omits an absent pending construction from telemetry", () => {
+    const tiles = construction();
+    try {
+      tiles.follow({ x: 0, z: 0 });
+      expect(tiles.debug()).not.toHaveProperty("pendingConstruction");
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("bounds grid and LOD error reads while converging to identical geometry", () => {
+    const synchronous = construction();
+    synchronous.follow({ x: 0, z: 0 });
+    const chunked = construction();
+    const heightReads = vi.spyOn(Heightfield.prototype, "heightAt");
+    const vertexReads = vi.spyOn(BufferAttribute.prototype, "getY");
+    let frames = 0;
+    while (chunked.residentTileCount === 0 && frames < 2000) {
+      heightReads.mockClear();
+      vertexReads.mockClear();
+      chunked.follow({ x: 0, z: 0 }, { admit: () => false });
+      expect(heightReads.mock.calls.length).toBeLessThanOrEqual(256);
+      expect(vertexReads.mock.calls.length).toBeLessThanOrEqual(2048);
+      frames += 1;
+    }
+    expect(frames).toBeGreaterThan(1);
+    expect(chunked.residentTileCount).toBe(1);
+    heightReads.mockRestore();
+    vertexReads.mockRestore();
+    const expected = synchronous.getTile("0:0");
+    const actual = chunked.getTile("0:0");
+    expect(actual?.field.heights).toEqual(expected?.field.heights);
+    expect(actual?.lodLevel).toBe(expected?.lodLevel);
+    expect(actual?.skirtVertexCount).toBe(expected?.skirtVertexCount);
+    const meshes = residentLevelMeshes(synchronous);
+    for (const [index, mesh] of residentLevelMeshes(chunked).entries()) {
+      const reference = meshes[index];
+      expect(mesh.geometry.getAttribute("position").array).toEqual(
+        reference?.geometry.getAttribute("position").array,
+      );
+      expect(mesh.geometry.getAttribute("normal").array).toEqual(
+        reference?.geometry.getAttribute("normal").array,
+      );
+      expect(mesh.geometry.getIndex()?.array).toEqual(reference?.geometry.getIndex()?.array);
+      expect(mesh.geometry.boundingBox).toEqual(reference?.geometry.boundingBox);
+      expect(mesh.geometry.boundingSphere).toEqual(reference?.geometry.boundingSphere);
+    }
+    expect(chunked.residentBytes).toBe(synchronous.residentBytes);
+    chunked.dispose();
+    synchronous.dispose();
+  });
+
+  it("cancels unfinished geometry when the camera jumps or the world is disposed", () => {
+    const tiles = construction();
+    const disposed = vi.spyOn(BufferGeometry.prototype, "dispose");
+    const created = vi.spyOn(BufferGeometry.prototype, "setIndex");
+    const budget = { admit: () => false };
+    const partiallyBuild = (x: number): void => {
+      created.mockClear();
+      for (let frame = 0; frame < 1000 && created.mock.calls.length === 0; frame += 1)
+        tiles.follow({ x, z: 0 }, budget);
+      expect(created).toHaveBeenCalled();
+      expect(tiles.residentTileCount).toBe(0);
+    };
+    // A fine-level geometry exists, but the remaining LOD work has not made its tile resident.
+    partiallyBuild(0);
+    expect(tiles.residentTileCount).toBe(0);
+    tiles.follow({ x: 256, z: 0 }, budget);
+    expect(disposed).toHaveBeenCalled();
+    partiallyBuild(256);
+    const before = disposed.mock.calls.length;
+    tiles.dispose();
+    expect(disposed.mock.calls.length).toBeGreaterThan(before);
+    expect(tiles.children).toHaveLength(0);
+    expect(tiles.residentTileCount).toBe(0);
+    disposed.mockRestore();
+  });
+
+  it("finishes selected pending tiles when small camera motion changes nearest priority", () => {
+    const tiles = construction(sampleHeight, 1);
+    const budget = { admit: () => false };
+    for (let frame = 0; frame < 2000 && tiles.residentTileCount === 0; frame += 1)
+      tiles.follow({ x: 0, z: 0 }, budget);
+    expect(tiles.getTile("0:0")).toBeDefined();
+    for (let frame = 0; frame < 4000 && tiles.residentTileCount < 9; frame += 1)
+      tiles.follow({ x: frame % 2 === 0 ? 0.1 : -0.1, z: 0 }, budget);
+    expect(tiles.residentTileCount).toBe(9);
+    expect(tiles.deferredAdmissions).toBe(0);
+    tiles.dispose();
+  });
+
+  it.skipIf(!bench)("reports CPU construction slices for the same terrain and camera", () => {
+    const tiles = construction();
+    const slices: number[] = [];
+    for (let frame = 0; frame < 2000; frame += 1) {
+      const start = performance.now();
+      tiles.follow(
+        { x: 0, z: 0 },
+        {
+          admit(work) {
+            if (performance.now() - start >= 2) return false;
+            work();
+            return true;
+          },
+        },
+      );
+      slices.push(performance.now() - start);
+      if (tiles.residentTileCount === 1) break;
+    }
+    console.log(
+      JSON.stringify({ terrainConstruction: { frames: slices.length, slicesMs: slices } }),
+    );
+    expect(tiles.residentTileCount).toBe(1);
+    tiles.dispose();
+  });
+});
+
+/**
+ * Every position the main pass submits for terrain levels, so "unchanged" is a number and not a
+ * claim. Keyed by the mesh that carries it: a merged super-tile under its own block name, a tile
+ * that draws its own level under the tile key.
+ */
 function renderedPositions(tiles: TerrainTiles): Record<string, Float32Array> {
   const rendered: Record<string, Float32Array> = {};
+  const record = (key: string, mesh: Mesh): void => {
+    rendered[key] = (mesh.geometry.getAttribute("position").array as Float32Array).slice();
+  };
+  // A named child is a merged super-tile; the unnamed ones are the stitch bridges, which are not
+  // terrain levels and were never part of this record.
+  for (const child of tiles.children)
+    if (child instanceof Mesh && child.name.startsWith(BLOCK_PREFIX)) record(child.name, child);
   for (const key of tiles.residentKeys) {
     const tile = tiles.getTile(key);
     if (tile === undefined) throw new Error(`Missing resident tile '${key}'.`);
-    const mesh = tile.lod.levels.find(({ object }) => object.visible)?.object;
-    if (!(mesh instanceof Mesh)) throw new Error(`Missing visible LOD for tile '${key}'.`);
-    rendered[key] = (mesh.geometry.getAttribute("position").array as Float32Array).slice();
+    for (const level of tile.lod.levels) {
+      const mesh = level.object;
+      if (mesh instanceof Mesh && mesh.visible) record(key, mesh);
+    }
   }
   return rendered;
 }
@@ -64,12 +225,26 @@ function ring(
   for (let frame = 0; frame < 4; frame += 1) tiles.process();
   tiles.follow({ x: 0, z: 0 });
   tiles.process();
+  // A third settle: the super-tile blocks rebuild one per frame, so the ring is only settled once
+  // the last dirty block is built.
+  let rebuilds = tiles.terrainTiles.rebuilds;
+  for (let frame = 0; frame < 64; frame += 1) {
+    tiles.follow({ x: 0, z: 0 });
+    tiles.process();
+    if (tiles.terrainTiles.rebuilds === rebuilds) break;
+    rebuilds = tiles.terrainTiles.rebuilds;
+  }
   return tiles;
 }
 
-/** A settled ring's stitch bridge, which is the only child of the tiles group that is a bare mesh. */
+/**
+ * A settled ring's stitch bridge: the only child of the tiles group that is a bare, unnamed mesh,
+ * where a merged super-tile is a bare mesh with a block name.
+ */
 function bridgeOf(tiles: TerrainTiles): Mesh {
-  const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+  const bridge = tiles.children.find(
+    (child): child is Mesh => child instanceof Mesh && !child.name.startsWith(BLOCK_PREFIX),
+  );
   if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
   return bridge;
 }
@@ -113,7 +288,146 @@ function expectContainsEveryVertex(mesh: Mesh): void {
   expect(mesh.geometry.boundingBox?.containsBox(box)).toBe(true);
 }
 
+describe("TerrainTiles blend-frame cost", () => {
+  function blendingTile(validate = false): TerrainTiles {
+    const tiles = new TerrainTiles({
+      mergeTiles: false,
+      validate,
+      residentByteBudget: 2_000_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 65,
+      tileSize: 64,
+      lodFactors: [1, 2],
+      lodDistances: [8],
+    });
+    tiles.follow({ x: 0, z: 0 });
+    return tiles;
+  }
+
+  it("retains the validating CPU reference's field reads for one blending 65×65 tile", () => {
+    const tiles = blendingTile(true);
+    try {
+      tiles.follow({ x: 9, z: 0 });
+      expect(tiles.residentKeys).toEqual(["0:0"]);
+      expect(tiles.blendingTiles).toBe(1);
+      const heights = vi.spyOn(Heightfield.prototype, "heightAt");
+      const normals = vi.spyOn(Heightfield.prototype, "normalAt");
+      try {
+        tiles.process();
+        expect(normals).toHaveBeenCalledTimes(65 * 65);
+        expect(heights).toHaveBeenCalledTimes(6 * 65 * 65);
+      } finally {
+        heights.mockRestore();
+        normals.mockRestore();
+      }
+      expect(tiles.blendingTiles).toBe(1);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("reads no field heights or normals for a GPU blend frame", () => {
+    const tiles = blendingTile();
+    try {
+      tiles.follow({ x: 9, z: 0 });
+      const heights = vi.spyOn(Heightfield.prototype, "heightAt");
+      const normals = vi.spyOn(Heightfield.prototype, "normalAt");
+      try {
+        tiles.process();
+        expect(tiles.blendingTiles).toBe(1);
+        expect(heights).not.toHaveBeenCalled();
+        expect(normals).not.toHaveBeenCalled();
+      } finally {
+        heights.mockRestore();
+        normals.mockRestore();
+      }
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it.skipIf(!bench)("times one blending 65×65 tile without spies", () => {
+    const tiles = blendingTile();
+    const timings: number[] = [];
+    try {
+      for (let frame = 0; frame < 120; frame += 1) {
+        tiles.follow({ x: frame % 2 === 0 ? 9 : 0, z: 0 });
+        expect(tiles.blendingTiles).toBe(1);
+        const started = performance.now();
+        tiles.process();
+        const elapsed = performance.now() - started;
+        if (frame >= 20) timings.push(elapsed);
+        tiles.process();
+        tiles.process();
+        expect(tiles.blendingTiles).toBe(0);
+      }
+      const mean = timings.reduce((total, ms) => total + ms, 0) / timings.length;
+      timings.sort((a, b) => a - b);
+      console.log(
+        `TerrainTiles blend 65×65: ${mean.toFixed(3)} ms mean, ` +
+          `${timings[49]?.toFixed(3)} ms median, ${timings[98]?.toFixed(3)} ms p99, ` +
+          `${timings.length} frames, 0 normalAt + 0 heightAt per GPU blend tile; ` +
+          `gate >=0.5 ms: ${mean >= 0.5}`,
+      );
+      expect(mean).toBeGreaterThan(0);
+    } finally {
+      tiles.dispose();
+    }
+  });
+});
+
 describe("TerrainTiles settled-frame cost", () => {
+  it("skips the neighbor LOD scan when follow changed no tile or target", () => {
+    const tiles = ring(2, 17, 32, 25, 64_000_000);
+    try {
+      const before = renderedPositions(tiles);
+      let lookups = 0;
+      const original = Map.prototype.get;
+      const get = vi.spyOn(Map.prototype, "get").mockImplementation(function (
+        this: Map<unknown, unknown>,
+        key: unknown,
+      ) {
+        if (this.size === 25) lookups += 1;
+        return original.call(this, key);
+      });
+      tiles.follow({ x: 0, z: 0 });
+      get.mockRestore();
+      expect(lookups).toBe(25);
+      tiles.process();
+      expect(renderedPositions(tiles)).toEqual(before);
+    } finally {
+      vi.restoreAllMocks();
+      tiles.dispose();
+    }
+  });
+
+  it("reads the active blend count without walking the resident ring", () => {
+    const tiles = ring(2, 17, 32, 25, 64_000_000);
+    try {
+      const before = renderedPositions(tiles);
+      const values = vi.spyOn(Map.prototype, "values");
+      expect(tiles.blendingTiles).toBe(0);
+      expect(values).not.toHaveBeenCalled();
+      values.mockRestore();
+      tiles.process();
+      expect(renderedPositions(tiles)).toEqual(before);
+      for (let frame = 1; frame <= 60; frame += 1) {
+        tiles.follow({ x: frame * 0.3, z: 0 });
+        tiles.process();
+      }
+      for (let frame = 0; frame < 4; frame += 1) tiles.process();
+      expect(tiles.blendingTiles).toBe(0);
+      tiles.dispose();
+      expect(tiles.blendingTiles).toBe(0);
+    } finally {
+      vi.restoreAllMocks();
+      tiles.dispose();
+    }
+  });
+
   // A still camera must not rebuild per-sample seam coverage. `bridgeCoverageAt` revalidated the
   // whole bridge topology and re-derived three world matrices *for every sample of every pair*,
   // which is what turned a 25-tile ring into a 289-tile frame cost.
@@ -321,7 +635,6 @@ describe("TerrainTiles settled-frame cost", () => {
         attributeReads += attributes.mock.calls.length - before;
       }
       attributes.mockRestore();
-      // eslint-disable-next-line no-console
       console.log(
         `TerrainTiles 6 s walk: ${perCall.toFixed(3)} ms per follow()+process(), ` +
           `${(attributeReads / frames).toFixed(0)} getAttribute a frame, ` +
@@ -353,7 +666,6 @@ describe("TerrainTiles settled-frame cost", () => {
         tiles.process();
       }
       const perCall = (performance.now() - started) / 100;
-      // eslint-disable-next-line no-console
       console.log(
         `TerrainTiles settled 289-tile ring: ${perCall.toFixed(3)} ms per follow()+process()`,
       );

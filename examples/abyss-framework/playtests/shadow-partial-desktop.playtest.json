@@ -1,0 +1,197 @@
+{
+  "name": "shadow-partial-desktop",
+  "schemaVersion": 1,
+  "target": "desktop",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 60,
+  "artifacts": {
+    "screenshots": true
+  },
+  "steps": [
+    {
+      "label": "proof-runs",
+      "release": true,
+      "timeoutMs": 120000,
+      "waitForResource": {
+        "equals": 1,
+        "id": "state",
+        "path": "shadowPartialDone"
+      }
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "component": "shadowPartialAdmissionPartial",
+        "entity": "world",
+        "equals": 1,
+        "allowTrivial": "1 only when every redraw of the step drew fewer pages than a whole level."
+      },
+      {
+        "component": "shadowPartialAdmissionAdmission",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "The caster arrived through childadded, so the redraw counts as an admission."
+      },
+      {
+        "component": "shadowPartialAdmissionChanged",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "Texels that differ from the previous map: the step drew something."
+      },
+      {
+        "component": "shadowPartialAdmissionMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Texels that differ between the partial redraw and the whole one."
+      },
+      {
+        "component": "shadowPartialMixedPartial",
+        "entity": "world",
+        "equals": 1,
+        "allowTrivial": "1 only when every redraw of the step drew fewer pages than a whole level."
+      },
+      {
+        "component": "shadowPartialMixedEviction",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "A removal rode in the step, so the redraw counts as an eviction."
+      },
+      {
+        "component": "shadowPartialMixedChanged",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "Texels that differ from the previous map: the step drew something."
+      },
+      {
+        "component": "shadowPartialMixedMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Texels that differ between the partial redraw and the whole one."
+      },
+      {
+        "component": "shadowPartialEvictionPartial",
+        "entity": "world",
+        "equals": 1,
+        "allowTrivial": "1 only when every redraw of the step drew fewer pages than a whole level."
+      },
+      {
+        "component": "shadowPartialEvictionChanged",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "Texels that differ from the previous map: the removal changed the depth."
+      },
+      {
+        "component": "shadowPartialEvictionMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Texels that differ between the partial redraw and the whole one."
+      },
+      {
+        "component": "shadowPartialRestoredMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Texels that differ between the first whole map and the map after both casters left."
+      },
+      {
+        "component": "shadowPartialAdmissionColorMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Actual GPU RGBA bytes after the partial redraw must match the stock whole-map clear and redraw."
+      },
+      {
+        "component": "shadowPartialMixedColorMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Actual GPU RGBA bytes after the partial redraw must match the stock whole-map clear and redraw."
+      },
+      {
+        "component": "shadowPartialEvictionColorMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Actual GPU RGBA bytes after the partial redraw must match the stock whole-map clear and redraw."
+      },
+      {
+        "component": "shadowPartialEvictionTransmittedTexels",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "The GPU color attachment held red transmitted-shadow texels before the caster was evicted."
+      },
+      {
+        "component": "shadowPartialAdmissionMatrixMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Receiver matrix after the partial redraw must equal the forced whole-map receiver matrix."
+      },
+      {
+        "component": "shadowPartialMixedMatrixMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Receiver matrix after the partial redraw must equal the forced whole-map receiver matrix."
+      },
+      {
+        "component": "shadowPartialEvictionMatrixMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Receiver matrix after the partial redraw must equal the forced whole-map receiver matrix."
+      },
+      {
+        "component": "shadowPartialTravelledMoves",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "No movement redraw can satisfy the depth-origin fallback proof."
+      },
+      {
+        "component": "shadowPartialTravelledWindowSteps",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "The snapped page windows must remain stationary throughout light-axis travel and admission."
+      },
+      {
+        "component": "shadowPartialTravelledDepthChanged",
+        "entity": "world",
+        "equals": 1,
+        "allowTrivial": "The uploaded receiver depth offset must change, proving the retained map's encoding became invalid."
+      },
+      {
+        "component": "shadowPartialTravelledPartial",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "0 is the whole-level fallback: the camera moved along the sun, so the map's depth origin moved and every texel the redraw kept was encoded from the old camera. Anything else is 1."
+      },
+      {
+        "component": "shadowPartialTravelledAdmission",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "The caster arrived through childadded, so the redraw counts as an admission."
+      },
+      {
+        "component": "shadowPartialTravelledChanged",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "Texels that differ from the previous map: the step drew something."
+      },
+      {
+        "component": "shadowPartialTravelledMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Texels that differ between the partial redraw and the whole one."
+      },
+      {
+        "component": "shadowPartialTravelledColorMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Actual GPU RGBA bytes after the partial redraw must match the stock whole-map clear and redraw."
+      },
+      {
+        "component": "shadowPartialTravelledMatrixMismatch",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "Receiver matrix after the partial redraw must equal the forced whole-map receiver matrix."
+      }
+    ]
+  }
+}

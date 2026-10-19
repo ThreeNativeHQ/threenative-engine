@@ -39,7 +39,7 @@ not own = **9 → HIGH mode.**
 repository, the sources and their licences, and the risks. The execution is six sibling PRDs
 indexed in [README.md](./README.md), each owning one phase and its decline condition.
 
-Sibling context: the [feature-mining batch](../../feature-mining/README.md), whose correction about
+Sibling context: the feature-mining batch, whose correction about
 `GPUParticles3D` — *mechanism is not the look* — is the rule this PRD lives or dies by.
 
 ## 1. Why this is proposed at all

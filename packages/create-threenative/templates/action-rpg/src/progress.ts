@@ -29,7 +29,3 @@ export function loadProgress<T extends Record<string, unknown>>(initial: T): T {
 export function saveProgress<T extends Record<string, unknown>>(store: IReadableStore<T>): void {
   storage()?.setItem(SAVE_KEY, JSON.stringify(store.getState()));
 }
-
-export function clearProgress(): void {
-  storage()?.removeItem(SAVE_KEY);
-}

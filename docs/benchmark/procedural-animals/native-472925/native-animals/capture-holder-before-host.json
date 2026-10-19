@@ -1,0 +1,5 @@
+{
+  "command": "animal outer shared lease bash -c cat /tmp/threenative-playtest-capture/lock/holder.json > \"$2/capture-holder-before-host.json\"; exec bash \"$1\" \"$3\" \"$2\" _ /home/joao/Documents/Codex/2026-10-05/task-4/animal-native-launch-prep/native-scenario-child.sh /home/joao/Documents/Codex/2026-10-05/task-4/animal-platform-runs/attempt.vRlqpqSr/native-animals animals",
+  "pid": 3439387,
+  "startedAt": "2026-10-06T15:20:52.535Z"
+}

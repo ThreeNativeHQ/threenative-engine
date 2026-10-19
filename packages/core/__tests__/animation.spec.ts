@@ -5,16 +5,19 @@ import {
   BufferGeometry,
   Float32BufferAttribute,
   Group,
+  Matrix4,
   MeshBasicMaterial,
   NumberKeyframeTrack,
   Object3D,
   PropertyBinding,
+  QuaternionKeyframeTrack,
   Skeleton,
   SkinnedMesh,
   VectorKeyframeTrack,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
+import { RigPreparation } from "../src/rig-preparation.js";
 import { SkeletalMesh3D } from "../src/skeletal-mesh.js";
 
 describe("AnimationPlayer", () => {
@@ -82,6 +85,151 @@ describe("AnimationPlayer", () => {
     expect(weightOf(hit)).toBeCloseTo(1, 3);
     expect(total()).toBeCloseTo(1, 3);
     expect(player.current).toBe("hit");
+  });
+
+  it("preserves weight and phase when returning to a still-contributing loop", () => {
+    const root = new Object3D();
+    const idle = new AnimationClip("idle", 1, [
+      new NumberKeyframeTrack(".position[x]", [0, 1], [1, 2]),
+    ]);
+    const run = new AnimationClip("run", 1, [
+      new NumberKeyframeTrack(".position[x]", [0, 1], [3, 4]),
+    ]);
+    const player = new AnimationPlayer({ clips: [idle, run], root, strideSync: false });
+    const idleAction = player.mixer.clipAction(idle);
+    const runAction = player.mixer.clipAction(run);
+    player.play("idle");
+    player.update(0.1);
+    player.play("run", { fade: 0.4 });
+    player.update(0.2);
+    player.update(0); // sample the current blend without advancing either clip
+    const poseBefore = root.position.x;
+    const phaseBefore = idleAction.time;
+
+    player.play("idle", { fade: 0.4 });
+
+    expect(idleAction.getEffectiveWeight()).toBeCloseTo(0.5, 6);
+    expect(idleAction.time).toBe(phaseBefore);
+    player.update(0);
+    expect(root.position.x).toBeCloseTo(poseBefore, 6);
+    player.update(0.2);
+    expect(idleAction.getEffectiveWeight()).toBeCloseTo(0.75, 6);
+    expect(runAction.getEffectiveWeight()).toBeCloseTo(0.25, 6);
+    player.update(0.2);
+    expect(idleAction.getEffectiveWeight()).toBe(1);
+    expect(runAction.isScheduled()).toBe(false);
+    player.dispose();
+  });
+
+  it("keeps rapid idle/walk/run/idle requests normalized before a frame advances", () => {
+    const clips = ["idle", "walk", "run"].map((name) => new AnimationClip(name, 1, []));
+    const player = new AnimationPlayer({ clips, root: new Object3D() });
+    player.play("idle");
+    for (const name of ["walk", "run", "idle", "run", "walk", "idle"]) {
+      player.play(name, { fade: 0.4 });
+      const weights = clips.map((clip) => player.mixer.clipAction(clip).getEffectiveWeight());
+      expect(weights.every((weight) => Number.isFinite(weight) && weight >= 0)).toBe(true);
+      expect(weights.reduce((sum, weight) => sum + weight, 0)).toBeCloseTo(1, 6);
+    }
+    player.update(0.4);
+    expect(player.mixer.clipAction(player.clip("idle")).getEffectiveWeight()).toBe(1);
+    player.dispose();
+  });
+
+  it("starts a requested fade at full weight when no actions are scheduled", () => {
+    const root = new Object3D();
+    const clips = ["idle", "walk", "run"].map(
+      (name, index) =>
+        new AnimationClip(name, 1, [
+          new NumberKeyframeTrack(".position[x]", [0, 1], [index + 1, index + 1]),
+        ]),
+    );
+    const player = new AnimationPlayer({ clips, root, strideSync: false });
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      player.play("walk", { fade: 0.4 });
+      player.update(0);
+      expect(root.position.x).toBe(2);
+      expect(player.mixer.stats.actions.inUse).toBe(1);
+      player.stop();
+      expect(player.mixer.stats.actions.inUse).toBe(0);
+    }
+    player.dispose();
+    expect(player.mixer.stats.actions.total).toBe(0);
+  });
+
+  it.each(["once", "loop"] as const)(
+    "restarts a still-contributing clip when explicitly changing it to %s",
+    (mode) => {
+      const root = new Object3D();
+      const first = new AnimationClip("first", 1, [
+        new NumberKeyframeTrack(".position[x]", [0, 1], [1, 2]),
+      ]);
+      const other = new AnimationClip("other", 1, []);
+      const player = new AnimationPlayer({ clips: [first, other], root, strideSync: false });
+      player.play("first", { mode: mode === "loop" ? "once" : "loop" });
+      player.update(0.1);
+      player.play("other", { fade: 0.4 });
+      player.update(0.2);
+      player.play("first", { fade: 0.4, mode });
+      expect(player.mixer.clipAction(first).time).toBe(0);
+      expect(player.mixer.clipAction(first).getEffectiveWeight()).toBeCloseTo(0.5, 6);
+      player.update(1.1);
+      expect(player.finished).toBe(mode === "once");
+      player.dispose();
+    },
+  );
+
+  it("restarts a loop on an immediate cut and after its previous fade has finished", () => {
+    const root = new Object3D();
+    const clips = ["idle", "run"].map((name) => new AnimationClip(name, 1, []));
+    const player = new AnimationPlayer({ clips, root });
+    for (const elapsed of [0.2, 0.4]) {
+      player.play("idle");
+      player.update(0.1);
+      player.play("run", { fade: 0.4 });
+      player.update(elapsed);
+      player.play("idle", { fade: elapsed === 0.2 ? 0 : 0.4 });
+      expect(player.mixer.clipAction(player.clip("idle")).time).toBe(0);
+      player.stop();
+    }
+    player.dispose();
+  });
+
+  it("keeps deterministic sampled bone poses through repeated rapid reversals", () => {
+    const trace = () => {
+      const bone = new Bone();
+      bone.name = "Hip";
+      const root = new Group();
+      root.add(bone);
+      const clips = ["idle", "walk", "run"].map(
+        (name, index) =>
+          new AnimationClip(name, 1, [
+            new NumberKeyframeTrack("Hip.position[x]", [0, 0.5, 1], [index, index + 1, index]),
+          ]),
+      );
+      const player = new AnimationPlayer({ clips, root, strideSync: false });
+      player.play("idle");
+      const poses: number[] = [];
+      for (const name of ["walk", "run", "idle", "run", "walk", "idle"]) {
+        player.update(0.1);
+        player.update(0);
+        const before = bone.position.x;
+        player.play(name, { fade: 0.4 });
+        player.update(0);
+        expect(bone.position.x).toBeCloseTo(before, 6);
+        poses.push(bone.position.x);
+        const weights = clips.map((clip) => player.mixer.clipAction(clip).getEffectiveWeight());
+        expect(weights.every((weight) => Number.isFinite(weight) && weight >= 0)).toBe(true);
+        expect(weights.reduce((sum, weight) => sum + weight, 0)).toBeCloseTo(1, 6);
+      }
+      player.update(0.4);
+      player.update(0);
+      expect(player.mixer.stats.actions.inUse).toBe(1);
+      player.dispose();
+      expect(player.mixer.stats.actions.total).toBe(0);
+      return poses;
+    };
+    expect(trace()).toEqual(trace());
   });
 
   it("should ease the blend rather than ramp it linearly", () => {
@@ -724,6 +872,112 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
       ),
     ]);
 
+  it("calibrates through owned world snapshots and restores animated transforms without cloning aliases", () => {
+    const root = new Group();
+    const foot = new Bone();
+    foot.name = "Foot";
+    root.add(foot);
+    root.position.set(7, 3, 5);
+    foot.position.set(0.2, 0.4, 0.1);
+    foot.rotation.set(0.2, 0.3, 0.4);
+    foot.scale.set(2, 3, 4);
+    const clip = plantedWalk();
+    clip.tracks.push(
+      new QuaternionKeyframeTrack("Foot.quaternion", [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]),
+      new VectorKeyframeTrack("Foot.scale", [0, 1], [1, 1, 1, 2, 2, 2]),
+    );
+    const player = new AnimationPlayer({ root, clips: [clip] });
+    player.play("walk");
+    player.mixer.update(0.2);
+    const originals = [root, foot].map((object) => ({
+      object,
+      position: object.position,
+      quaternion: object.quaternion,
+      scale: object.scale,
+      values: [object.position.toArray(), object.quaternion.toArray(), object.scale.toArray()],
+    }));
+    const copies = [root, foot].map((object) => {
+      const copy = vi.fn((target: Matrix4) => target.copy(object.matrixWorld));
+      Object.assign(object, { __tnCopyMatrixWorld: copy });
+      return copy;
+    });
+    const clones = originals.flatMap(({ position, quaternion, scale }) => [
+      vi.spyOn(position, "clone"),
+      vi.spyOn(quaternion, "clone"),
+      vi.spyOn(scale, "clone"),
+    ]);
+    try {
+      expect(player.stride.clipGroundSpeed).toBeCloseTo(1, 1);
+      for (const copy of copies) expect(copy).toHaveBeenCalledTimes(65);
+      for (const clone of clones) expect(clone).not.toHaveBeenCalled();
+      for (const { object, position, quaternion, scale, values } of originals) {
+        expect(object.position).toBe(position);
+        expect(object.quaternion).toBe(quaternion);
+        expect(object.scale).toBe(scale);
+        expect([position.toArray(), quaternion.toArray(), scale.toArray()]).toEqual(values);
+      }
+    } finally {
+      for (const clone of clones) clone.mockRestore();
+    }
+  });
+
+  it("reads the sampled rig's world positions without re-walking each bone's ancestors", () => {
+    // One world update per sampled frame covers the rig; a per-bone walk costs a native back end
+    // one engine call per ancestor per bone per frame.
+    const { body, player } = character({ clips: [plantedWalk()] });
+    const rig = new Set<Object3D>();
+    (body.children[0] as Object3D).traverse((object) => rig.add(object));
+    const walked: Object3D[] = [];
+    const update = Object3D.prototype.updateWorldMatrix;
+    const spy = vi.spyOn(Object3D.prototype, "updateWorldMatrix").mockImplementation(function (
+      this: Object3D,
+      ...args
+    ) {
+      if (rig.has(this)) walked.push(this);
+      return update.apply(this, args);
+    });
+    try {
+      player.play("walk");
+      player.update(1 / 60);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(player.stride.clipGroundSpeed).toBeCloseTo(1, 1);
+    expect(walked).toEqual([]);
+  });
+
+  it("measures through an ancestor above the rig that moved since its last world update", () => {
+    // `stride` is readable the moment a clip plays, before any update has refreshed the ancestors.
+    const speedUnder = (stale: boolean) => {
+      const { body, player } = character({ clips: [plantedWalk()] });
+      const carrier = new Group();
+      carrier.add(body);
+      if (stale) carrier.updateMatrixWorld(true);
+      carrier.scale.setScalar(2);
+      carrier.position.set(5, 1, -3);
+      if (!stale) carrier.updateMatrixWorld(true);
+      player.play("walk");
+      return player.stride.clipGroundSpeed;
+    };
+    const fresh = speedUnder(false);
+    expect(fresh).toBeGreaterThan(1.9);
+    expect(speedUnder(true)).toBeCloseTo(fresh, 6);
+  });
+
+  it("preserves the root's exact Euler while measuring a foot-plant stride", () => {
+    const root = new Object3D();
+    const foot = new Object3D();
+    foot.name = "Foot";
+    root.add(foot);
+    root.rotation.set(0, Math.PI, 0);
+    const player = new AnimationPlayer({ root, clips: [plantedWalk()] });
+    player.play("walk");
+    player.update(1 / 60);
+
+    expect(player.stride.clipGroundSpeed).toBeGreaterThan(0);
+    expect(root.rotation.toArray()).toEqual([0, Math.PI, 0, "XYZ"]);
+  });
+
   it("matches an in-place walk cycle from the ground its planted foot sweeps", () => {
     const { body, player } = character({ clips: [plantedWalk()] });
     player.play("walk");
@@ -832,6 +1086,31 @@ describe("SkeletalMesh3D shared preparation reuse", () => {
     } finally {
       setTime.mockRestore();
     }
+  });
+
+  it("reads shared stride scale from a native snapshot without exposing the live world matrix", () => {
+    const { root } = fixture();
+    const matrix = new Matrix4().makeScale(2, 2, 2);
+    const body = Object.assign(new Group(), {
+      __tnCopyMatrixWorld(target: Matrix4): void {
+        expect(this).toBe(body);
+        target.copy(matrix);
+      },
+    });
+    body.add(root);
+    const preparation = new RigPreparation();
+    vi.spyOn(preparation, "stride").mockReturnValue({ groundSpeed: 1, inPlace: true });
+    const player = new AnimationPlayer({ root, clips: [inPlaceClip()], preparation });
+    vi.spyOn(body, "updateWorldMatrix").mockImplementation(() => {});
+    vi.spyOn(body, "getWorldScale").mockImplementation((target) => target.set(2, 2, 2));
+    Object.defineProperty(body, "matrixWorld", {
+      get() {
+        throw new Error("Live native world matrix must not escape");
+      },
+    });
+
+    player.play("walk");
+    expect(player.stride.clipGroundSpeed).toBe(2);
   });
 
   it("keeps per-instance measurement under a non-uniform world scale", () => {
@@ -965,5 +1244,52 @@ describe("SkeletalMesh3D shared preparation reuse", () => {
     expect(
       () => new SkeletalMesh3D({ source: root, clips: [alien], requiredClips: ["alien"] }),
     ).toThrow(/binds 0 tracks/);
+  });
+});
+
+describe("AnimationPlayer starting pose", () => {
+  function riggedPlayer(): { bone: Bone; player: AnimationPlayer } {
+    const root = new Group();
+    const bone = new Bone();
+    bone.name = "arm";
+    bone.position.set(0, 0, 0);
+    root.add(bone);
+    // The clip's first key is not the bind pose, so a skeleton still at bind is observable.
+    const idle = new AnimationClip("idle", 1, [
+      new VectorKeyframeTrack("arm.position", [0, 1], [1, 2, 3, 1, 2, 3]),
+    ]);
+    return { bone, player: new AnimationPlayer({ clips: [idle], root }) };
+  }
+
+  it("should pose the skeleton from the clip as soon as the clip starts, before any update", () => {
+    const { bone, player } = riggedPlayer();
+
+    player.play("idle");
+
+    expect(bone.position.toArray()).toEqual([1, 2, 3]);
+    expect(player.posed).toBe(true);
+  });
+
+  it("should pose from a weighted blend before any update", () => {
+    const { bone, player } = riggedPlayer();
+
+    player.playWeighted([{ clip: "idle", weight: 1 }]);
+
+    expect(bone.position.toArray()).toEqual([1, 2, 3]);
+  });
+
+  it("should leave the bind pose, and say so, when no clip has played", () => {
+    const { bone, player } = riggedPlayer();
+
+    expect(bone.position.toArray()).toEqual([0, 0, 0]);
+    expect(player.posed).toBe(false);
+  });
+
+  it("should not advance the clip while posing it", () => {
+    const { player } = riggedPlayer();
+
+    player.play("idle");
+
+    expect(player.mixer.time).toBe(0);
   });
 });

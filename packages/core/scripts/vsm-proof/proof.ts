@@ -16,6 +16,22 @@ import { VirtualShadowNode } from "../../src/render/virtual-shadow.js";
 const params = new URLSearchParams(location.search);
 const mode = params.get("mode") ?? "virtual";
 const clip = params.get("clip");
+// `track` picks how the virtual arm learns the ball moves: `manual` calls `trackCaster` (the
+// original arm), `auto` calls nothing and leaves it to the node, `pinned` calls `pinStatic`, which
+// is the node before PRD-572 for an untracked caster. `move=1` moves the ball in the stock arm too,
+// and `step=1` hands each frame to the runner so it can screenshot every one.
+const track = params.get("track") ?? "manual";
+const stepped = params.get("step") === "1";
+const moves = mode === "virtual" || params.get("move") === "1";
+// `lead=N` holds the ball still for N frames first, so every level has baked it in place before
+// it moves: the stale shadow a missed mover leaves is the thing under test.
+const lead = Number(params.get("lead") ?? "0");
+// `settle=N` keeps the frame loop going for N frames after the ball's last move, so a caster the
+// node demoted can be read in the cached levels again; `staticAfter` shortens the quiet-frame count
+// that demotion waits for, and `mover` sets the mover map's texels per edge.
+const settle = Number(params.get("settle") ?? "0");
+const staticAfter = params.get("staticAfter");
+const moverSize = params.get("mover");
 const renderer = new WebGPURenderer({ antialias: false });
 renderer.setSize(512, 512);
 renderer.setPixelRatio(1);
@@ -71,6 +87,8 @@ if (mode === "virtual") {
     clipExtents: clip === null ? [6, 18, 54] : clip.split(",").map(Number),
     mapSize: 1024,
     marker: 5,
+    ...(staticAfter === null ? {} : { staticAfterFrames: Number(staticAfter) }),
+    ...(moverSize === null ? {} : { moverMapSize: Number(moverSize) }),
     ...(near ? { depthRange: 30, lightDistance: 12 } : {}),
   });
   const counts: Record<string, number> = { inner: 0, innerRender: 0, outer: 0 };
@@ -118,11 +136,13 @@ const ball = new Mesh(new SphereGeometry(1, 32, 16), new MeshStandardMaterial({ 
 ball.position.set(0, 1.5, 0);
 ball.castShadow = true;
 scene.add(ball);
-if (mode === "virtual") node?.trackCaster(ball);
+if (mode === "virtual" && track === "manual") node?.trackCaster(ball);
+if (mode === "virtual" && track === "pinned") node?.pinStatic(ball);
 
 const adapter = await navigator.gpu?.requestAdapter();
 const info = adapter?.info as { vendor?: string; architecture?: string } | undefined;
 const history: Array<{
+  renderedLevels: number[];
   cached: number;
   frame: number;
   moverRenders: number;
@@ -133,17 +153,25 @@ const history: Array<{
 // animation loop, and a shadow requested in a frame already answered is skipped.
 const nextFrame = (): Promise<void> =>
   new Promise((resolve) => requestAnimationFrame(() => resolve()));
-for (let frame = 0; frame < 12; frame += 1) {
-  if (mode === "virtual") {
-    const phase = ((frame + 1) * Math.PI) / 6;
+for (let frame = 0; frame < lead + 12 + settle; frame += 1) {
+  if (stepped) {
+    const gate = window as unknown as { __GO__?: () => void; __WAITING__?: number };
+    gate.__WAITING__ = frame;
+    await new Promise<void>((resolve) => {
+      gate.__GO__ = resolve;
+    });
+  }
+  if (moves && frame >= lead && frame < lead + 12) {
+    const phase = ((frame - lead + 1) * Math.PI) / 6;
     ball.position.x = Math.sin(phase) * 0.75;
     ball.position.z = Math.sin(phase * 2) * 0.35;
   }
   await renderer.renderAsync(scene, camera);
   (window as unknown as { __WRAP__?: () => void }).__WRAP__?.();
   if (node !== undefined) {
-    const { cached, frame: statsFrame, moverRenders, movers, rendered } = node.stats;
+    const { cached, frame: statsFrame, moverRenders, movers, perLevel, rendered } = node.stats;
     history.push({
+      renderedLevels: perLevel.flatMap((level, index) => (level.rendered === 1 ? [index] : [])),
       cached,
       frame: statsFrame,
       moverRenders,
@@ -152,6 +180,7 @@ for (let frame = 0; frame < 12; frame += 1) {
     });
   }
   await nextFrame();
+  (window as unknown as { __DONE__?: number }).__DONE__ = frame + 1;
 }
 (window as unknown as { __PROOF__: unknown }).__PROOF__ = {
   adapter: `${info?.vendor ?? "?"} | ${info?.architecture ?? "?"}`,

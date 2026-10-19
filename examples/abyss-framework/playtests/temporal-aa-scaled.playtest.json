@@ -1,0 +1,232 @@
+{
+  "name": "display-sized-temporal-reconstruction",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 30
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "temporal",
+        "path": "frame",
+        "gte": 30,
+        "changed": true
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.inputWidth",
+        "changed": false,
+        "allowTrivial": "The fixture resizes the display height only, so the input width is held by construction across the transition; asserting it moved would describe a different scenario."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.inputHeight",
+        "equals": 320,
+        "changed": true
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.resolveWidth",
+        "changed": false
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.resolveHeight",
+        "equals": 480,
+        "changed": true
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.historyWidth",
+        "changed": false
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.historyHeight",
+        "equals": 480,
+        "changed": true
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.depthHistoryWidth",
+        "changed": false,
+        "allowTrivial": "The depth history is input sized, so its width follows the held input width for the whole run."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.depthHistoryHeight",
+        "equals": 320,
+        "changed": true,
+        "allowTrivial": "The sink is reallocated on the transition rather than carried, so the pair of changed/equals checks is the whole claim and the reason names what a carried sink would report instead."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.inputViewWidth",
+        "changed": false,
+        "allowTrivial": "The jitter lattice is the input raster, whose width is held across this resize for the reason the input width is."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.inputViewHeight",
+        "equals": 320,
+        "changed": true,
+        "allowTrivial": "The lattice moves with the input raster, which the paired held-width check already establishes; the reason says which raster it follows."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.farBorderBeyondInput",
+        "equals": true,
+        "allowTrivial": "The read sits past the input raster's extent by construction; a resolve at input size could not address it and the probe would throw."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.farBorderMax",
+        "gte": 0.01,
+        "allowTrivial": "A static background border reads the same every frame; the probe itself throws when this read comes back black, so the assertion names the same floor."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.0.pixels",
+        "equals": 2764800,
+        "allowTrivial": "The opening cold frame compares every RGB channel of the 1280x720 display, so the count is fixed by the viewport. A smaller window would leave the rest of the published frame uncompared."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.0.outside",
+        "equals": 0,
+        "allowTrivial": "The opening reset frame is compared once, before the scenario starts, and no later frame can change that measurement; the paired unchecked-reset control carries the contrast on the same assertion."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.0.viewEnabled",
+        "equals": false,
+        "allowTrivial": "The provider's first setup lands after the first scene draw, so the opening frame carries no lattice at all rather than a stale one. That frame discards its history, and the same frame's oracle equality is what proves it published the untouched input."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.1.pixels",
+        "equals": 1843200,
+        "allowTrivial": "The resize cold frame compares every RGB channel of the 1280x480 display the fixture resized to, so the count is fixed by the viewport and that height-only transition."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.1.outside",
+        "equals": 0,
+        "allowTrivial": "The resize reset frame is compared inside the run and then held; nothing after it can alter an already recorded comparison."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.1.jitterMatchesInput",
+        "equals": true,
+        "allowTrivial": "One measurement taken at the resize draw, inside the run, and then held."
+      },
+      {
+        "id": "temporal",
+        "path": "lastReset.inputHeight",
+        "equals": 320
+      },
+      {
+        "id": "temporal",
+        "path": "lastReset.outputHeight",
+        "equals": 480
+      },
+      {
+        "id": "temporal",
+        "path": "lastReset.resetReason",
+        "equals": "resize",
+        "allowTrivial": "The reason is recorded per reset frame, so a projection mutation the caller never asked for would report itself here instead of the raster transition the fixture made."
+      },
+      {
+        "id": "temporal",
+        "path": "aa.historyValid",
+        "equals": true,
+        "allowTrivial": "History validity is a steady-state property: the run opens on the initial reset and every later frame reuses history. The frame count carries the transition."
+      },
+      {
+        "id": "temporal",
+        "path": "aa.outputWidth",
+        "equals": 1280,
+        "allowTrivial": "The reported output raster keeps its width for every settled frame, including after the height-only resize."
+      },
+      {
+        "id": "temporal",
+        "path": "resets",
+        "equals": 2,
+        "allowTrivial": "One reset is the opening initial frame and one is the fixture's own height-only resize, so the count is fixed by the scenario and the run only has to not add any."
+      },
+      {
+        "id": "temporal",
+        "path": "velocity.source",
+        "equals": "mrt",
+        "allowTrivial": "The velocity route is decided when the chain is built, before the first observation."
+      },
+      {
+        "id": "temporal",
+        "path": "stages.0",
+        "equals": "traa",
+        "allowTrivial": "The applied stage list is decided when the chain is built, before the first observation."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.0.visited",
+        "equals": 921600,
+        "allowTrivial": "The opening reset frame's count is the 1280x720 display the scenario fixes as its viewport, so the GPU must report having visited exactly that many pixels; a smaller count means the kernel skipped a region of the raster."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.0.fraction",
+        "equals": 1,
+        "allowTrivial": "A reset frame carries no legal history at any pixel, so the whole counted raster must be reported rejected. The measurement is one frame taken before the scenario starts and nothing later can change it."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.1.visited",
+        "equals": 614400,
+        "allowTrivial": "The resize reset frame counts the 1280x480 display the fixture resized to, so the visited count follows the display rather than the input raster or the opening frame."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.1.fraction",
+        "equals": 1,
+        "allowTrivial": "The second reset frame has no legal history either, so its whole counted raster is rejected for the same reason the opening frame's is."
+      },
+      {
+        "id": "temporal",
+        "path": "aa.rejection.visited",
+        "equals": 614400,
+        "allowTrivial": "Every settled frame of this run counts the resized display, so the latest completed measurement names that many pixels; it is the same count the resize reset frame recorded."
+      },
+      {
+        "id": "temporal",
+        "path": "aa.rejection.fraction",
+        "gte": 0,
+        "lte": 1,
+        "changed": true,
+        "allowTrivial": "A steady-state frame rejects whatever its own pixels reject, so the share is a finite fraction of the display rather than a whole raster; the before and after samples differ because the counted frame advances."
+      },
+      {
+        "id": "temporal",
+        "path": "aa.rejection.staleFrames",
+        "equals": 0,
+        "allowTrivial": "The copy is asynchronous, so every count carries the age of the frame it measured. This scenario's driver awaits each count before drawing the next frame, so the settled measurement is always its own frame; the assertion states that age instead of leaving it implicit."
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    }
+  }
+}

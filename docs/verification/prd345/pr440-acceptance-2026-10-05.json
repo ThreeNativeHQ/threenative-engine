@@ -1,0 +1,88 @@
+{
+  "sourceRevision": "da632c337ca6ea1a60b50291b0c2a8d76d2166c0",
+  "mergedBase": "d5d169705f34b6b41d1888f3885cb8968e81cb60",
+  "captureSourceUnchangedByLatestBase": true,
+  "scenarioLimitsChanged": false,
+  "performanceAccepted": false,
+  "codeCausalityEstablished": false,
+  "runs": [
+    {
+      "launch": 1,
+      "template": "shooter",
+      "pass": false,
+      "p95Ms": 112.9,
+      "p95LimitMs": 33,
+      "sampleCount": 307,
+      "fps": 33.78,
+      "draws": 1176,
+      "triangles": 420917,
+      "reportSha256": "47fa058a3fc72d9ca05c4351c74e524424fbc5f43c0a4a6b116a5de5a8a168d7",
+      "localReport": "artifacts/pr440-acceptance/integrated-performance/1-shooter/report.json"
+    },
+    {
+      "launch": 2,
+      "template": "snow",
+      "pass": false,
+      "p95Ms": 59.8,
+      "p95LimitMs": 33,
+      "sampleCount": 225,
+      "fps": 138.89,
+      "draws": 119,
+      "triangles": 888397,
+      "reportSha256": "843ac95940e2d7fdd50cf95b577cef63cd388762abdf84847e001e34e170265c",
+      "localReport": "artifacts/pr440-acceptance/integrated-performance/2-snow/report.json"
+    },
+    {
+      "launch": 3,
+      "template": "snow",
+      "pass": false,
+      "p95Ms": 48.6,
+      "p95LimitMs": 33,
+      "sampleCount": 227,
+      "fps": 243.9,
+      "draws": 119,
+      "triangles": 888397,
+      "reportSha256": "b6277894cfdc27d793d069f2580b85e9a7851bdabc0aca338084be9f6d884f97",
+      "localReport": "artifacts/pr440-acceptance/integrated-performance/3-snow/report.json"
+    },
+    {
+      "launch": 4,
+      "template": "shooter",
+      "pass": false,
+      "p95Ms": 144.5,
+      "p95LimitMs": 33,
+      "sampleCount": 345,
+      "fps": 27.93,
+      "draws": 1176,
+      "triangles": 420917,
+      "reportSha256": "c173f8a99701208c652caa35b3aa9c0d496466adf3e7f27232463c01b1839f9d",
+      "localReport": "artifacts/pr440-acceptance/integrated-performance/4-shooter/report.json"
+    },
+    {
+      "launch": 5,
+      "template": "shooter",
+      "pass": false,
+      "p95Ms": 88.9,
+      "p95LimitMs": 33,
+      "sampleCount": 279,
+      "fps": 35.97,
+      "draws": 1176,
+      "triangles": 420917,
+      "reportSha256": "26909d664f7e5e0a73946f5758813e18e7238f6cd5ed50464d81997b9e305c7d",
+      "localReport": "artifacts/pr440-acceptance/integrated-performance/5-shooter/report.json"
+    },
+    {
+      "launch": 6,
+      "template": "snow",
+      "pass": false,
+      "p95Ms": 51.8,
+      "p95LimitMs": 33,
+      "sampleCount": 227,
+      "fps": 243.9,
+      "draws": 119,
+      "triangles": 888397,
+      "reportSha256": "85ad586367a6eb5becfbbc9e7d6a9de32852b03d4e6a2f5b55ef5420f21ce146",
+      "localReport": "artifacts/pr440-acceptance/integrated-performance/6-snow/report.json"
+    }
+  ]
+}

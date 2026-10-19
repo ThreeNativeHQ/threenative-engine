@@ -9,7 +9,7 @@
 **Status, 2026-08-28.** Desktop, the Android emulator and the iOS simulator execute, and one
 physical Pixel 8 (arm64) has run measured load tests. **No iOS hardware, no signed release build, no
 published prebuilt distribution** — phone runs are benchmark evidence, not a mobile-readiness claim
-(the qualification split is [PRD-128](../PRDs/mobile/PRD-128-android-qualification-split.md)). The
+(the qualification split is [PRD-128](../PRDs/native/PRD-128-android-qualification-split.md)). The
 frame budget is attributed and the path to 60 fps is filed as
 [PRD-227](../PRDs/performance/PRD-227-the-frame-crosses-once.md).
 

@@ -16,12 +16,22 @@ import path from "node:path";
 import { assertBudget, measureBudget, parseBudget } from "./budget.js";
 import type { IAssetBudget, IAssetRuntimeDecoderCapabilities } from "./budget.js";
 import {
+  ASSETS_CONFIG_KEYS,
+  LIGHTMAP_CONFIG_KEYS,
+  MODELS_CONFIG_KEYS,
+  MODEL_PASS_KEYS,
+  MODEL_QUANTIZE_KEYS,
+  MODEL_VIRTUAL_COUNT_KEYS,
+  MODEL_VIRTUAL_KEYS,
+} from "./config-keys.js";
+import {
   type IModelDedupeSummary,
   formatModelDedupe,
   groupModelSources,
 } from "./content/model-dedupe.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
+import { readTextureQuality, resolveImageQualityFloor } from "./image-quality.js";
 import {
   type IModelLodOptions,
   type IModelLodOverride,
@@ -31,6 +41,13 @@ import {
   isLodPreset,
   resolveLodPolicy,
 } from "./lod/generate.js";
+import {
+  type INativePackageEntry,
+  NATIVE_PACKAGE_NAME,
+  NativeEntryKind,
+  WGPU_TEXTURE_FORMAT_RGBA8_UNORM,
+  writeNativePackage,
+} from "./native-package.js";
 import { applyPasses } from "./pass-chain.js";
 import type { IAppliedPasses, IPassTiming } from "./pass-chain.js";
 import { parseAudioConfig } from "./passes/audio-config.js";
@@ -46,9 +63,11 @@ import type {
   IModelCompactOptions,
   IModelCompactSummary,
 } from "./passes/compact.js";
+import { decodeImageBytes } from "./passes/decode-image.js";
 import { globMatch } from "./passes/glob.js";
-import { lightmapPass } from "./passes/lightmap.js";
+import { createLightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
+import { TEXTURE_SIZE_SLOTS, type TextureMaxSize } from "./passes/model-textures.js";
 import { modelPass } from "./passes/model.js";
 import type {
   IModelPassOptions,
@@ -62,12 +81,15 @@ import type {
 import { createSharedImageStore, unpackGlb } from "./passes/shared-images.js";
 import { texturePass, textureResizePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions, TextureSkipReason } from "./passes/texture.js";
+import { parsePng } from "./png.js";
 import {
   formatAudioSizes,
   formatBudget,
   formatModelSizes,
   formatPassCosts,
   formatSkippedCompression,
+  formatTextureQualityTotals,
+  formatTextureRungs,
   formatTextureSizes,
 } from "./report.js";
 import type {
@@ -187,6 +209,14 @@ export interface IAssetSourceConfig {
    * default-on decision is a later phase (PRD-377 §8).
    */
   readonly lod?: boolean | IModelLodOptions | "none";
+  /**
+   * Also writes the native cooked package (`<output>/native/assets.tnpk`, TNPK v1) beside the
+   * existing outputs: one Buffer entry per cooked binary buffer and one Texture entry per cooked
+   * PNG or JPEG (decoded to RGBA8). Mesh, material and scene entries are out of scope until their
+   * native loaders land.
+   * Absent means off, so a web-only project pays nothing.
+   */
+  readonly nativePackage?: boolean;
   readonly output?: string;
   readonly source?: string;
   readonly targets?: IAssetTargets;
@@ -239,7 +269,8 @@ export interface IAudioConfig {
 }
 
 export interface ITexturesConfig {
-  readonly maxSize?: number;
+  readonly floor?: ITexturePassOptions["floor"];
+  readonly maxSize?: TextureMaxSize;
   readonly overrides?: readonly ITextureOverride[];
   readonly quality?: number;
 }
@@ -265,31 +296,16 @@ export interface IAssetCompileOptions {
    */
   readonly processingOrder?: "reversed" | "sorted";
   /**
-   * The platform this bake is for, which decides whether compression can ship at all.
-   *
-   * Android and iOS run the native host without WebAssembly, so they carry no Basis transcoder
-   * and no Meshopt decoder: a `.ktx2` texture or a meshopt-compressed mesh in a mobile bundle is
-   * a black screen, and `threenative build` refuses one with `TN_NATIVE_KTX2_UNSUPPORTED`. Web
-   * and desktop decode both.
-   *
-   * Absent means web — a direct `compileAssets` call, or a project that compiles once and serves
-   * the result. `threenative build` always names its `--target`, so the passes that a platform
-   * cannot decode drop for that build and stay on for every other one. This is the whole reason
-   * `assets.textures: "none"` used to be pinned in the scaffolded config: the author was asked to
-   * choose one constant for four targets, and every game that wanted Android shipped its web
-   * build uncompressed too. The build knows its target; it decides.
+   * The conservative default decoder policy: web/desktop keep the existing loaders;
+   * Android/iOS stay decoder-free until their packaged loaders are qualified. A V8 engine
+   * alone does not establish a working Basis, Meshopt or Draco path. Absent means web.
+   * Native builds provide runtimeDecoders from their selected artifact instead.
    */
   readonly platform?: "android" | "desktop" | "ios" | "web";
-  /**
-   * What the runtime that will execute this bake can decode, when the caller has probed it.
-   *
-   * `platform` is a proxy: it answers "android and iOS have no WebAssembly" for the targets this
-   * repository ships. A desktop host can also lack WebAssembly — the Linux arm64 lane builds
-   * QuickJS over wgpu-native — and then the same meshopt/KTX2 passes it would keep produce an
-   * asset nothing can decode. `threenative build` reads the engine from the runtime binary it will
-   * package and passes the real capability here; absent, the platform-derived default stands.
-   */
+  /** Which compressed outputs the selected runtime's bundle can decode, independently of WASM. */
   readonly runtimeDecoders?: IAssetRuntimeDecoderCapabilities;
+  /** Exact selected runtime/cohort identity; changing it invalidates cooked output. */
+  readonly runtimeIdentity?: string;
   readonly source?: string;
   /** Overrides resolution of three's Basis transcoder for the copy into the output root. */
   readonly transcoder?: IBasisTranscoder;
@@ -345,6 +361,7 @@ export interface IBakeReceipt {
 }
 
 interface IAssetManifestEntry {
+  readonly quality?: import("./image-quality.js").ITextureQuality;
   readonly compressionSkipped?: TextureSkipReason;
   /** What the audio pass measured and did to one clip. */
   readonly audio?: IAudioRow;
@@ -427,6 +444,8 @@ interface ICompileLayout {
   readonly modelCompressionReason: ISkippedCompressionRow["reason"] | undefined;
   /** The model decoder-backed sub-passes that were enabled before the target filtered them. */
   readonly modelCompressionDecoders: readonly ("meshopt" | "KTX2")[];
+  /** True when `assets.nativePackage` asked for the TNPK output beside the existing outputs. */
+  readonly nativePackage: boolean;
   /** Why the standalone texture pass was not emitted, if it was skipped. */
   readonly textureCompressionReason: ISkippedCompressionRow["reason"] | undefined;
 }
@@ -774,6 +793,18 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
       )
     : undefined;
   return {
+    ...(isRecord(value.quality)
+      ? {
+          quality: Object.fromEntries(
+            Object.entries(value.quality).map(([key, score]) => {
+              const parsed = readTextureQuality(score);
+              if (parsed === undefined)
+                throw new Error(`TN_ASSETS_QUALITY_MISSING: invalid score for '${key}'.`);
+              return [key, parsed];
+            }),
+          ),
+        }
+      : {}),
     bytesAfter: value.bytesAfter as number,
     bytesBefore: value.bytesBefore as number,
     count: value.count as number,
@@ -782,7 +813,8 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
       ? {
           skippedCompression: Object.fromEntries(
             Object.entries(value.skippedCompression).filter(
-              ([, reason]) => reason === "block-size" || reason === "not-smaller",
+              ([, reason]) =>
+                reason === "block-size" || reason === "not-smaller" || reason === "below-floor",
             ),
           ) as Record<string, TextureSkipReason>,
         }
@@ -957,19 +989,39 @@ function parseTexturesConfig(raw: unknown): ITexturePassOptions | undefined {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.textures must be "none" or an object.');
   }
   for (const key of Object.keys(raw)) {
-    if (key !== "maxSize" && key !== "quality" && key !== "overrides") {
+    if (key !== "maxSize" && key !== "quality" && key !== "overrides" && key !== "floor") {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.textures.${key} is not recognised.`);
     }
   }
   return {
+    ...(raw.floor === undefined ? {} : { floor: resolveImageQualityFloor(raw.floor) }),
     ...(raw.maxSize === undefined
       ? {}
-      : { maxSize: positiveTextureSize(raw.maxSize, "assets.textures.maxSize") }),
+      : {
+          maxSize: parseTextureMaxSize(raw.maxSize, "assets.textures.maxSize", positiveTextureSize),
+        }),
     ...(raw.quality === undefined
       ? {}
       : { quality: textureQuality(raw.quality, "assets.textures.quality") }),
     ...(raw.overrides === undefined ? {} : { overrides: validateTextureOverrides(raw.overrides) }),
   };
+}
+
+function parseTextureMaxSize(
+  value: unknown,
+  label: string,
+  validate: (value: unknown, label: string) => number,
+): TextureMaxSize {
+  if (!isRecord(value)) return validate(value, label);
+  return Object.fromEntries(
+    Object.entries(value).map(([slot, cap]) => {
+      if (!TEXTURE_SIZE_SLOTS.has(slot))
+        throw new Error(
+          `TN_ASSETS_CONFIG_INVALID: ${label}.${slot} must name a glTF texture slot.`,
+        );
+      return [slot, validate(cap, `${label}.${slot}`)];
+    }),
+  );
 }
 
 function positiveTextureSize(value: unknown, label: string): number {
@@ -990,18 +1042,8 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
   }
-  const allowed = [
-    "compact",
-    "lightmap",
-    "passes",
-    "quantize",
-    "sharedImages",
-    "simplify",
-    "textures",
-    "virtual",
-  ];
   for (const key of Object.keys(raw)) {
-    if (!allowed.includes(key)) {
+    if (!MODELS_CONFIG_KEYS.includes(key)) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.${key} is not recognised.`);
     }
   }
@@ -1124,7 +1166,7 @@ function parseModelCompact(raw: unknown): boolean | IModelCompactOptions {
   };
 }
 
-const MODEL_TEXTURE_KEYS: readonly string[] = ["maxSize", "overrides", "quality"];
+const MODEL_TEXTURE_KEYS: readonly string[] = ["maxSize", "overrides", "quality", "floor"];
 
 function positiveInteger(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
@@ -1151,7 +1193,10 @@ function parseModelTextures(raw: unknown): IModelTexturesOptions | "none" {
     }
   }
   return {
-    ...(raw.maxSize === undefined ? {} : { maxSize: positiveInteger(raw.maxSize, "maxSize") }),
+    ...(raw.floor === undefined ? {} : { floor: resolveImageQualityFloor(raw.floor) }),
+    ...(raw.maxSize === undefined
+      ? {}
+      : { maxSize: parseTextureMaxSize(raw.maxSize, "maxSize", positiveInteger) }),
     ...(raw.overrides === undefined
       ? {}
       : { overrides: validateModelTextureOverrides(raw.overrides) }),
@@ -1226,16 +1271,15 @@ function parseModelVirtual(raw: unknown): IModelVirtualOptions | "none" {
   if (!isRecord(raw)) {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models.virtual must be "none" or an object.');
   }
-  const counts = ["groupSize", "maxTriangles", "minSourceTriangles", "minTriangles"] as const;
   for (const key of Object.keys(raw)) {
-    if (key !== "simplifyRatio" && !(counts as readonly string[]).includes(key)) {
+    if (!MODEL_VIRTUAL_KEYS.includes(key)) {
       throw new Error(
         `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.virtual.${key} is not recognised.`,
       );
     }
   }
   const parsed: Record<string, number> = {};
-  for (const key of counts) {
+  for (const key of MODEL_VIRTUAL_COUNT_KEYS) {
     const value = raw[key];
     if (value === undefined) continue;
     if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
@@ -1456,7 +1500,7 @@ function parseLightmap(raw: unknown): ILightmapPassOptions {
     throw new Error("TN_ASSETS_CONFIG_INVALID: assets.models.lightmap must be an object.");
   }
   for (const key of Object.keys(raw)) {
-    if (key !== "atlasSize" && key !== "padding") {
+    if (!LIGHTMAP_CONFIG_KEYS.includes(key)) {
       throw new Error(
         `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.lightmap.${key} is not recognised.`,
       );
@@ -1467,6 +1511,11 @@ function parseLightmap(raw: unknown): ILightmapPassOptions {
       "TN_ASSETS_CONFIG_INVALID: assets.models.lightmap.atlasSize must be a positive integer.",
     );
   }
+  if ((raw.atlasSize as number) % 4 !== 0) {
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: assets.models.lightmap.atlasSize must be a multiple of 4.",
+    );
+  }
   if (!Number.isSafeInteger(raw.padding) || (raw.padding as number) <= 0) {
     throw new Error(
       "TN_ASSETS_CONFIG_INVALID: assets.models.lightmap.padding must be a positive integer.",
@@ -1474,8 +1523,6 @@ function parseLightmap(raw: unknown): ILightmapPassOptions {
   }
   return { atlasSize: raw.atlasSize as number, padding: raw.padding as number };
 }
-
-const MODEL_PASS_KEYS: readonly string[] = ["dedup", "meshopt", "prune", "quantize", "reorder"];
 
 function parseModelPasses(raw: unknown): IModelPassesOptions {
   if (!isRecord(raw)) {
@@ -1493,8 +1540,6 @@ function parseModelPasses(raw: unknown): IModelPassesOptions {
   }
   return raw as IModelPassesOptions;
 }
-
-const MODEL_QUANTIZE_KEYS: readonly string[] = ["normalBits", "positionBits", "uvBits"];
 
 function parseModelQuantize(raw: unknown): IModelQuantizeOptions {
   if (!isRecord(raw)) {
@@ -1535,7 +1580,9 @@ function parseModelQuantize(raw: unknown): IModelQuantizeOptions {
 function embeddedTexturesFor(
   configured: IModelTexturesOptions | "none" | undefined,
   ktx2: boolean,
+  astc = false,
 ): { readonly textures?: IModelTexturesOptions | "none" } {
+  if (astc && configured !== "none") return { textures: { ...configured, astc: true } };
   if (ktx2) return {};
   if (configured !== undefined && configured !== "none" && configured.maxSize !== undefined) {
     return {
@@ -1555,20 +1602,9 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     throw new Error("TN_ASSETS_CONFIG_INVALID: assets must be an object when declared.");
   }
   for (const key of Object.keys(config)) {
-    if (
-      key !== "audio" &&
-      key !== "budget" &&
-      key !== "exclude" &&
-      key !== "concurrency" &&
-      // `assets.lod` is validated and resolved by the project config loader; this package accepts
-      // it so the resolved config crosses the seam intact. Phase 2 consumes it for generation.
-      key !== "lod" &&
-      key !== "source" &&
-      key !== "output" &&
-      key !== "targets" &&
-      key !== "textures" &&
-      key !== "models"
-    ) {
+    // `assets.lod` is validated and resolved by the project config loader; this package accepts
+    // it so the resolved config crosses the seam intact. Phase 2 consumes it for generation.
+    if (!ASSETS_CONFIG_KEYS.includes(key)) {
       throw new Error(`TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.${key} is not recognised.`);
     }
   }
@@ -1594,15 +1630,15 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       `TN_ASSETS_OVERLAP: source '${sourceRoot}' and output '${outputRoot}' must be disjoint directories.`,
     );
   }
-  // Android and iOS have no WebAssembly and therefore no Basis transcoder and no Meshopt
-  // decoder. The registry uses each pass's declaration below, so decoder-free work in the mixed
-  // model pass survives on those targets.
+  // Mobile keeps the decoder-free policy until its packaged loaders are qualified.
+  // Each pass declares its decoder dependency, so decoder-free model work survives.
   const runtimeDecoderCapabilities: IAssetRuntimeDecoderCapabilities = options.runtimeDecoders ?? {
     ktx2: options.platform !== "android" && options.platform !== "ios",
     meshopt: options.platform !== "android" && options.platform !== "ios",
   };
   const runtimeDecoderAvailable =
     runtimeDecoderCapabilities.ktx2 && runtimeDecoderCapabilities.meshopt;
+  const mobileAstc = options.platform === "android" || options.platform === "ios";
   const audio = parseAudioConfig(config.audio);
   const configuredTextures = parseTexturesConfig(config.textures);
   const configuredModels = parseModelsConfig(config.models);
@@ -1611,12 +1647,16 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   // `"none"` remain the absolute kill switch, and the legacy `models` declarations still translate
   // against the same policy, so an explicit `simplify` or `virtual: "none"` project is unaffected.
   const configuredLod = config.lod === undefined ? true : parseModelLod(config.lod);
+  const nativePackage = config.nativePackage ?? false;
+  if (typeof nativePackage !== "boolean") {
+    throw new Error("TN_ASSETS_CONFIG_INVALID: assets.nativePackage must be a boolean.");
+  }
   const modelCompressionDecoders: readonly ("meshopt" | "KTX2")[] =
     configuredModels === undefined
       ? []
       : [
           (configuredModels.passes?.meshopt ?? true) ? "meshopt" : undefined,
-          configuredModels.textures === "none" ? undefined : "KTX2",
+          configuredModels.textures === "none" || mobileAstc ? undefined : "KTX2",
         ].filter((decoder): decoder is "meshopt" | "KTX2" => decoder !== undefined);
   const models =
     configuredModels === undefined
@@ -1628,9 +1668,18 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
             : {
                 passes: { ...(configuredModels.passes ?? {}), meshopt: false },
               }),
-          ...embeddedTexturesFor(configuredModels.textures, runtimeDecoderCapabilities.ktx2),
+          ...embeddedTexturesFor(
+            configuredModels.textures,
+            runtimeDecoderCapabilities.ktx2,
+            mobileAstc,
+          ),
         };
-  const textures = configuredTextures;
+  const textures =
+    configuredTextures === undefined
+      ? undefined
+      : mobileAstc
+        ? { ...configuredTextures, astc: true }
+        : configuredTextures;
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
     ?.lightmap;
   // The built-in registry runs only when the caller did not replace it wholesale; each
@@ -1640,7 +1689,19 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   const builtinPasses: IAssetPass[] = [];
   const passSpecs: PassSpec[] = [];
   const registerBuiltin = (pass: IAssetPass, spec: PassSpec): void => {
-    if (spec.needsRuntimeDecoder === true && !runtimeDecoderAvailable) return;
+    if (
+      spec.needsRuntimeDecoder === true &&
+      !(spec.kind === "texture"
+        ? runtimeDecoderCapabilities.ktx2
+        : spec.kind === "model"
+          ? (!(spec.options.passes?.meshopt ?? true) || runtimeDecoderCapabilities.meshopt) &&
+            (spec.options.textures === "none" ||
+              spec.options.textures?.decoderFree === true ||
+              spec.options.textures?.astc === true ||
+              runtimeDecoderCapabilities.ktx2)
+          : runtimeDecoderAvailable)
+    )
+      return;
     builtinPasses.push(pass);
     passSpecs.push(spec);
   };
@@ -1655,13 +1716,14 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
     if (textures !== undefined) {
       registerBuiltin(texturePass(textures), {
         kind: "texture",
-        needsRuntimeDecoder: true,
+        needsRuntimeDecoder: !mobileAstc,
         options: textures,
       });
     }
     if (
       textures !== undefined &&
       !runtimeDecoderCapabilities.ktx2 &&
+      !mobileAstc &&
       textures.maxSize !== undefined
     ) {
       // The KTX2 pass dropped for this target, but the declared cap is still honoured: the
@@ -1675,9 +1737,10 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
       });
     }
     if (lightmap !== undefined) {
-      registerBuiltin(lightmapPass(lightmap), {
+      registerBuiltin(createLightmapPass(lightmap, mobileAstc), {
         kind: "lightmap",
-        needsRuntimeDecoder: true,
+        ...(mobileAstc ? { astc: true } : {}),
+        needsRuntimeDecoder: !mobileAstc,
         options: lightmap,
       });
     }
@@ -1750,10 +1813,15 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
           ? "config"
           : modelCompressionDecoders.length === 0
             ? undefined
-            : runtimeDecoderAvailable
+            : modelCompressionDecoders.every((decoder) =>
+                  decoder === "KTX2"
+                    ? runtimeDecoderCapabilities.ktx2
+                    : runtimeDecoderCapabilities.meshopt,
+                )
               ? undefined
               : "platform",
     modelCompressionDecoders,
+    nativePackage,
     outputRoot,
     passSpecs,
     skippedPasses,
@@ -1766,11 +1834,14 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
         ? undefined
         : configuredTextures === undefined
           ? "config"
-          : runtimeDecoderCapabilities.ktx2
+          : runtimeDecoderCapabilities.ktx2 || mobileAstc
             ? undefined
             : "platform",
     texturesActive:
-      textures !== undefined && options.passes === undefined && runtimeDecoderAvailable,
+      textures !== undefined &&
+      options.passes === undefined &&
+      runtimeDecoderCapabilities.ktx2 &&
+      !mobileAstc,
   };
 }
 
@@ -1879,6 +1950,7 @@ function sameEntry(existing: IAssetManifestEntry, entry: IAssetManifestEntry): b
     JSON.stringify(existing.lightmapAtlas) === JSON.stringify(entry.lightmapAtlas) &&
     JSON.stringify(existing.lightmaps) === JSON.stringify(entry.lightmaps) &&
     JSON.stringify(existing.embeddedTextures) === JSON.stringify(entry.embeddedTextures) &&
+    JSON.stringify(existing.quality) === JSON.stringify(entry.quality) &&
     JSON.stringify(existing.simplify) === JSON.stringify(entry.simplify) &&
     JSON.stringify(existing.lod) === JSON.stringify(entry.lod) &&
     existing.bytes === entry.bytes &&
@@ -2209,6 +2281,165 @@ async function writeOutput(
   await writeFile(outputAbsolute, buffer);
 }
 
+/** A decoded PNG or JPEG as a TNPK v1 Texture entry, or undefined for any other container. */
+async function nativeTextureEntry(
+  name: string,
+  data: Buffer,
+): Promise<INativePackageEntry | undefined> {
+  // PNG or JPEG: decoded here to RGBA8. KTX2 and other containers need a runtime transcoder.
+  const jpeg = data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+  if (!jpeg && parsePng(data) === undefined) return undefined;
+  const image = await decodeImageBytes(data, name);
+  const header = Buffer.alloc(12);
+  header.writeUInt32LE(image.width, 0);
+  header.writeUInt32LE(image.height, 4);
+  // WGPU_TEXTURE_FORMAT_RGBA8_UNORM, not _SRGB: the standalone texture pipeline decides
+  // colour versus data only for codec choice (the `*_normal`/`*_nrm` basename convention in
+  // passes/texture.ts) and records no colour space on the cooked PNG. Treating every other
+  // PNG as sRGB would be a guess — masks, roughness, metallic and AO maps are data too — so
+  // the writer keeps the format the header states and the C++ loader accepts (package.h v1).
+  // sRGB ships once a pass records a colour space this can read.
+  header.writeUInt32LE(WGPU_TEXTURE_FORMAT_RGBA8_UNORM, 8);
+  return {
+    data: Buffer.concat([header, Buffer.from(image.data)]),
+    kind: NativeEntryKind.Texture,
+    name,
+    uploadSize: image.width * image.height * 4,
+  };
+}
+
+/** Editor and VCS leftovers, by basename: the packaging selector's rule 1 (asset-manifest.mjs). */
+function isLeftover(relative: string): boolean {
+  const name = path.posix.basename(relative);
+  return (
+    [".DS_Store", "Thumbs.db", ".gitkeep"].includes(name) ||
+    [".orig", ".rej", ".bak", ".swp", "~"].some((suffix) => name.endsWith(suffix))
+  );
+}
+
+/**
+ * Gathers the native package's entries from the files already on disk.
+ *
+ * Cooked outputs enter under their logical path: one Buffer entry per cooked binary buffer
+ * (audio/other), as CPU data at its exact length, and one Texture entry per cooked PNG or JPEG,
+ * decoded to RGBA8, and one Scene entry per cooked model. A KTX2 texture is not a v1 entry.
+ *
+ * Every other file in the output root (the web root) enters under its web URL, `/` plus its path
+ * there, because that is the URL a game requests it by on the web (`/assets/sky.hdr` is served
+ * from `public/assets/sky.hdr`). PNG and JPEG become Texture entries, a binary glTF a Scene entry,
+ * anything else a CPU Buffer. Cook outputs (this bake's or a previous one's), the manifest, the
+ * receipts, the package itself and editor leftovers are not web-root files. An empty file is left
+ * out and counted, never silently padded.
+ */
+async function nativePackageEntries(
+  outputRoot: string,
+  entries: Readonly<Record<string, IAssetManifestEntry>>,
+  cookOutputs: ReadonlySet<string>,
+): Promise<{ entries: INativePackageEntry[]; skipped: number }> {
+  const specs: INativePackageEntry[] = [];
+  const shared = new Set<string>();
+  let skipped = 0;
+  for (const logical of Object.keys(entries).sort()) {
+    const entry = entries[logical];
+    if (entry === undefined) continue;
+    const data = await readFile(path.join(outputRoot, entry.output));
+    if (entry.kind === "model") {
+      // The GLB bytes the native glTF loader reads; it refuses by name any extension it cannot decode.
+      specs.push({ data, kind: NativeEntryKind.Scene, name: logical, uploadSize: 0 });
+      // The images it names by uri sit beside it as raw bytes, which the loader decodes: the model
+      // is a root file, so the uri is the entry name.
+      for (const image of declaredAuxiliaryOutputs(entry))
+        if (image.producer === "image" && !shared.has(image.path)) {
+          shared.add(image.path);
+          const bytes = await readFile(path.join(outputRoot, image.path));
+          specs.push({
+            data: bytes,
+            kind: NativeEntryKind.Buffer,
+            name: image.path,
+            uploadSize: 0,
+          });
+        }
+      continue;
+    }
+    const texture = entry.kind === "texture" ? await nativeTextureEntry(logical, data) : undefined;
+    if (texture !== undefined) specs.push(texture);
+    else if (entry.kind === "texture" || data.length === 0) skipped += 1;
+    // Every Buffer the cook writes is CPU data a decoder reads (audio, an HDRLoader's .hdr, raw
+    // bytes): uploadSize 0 says so, and it keeps its exact length. Only GPU buffers are aligned.
+    else specs.push({ data, kind: NativeEntryKind.Buffer, name: logical, uploadSize: 0 });
+  }
+  const bookkeeping = new Set([
+    MANIFEST_NAME,
+    RECEIPT_NAME,
+    PENDING_RECEIPT_NAME,
+    NATIVE_PACKAGE_NAME,
+  ]);
+  for (const relative of (await walkOutputFiles(outputRoot)).sort()) {
+    if (bookkeeping.has(relative) || cookOutputs.has(relative) || isLeftover(relative)) continue;
+    const data = await readFile(path.join(outputRoot, relative));
+    const name = `/${relative}`;
+    if (data.length === 0) {
+      skipped += 1;
+      continue;
+    }
+    const texture = await nativeTextureEntry(name, data);
+    const scene = data.length >= 4 && data.toString("latin1", 0, 4) === "glTF";
+    specs.push(
+      texture ?? {
+        data,
+        kind: scene ? NativeEntryKind.Scene : NativeEntryKind.Buffer,
+        name,
+        uploadSize: 0,
+      },
+    );
+  }
+  specs.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return { entries: specs, skipped };
+}
+
+/**
+ * Writes `native/assets.tnpk` from the cook and the web root, and returns its receipt row; with no
+ * v1 entry it removes a package an earlier run left there and returns undefined.
+ */
+async function writeNativePackageOutput(
+  outputRoot: string,
+  entries: Readonly<Record<string, IAssetManifestEntry>>,
+  cookOutputs: ReadonlySet<string>,
+): Promise<IBakeReceiptOutput | undefined> {
+  const native = await nativePackageEntries(outputRoot, entries, cookOutputs);
+  const nativeAbsolute = path.join(outputRoot, NATIVE_PACKAGE_NAME);
+  if (native.entries.length === 0) {
+    // The bake owns this fixed path whenever the option is on. A package left by an earlier
+    // run whose receipt is gone is pruned here, the way the empty-source branch removes its
+    // stale manifest, rather than left to haunt a rebuilt project.
+    await rm(nativeAbsolute, { force: true });
+    console.log(
+      "TN_ASSETS_NATIVE_PACKAGE_EMPTY: assets.nativePackage is on but no cooked output or web-root file is in scope for a v1 entry.",
+    );
+    return undefined;
+  }
+  const nativeBytes = writeNativePackage(native.entries);
+  await mkdir(path.dirname(nativeAbsolute), { recursive: true });
+  const existing = await readFile(nativeAbsolute).catch(() => undefined);
+  if (existing === undefined || !Buffer.from(existing).equals(nativeBytes)) {
+    await writeFile(nativeAbsolute, nativeBytes);
+  }
+  if (native.skipped > 0) {
+    console.log(
+      `TN_ASSETS_NATIVE_PACKAGE_SKIPPED: ${String(native.skipped)} file(s) are not a legal TNPK v1 entry (a KTX2 texture or an empty file) and are left out.`,
+    );
+  }
+  console.log(
+    `TN_ASSETS_NATIVE_PACKAGE: ${String(native.entries.length)} entry(ies), ${String(nativeBytes.length)} bytes at ${NATIVE_PACKAGE_NAME}.`,
+  );
+  return {
+    bytes: nativeBytes.length,
+    path: NATIVE_PACKAGE_NAME,
+    producer: "native-package",
+    source: null,
+  };
+}
+
 async function writeManifest(
   manifestPath: string,
   outputRoot: string,
@@ -2237,8 +2468,9 @@ async function walkOutputFiles(root: string, prefix = ""): Promise<string[]> {
   let entries: Dirent[];
   try {
     entries = await readdir(path.join(root, prefix), { withFileTypes: true });
-  } catch {
-    return [];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
   }
   const files: string[] = [];
   for (const entry of entries) {
@@ -2254,14 +2486,16 @@ async function walkOutputFiles(root: string, prefix = ""): Promise<string[]> {
  *
  * Without this, a pass that writes a file it does not report is invisible: the delete-test would
  * delete less than the bake produced, the second run would still find the undeleted file, and the
- * gate would pass while proving nothing. Only files touched during this run are considered — a
- * project's own hand-authored `public/icon.png` is not a bake output and is left alone.
+ * gate would pass while proving nothing. New paths are checked regardless of their timestamps;
+ * existing paths are checked when touched during this run. An untouched hand-authored
+ * `public/icon.png` is not a bake output and is left alone.
  */
 async function assertNoUndeclaredOutputs(
   outputRoot: string,
   declared: ReadonlySet<string>,
   since: number,
   writtenBefore: ReadonlySet<string>,
+  existingBefore: ReadonlySet<string>,
 ): Promise<void> {
   const undeclared: string[] = [];
   for (const relative of await walkOutputFiles(outputRoot)) {
@@ -2277,7 +2511,7 @@ async function assertNoUndeclaredOutputs(
     // millisecond apart, and the previous bake's now-stale output is not this bake's leak.
     if (writtenBefore.has(relative)) continue;
     const info = await stat(path.join(outputRoot, relative));
-    if (info.mtimeMs + 1 >= since) undeclared.push(relative);
+    if (!existingBefore.has(relative) || info.mtimeMs + 1 >= since) undeclared.push(relative);
   }
   if (undeclared.length > 0) {
     throw new Error(
@@ -2378,20 +2612,23 @@ export async function compileAssets(
       await measureBudget({}, layout.outputRoot, layout.runtimeDecoderCapabilities, layout.budget),
     ))
       console.log(line);
-    await rm(manifestPath, { force: true });
+    await writeManifest(manifestPath, layout.outputRoot, undefined, {});
     await rm(receiptPath, { force: true });
     await rm(pendingReceiptPath, { force: true });
+    // Nothing to cook, but a web root of hand-placed files (Midway's `public/assets`) still ships
+    // to the native engine, and the receipt names the package so a later bake can remove it.
+    const native = layout.nativePackage
+      ? await writeNativePackageOutput(layout.outputRoot, {}, writtenBefore)
+      : undefined;
+    if (native !== undefined) await writeReceipt(layout.outputRoot, [native]);
     return { concurrencyUsed: 1, passCosts: [], skipped: 0, skippedCompression: [], written: 0 };
   }
   const previous = await readExistingManifest(manifestPath);
 
-  // Read before the first write *and before the source walk*, so the undeclared-output guard can
-  // tell this run's files from the project's own static ones. Taking it after the walk shrinks the
-  // margin by however long the walk took, and `TN_ASSETS_UNDECLARED_OUTPUT` then misses a stray
-  // file whose mtime the filesystem truncated below it — which is exactly how
-  // `bake-receipt.spec.ts` went red on a loaded CI shard while passing locally. It never reaches
-  // the receipt: that stays deterministic.
+  // Snapshot before the first write and source walk: new outputs can retain old timestamps when
+  // copied, so modification time alone cannot distinguish them from authored static files.
   const runStart = Date.now();
+  const existingBefore = new Set(await walkOutputFiles(layout.outputRoot));
 
   const sources = await walkSources(layout.sourceRoot);
   const excluded = sources.filter((logical) =>
@@ -2534,6 +2771,14 @@ export async function compileAssets(
     const cacheKeys = included.map((pass) => pass.cacheKey ?? null);
     return JSON.stringify({
       ...(cacheKeys.some((key) => key !== null) ? { passCacheKeys: cacheKeys } : {}),
+      ...(options.runtimeIdentity === undefined && options.runtimeDecoders === undefined
+        ? {}
+        : {
+            runtime: {
+              identity: options.runtimeIdentity ?? null,
+              decoders: layout.runtimeDecoderCapabilities,
+            },
+          }),
       pipelineVersion: PIPELINE_VERSION,
       passes: included.map((pass) => pass.name),
       options: included.map((pass) => pass.configuration ?? null),
@@ -2562,16 +2807,14 @@ export async function compileAssets(
   let textureCount = 0;
   let compressedModelCount = 0;
 
-  // An empty (or dotfile-only) source must never publish an empty manifest: the runtime treats
-  // a served manifest as authoritative and would reject every load against it. A source that
-  // held inputs last build drops its stale manifest here, restoring the no-manifest fallback.
+  // Asset-free projects still serve the manifest the runtime loader requests.
   if (logicals.length === 0) {
     for (const line of formatBudget(
       await measureBudget({}, layout.outputRoot, layout.runtimeDecoderCapabilities, layout.budget),
     ))
       console.log(line);
     await removeStaleReceiptOutputs(layout.outputRoot, writtenBefore, new Set());
-    if (previous.raw !== undefined) await rm(manifestPath, { force: true });
+    await writeManifest(manifestPath, layout.outputRoot, previous.raw, {});
     await rm(receiptPath, { force: true });
     await rm(pendingReceiptPath, { force: true });
     const report = await runHealthReport([], layout.targets);
@@ -2664,6 +2907,7 @@ export async function compileAssets(
       });
     } else {
       textureRows.push({
+        ...(entry.quality === undefined ? {} : { quality: entry.quality }),
         after: entry.bytes,
         before: entry.bytesBefore,
         // Read off the manifest entry, not off the pass: a cache hit reuses the previous entry
@@ -2748,12 +2992,14 @@ export async function compileAssets(
             bytesBefore: input.length,
             audio: audioRow(applied.entry.audio),
             embeddedTextures: embeddedTextureRow(applied.entry.embeddedTextures),
+            quality: readTextureQuality(applied.entry.quality),
             compact: compactRow(applied.entry.compact),
             simplify: simplifyRow(applied.entry.simplify),
             lod: lodRow(applied.entry.lod),
             materials: materialRow(applied.entry.materials),
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
             ...(applied.entry.compressionSkipped === "block-size" ||
+            applied.entry.compressionSkipped === "below-floor" ||
             applied.entry.compressionSkipped === "not-smaller"
               ? { compressionSkipped: applied.entry.compressionSkipped }
               : {}),
@@ -2940,6 +3186,19 @@ export async function compileAssets(
     }
   }
 
+  // The native cooked package (PRD-515) is an additional output, never a replacement: enabling
+  // it leaves every existing output byte-identical. Written after the cook, so a cache hit
+  // rebuilds it from the outputs already on disk.
+  if (layout.nativePackage) {
+    await recordPendingOutputs([NATIVE_PACKAGE_NAME]);
+    const output = await writeNativePackageOutput(
+      layout.outputRoot,
+      entries,
+      new Set([...writtenBefore, ...receiptOutputs.map((output) => output.path)]),
+    );
+    if (output !== undefined) receiptOutputs.push(output);
+  }
+
   // The report runs unconditionally — it is the one place a user learns why their game is
   // slow. Only declared targets can fail it.
   assertCompletePassCosts(costInputs, logicals.length);
@@ -2949,6 +3208,16 @@ export async function compileAssets(
   for (const line of formatAudioSizes(audioRows)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  const rungs = [
+    ...textureRows.map((row) => row.format ?? "none"),
+    ...modelRows.flatMap((row) => Object.values(row.embeddedTextures?.formats ?? {})),
+  ];
+  if (rungs.length > 0) console.log(formatTextureRungs(rungs));
+  const qualityScores = [
+    ...textureRows.flatMap((row) => (row.quality === undefined ? [] : [row.quality])),
+    ...modelRows.flatMap((row) => Object.values(row.embeddedTextures?.quality ?? {})),
+  ];
+  if (qualityScores.length > 0) console.log(formatTextureQualityTotals(qualityScores));
   const dedupe: IModelDedupeSummary | undefined =
     modelSources.length === 0
       ? undefined
@@ -2992,7 +3261,13 @@ export async function compileAssets(
     );
   }
   const currentReceiptPaths = new Set(receiptOutputs.map((output) => output.path));
-  await assertNoUndeclaredOutputs(layout.outputRoot, currentReceiptPaths, runStart, writtenBefore);
+  await assertNoUndeclaredOutputs(
+    layout.outputRoot,
+    currentReceiptPaths,
+    runStart,
+    writtenBefore,
+    existingBefore,
+  );
   const staleOutputs = await resolveStaleReceiptOutputs(
     layout.outputRoot,
     new Set([...writtenBefore, ...pendingPaths]),

@@ -1,0 +1,59 @@
+{
+  "name": "rain-paused-storm-holds-its-frame",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "warmupFrames": 30,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "press": "Space",
+      "label": "paused",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 40,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "paused",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "elapsed",
+        "changed": false
+      },
+      {
+        "id": "state",
+        "path": "frame",
+        "changed": true
+      }
+    ],
+    "visual": [
+      {
+        "frameDiff": {
+          "maxChangedPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

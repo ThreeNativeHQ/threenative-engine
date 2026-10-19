@@ -1,0 +1,428 @@
+{
+  "sourceSha": "4cfc3c2024da1cb37533dc67fd07679e364c27f6",
+  "correctnessOnly": true,
+  "results": [
+    {
+      "name": "static",
+      "sourceSha": "4cfc3c2024da1cb37533dc67fd07679e364c27f6",
+      "qualified": true,
+      "measurement": {
+        "generation": 1,
+        "active": 256,
+        "capacity": 256,
+        "created": 321,
+        "released": 65,
+        "geometryBytes": 275076,
+        "maxDrawCalls": 516,
+        "motionError": 0,
+        "receiverMotion": 0,
+        "lodHit": true,
+        "renderTriangles": 2,
+        "receiverRemoved": false
+      },
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "screenshot": "/home/runner/work/threenative/threenative/artifacts/vq11-decals/static/after.png",
+      "diagnostics": [],
+      "visual": {
+        "changedPixelRatio": 0.00017939814814814815,
+        "comparisonSource": "before-after",
+        "nonblankRegions": [
+          {
+            "height": 540,
+            "width": 960,
+            "x": 0,
+            "y": 0,
+            "minNonblankPixelRatio": 0.15,
+            "darkPixelRatio": 0.5420428240740741,
+            "nonblankPixelRatio": 0.9999710648148148
+          },
+          {
+            "height": 125,
+            "width": 170,
+            "x": 270,
+            "y": 185,
+            "maxDarkPixelRatio": 0.2,
+            "maxLuminance": 0.35,
+            "minDarkPixelRatio": 0.01,
+            "minNonblankPixelRatio": 0.9,
+            "darkPixelRatio": 0.05341176470588235,
+            "nonblankPixelRatio": 0.9994823529411765
+          },
+          {
+            "height": 90,
+            "width": 95,
+            "x": 550,
+            "y": 190,
+            "maxDarkPixelRatio": 0.2,
+            "maxLuminance": 0.35,
+            "minDarkPixelRatio": 0.01,
+            "minNonblankPixelRatio": 0.9,
+            "darkPixelRatio": 0.05660818713450293,
+            "nonblankPixelRatio": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "motion",
+      "sourceSha": "4cfc3c2024da1cb37533dc67fd07679e364c27f6",
+      "qualified": true,
+      "measurement": {
+        "generation": 1,
+        "active": 256,
+        "capacity": 256,
+        "created": 321,
+        "released": 65,
+        "geometryBytes": 275076,
+        "maxDrawCalls": 516,
+        "motionError": 0,
+        "receiverMotion": 0.8042230500706451,
+        "lodHit": true,
+        "renderTriangles": 2,
+        "receiverRemoved": false
+      },
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "screenshot": "/home/runner/work/threenative/threenative/artifacts/vq11-decals/motion/after.png",
+      "diagnostics": [],
+      "visual": {
+        "changedPixelRatio": 0.04210648148148148,
+        "comparisonSource": "before-after",
+        "nonblankRegions": [
+          {
+            "height": 540,
+            "width": 960,
+            "x": 0,
+            "y": 0,
+            "minNonblankPixelRatio": 0.15,
+            "darkPixelRatio": 0.5506944444444445,
+            "nonblankPixelRatio": 0.9999729938271605
+          },
+          {
+            "height": 125,
+            "width": 170,
+            "x": 270,
+            "y": 185,
+            "maxDarkPixelRatio": 0.2,
+            "maxLuminance": 0.35,
+            "minDarkPixelRatio": 0.01,
+            "minNonblankPixelRatio": 0.9,
+            "darkPixelRatio": 0.05341176470588235,
+            "nonblankPixelRatio": 0.9994823529411765
+          },
+          {
+            "height": 90,
+            "width": 95,
+            "x": 550,
+            "y": 190,
+            "maxDarkPixelRatio": 0.2,
+            "maxLuminance": 0.35,
+            "minDarkPixelRatio": 0.01,
+            "minNonblankPixelRatio": 0.9,
+            "darkPixelRatio": 0.051812865497076026,
+            "nonblankPixelRatio": 0.9997660818713451
+          }
+        ]
+      }
+    },
+    {
+      "name": "teardown",
+      "sourceSha": "4cfc3c2024da1cb37533dc67fd07679e364c27f6",
+      "qualified": true,
+      "measurement": {
+        "generation": 1,
+        "active": 128,
+        "capacity": 256,
+        "created": 321,
+        "released": 193,
+        "geometryBytes": 136140,
+        "maxDrawCalls": 516,
+        "motionError": 0,
+        "receiverMotion": 0,
+        "lodHit": true,
+        "renderTriangles": 2,
+        "receiverRemoved": true
+      },
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "screenshot": "/home/runner/work/threenative/threenative/artifacts/vq11-decals/teardown/after.png",
+      "diagnostics": [],
+      "visual": {
+        "changedPixelRatio": 0.07619598765432099,
+        "comparisonSource": "before-after",
+        "nonblankRegions": [
+          {
+            "height": 540,
+            "width": 960,
+            "x": 0,
+            "y": 0,
+            "minNonblankPixelRatio": 0.15,
+            "darkPixelRatio": 0.6017264660493827,
+            "nonblankPixelRatio": 0.9999787808641976
+          },
+          {
+            "height": 125,
+            "width": 170,
+            "x": 270,
+            "y": 185,
+            "maxDarkPixelRatio": 0.2,
+            "maxLuminance": 0.35,
+            "minDarkPixelRatio": 0.01,
+            "minNonblankPixelRatio": 0.9,
+            "darkPixelRatio": 0.05341176470588235,
+            "nonblankPixelRatio": 0.9994823529411765
+          }
+        ]
+      }
+    },
+    {
+      "name": "restart",
+      "sourceSha": "4cfc3c2024da1cb37533dc67fd07679e364c27f6",
+      "qualified": true,
+      "measurement": {
+        "generation": 2,
+        "active": 256,
+        "capacity": 256,
+        "created": 321,
+        "released": 65,
+        "geometryBytes": 275028,
+        "maxDrawCalls": 516,
+        "motionError": 0,
+        "receiverMotion": 0,
+        "lodHit": true,
+        "renderTriangles": 2,
+        "receiverRemoved": false
+      },
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "screenshot": "/home/runner/work/threenative/threenative/artifacts/vq11-decals/restart/after.png",
+      "diagnostics": [],
+      "visual": {
+        "changedPixelRatio": 0.00017939814814814815,
+        "comparisonSource": "before-after",
+        "nonblankRegions": [
+          {
+            "height": 540,
+            "width": 960,
+            "x": 0,
+            "y": 0,
+            "minNonblankPixelRatio": 0.15,
+            "darkPixelRatio": 0.5420428240740741,
+            "nonblankPixelRatio": 0.9999710648148148
+          },
+          {
+            "height": 125,
+            "width": 170,
+            "x": 270,
+            "y": 185,
+            "maxDarkPixelRatio": 0.2,
+            "maxLuminance": 0.35,
+            "minDarkPixelRatio": 0.01,
+            "minNonblankPixelRatio": 0.9,
+            "darkPixelRatio": 0.05341176470588235,
+            "nonblankPixelRatio": 0.9994823529411765
+          },
+          {
+            "height": 90,
+            "width": 95,
+            "x": 550,
+            "y": 190,
+            "maxDarkPixelRatio": 0.2,
+            "maxLuminance": 0.35,
+            "minDarkPixelRatio": 0.01,
+            "minNonblankPixelRatio": 0.9,
+            "darkPixelRatio": 0.05660818713450293,
+            "nonblankPixelRatio": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "hidden-decals",
+      "sourceSha": "4cfc3c2024da1cb37533dc67fd07679e364c27f6",
+      "qualified": false,
+      "negativeControlPassed": true,
+      "measurement": {
+        "generation": 1,
+        "active": 256,
+        "capacity": 256,
+        "created": 321,
+        "released": 65,
+        "geometryBytes": 259794,
+        "maxDrawCalls": 4,
+        "motionError": 0,
+        "receiverMotion": 0,
+        "lodHit": true,
+        "renderTriangles": 2,
+        "receiverRemoved": false
+      },
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "screenshot": "/home/runner/work/threenative/threenative/artifacts/vq11-decals/hidden-decals/after.png",
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_FAILED",
+          "message": "Screenshot region at (270, 185) contained 0 dark pixels, below required ratio 0.01.",
+          "severity": "error",
+          "suggestion": "Check whether the expected foreground silhouette occupies the asserted raster region."
+        },
+        {
+          "code": "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_FAILED",
+          "message": "Screenshot region at (550, 190) contained 0 dark pixels, below required ratio 0.01.",
+          "severity": "error",
+          "suggestion": "Check whether the expected foreground silhouette occupies the asserted raster region."
+        }
+      ],
+      "visual": {
+        "changedPixelRatio": 0,
+        "comparisonSource": "before-after",
+        "nonblankRegions": [
+          {
+            "height": 540,
+            "width": 960,
+            "x": 0,
+            "y": 0,
+            "minNonblankPixelRatio": 0.15,
+            "darkPixelRatio": 0.5417457561728395,
+            "nonblankPixelRatio": 1
+          },
+          {
+            "height": 125,
+            "width": 170,
+            "x": 270,
+            "y": 185,
+            "maxDarkPixelRatio": 0.2,
+            "maxLuminance": 0.35,
+            "minDarkPixelRatio": 0.01,
+            "minNonblankPixelRatio": 0.9,
+            "darkPixelRatio": 0,
+            "nonblankPixelRatio": 1
+          },
+          {
+            "height": 90,
+            "width": 95,
+            "x": 550,
+            "y": 190,
+            "maxDarkPixelRatio": 0.2,
+            "maxLuminance": 0.35,
+            "minDarkPixelRatio": 0.01,
+            "minNonblankPixelRatio": 0.9,
+            "darkPixelRatio": 0,
+            "nonblankPixelRatio": 1
+          }
+        ]
+      }
+    }
+  ]
+}

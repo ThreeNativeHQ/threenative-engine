@@ -59,10 +59,14 @@ case "$suite_prebuilt" in
     ;;
 esac
 
-suite_tmp_root="$(mktemp -d /tmp/threenative-suite.XXXXXX)"
+suite_tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/threenative-suite.XXXXXX")" || exit $?
 export TN_SUITE_TMPDIR="$suite_tmp_root"
 export TMPDIR="$suite_tmp_root"
-suite_marker="$(mktemp "$suite_tmp_root/tn-suite-count.XXXXXX")"
+suite_marker="$(mktemp "$suite_tmp_root/tn-suite-count.XXXXXX")" || {
+  suite_allocation_status=$?
+  rmdir -- "$suite_tmp_root"
+  exit "$suite_allocation_status"
+}
 # Names this run so any legacy tag-aware temp guard also stays isolated from concurrent lanes.
 export TN_TEST_TEMP_TAG="run${$}"
 lease_branch="$(git symbolic-ref -q HEAD || true)"

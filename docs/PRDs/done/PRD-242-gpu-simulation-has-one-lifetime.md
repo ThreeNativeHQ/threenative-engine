@@ -20,7 +20,7 @@ Sources read at depth 1 on 2026-08-28, all MIT:
 [`bandinopla/threejs-fluid-simulation`](https://github.com/bandinopla/threejs-fluid-simulation).
 **Nothing is depended on and nothing is copied.** What is mined is the shape all five converge on.
 
-Parent batch: [feature-mining](../feature-mining/README.md). **This PRD is the enabler for
+Parent batch: feature-mining. **This PRD is the enabler for
 [243](./PRD-243-softbody3d-cloth-first.md) and [244](./PRD-244-the-scenes-bvh-reaches-the-gpu.md);
 neither is worth starting before it lands.**
 

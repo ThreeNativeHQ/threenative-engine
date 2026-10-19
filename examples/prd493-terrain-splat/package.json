@@ -1,0 +1,24 @@
+{
+  "name": "prd493-terrain-splat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "world": "blender --background --factory-startup --python scripts/make_world.py -- --out public/world",
+    "build:native": "node ../../packages/create-threenative/dist/threenative.js build --target desktop"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "@threenative/playtest": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.3",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "@threenative/runtime-native": "workspace:*"
+  }
+}

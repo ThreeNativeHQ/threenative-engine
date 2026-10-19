@@ -149,7 +149,7 @@ function expandUe4Instances(
 
 /** Builds geometry from a UE4 MeshDescription: every triangle's corners come from the file's
  * own triangle container, and its section from the polygon group its polygon belongs to. */
-export function buildGeometryFromUe4MeshDescription(
+function buildGeometryFromUe4MeshDescription(
   description: IUe4MeshDescription,
   options: GeometryOptions,
 ): IGeometryBuild {

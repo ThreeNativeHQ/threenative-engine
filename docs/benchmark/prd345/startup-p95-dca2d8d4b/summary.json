@@ -1,0 +1,46 @@
+{
+  "pass": true,
+  "unchanged": true,
+  "arms": {
+    "before": {
+      "attempted": 40,
+      "failures": 0,
+      "navigationReadyMs": {
+        "count": 40,
+        "median": 2560.2999999970198,
+        "p95": 2649.699999988079,
+        "maximum": 7679.5,
+        "method": "nearest rank ceil(0.95*n), one-based"
+      },
+      "sceneLoadToReadyMs": {
+        "count": 40,
+        "median": 1965.6500000059605,
+        "p95": 2036.8999999910593,
+        "maximum": 2297.4000000059605,
+        "method": "nearest rank ceil(0.95*n), one-based"
+      }
+    },
+    "after": {
+      "attempted": 40,
+      "failures": 0,
+      "navigationReadyMs": {
+        "count": 40,
+        "median": 2760,
+        "p95": 2831,
+        "maximum": 8064.79999999702,
+        "method": "nearest rank ceil(0.95*n), one-based"
+      },
+      "sceneLoadToReadyMs": {
+        "count": 40,
+        "median": 2160.2499999925494,
+        "p95": 2241.7000000029802,
+        "maximum": 2247.9000000059605,
+        "method": "nearest rank ceil(0.95*n), one-based"
+      }
+    }
+  },
+  "p95DeltaMs": 181.30000001192093,
+  "scope": "fresh Chromium process/context/page; engine ready timeline performance.now origin; load-to-ready also retained; no browser launch/lease/server timing",
+  "cache": "fresh page/HTTP cache; OS filesystem and GPU driver shader caches uncontrolled; NOT shader-cold",
+  "limitations": "40 samples/arm is empirical engineering evidence, not a precise population-tail estimate. Failures retained; successful-only statistics are unqualified if any failure occurs. No compileComplete or full restart readiness inferred."
+}

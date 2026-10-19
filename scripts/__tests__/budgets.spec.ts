@@ -606,8 +606,13 @@ describe("budget gate", () => {
     await budgetSupportFixture(root);
 
     await expect(enforceBudgets(root)).rejects.toThrow(/starter.*UiLayer.*@threenative\/ui/u);
+    // Each template is judged by its own closure: starter for the import its source makes,
+    // minimal because it cannot resolve an entry that carries no install instruction.
     await expect(enforceBudgets(root)).rejects.toThrow(
-      /^(?![\s\S]*minimal.*UiLayer)[\s\S]*starter.*UiLayer.*@threenative\/ui/u,
+      /starter: UiLayer -> @threenative\/ui \(@threenative\/ui\); template source imports/u,
+    );
+    await expect(enforceBudgets(root)).rejects.toThrow(
+      /minimal: UiLayer -> @threenative\/ui \(@threenative\/ui\); this template's dependency closure does not install/u,
     );
   });
 

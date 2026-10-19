@@ -9,8 +9,9 @@ Repository `/home/joao/projects/threenative/threenative-engine`, remote
 `https://github.com/ThreeNativeHQ/threenative.git`, branch `main`, baseline HEAD
 `e8754ab24e8e227ab472690a3d8d7b6d2cd53550`. Binding charter:
 [`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md). Parent batch:
-[feature-mining](../../feature-mining/README.md).
+feature-mining.
 
+**Priority:** P3 — Its own blocked-on says Phase 0 may close it DECLINED with nothing built.
 **Blocking evidence:** the required real many-soldier consumer is not reproducibly runnable from
 its committed source. A detached `sandbox/fps-framework` at `e2652889` requests
 `public/raw-assets.manifest.json`, but that commit contains only `public/assets.manifest.json`.

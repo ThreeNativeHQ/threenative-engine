@@ -1,6 +1,7 @@
 # PRD-368 — Compiled pipelines survive a relaunch
 
 **Status:** PARTIAL — persistence and paired-measurement implementation added on 2026-09-10; Linux/Android dependency reconstruction and filesystem contracts executed. Full host-lifecycle/shared gates are still being verified; physical Pixel 8 timing, visual acceptance, and independent review remain open. See the [current verification record](../../verification/prd-368-persistence-2026-09-10.md). **Layer:** native engine; only the host can persist backend compiler data.
+**Priority:** P1 — Open: Pixel 8 pairs meet the compile bar and corrupt caches still launch.
 **Complexity:** 3 (10+ files) + 2 (new cache lifecycle) + 2 (concurrency) = **7 → HIGH mode**.
 **Depends on:** [367](PRD-367-doctor-explains-shader-compilation.md) for measured acceptance and
 the [shared execution contract](README.md). Dependency feasibility can run first.

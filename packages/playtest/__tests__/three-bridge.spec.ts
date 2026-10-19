@@ -1,6 +1,8 @@
 import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, type Vector2, type WebGLRenderer } from "three";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
+import { PLAYTEST_CLOCK_GLOBAL } from "../src/protocol.js";
+import { waitForResource } from "../src/runner/wait-for-resource.js";
 import { installThreePlaytestBridge } from "../src/three/bridge.js";
 import { ThreePlaytestEntityRegistry } from "../src/three/entities.js";
 
@@ -15,6 +17,89 @@ const renderer = {
     return target.set(1280, 720);
   },
 } as WebGLRenderer;
+
+test("resource-only polls leave scene, entity and component observers for the full witness", async () => {
+  const scene = new Scene();
+  const entities = vi.fn(() => [{ id: "wolf", object: new Mesh() }]);
+  const components = vi.fn(() => ({ wolf: { alive: true } }));
+  const gameplay = vi.fn(() => ({ animation: {}, states: { wolf: "walking" } }));
+  const update = vi.spyOn(scene, "updateMatrixWorld");
+  const size = vi.fn(renderer.getDrawingBufferSize);
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    clockMode: "wall-clock",
+    components,
+    entities,
+    gameplay,
+    renderer: { getDrawingBufferSize: size },
+    scene,
+    tick: () => 7,
+    fixedStep: () => {},
+    resources: { read: () => ({ state: { ready: true } }) },
+  });
+  try {
+    entities.mockClear();
+    const poll = await installation.bridge.sample({ entities: [], include: ["resources"], resources: ["state"] });
+    expect(poll.resources).toEqual({ state: { ready: true } });
+    expect(poll.clock).toMatchObject({ mode: "wall-clock", tick: 7 });
+    expect(Number.isFinite(poll.clock.timeMs)).toBe(true);
+    for (const observer of [entities, components, gameplay, update, size]) expect(observer).not.toHaveBeenCalled();
+    expect(poll.components).toBeUndefined();
+    const full = await installation.bridge.sample({});
+    expect(full.components).toEqual({ wolf: { alive: true } });
+    expect(full.entities?.[0]?.id).toBe("wolf");
+    for (const observer of [entities, components, gameplay, update, size]) expect(observer).toHaveBeenCalled();
+  } finally {
+    installation.dispose();
+  }
+});
+
+test("resource-only polls still reject non-JSON observations", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    renderer,
+    scene: new Scene(),
+    resources: { read: () => ({ state: { ready: Number.NaN } }) },
+  });
+  try {
+    await expect(Promise.resolve().then(() => installation.bridge.sample({ entities: [], include: ["resources"], resources: ["state"] }))).rejects.toThrow();
+  } finally {
+    installation.dispose();
+  }
+});
+
+test("a passing resource poll cannot bypass an invalid full component witness", async () => {
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    renderer,
+    scene: new Scene(),
+    resources: { read: () => ({ state: { ready: true } }) },
+    components: () => ({ wolf: { value: Number.NaN } }),
+  });
+  let polls = 0;
+  let full = 0;
+  try {
+    await expect(
+      waitForResource({
+        id: "state",
+        path: "ready",
+        predicate: { equals: true },
+        timeoutMs: 1000,
+        poll: async () => {
+          polls++;
+          return installation.bridge.sample({ entities: [], include: ["resources"], resources: ["state"] });
+        },
+        sample: async () => {
+          full++;
+          return installation.bridge.sample({});
+        },
+      }),
+    ).rejects.toThrow(/finite JSON/u);
+    expect({ polls, full }).toEqual({ polls: 1, full: 1 });
+  } finally {
+    installation.dispose();
+  }
+});
 
 test("bridge samples registered transforms and projected bounds without owning a render loop", async () => {
   const scene = new Scene();
@@ -165,6 +250,67 @@ test("fixed-step fails closed when actual updates differ from requested ticks", 
     "fixedStep advanced 2 actual ticks; expected 1.",
   );
   installation.dispose();
+});
+
+test("a wall-clock request makes the host's own pump the clock, whatever the installer passed", async () => {
+  // The browser half of the production profile: a runner asks for the wall clock before the page
+  // loads, the game's own frame pump moves the simulation, and `advance` names the span those
+  // ticks cover rather than stepping the loop itself. The bridge judged that pump a fixed-step
+  // producer and failed a healthy run with "fixedStep advanced 3 actual ticks; expected 1" — a
+  // count error about a clock nobody had chosen, thrown at a loop that was running correctly.
+  const host = globalThis as Record<string, unknown>;
+  const previous = host[PLAYTEST_CLOCK_GLOBAL];
+  host[PLAYTEST_CLOCK_GLOBAL] = "wall-clock";
+  let tick = 0;
+  // A live host, not the bridge's own stepping: the claim is that ticks arriving from somewhere
+  // else are the clock, so the pump has to be the only thing that produces them.
+  const pump = setInterval(() => { tick += 1; }, 10);
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    fixedStep: async (ticks) => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      tick += ticks;
+    },
+    renderer,
+    scene: new Scene(),
+    tick: () => tick,
+  });
+
+  try {
+    const advanced = await installation.bridge.advance?.(1);
+    expect(advanced?.clock.mode).toBe("wall-clock");
+    // The ticks the pump really ran during the span, not the count the request named.
+    expect(advanced?.ticks ?? 0).toBeGreaterThan(1);
+    expect((await installation.bridge.sample({})).clock.mode).toBe("wall-clock");
+  } finally {
+    clearInterval(pump);
+    installation.dispose();
+    if (previous === undefined) Reflect.deleteProperty(host, PLAYTEST_CLOCK_GLOBAL);
+    else host[PLAYTEST_CLOCK_GLOBAL] = previous;
+  }
+});
+
+test("an unrecognised clock request fails closed instead of falling back to fixed-step", async () => {
+  const host = globalThis as Record<string, unknown>;
+  const previous = host[PLAYTEST_CLOCK_GLOBAL];
+  // A misspelling that quietly became a fixed-step run published a frame rate for a game that was
+  // not playing, which is the whole reason this switch is a name and not a boolean.
+  host[PLAYTEST_CLOCK_GLOBAL] = "wallclock";
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    fixedStep: () => undefined,
+    renderer,
+    scene: new Scene(),
+    tick: () => 0,
+  });
+
+  try {
+    expect(() => installation.bridge.sample({})).toThrow("TN_PLAYTEST_CLOCK_UNSUPPORTED");
+  } finally {
+    installation.dispose();
+    if (previous === undefined) Reflect.deleteProperty(host, PLAYTEST_CLOCK_GLOBAL);
+    else host[PLAYTEST_CLOCK_GLOBAL] = previous;
+  }
 });
 
 test("fixed-step refuses to advertise without an authoritative tick provider", () => {
@@ -353,4 +499,30 @@ test("dispose restores a previously installed bridge instead of deleting it", ()
   expect((globalThis as Record<string, unknown>).__THREENATIVE_PLAYTEST_BRIDGE__).toBe(first.bridge);
   first.dispose();
   expect((globalThis as Record<string, unknown>).__THREENATIVE_PLAYTEST_BRIDGE__).toBeUndefined();
+});
+
+test("a runtime render-only provider is advertised and serviced, and absent otherwise", async () => {
+  // A driven native loop presents nothing between ticks, so a desktop screenshot needs an explicit
+  // render-only frame. The bridge owns the operation; the capability is the runner's signal that
+  // the operation exists, so a capture that needs one is never sent to a bridge that lacks it.
+  let rendered = 0;
+  const withRender = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    fixedStep: () => undefined,
+    renderCurrent: () => {
+      rendered += 1;
+    },
+    renderer,
+    scene: new Scene(),
+    tick: () => 0,
+  });
+  expect((await withRender.bridge.describe()).capabilities).toContain("runtime.renderOnly");
+  await withRender.bridge.renderOnly?.();
+  expect(rendered).toBe(1);
+  withRender.dispose();
+
+  const without = installThreePlaytestBridge({ camera: new PerspectiveCamera(), renderer, scene: new Scene() });
+  expect((await without.bridge.describe()).capabilities).not.toContain("runtime.renderOnly");
+  expect(without.bridge.renderOnly).toBeUndefined();
+  without.dispose();
 });

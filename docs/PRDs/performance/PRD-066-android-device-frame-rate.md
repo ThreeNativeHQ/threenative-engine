@@ -9,6 +9,7 @@ open, 2026-08-10.** First physical Android device ever attached to this reposito
 serial `37251FDJH0037Z`, arm64-v8a, Android 17, 1080×2400, Mali-G715). Every number below was
 executed on it. Nothing here is emulator-derived and nothing here licenses an iOS claim.
 
+**Priority:** P1 — Debug APK still ships an unoptimised interpreter; open boxes want the flag test and -O2 release proof.
 **Complexity: 7 → MEDIUM-HIGH mode.** One landed build-flag fix, one engine decision that
 needs a spike before it can be scoped, one device frame-rate gate that does not exist yet.
 

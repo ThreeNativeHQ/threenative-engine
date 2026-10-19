@@ -110,6 +110,27 @@ describe("dynamic body actuation", () => {
     expect(rigidBodyObject(body).position.x).toBeGreaterThan(0.5);
   });
 
+  it("applies an off-centre force for one step only: its torque does not linger", async () => {
+    const { ctx, step } = await world();
+    const body = crate(ctx);
+    body.applyForceAtPoint({ x: 0, y: 0, z: 30 }, { x: 0.5, y: 0.5, z: 0 });
+    step(2);
+    /** Angle the body turns over the next ten frames, in radians. */
+    const spin = () => {
+      const before = rigidBodyObject(body).quaternion.clone();
+      step(10);
+      return before.angleTo(rigidBodyObject(body).quaternion);
+    };
+    const early = spin();
+    step(10);
+    const late = spin();
+    // One step of torque leaves a steady spin (the windows may differ by a fixed step); a torque
+    // the backend kept would spin it up — unfixed, the late window turned 3.3x the early one.
+    expect(early).toBeGreaterThan(0.01);
+    expect(late / early).toBeGreaterThan(0.7);
+    expect(late / early).toBeLessThan(1.3);
+  });
+
   // Rapier discards actuation on a sleeping body, which is the same silent no-op class as the
   // discarded transform write this API exists to replace.
   it("wakes a settled body rather than discarding the impulse", async () => {

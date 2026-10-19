@@ -1,0 +1,6 @@
+{
+  "name": "vq-volumetric-fog-fixture",
+  "private": true,
+  "type": "module",
+  "threenative": { "nativeEntry": "src/game.ts" }
+}

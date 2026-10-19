@@ -699,7 +699,6 @@ async function run(): Promise<IProfileResult> {
     const removed = meshes[2] as Mesh;
     const reparented = meshes[3] as Mesh;
     const removedParent = removed.parent;
-    const reparentHome = reparented.parent;
     const relocated = new Group();
     relocated.position.set(0, 500, 0);
     scene.add(relocated);

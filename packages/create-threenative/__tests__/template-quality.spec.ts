@@ -19,6 +19,7 @@ const names = await templateNames(templatesDir);
 interface IQualityModule {
   readonly qualityPreset: (tier: string) => Record<string, unknown>;
   readonly resolveQualityTier: (request?: {
+    gpuClass?: string;
     mobile?: boolean;
     software?: boolean;
     tier?: string;
@@ -29,6 +30,35 @@ async function load(template: string): Promise<IQualityModule> {
   return (await import(
     path.join(templatesDir, template, "src", "render", "quality.ts")
   )) as IQualityModule;
+}
+
+interface IRenderChain {
+  readonly perAdapter?: Record<string, { tier?: string }>;
+  readonly tier?: string;
+}
+
+/** The `renderChain` block of every scenario a template ships, wherever the template keeps it. */
+async function renderChains(template: string): Promise<{ chain: IRenderChain; label: string }[]> {
+  const found: { chain: IRenderChain; label: string }[] = [];
+  for (const dir of [
+    path.join(templatesDir, template),
+    path.join(templatesDir, "..", "template-playtests", template),
+  ]) {
+    for (const file of await readdir(dir, { recursive: true }).catch(() => [])) {
+      if (!file.endsWith(".playtest.json")) continue;
+      const scenario = JSON.parse(await readFile(path.join(dir, file), "utf8")) as {
+        assert?: { renderChain?: IRenderChain };
+      };
+      const chain = scenario.assert?.renderChain;
+      if (chain !== undefined) found.push({ chain, label: `${template}/${file}` });
+    }
+  }
+  return found;
+}
+
+function scenarioTier(chain: IRenderChain, adapter: string): string | undefined {
+  const generic = adapter === "software" ? "software" : "hardware";
+  return (chain.perAdapter?.[adapter] ?? chain.perAdapter?.[generic])?.tier ?? chain.tier;
 }
 
 describe("template quality tiers", () => {
@@ -137,13 +167,23 @@ describe("template quality tiers", () => {
             renderer: unknown,
             scene: unknown,
             camera: unknown,
-            environment?: { mobile?: boolean; software?: boolean; tier?: string },
+            environment?: {
+              gpuClass?: string;
+              mobile?: boolean;
+              software?: boolean;
+              tier?: string;
+            },
           ) => { dispose?: () => void };
         };
         const renderer = {
           kind: "webgpu",
           raw: {},
-          createRenderChain: () => ({ applied: { dropped: [], stages: [] }, dispose() {} }),
+          // A working chain runs what it was asked for; a kit that fails closed when its own
+          // stage is missing (rain) must see it applied, as it would on a real renderer.
+          createRenderChain: (options?: { request?: { stages?: readonly string[] } }) => ({
+            applied: { dropped: [], stages: [...(options?.request?.stages ?? [])] },
+            dispose() {},
+          }),
         };
         const reported = (environment: Parameters<typeof post.setupPost>[3]): string => {
           info.mockClear();
@@ -170,6 +210,16 @@ describe("template quality tiers", () => {
         expect(reported({ mobile: true, software: false }), `${name}: phone`).toContain(
           "TN_QUALITY_TIER low",
         );
+        // PRD-563: the family the renderer named reaches the resolver through each call site.
+        expect(reported({ gpuClass: "integrated", mobile: false }), `${name}: iGPU`).toContain(
+          "TN_QUALITY_TIER medium",
+        );
+        expect(reported({ gpuClass: "discrete", mobile: false }), `${name}: card`).toContain(
+          "TN_QUALITY_TIER high",
+        );
+        expect(reported({ gpuClass: "unknown", mobile: true }), `${name}: unknown`).toContain(
+          "TN_QUALITY_TIER low",
+        );
       }
     } finally {
       info.mockRestore();
@@ -185,20 +235,99 @@ describe("template quality tiers", () => {
     }
   });
 
+  // PRD-563: the renderer names a GPU family and the game maps it to a start tier. `unknown` is
+  // every adapter no rule matched (Apple Silicon, a new vendor), so it must give today's answer.
+  it("should resolve an unknown or absent GPU family exactly as before in every template", async () => {
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      for (const base of [
+        {},
+        { mobile: true },
+        { mobile: false },
+        { software: true },
+        { mobile: true, tier: "medium" },
+      ]) {
+        const before = resolveQualityTier(base);
+        expect(resolveQualityTier({ ...base, gpuClass: "unknown" }), `${name} unknown`).toBe(
+          before,
+        );
+        expect(resolveQualityTier({ ...base, gpuClass: undefined }), `${name} absent`).toBe(before);
+      }
+    }
+  });
+
+  it("should start each GPU family on the tier the game names for it in every template", async () => {
+    const expected: Record<string, string> = {
+      discrete: "high",
+      integrated: "medium",
+      "mobile-high": "medium",
+      "mobile-low": "low",
+      "mobile-mid": "low",
+      software: "low",
+    };
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      for (const [gpuClass, tier] of Object.entries(expected)) {
+        expect(resolveQualityTier({ gpuClass }), `${name} ${gpuClass}`).toBe(tier);
+        // A family is a start: the explicit tier and the software fact keep outranking it.
+        expect(resolveQualityTier({ gpuClass, tier: "high" }), `${name} ${gpuClass} pinned`).toBe(
+          "high",
+        );
+      }
+      expect(resolveQualityTier({ gpuClass: "discrete", software: true }), `${name}`).toBe("low");
+    }
+  });
+
+  // A scenario's flat `renderChain.tier` is held by every adapter its `perAdapter` rows do not name.
+  // A template that starts a GPU family on another tier than that flat one fails the scenario on
+  // that machine unless the family has a row, and a row that disagrees with the game fails it the
+  // other way. Both are read off the template's own table, never typed twice by hand, and every
+  // scenario that asserts a chain is read — web, native and look, with or without `perAdapter`.
+  it("should name the start tier of every adapter a template scenario would otherwise miss", async () => {
+    const adapters: [string, { gpuClass?: string; software?: boolean }][] = [
+      ["discrete", { gpuClass: "discrete" }],
+      ["integrated", { gpuClass: "integrated" }],
+      ["mobile-high", { gpuClass: "mobile-high" }],
+      ["mobile-low", { gpuClass: "mobile-low" }],
+      ["mobile-mid", { gpuClass: "mobile-mid" }],
+      ["software", { software: true }],
+    ];
+    const read: string[] = [];
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      for (const { chain, label } of await renderChains(name)) {
+        read.push(label);
+        for (const [adapter, request] of adapters) {
+          const asserted = scenarioTier(chain, adapter);
+          if (asserted === undefined) continue;
+          expect(asserted, `${label}: ${adapter} row`).toBe(resolveQualityTier(request));
+        }
+      }
+    }
+    expect(read, "no template scenario asserted a render chain to check").not.toHaveLength(0);
+    expect(read, "the scan missed a native scenario").toContain(
+      "rain/native-playtests/boot.playtest.json",
+    );
+  });
+
   // The tier the game picks and the tier the renderer's chain runs at are two separate settings, and
   // a preset that names only the first leaves the chain at its own `high` default. Found by a real
   // forced-SwiftShader run on `minimal`: TN_QUALITY_TIER said `low`, and the run still reported
   // `renderChain.tier: "high"`, because no template but `starter` set `renderChainTier` — so the low
   // preset paid for the high chain's denoise and slice counts. Every fixture asserting
   // `perAdapter.software: {tier: "low"}` was green anyway, because those are read off the tier the
-  // game chose rather than off the chain that ran.
-  it("should carry the chain's own tier in every template's low preset", async () => {
+  // game chose rather than off the chain that ran. The same gap sat in `medium` for ten kits: the
+  // game resolved `medium` for an integrated or mobile-high GPU while the chain stayed on `high`.
+  it("should request the chain tier it names in every template's preset", async () => {
     for (const name of names) {
       const { qualityPreset } = await load(name);
-      expect(
-        qualityPreset("low").renderChainTier,
-        `${name}: low preset leaves the render chain on its high default`,
-      ).toBe("low");
+      for (const tier of QUALITY_TIERS) {
+        // The chain falls back to `high` when a preset names no `renderChainTier`.
+        expect(
+          qualityPreset(tier).renderChainTier ?? "high",
+          `${name}: ${tier} preset leaves the render chain on another tier`,
+        ).toBe(tier);
+      }
     }
   });
 
@@ -302,6 +431,7 @@ interface ITestWindow {
   readonly frame: { readonly p95: number };
   readonly gpuMs?: number;
   readonly gpuAgeFrames?: number;
+  readonly gpu?: { readonly samples: number; readonly p50: number };
   readonly surface?: { readonly compiling?: boolean };
 }
 
@@ -566,6 +696,65 @@ describe("starter adaptive quality", () => {
     expect(laterWindows.changed).toBe(false);
   });
 
+  it("should keep high on the completed GPU series when a stale age hides fresh work behind a host gap", async () => {
+    const { createAdaptiveQuality, formatQualityAdaptation } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality(
+      { mobile: false },
+      { maxGpuAgeFrames: 4, startupWindows: 0 },
+    );
+    const window = {
+      frame: { p95: 3.7 },
+      gpu: { p50: 16.61, samples: 37 },
+      gpuAgeFrames: 10,
+      gpuMs: 15.48,
+      presented: { p95: 54.7 },
+    };
+    const decision = feed(policy, 1, 3, window);
+    expect(decision.meter).toBe("work");
+    expect(decision.costMs).toBeCloseTo(16.61, 5);
+    expect(decision.tier).toBe("high");
+    expect(decision.reason).toBe("steady");
+    expect(formatQualityAdaptation(decision)).toContain("meter=work");
+  });
+
+  it("should still downgrade on a stale window whose completed GPU series is over budget", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality(
+      { mobile: false },
+      { maxGpuAgeFrames: 4, startupWindows: 0 },
+    );
+    const decision = feed(policy, 1, 2, {
+      frame: { p95: 3.7 },
+      gpu: { p50: 39, samples: 37 },
+      gpuAgeFrames: 10,
+      gpuMs: 39,
+      presented: { p95: 16.7 },
+    });
+    expect(decision.meter).toBe("work");
+    expect(decision.costMs).toBeCloseTo(39, 5);
+    expect(decision.tier).toBe("medium");
+    expect(decision.reason).toBe("overloaded");
+  });
+
+  it("should downgrade when the completed GPU series is cheap but the own CPU frame is over budget", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality(
+      { mobile: false },
+      { maxGpuAgeFrames: 4, startupWindows: 0 },
+    );
+    const decision = feed(policy, 1, 2, {
+      frame: { p95: 30 },
+      gpu: { p50: 10, samples: 37 },
+      gpuAgeFrames: 10,
+      gpuMs: 10,
+      presented: { p95: 16.7 },
+    });
+    expect(decision.meter).toBe("work");
+    expect(decision.costMs).toBeCloseTo(30, 5);
+    expect(decision.tier).toBe("medium");
+    expect(decision.reason).toBe("overloaded");
+  });
+
   it("should still step down on a fresh GPU sample above the strict budget", async () => {
     const { createAdaptiveQuality } = await loadAdaptive("starter");
     const policy = createAdaptiveQuality({ mobile: false }, { startupWindows: 0 });
@@ -673,6 +862,9 @@ describe("starter postprocessing lifecycle", () => {
     const absent = controller.debug();
     expect(absent).toMatchObject({ fallback: "gpu-unavailable", meter: "presented", window: 1 });
     expect(Object.hasOwn(absent, "gpuMs")).toBe(false);
+    // No temporal provider is installed, so the key must be absent: `undefined` is not JSON-safe and
+    // the playtest bridge rejects the whole quality component with it.
+    expect(Object.hasOwn(absent, "temporal")).toBe(false);
 
     post.observeQualityWindow(frameWindow(2, { gpuMs: 8 }));
     const fresh = controller.debug();

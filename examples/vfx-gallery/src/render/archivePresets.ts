@@ -56,7 +56,6 @@ export type ArchiveLayer = {
 
 type PresetFactory = (position: ArchiveVec3) => ArchiveLayer[];
 
-const FIRE_SPRITE_TEXTURE = "fire";
 const SMOKE_SPRITE_TEXTURE = "smoke";
 const GLOW_SPRITE_TEXTURE = "glow";
 

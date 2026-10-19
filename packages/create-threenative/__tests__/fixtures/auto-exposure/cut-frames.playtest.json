@@ -1,0 +1,56 @@
+{
+  "name": "prd339-exposure-180-rendered-updates",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 640,
+    "height": 360
+  },
+  "warmupFrames": 20,
+  "artifacts": {
+    "screenshots": "before-after",
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "initial",
+      "waitForResource": {
+        "id": "state",
+        "path": "sampleFrames",
+        "equals": 180
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "holdTicks": 1,
+      "press": ["KeyC"],
+      "release": true
+    },
+    {
+      "label": "changed",
+      "waitForResource": {
+        "id": "state",
+        "path": "cutSampleFrames",
+        "equals": 180
+      },
+      "timeoutMs": 60000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true
+    },
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 360,
+          "minNonblankPixelRatio": 0.15
+        }
+      }
+    ]
+  }
+}

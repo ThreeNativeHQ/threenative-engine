@@ -84,6 +84,13 @@ function loadingFixture() {
 }
 
 describe("native loading stall fixture", () => {
+  it("ships the empty manifest requested during procedural smoke startup", () => {
+    const manifest = JSON.parse(
+      readFileSync(path.join(repo, "examples/native-smoke/assets.manifest.json"), "utf8"),
+    );
+    expect(manifest).toEqual({ version: 1, entries: {} });
+  });
+
   it("cannot end after three seconds with only 57 frame opportunities", async () => {
     const fixture = loadingFixture();
     await fixture.advance(3_000, 57);

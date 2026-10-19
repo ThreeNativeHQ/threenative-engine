@@ -41,7 +41,7 @@ template from nothing.
 
 **Task 1 of the Band 1 quick wins.** Slice of
 [`FUTURE-ARCHITECTURE-DIRECTION.md`](../../architecture/FUTURE-ARCHITECTURE-DIRECTION.md) — see
-[README](../architecture/README.md) for the tick-back rule.
+README for the tick-back rule.
 
 **Complexity: 8 → HIGH mode.** +3 (10+ files: 8 templates × 2, plus a gate and template docs),
 +2 (multi-package: `create-threenative` templates and `scripts/`), +2 (this is generated user

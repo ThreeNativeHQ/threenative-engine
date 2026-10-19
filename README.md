@@ -121,7 +121,9 @@ lifecycle.
 | `tower-defense` | Four tower types, three upgrade levels, twelve waves and an orbital strike on a polished diorama |
 | `racing` | Three laps, checklines, rescue sectors, boost pads |
 | `sailing` | Wind, waves, buoyancy, and an ordered course |
+| `rain` | A procedural coastal storm, weather controls, and a free-fly camera |
 | `shooter` | Hitscan and projectile weapons, hunting targets, timed pickups |
+| `snow` | Deformable snow footprints, a ball that carves its own track, blizzard weather |
 
 Details in [`create-threenative`](packages/create-threenative/README.md).
 
@@ -135,8 +137,11 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/metahuman` | MetaHuman head expressions — checksum-verified OpenRigLogic WASM evaluator and the binding-metadata asset contract |
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
+| `@threenative/procedural-animals` | Baked animal payloads, runtime poses, accepted-state following, and conservative bounds |
 | `@threenative/runtime-native` | Owned C++ host for desktop and Android |
 | `@threenative/raw-unreal` | Raw Unreal editor `.uasset` static-mesh loader — UE5 FMeshDescription and UE4.18 FRawMesh, no interchange conversion |
+| `@threenative/terrain` | Optional headless Strata authoring: validated recipes, baked heightfields and indexed Three.js geometry |
+| `@threenative/three-native` | The native engine's Three.js API catalog and the TypeScript sources the engine bundlers read |
 | `@threenative/ui` | React bindings for HUD and game state |
 | `@threenative/ueformat` | UEFormat v10 `.uemodel` parser and Three.js loader for meshes exported from Unreal packages |
 | `threenative-engine-mcp` | Offline MCP capability discovery for authoring agents |

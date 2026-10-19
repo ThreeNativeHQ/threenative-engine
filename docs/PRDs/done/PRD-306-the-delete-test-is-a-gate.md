@@ -44,7 +44,7 @@ that goes red.
 [PRD-307](PRD-307-reflections-are-prefiltered-before-the-game-ships.md) — the gate is cheap to
 write now and expensive to retrofit once a second baking pass exists to get it wrong.
 
-**Task 3 of Band 1.** See [README](../architecture/README.md) for the tick-back rule.
+**Task 3 of Band 1.** See README for the tick-back rule.
 
 **Complexity: 6 → MEDIUM mode.** +2 (6–10 files), +2 (new gate module driving a real build and two
 playtest runs), +1 (multi-package: `assets`, `create-threenative`, `playtest`, `scripts`), +1 (a

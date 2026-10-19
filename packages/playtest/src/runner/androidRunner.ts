@@ -1,10 +1,14 @@
+import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, type ICompletionWindow } from "./steps.js";
+import { cpuWindowLabels, measureCpuWindow, type ICpuWindow } from "./linuxCpuWindow.js";
+import type { IPlaytestToneObservation } from "../tone.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { assertCaptureNotBlank } from "../capture.js";
+import { assertCaptureNotBlank, assertDesktopCaptureNotBlank } from "../capture.js";
 import {
   loadPlaytestScenario,
   playtestDiagnostic,
+  resolveDiagnosticsPolicy,
   playtestStepHoldTicks,
   playtestStepWaitTicks,
   type IPlaytestFramebufferCoverageObservation,
@@ -31,6 +35,7 @@ import {
   PlaytestBridgeError,
   type IPlaytestBridgeClient,
 } from "./bridgeClient.js";
+import { alignScenarioStartTick } from "./runner-support.js";
 import { waitForStartupReady } from "./startupReady.js";
 import { waitForResource } from "./wait-for-resource.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
@@ -67,6 +72,7 @@ export interface IAndroidPlaytestDependencies {
 }
 
 export interface IDevicePlaytestDriver {
+  readonly processId?: number;
   /** Send the app behind HOME and wait until the device reports it unfocused. */
   background?(): Promise<void>;
   captureConsole(): Promise<Array<{ text: string; type: string }>>;
@@ -85,7 +91,7 @@ export interface IDevicePlaytestDriver {
   removeFile?(path: string): Promise<void>;
   rotate?(rotation: number): Promise<void>;
   runAdb?(args: readonly string[]): Promise<string>;
-  screenshot(path: string): Promise<void>;
+  screenshot(path: string, onRequestAccepted?: () => Promise<void>): Promise<void>;
   setPointers?(pointers: readonly IAndroidPointer[]): Promise<IAndroidPointerInjection>;
   tap?(x: number, y: number): Promise<void>;
   hideKeyboard?(): Promise<boolean>;
@@ -160,6 +166,12 @@ async function runDevicePlaytestInternal(
     await loadPlaytestScenario(config.projectPath, config.scenarioPath),
     config.performanceBudget,
   );
+  const cpuLabels = cpuWindowLabels(scenario, target.name, config.liveClock === true);
+  const cpuWindows: ICpuWindow[] = [];
+  const completionLabel = completionWindowLabel(scenario, target.name, config.liveClock === true);
+  let completionWindow: ICompletionWindow | undefined;
+  const completionDisplay = completionLabel === undefined ? undefined : completionWindowEnvironment("desktop", config.headless);
+  let failureEvidenceCaptured = false;
   await throwIfAborted(target);
   await mkdir(config.artifactDirectory, { recursive: true });
   await throwIfAborted(target);
@@ -237,11 +249,17 @@ async function runDevicePlaytestInternal(
     await throwIfAborted(target);
     setupApplication = bridge.setupApplication;
     await throwIfAborted(target);
-    if (scenario.warmupFrames > 0) await bridge.advance(scenario.warmupFrames);
-    await throwIfAborted(target);
-    // Same boundary as the browser lane: a fixed-step warmup is a tick count, not the clock the
-    // application's launch runs on, so wait for the device to say its world is safe to observe.
+    // Startup owns temporary operation timeouts during first-use compilation. Complete that
+    // gate before the scenario's frame warmup against the ready world.
     const attached = bridge;
+    // A counted desktop run's loop presents nothing between ticks, so its screenshot needs the
+    // bridge's render-only operation. Gated on the advertised capability: a bridge that offers
+    // none keeps the previous capture path rather than being handed an operation it lacks.
+    const renderOnly = target.name === "desktop"
+      && config.liveClock !== true
+      && attached.description.capabilities.includes("runtime.renderOnly")
+      ? () => attached.renderOnly()
+      : undefined;
     const startupOutcome = scenario.awaitStartup === false
       ? undefined
       : await waitForStartupReady({
@@ -254,7 +272,14 @@ async function runDevicePlaytestInternal(
         pump: () => attached.advance(1),
       });
     await throwIfAborted(target);
+    // Device requests are polled on animation frames; observe warmup draws, as the browser does,
+    // without spending simulation ticks before the scenario starts.
+    for (let frame = 0; frame < scenario.warmupFrames; frame += 1) {
+      await bridge.sample({ entities: [], include: [] });
+    }
+    await throwIfAborted(target);
 
+    await alignScenarioStartTick(bridge, scenario.startTick, config.liveClock === true);
     const entityIds = observedEntityIds(scenario);
     const sampleRequest = {
       ...(entityIds === undefined ? {} : { entities: entityIds }),
@@ -287,7 +312,12 @@ async function runDevicePlaytestInternal(
       // One armed capture per sample; absent means the bridge does no geometry work at all.
       ...(scenario.assert?.geometry === undefined ? {} : { geometry: scenario.assert.geometry }),
     } as const;
+    const tone: IPlaytestToneObservation[] = [];
     const before = await bridge.sample(sampleRequest);
+    if (completionLabel !== undefined && before.clock.mode !== "fixed-step") throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: prefix requires fixed-step clock");
+    if (scenario.artifacts?.screenshots === "before-after" && config.captureArtifactScreenshots !== false) {
+      await captureDeviceScreenshot(target, join(config.artifactDirectory, "before.png"), tone, "before.png", undefined, renderOnly);
+    }
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
       ? undefined
       : scenario.assert.movement.entity ?? scenario.subject;
@@ -368,6 +398,7 @@ async function runDevicePlaytestInternal(
           id: wait.id,
           path: wait.path,
           predicate: wait,
+          poll: () => attachedBridge.sample({ entities: [], include: ["resources"], resources: [wait.id] }),
           sample: () => attachedBridge.sample(sampleRequest),
           signal: target.abortSignal,
           timeoutMs,
@@ -394,10 +425,25 @@ async function runDevicePlaytestInternal(
           await setDevicePointers(target, transport, step.pointers, scenario.viewport);
           pointerCount = step.pointers.length;
         }
+        if (step.media !== undefined) {
+          await transport.call("input.media", {
+            dark: step.media.colorScheme === undefined ? -1 : step.media.colorScheme === "dark" ? 1 : 0,
+            reducedMotion: step.media.reducedMotion === undefined ? -1 : step.media.reducedMotion === "reduce" ? 1 : 0,
+          });
+        }
+        if (step.wheel !== undefined) {
+          // Viewport pixels, like every other device pointer; the centre when the step names no point,
+          // which is where the browser lane turns the wheel too.
+          await transport.call("input.wheel", {
+            deltaX: step.wheel.deltaX ?? 0,
+            deltaY: step.wheel.deltaY,
+            x: (step.wheel.x ?? 0.5) * scenario.viewport.width,
+            y: (step.wheel.y ?? 0.5) * scenario.viewport.height,
+          });
+        }
         if (typeof pressed === "string") {
           if (!heldKeys.has(pressed)) {
-            await transport.call("input.keyDown", { key: pressed });
-            await sendAndroidTextInput(target, pressed);
+            await pressKey(target, transport, pressed);
             heldKeys.add(pressed);
           }
         } else if (pressed !== undefined) {
@@ -409,8 +455,7 @@ async function runDevicePlaytestInternal(
           }
           for (const key of pressed) {
             if (!heldKeys.has(key)) {
-              await transport.call("input.keyDown", { key });
-              await sendAndroidTextInput(target, key);
+              await pressKey(target, transport, key);
               heldKeys.add(key);
             }
           }
@@ -424,7 +469,35 @@ async function runDevicePlaytestInternal(
           playtestStepHoldTicks(step, 0) + playtestStepWaitTicks(step),
           (step.holdFrames ?? 0) + (step.waitFrames ?? 0),
         );
-        if (coverageRecordingStarted) {
+        if (step.label === completionLabel && completionLabel !== undefined) {
+          const setupSnapshot = await bridge.sample({ ...sampleRequest, include: [...new Set([...(sampleRequest.include ?? []), "scene", "resources"])], resources: [...new Set([...(sampleRequest.resources ?? []), "state", "hud"])] });
+          if (setupSnapshot.clock.mode !== "fixed-step") throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: pose setup requires fixed-step clock");
+          completionWindow = await measureCompletionWindow(completionLabel,
+            (mode) => transport.call("_setClockMode", mode), () => transport.call("_presentationCompletions"), async () => {
+              for (const key of heldKeys) await transport.call("input.keyUp", { key });
+              heldKeys.clear();
+              if (pointerButtons) await transport.call("input.pointer", { buttons: 0, type: "up", x: pointerX, y: pointerY });
+              if (pointerCount) await transport.call("input.pointers", { pointers: [] });
+              pointerButtons = 0; pointerCount = 0;
+            });
+          completionWindow.setupSnapshot = setupSnapshot;
+        } else if (step.label !== undefined && cpuLabels.includes(step.label)) {
+          const measuredBridge = bridge;
+          if (frames > 1000) await measuredBridge.advance(frames - 1000);
+          const profile: unknown = "profile" in measuredBridge.description ? measuredBridge.description.profile : undefined;
+          const holdRender = target.name === "desktop" && typeof profile === "object" && profile !== null
+            && "engine" in profile && profile.engine === "native";
+          if (holdRender) await transport.call("_holdAutomaticRender", true);
+          try {
+            cpuWindows.push(await measureCpuWindow(step.label, async () => {
+              const pid = target.driver.processId;
+              if (pid === undefined) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: native child PID unavailable");
+              return { rootPid: pid, pid, tid: pid };
+            }, measuredBridge, () => measuredBridge.advance(1000)));
+          } finally {
+            if (holdRender) await transport.call("_holdAutomaticRender", false);
+          }
+        } else if (coverageRecordingStarted) {
           for (let frame = 0; frame < frames; frame += 1) {
             await bridge.advance(1);
             await delay(100);
@@ -446,11 +519,10 @@ async function runDevicePlaytestInternal(
           : [];
         labeledSamples.push({ label: step.label, signals, snapshot });
       }
-      if (step.screenshot !== undefined) {
-        await captureDeviceScreenshot(
-          target,
-          join(config.artifactDirectory, `${safePart(step.screenshot)}.png`),
-        );
+      const wantsStepTone = step.label !== undefined && scenario.assert?.tone?.some(({ atStep }) => atStep === step.label) === true;
+      if (step.screenshot !== undefined || wantsStepTone) {
+        const label = step.screenshot === undefined ? `tone-${index}.png` : `${safePart(step.screenshot)}.png`;
+        await captureDeviceScreenshot(target, join(config.artifactDirectory, label), tone, label, step.label, renderOnly);
       }
       if (step.release && pressed !== undefined) {
         const released = typeof pressed === "string" ? [pressed] : [...pressed];
@@ -510,8 +582,8 @@ async function runDevicePlaytestInternal(
     appendPosition(pathPositions, after, pathEntity);
     metrics?.stop();
     await metrics?.sampleNow("after").catch(() => undefined);
-    if (scenario.artifacts?.screenshots !== false) {
-      await captureDeviceScreenshot(target, join(config.artifactDirectory, "after.png"));
+    if (scenario.artifacts?.screenshots !== false || scenario.assert?.tone?.some(({ atStep }) => atStep === undefined) === true) {
+      await captureDeviceScreenshot(target, join(config.artifactDirectory, "after.png"), tone, "after.png", undefined, renderOnly);
     }
     if (!(await target.driver.isAlive())) {
       return failureReport(config, scenario, playtestDiagnostic(
@@ -521,13 +593,16 @@ async function runDevicePlaytestInternal(
       ), target.name);
     }
     const consoleEntries = await target.driver.captureConsole();
+    const networkEntries = target.name === "desktop" && resolveDiagnosticsPolicy(scenario.assert?.diagnostics, target.name).noNetworkErrors
+      ? desktopNetworkEntries(after)
+      : [];
     const report = buildReport(
       config,
       scenario,
       before,
       after,
       consoleEntries,
-      [],
+      networkEntries,
       accumulatedPathLength(pathPositions),
       {},
       true,
@@ -548,16 +623,22 @@ async function runDevicePlaytestInternal(
         ? undefined
         : { ...startupOutcome.startup, rule: startupOutcome.rule },
       lifecycle?.observation(),
+      tone,
     );
     // Same artifacts as the browser target: a diagnostic that names console.json must find it
     // there whichever target produced the run.
     await writeObservationArtifacts(config.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,
-      network: [],
+      network: networkEntries,
       runtimeTrace: undefined,
     });
+    if (completionWindow !== undefined) completionWindow.provenance = { requestedDisplay: completionDisplay!, qualified: false, nativeVsync: process.env.TN_PLAYER_VSYNC };
+    if (cpuWindows.length !== cpuLabels.length) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: missing requested CPU window");
     return {
       ...report,
+      ...(completionWindow === undefined ? {} : { clock: "wall-clock" as const }),
+      ...((cpuLabels.length === 0 && completionWindow === undefined) ? {} : { acquisition: { requestUrls: [],
+        ...(cpuLabels.length === 0 ? {} : { cpuWindows }), ...(completionWindow === undefined ? {} : { completionWindow }) } }),
       runtime: "native",
       target: target.name,
       url: target.name === "desktop" ? config.desktop?.executable ?? target.processName : endpoint,
@@ -565,6 +646,20 @@ async function runDevicePlaytestInternal(
   } catch (error) {
     if (error instanceof PlaytestBridgeError) {
       let diagnostic = error.diagnostic;
+      failureEvidenceCaptured = true;
+      // Preserve this failed host's output before stop/transport cleanup. Diagnostic
+      // collection is best effort and must never replace the original failure.
+      const consoleEntries = await target.driver.captureConsole().catch((captureError: unknown) => [
+        {
+          text: captureError instanceof Error ? captureError.message : String(captureError),
+          type: "error",
+        },
+      ]);
+      await writeFile(
+        join(config.artifactDirectory, "console.json"),
+        `${JSON.stringify(consoleEntries, null, 2)}\n`,
+        "utf8",
+      ).catch(() => undefined);
       if (
         diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT" ||
         diagnostic.code === "TN_PLAYTEST_STARTUP_HOST_EXITED"
@@ -573,14 +668,20 @@ async function runDevicePlaytestInternal(
         // a crash with evidence in its console tail, not a generic timeout (PRD-167).
         const hostAlive = await target.driver.isAlive().catch(() => undefined);
         const lastConsoleLines = hostAlive === false
-          ? (await target.driver.captureConsole().catch(() => [])).slice(-6).map((entry) => entry.text)
+          ? consoleEntries.slice(-6).map((entry) => entry.text)
           : [];
         diagnostic = deviceTimeoutDiagnostic(diagnostic, hostAlive, lastConsoleLines);
       }
-      return failureReport(config, scenario, diagnostic, target.name);
+      return { ...failureReport(config, scenario, diagnostic, target.name), observations: { console: consoleEntries, hud: {}, network: [], resources: {} } };
     }
     throw error;
   } finally {
+    // The timed-out request remains available until close; retain it even if
+    // console capture failed. An unavailable artifact must not mask the verdict.
+    await Promise.resolve().then(async () => {
+      const request = transport.getPendingRequest?.();
+      if (request !== undefined) await writeFile(join(config.artifactDirectory, "device-request-context.json"), `${JSON.stringify(request, null, 2)}\n`, "utf8");
+    }).catch(() => undefined);
     const cleanupErrors: unknown[] = [];
     const attemptCleanup = async (cleanup: () => Promise<void>): Promise<void> => {
       try {
@@ -609,6 +710,14 @@ async function runDevicePlaytestInternal(
       });
     }
     await attemptCleanup(() => target.driver.stop());
+    if (target.name === "desktop" && !failureEvidenceCaptured) {
+      await attemptCleanup(async () => {
+        await mkdir(config.artifactDirectory, { recursive: true });
+        await writeObservationArtifacts(config.artifactDirectory, { console: true }, {
+          console: await target.driver.captureConsole(), network: [], runtimeTrace: undefined,
+        });
+      });
+    }
     await attemptCleanup(async () => {
       await bridge?.close();
     });
@@ -621,9 +730,17 @@ async function runDevicePlaytestInternal(
 async function captureDeviceScreenshot(
   target: IDevicePlaytestTarget,
   path: string,
+  tone: IPlaytestToneObservation[],
+  label: string,
+  atStep?: string,
+  renderOnly?: () => Promise<void>,
 ): Promise<void> {
-  await target.driver.screenshot(path);
-  assertCaptureNotBlank(await readFile(path), path);
+  await target.driver.screenshot(path, renderOnly);
+  const png = await readFile(path);
+  // The browser bright-pixel floor rejected the native desktop frame panned-culled.png (PRD-569).
+  // Its content ratio is at least 0.0044, so desktop takes the content floor.
+  const stats = target.name === "desktop" ? assertDesktopCaptureNotBlank(png, path) : assertCaptureNotBlank(png, path);
+  if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
 }
 
 /**
@@ -648,7 +765,10 @@ function cleanupFailure(errors: readonly unknown[]): Error {
     const error = errors[0];
     return error instanceof Error ? error : new Error(String(error));
   }
-  return new AggregateError(errors, "Device playtest cleanup failed.");
+  if (errors.length === 0) return new AggregateError(errors, "Device playtest cleanup failed.");
+  const primary = errors[0];
+  const detail = primary instanceof Error ? primary.message : String(primary);
+  return new AggregateError(errors, `Device playtest cleanup failed. ${detail}`);
 }
 
 function createDeviceTransport(
@@ -735,6 +855,13 @@ async function deviceClickPoint(
       "Declare at as viewport pixels ({ x, y }) or a registered entity ({ entity }).",
     ));
   }
+  if ("element" in target) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+      "Click step targets a DOM element, which only the browser target can resolve.",
+      "Run this click on --target browser, or target viewport pixels or a registered entity.",
+    ));
+  }
   if (!("entity" in target)) return { x: target.x, y: target.y };
   if (bridge === undefined) {
     throw new PlaytestBridgeError(playtestDiagnostic(
@@ -753,6 +880,24 @@ async function deviceClickPoint(
     ));
   }
   return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+}
+
+/**
+ * One key down through the mailbox, plus the OS key event a focused web-view input needs.
+ *
+ * A host whose native-css UI took the key says so (`consumedByUi`), and the OS event is then a
+ * second delivery of the same key: a Space the UI already activated on, activated again by SDL's
+ * own copy of it. A web-view overlay never consumes a mailbox key, so its OS event still goes out.
+ */
+async function pressKey(
+  target: IDevicePlaytestTarget,
+  transport: IDevicePlaytestTransport,
+  key: string,
+): Promise<void> {
+  const reply = await transport.call<unknown>("input.keyDown", { key });
+  const consumed = typeof reply === "object" && reply !== null
+    && (reply as { consumedByUi?: unknown }).consumedByUi === true;
+  if (!consumed) await sendAndroidTextInput(target, key);
 }
 
 async function sendAndroidTextInput(target: IDevicePlaytestTarget, key: string): Promise<void> {
@@ -1030,10 +1175,25 @@ function unsupportedAssertion(
       target,
     );
   }
-  if (scenario.steps.some((step) => step.wheel !== undefined)) {
+  // A wheel and a media step reach Android the way they reach desktop: `input.wheel` /
+  // `input.media` over the mailbox, into `playtestInput` on the host, then `uiOverlayRouteWheel` /
+  // `uiOverlaySetEnvironment` — all host-neutral (runtime.cpp, ui_overlay.cpp), and the Android
+  // build attaches the same native-css document (`attachDesktopCssUi` from android_main.cpp). A
+  // wheel a scroller did not take, and a media set on a build with no CSS UI attached, both fail
+  // by name from the host itself (packages/playtest/src/three/device.ts), so nothing here has to
+  // guess on the host's behalf. iOS keeps its refusal: its overlay is a WKWebView mirror
+  // (`attachIosUiOverlay`), which has no native-css environment to emulate or scroll.
+  if (target === "ios" && scenario.steps.some((step) => step.wheel !== undefined)) {
     return unsupportedDiagnostic(
       "wheel input steps",
-      "Run wheel input steps on --target browser; Android, desktop, and iOS runners have no wheel injector and will not skip the sample.",
+      "Run wheel input steps on --target browser, --target desktop or --target android; the iOS overlay is a web-view mirror with no native-css scroller to turn, and will not skip the sample.",
+      target,
+    );
+  }
+  if (target === "ios" && scenario.steps.some((step) => step.media !== undefined)) {
+    return unsupportedDiagnostic(
+      "media steps",
+      "Run media steps on --target browser, --target desktop or --target android (native-css UI); the iOS overlay is a web-view mirror with no native-css environment to emulate, and will not skip the step.",
       target,
     );
   }
@@ -1056,12 +1216,8 @@ function unsupportedAssertion(
       target,
     );
   }
-  // Only an explicit `true`. The omitted case is no longer the same question: since
-  // `resolveDiagnosticsPolicy` learned the run target, a device lane defaults the network channel
-  // *off* with the reason recorded, rather than defaulting it on and comparing it to an
-  // observation that is hardwired empty. A scenario that spells out `true` is still asking the
-  // target for something it cannot do, and still fails here by name.
-  if (scenario.assert?.diagnostics?.noNetworkErrors === true) {
+  // Desktop consumes the host fetch observation; the other device lanes still lack an observer.
+  if (scenario.assert?.diagnostics?.noNetworkErrors === true && target !== "desktop") {
     return unsupportedDiagnostic(
       "network assertions",
       `Run this assertion on --target browser; ${targetLabel(target)} device transport has no CDP network observer. Remove the explicit network assertion, or declare "diagnostics": { "noNetworkErrors": false, "networkErrorsOptOutReason": "..." } to record a scenario-owned waiver.`,
@@ -1123,4 +1279,17 @@ function unreadableCoverageObservation(error: unknown): IPlaytestFramebufferCove
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+
+function desktopNetworkEntries(snapshot: IPlaytestObservationSnapshot): Array<{ method: string; url: string }> {
+  const network = snapshot.network;
+  if (network === undefined || network === null || !Number.isSafeInteger(network.requests)
+    || network.requests < 0 || !Array.isArray(network.entries) || network.entries.length > 256
+    || network.requests < network.entries.length || network.entries.some((entry) =>
+      entry === null || typeof entry !== "object" || typeof entry.method !== "string"
+      || entry.method.length === 0 || typeof entry.url !== "string" || entry.url.length === 0)) {
+    throw new Error("TN_PLAYTEST_NETWORK_UNOBSERVED: desktop host network observation is missing or malformed.");
+  }
+  return network.entries;
 }

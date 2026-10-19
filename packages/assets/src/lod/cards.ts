@@ -22,16 +22,13 @@
  *   hash of their own centroid. The same input bytes always produce the same levels, which is what
  *   `determinism.spec.ts` and a cache keyed on a generation fingerprint both depend on.
  *
- * **No scaling, and why.** A kept card is normally scaled about its centroid by `sqrt(1 / keep)`, so
- * the surviving cards cover the area the dropped ones did. That needs *new vertex positions*, and
- * `TN_discrete_lod` is index-only by construction: a level's POSITION/NORMAL/UV come from the
- * primitive's own accessors and the runtime reader (`packages/core/src/model-lod.ts`) builds each
- * derived level by copying the base's attributes and swapping in only an index buffer. So the scale
- * step is not representable in the chain as it is specified today, and the levels shipped here are
- * the un-scaled subset. The consequence is stated rather than hidden: card *area* coverage falls to
- * the keep ratio, and what the grid buys is cell coverage — every occupied cell still holds a card.
- * Lifting it needs a per-level vertex buffer in the chain (a core schema change, PRD-458 §4), not a
- * different selection.
+ * **Scaled, so the crown stays covered.** Each kept card is scaled about its centroid by
+ * `sqrt(lod0Area / keptArea)`, so the survivors cover the area the dropped cards did. Un-scaled, a
+ * level's card area falls to the keep ratio, and on Machinefall the mid-distance pines read as bare
+ * trunks (PRD-541). `TN_discrete_lod` stays index-only: a level's scaled cards are *copies* appended
+ * to the primitive's own vertex arrays (see {@link ICardCopies}), and the level's indices point at
+ * them. LOD0's indices never reference a copy, so a stock loader draws LOD0 unchanged, and both
+ * runtime readers already build a level by copying the base attributes and swapping the index buffer.
  */
 
 /**
@@ -54,6 +51,12 @@ export const CARD_KEEP_RATIOS: readonly number[] = [0.5, 0.25];
 
 const TRIANGLE = 3;
 
+/**
+ * The largest scale a kept card takes. Above it, a card grows past the crown's own silhouette; the
+ * terminal level, which keeps far fewer cards than this restores, then covers `keep * 4` of LOD0.
+ */
+const MAX_CARD_SCALE = 2;
+
 /** One card: the triangles of one connected component, its centroid and its area. */
 export interface ICard {
   /** Indices into the primitive's index buffer, one entry per triangle of this card. */
@@ -64,18 +67,32 @@ export interface ICard {
 
 /** What one derived level kept, and what it cost the crown. Reported, never inferred. */
 export interface ICardLevelSummary {
-  /** Kept card area as a fraction of LOD0's total card area — the un-scaled coverage, honestly low. */
+  /** Kept card area after scaling, as a fraction of LOD0's total card area. */
   readonly areaCoverage: number;
   readonly cards: number;
   /** Fraction of LOD0's occupied grid cells that still hold at least one kept card. */
   readonly cellCoverage: number;
   /** The fraction of LOD0's cards this level kept. */
   readonly keep: number;
+  /** The factor every kept card was scaled by about its centroid; `1` keeps it as authored. */
+  readonly scale: number;
+}
+
+/**
+ * One level's scaled cards, appended after the primitive's vertices (and any earlier level's copies)
+ * in level order. Copy `i` repeats every attribute of LOD0 vertex `source[i]`, except its position,
+ * which is `positions[3i..3i+2]`.
+ */
+export interface ICardCopies {
+  readonly positions: Float32Array;
+  readonly source: Uint32Array;
 }
 
 /** A card-thinned chain, shaped like the triangle chain so both take the same attachment path. */
 export interface ICardChain {
   readonly absoluteErrors: readonly number[];
+  /** Per derived level, aligned with `counts`: the scaled copies its indices point at. */
+  readonly copies: readonly ICardCopies[];
   readonly counts: readonly number[];
   readonly errors: readonly number[];
   readonly indices: readonly Uint32Array[];
@@ -283,6 +300,7 @@ function thinLevel(
       cards: kept.length,
       cellCoverage: lod0Cells === 0 ? 1 : cells / lod0Cells,
       keep,
+      scale: 1,
     },
   };
 }
@@ -301,6 +319,49 @@ function indicesOf(cards: readonly ICard[], source: Uint32Array): Uint32Array {
       at += TRIANGLE;
     }
   return out;
+}
+
+/**
+ * A level drawn from scaled copies of its cards: the copies, numbered from `base`, and the index
+ * buffer over them in {@link indicesOf}'s order. The scale restores LOD0's card area, capped at
+ * {@link MAX_CARD_SCALE}; a card's vertices belong to that card alone, so each is copied once.
+ */
+function scaledLevel(
+  level: { readonly cards: readonly ICard[]; readonly summary: ICardLevelSummary },
+  indices: Uint32Array,
+  positions: Float32Array,
+  base: number,
+): { copies: ICardCopies; indices: Uint32Array; summary: ICardLevelSummary } {
+  const covered = level.summary.areaCoverage;
+  const scale = covered > 0 ? Math.min(MAX_CARD_SCALE, Math.sqrt(1 / covered)) : 1;
+  const copyOf = new Map<number, number>();
+  const source: number[] = [];
+  const moved: number[] = [];
+  const out = indicesOf(level.cards, indices);
+  let at = 0;
+  for (const card of level.cards) {
+    const [cx, cy, cz] = card.centroid;
+    for (let corner = 0; corner < card.triangles.length * TRIANGLE; corner += 1, at += 1) {
+      const vertex = out[at] as number;
+      let copy = copyOf.get(vertex);
+      if (copy === undefined) {
+        copy = base + source.length;
+        copyOf.set(vertex, copy);
+        source.push(vertex);
+        moved.push(
+          cx + ((positions[vertex * 3] as number) - cx) * scale,
+          cy + ((positions[vertex * 3 + 1] as number) - cy) * scale,
+          cz + ((positions[vertex * 3 + 2] as number) - cz) * scale,
+        );
+      }
+      out[at] = copy;
+    }
+  }
+  return {
+    copies: { positions: Float32Array.from(moved), source: Uint32Array.from(source) },
+    indices: out,
+    summary: { ...level.summary, areaCoverage: Math.min(1, covered * scale * scale), scale },
+  };
 }
 
 /** Triangles a card submits (one entry in `triangles` per triangle). */
@@ -377,6 +438,7 @@ function terminalCardLevel(
       cards: kept.length,
       cellCoverage: lod0Cells === 0 ? 1 : covered.size / lod0Cells,
       keep: kept.length / cards.length,
+      scale: 1,
     },
   };
 }
@@ -439,6 +501,9 @@ export function generateCardChain(
   const errors: number[] = [];
   const absoluteErrors: number[] = [];
   const buffers: Uint32Array[] = [];
+  const copies: ICardCopies[] = [];
+  // Where the next level's copies start: after LOD0's vertices and every earlier level's copies.
+  let base = Math.floor(positions.length / 3);
   let previousTriangles = lod0Triangles;
   for (const keep of keepRatios.slice(0, Math.max(0, maxLevels - 1))) {
     if (levels.length >= Math.max(0, maxLevels - 1)) break;
@@ -450,11 +515,14 @@ export function generateCardChain(
     if (triangles >= previousTriangles) continue;
     if ((previousTriangles - triangles) / previousTriangles < minSaving) continue;
     const absoluteError = cellSize * (1 - keep);
-    levels.push(level.summary);
+    const scaled = scaledLevel(level, indices, positions, base);
+    base += scaled.copies.source.length;
+    levels.push(scaled.summary);
     counts.push(triangles);
     absoluteErrors.push(absoluteError);
     errors.push(absoluteError / Math.max(scale, 1e-6));
-    buffers.push(buffer);
+    buffers.push(scaled.indices);
+    copies.push(scaled.copies);
     previousTriangles = triangles;
   }
   if (levels.length === 0) return null;
@@ -477,17 +545,21 @@ export function generateCardChain(
       const triangles = Math.floor(buffer.length / TRIANGLE);
       if (triangles > 0 && triangles < previousTriangles) {
         const absoluteError = cellSize * terminal.factor;
-        levels.push(terminal.summary);
+        const scaled = scaledLevel(terminal, indices, positions, base);
+        base += scaled.copies.source.length;
+        levels.push(scaled.summary);
         counts.push(triangles);
         absoluteErrors.push(absoluteError);
         errors.push(absoluteError / Math.max(scale, 1e-6));
-        buffers.push(buffer);
+        buffers.push(scaled.indices);
+        copies.push(scaled.copies);
         previousTriangles = triangles;
       }
     }
   }
   return {
     absoluteErrors,
+    copies,
     counts,
     errors,
     indices: buffers,

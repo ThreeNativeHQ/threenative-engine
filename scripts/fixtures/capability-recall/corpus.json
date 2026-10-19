@@ -97,7 +97,7 @@
     },
     {
       "id": "brief.fps.2",
-      "query": "Vertical field of view 70°, narrowing to 22° while aiming down the sights, and mouse look is half as sensitive while aimed. Pitch is clamped roughly −66° to +72°.",
+      "query": "Vertical field of view 70\u00b0, narrowing to 22\u00b0 while aiming down the sights, and mouse look is half as sensitive while aimed. Pitch is clamped roughly \u221266\u00b0 to +72\u00b0.",
       "scope": "mechanic",
       "source": "brief:fps#2",
       "expect": ["defineGame"],
@@ -121,7 +121,7 @@
     },
     {
       "id": "brief.fps.5",
-      "query": "One rifle, always equipped. **One round per press** — holding the fire input does not repeat.",
+      "query": "One rifle, always equipped. **One round per press** \u2014 holding the fire input does not repeat.",
       "scope": "mechanic",
       "source": "brief:fps#5",
       "expect": ["TracerPool3D"],
@@ -145,7 +145,7 @@
     },
     {
       "id": "brief.fps.8",
-      "query": "10 damage a round; 4× in the top 12% of a body's height, 0.7× below a third of it.",
+      "query": "10 damage a round; 4\u00d7 in the top 12% of a body's height, 0.7\u00d7 below a third of it.",
       "scope": "mechanic",
       "source": "brief:fps#8",
       "expect": ["PhysicsDirectSpaceState3D"],
@@ -153,7 +153,7 @@
     },
     {
       "id": "brief.fps.9",
-      "query": "A target hit scores that target's value — 100, 150, 250 or 300. The struck target drops below its stand, cannot be scored, and swings back up about 1.4 s later.",
+      "query": "A target hit scores that target's value \u2014 100, 150, 250 or 300. The struck target drops below its stand, cannot be scored, and swings back up about 1.4 s later.",
       "scope": "mechanic",
       "source": "brief:fps#9",
       "expect": ["publishUiState", "ScenePicker"],
@@ -403,7 +403,7 @@
       "id": "request.build-racing-game",
       "query": "build a racing game",
       "scope": "request",
-      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
+      "source": "template:racing#AGENTS.md \u2014 __PROJECT_NAME__ racing",
       "expect": ["PathFollow3D"],
       "reject": []
     },
@@ -419,7 +419,7 @@
       "id": "request.inventory-system",
       "query": "make an inventory system",
       "scope": "request",
-      "source": "template:action-rpg#AGENTS.md — __PROJECT_NAME__ action RPG",
+      "source": "template:action-rpg#AGENTS.md \u2014 __PROJECT_NAME__ action RPG",
       "expect": ["assertPortableState"],
       "reject": [],
       "notOwned": "inventory"
@@ -436,7 +436,7 @@
       "id": "request.third-person-camera",
       "query": "third person camera follow",
       "scope": "request",
-      "source": "template:platformer#AGENTS.md — __PROJECT_NAME__ platformer",
+      "source": "template:platformer#AGENTS.md \u2014 __PROJECT_NAME__ platformer",
       "expect": ["defineGame"],
       "reject": []
     },
@@ -444,7 +444,7 @@
       "id": "request.save-progress",
       "query": "save the player progress",
       "scope": "request",
-      "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
+      "source": "template:starter#AGENTS.md \u2014 __PROJECT_NAME__ starter",
       "expect": ["assertPortableState"],
       "reject": [
         "Area3D",
@@ -485,7 +485,7 @@
       "id": "request.dialogue-npc",
       "query": "dialogue with an NPC",
       "scope": "request",
-      "source": "template:sailing#AGENTS.md — __PROJECT_NAME__ sailing",
+      "source": "template:sailing#AGENTS.md \u2014 __PROJECT_NAME__ sailing",
       "expect": ["Text"],
       "reject": ["NavigationAgent3D", "recast"],
       "notOwned": "dialogue"
@@ -494,7 +494,7 @@
       "id": "request.pick-up-item",
       "query": "pick up an item",
       "scope": "request",
-      "source": "template:minimal#AGENTS.md — __PROJECT_NAME__ minimal",
+      "source": "template:minimal#AGENTS.md \u2014 __PROJECT_NAME__ minimal",
       "expect": ["Area3D"],
       "reject": ["ClusteredMesh"]
     },
@@ -528,7 +528,7 @@
       "id": "request.platformer-double-jump",
       "query": "make a platformer with double jump",
       "scope": "request",
-      "source": "template:platformer#AGENTS.md — __PROJECT_NAME__ platformer",
+      "source": "template:platformer#AGENTS.md \u2014 __PROJECT_NAME__ platformer",
       "expect": ["CharacterBody3D"],
       "reject": []
     },
@@ -595,6 +595,126 @@
       "source": "sandbox:fps#render/facade.ts",
       "expect": ["mergeParts"],
       "reject": []
+    },
+    {
+      "id": "snow.footprints",
+      "query": "leave footprints in deep snow that stay where the player walked",
+      "scope": "mechanic",
+      "source": "template:snow#Commands and map",
+      "expect": ["SnowField"],
+      "reject": []
+    },
+    {
+      "id": "snow.refill",
+      "query": "fresh snowfall slowly fills old tracks back in",
+      "scope": "mechanic",
+      "source": "template:snow#Commands and map",
+      "expect": ["SnowField"],
+      "reject": []
+    },
+    {
+      "id": "snow.compaction",
+      "query": "show how packed the snow is where people have walked",
+      "scope": "mechanic",
+      "source": "template:snow#Commands and map",
+      "expect": ["SnowField"],
+      "reject": []
+    },
+    {
+      "id": "snow.ball-drop",
+      "query": "drop a heavy ball into powder snow so it sinks and settles in the crater it makes",
+      "scope": "mechanic",
+      "source": "template:snow#Commands and map",
+      "expect": ["attachSnowPhysics"],
+      "reject": []
+    },
+    {
+      "id": "snow.ball-roll",
+      "query": "push a ball through snow so it rolls and carves a continuous track",
+      "scope": "mechanic",
+      "source": "template:snow#Commands and map",
+      "expect": ["attachSnowPhysics"],
+      "reject": []
+    },
+    {
+      "id": "snow.bodies",
+      "query": "a crate and a fallen log press their own shapes into the snow they rest on",
+      "scope": "mechanic",
+      "source": "template:snow#Commands and map",
+      "expect": ["attachSnowPhysics"],
+      "reject": []
+    },
+    {
+      "id": "snow.snowfall",
+      "query": "falling snowflakes that thicken into a windy blizzard",
+      "scope": "mechanic",
+      "source": "template:snow#Commands and map",
+      "expect": ["GPUParticles3D"],
+      "reject": []
+    },
+    {
+      "id": "snow.powder",
+      "query": "a puff of powder snow sprays up where a boot lands",
+      "scope": "mechanic",
+      "source": "template:snow#Commands and map",
+      "expect": ["GPUParticles3D"],
+      "reject": []
+    },
+    {
+      "id": "request.snow-glade",
+      "query": "a snowy glade where an explorer leaves boot prints, a ball rolls through the powder carving a track, and snowfall turns into a blizzard",
+      "scope": "request",
+      "source": "template:snow#Commands and map",
+      "expect": ["SnowField", "attachSnowPhysics"],
+      "reject": []
+    },
+    {
+      "id": "rain.weather-world",
+      "query": "procedural coastal storm with a road, forest, sea and wet reflections drawn from maths rather than geometry",
+      "scope": "mechanic",
+      "source": "template:rain#Ownership",
+      "expect": ["createWeatherWorld"],
+      "reject": ["Area3D", "NavigationAgent3D"]
+    },
+    {
+      "id": "rain.noise-volume",
+      "query": "generate a 3D noise volume for the clouds instead of shipping one as an asset",
+      "scope": "mechanic",
+      "source": "template:rain#Ownership",
+      "expect": ["createNoiseVolume"],
+      "reject": ["Area3D"]
+    },
+    {
+      "id": "rain.storm-audio",
+      "query": "rain hiss, wind bed and thunder delayed by how far away the strike was",
+      "scope": "mechanic",
+      "source": "template:rain#Ownership",
+      "expect": ["createStormAudio"],
+      "reject": ["Area3D"]
+    },
+    {
+      "id": "rain.lightning",
+      "query": "generate branching lightning ribbon geometry that flashes the scene",
+      "scope": "mechanic",
+      "source": "template:rain#Ownership",
+      "expect": ["createStormLightning"],
+      "reject": ["Area3D"]
+    },
+    {
+      "id": "rain.streaks",
+      "query": "thousands of falling rain streaks around the camera in one draw",
+      "scope": "mechanic",
+      "source": "template:rain#Ownership",
+      "expect": ["createStormRain", "GPUParticles3D"],
+      "reject": ["Area3D"]
+    },
+    {
+      "id": "rain.round-time-limit",
+      "query": "countdown timer that ends the round",
+      "scope": "mechanic",
+      "source": "template:rain#Ownership",
+      "expect": ["Scheduler"],
+      "reject": ["Area3D"]
     },
     {
       "id": "request.drive-a-racing-kart",

@@ -83,6 +83,47 @@ describe("scenario schema boundaries", () => {
     expect(parsed.target).toBe("web");
   });
 
+  it("accepts reduced-motion emulation on the web target and refuses it elsewhere", () => {
+    const parsed = validatePlaytestScenario({
+      ...scenario(undefined),
+      reducedMotion: "reduce",
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+    }, "reduced-motion.playtest.json");
+    expect(parsed.reducedMotion).toBe("reduce");
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      reducedMotion: "reduce",
+      target: "desktop",
+      viewport: { height: 720, width: 1280 },
+    }, "desktop-reduced-motion.playtest.json")).toThrow(/reducedMotion is browser-only/u);
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      reducedMotion: "no-preference",
+    }, "invalid-reduced-motion.playtest.json")).toThrow(/reducedMotion must be 'reduce'/u);
+  });
+
+  it("accepts a click on a DOM element by id or selector, never both or neither", () => {
+    const click = (at: unknown) => ({
+      ...scenario(undefined),
+      steps: [{ at, kind: "click", release: true, waitTicks: 1 }],
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+    });
+    expect(validatePlaytestScenario(click({ element: { id: "cloud" } }), "id.playtest.json").steps[0]?.at).toEqual({
+      element: { id: "cloud" },
+    });
+    expect(
+      validatePlaytestScenario(click({ element: { selector: "[role=switch]" } }), "sel.playtest.json").steps[0]?.at,
+    ).toEqual({ element: { selector: "[role=switch]" } });
+    expect(() => validatePlaytestScenario(click({ element: { id: "a", selector: "b" } }), "both.playtest.json")).toThrow(
+      /exactly one of id or selector/u,
+    );
+    expect(() => validatePlaytestScenario(click({ element: {} }), "none.playtest.json")).toThrow(
+      /exactly one of id or selector/u,
+    );
+  });
+
   it("rejects an unknown boot-failure seam", () => {
     expect(() => validatePlaytestScenario({
       ...scenario(undefined),
@@ -232,7 +273,7 @@ describe("scenario schema boundaries", () => {
           {
             entityVisible: { entity: "player", minProjectedPixels: 20, throughoutFrames: true },
             frameDiff: { baselineImage: "artifacts/base.png", maxChangedPixelRatio: 0.9, minChangedPixelRatio: 0.1 },
-            region: { height: 10, maxDarkPixelRatio: 0.8, maxLuminance: 100, minDarkPixelRatio: 0.1, minNonblankPixelRatio: 0.2, width: 10, x: 0, y: 0 },
+            region: { height: 10, maxDarkPixelRatio: 0.8, maxLuminance: 0.9, minDarkPixelRatio: 0.1, minNonblankPixelRatio: 0.2, width: 10, x: 0, y: 0 },
           },
         ],
         world: {
@@ -310,6 +351,7 @@ describe("scenario schema boundaries", () => {
     expect(validateStep({ kind: "wait", label: "message", overlayMessage: { overlayId: "hud", payload: { ok: true }, type: "toast" }, waitTicks: 1 }, "steps.json", 0)).toMatchObject({ kind: "wait", overlayMessage: { type: "toast" } });
     expect(validateStep({ kind: "click", at: { entity: "button" }, label: "click", release: false, screenshot: "clicked" }, "steps.json", 1)).toMatchObject({ kind: "click", at: { entity: "button" } });
     expect(validateStep({ kind: "input", holdTicks: 2, label: "input", pointerPosition: { buttons: 1, x: 0.5, y: 0.5 }, pointers: [{ buttons: 1, id: 1, x: 0.5, y: 0.5 }], press: ["KeyW", "ShiftLeft"], release: true, wheel: { deltaX: 1, deltaY: -1 } }, "steps.json", 2)).toMatchObject({ pointers: [{ id: 1 }], wheel: { deltaY: -1 } });
+    expect(validateStep({ media: { colorScheme: "dark", reducedMotion: "reduce" }, wheel: { deltaY: 50, x: 0.25, y: 1 }, waitTicks: 1 }, "steps.json", 5)).toMatchObject({ media: { colorScheme: "dark", reducedMotion: "reduce" }, wheel: { deltaY: 50, x: 0.25, y: 1 } });
     expect(validateStep({ kind: "aimAt", label: "aim", pitch: 0.2, target: { x: 1, z: 2 }, waitTicks: 1, release: true }, "steps.json", 3)).toMatchObject({ target: { x: 1, z: 2 } });
     expect(validateStep({ kind: "wait", label: "resize", release: true, window: { height: 480, operation: "resize", width: 640 } }, "steps.json", 4)).toMatchObject({ window: { operation: "resize" } });
     expect(validateAimTarget({ entity: "player" }, "steps.json", 0)).toEqual({ entity: "player" });
@@ -358,12 +400,79 @@ describe("scenario schema boundaries", () => {
     expect(() => validateStepLabels([{ label: "start", release: true, waitTicks: 1 }] as never, { signals: [{ atStep: "missing", name: "hit" }] } as never, "invalid.json")).toThrow(/no scenario step defines/u);
   });
 
+  // PRD-536 A1: the root parser decided each of these by `isRecord(...)` or a
+  // `typeof x === "number" ? { x } : {}` spread, so a wrong-typed root field was
+  // dropped and the scenario ran without it.
+  it("rejects a root field it would otherwise drop", () => {
+    const dropped: [unknown, RegExp][] = [
+      [-1, /warmupFrames/u],
+      ["2", /warmupFrames/u],
+      [[], /setup/u],
+      [5, /subject/u],
+      [{ screenshots: "no" }, /screenshots/u],
+      ["before-after", /parity/u],
+    ];
+    const keys = ["warmupFrames", "warmupFrames", "setup", "subject", "artifacts", "parity"];
+    keys.forEach((key, index) => {
+      const [bad, message] = dropped[index]!;
+      expect(() => validatePlaytestScenario({ ...scenario(undefined), [key]: bad }, "invalid.json")).toThrow(message);
+    });
+    expect(validatePlaytestScenario({ ...scenario(undefined), warmupFrames: 0 }, "valid.json").warmupFrames).toBe(0);
+  });
+
+  // PRD-536 A2: each of these loaded and then bounded nothing, so the run reported
+  // green with the author's check missing. Same rejection shape as notThermallyConfounded:false.
+  it("rejects an assertion that sets no bound", () => {
+    const vacuous: [Record<string, unknown>, RegExp][] = [
+      [{ performance: {} }, /performance/u],
+      [{ visual: [{ frameDiff: {} }] }, /frameDiff/u],
+      [{ resources: [{ atSteps: [{ label: "sample" }], id: "state" }] }, /atSteps\[0\]/u],
+      [{ resources: [{ atSteps: [], id: "state" }] }, /atSteps/u],
+      [{ causedBy: [{ cause: { contact: { entity: "player", with: "crate" } }, effect: { becomes: "won", path: "game.mode" }, neverBefore: false }] }, /neverBefore/u],
+      [{ scene: { cameraClearsScene: false } }, /cameraClearsScene/u],
+      [{ scene: { minVisibleLights: 0 } }, /minVisibleLights/u],
+      [{ sceneNodes: [{ select: { name: "crate" }, texturesLoaded: false }] }, /texturesLoaded/u],
+      [{ movement: { rotationChanged: false } }, /rotationChanged/u],
+    ];
+    for (const [assert, message] of vacuous) {
+      expect(() => validateAssertions(assert, "invalid.json")).toThrow(message);
+    }
+  });
+
+  // PRD-536 A3: the ranges are the runtime units the evaluators compare against —
+  // capture.ts divides luminance by 255, projectedOffscreenRatio returns 0..1.
+  it("rejects an out-of-range or malformed bound", () => {
+    const outOfRange: [Record<string, unknown>, RegExp][] = [
+      [{ visual: [{ region: { element: { id: "hud" }, minNonblankPixelRatio: 1.2 } }] }, /minNonblankPixelRatio/u],
+      [{ visual: [{ region: { element: { id: "hud" }, minDarkPixelRatio: -0.1 } }] }, /minDarkPixelRatio/u],
+      [{ visual: [{ region: { element: { id: "hud" }, maxLuminance: 100 } }] }, /maxLuminance/u],
+      [{ animation: [{ entity: "player", maxFootSlide: -0.5 }] }, /maxFootSlide/u],
+      [{ visibility: [{ entity: "player", maxOffscreenRatio: 1.5 }] }, /maxOffscreenRatio/u],
+      [{ visibility: [{ entity: "player", minProjectedPixels: -1 }] }, /minProjectedPixels/u],
+      [{ visual: [{ entityVisible: { entity: "player", minProjectedPixels: -1 } }] }, /minProjectedPixels/u],
+      [{ movement: { maxDistance: -1 } }, /maxDistance/u],
+      [{ movement: { pathLength: -1 } }, /pathLength/u],
+      [{ movement: { maxDistance: "20" } }, /maxDistance/u],
+      [{ movement: { closesDistanceToPosition: "near" } }, /closesDistanceToPosition/u],
+      [{ movement: { minAxisDelta: [{ axis: "+x", min: 0.2 }] } }, /minAxisDelta/u],
+    ];
+    for (const [assert, message] of outOfRange) {
+      expect(() => validateAssertions(assert, "invalid.json")).toThrow(message);
+    }
+    expect(() => validateStep({ press: "KeyW", release: "no" }, "invalid.json", 0)).toThrow(/release/u);
+  });
+
   it("rejects assertion shapes and impossible boundary values", () => {
     expect(() => validateAssertions({ signals: [] }, "invalid.json")).toThrow(/signals.*at least one/u);
     expect(() => validateAssertions({ camera: {} }, "invalid.json")).toThrow(/camera.*within|targetInViewport/u);
     expect(() => validateAssertions({ world: { seed: "random" } }, "invalid.json")).toThrow(/world\.seed/u);
     expect(() => validateAssertions({ reachability: { artifact: "", entities: ["a"] } }, "invalid.json")).toThrow(/reachability/u);
     expect(() => validateAssertions({ renderChain: "high" }, "invalid.json")).toThrow(/renderChain.*object/u);
+    expect(() => validateAssertions({ pipelineCensus: "zero" }, "invalid.json")).toThrow(/pipelineCensus.*object/u);
+    expect(() => validateAssertions({ pipelineCensus: { maxNodeBuildsAfterWarmUpSettled: "zero" } }, "invalid.json")).toThrow(/maxNodeBuildsAfterWarmUpSettled.*non-negative integer/u);
+    expect(() => validateAssertions({ pipelineCensus: {} }, "invalid.json")).toThrow(/pipeline census assertion observes nothing/u);
+    expect(() => validateAssertions({ pipelineCensus: { warmUpScope: "chunk:0" } }, "invalid.json")).toThrow(/pipeline census assertion observes nothing/u);
+    expect(() => validateAssertions({ pipelineCensus: { maxRenderPipelineCreationsAfterWarmUpScope: 0 } }, "invalid.json")).toThrow(/warmUpScope.*required/u);
     expect(() => validateAssertions({ performance: "fast" }, "invalid.json")).toThrow(/performance/u);
     expect(() => validateAssertions({ visual: [{}] }, "invalid.json")).toThrow(/visual.*declare/u);
     expect(() => validateAssertions({ aerodynamics: [{ entity: "plane", controls: [{ sign: "sideways", surface: "elevator" }] }] }, "invalid.json")).toThrow(/negative.*positive/u);
@@ -422,6 +531,14 @@ describe("scenario schema boundaries", () => {
       { pointers: [{ id: 1, x: 0, y: 0 }, { id: 1, x: 1, y: 1 }], waitTicks: 1 },
       { pointers: {}, waitTicks: 1 },
       { wheel: { deltaY: Number.NaN }, waitTicks: 1 },
+      { wheel: { deltaY: 1, x: 0.5 }, waitTicks: 1 },
+      { wheel: { deltaY: 1, x: 1.5, y: 0.5 }, waitTicks: 1 },
+      { wheel: { deltaY: 1, x: 0.5, y: 0.5, z: 0 }, waitTicks: 1 },
+      { media: {}, waitTicks: 1 },
+      { media: { colorScheme: "sepia" }, waitTicks: 1 },
+      { media: { reducedMotion: true }, waitTicks: 1 },
+      { media: { colorScheme: "dark", contrast: "more" }, waitTicks: 1 },
+      { kind: "click", at: { x: 0, y: 0 }, media: { colorScheme: "dark" } },
       { screenshot: "not safe!", waitTicks: 1 },
       { label: " ", waitTicks: 1 },
       { window: { height: 0, operation: "resize", width: 640 }, waitTicks: 1 },
@@ -484,7 +601,7 @@ describe("scenario schema boundaries", () => {
     expect(() => validateRenderChainAssertion({ velocity: { maxRejectionFraction: 2 } }, "invalid.json", "assert.renderChain")).toThrow(/between 0 and 1/u);
     expect(() => validateRenderChainAssertion({}, "invalid.json", "assert.renderChain")).toThrow(/tier, stages, contributions, or velocity/u);
     expect(() => validateResourcePathAssertion({ anyOf: "not-an-array", id: "state" }, "invalid.json", "assert.resources[0]")).toThrow(/array/u);
-    expect(validateResourcePathAssertion({ atSteps: [{ label: "start" }], id: "state" }, "valid.json", "assert.resources[0]")).toMatchObject({ atSteps: [{ label: "start" }] });
+    expect(validateResourcePathAssertion({ atSteps: [{ equals: 1, label: "start" }], id: "state" }, "valid.json", "assert.resources[0]")).toMatchObject({ atSteps: [{ equals: 1, label: "start" }] });
     expect(() => validateViewport({ width: 1 }, "invalid.json")).toThrow(/height/u);
     expect(() => validateOptionalNumberTuple({ position: [1, 2] }, "position", 3, "invalid.json", 0)).toThrow(/tuple/u);
     expect(validateNumberTuple([1, 2, 3], 3)).toEqual([1, 2, 3]);

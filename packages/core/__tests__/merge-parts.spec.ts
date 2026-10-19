@@ -3,6 +3,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  Euler,
   ExtrudeGeometry,
   Group,
   InstancedMesh,
@@ -11,12 +12,14 @@ import {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  Quaternion,
   Shape,
   SkinnedMesh,
+  Vector3,
 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { describe, expect, it, vi } from "vitest";
-import { mergeByMaterial, mergeParts } from "../src/merge-parts.js";
+import { type IMergePart, mergeByMaterial, mergeParts } from "../src/merge-parts.js";
 
 /** The mismatch that actually happens: a lofted profile is non-indexed, a primitive is indexed. */
 function extruded(): ExtrudeGeometry {
@@ -581,5 +584,178 @@ describe("mergeByMaterial", () => {
       expect(baked).toHaveLength(1);
       expect(baked[0]?.geometry.getAttribute("position").count).toBe(2 * 24);
     });
+  });
+});
+
+/**
+ * The one shape a streamed world chunk is made of, and the arithmetic the fused copy has to match:
+ * a quantized interleaved `normal` inside a shared stride, a quantized `uv`, a placement with scale
+ * (which its normals must survive as unit normals), one indexed part among a non-indexed one so the
+ * group de-indexes, and enough vertices to cross 65,535 so the merged index must widen.
+ */
+function cookedChunk(vertices = 24_000): IMergePart[] {
+  const buffer = new InterleavedBuffer(new Int8Array(vertices * 4), 4);
+  for (let vertex = 0; vertex < vertices; vertex += 1) {
+    const at = vertex * 4;
+    buffer.array[at] = (vertex % 127) - 63;
+    buffer.array[at + 1] = ((vertex * 7) % 127) - 63;
+    buffer.array[at + 2] = ((vertex * 13) % 127) - 63;
+  }
+  const positions = new Float32Array(vertices * 3);
+  for (let vertex = 0; vertex < vertices; vertex += 1) {
+    positions[vertex * 3] = (vertex % 97) * 0.25;
+    positions[vertex * 3 + 1] = ((vertex * 3) % 89) * 0.5;
+    positions[vertex * 3 + 2] = ((vertex * 11) % 83) * 0.125;
+  }
+  const indexed = new BufferGeometry();
+  indexed.setAttribute("position", new BufferAttribute(positions, 3));
+  indexed.setAttribute("normal", new InterleavedBufferAttribute(buffer, 3, 0, true));
+  indexed.setAttribute(
+    "uv",
+    new BufferAttribute(
+      new Uint16Array(vertices * 2).map((_, at) => at % 4096),
+      2,
+      true,
+    ),
+  );
+  const indices = new Uint32Array(vertices);
+  for (let vertex = 0; vertex < vertices; vertex += 1) indices[vertex] = vertex;
+  indexed.setIndex(new BufferAttribute(indices, 1));
+
+  const flat = new BufferGeometry();
+  flat.setAttribute("position", new BufferAttribute(positions.slice(0, 9), 3));
+  flat.setAttribute(
+    "normal",
+    new BufferAttribute(new Int8Array([63, -63, 0, 12, 90, -33, -7, 5, 111]), 3, true),
+  );
+  flat.setAttribute("uv", new BufferAttribute(new Uint16Array([0, 0, 4096, 0, 0, 4096]), 2, true));
+
+  return [
+    {
+      color: 0x2f8b1a,
+      geometry: indexed,
+      matrix: new Matrix4().compose(
+        new Vector3(3, -1, 0.5),
+        new Quaternion().setFromEuler(new Euler(0.3, 1.1, -0.2)),
+        new Vector3(10.27, 10.27, 10.27),
+      ),
+    },
+    {
+      color: 0x8b2f1a,
+      geometry: flat,
+      matrix: new Matrix4().makeTranslation(4, 0, 0),
+    },
+  ];
+}
+
+/**
+ * `mergeParts` before PRD-478 AC-1 read every component through three's own accessors: `clone()`,
+ * `applyMatrix4`, `toNonIndexed()`, a de-quantizing copy, then `mergeGeometries`. The fused copy
+ * reads the same arrays directly, and this is the proof it lands on the same bytes — the fixture
+ * above against the three path it replaced, attribute for attribute and element for element.
+ */
+function throughThree(
+  parts: readonly IMergePart[],
+  preserve: readonly ("uv" | "normal")[],
+): BufferGeometry {
+  const deindex = !parts.every((part) => part.geometry.index !== null);
+  const keep = new Set<string>(["position", ...preserve]);
+  const flattened = parts.map((part) => {
+    const placed = part.geometry.clone();
+    if (part.matrix !== undefined) placed.applyMatrix4(part.matrix);
+    const flat = deindex && placed.index !== null ? placed.toNonIndexed() : placed;
+    for (const name of Object.keys(flat.attributes))
+      if (!keep.has(name)) flat.deleteAttribute(name);
+    flat.morphAttributes = {};
+    for (const name of Object.keys(flat.attributes)) {
+      const attribute = flat.getAttribute(name);
+      if (
+        attribute.array instanceof Float32Array &&
+        !attribute.normalized &&
+        !("isInterleavedBufferAttribute" in attribute)
+      )
+        continue;
+      const values = new Float32Array(attribute.count * attribute.itemSize);
+      for (let index = 0; index < attribute.count; index += 1)
+        for (let component = 0; component < attribute.itemSize; component += 1)
+          values[index * attribute.itemSize + component] = attribute.getComponent(index, component);
+      flat.setAttribute(name, new BufferAttribute(values, attribute.itemSize));
+    }
+    if (part.color === undefined) return flat;
+    const tone = new Color(part.color);
+    const position = flat.getAttribute("position");
+    const painted = new Float32Array(position.count * 3);
+    for (let vertex = 0; vertex < position.count; vertex += 1) {
+      painted[vertex * 3] = tone.r;
+      painted[vertex * 3 + 1] = tone.g;
+      painted[vertex * 3 + 2] = tone.b;
+    }
+    flat.setAttribute("color", new BufferAttribute(painted, 3));
+    return flat;
+  });
+  const merged = mergeGeometries(flattened, false);
+  for (const geometry of flattened) geometry.dispose();
+  if (merged === null) throw new Error("three refused the fixture merge.");
+  if (!preserve.includes("normal")) merged.computeVertexNormals();
+  return merged;
+}
+
+function sameBytes(merged: BufferGeometry, expected: BufferGeometry): void {
+  expect(Object.keys(merged.attributes)).toEqual(Object.keys(expected.attributes));
+  for (const name of Object.keys(expected.attributes)) {
+    const got = merged.getAttribute(name);
+    const want = expected.getAttribute(name);
+    expect(got.array.constructor, `${name} array type`).toBe(want.array.constructor);
+    expect(got.itemSize, `${name} itemSize`).toBe(want.itemSize);
+    expect(got.count, `${name} count`).toBe(want.count);
+    expect(Array.from(got.array as Float32Array), `${name} values`).toEqual(
+      Array.from(want.array as Float32Array),
+    );
+  }
+  const index = merged.getIndex();
+  const expectedIndex = expected.getIndex();
+  if (expectedIndex === null) expect(index).toBeNull();
+  else {
+    expect(index?.array.constructor, "index array type").toBe(expectedIndex.array.constructor);
+    expect(Array.from(index?.array ?? []), "index values").toEqual(Array.from(expectedIndex.array));
+  }
+}
+
+describe("mergeParts — the fused copy against the three path it replaced (PRD-478 AC-1)", () => {
+  it("should hold the same bytes for a de-indexing quantized interleaved chunk, colour included", () => {
+    const preserve = ["normal", "uv"] as const;
+    const expected = throughThree(cookedChunk(), preserve);
+    // The three path de-interleaves every channel it clones, loudly; the fused path reads the array.
+    // This is the assertion that makes the comparison below a comparison of the two, not of three
+    // with itself.
+    const log = vi.spyOn(console, "log");
+    const merged = mergeParts(cookedChunk(), { label: "chunk", preserve });
+    expect(log).not.toHaveBeenCalled();
+    log.mockRestore();
+    expect(merged.getIndex()).toBeNull();
+    sameBytes(merged, expected);
+  });
+
+  it("should hold the same bytes with the position-only default, which recomputes the normals", () => {
+    sameBytes(mergeParts(cookedChunk(), { label: "chunk" }), throughThree(cookedChunk(), []));
+  });
+
+  it("should hold the same bytes for an all-indexed group whose merge crosses 65,535 vertices", () => {
+    const wide = cookedChunk(40_000);
+    const parts = [wide[0] as IMergePart, { ...(wide[0] as IMergePart), matrix: undefined }];
+    const preserve = ["normal", "uv"] as const;
+    const merged = mergeParts(parts, { label: "wide", preserve });
+    expect(merged.getAttribute("position").count).toBeGreaterThan(65_535);
+    expect(merged.getIndex()?.array).toBeInstanceOf(Uint32Array);
+    sameBytes(merged, throughThree(parts, preserve));
+  });
+
+  it("should read one source geometry once per part, leaving its interleaved buffer untouched", () => {
+    const part = cookedChunk()[0];
+    const geometry = part?.geometry as BufferGeometry;
+    const normal = geometry.getAttribute("normal") as InterleavedBufferAttribute;
+    const before = Array.from(normal.data.array);
+    mergeParts([part as IMergePart], { label: "untouched", preserve: ["normal", "uv"] });
+    expect(Array.from(normal.data.array)).toEqual(before);
   });
 });

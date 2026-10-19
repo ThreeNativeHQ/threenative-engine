@@ -1,6 +1,6 @@
-import type { BatchedMesh, Matrix4, Object3D } from "three";
+import type { BatchedMesh, Matrix4, Object3D, RenderTarget, SkinnedMesh } from "three";
 import { context, mrt, output, velocity } from "three/tsl";
-import type { MRTNode, Node } from "three/webgpu";
+import type { MRTNode, Node, TextureNode } from "three/webgpu";
 
 import {
   disposeBatchedMeshVelocity,
@@ -18,6 +18,8 @@ export const VELOCITY_OUTPUT_NAME = "velocity";
  * without making the game depend on either implementation.
  */
 export interface IVelocityRenderPass {
+  /** Physical attachments on Three passes; structural adapters may own them elsewhere. */
+  readonly renderTarget?: Pick<RenderTarget, "textures" | "dispose">;
   getMRT(): MRTNode | null;
   getTextureNode(name?: string): Node;
   setMRT(value: MRTNode | null): unknown;
@@ -36,8 +38,12 @@ export const VELOCITY_PREVIOUS_BONE_MATRICES = Symbol.for(
   "threenative.velocity.previousBoneMatrices",
 );
 
+const VELOCITY_PREVIOUS_BIND_MATRIX_INVERSE = Symbol.for(
+  "threenative.velocity.previousBindMatrixInverse",
+);
+
 interface IInstanceMatrixSource {
-  instanceMatrix?: { array: ArrayLike<number> };
+  instanceMatrix?: { array: ArrayLike<number>; version?: number };
 }
 
 interface IBatchedMatrixSource {
@@ -51,6 +57,7 @@ interface IVelocityObject {
   [VELOCITY_PREVIOUS_INSTANCE_MATRICES]?: Float32Array;
   [VELOCITY_PREVIOUS_WORLD_MATRIX]?: Matrix4;
   [VELOCITY_PREVIOUS_BONE_MATRICES]?: Float32Array;
+  [VELOCITY_PREVIOUS_BIND_MATRIX_INVERSE]?: Matrix4;
 }
 
 interface ITrackedSkeleton {
@@ -87,7 +94,13 @@ export function ensureVelocityOutput(pass: IVelocityRenderPass): MRTNode {
  */
 export function velocityTexture(pass: IVelocityRenderPass): Node {
   ensureVelocityOutput(pass);
-  return pass.getTextureNode(VELOCITY_OUTPUT_NAME);
+  const node = pass.getTextureNode(VELOCITY_OUTPUT_NAME);
+  const target = pass.renderTarget;
+  const texture = (node as TextureNode).value;
+  // PassNode caches texture nodes after a chain detaches their physical attachment.
+  if (target !== undefined && texture?.isTexture === true && !target.textures.includes(texture))
+    target.textures.push(texture);
+  return node;
 }
 
 /**
@@ -101,6 +114,26 @@ export function withVelocityContext<T>(node: T, source: Node): T {
 }
 
 /**
+ * How the render chain provisions the MRT velocity a temporal stage reads. The chain defaults to
+ * {@link mrtVelocity}; a host that provisions velocity another way (an engine whose scene pass owns
+ * the output) passes its own as `request.velocity.provision`.
+ */
+export interface IVelocityProvision {
+  /** Ensures `pass` writes velocity and returns its texture node. */
+  texture(pass: IVelocityRenderPass): Node;
+  /** Hands the velocity source through the composed graph; `source` is the node `texture` returned. */
+  attach<T>(node: T, source: Node): T;
+}
+
+/**
+ * Core's own provision: the scene pass's MRT output, with the TSL `velocity` accessor as the context
+ * source temporal nodes jitter.
+ */
+export function mrtVelocity(): IVelocityProvision {
+  return { texture: velocityTexture, attach: (node) => withVelocityContext(node, velocity) };
+}
+
+/**
  * Captures instance matrices at the framework's pre-render boundary and enables previous data on
  * every renderable in the graph. The previous snapshot is never the array the game writes next.
  * @situation retain previous transforms for animated and instanced renderables
@@ -110,7 +143,15 @@ export class VelocityTracker {
   readonly #originalFlags = new Map<Object3D, IOriginalVelocityFlag>();
   readonly #instanceSnapshots = new Map<Object3D, Float32Array>();
   readonly #worldSnapshots = new Map<Object3D, Matrix4>();
+  readonly #bindInverseSnapshots = new Map<Object3D, Matrix4>();
   readonly #boneSnapshots = new Map<ITrackedSkeleton, Float32Array>();
+  // The previous frame's buffers, written at the next commit. The snapshot scheduled for the frame
+  // that just rendered stays untouched until `update` replaces it, and steady state allocates nothing.
+  readonly #spareInstances = new Map<Object3D, Float32Array>();
+  readonly #spareWorlds = new Map<Object3D, Matrix4>();
+  readonly #spareBones = new Map<ITrackedSkeleton, Float32Array>();
+  /** `instanceMatrix.version` at the last commit: an unchanged mesh's history already equals it. */
+  readonly #instanceVersions = new Map<Object3D, number>();
   readonly #ownedBatchedMeshes = new Set<BatchedMesh>();
   readonly #active = new Set<Object3D>();
   #updatedRoot: Object3D | undefined;
@@ -133,8 +174,13 @@ export class VelocityTracker {
           seenSkeletons.add(skeleton);
         }
         this.captureBones(object, skeleton);
+        (object as IVelocityObject)[VELOCITY_PREVIOUS_BIND_MATRIX_INVERSE] =
+          this.#bindInverseSnapshots.get(object) ??
+          (object as SkinnedMesh).bindMatrixInverse.clone();
       } else {
         Reflect.deleteProperty(object, VELOCITY_PREVIOUS_BONE_MATRICES);
+        Reflect.deleteProperty(object, VELOCITY_PREVIOUS_BIND_MATRIX_INVERSE);
+        this.#bindInverseSnapshots.delete(object);
       }
       this.captureInstance(object);
     });
@@ -145,7 +191,10 @@ export class VelocityTracker {
       this.#active.delete(object);
     }
     for (const skeleton of this.#boneSnapshots.keys()) {
-      if (!seenSkeletons.has(skeleton)) this.#boneSnapshots.delete(skeleton);
+      if (!seenSkeletons.has(skeleton)) {
+        this.#boneSnapshots.delete(skeleton);
+        this.#spareBones.delete(skeleton);
+      }
     }
     for (const object of seen) this.#active.add(object);
   }
@@ -159,13 +208,20 @@ export class VelocityTracker {
     root.traverse((object) => {
       if (!this.#active.has(object) || !isVelocityRenderable(object)) return;
       seen.add(object);
-      this.#worldSnapshots.set(object, object.matrixWorld.clone());
+      const spare = this.#spareWorlds.get(object);
+      const scheduled = this.#worldSnapshots.get(object);
+      if (scheduled) this.#spareWorlds.set(object, scheduled);
+      this.#worldSnapshots.set(
+        object,
+        spare ? spare.copy(object.matrixWorld) : object.matrixWorld.clone(),
+      );
       const skeleton = getSkeleton(object);
       if (skeleton !== undefined) {
+        this.#bindInverseSnapshots.set(object, (object as SkinnedMesh).bindMatrixInverse.clone());
         if (!seenSkeletons.has(skeleton)) {
           skeleton.update();
           seenSkeletons.add(skeleton);
-          this.#boneSnapshots.set(skeleton, copyArray(skeleton.boneMatrices));
+          rotate(this.#boneSnapshots, this.#spareBones, skeleton, skeleton.boneMatrices);
         }
       }
       this.commitInstance(object);
@@ -184,7 +240,12 @@ export class VelocityTracker {
     this.#originalFlags.clear();
     this.#instanceSnapshots.clear();
     this.#worldSnapshots.clear();
+    this.#bindInverseSnapshots.clear();
     this.#boneSnapshots.clear();
+    this.#spareInstances.clear();
+    this.#instanceVersions.clear();
+    this.#spareWorlds.clear();
+    this.#spareBones.clear();
     this.#updatedRoot = undefined;
   }
 
@@ -247,11 +308,22 @@ export class VelocityTracker {
 
   private commitInstance(object: Object3D): void {
     const batch = getBatchedMesh(object);
-    const current =
-      batch === undefined
-        ? (object as Object3D & IInstanceMatrixSource).instanceMatrix?.array
-        : batchedMatrixData(batch);
-    if (current !== undefined) this.#instanceSnapshots.set(object, copyArray(current));
+    const matrices =
+      batch === undefined ? (object as Object3D & IInstanceMatrixSource).instanceMatrix : undefined;
+    const current = batch === undefined ? matrices?.array : batchedMatrixData(batch);
+    if (current === undefined) return;
+    // A static forest is nearly every instance: copying 218,809 unchanged matrices each frame was
+    // the remaining per-frame cost. Same version means the scheduled history is already current.
+    const version = matrices?.version;
+    if (
+      version !== undefined &&
+      this.#instanceVersions.get(object) === version &&
+      this.#instanceSnapshots.get(object)?.length === current.length
+    )
+      return;
+    rotate(this.#instanceSnapshots, this.#spareInstances, object, current);
+    if (version !== undefined) this.#instanceVersions.set(object, version);
+    else this.#instanceVersions.delete(object);
   }
 
   private restore(object: Object3D): void {
@@ -266,9 +338,14 @@ export class VelocityTracker {
     Reflect.deleteProperty(typed, VELOCITY_PREVIOUS_INSTANCE_MATRICES);
     Reflect.deleteProperty(typed, VELOCITY_PREVIOUS_WORLD_MATRIX);
     Reflect.deleteProperty(typed, VELOCITY_PREVIOUS_BONE_MATRICES);
+    Reflect.deleteProperty(typed, VELOCITY_PREVIOUS_BIND_MATRIX_INVERSE);
     this.#originalFlags.delete(object);
     this.#instanceSnapshots.delete(object);
     this.#worldSnapshots.delete(object);
+    this.#spareInstances.delete(object);
+    this.#instanceVersions.delete(object);
+    this.#spareWorlds.delete(object);
+    this.#bindInverseSnapshots.delete(object);
   }
 }
 
@@ -335,6 +412,31 @@ function isNode(value: unknown): value is Node {
 
 function copyArray(source: ArrayLike<number>): Float32Array {
   const copy = new Float32Array(source.length);
-  for (let index = 0; index < source.length; index += 1) copy[index] = source[index] ?? 0;
+  copy.set(source);
   return copy;
+}
+
+/**
+ * The committed history, written into last frame's buffer when the length still matches. Three
+ * copies the scheduled history into its own attribute at draw time, so reuse is safe; a fresh array
+ * per instanced mesh per frame was ~14 MB of garbage a frame for 218,809 instances and produced
+ * multi-second collector stalls.
+ */
+/** Commit into last frame's spare buffer and keep the scheduled one as the next spare. */
+function rotate<K>(
+  snapshots: Map<K, Float32Array>,
+  spares: Map<K, Float32Array>,
+  key: K,
+  source: ArrayLike<number>,
+): void {
+  const scheduled = snapshots.get(key);
+  const next = copyInto(spares.get(key), source);
+  if (scheduled) spares.set(key, scheduled);
+  snapshots.set(key, next);
+}
+
+function copyInto(target: Float32Array | undefined, source: ArrayLike<number>): Float32Array {
+  if (target === undefined || target.length !== source.length) return copyArray(source);
+  target.set(source);
+  return target;
 }

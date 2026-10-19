@@ -41,6 +41,21 @@ function manyShells(count: number): IBody {
   return { indices: Uint32Array.from(indices), positions: Float32Array.from(positions) };
 }
 
+/** Disconnected alpha-cutout cards — the shape a Fab foliage primitive is, and why it stalls. */
+function cards(count: number): IBody {
+  const indices: number[] = [];
+  const positions: number[] = [];
+  const perRow = Math.ceil(Math.sqrt(count));
+  for (let card = 0; card < count; card += 1) {
+    const base = positions.length / 3;
+    const x = (card % perRow) * 2;
+    const y = Math.floor(card / perRow) * 2;
+    positions.push(x, y, 0, x + 0.5, y, 0, x + 0.5, y + 0.5, 0, x, y + 0.5, 0);
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  return { indices: Uint32Array.from(indices), positions: Float32Array.from(positions) };
+}
+
 function edgeKey(a: number, b: number): number {
   return a < b ? a * 4294967296 + b : b * 4294967296 + a;
 }
@@ -211,6 +226,19 @@ describe("the cluster DAG", () => {
 
     expect(dag.stopReason).toBe("cap");
     expect(dag.roots.length).toBeGreaterThan(1);
+  }, 120_000);
+
+  it("AC6 red — a body of alpha-cutout cards stalls on its very first fold, at 100%", async () => {
+    const body = cards(400);
+    const dag = await buildClusterDag(body.indices, body.positions);
+
+    // Not the shells' 64-triangle floor: no collapse at all. Every edge of every card is a border
+    // edge, so `LockBorder` holds the whole body still and the only remaining candidates are the
+    // quads' diagonals, which collapse to nothing. PRD-485's Hornbeam foliage: 745,328 triangles
+    // whose DAG therefore reports every level at the source count, and the bake declines it.
+    expect(dag.stopReason).toBe("stalled");
+    expect(dag.groups).toHaveLength(0);
+    for (const level of dag.levels) expect(level.triangleCount).toBe(body.indices.length / 3);
   }, 120_000);
 
   it("refuses a malformed mesh rather than baking nonsense", async () => {

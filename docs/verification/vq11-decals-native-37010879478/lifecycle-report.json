@@ -1,0 +1,54 @@
+{
+  "sourceSha": "563ab23e9448a993013cb0d58c75ab6ab83917c9",
+  "artifactDirectory": "/home/runner/work/threenative/threenative/artifacts/vq11-decals-native/lifecycle",
+  "assertionResults": [
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "networkErrorsOptOutReason": "The run target has no network observer; its network observation is hardwired empty, so the default network policy is waived rather than evaluated against nothing.",
+          "noConsoleErrors": true,
+          "noNetworkErrors": false,
+          "noRuntimeDiagnostics": true
+        },
+        "reason": "not-evaluated",
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": false
+    }
+  ],
+  "debugColliders": false,
+  "diagnostics": [
+    {
+      "code": "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+      "fix": {
+        "instruction": "Increase timeoutMs only when the transition is expected to take longer; otherwise fix the producer or resource path."
+      },
+      "message": "Resource wait for 'state.residencyGeneration' timed out after 30150 ms; predicate {\"gte\":1,\"id\":\"state\",\"path\":\"residencyGeneration\"}, last observation 0.",
+      "path": "state",
+      "severity": "error",
+      "suggestion": "Increase timeoutMs only when the transition is expected to take longer; otherwise fix the producer or resource path."
+    }
+  ],
+  "diagnosticsPolicy": {
+    "networkErrorsOptOutReason": "The run target has no network observer; its network observation is hardwired empty, so the default network policy is waived rather than evaluated against nothing.",
+    "noConsoleErrors": true,
+    "noNetworkErrors": false,
+    "noRuntimeDiagnostics": true
+  },
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 0,
+  "input": "",
+  "movementThreshold": 0,
+  "pass": false,
+  "runtime": "native",
+  "scenario": "vq11-lifecycle",
+  "target": "desktop",
+  "trivialityOptOutCount": 0,
+  "trivialityOptOuts": [],
+  "url": "/home/runner/work/threenative/threenative/artifacts/vq11-decals-native/variants/native/decals"
+}

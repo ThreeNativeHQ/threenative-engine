@@ -1,0 +1,249 @@
+{
+  "sourceSha": "dd7d236c0d058f8772ca76503dcb371fa7839438",
+  "sourceFiles": [
+    {
+      "filename": "packages/core/src/fluid-particles.ts",
+      "sha256": "474930855500cf2754fe5149ff2283200f9576470a3e3cf6844680ba5fde3f9d"
+    },
+    {
+      "filename": "packages/core/src/gpu-readback.ts",
+      "sha256": "fece052efd783927fc92f05f9536c27d9ab22e4c15f47f3f693d2bf10013e64f"
+    },
+    {
+      "filename": "packages/core/patches/three@0.185.1.patch",
+      "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/src/collision-proof.ts",
+      "sha256": "d7bb330b0a321675bec66fb66afa4bac40d8ffc0285acb32dbb03df868457c13"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/playtests/fluid-collision.playtest.json",
+      "sha256": "c50f2e0cc15f0019d2b2f2f2f916d08a06534fa358de8cb0d587630562e0ccda"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/proof.html",
+      "sha256": "22a2d1a0cdd8822a276be9e7a2afaacedab1f30162474e3adb954d1f0f38d439"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/proof.vite.config.ts",
+      "sha256": "485b60dd4120a7ec567ca7e32f57f0f2832b034fc31969d1112b82b876bb30cd"
+    },
+    {
+      "filename": "scripts/fluid-collision-proof.ts",
+      "sha256": "9889bbc4424d5919211a80aceec3043b1941ff1d4828904f6e803f0ecbb5a24e"
+    },
+    {
+      "filename": "scripts/verify-fluid-collision.ts",
+      "sha256": "1fffa76d7a9d59bc0b352121a2b328fb8a384f619b091ee41c729bfd249e9a06"
+    }
+  ],
+  "qualification": "Rendered browser GPU correctness; no native or hardware-performance claim.",
+  "expectedOutcomesPassed": true,
+  "variants": [
+    {
+      "variant": "gate",
+      "pass": true,
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "rendererKind": "webgpu",
+      "assertions": [
+        {
+          "id": "visual.0.region",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.collisionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.measuredSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.totalSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.freeMotionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDistance",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDirectionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.ejectionSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.finite",
+          "pass": true
+        },
+        {
+          "id": "diagnostics",
+          "pass": true
+        }
+      ],
+      "diagnostics": [],
+      "measurements": {
+        "before": {
+          "gateClosed": true,
+          "measuredSteps": 0,
+          "totalSteps": 1,
+          "initialX": -1.0499999523162842,
+          "collisionX": -1.0499999523162842,
+          "collisionPassed": 0,
+          "freeX": -1.0499999523162842,
+          "freeMotionPassed": 0,
+          "diagonalSpeed": 0,
+          "diagonalDistance": 0,
+          "diagonalDirectionPassed": 0,
+          "ejectionSpeed": 0,
+          "finite": 0
+        },
+        "after": {
+          "gateClosed": true,
+          "measuredSteps": 1,
+          "totalSteps": 2,
+          "initialX": -1.0499999523162842,
+          "collisionX": -1.0468000173568726,
+          "collisionPassed": 1,
+          "freeX": -0.75,
+          "freeMotionPassed": 1,
+          "diagonalSpeed": 18.00000091579126,
+          "diagonalDistance": 0.3000000311790893,
+          "diagonalDirectionPassed": 1,
+          "ejectionSpeed": 18,
+          "finite": 1
+        }
+      },
+      "images": [
+        {
+          "filename": "before.png",
+          "sha256": "edc58721e2e85ba2d2b6d8d6ba43272d55962aa6d178dc7484a61223ab7539b6"
+        },
+        {
+          "filename": "after.png",
+          "sha256": "a70827bbfac684af9250d82420857e8f003dce1eb29438ad079a36bb4bf2cf75"
+        }
+      ]
+    },
+    {
+      "variant": "gate-disabled",
+      "pass": false,
+      "adapter": {
+        "architecture": "turing",
+        "vendor": "nvidia",
+        "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "16384",
+        "limit.maxStorageBufferBindingSize": "2147483644"
+      },
+      "rendererKind": "webgpu",
+      "assertions": [
+        {
+          "id": "visual.0.region",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.collisionPassed",
+          "pass": false
+        },
+        {
+          "id": "resource.FluidCollision.measuredSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.totalSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.freeMotionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDistance",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDirectionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.ejectionSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.finite",
+          "pass": true
+        },
+        {
+          "id": "diagnostics",
+          "pass": true
+        }
+      ],
+      "diagnostics": ["TN_PLAYTEST_RESOURCE_ASSERTION_FAILED"],
+      "measurements": {
+        "before": {
+          "gateClosed": false,
+          "measuredSteps": 0,
+          "totalSteps": 1,
+          "initialX": -1.0499999523162842,
+          "collisionX": -1.0499999523162842,
+          "collisionPassed": 0,
+          "freeX": -1.0499999523162842,
+          "freeMotionPassed": 0,
+          "diagonalSpeed": 0,
+          "diagonalDistance": 0,
+          "diagonalDirectionPassed": 0,
+          "ejectionSpeed": 0,
+          "finite": 0
+        },
+        "after": {
+          "gateClosed": false,
+          "measuredSteps": 1,
+          "totalSteps": 2,
+          "initialX": -1.0499999523162842,
+          "collisionX": -0.75,
+          "collisionPassed": 0,
+          "freeX": -0.75,
+          "freeMotionPassed": 1,
+          "diagonalSpeed": 18.00000091579126,
+          "diagonalDistance": 0.3000000311790893,
+          "diagonalDirectionPassed": 1,
+          "ejectionSpeed": 18,
+          "finite": 1
+        }
+      },
+      "images": [
+        {
+          "filename": "before.png",
+          "sha256": "795aecb354a041db6b5d813a5bb4967dc62ca6b6a722c41b3373a0c24d892b16"
+        },
+        {
+          "filename": "after.png",
+          "sha256": "7612ba3c5b7cef9fdd74f2b588d866d86b8bcbc735ca493fec06112a907301cc"
+        }
+      ]
+    }
+  ]
+}

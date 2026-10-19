@@ -656,23 +656,63 @@ describe("capability manifest generator", () => {
     ).resolves.toEqual(expect.objectContaining({ problems: [] }));
   });
 
+  it("checks each template closure on its own, so another template's install does not count", async () => {
+    const root = await makeTempDir("threenative-capability-per-template-");
+    temporaryRoots.push(root);
+    await writePackage(root, "core", "@threenative/core", documentedClass);
+    const uiLayer = (requires: string): string =>
+      [
+        "/**",
+        " * A fixture UI layer.",
+        " * @situation render a React HUD over the game",
+        " * @example const layer = new UiLayer();",
+        requires,
+        " */",
+        "export class UiLayer {}",
+        "",
+      ].join("\n");
+    await writePackage(root, "ui", "@threenative/ui", uiLayer(" *"));
+    await writeTemplatePackage(root, "starter", {
+      dependencies: { "@threenative/core": "0.0.0", "@threenative/ui": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
+    await writeTemplatePackage(root, "minimal", {
+      dependencies: { "@threenative/core": "0.0.0", three: "0.0.0" },
+      devDependencies: {},
+    });
+
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).rejects.toThrow(/- minimal: UiLayer -> @threenative\/ui/u);
+
+    await writePackage(
+      root,
+      "ui",
+      "@threenative/ui",
+      uiLayer(" * @requires npm i @threenative/ui"),
+    );
+    await expect(
+      checkCapabilityScaffoldImports(root, buildCapabilityManifest(root)),
+    ).resolves.toEqual(expect.objectContaining({ problems: [] }));
+  });
+
   it("maps every authored alias to a named predecessor corpus row", async () => {
     const manifest = await checkCapabilityManifest(process.cwd());
     const aliases = manifest.entries.flatMap((entry) => entry.aliases ?? []);
     const predecessorRows = {
       "third-person camera": { ids: ["request.third-person-camera"], owners: ["defineGame"] },
-      "restart the run without a page reload": {
+      "restart run without page reload": {
         ids: ["brief.endless-runner.5"],
         owners: ["defineGame"],
       },
       "field of view while aiming": { ids: ["brief.fps.2"], owners: ["defineGame"] },
-      "firing line nearest target crosshair": { ids: ["brief.fps.4"], owners: ["defineGame"] },
+      "nearest target crosshair spawns": { ids: ["brief.fps.4"], owners: ["defineGame"] },
       "obstacles collectibles increasing pace": {
         ids: ["brief.endless-runner.3"],
         owners: ["InstancedBatch"],
       },
       "readable world lighting": { ids: ["brief.exploration.5"], owners: ["ProbeVolume"] },
-      "different props in each area": {
+      "different area props": {
         ids: ["brief.exploration.3"],
         owners: ["createAssetLoader"],
       },
@@ -721,7 +761,7 @@ describe("capability manifest generator", () => {
         ids: ["brief.platformer.3"],
         owners: ["CharacterBody3D"],
       },
-      "bright sky saturated green platforms": {
+      "green platforms bright saturated sky": {
         ids: ["brief.platformer.4"],
         owners: ["Atmosphere"],
       },

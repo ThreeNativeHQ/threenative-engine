@@ -13,7 +13,7 @@ valuable and does not belong here. **Value that arrives at a stranger's `pnpm de
 PRD-289 through PRD-292 were inventoried and recovered in one integration worktree. PRD-289 stays
 here as `PARTIAL` until the eight-template visual score manifest is complete; PRD-290 through
 PRD-292 remain archived. The procedure and run history remain in
-[RESUME-2026-09-01.md](./RESUME-2026-09-01.md).
+RESUME-2026-09-01.md.
 
 ## What earns a place in this folder
 
@@ -41,7 +41,7 @@ owning batch. Every inbound relative link was repointed and `pnpm check:docs` wa
 another lane.
 
 `batch-2026-08-30/` is dissolved. Its README is kept verbatim as
-[ORIGIN-decent-defaults-2026-08-30.md](./ORIGIN-decent-defaults-2026-08-30.md) because it holds the
+ORIGIN-decent-defaults-2026-08-30.md because it holds the
 measured argument for rows 3 through 8 below and the owner ruling that unblocked PRD-266. Read it
 before touching the visual half.
 
@@ -73,7 +73,7 @@ flowchart TD
 | 1 | [289 — the conventions the templates document also run in them](./PRD-289-the-conventions-the-templates-document-also-run-in-them.md) | PARTIAL — visual score gap | Cheapest row on the table and the widest promise gap. Nothing to build; the exports exist and are tested. |
 | 2 | [290 — a game that fails to start says why](../done/PRD-290-a-game-that-fails-to-start-says-why-on-the-screen.md) | DONE — 2026-09-02 | An invisible boot failure poisons every other row's evidence: a stuck launch card and a working game look identical in a capture. |
 | 3 | [278 — every template ships the render chain, and says which stages ran](../done/PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) | SCOPING | The largest visual-default delta available, and charter-safe: it ships as generated source. Six templates, six integration problems. |
-| 4 | [266 — the render chain names the tier it actually ran](./PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) | PROPOSED | Unblocked by the owner ruling recorded in the origin memo. The spine of rows 5 and 6. |
+| 4 | 266 — the render chain names the tier it actually ran | PROPOSED | Unblocked by the owner ruling recorded in the origin memo. The spine of rows 5 and 6. |
 | 5 | [193 — all templates model allocation-free ordinary frames](./PRD-193-all-templates-model-allocation-free-frames.md) + [194 — every template carries a real performance proof](./PRD-194-every-template-carries-a-real-performance-proof.md) | NOT STARTED | The regression net under row 3. Run **with** it, not after: five TSL stages across eight templates with no per-template proof is how a good default silently becomes a 30 fps one. |
 | 6 | [287 — the default look holds the phone's budget](./PRD-287-the-default-look-holds-the-phones-budget.md) | OPEN | The device arm nothing else owns, plus the correction to the tier ladder's selection meter. |
 | 7 | [288 — the first frame is not the compile bill](./PRD-288-the-first-frame-is-not-the-compile-bill.md) | OPEN | `warmup.ts` compiles the scene and never walks the post chain, so the chain's pipelines are built after the loading screen leaves. |
@@ -95,7 +95,7 @@ flowchart TD
   largest quality jumps available and both multi-week. Neither is a default until the chain is in
   the templates at all.
 - **[`tech-debt-code-quality/PRD-203`](../tech-debt-code-quality/PRD-203-template-loading-screens-stop-drifting.md)**
-  (template loading screens stop drifting) and **[`tooling/PRD-106`](../tooling/PRD-106-reference-image-generation.md)**
+  (template loading screens stop drifting) and **`tooling/PRD-106`**
   (a project can obtain its own reference image) — real developer value, filed as hygiene and
   tooling rather than defaults. They are referenced from here but live in their owning categories.
 - **`agent-leverage/PRD-123` and `PRD-124`** — a compatibility corpus and a repair benchmark. Both

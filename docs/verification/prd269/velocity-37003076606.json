@@ -1,0 +1,582 @@
+{
+  "sourceCommit": "47e188e41601a64decb4fe0f580037546d63b543",
+  "sourceTree": "8d998064a1f5d8c17f7c27c6cf44ab66fd78e1ef",
+  "workflowRunId": 37003076606,
+  "workflowRunUrl": "https://github.com/ThreeNativeHQ/threenative/actions/runs/37003076606",
+  "workflowConclusion": "success",
+  "artifactId": 11224711152,
+  "artifactName": "velocity-history-47e188e41601a64decb4fe0f580037546d63b543",
+  "artifactSha256": "bca60e256985287d5eeeda1b7942d17ef5a3c5b5a056f35f7093520a7a1ae667",
+  "artifactBytes": 71091,
+  "screenshotsVisuallyInspected": true,
+  "positiveImagesByteIdentical": true,
+  "images": [
+    {
+      "variant": "without-history",
+      "artifactPath": "without-history/after.png",
+      "storedFile": "without-history-37003076606.png",
+      "sha256": "ef304d46bba40419d55edc1af9aba20aa911ca291332626ba04a88af0a5a6c7d",
+      "bytes": 14318
+    },
+    {
+      "variant": "tracked",
+      "artifactPath": "tracked/after.png",
+      "storedFile": "instanced-37003076606.png",
+      "sha256": "bc4bd72a652a9195d97d6896c9882e6f6d9ce05e9aec8ef35126ad41bebc52c1",
+      "bytes": 14725
+    },
+    {
+      "variant": "instanced",
+      "artifactPath": "instanced/after.png",
+      "storedFile": "instanced-37003076606.png",
+      "sha256": "bc4bd72a652a9195d97d6896c9882e6f6d9ce05e9aec8ef35126ad41bebc52c1",
+      "bytes": 14725
+    },
+    {
+      "variant": "instanced-dynamic",
+      "artifactPath": "instanced-dynamic/after.png",
+      "storedFile": "instanced-37003076606.png",
+      "sha256": "bc4bd72a652a9195d97d6896c9882e6f6d9ce05e9aec8ef35126ad41bebc52c1",
+      "bytes": 14725
+    }
+  ],
+  "qualification": "actual WebGPU velocity MRT readback and screenshots; software pixels only, no native, ghosting or hardware-performance claim",
+  "limits": {
+    "maximumSignedVelocityErrorPixels": 0.05,
+    "maximumStaticVelocity": 1e-5,
+    "maximumFirstFrameVelocity": 1e-5,
+    "maximumStoppedVelocity": 1e-5,
+    "minimumMovingPixels": 100
+  },
+  "variants": [
+    {
+      "variant": "without-history",
+      "pass": false,
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": true,
+          "instanced": false,
+          "dynamic": false,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": true,
+          "instanced": false,
+          "dynamic": false,
+          "oracleMaxErrorPixels": 63.999999999999986,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 23.999999999999993
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 47.999999999999964
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 63.999999999999986
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 56.000000000000014
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 24.00000000000002
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 40.000000000000014
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 63.999999999999986
+            }
+          ]
+        }
+      },
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'movingPixels'.",
+          "severity": "error",
+          "suggestion": "Observed resource value did not change during the scenario. Inspect effect-log.json for the owning system's resource writes, run tn build --project . --json for undeclared writes, and check whether duplicate/stale systems or route/collision setup prevented the state transition."
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'oracleMaxErrorPixels'.",
+          "severity": "error",
+          "suggestion": "Check resource IDs, script writes, and assertion path spelling."
+        }
+      ]
+    },
+    {
+      "variant": "tracked",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579
+            }
+          ]
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "variant": "instanced",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579
+            }
+          ]
+        }
+      },
+      "diagnostics": []
+    },
+    {
+      "variant": "instanced-dynamic",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": true,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": true,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579
+            }
+          ]
+        }
+      },
+      "diagnostics": []
+    }
+  ]
+}

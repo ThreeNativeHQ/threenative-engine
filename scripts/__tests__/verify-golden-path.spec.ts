@@ -443,7 +443,7 @@ input.on("line", (line) => {
     ).toThrow(/surface drifted/u);
   });
 
-  it("packs and scaffolds the mutated CLI before observing its broken dependency", async () => {
+  it("packs a cold-layout CLI and scaffolds its deliberately broken dependency", async () => {
     const root = await makeTempDir("threenative-golden-path-packed-control-");
     try {
       const staging = path.join(root, "packages");

@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P2 — Open boxes collapse about 18 hand-copied pass/fail predicates into one helper.
 **Complexity:** +2 for 6–10 files, +2 for refactoring the harness's judgement core, +1
 multi-lane (browser/device runners), +1 for the decompose phase = **6 → MEDIUM mode**.
 

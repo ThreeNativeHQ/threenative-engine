@@ -45,7 +45,7 @@ fi
 if ! node scripts/ci-change-scope.mjs "${scope_args[@]}" --format json > "$log_root/selection.json"; then exit 2; fi
 if ! node scripts/ci-change-scope.mjs --validate-plan "$(cat "$log_root/selection.json")"; then exit 2; fi
 selection="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; console.log(JSON.parse(readFileSync(process.argv[1], "utf8")).selection)' "$log_root/selection.json")" || exit 2
-case "$selection" in full|prose|instructions) ;; *) echo 'TN_CI_LOCAL_INVALID_SELECTION' >&2; exit 2 ;; esac
+case "$selection" in full|prose|instructions|ci|template|native-engine) ;; *) echo 'TN_CI_LOCAL_INVALID_SELECTION' >&2; exit 2 ;; esac
 
 declare -a names=() cmds=()
 add() { names+=("$1"); cmds+=("$2"); }
@@ -62,6 +62,22 @@ if [ "$selection" = full ]; then
   add golden-path   'TN_PLAYTEST_ALLOW_SOFTWARE=1 pnpm verify:golden-path'
   add visuals       'pnpm visuals'
 
+elif [ "$selection" = ci ] || [ "$selection" = template ]; then
+  add build 'pnpm build'
+  add typecheck 'pnpm typecheck'
+  add lint 'pnpm lint'
+  add budgets 'pnpm budgets'
+  if [ "$selection" = ci ]; then
+    add test 'pnpm exec vitest run scripts/__tests__/ci-*.spec.ts'
+  else
+    export TN_CI_CONTRACTS="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; console.log(JSON.parse(readFileSync(process.argv[1], "utf8")).checks.ci)' "$log_root/selection.json")"
+    add test 'pnpm exec vitest run packages/create-threenative/__tests__ scripts/__tests__/verify-golden-path.spec.ts && if [ "$TN_CI_CONTRACTS" = true ]; then pnpm exec vitest run scripts/__tests__/ci-*.spec.ts; fi'
+    selected_templates="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; console.log(JSON.parse(readFileSync(process.argv[1], "utf8")).templateMatrix.template.join(","))' "$log_root/selection.json")"
+    export TN_GOLDEN_PATH_TEMPLATES="$selected_templates"
+    add golden-path 'TN_PLAYTEST_ALLOW_SOFTWARE=1 pnpm verify:golden-path'
+    export TN_TEMPLATE_ONLY="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; console.log(JSON.parse(readFileSync(process.argv[1], "utf8")).templateMatrix.template.filter(name => !["starter", "platformer"].includes(name)).join(","))' "$log_root/selection.json")"
+    if [ -n "$TN_TEMPLATE_ONLY" ]; then add templates 'pnpm test:templates'; fi
+  fi
 else
   add lint 'pnpm lint'
   add docs 'pnpm check:docs && pnpm exec vitest run scripts/__tests__/check-doc-links.spec.ts scripts/__tests__/evidence-budget.spec.ts scripts/__tests__/evidence-citations.spec.ts scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts'

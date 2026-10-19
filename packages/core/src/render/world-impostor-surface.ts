@@ -12,8 +12,10 @@ import {
   Vector3,
 } from "three";
 import {
+  Break,
   Fn,
-  OnObjectUpdate,
+  If,
+  Loop,
   abs,
   attribute,
   cameraPosition,
@@ -49,6 +51,7 @@ import {
   vec4,
 } from "three/tsl";
 import {
+  EventNode,
   MeshBasicNodeMaterial,
   MeshPhysicalNodeMaterial,
   MeshStandardNodeMaterial,
@@ -57,18 +60,16 @@ import {
 } from "three/webgpu";
 import { IMPOSTOR_VIEW_GRID, type WorldImpostorAtlas } from "./world-impostor.js";
 
-/**
- * Stored depth is baked but never read back into the lighting of this surface. Parallax is off; the
- * constant exists so a caller reports the same answer the shader makes and no future code claims
- * depth correction this slice did not do.
- */
-export const IMPOSTOR_SURFACE_PARALLAX = false;
+/** The surface reconstructs alpha-covered ray/depth crossings in the three neighboring views. */
+export const IMPOSTOR_SURFACE_PARALLAX = true;
 
 /** Mip compensation for the impostor cutout, the scattered-foliage constant: 0.25 drops needles. */
 export const IMPOSTOR_MIP_ALPHA_SCALE = 0.75;
 
 /** The alpha cutoff a source part gets when it authored none; the same 0.5 the scatter path uses. */
 const DEFAULT_ALPHA_TEST = 0.5;
+/** The positive alpha number the shadow pass copies; see the material setup in `WorldImpostorSurface`. */
+const IMPOSTOR_SHADOW_ALPHA_FLOOR = 1e-4;
 
 /**
  * The per-instance view-distance attribute a far aggregate writes: one float per placement, the
@@ -95,6 +96,12 @@ const UNSYNCED = new Set(["_listeners", "id", "uuid", "version"]);
  * Maps a source material authored against the source geometry's UVs. Every one of them refers to a
  * UV layout the two-triangle quad does not have, so each is cleared and albedo/normals come only
  * from the baked atlas.
+ *
+ * The whole family is here, not the classic set: a physical source's `transmissionMap`, `thicknessMap`
+ * and specular/iridescence pair are sampled the same way three samples `map` — through
+ * `attribute("uv")` — and a quad with no `uv` at all makes every one of them a
+ * `Vertex attribute "uv" not found on geometry` warning on every build of that material, for a sample
+ * the sampler was already returning as zero.
  */
 const GEOMETRY_MAPS = [
   "map",
@@ -115,6 +122,11 @@ const GEOMETRY_MAPS = [
   "sheenRoughnessMap",
   "iridescenceMap",
   "anisotropyMap",
+  "iridescenceThicknessMap",
+  "specularColorMap",
+  "specularIntensityMap",
+  "thicknessMap",
+  "transmissionMap",
 ] as const;
 
 /** One `mat4` node per CPU instance-matrix attribute, derived once and kept live with its source. */
@@ -233,16 +245,30 @@ export function syncInstanceRanges(
 }
 
 /**
+ * The event that runs {@link syncInstanceRanges} for one instance attribute: once per frame, the
+ * type three's own `Instance.js` sync uses (`OnFrameUpdate`, not re-exported, so built directly).
+ * Never OBJECT: world batches are `static`, and three skips a settled static object's OBJECT
+ * updates, so an OBJECT sync never ran and the GPU kept the batch's first, zeroed upload.
+ */
+export function instanceSyncEvent(
+  source: InstancedBufferAttribute,
+  derived: InstancedInterleavedBuffer,
+): EventNode {
+  return new EventNode(EventNode.FRAME as ConstructorParameters<typeof EventNode>[0], () =>
+    syncInstanceRanges(source, derived),
+  );
+}
+
+/**
  * The per-instance matrix as a `mat4` node, choosing the path by the attribute three installed.
  *
  * A `StorageInstancedBufferAttribute` is read through `storage(...).element(instanceIndex)`, which
  * is the same seam three's own `Instance.js` uses and which includes the indirect draw's
  * `firstInstance`. A plain CPU `InstancedBufferAttribute` cannot require storage support, so it is
  * read as the same four `instancedBufferAttribute` columns of an `InstancedInterleavedBuffer` over
- * its own array, and a per-object update copies the attribute's ranges and version onto that
+ * its own array, and a per-frame update copies the attribute's ranges and version onto that
  * derived buffer exactly as `Instance.js` does — a derived buffer nobody re-uploads draws a stale
- * pose. `OnFrameUpdate` is internal to three's bundled `Instance.js` in 0.185 and is not
- * re-exported, so the public per-object event carries the same synced ranges.
+ * pose. See {@link instanceSyncEvent}.
  */
 function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
   const count = Math.max(attribute.count, 1);
@@ -266,12 +292,7 @@ function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
     bufferFn(interleaved, "vec4", 16, 8),
     bufferFn(interleaved, "vec4", 16, 12),
   ];
-  // `OnFrameUpdate` is internal to three's bundled `Instance.js` and not re-exported publicly, so
-  // the public per-object event carries the same sync: it fires for the mesh on every render, which
-  // is every frame a changed matrix must be followed, and the copy is idempotent across passes.
-  OnObjectUpdate(() => {
-    if (interleaved !== undefined) syncInstanceRanges(attribute, interleaved);
-  });
+  instanceSyncEvent(attribute, interleaved).toStack();
   return mat4(
     columns[0] as Node<"vec4">,
     columns[1] as Node<"vec4">,
@@ -352,9 +373,12 @@ export class WorldImpostorSurface {
     material.depthWrite = true;
     material.depthTest = true;
     material.side = DoubleSide;
-    // A number, not only a node: readers that only understand a number (the shadow alpha caster)
-    // must see a positive cutoff even though the discard uses the node below.
-    material.alphaTest = cutoff;
+    // A positive number, never the cutoff: three's shadow pass copies this number as its own cutoff
+    // and ignores `alphaTestNode`, and a shadow-map texel is metres wide, so the blended coverage it
+    // reads is far below the authored 0.5 everywhere and every fragment would be discarded. The
+    // discard that matters runs through `maskShadowNode` below, with the same mip-aware threshold the
+    // main pass uses; this floor only drops empty space.
+    material.alphaTest = IMPOSTOR_SHADOW_ALPHA_FLOOR;
     material.userData = { ...material.userData, tnWholeAssetImpostor: true };
     material.needsUpdate = true;
 
@@ -407,7 +431,9 @@ export class WorldImpostorSurface {
           )
         : rel;
       relVarying.assign(gated);
-      dirVarying.assign(dAsset);
+      dirVarying.assign(
+        select(orthographicNode(), dAsset, asMat3(view).inverse().mul(centerView.negate())),
+      );
       return instance.mul(vec4(centerUniform.add(gated), 1)).xyz;
     })();
 
@@ -422,6 +448,7 @@ export class WorldImpostorSurface {
     );
     material.colorNode = vec4(fragment.albedo, fragment.coverage);
     material.alphaTestNode = fragment.threshold;
+    material.maskShadowNode = fragment.coverage.greaterThan(fragment.threshold);
     material.normalNode = Fn((_inputs: unknown, builder: { readonly object: Object3D }) =>
       transformNormal(fragment.normalAsset, instanceViewMatrixNode(builder.object)),
     )();
@@ -528,17 +555,121 @@ function buildFragmentNodes(
       grid,
     );
     const basis = frameBasisNode(direction);
-    const uv = vec2(dot(relVarying, basis.right), dot(relVarying, basis.up))
-      .div(radiusUniform)
-      .mul(0.5)
-      .add(0.5);
+    // Row 0 of a three render target is the top of the frame the bake drew, so `up` runs toward v=0;
+    // see `impostorFrameUv`.
+    const ray = normalize(select(orthographicNode(), dirVarying, dirVarying.sub(relVarying)));
     const layer = (cellY[index] as Node<"float">)
       .mul(grid)
       .add(cellX[index] as Node<"float">)
       .toInt();
-    uvs.push(uv);
-    colors.push(colorMap.depth(layer).sample(uv).toVar() as Node<"vec4">);
-    normals.push(normalMap.depth(layer).sample(uv).toVar() as Node<"vec4">);
+    // A crossing must remain covered throughout refinement; alpha holes and depth jumps
+    // cannot create an interior surface. One march step per baked texel, eight refinements.
+    const hit = Fn(() => {
+      const found = float(0).toVar();
+      const hitUv = vec2(2).toVar();
+      const previousGap = float(0).toVar();
+      const previousAlpha = float(0).toVar();
+      const previousT = radiusUniform.toVar();
+      Loop({ start: 0, end: atlas.pixels + 1, type: "int" }, ({ i }) => {
+        const t = float(1).sub(float(i).div(atlas.pixels).mul(2)).mul(radiusUniform);
+        const point = relVarying.add(ray.mul(t));
+        const sampleUv = vec2(dot(point, basis.right), dot(point, basis.up).negate())
+          .div(radiusUniform)
+          .mul(0.5)
+          .add(0.5);
+        const c = colorMap.depth(layer).sample(sampleUv).level(float(0)).toVar();
+        const n = normalMap.depth(layer).sample(sampleUv).level(float(0)).toVar();
+        const depth = float(1)
+          .sub(
+            float(1)
+              .sub(n.a)
+              .div(max(c.a, float(0.001)))
+              .mul(2),
+          )
+          .mul(radiusUniform);
+        const gap = dot(point, direction).sub(depth).toVar();
+        If(
+          found
+            .equal(0)
+            .and(previousAlpha.greaterThan(cutoff))
+            .and(c.a.greaterThan(cutoff))
+            .and(previousGap.greaterThan(0))
+            .and(gap.lessThanEqual(0)),
+          () => {
+            const front = previousT.toVar();
+            const back = t.toVar();
+            const valid = float(1).toVar();
+            Loop({ start: 0, end: 8, type: "int" }, () => {
+              const mid = front.add(back).mul(0.5).toVar();
+              const p = relVarying.add(ray.mul(mid));
+              const u = vec2(dot(p, basis.right), dot(p, basis.up).negate())
+                .div(radiusUniform)
+                .mul(0.5)
+                .add(0.5);
+              const mc = colorMap.depth(layer).sample(u).level(float(0)).toVar();
+              const mn = normalMap.depth(layer).sample(u).level(float(0)).toVar();
+              const md = float(1)
+                .sub(
+                  float(1)
+                    .sub(mn.a)
+                    .div(max(mc.a, float(0.001)))
+                    .mul(2),
+                )
+                .mul(radiusUniform);
+              const mg = dot(p, direction).sub(md);
+              If(mc.a.lessThanEqual(cutoff), () => {
+                valid.assign(0);
+              });
+              If(mg.greaterThan(0), () => {
+                front.assign(mid);
+              }).Else(() => {
+                back.assign(mid);
+              });
+            });
+            const p = relVarying.add(ray.mul(front.add(back).mul(0.5)));
+            const u = vec2(dot(p, basis.right), dot(p, basis.up).negate())
+              .div(radiusUniform)
+              .mul(0.5)
+              .add(0.5);
+            const hc = colorMap.depth(layer).sample(u).level(float(0)).toVar();
+            const hn = normalMap.depth(layer).sample(u).level(float(0)).toVar();
+            const hd = float(1)
+              .sub(
+                float(1)
+                  .sub(hn.a)
+                  .div(max(hc.a, float(0.001)))
+                  .mul(2),
+              )
+              .mul(radiusUniform);
+            If(
+              valid
+                .equal(1)
+                .and(hc.a.greaterThan(cutoff))
+                .and(
+                  abs(dot(p, direction).sub(hd)).lessThanEqual(
+                    radiusUniform.mul(2 / 255).div(max(hc.a, float(0.001))),
+                  ),
+                ),
+              () => {
+                hitUv.assign(u);
+                found.assign(1);
+              },
+            );
+          },
+        );
+        previousGap.assign(gap);
+        previousAlpha.assign(c.a);
+        previousT.assign(t);
+        // The first valid crossing owns the result; later samples cannot change it.
+        If(found.equal(1), () => {
+          Break();
+        });
+      });
+      return vec3(hitUv, found);
+    })();
+    uvs.push(hit.xy);
+    colors.push(colorMap.depth(layer).sample(hit.xy).mul(hit.z).toVar() as Node<"vec4">);
+    normals.push(normalMap.depth(layer).sample(hit.xy).mul(hit.z).toVar() as Node<"vec4">);
   }
 
   const [w0, w1, w2] = weights as [Node<"float">, Node<"float">, Node<"float">];
@@ -572,7 +703,13 @@ export function impostorFrameBasis(direction: Vector3): {
   return { right, up };
 }
 
-/** The UV a baked frame gives one asset-local offset, as the surface shader projects it. */
+/**
+ * The UV a baked frame gives one asset-local offset, as the surface shader projects it.
+ *
+ * `v` runs downward: a three render target's row 0 is the top of the frame its camera drew (WebGPU
+ * samples it unflipped, and WebGL's render-target flip lands the same place), so the GL-style
+ * `0.5 + y/2` reads the frame upside down.
+ */
 export function impostorFrameUv(
   relative: Vector3,
   basis: { readonly right: Vector3; readonly up: Vector3 },
@@ -580,6 +717,6 @@ export function impostorFrameUv(
 ): { readonly u: number; readonly v: number } {
   return {
     u: (relative.dot(basis.right) / radius) * 0.5 + 0.5,
-    v: (relative.dot(basis.up) / radius) * 0.5 + 0.5,
+    v: 0.5 - (relative.dot(basis.up) / radius) * 0.5,
   };
 }

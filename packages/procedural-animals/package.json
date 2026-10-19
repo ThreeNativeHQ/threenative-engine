@@ -1,0 +1,50 @@
+{
+  "name": "@threenative/procedural-animals",
+  "version": "0.1.1",
+  "license": "MIT",
+  "description": "Optional, bake-first procedural animal content for ThreeNative.",
+  "homepage": "https://github.com/ThreeNativeHQ/threenative#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "directory": "packages/procedural-animals"
+  },
+  "type": "module",
+  "files": ["dist", "README.md", "LICENSES"],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json",
+    "./build": {
+      "types": "./dist/build.d.ts",
+      "import": "./dist/build.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup --config tsup.config.ts && publint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. procedural-animals/__tests__ && publint --strict"
+  },
+  "dependencies": {
+    "three": "catalog:",
+    "procedural-animals": "catalog:"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.3",
+    "publint": "0.3.22",
+    "tsup": "8.5.1",
+    "typescript": "catalog:",
+    "@threenative/assets": "workspace:*",
+    "@threenative/physics": "workspace:*",
+    "@threenative/playtest": "workspace:*"
+  }
+}

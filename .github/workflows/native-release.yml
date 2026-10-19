@@ -15,11 +15,14 @@ on:
     tags:
       - "runtime-native-v*"
   pull_request:
-    paths:
-      - ".github/workflows/native-release.yml"
-      - "scripts/__tests__/native-release-proof.spec.ts"
-      - "scripts/__tests__/native-release-android-staging.spec.ts"
-      - "packages/runtime-native/tests/native-platform-workflow.test.mjs"
+    # The proof is the most expensive board in this repository (macOS, Windows, Linux and a
+    # 210-minute Android producer) and an ordinary PR push never needed it: over 2026-09-18 to
+    # 10-02 it cost 7.0k runner-minutes against a pool that holds about three runs. It runs for
+    # a promotion PR into main, or when a PR carries the `release-proof` label - `labeled` is
+    # what makes that route reachable, and the open/reopen events are what make a promotion PR
+    # reach it. The `paths` filter is gone: it was the thing that re-ran the board on every push
+    # to four files, one of them touched by ordinary runtime-native PRs.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 permissions:
@@ -27,24 +30,24 @@ permissions:
   actions: read
 
 concurrency:
-  # Measured over this workflow's entire history, re-counted 2026-09-11: 41 runs, 18 cancelled,
-  # 17 failed, 4 succeeded. The four successes are PRD-078's non-publishing hosted proof, and they
-  # arrived only after this setting stopped evicting them - the earlier count behind this choice was
-  # 18 runs with zero successes. Every cancellation was a proof run killed by the next push to its
-  # own branch. `clean-consumer` sits behind a ~20 minute build matrix, so on an actively-pushed
-  # branch it cannot reach its own first line no matter what its timeout is - which is why this sits
-  # alongside the timeout raise rather than instead of it. Evidence here is candidate-keyed, so a
-  # superseded run's output is still valid for the SHA it was produced from and is worth letting
-  # finish.
-  # `github.event_name` is in the group because a manual proof on main and an automatic one would
-  # otherwise share `native-release-refs/heads/main` and evict each other.
-  # `github.event.workflow_run.head_sha` is in the group because every `workflow_run` run shares
-  # `github.ref` (the default branch) and `github.event_name` (`workflow_run`): without the head
-  # SHA they all serialize behind each other in one group while the Actions queue drains. A new CI
-  # completion for a newer main SHA gets its own group instead of queueing behind a superseded
-  # evidence run; a re-run for the same SHA still shares its group. Tag publication stays
-  # per-ref as before.
-  group: native-release-${{ github.event_name }}-${{ github.event.workflow_run.head_sha }}-${{ github.ref }}
+  # One group for every run of this workflow, whatever triggered it. It used to carry
+  # `github.event_name`, the triggering CI head SHA and `github.ref`, so a promotion PR, a manual
+  # dispatch, a tag push and each main CI completion each held a runner simultaneously - and a
+  # two-minute `build` join waited over an hour behind them (PRD-380).
+  #
+  # What that keying bought: a new CI completion for a newer main SHA got its own group instead of
+  # queueing behind a superseded evidence run. That is now the intended trade - the queue behind a
+  # superseded proof is a few minutes of one runner, where running them beside each other was the
+  # whole pool.
+  #
+  # `cancel-in-progress: false` is unchanged and load-bearing: every cancellation in this
+  # workflow's history was a proof run killed by the next push to its own branch, and a
+  # candidate-keyed result is still valid for the SHA it was produced from.
+  #
+  # Only a run that will prove joins the shared group. Every ordinary PR push still starts this
+  # workflow (its `gates` job then refuses it), and in one shared group those no-op runs would queue
+  # behind a real proof and replace a pending one, since a group keeps a single pending run.
+  group: ${{ (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -117,8 +120,15 @@ jobs:
   gates:
     needs: validate-tag
     # Scheduled/manual CI also completes on main, but only push CI qualifies a release.
+    # And the pull_request trigger fires on every push now (the label needs `labeled`), so this
+    # job is where an ordinary PR is refused: PRD-373 retired the `promotion/<sha>` ref, so a PR
+    # targeting main is the promotion, and `release-proof` is the owner's manual route for any
+    # other PR. Every proof job below needs `gates`, so refusing here spends nothing.
     if: >-
       ${{ !cancelled() &&
+      (github.event_name != 'pull_request' ||
+      github.event.pull_request.base.ref == 'main' ||
+      contains(github.event.pull_request.labels.*.name, 'release-proof')) &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push') &&
       (github.ref_type != 'tag' || needs.validate-tag.result == 'success') }}
     runs-on: ubuntu-24.04
@@ -406,6 +416,9 @@ jobs:
             executable: mystral
             asset: threenative-runtime-linux-x64
             tools_asset: threenative-tools-linux-x64
+            player: tn-native-engine-player-v8
+            player_asset: threenative-engine-player-linux-x64
+            player_ui: "ON"
           - key: darwin-arm64
             published: false
             runner: macos-15
@@ -413,6 +426,9 @@ jobs:
             executable: mystral
             asset: threenative-runtime-darwin-arm64
             tools_asset: threenative-tools-darwin-arm64
+            player: tn-native-engine-player-v8
+            player_asset: threenative-engine-player-darwin-arm64
+            player_ui: "OFF"
           - key: win32-x64
             published: true
             runner: windows-2025
@@ -420,6 +436,9 @@ jobs:
             executable: mystral.exe
             asset: threenative-runtime-win32-x64.exe
             tools_asset: threenative-tools-win32-x64.exe
+            player: tn-native-engine-player-v8.exe
+            player_asset: threenative-engine-player-win32-x64.exe
+            player_ui: "OFF"
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
@@ -473,8 +492,17 @@ jobs:
           set "VCPKG_ROOT=%VCPKG_INSTALLATION_ROOT%"
           where cl
           pnpm --filter @threenative/runtime-native native:build
+          cd packages/runtime-native
+          cmake --preset ${{ matrix.preset }} -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=${{ matrix.player_ui }}
+          cmake --build build/tn-engine-ui --config Release --target tn-native-engine-player-v8
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Build Release engine player
+        if: runner.os != 'Windows'
+        working-directory: packages/runtime-native
+        run: |
+          cmake --preset ${{ matrix.preset }} -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=${{ matrix.player_ui }}
+          cmake --build build/tn-engine-ui --config Release --target tn-native-engine-player-v8
       # `VsDevCmd.bat` configures the process it runs in, and a `cmd` step's environment dies with
       # the step. So this ran without INCLUDE, LIB or a usable `cl`, and the first thing inside it
       # that *configures* a build directory — the physics contract lane — got "the C compiler is
@@ -507,6 +535,8 @@ jobs:
           ASSET_NAME: ${{ matrix.asset }}
           EXECUTABLE_NAME: ${{ matrix.executable }}
           PRESET: ${{ matrix.preset }}
+          PLAYER_NAME: ${{ matrix.player }}
+          PLAYER_ASSET_NAME: ${{ matrix.player_asset }}
           TOOLS_ASSET_NAME: ${{ matrix.tools_asset }}
         run: |
           node --input-type=module <<'NODE'
@@ -517,6 +547,10 @@ jobs:
           // (`src/cli/tool_dispatch.cpp:52`). It is a published release asset in its own right, so a
           // consumer that installed only the runtime can no longer reach `build tool helper is
           // missing` / exit 127 on `threenative build --target desktop`.
+          const playerSource = join("packages", "runtime-native", "build", "tn-engine-ui", process.env.PLAYER_NAME);
+          const playerOutput = join("release", process.env.PLAYER_ASSET_NAME);
+          copyFileSync(playerSource, playerOutput);
+          if (statSync(playerOutput).size === 0) throw new Error(`${playerOutput} is empty.`);
           const toolsName = process.env.EXECUTABLE_NAME.replace(/^mystral/u, "mystral-tools");
           const stage = [
             [process.env.EXECUTABLE_NAME, process.env.ASSET_NAME],
@@ -540,6 +574,7 @@ jobs:
           path: |
             release/${{ matrix.asset }}
             release/${{ matrix.tools_asset }}
+            release/${{ matrix.player_asset }}
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         if: always()
@@ -885,6 +920,7 @@ jobs:
           # A real Linux consumer needs it too, so it belongs inside the proof, not around it.
           sudo apt-get install -y mesa-vulkan-drivers libwebkit2gtk-4.1-0
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/native-engine-wasm
       - name: Pack the exact scaffold consumer packages
         run: |
           mkdir -p "$RUNNER_TEMP/packages"
@@ -894,6 +930,8 @@ jobs:
             pnpm --filter "$package_name" --if-present run build
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
+      - name: Verify packed default-engine desktop and web consumer
+        run: nice -n 19 pnpm tsx scripts/verify-one-template-desktop.ts platformer --archives "$RUNNER_TEMP/packages"
       - name: Scaffold from local tarballs
         uses: ./.github/actions/scaffold-from-tarballs
         with:
@@ -901,6 +939,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-consumer-proof
           template: minimal
+          # This job proves the released Three.js host (`mystral`). The default-engine consumer has its own step.
+          engine: threejs
       - name: Prepare the scaffolded consumer proof
         run: |
           target="$RUNNER_TEMP/threenative-consumer-proof"
@@ -1245,6 +1285,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-ios-release-consumer
           template: minimal
+          # The iOS release proof builds the released Three.js host without a native compiler.
+          engine: threejs
       - name: Install the exact iOS consumer packages
         run: |
           target="$RUNNER_TEMP/threenative-ios-release-consumer"
@@ -1453,6 +1495,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-consumer-proof
           template: minimal
+          # This job proves the released Three.js host (`mystral`). The default-engine consumer has its own step.
+          engine: threejs
       - name: Prepare the scaffolded consumer proof
         run: |
           target="$RUNNER_TEMP/threenative-consumer-proof"

@@ -6,7 +6,7 @@
  * unavoidable here — core is bundled for browsers and cannot read `package.json` at runtime — so
  * the spec now asserts this equals the manifest instead of asserting a number somebody typed.
  */
-export const version = "0.3.4";
+export const version = "0.3.5";
 
 /**
  * Play a skinned or sprite animation from game code.
@@ -35,6 +35,35 @@ export type {
   IAnimationPlayOptions,
   IStrideReport,
 } from "./animation.js";
+/**
+ * Compose game-authored locomotion and masked actions on one Three.js mixer.
+ * @situation synchronize walk/run/strafe clips with different durations
+ * @situation reload with the upper body while locomotion continues
+ * @situation apply an additive recoil clip with an explicit reference pose
+ * @situation route root motion through collision-aware character movement
+ * @constraint one base phase, one masked override, at most two additive layers and eight actions
+ * @constraint root motion requires a separate rig below the body; advance, CharacterBody3D.move, finish with observed accepted motion after physics, then existing IK
+ * @constraint root motion excludes velocity-driven stride sync; unsupported parent transforms throw
+ * @constraint source clips remain immutable; dispose at scene exit
+ * @example const animation = new AnimationComposer({ root: rig, clips, samples: ["walk", "run"] });
+ * animation.setWeights([0.5, 0.5]); animation.update(dt);
+ */
+export { AnimationComposer } from "./animation-composition.js";
+export type { IAnimationComposerOptions } from "./animation-composition.js";
+export type { IAnimationLayer, IAnimationMask } from "./animation-layers.js";
+export type {
+  IAnimationMotionDelta,
+  IAnimationRootMotionOptions,
+} from "./animation-root-motion.js";
+/**
+ * Select finite, normalized locomotion weights from sorted thresholds or a fixed triangulation.
+ * @situation calculate 1D walk/run blend weights from speed
+ * @situation calculate 2D locomotion weights from forward and strafe intent
+ * @constraint duplicate samples, collinear triangles and invalid/incomplete triangulations throw at initialization
+ * @constraint outside 2D queries project to the nearest boundary subedge; output is borrowed scratch
+ * @example const blend = new BlendSpace1D([0, 2]); animation.setWeights(blend.sample(speed));
+ */
+export { BlendSpace1D, BlendSpace2D } from "./animation-blend.js";
 /**
  * Shared preparation for an imported rigged character.
  *
@@ -85,7 +114,7 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
  * @situation load assets from a nonstandard base path or a compiled asset manifest
- * @alias different props in each area
+ * @alias different area props
  * @alias first playable screen external assets
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
  * @example const assets = createAssetLoader({ basePath: "/assets" });
@@ -96,15 +125,21 @@ export { onLaunchFailure } from "./launch-diagnostics.js";
 export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
 export type { IAssetLoader, IAssetLoaderOptions, ITextureOptions } from "./assets.js";
-export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
+export type {
+  IAudioBusOptions,
+  IAudioCompressorOptions,
+  IAudioPlayOptions,
+} from "./audio.js";
 /**
  * Route effects through a named audio bus.
  * @situation play a sound effect with a volume bus
  * @situation mute or adjust a category of game audio
  * @situation keep a gunshot audible at 20 metres by tuning positional falloff
+ * @situation hold a loud mix below clipping with a compressor on the bus
  * @situation play cannon, wave, and ship sound effects
  * @constraint create buses before playing clips and dispose them with the game
  * @constraint refDistance and rolloffFactor tune positional falloff and apply to playAt only
+ * @constraint compressor takes threshold, knee, ratio, attack and release from the game and takes effect on the bus sum
  * @supersedes new Audio(
  * @example const effects = new AudioBus({ camera });
  */
@@ -152,9 +187,9 @@ export type { IRandom } from "./random.js";
  * @situation register physics and gameplay plugins
  * @situation let the player zoom the camera with a wheel, pinch, or gamepad axis
  * @situation frame a camera behind the player
- * @alias firing line nearest target crosshair
+ * @alias nearest target crosshair spawns
  * @alias third-person camera
- * @alias restart the run without a page reload
+ * @alias restart run without page reload
  * @alias field of view while aiming
  * @constraint keep DOM and React mounting in src/main.ts
  * @constraint bind scroll or pinch and read the intent with ctx.input.axis(name); do not add a window wheel listener
@@ -224,6 +259,7 @@ export type {
  * is returned so instances can still be animated by the index `place` and `span` hand back.
  * @situation draw hundreds of repeated props without hundreds of draw calls
  * @situation draw thousands of identical instanced blocks or obstacles in one mesh
+ * @situation automatically select instanced prop detail from projected screen error using baked AutoLOD chains
  * @situation place repeated props when the count is not known until the layout has been walked
  * @situation build a chain, railing, cable, or tie rod out of point-to-point segments
  * @alias landmarks points of interest
@@ -231,6 +267,9 @@ export type {
  * @constraint geometry and material are required and come from the game; the batch chooses neither
  * @constraint span stretches along +Y, so its geometry must be unit-height and centred on the origin
  * @constraint placing after build() throws, and build() returns undefined when nothing was placed
+ * @constraint baked AutoLOD chains survive geometry clone/transform preparation and partition instances automatically into spatially bounded draws in the engine frame loop at 4 px projected error; public instance slots remain stable
+ * @constraint unavailable authored levels report TN_INSTANCED_LOD_FAILED once naming the batch; a million-triangle batch with no chain reports TN_INSTANCED_LOD_UNAVAILABLE
+ * @override autoLod: false leaves selection to the game; autoLod.maxPixelError and hysteresis override the measured-camera budget; lods supplies authored distance/geometry levels and wins over the baked chain
  * @override castShadow and receiveShadow pass through to the built mesh and default to Three.js's own false
  * @example const curbs = new InstancedBatch({ geometry: new BoxGeometry(1, 1, 1), material });
  * curbs.place({ position: [x, 0.08, z], rotation: [0, angle, 0], scale: [length, 0.18, 0.42] });
@@ -406,7 +445,11 @@ export type { IClusteredMeshOptions, IClusterTable } from "./clustered-mesh.js";
  * const hull = await ctx.assets.model("hull.glb");
  * ctx.scene.add(hull.scene);
  */
-export { updateModelLods } from "./model-lod.js";
+export {
+  DISCRETE_LOD_DEFAULT_ERROR_PIXELS,
+  DISCRETE_LOD_DEFAULT_HYSTERESIS,
+  updateModelLods,
+} from "./model-lod.js";
 /**
  * The full-detail geometry of a mesh the loader gave an automatic LOD chain.
  *
@@ -488,9 +531,13 @@ export type { IMatrixWorldReport, MatrixWorldMode } from "./matrix-world.js";
  * @situation tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp
  * @situation split a frame's draw calls and triangles per render pass (main, shadow, reflection)
  * @situation tell a shadow or reflection pass's cost from the main colour pass
+ * @situation retain every asynchronous GPU render frame for a complete paired benchmark
  * @constraint on by default and printed as TN_FRAME_BUDGET; defineGame({ frameBudget: false }) silences the marker, not the measurement
  * @constraint per-pass numbers are attributed to the innermost active render call, so nested shadow and reflection passes do not read as main
  * @constraint GPU is a mean/p50/p95/max series over resolved frames (`gpu`) with `gpuStale` counting frames that had no fresh reading; absent means no timestamps, never zero
+ * @constraint `ctx.renderer.observeGpuFrames({ maxFrames, maxQueries })` is opt-in, bounded and fail-closed; `take()` delivers immutable complete render-query groups once, while `status()` reports pending/undrained/queued membership and losses
+ * @constraint observation preserves ordinary sampling; a complete benchmark explicitly requests `renderer.gpuTimestampFrameInterval: 1` and joins Three query IDs to actual world renders, including separate overlay IDs
+ * @constraint `stop()` fences allocated frames and drains existing resolver work; `dispose()` invalidates late completions, and a failed observation must be disposed before replacement
  * @example defineGame({ frameBudget: { reportEvery: 120 }, scenes: { Play } });
  */
 export {
@@ -502,12 +549,13 @@ export {
 export type {
   FrameBudgetPhase,
   IFrameBudgetOptions,
+  IFrameBudgetSimulation,
   IFrameBudgetPassSummary,
   IFrameBudgetSummary,
   IFrameBudgetWindow,
   IFramePhaseSample,
 } from "./frame-budget.js";
-export type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
+export type { FramePassKind, IRenderPassSample, MainDrawSource } from "./render-pass-budget.js";
 /**
  * Read what frame rate a game gets when its config does not say, and why.
  *
@@ -604,6 +652,40 @@ export {
   sceneWarning,
 } from "./profiling/scene-warning.js";
 export type { ISceneShape, ISceneWarning } from "./profiling/scene-warning.js";
+/**
+ * Tell the agent that built the scene that its imported foliage is drawing with no image-based light:
+ * an alpha-cutout `MeshStandardMaterial` (or its Node twin) with `scene.environment` unset and no
+ * `envMap` of its own gets a hemisphere fill and one flat dark value, which is cardboard. Printed
+ * once per scene entry as `TN_UNLIT_FOLIAGE`, after `enter()`, with the fix in the same line.
+ * @situation catch the "why does my forest look like cardboard" question before a human plays it
+ * @situation audit a scene a game built from imported GLB foliage
+ * @constraint derived from the scene graph, not from a constant: cutout PBR with no environment in the scene and none on the material
+ * @constraint it changes nothing and never throws — the environment is appearance, so setting it stays the game's decision
+ * @override `material.userData.tnUnlitOk = true` on a material a game deliberately renders unlit (the same `userData.tn*` naming the alpha and impostor conventions use)
+ * @example defineGame({ scenes: { Forest } }); // one TN_UNLIT_FOLIAGE line when the forest has no sky
+ */
+export {
+  UNLIT_FOLIAGE_FIX,
+  UNLIT_FOLIAGE_MARKER,
+  formatUnlitFoliageWarning,
+  unlitFoliageWarning,
+} from "./profiling/unlit-foliage-warning.js";
+export type { IUnlitFoliageWarning } from "./profiling/unlit-foliage-warning.js";
+/**
+ * Catch scene state that silently loses environment fill or ignores authored opacity.
+ * Printed once after `enter()` as `TN_ENVIRONMENT_TOO_SMALL` or `TN_OPACITY_IGNORED`,
+ * with the fix in the same console error line so playtest `noConsoleErrors` rejects it.
+ * @situation audit an equirectangular sky too narrow for three's WebGPU PMREM
+ * @situation find visible opaque materials whose authored opacity is ignored
+ * @constraint structural scene reads only, one visible-tree walk per entry, at most five material examples
+ * @constraint it changes no scene state; environment and transparency remain the game's decisions
+ * @example renderTrapAudit(ctx.scene); // marker lines with the fixes, or an empty array
+ */
+export {
+  ENVIRONMENT_TOO_SMALL_MARKER,
+  OPACITY_IGNORED_MARKER,
+  renderTrapAudit,
+} from "./profiling/render-trap-audit.js";
 /**
  * Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the
  * subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and
@@ -798,7 +880,8 @@ export type { IVelocityRenderPass } from "./render/velocity.js";
  * @situation shadows shimmer when the camera moves
  * @constraint the light must be a DirectionalLight with `castShadow` and a target in the scene
  * @constraint clipExtents are half-widths in world units, finest first, strictly increasing
- * @constraint call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves
+ * @constraint movers sort themselves: a layer-0 caster whose world matrix, instance matrix or deformation changed draws through the mover maps and leaves the cached levels, and returns to them after `staticAfterFrames` quiet frames; the cache redraws only the region it left
+ * @constraint `trackCaster(object)` is the override that pins an object as a mover for good (it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants), and `pinStatic(object)` opts an object out of detection; tracking or untracking refreshes only that object's region
  * @constraint call `object.layers.set(VIRTUAL_SHADOW_CASTER_LAYER)` for a mesh that exists only to cast; the level cameras already render that layer and the main camera never does
  * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement
  * @example
@@ -839,7 +922,7 @@ export type { IVirtualShadowOptions, IVirtualShadowStats } from "./render/virtua
  * @constraint the objects, and where each one goes, stay the game's; this decides only when each joins the graph
  * @constraint input order is the attach order and cannot be changed
  * @constraint a false `while` stops the run and is reported as `stopped`, never thrown
- * @override sliceSize defaults to 256; `marker: false` silences the TN_ADD_SLICES line, not the report
+ * @override a slice ends on an 8 ms budget unless the game gives `sliceSize`, and the reported sliceSize is then the measured average; `marker: false` silences the TN_ADD_SLICES line, not the report
  * @example const report = await addInSlices(objects, (object) => ctx.add(object), {
  *   onProgress: ({ added, total }) => setProgress(added / total),
  *   while: () => generation.live,
@@ -919,10 +1002,35 @@ export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js"
  * @situation trail dust, exhaust, or spray behind a moving object
  * @situation emit cannon smoke and muzzle flash particles
  * @situation fire a cannonball projectile with cannon smoke particles
+ * @situation splash spray droplets with lifetime and gravity
+ * @situation spawn water droplets, mist, or foam bubbles above a fluid surface
+ * @situation falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard
+ * @situation kick up a spray of powder snow or dust where a foot or a ball lands
+ * @situation a hit, impact or explosion burst that starts at the point and moment it is asked for, and a second hit that must not move the first hit's live particles
+ * @situation emitParticle a burst of GPU particles at a world position with its own free slots
  * @constraint geometry, color, and timing remain supplied by the game
+ * @constraint a `spawn` kernel makes bursts requests: `emitParticle({ count, origin })` reserves ring slots, the engine stamps `buffers.births` and `process` reads age as `runtime.time - births[i]`; there is no readback
+ * @constraint a spawn emitter is world space (identity world matrix); `localCoords: true` follows the parent
+ * @constraint requests over `amount` or `maxSpawnPerFrame` clamp, add to `stats.clamped` and warn once; `stats.recycledLive` is `undefined` without the `lifetime` option
+ * @constraint the emitter measures its own bounds and stops computing and drawing after graceSeconds outside the camera view
+ * @constraint a game needs no emitting = visible gate, and an emitter with no measured bounds is never culled for leaving the view
+ * @constraint when measured GPU cost passes the frame budget, the smallest projected emitters pause first, and cull.reason reads outside-view or over-budget
+ * @override localCoords, maxSpawnPerFrame and lifetime tune a spawn emitter; `restart()` kills every particle and rewinds the ring
+ * @override onCull: "clear" restarts a returning effect, the default "pause" resumes it with buffers intact
+ * @override bounds supplies a fixed local Box3 and skips GPU measurement, padding enlarges the world box, boundsEveryFrames sets the measurement cadence
+ * @override graceSeconds sets the seconds outside the view before culling, and Infinity disables view culling
  * @example const particles = new GPUParticles3D(particleOptions);
+ * particles.emitParticle({ count: 220, origin: hit.position });
  */
 export { GPUParticles3D } from "./particles.js";
+export type {
+  IEmitParticleRequest,
+  IGPUParticles3DOptions,
+  IGPUParticles3DRuntime,
+  IGPUParticles3DSpawnBuffers,
+  IGPUParticles3DSpawnRequest,
+  IGPUParticles3DStats,
+} from "./particles.js";
 /**
  * Simulate a deterministic 2D velocity-and-dye field on the GPU while exposing its data to game-owned rendering.
  * @situation simulate smoke, fire, fog, wind, or fluid response on a grid
@@ -940,6 +1048,29 @@ export { GPUParticles3D } from "./particles.js";
  */
 export { FluidField2D } from "./fluid-field.js";
 export type { IFluidFieldOptions, IFluidFieldSampler, IFluidFieldVector2 } from "./fluid-field.js";
+/**
+ * Simulate liquid as GPU particles (pour, splash, dam break, waterfall) and expose positions, a density volume and a surface height while the game owns every look.
+ * @situation pour, splash, or dam-break water that fills a container and flows around obstacles
+ * @situation simulate water or another liquid as particles in a fluid simulation
+ * @situation drop a ball or box into liquid and let it displace and float on the water
+ * @situation emit a stream or waterfall of particle fluid and drain it somewhere else
+ * @situation sample particle-fluid density or surface height in a game-owned render node
+ * @constraint add the fluid through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic
+ * @constraint a renderer without WebGPU compute throws a named error at attach; it never draws nothing
+ * @constraint `emit` recycles the oldest slot once `capacity` slots have been used; `fill` stops at capacity
+ * @constraint `sample` and `stats` read a throttled GPU copy and report `staleFrames`; they are never live
+ * @override iterations, viscosity, cohesion, vorticity, gravity and maxSpeed tune the solver without changing its pass order
+ * @example const water = new FluidParticles3D({ capacity: 6000 });
+ * ctx.add(water);
+ * water.fill([-2.8, 0.1, -1.5], [-0.6, 3, 1.5]);
+ */
+export { FluidParticles3D } from "./fluid-particles.js";
+export type {
+  IFluidBounds,
+  IFluidCollider,
+  IFluidParticlesOptions,
+  IFluidParticlesStats,
+} from "./fluid-particles.js";
 /**
  * Propagate a disturbance across a patch of water surface and let it fade.
  * @situation make a splash or explosion ripple outward across water
@@ -991,15 +1122,16 @@ export type {
  * @situation stop a water surface repeating in visible bands or stripes
  * @situation keep a crowd of small actors out of the water's reflection so the frame can afford it
  * @situation stop the water reflection redrawing the whole world every frame
+ * @situation automatically reflect terrain and large casters without redrawing instanced small props
  * @constraint it draws nothing; the game supplies the mesh, the material and every colour
  * @constraint the material must be transparent so the frame beneath it is already drawn
  * @constraint thickness is metres, saturating at maxThickness; sky behind the surface reads deep
  * @constraint one reflection is a second draw of the world; resolutionScale is its pixels only
- * @constraint on a crowded scene the mirrored pass is draw-bound: name reflection.layers or pay twice
+ * @constraint omitted reflection.layers automatically reflects terrain-sized surfaces and large non-instanced casters, excluding instanced/skinned props; TN_WATER_REFLECTION_DEFAULT reports the set once
+ * @override reflection.layers is an explicit Three Layers mask and wins over automatic filtering, including layer-0 mask 1; reflection.minSize overrides the default 10 metre minimum extent
  * @constraint reflection.refreshInterval is in presented frames; 1 is every frame, and the default
  * @constraint the mirror plane is level, from level alone; do not parent target to a scaled mesh
- * @example const REFLECTED = 1; // the layer the big silhouettes sit on
- * const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5, layers: (1 << 0) | (1 << REFLECTED) } });
+ * @example const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection: { resolutionScale: 0.5 } });
  * material.colorNode = mix(surface.refractionAt(offset), surface.reflectionAt(offset), fresnel);
  */
 export { WaterSurface3D } from "./water-surface.js";
@@ -1015,6 +1147,7 @@ export { softCircleDataTexture } from "./textures.js";
 /**
  * Pool travelling bullet-streak meshes for hitscan shots.
  * @situation show where a hitscan round went
+ * @situation show each round a weapon fires, one tracer per trigger press
  * @situation draw incoming fire without spawning projectiles
  * @constraint the surface comes from the game; pooling, travel, and fading belong to the engine
  * @constraint update once per frame and dispose with the owning scene
@@ -1167,6 +1300,7 @@ export type {
  * @situation delay an enemy patrol transition
  * @situation run a callback every simulation tick
  * @situation tween a numeric property with a game-owned curve
+ * @situation a countdown timer: end the level when its time limit runs out
  * @alias tower defense game
  * @alias spawn waves
  * @constraint dispose returned handles when the owning scene exits

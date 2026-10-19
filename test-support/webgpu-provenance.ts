@@ -65,7 +65,9 @@ export async function readWebGpuAdapterInfo(
   return page.evaluate(async () => {
     const adapterIdentityKeys = ["architecture", "description", "device", "vendor"] as const;
     type Adapter = {
-      info?: Record<string, unknown>;
+      info?: Partial<
+        Record<"architecture" | "description" | "device" | "vendor" | "isFallbackAdapter", unknown>
+      >;
       isFallbackAdapter?: boolean;
     };
 
@@ -84,7 +86,7 @@ export async function readWebGpuAdapterInfo(
     }
 
     function adapterFields(
-      info: Record<string, unknown>,
+      info: NonNullable<Adapter["info"]>,
       adapter: Adapter,
     ): Record<string, unknown> {
       const fallback = info.isFallbackAdapter ?? adapter.isFallbackAdapter;

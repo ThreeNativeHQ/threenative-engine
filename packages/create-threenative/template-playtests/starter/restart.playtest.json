@@ -19,7 +19,7 @@
       "kind": "input",
       "label": "collected",
       "press": "ArrowRight",
-      "holdTicks": 100,
+      "holdTicks": 142,
       "release": true
     },
     {

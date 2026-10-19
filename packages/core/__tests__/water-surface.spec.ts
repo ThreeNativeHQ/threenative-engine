@@ -1,5 +1,9 @@
 import {
+  BoxGeometry,
   type Camera,
+  InstancedMesh,
+  Mesh,
+  MeshBasicMaterial,
   PerspectiveCamera,
   Quaternion,
   Scene,
@@ -8,7 +12,7 @@ import {
   WebGPUCoordinateSystem,
 } from "three";
 import { vec2 } from "three/tsl";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WaterSurface3D } from "../src/water-surface.js";
 
 const reflection = { resolutionScale: 0.5 } as const;
@@ -35,7 +39,7 @@ describe("WaterSurface3D", () => {
     ).toThrow(/resolutionScale/u);
   });
 
-  it("draws only the named layers in the mirrored pass, and everything when none are named", () => {
+  it("draws only the named layers in the mirrored pass, preserving explicit overrides", () => {
     // A reflection is a second draw of the world. `resolutionScale` decides how many pixels that
     // costs; this decides how much world, which on a crowded scene is the whole bill.
     const mask = (1 << 0) | (1 << 3);
@@ -52,8 +56,7 @@ describe("WaterSurface3D", () => {
     // The same scene camera asked for twice is the same masked pass camera, not a fresh unmasked one.
     expect(surface.reflectionCameraFor(camera)?.layers.mask).toBe(mask);
 
-    // Omitted, the pass draws whatever the scene camera draws — the reflection a game means when it
-    // says nothing — because three's own virtual camera is a clone of the source.
+    // Omitted masks use automatic object filtering while retaining the source camera layers.
     const plain = new WaterSurface3D({ level: 0, maxThickness: 3, reflection });
     const source = new PerspectiveCamera();
     source.layers.set(5);
@@ -260,6 +263,89 @@ describe("WaterSurface3D reflection refresh interval", () => {
     if (last === undefined) throw new Error("no reflection render");
     expect(last.position.x).toBeCloseTo(30, 5);
     expect(last.position.y).toBeCloseTo(-20, 5);
+  });
+
+  it("automatically reflects terrain and large casters while omitting instanced props", () => {
+    const surface = new WaterSurface3D({ level: 0, maxThickness: 3, reflection });
+    const scene = new Scene();
+    const material = new MeshBasicMaterial();
+    const terrain = new Mesh(new BoxGeometry(200, 1, 200), material);
+    const hills = new Mesh(new BoxGeometry(50, 12, 50), material);
+    const cliff = new Mesh(new BoxGeometry(20, 40, 20), material);
+    cliff.castShadow = true;
+    const prop = new Mesh(new BoxGeometry(1, 1, 1), material);
+    prop.castShadow = true;
+    const forest = new InstancedMesh(new BoxGeometry(1, 15, 1), material, 3200);
+    forest.castShadow = true;
+    const hidden = new Mesh(new BoxGeometry(100, 1, 100), material);
+    hidden.visible = false;
+    scene.add(terrain, hills, cliff, prop, forest, hidden);
+    scene.updateMatrixWorld(true);
+    const seen: Mesh[][] = [];
+    const renderer = stubRenderer([]);
+    renderer.render = () => {
+      seen.push(
+        scene.children.filter(
+          (node) => node.visible && node.layers.test(frame.camera.layers),
+        ) as Mesh[],
+      );
+    };
+    const warning = vi.spyOn(console, "info").mockImplementation(() => {});
+    const frame = { scene, camera: sceneCamera(), renderer, material: { visible: true } };
+    passOf(surface).updateBefore(frame);
+    passOf(surface).updateBefore(frame);
+    expect(seen).toEqual([
+      [terrain, hills, cliff],
+      [terrain, hills, cliff],
+    ]);
+    expect([terrain.visible, cliff.visible, prop.visible, forest.visible, hidden.visible]).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+    ]);
+    expect(
+      warning.mock.calls.filter(([line]) => String(line).includes("TN_WATER_REFLECTION_DEFAULT")),
+    ).toHaveLength(1);
+    warning.mockRestore();
+  });
+
+  it("explicit layers bypass automatic filtering and failed mirror renders restore visibility", () => {
+    const scene = new Scene();
+    const prop = new InstancedMesh(new BoxGeometry(), new MeshBasicMaterial(), 10);
+    scene.add(prop);
+    scene.updateMatrixWorld(true);
+    const renderer = stubRenderer([]);
+    const explicit = new WaterSurface3D({
+      level: 0,
+      maxThickness: 3,
+      reflection: { ...reflection, layers: 1 },
+    });
+    renderer.render = () => {
+      expect(prop.visible).toBe(true);
+    };
+    passOf(explicit).updateBefore({
+      scene,
+      camera: sceneCamera(),
+      renderer,
+      material: { visible: true },
+    });
+    const automatic = new WaterSurface3D({ level: 0, maxThickness: 3, reflection });
+    renderer.render = () => {
+      expect(prop.layers.mask).toBe(0);
+      throw new Error("mirror failed");
+    };
+    expect(() =>
+      passOf(automatic).updateBefore({
+        scene,
+        camera: sceneCamera(),
+        renderer,
+        material: { visible: true },
+      }),
+    ).toThrow("mirror failed");
+    expect(prop.visible).toBe(true);
+    expect(prop.layers.mask).toBe(1);
   });
 
   it("refuses an interval that is not a positive integer", () => {

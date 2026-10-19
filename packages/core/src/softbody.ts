@@ -4,7 +4,6 @@ import {
   If,
   Loop,
   exp,
-  float,
   instanceIndex,
   instancedArray,
   length,

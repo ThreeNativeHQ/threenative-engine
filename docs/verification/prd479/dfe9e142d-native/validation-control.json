@@ -1,0 +1,11 @@
+{
+  "sourceSha": "6e37e817a",
+  "runtimeSha256": "a051263ce8411160df261926b0f9a01e193fbe526368c81327d93115ac8a2a2b",
+  "input": {
+    "bufferSize": 4,
+    "bufferUsage": 0
+  },
+  "observedStartupFailure": "TN_NATIVE_START_FAILED:Fluid GPU error scope reported an error.",
+  "rawConsoleSha256": "289f103f1cbbb209093366e07e56377c2fb85b9cdd60187e922ab5b682407b0d",
+  "qualification": "Actual invalid WebGPU descriptor inside initialization validation scope; non-null actual popErrorScope result rejects startup."
+}

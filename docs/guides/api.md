@@ -71,6 +71,42 @@ All of these export from `@threenative/core`.
 Physics nodes (`RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D`) export from
 `@threenative/physics`. See [Physics](physics.md).
 
+## Search the engine before you write
+
+An agent works from this repository's MCP servers, which are wired into every generated project's
+`.mcp.json`. `threenative-engine` is the one that answers "does the engine already do this?".
+
+| Tool | Takes | Answers |
+| --- | --- | --- |
+| `engine_search_capabilities` | `situation` (required), `scope` (`"request"` or `"mechanic"`, default `"mechanic"`) | Up to 15 deduplicated capabilities for a complete cross-system request, up to 5 for one mechanic |
+| `engine_capability_detail` | `symbol` (required), `importPath` when two packages export that symbol | One capability's import, signature, example, constraints and overrides |
+
+Search the mechanically explicit request with `scope: "request"`, then search each implied mechanic
+with `scope: "mechanic"`. A genre label alone is not a query. Every result carries the
+`matchedSituation` it matched and a `score`, so a weak match is visible rather than silent, and
+`engine_capability_detail` is authoritative on platform support: it never states a limitation it does
+not actually have.
+
+A reply with `verdict: "none"` is an answer, not a failed search. Follow its `guidance` and write the
+behavior in your own `src/`. Only results at or above the relevance floor of `0.27` are returned.
+
+The server fails closed on the JSON-RPC layer, so a broken call is legible:
+
+| Code | Meaning |
+| --- | --- |
+| `-32700` | The line was not valid JSON |
+| `-32601` | Unknown method |
+| `-32000` | A tool rejected its arguments, with the message as written |
+
+The blender server answers the same way, and never fails on a machine without Blender: `blender_status`
+returns `available: false` with a `cause` (`blender-missing`, `blender-too-old`, `blender-unreadable`)
+and an install command per platform. Every other blender tool returns one structured result with the
+same guidance, so a missing Blender reads as a fixable instruction rather than a dead server.
+
+The asset and sculpt servers are separate servers with their own tools and their own argument
+shapes. The recipes cover them: [Finding assets](../../packages/create-threenative/agent-docs/references/finding-assets.md)
+and [Sculpt from a reference](../../packages/create-threenative/agent-docs/references/sculpt-from-a-reference.md).
+
 ## Read an API in the source
 
 Start at a package's `src/index.ts` and follow the export to its file. The doc comment above each

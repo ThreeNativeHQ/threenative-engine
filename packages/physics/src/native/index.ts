@@ -30,6 +30,12 @@ export type {
   StaticColliderPredicate,
 } from "../static-colliders.js";
 export { softBodyCollision } from "../softbody-collision.js";
+export { attachSnowPhysics, boxFootprint, capsuleFootprint } from "../snow.js";
+export type {
+  ISnowPhysicsBinding,
+  ISnowPhysicsObservation,
+  ISnowPhysicsOptions,
+} from "../snow.js";
 export type {
   IIntersectPointOptions,
   IIntersectRayOptions,

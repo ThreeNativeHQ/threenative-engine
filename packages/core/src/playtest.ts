@@ -9,9 +9,11 @@ import {
   type IPlaytestWorldObservation,
   type JsonPrimitive,
   type JsonValue,
+  PLAYTEST_CLOCK_GLOBAL,
   PLAYTEST_PROTOCOL_LIMITS,
   type PlaytestClockMode,
   assertJsonSafe,
+  requestedPlaytestClockMode,
 } from "@threenative/playtest/protocol";
 import { type IThreePlaytestEntity, installThreePlaytestBridge } from "@threenative/playtest/three";
 import { Object3D, type Object3D as ThreeObject3D, type Vector2 } from "three";
@@ -64,7 +66,13 @@ export function playtest<
     setup: async (ctx, runtime) => {
       readTick = runtime?.tick;
       const seed = runtime?.seed ?? null;
-      const clockMode = requestedClockMode();
+      // One decision, named once, for both consumers: the freeze below and the bridge's verdict on
+      // `advance`. Handing the bridge only a *requested* mode and letting it derive the rest is what
+      // let the two disagree — a frozen loop reported as the wall clock publishes a frame rate for a
+      // game that was not playing. The deterministic answer is therefore stated rather than derived,
+      // and stays `undefined` only when there is no tick producer to be fixed-step about.
+      let clockMode: PlaytestClockMode | undefined =
+        requestedPlaytestClockMode() ?? (runtime === undefined ? undefined : "fixed-step");
       const wallClock = clockMode === "wall-clock";
       const replayRuntime: IPlaytestWorldObservation["runtime"] =
         runtime?.seed === null || runtime?.seed === undefined
@@ -76,7 +84,13 @@ export function playtest<
               rapier: runtime.rapier ?? null,
               step: runtime.step,
             };
-      const installation = installThreePlaytestBridge({
+      const clockRuntime = runtime as
+        | (IGamePluginRuntime & {
+            _setClockMode?: (mode: "fixed-step" | "wall-clock") => void;
+          })
+        | undefined;
+      const liveAdvance = runtime === undefined ? undefined : wallClockAdvance(runtime);
+      const bridgeOptions: Parameters<typeof installThreePlaytestBridge>[0] = {
         camera: ctx.camera,
         ...(clockMode === undefined ? {} : { clockMode }),
         entities: () => bridgeEntities(ctx),
@@ -86,12 +100,20 @@ export function playtest<
         ...(runtime === undefined
           ? {}
           : {
-              fixedStep: wallClock ? wallClockAdvance(runtime) : runtime.fixedStep,
+              fixedStep: (ticks, options) =>
+                clockMode === "wall-clock" && liveAdvance !== undefined
+                  ? liveAdvance(ticks)
+                  : runtime.fixedStep(ticks, options),
               tick: runtime.tick,
             }),
         ...(runtime?.runtimeDiagnosticsSeries === undefined
           ? {}
           : { runtimeDiagnosticsSeries: runtime.runtimeDiagnosticsSeries }),
+        // A driven native loop presents nothing between ticks; the render-only operation lets a
+        // desktop screenshot draw the standing world without spending a simulation step.
+        ...(runtime?.renderCurrent === undefined
+          ? {}
+          : { renderCurrent: () => runtime.renderCurrent?.() }),
         ...(options.events === undefined ? {} : { events: options.events }),
         gameplay: () => gameplayObservations(ctx, contactHistory, seed, replayRuntime, watcher),
         gameplayChannels: () => gameplayChannels(ctx),
@@ -111,7 +133,7 @@ export function playtest<
                 velocity: { ...observation.velocity },
               };
         },
-        resources: stateResources(ctx),
+        resources: stateResources(ctx, runtime),
         scene: ctx.scene,
         // A runner advances ticks far faster than a launch completes, and compute dispatch and
         // the first world present are both held behind an opaque loading layer. Published so the
@@ -129,7 +151,28 @@ export function playtest<
             ? {}
             : { timeline: runtime.startupTimeline() }),
         }),
-      });
+      };
+      const installation = installThreePlaytestBridge(bridgeOptions);
+      let clockDisposed = false;
+      const clockControl = {
+        _clockEpoch: 0,
+        _setClockMode: (mode: unknown) => {
+          if (clockDisposed) throw new Error("Playtest clock is disposed.");
+          if (mode !== "fixed-step" && mode !== "wall-clock")
+            throw new Error("Unknown clock mode.");
+          clockRuntime?._setClockMode?.(mode);
+          if (mode !== clockMode) clockControl._clockEpoch += 1;
+          clockMode = mode;
+          bridgeOptions.clockMode = mode;
+          return { mode, tick: runtime?.tick(), epoch: clockControl._clockEpoch };
+        },
+      };
+      if (clockRuntime?._setClockMode !== undefined) {
+        Object.assign(installation.bridge, { _setClockMode: clockControl._setClockMode });
+        Object.defineProperty(installation.bridge, "_clockEpoch", {
+          get: () => clockControl._clockEpoch,
+        });
+      }
       const pipelineCensus = runtime?.pipelineCensus;
       if (runtime !== undefined && pipelineCensus !== undefined) {
         disposePipelineCensus = runtime.observations.contribute({
@@ -175,6 +218,9 @@ export function playtest<
       dispose = installation.dispose;
       attached = holdUntilAttached(installation.bridge, options, () => startSceneEntered);
       const cleanup = () => {
+        if (!clockDisposed && clockRuntime?._setClockMode !== undefined)
+          clockControl._setClockMode("fixed-step");
+        clockDisposed = true;
         disposePipelineCensus?.();
         disposePipelineCensus = undefined;
         disposeGeometryCapture?.();
@@ -230,36 +276,33 @@ export const PLAYTEST_RUNNER_EXPECTED_GLOBAL = "__THREENATIVE_PLAYTEST_RUNNER_EX
 /**
  * The clock a consumer asks this game to run on, named in the protocol's own vocabulary. Set before
  * the game module evaluates — a production profile does it in the instrumentation it injects ahead
- * of the bundle, on the browser and on native alike.
- */
-export const PLAYTEST_CLOCK_GLOBAL = "__THREENATIVE_PLAYTEST_CLOCK__";
-
-/**
- * The clock the host asked for, or `undefined` for the default deterministic run.
+ * of the bundle, on the browser and on native alike, and the browser runner's `--live-clock` does it
+ * in an `addInitScript` ahead of every page script.
  *
- * `wall-clock` is the production profile's opt-in and the only one this protocol has. An
- * unrecognised value throws instead of falling back, because a misspelling that quietly left the
- * loop frozen would publish a frame rate for a game that was not playing.
+ * The read and its failure live in the protocol beside the mode they name, so the loop's clock, the
+ * bridge's verdict on it and the producer a game installs itself cannot disagree about it.
  */
-function requestedClockMode(): PlaytestClockMode | undefined {
-  const requested = (globalThis as Record<string, unknown>)[PLAYTEST_CLOCK_GLOBAL];
-  if (requested === undefined) return undefined;
-  if (requested === "wall-clock") return "wall-clock";
-  throw new Error(
-    `TN_PLAYTEST_CLOCK_UNSUPPORTED: '${PLAYTEST_CLOCK_GLOBAL}' is ${JSON.stringify(requested)}; this protocol knows 'wall-clock' and nothing else.`,
-  );
-}
+export { PLAYTEST_CLOCK_GLOBAL };
 
 /**
- * The fixed steps of extra wall time a live advance may wait past the span its own ticks name.
+ * How long a live advance waits for the pump's own tick past the span its ticks name.
+ *
+ * The room this buys has to be wall time, not a number of fixed slices, because the thing being
+ * waited for is a frame and a frame costs what the machine costs: four slices is 33 ms, which is half
+ * a frame on the 15 fps host the old bound claimed to cover and a fraction of one on anything
+ * slower — and the 2026-10-04 CI host measured 55-59 ms, where those four slices ended at 50.0 ms
+ * and read that slow pump as a dead one. Eight slices only bought 83.3 ms, which is still named
+ * against a machine the runner was about to measure. The runner counts a wait in ten-tick pieces, so
+ * each piece named a 166 ms span and then a few more slices — and Machinefall's map-walk standing
+ * scene died on exactly that at load average 142, with the world plainly drawing at 20 fps in the
+ * windows either side. A measurement whose subject is a slow machine cannot refuse to measure one.
  *
  * A one-tick request names exactly one frame interval, so a wait that ended on that boundary ran
  * just before the host's next frame and observed nothing: the 2026-09-28 desktop pair failed on
- * that at 58 mean fps. Four steps is enough room for a host presenting at 15 fps, and it is a
- * bound — a host that really stopped presenting returns the zero the bridge reports as a dead
- * frame pump rather than hanging the run.
+ * that at 58 mean fps. The tick has to come from the pump, and only a pump that has genuinely
+ * stopped may end the wait without one.
  */
-const WALL_CLOCK_PUMP_STEPS = 4;
+const WALL_CLOCK_PUMP_TIMEOUT_MS = 1_000;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -281,10 +324,10 @@ function wallClockAdvance(runtime: IGamePluginRuntime): (ticks: number) => Promi
     // The span is the floor, not the end: a host whose next frame lands just after it has still
     // presented nothing to report. Keep waiting for the pump's own tick, in half-step slices, and
     // never take one here — the loop is the host's, and a tick invented here would be the profile
-    // measuring itself. The slice count is the bound, so a pump that has stopped is a fast failure
+    // measuring itself. The deadline is the bound, so a pump that has stopped is a fast failure
     // carrying zero rather than a wait that never ends.
-    for (let waited = 0; waited < WALL_CLOCK_PUMP_STEPS && runtime.tick() === before; waited += 1)
-      await sleep(stepMs / 2);
+    const deadline = Date.now() + WALL_CLOCK_PUMP_TIMEOUT_MS;
+    while (runtime.tick() === before && Date.now() < deadline) await sleep(stepMs / 2);
     return runtime.tick() - before;
   };
 }
@@ -359,8 +402,9 @@ function holdUntilAttached(
     if (applySetup !== undefined) {
       bridge.applySetup = async (request) => {
         try {
-          await applySetup(request);
+          const confirmation = await applySetup(request);
           release();
+          return confirmation;
         } catch (error) {
           fail(error);
           throw error;
@@ -579,7 +623,7 @@ function drainContacts<TState extends Record<string, unknown>, TPhysics>(
     for (const value of objectGraphValues(registered))
       if (!idsByEntity.has(value)) idsByEntity.set(value, id);
   });
-  ctx.entities.forEach((id, registered) => {
+  ctx.entities.forEach((_id, registered) => {
     for (const source of entitySources(registered)) {
       for (const event of source.drainContacts()) {
         const entity = idsByEntity.get(event.body);
@@ -734,6 +778,7 @@ function componentObservations(
 
 function stateResources<TState extends Record<string, unknown>, TPhysics>(
   ctx: ICtx<TState, TPhysics>,
+  runtime: IGamePluginRuntime | undefined,
 ) {
   return {
     read: () => {
@@ -753,6 +798,9 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
         // console log: a game whose manifest never loaded runs on the uncompiled source directory
         // and looks healthy, and without this nothing observable says so.
         ["assets", assetResolutions(ctx.assets)],
+        ...(runtime?.frameCounts === undefined
+          ? []
+          : [["__threenativeFrameCounts", runtime.frameCounts()]]),
       ]);
     },
   };

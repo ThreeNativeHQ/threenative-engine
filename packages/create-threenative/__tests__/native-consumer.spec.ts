@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { encodeToKTX2 } from "ktx2-encoder";
 import { afterEach, test } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { build, parseBuildArgs } from "../src/build.js";
@@ -31,7 +32,7 @@ async function callerFixture(): Promise<{ root: string; log: string }> {
   await writeFile(path.join(root, "package.json"), '{"name":"consumer-test","type":"module"}');
   await writeFile(
     path.join(root, "threenative.config.ts"),
-    'export default { ui: { renderer: "native" } };\n',
+    'export default { engine: "threejs", ui: { renderer: "native" } };\n',
   );
   await writeFile(path.join(root, "src/game.ts"), "export default {};\n");
   await writeFile(path.join(runtime, "package.json"), '{"name":"@threenative/runtime-native"}');
@@ -46,26 +47,34 @@ async function callerFixture(): Promise<{ root: string; log: string }> {
   `,
   );
   const log = path.join(root, "packager-args.json");
+  await writeFile(path.join(root, "selected-runtime"), "fixture runtime: unknown engine");
   for (const target of ["desktop", "android", "ios"]) {
     await writeFile(
       path.join(runtime, `scripts/package-${target}.mjs`),
       `
       import { mkdirSync, writeFileSync } from 'node:fs';
       import { dirname } from 'node:path';
+      import { pathToFileURL } from 'node:url';
+      export async function resolveDesktopRuntime(explicit) {
+        return explicit ?? ${JSON.stringify(path.join(root, "selected-runtime"))};
+      }
+      if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
       const output = process.argv[process.argv.indexOf('--output') + 1];
       mkdirSync(dirname(output), { recursive: true });
       writeFileSync(output, 'packaged');
       writeFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)));
+      }
     `,
     );
   }
   return { root, log };
 }
 
-test("desktop consumer caller leaves runtime discovery to the packager", async () => {
+test("desktop consumer caller resolves the exact package runtime before cooking", async () => {
   const { root, log } = await callerFixture();
   await build({ cwd: root, target: "desktop" });
-  assert.ok(!JSON.parse(await readFile(log, "utf8")).includes("--runtime"));
+  const args: string[] = JSON.parse(await readFile(log, "utf8"));
+  assert.equal(args[args.indexOf("--runtime") + 1], path.join(root, "selected-runtime"));
 });
 
 test("desktop caller preserves an explicit maintainer binary including spaces", async () => {
@@ -74,6 +83,26 @@ test("desktop caller preserves an explicit maintainer binary including spaces", 
   await build({ cwd: root, target: "desktop" });
   const args: string[] = JSON.parse(await readFile(log, "utf8"));
   assert.equal(args[args.indexOf("--runtime") + 1], process.env.THREENATIVE_RUNTIME_BINARY);
+});
+
+test("a codec refusal in the live desktop build preserves the previous packaged artifact", async () => {
+  const { root, log } = await callerFixture();
+  await mkdir(path.join(root, "assets"));
+  await mkdir(path.join(root, "dist-native"));
+  const final = path.join(root, "dist-native/consumer-test");
+  await writeFile(final, "previous working package");
+  const ktx2 = await encodeToKTX2(new Uint8Array([0]), {
+    generateMipmap: false,
+    imageDecoder: async () => ({ data: new Uint8Array(4 * 4 * 4).fill(255), height: 4, width: 4 }),
+    isUASTC: true,
+  });
+  await writeFile(path.join(root, "assets/rock.ktx2"), ktx2);
+  await assert.rejects(
+    build({ cwd: root, target: "desktop" }),
+    /TN_NATIVE_KTX2_UNSUPPORTED.*rock.ktx2.*selected-runtime.*unknown.*Basis\/KTX2/u,
+  );
+  assert.equal(await readFile(final, "utf8"), "previous working package");
+  await assert.rejects(readFile(log), { code: "ENOENT" });
 });
 
 test("Android source opt-in survives parsing and subprocess dispatch", async () => {

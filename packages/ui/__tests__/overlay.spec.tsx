@@ -356,3 +356,21 @@ function capturedReport() {
     viewport: { height: 720, width: 1280 },
   };
 }
+
+describe("DebugOverlay DEV gate", () => {
+  it("places the dev gate before hooks so the view is unreachable in production", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { fileURLToPath } = await import("node:url");
+    const overlayPath = fileURLToPath(new URL("../src/DebugOverlay.tsx", import.meta.url));
+    const source = await readFile(overlayPath, "utf8");
+
+    // The gate must be in DebugOverlay before calling DebugOverlayView or running hooks
+    const match = source.match(/export function DebugOverlay\(\)[^{]*\{([\s\S]*?)\}/);
+    expect(match).not.toBeNull();
+    const body = match?.[1] ?? "";
+    expect(body).toContain("if (!isDev) return null;");
+    expect(body).toContain("<DebugOverlayView />");
+    expect(body).not.toContain("useState");
+    expect(body).not.toContain("useEffect");
+  });
+});

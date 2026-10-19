@@ -83,6 +83,97 @@ describe("template playtest matrix", () => {
     }
   });
 
+  it("runs Sailing's live-clock render-motion scenario after its boot smoke", async () => {
+    const root = await makeTempDir("threenative-sailing-motion-qualification-");
+    const extras = await makeTempDir("threenative-sailing-motion-extras-");
+    const invocations: string[][] = [];
+    try {
+      await runTemplatePlaytests(
+        ["sailing"],
+        root,
+        { "create-threenative": "/tmp/create-threenative.tgz" },
+        {
+          templatePlaytestRoot: extras,
+          createProject: async ({ target, template }) => {
+            await mkdir(target, { recursive: true });
+            return { installed: true, target, template: template ?? "unknown" };
+          },
+          run: async (_command, args) => {
+            invocations.push([...args]);
+          },
+        },
+      );
+
+      expect(invocations[0]).toEqual(["test"]);
+      expect(invocations[1]).toContain(".threenative-template-boot.playtest.json");
+      expect(invocations[2]).toEqual([
+        "exec",
+        "threenative-playtest",
+        "--scenario",
+        "playtests/live/render-motion.playtest.json",
+        "--live-clock",
+        "--browser-recipe",
+        "webgpu",
+        "--headed",
+        "--server-command",
+        "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
+      ]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+      await rm(extras, { force: true, recursive: true });
+    }
+  });
+
+  it("fails release qualification when Sailing motion fails and still runs later templates", async () => {
+    const root = await makeTempDir("threenative-sailing-motion-failure-");
+    const extras = await makeTempDir("threenative-sailing-motion-failure-extras-");
+    const invocations: string[] = [];
+    try {
+      const results = await runTemplatePlaytests(
+        ["sailing", "alpha"],
+        root,
+        { "create-threenative": "/tmp/create-threenative.tgz" },
+        {
+          templatePlaytestRoot: extras,
+          createProject: async ({ target, template }) => {
+            await mkdir(target, { recursive: true });
+            return { installed: true, target, template: template ?? "unknown" };
+          },
+          run: async (_command, args, cwd) => {
+            const template = path.basename(cwd);
+            const invocation = args.includes("playtests/live/render-motion.playtest.json")
+              ? "motion"
+              : args.includes(".threenative-template-boot.playtest.json")
+                ? "boot"
+                : "test";
+            invocations.push(`${template}:${invocation}`);
+            if (template === "sailing" && invocation === "motion") {
+              throw new Error("render-motion failed");
+            }
+          },
+        },
+      );
+
+      expect(results).toEqual([
+        { error: "render-motion failed", pass: false, template: "sailing" },
+        { pass: true, template: "alpha" },
+      ]);
+      expect(invocations).toEqual([
+        "sailing:test",
+        "sailing:boot",
+        "sailing:motion",
+        "alpha:test",
+        "alpha:boot",
+      ]);
+      expect(() => assertTemplatePlaytestsPassed(results)).toThrow(
+        "TN_TEMPLATE_PLAYTESTS_FAILED: sailing: render-motion failed",
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+      await rm(extras, { force: true, recursive: true });
+    }
+  });
+
   it("copies a template's engine-only guards in before pnpm test runs", async () => {
     const root = await makeTempDir("threenative-template-extras-");
     const extras = await makeTempDir("threenative-template-extras-source-");

@@ -2,6 +2,7 @@
 
 **Status:** PROPOSED, filed 2026-09-02 against `5879799d`
 
+**Priority:** P2 — Proposed; open boxes register rAF-observing collectors with test and template entry points.
 **Complexity:** 3 (10+ files) + 2 (multi-package) = **5 → MEDIUM mode**
 
 **Owner:** unassigned

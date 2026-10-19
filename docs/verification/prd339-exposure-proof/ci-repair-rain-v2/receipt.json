@@ -1,0 +1,365 @@
+{
+  "schema": 1,
+  "scope": "Reviewed Rain v2 policy fixture; actual browser WebGPU software qualification. Not a capture of the final PR397 repair commit and not proof of a CI device-loss root cause. Exact-head CI remains required.",
+  "patchSha256": "9e3bfe1ee288d95a9dba511c805f12386db2bbbb883e66a4d4cdaf433226331d",
+  "originalReportSha256": "847f975fabf55eb58a41460816dbd3f13a81e77c3cbf90cbd00423bd8c68c6c6",
+  "scenario": "rain-four-tiers-render-the-storm",
+  "pass": true,
+  "frames": 136,
+  "capture": {
+    "adapter": {
+      "architecture": "swiftshader",
+      "vendor": "google",
+      "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "8192",
+      "limit.maxStorageBufferBindingSize": "1073741824"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan",
+      "--use-vulkan=swiftshader",
+      "--use-angle=swiftshader"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 900,
+      "width": 1440
+    }
+  },
+  "diagnostics": [],
+  "assertionResults": [
+    {
+      "id": "visual.0.region",
+      "pass": true,
+      "details": {
+        "after": true,
+        "expected": {
+          "equals": true
+        },
+        "minimum": 0.01,
+        "observed": 1
+      }
+    },
+    {
+      "details": {
+        "after": "ultra",
+        "before": "performance",
+        "expected": {
+          "atSteps": [
+            {
+              "equals": "high",
+              "label": "high"
+            },
+            {
+              "equals": "balanced",
+              "label": "balanced"
+            },
+            {
+              "equals": "performance",
+              "label": "performance"
+            },
+            {
+              "equals": "ultra",
+              "label": "ultra"
+            }
+          ],
+          "equals": "ultra"
+        },
+        "id": "state",
+        "path": "quality",
+        "trivial": false
+      },
+      "id": "resource.state.quality",
+      "pass": true
+    },
+    {
+      "details": {
+        "samples": [
+          {
+            "expected": {
+              "equals": "high",
+              "label": "high"
+            },
+            "pass": true,
+            "value": "high"
+          },
+          {
+            "expected": {
+              "equals": "balanced",
+              "label": "balanced"
+            },
+            "pass": true,
+            "value": "balanced"
+          },
+          {
+            "expected": {
+              "equals": "performance",
+              "label": "performance"
+            },
+            "pass": true,
+            "value": "performance"
+          },
+          {
+            "expected": {
+              "equals": "ultra",
+              "label": "ultra"
+            },
+            "pass": true,
+            "value": "ultra"
+          }
+        ]
+      },
+      "id": "resource.state.quality.atSteps",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 88,
+        "before": 32,
+        "expected": {
+          "atSteps": [
+            {
+              "equals": 64,
+              "label": "high"
+            },
+            {
+              "equals": 48,
+              "label": "balanced"
+            },
+            {
+              "equals": 32,
+              "label": "performance"
+            },
+            {
+              "equals": 88,
+              "label": "ultra"
+            }
+          ],
+          "equals": 88
+        },
+        "id": "state",
+        "path": "cloudPass.steps",
+        "trivial": false
+      },
+      "id": "resource.state.cloudPass.steps",
+      "pass": true
+    },
+    {
+      "details": {
+        "samples": [
+          {
+            "expected": {
+              "equals": 64,
+              "label": "high"
+            },
+            "pass": true,
+            "value": 64
+          },
+          {
+            "expected": {
+              "equals": 48,
+              "label": "balanced"
+            },
+            "pass": true,
+            "value": 48
+          },
+          {
+            "expected": {
+              "equals": 32,
+              "label": "performance"
+            },
+            "pass": true,
+            "value": 32
+          },
+          {
+            "expected": {
+              "equals": 88,
+              "label": "ultra"
+            },
+            "pass": true,
+            "value": 88
+          }
+        ]
+      },
+      "id": "resource.state.cloudPass.steps.atSteps",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 12160,
+        "before": 4940,
+        "expected": {
+          "atSteps": [
+            {
+              "equals": 9120,
+              "label": "high"
+            },
+            {
+              "equals": 9120,
+              "label": "balanced"
+            },
+            {
+              "equals": 4940,
+              "label": "performance"
+            },
+            {
+              "equals": 12160,
+              "label": "ultra"
+            }
+          ],
+          "equals": 12160
+        },
+        "id": "state",
+        "path": "dropCount",
+        "trivial": false
+      },
+      "id": "resource.state.dropCount",
+      "pass": true
+    },
+    {
+      "details": {
+        "samples": [
+          {
+            "expected": {
+              "equals": 9120,
+              "label": "high"
+            },
+            "pass": true,
+            "value": 9120
+          },
+          {
+            "expected": {
+              "equals": 9120,
+              "label": "balanced"
+            },
+            "pass": true,
+            "value": 9120
+          },
+          {
+            "expected": {
+              "equals": 4940,
+              "label": "performance"
+            },
+            "pass": true,
+            "value": 4940
+          },
+          {
+            "expected": {
+              "equals": 12160,
+              "label": "ultra"
+            },
+            "pass": true,
+            "value": 12160
+          }
+        ]
+      },
+      "id": "resource.state.dropCount.atSteps",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "resourceSeries": [
+    {
+      "label": "requested-high",
+      "quality": "high",
+      "qualityExplicit": true,
+      "cloudSteps": 64,
+      "dropCount": 9120
+    },
+    {
+      "label": "high",
+      "quality": "high",
+      "qualityExplicit": true,
+      "cloudSteps": 64,
+      "dropCount": 9120
+    },
+    {
+      "label": "balanced",
+      "quality": "balanced",
+      "qualityExplicit": true,
+      "cloudSteps": 48,
+      "dropCount": 9120
+    },
+    {
+      "label": "performance",
+      "quality": "performance",
+      "qualityExplicit": true,
+      "cloudSteps": 32,
+      "dropCount": 4940
+    },
+    {
+      "label": "ultra",
+      "quality": "ultra",
+      "qualityExplicit": true,
+      "cloudSteps": 88,
+      "dropCount": 12160
+    }
+  ],
+  "images": [
+    {
+      "name": "after.png",
+      "bytes": 1355321,
+      "sha256": "3aaa1a908d843c13d5c0791f8a9c03fa5d6b7f84ddcd1d99ba50426e7ce1b913"
+    },
+    {
+      "name": "before.png",
+      "bytes": 1354993,
+      "sha256": "edac324f182e863dca96395c37e7528889838107257faa111f1bbedbf8894e46"
+    },
+    {
+      "name": "tier-balanced.png",
+      "bytes": 1380883,
+      "sha256": "4c39a274da1ebc25bc6047a0796a4b0237ce2525fe9ee09305a5bd96c0f1d64a"
+    },
+    {
+      "name": "tier-high.png",
+      "bytes": 1370674,
+      "sha256": "1fe8992225eeb1d3e36a1efc23911256507bd31315f8939abffb39278f02ff69",
+      "publicFile": "tier-high.png"
+    },
+    {
+      "name": "tier-low.png",
+      "bytes": 1357855,
+      "sha256": "8169416e1f15656ec5d71ec10b57fce8ff143c851b427e6e37234c2bb00948a8",
+      "publicFile": "tier-low.png"
+    },
+    {
+      "name": "tier-ultra.png",
+      "bytes": 1355321,
+      "sha256": "3aaa1a908d843c13d5c0791f8a9c03fa5d6b7f84ddcd1d99ba50426e7ce1b913"
+    }
+  ],
+  "retention": "All six original PNGs and complete report retained by the capture owner; two exact tier PNGs published here within the unchanged evidence budget.",
+  "historicalFailures": [
+    {
+      "run": 37156733489,
+      "fluidDeviceLossJob": 111302365365,
+      "singleRecoveryScreenshotStabilityJob": 111327039596
+    },
+    {
+      "run": 37156733815,
+      "rainAdapterNullJob": 111302049858
+    }
+  ],
+  "qualification": "Preserves original eight assertions and six captures; supported UI HIGH intent precedes original high/balanced/performance/ultra steps. No thresholds, runtime budgets, security settings or adapter-null guards waived."
+}

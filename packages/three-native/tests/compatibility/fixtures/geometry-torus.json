@@ -1,0 +1,83 @@
+{
+  "name": "geometry-torus",
+  "adaptedFrom": "three@0.185.1 src/geometries/TorusGeometry.js — the coarse default and a partial tubular sweep",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "coarse",
+      "class": "TorusGeometry",
+      "args": [1, 0.4, 8, 12]
+    },
+    {
+      "op": "new",
+      "id": "partial",
+      "class": "TorusGeometry",
+      "args": [2, 0.5, 6, 10, 3, 0.5, 4]
+    }
+  ],
+  "observe": [
+    {
+      "id": "coarse",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "coarse",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "partial",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "partial",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "partial",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "partial",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "partial",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "partial",
+      "path": "parameters",
+      "kind": "json"
+    }
+  ]
+}

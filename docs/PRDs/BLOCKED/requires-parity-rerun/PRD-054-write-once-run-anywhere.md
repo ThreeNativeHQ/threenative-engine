@@ -9,6 +9,7 @@ multitouch remained blocked because native injection is unsupported. Android row
 the lack of an online emulator/device. The separate Android multitouch supplemental reached APK
 assembly and exposed a real missing `SDL3-3.2.8.aar` before APK creation. Criterion 1 remains open.
 
+**Priority:** P1 — Tier 1 parity rows must run on web, desktop and emulator; one row fails against pinned wgpu.
 The precondition handling was repaired on 2026-08-09. `--target desktop` now runs the
 repository's own `download-deps.mjs` and `native-build.mjs` before it can fail a row, and a
 host that cannot run them reports every desktop row `blocked` with the command output rather

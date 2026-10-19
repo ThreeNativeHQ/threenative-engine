@@ -11,6 +11,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Readonly<Record<string, GeneratedAssertionFieldValidator>>>> = Object.freeze({
+  "tone": Object.freeze({
+    "atStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "region": (value: unknown) => isRecord(value),
+    "compare": (value: unknown) => isRecord(value),
+    "mean": (value: unknown) => isRecord(value),
+    "p1": (value: unknown) => isRecord(value),
+    "p50": (value: unknown) => isRecord(value),
+    "p99": (value: unknown) => isRecord(value),
+    "clipFraction": (value: unknown) => isRecord(value),
+    "blackFraction": (value: unknown) => isRecord(value),
+  }),
   "deviceMetrics": Object.freeze({
     "maxTemperatureRiseC": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0,
     "maxThermalStatus": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 6,
@@ -224,6 +235,13 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "maxEnteredMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxCompileSettledMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxReadyMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+  }),
+  "pipelineCensus": Object.freeze({
+    "maxNodeBuildsAfterWarmUpSettled": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "maxRenderPipelineCreationsAfterWarmUpSettled": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "warmUpScope": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "maxNodeBuildsAfterWarmUpScope": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "maxRenderPipelineCreationsAfterWarmUpScope": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
   }),
   "renderChain": Object.freeze({
     "tier": (value: unknown) => typeof value === "string" && value.trim() !== "",

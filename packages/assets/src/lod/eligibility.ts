@@ -4,7 +4,13 @@
 // structurally intact is declined with a named reason rather than forced to a triangle target. An
 // inability to reduce safely is a normal skip, not a failure.
 
-import type { Material, Primitive } from "@gltf-transform/core";
+import {
+  type Document,
+  type Material,
+  type Mesh,
+  Node,
+  type Primitive,
+} from "@gltf-transform/core";
 
 /** The stable reason codes reported for a primitive that gets no automatic discrete chain. */
 export type DiscreteLodSkipReason =
@@ -55,6 +61,37 @@ function sharedByLevels(semantic: string): boolean {
 
 const DEFORMING_ATTRIBUTES: ReadonlySet<string> = new Set(["JOINTS_0", "WEIGHTS_0"]);
 
+/**
+ * Whether a primitive is deforming: skinned, morph-targeted, or carrying per-vertex joint data.
+ *
+ * The one definition of the word, shared by every rule that declines to rewrite geometry a rig
+ * drives — no discrete chain, no joined far rung, and no vertex reordering in the cook. A vertex
+ * index into deforming geometry is an address something outside the file may already hold, and a
+ * rig is where index-addressed data is most likely to come from: a MetaHuman sidecar records the
+ * head vertex each brow strand root rides and reads its position back every frame.
+ */
+export function deforming(primitive: Primitive, skinned: boolean): boolean {
+  if (skinned || primitive.listTargets().length > 0) return true;
+  return primitive.listSemantics().some((semantic) => DEFORMING_ATTRIBUTES.has(semantic));
+}
+
+/** The mesh-level half of {@link deforming}: the node compensation quantization applies is per mesh,
+ * so one deforming primitive is enough to hold every position the mesh carries. */
+export function deformingMesh(mesh: Mesh, skinned: ReadonlySet<Mesh>): boolean {
+  const isSkinned = skinned.has(mesh);
+  return isSkinned || mesh.listPrimitives().some((primitive) => deforming(primitive, isSkinned));
+}
+
+/** The meshes a skin is bound to, shared by every rule that asks whether a rig drives a mesh. */
+export function skinnedMeshes(document: Document): Set<Mesh> {
+  const skinned = new Set<Mesh>();
+  for (const node of document.getRoot().listNodes()) {
+    const mesh = node.getMesh();
+    if (mesh !== null && node.getSkin() !== null) skinned.add(mesh);
+  }
+  return skinned;
+}
+
 const TRIANGLES_MODE = 4;
 
 const TRIANGLE = 3;
@@ -62,7 +99,7 @@ const TRIANGLE = 3;
 export interface IEligibilityFlags {
   /** The primitive already carries a `TN_discrete_lod` payload from an earlier cook. */
   readonly alreadyCooked: boolean;
-  /** A node or mesh name marks this as a hand-authored LOD variant (`hull_LOD1`). */
+  /** The asset is an authored chain: two or more of its nodes carry a level name (`hull_LOD1`). */
   readonly authoredLod: boolean;
   /** `assets.models.simplify` is declared for this asset. */
   readonly legacySimplify: boolean;
@@ -253,7 +290,8 @@ export function classifyJoinCandidate(
 /**
  * Authored LOD detection: a node or mesh whose name carries a level suffix (`hull_LOD1`,
  * `hull-lod2`) is a hand-authored variant, and generating on top of it would stack two owners on
- * one primitive (PRD-377 §4.2).
+ * one primitive (PRD-377 §4.2). The cook counts it as authored only when the asset holds two or
+ * more level-named nodes; a lone one is that asset's LOD0.
  */
 export function authoredLodName(name: string): boolean {
   return /(^|[_\-.\s])lod[0-9]+($|[_\-.\s])/i.test(name);

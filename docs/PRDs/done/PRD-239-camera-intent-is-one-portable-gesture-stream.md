@@ -16,7 +16,7 @@ Source of the borrowed technique:
 2026-08-28. **Only its gesture table is mined.** Its camera rig — the part everyone means when they
 name it — is refused, for a reason this repository already wrote down.
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 
 **Complexity:** +2 new input surface with a platform seam on four targets, +1 touches ≤5 files in
 core, +1 native host work, +1 template edit = **5 → MEDIUM mode.**

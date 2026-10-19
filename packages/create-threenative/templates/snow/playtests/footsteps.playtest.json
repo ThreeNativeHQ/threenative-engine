@@ -1,0 +1,95 @@
+{
+  "name": "snow-footsteps",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "hands-off",
+      "press": "KeyP",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "ArrowUp",
+      "holdTicks": 150,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 1.2
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "steps",
+        "gte": 3,
+        "allowTrivial": "Only a grounded body plants a boot that presses snow; three prints prove the walk cycle reaches the snow."
+      },
+      {
+        "entity": "player",
+        "component": "grounded",
+        "equals": true,
+        "allowTrivial": "The explorer ends standing on the snow it walked over."
+      },
+      {
+        "entity": "snow",
+        "component": "renderError",
+        "lte": 0.001,
+        "allowTrivial": "The drawn snow is the canonical surface within a millimetre after the walk."
+      },
+      {
+        "entity": "snow",
+        "component": "colliderError",
+        "lte": 0.001,
+        "allowTrivial": "The collider is the canonical surface within a millimetre after the walk."
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "lastSink",
+        "gte": 0.02,
+        "allowTrivial": "A planted boot in 28 cm of powder sinks at least 2 cm."
+      },
+      {
+        "id": "state",
+        "path": "contacts",
+        "changed": true
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

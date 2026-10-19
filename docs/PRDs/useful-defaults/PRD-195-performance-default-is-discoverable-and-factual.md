@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P2 — Open boxes derive the scenario count from real files and correct drifted size claims.
 **Complexity:** +3 for 10+ generated/document files = **3 → LOW mode**.
 
 **Depends on:** PRD-189 through PRD-194. Land this last; instructions must not promise behavior the

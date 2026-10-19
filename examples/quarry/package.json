@@ -25,6 +25,7 @@
     "pngjs": "7.0.0",
     "tsx": "4.23.5",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "@typescript/native": "catalog:"
   }
 }

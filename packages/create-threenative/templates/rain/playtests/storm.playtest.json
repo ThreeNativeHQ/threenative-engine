@@ -1,0 +1,150 @@
+{
+  "name": "rain-storm-panel-and-camera-change-the-frame",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "warmupFrames": 30,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "press": "Space",
+      "label": "paused",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "preset-drizzle"
+        }
+      },
+      "label": "drizzle",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "rain"
+        }
+      },
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "End",
+      "label": "slider",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "pointerPosition": {
+        "x": 0.45,
+        "y": 0.5,
+        "buttons": 1
+      },
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "pointerPosition": {
+        "x": 0.3,
+        "y": 0.42,
+        "buttons": 1
+      },
+      "waitTicks": 4,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "pointerPosition": {
+        "x": 0.3,
+        "y": 0.42,
+        "buttons": 0
+      },
+      "label": "look",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "paused",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "preset",
+        "atSteps": [
+          {
+            "equals": "drizzle",
+            "label": "drizzle"
+          }
+        ],
+        "equals": "drizzle"
+      },
+      {
+        "id": "state",
+        "path": "target.rain",
+        "atSteps": [
+          {
+            "equals": 0.24,
+            "label": "drizzle"
+          }
+        ],
+        "gte": 0.8
+      },
+      {
+        "id": "state",
+        "path": "weather.rain",
+        "atSteps": [
+          {
+            "equals": 0.24,
+            "label": "drizzle"
+          }
+        ],
+        "gte": 0.8
+      },
+      {
+        "id": "state",
+        "path": "heading",
+        "changed": true
+      }
+    ],
+    "visual": [
+      {
+        "frameDiff": {
+          "minChangedPixelRatio": 0.2
+        }
+      },
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 900,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

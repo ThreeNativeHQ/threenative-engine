@@ -4,6 +4,13 @@ import path from "node:path";
 
 const REGENERATE = "run `pnpm --filter @threenative/runtime-native native:coverage`";
 
+/**
+ * A committed floor more than this many percentage points below its measured value is stale
+ * slack: it would let a real coverage regression ship without the gate noticing. Floors ratchet
+ * up to `measured - margin`; a floor already tighter than that is never loosened.
+ */
+export const NATIVE_COVERAGE_FLOOR_MARGIN = 5;
+
 type CoverageBySubsystem = Map<string, number>;
 
 function parseTable(record: string, heading: string): CoverageBySubsystem {
@@ -59,6 +66,10 @@ export function nativeCoverageGateErrors(record: string, currentDigest: string):
     } else if (actual < floor) {
       errors.push(
         `native coverage dropped: ${subsystem} measured ${actual.toFixed(2)}%, floor ${floor.toFixed(2)}%`,
+      );
+    } else if (Math.round((actual - floor) * 100) > NATIVE_COVERAGE_FLOOR_MARGIN * 100) {
+      errors.push(
+        `native coverage floor too loose: ${subsystem} floor ${floor.toFixed(2)}%, measured ${actual.toFixed(2)}%; raise it to at least ${(actual - NATIVE_COVERAGE_FLOOR_MARGIN).toFixed(2)}% (measured - ${NATIVE_COVERAGE_FLOOR_MARGIN} percentage points)`,
       );
     }
   }

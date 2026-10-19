@@ -14,8 +14,19 @@
  * asked for when they report a launch that hung); this owns the noticing and the wording.
  */
 
-/** What failed. `stalled` is "no progress for a while"; `device-lost` is the GPU going away. */
-export type LaunchFailureKind = "stalled" | "device-lost";
+/**
+ * What failed. `stalled` is "no progress for a while"; `device-lost` is the GPU going away;
+ * `scene-load-failed` is a scene's `load()` rejecting and `start-failed` is `start()` rejecting,
+ * each of which otherwise reads as a stall.
+ */
+export type LaunchFailureKind = "stalled" | "device-lost" | "scene-load-failed" | "start-failed";
+
+const MARKERS: Readonly<Record<LaunchFailureKind, string>> = {
+  stalled: "TN_STARTUP_STALLED",
+  "device-lost": "TN_DEVICE_LOST",
+  "scene-load-failed": "TN_SCENE_LOAD_FAILED",
+  "start-failed": "TN_START_FAILED",
+};
 
 export interface ILaunchFailure {
   readonly kind: LaunchFailureKind;
@@ -46,15 +57,22 @@ export function resetLaunchFailures(): void {
 
 export function reportLaunchFailure(failure: ILaunchFailure): void {
   if (reported.has(failure.kind)) return;
+  // A launch that failed to start or load stops making progress too; that stall is not news.
+  if (
+    failure.kind === "stalled" &&
+    (reported.has("scene-load-failed") || reported.has("start-failed"))
+  )
+    return;
   reported.add(failure.kind);
-  const marker = failure.kind === "stalled" ? "TN_STARTUP_STALLED" : "TN_DEVICE_LOST";
-  console.error(`${marker}: ${failure.message}`);
+  console.error(`${MARKERS[failure.kind]}: ${failure.message}`);
   for (const listener of listeners) listener(failure);
 }
 
 export interface IStallWatchOptions {
   /** 0..1, monotonic — `ctx.startup.progress`. */
   readonly progress: () => number;
+  /** Monotonic completed work units, independent of the displayed percentage. Never elapsed time. */
+  readonly workProgress?: () => number;
   /** What is still loading, so the report names it rather than saying "something". */
   readonly pending: () => readonly string[];
   /** How long progress may stand still before this is a failure. */
@@ -80,13 +98,16 @@ export function watchStartupStall(options: IStallWatchOptions): () => void {
     throw new Error(`TN_STARTUP_STALL_MS_INVALID: stallMs must be > 0, got ${options.stallMs}`);
   }
   let lastProgress = options.progress();
+  let lastWork = options.workProgress?.() ?? 0;
   let lastMovedAt = now();
   const began = lastMovedAt;
   const handle = start(
     () => {
       const progress = options.progress();
-      if (progress > lastProgress) {
-        lastProgress = progress;
+      const work = options.workProgress?.() ?? 0;
+      if (progress > lastProgress || (Number.isFinite(work) && work > lastWork)) {
+        lastProgress = Math.max(lastProgress, progress);
+        if (Number.isFinite(work)) lastWork = Math.max(lastWork, work);
         lastMovedAt = now();
         return;
       }
@@ -94,12 +115,14 @@ export function watchStartupStall(options: IStallWatchOptions): () => void {
       if (stillMs < options.stallMs) return;
       const waiting = options.pending();
       const named =
-        waiting.length === 0 ? "nothing — no asset is outstanding" : waiting.slice(0, 8).join(", ");
+        waiting.length === 0
+          ? "nothing — no asset or startup hold is outstanding"
+          : waiting.slice(0, 8).join(", ");
       const more = waiting.length > 8 ? ` (+${waiting.length - 8} more)` : "";
       reportLaunchFailure({
         kind: "stalled",
         message:
-          `The game stopped loading. Progress has stood at ${(progress * 100).toFixed(1)}% for ` +
+          `The game stopped loading. No startup work has advanced at ${(progress * 100).toFixed(1)}% for ` +
           `${Math.round(stillMs / 1000)}s, ${Math.round((now() - began) / 1000)}s into the launch.\n` +
           `Still loading: ${named}${more}`,
       });

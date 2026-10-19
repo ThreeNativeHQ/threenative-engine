@@ -612,6 +612,11 @@ struct CLIOptions {
     std::string uiRoot;
     bool bypassUiLoading = false;
 
+    // `ui.renderer: "native-css"`: the same bundle, laid out and rasterised on the CPU by the
+    // `native/css-ui` crate instead of by a web view. A backend choice, so it rides with `uiRoot`
+    // — which the bundle-loading and ready-gate code below already keys on.
+    bool cssUiRenderer = false;
+
     // Bake options
     int bakeResolution = 2048;   // Max lightmap atlas size
     int bakeSamples = 64;        // Rays per texel
@@ -647,9 +652,15 @@ static void applyEmbeddedConfig(CLIOptions& opts) {
         opts.maxFps = static_cast<uint32_t>(maxFps);
     }
     // `ui.renderer`, flattened by the packager to `uiRenderer` because `renderer` already means
-    // the WebGPU preference here. Anything but "web" is the native renderer, which ships no
-    // overlay at all — the same fail-closed reading the Android manifest metadata gets.
-    if (extractJsonString(config, "uiRenderer") == "web") opts.uiRoot = "ui";
+    // the WebGPU preference here. Anything but "web" and "native-css" is the native renderer, which
+    // ships no overlay at all — the same fail-closed reading the Android manifest metadata gets.
+    const std::string uiRenderer = extractJsonString(config, "uiRenderer");
+    if (uiRenderer == "web" || uiRenderer == "native-css") {
+        // Both renderers read the same built bundle from the same place; they differ only in who
+        // rasterises it, which is decided once here rather than at every call site below.
+        opts.uiRoot = "ui";
+        opts.cssUiRenderer = uiRenderer == "native-css";
+    }
 }
 
 CLIOptions parseArgs(int argc, char* argv[]) {
@@ -1110,8 +1121,21 @@ static void printRunBanner(const CLIOptions& opts, bool screenshotMode, bool vid
 
 static std::unique_ptr<mystral::Runtime> createConfiguredRuntime(const CLIOptions& opts) {
 #if defined(__linux__) && TN_ENABLE_UI_OVERLAY
-    if (!opts.uiRoot.empty()) {
-        // The web overlay attaches to an X11 surface, also on Wayland via XWayland.
+    // Only the web overlay needs this. The CSS UI backend attaches to no window system at all — it
+    // hands the compositor pixels — so it must not cost a Wayland session its native video driver.
+    if (!opts.uiRoot.empty() && !opts.cssUiRenderer) {
+        // The web overlay attaches to an X11 surface, also on Wayland via XWayland. SDL_HINT_OVERRIDE
+        // below replaces any explicit driver, so a Wayland request with this overlay would run on X11
+        // without saying so. Refuse it instead and name the two ways forward.
+        const char* sdl3Driver = std::getenv("SDL_VIDEO_DRIVER");
+        const char* legacyDriver = std::getenv("SDL_VIDEODRIVER");
+        const char* requestedDriver = (sdl3Driver != nullptr && *sdl3Driver != '\0') ? sdl3Driver : legacyDriver;
+        if (requestedDriver != nullptr && std::string(requestedDriver) == "wayland") {
+            std::cerr << "[Mystral] The web UI overlay needs X11, but SDL_VIDEO_DRIVER/SDL_VIDEODRIVER "
+                         "asks for Wayland. Set ui.renderer: \"native-css\", or unset the variable."
+                      << std::endl;
+            std::exit(1);
+        }
         // Select both backends before SDL/GTK initialization and worker creation; a desktop
         // session's GDK_BACKEND=wayland must not leave the game's requested HUD unattached.
         SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "x11", SDL_HINT_OVERRIDE);
@@ -1182,15 +1206,19 @@ static bool attachUiOverlayIfConfigured(const CLIOptions& opts, mystral::Runtime
             const char* base = SDL_GetBasePath();
             if (base != nullptr) uiRoot = std::filesystem::path(base) / uiRoot;
         }
+        const char* renderer = opts.cssUiRenderer ? "native-css" : "web";
         std::error_code exists;
         if (!std::filesystem::is_directory(uiRoot, exists)) {
-            std::cerr << "TN_UI_BUNDLE_MISSING: the web UI renderer was requested but "
-                      << uiRoot.string() << " is not a directory." << std::endl;
+            std::cerr << "TN_UI_BUNDLE_MISSING: the " << renderer << " UI renderer was requested "
+                      << "but " << uiRoot.string() << " is not a directory." << std::endl;
             return false;
         }
-        if (!mystral::platform::attachDesktopUiOverlay(uiRoot.string())) {
-            std::cerr << "TN_UI_LOAD_FAILED: the requested web UI overlay could not attach. "
-                      << "Use --bypass-ui-loading only for scene diagnostics." << std::endl;
+        const bool attached = opts.cssUiRenderer
+            ? mystral::platform::attachDesktopCssUi(uiRoot.string())
+            : mystral::platform::attachDesktopUiOverlay(uiRoot.string());
+        if (!attached) {
+            std::cerr << "TN_UI_LOAD_FAILED: the requested " << renderer << " UI overlay could not "
+                      << "attach. Use --bypass-ui-loading only for scene diagnostics." << std::endl;
             return false;
         }
     }

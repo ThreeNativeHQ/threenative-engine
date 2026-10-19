@@ -1,6 +1,6 @@
 {
-  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.9.5 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. The published 0.9.5 serves all 46 tools, including the humanoid rig inspect, auto-rig, retarget and preview tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. `fab_import_asset` and `asset_import_unreal` are deliberately not recommended: they convert an Unreal pack the user already owns, which is a route a game takes on purpose rather than a step in the ordinary asset loop. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
-  "version": "0.9.5",
+  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.14.0 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. `inputSchemas` and `descriptions` come from that same response, so the documentation cannot name an argument the server does not accept. The published 0.14.0 serves all 53 tools, including the humanoid rig and Unreal import tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. It includes the Fab loop: `fab_search_assets` finds a listing, `fab_list_owned` confirms it is in the library, and `fab_import_asset` (or `asset_import_unreal` for a local pack) converts the Unreal source to textured GLBs. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
+  "version": "0.14.0",
   "profile": null,
   "recommended": [
     "ambientcg_list_files",
@@ -14,7 +14,11 @@
     "asset_inspect_rig",
     "asset_auto_rig",
     "asset_retarget_animations",
-    "asset_preview_animation"
+    "asset_preview_animation",
+    "fab_search_assets",
+    "fab_list_owned",
+    "fab_import_asset",
+    "asset_import_unreal"
   ],
   "tools": [
     "ambientcg_get_asset",
@@ -22,9 +26,12 @@
     "ambientcg_list_files",
     "ambientcg_search_assets",
     "asset_auto_rig",
+    "asset_download",
     "asset_download_bundle_animation",
     "asset_download_bundle_entry",
     "asset_download_file",
+    "asset_get",
+    "asset_import_unity",
     "asset_import_unreal",
     "asset_inspect_rig",
     "asset_list_bundle_animations",
@@ -32,12 +39,15 @@
     "asset_list_sources",
     "asset_preview_animation",
     "asset_retarget_animations",
+    "asset_search",
     "asset_search_sources",
     "audio_download_asset",
     "audio_generate_sound",
     "audio_inspect_asset",
     "audio_list_sources",
     "audio_search_assets",
+    "blendkit_import_asset",
+    "blendkit_status",
     "creature_check",
     "creature_compile",
     "creature_guide",
@@ -62,6 +72,2086 @@
     "sketchfab_search_models",
     "smithsonian_get_asset",
     "smithsonian_list_files",
-    "smithsonian_search_assets"
-  ]
+    "smithsonian_search_assets",
+    "unity_list_packages"
+  ],
+  "inputSchemas": {
+    "asset_search": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "types": {
+          "default": ["3d-model", "texture", "hdri", "animation"],
+          "minItems": 1,
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["3d-model", "texture", "hdri", "animation"]
+          }
+        },
+        "providers": {
+          "minItems": 1,
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9-]+$"
+          }
+        },
+        "freeOnly": {
+          "default": true,
+          "type": "boolean"
+        },
+        "downloadableOnly": {
+          "default": false,
+          "type": "boolean"
+        },
+        "commercialUse": {
+          "default": false,
+          "type": "boolean"
+        },
+        "attributionRequired": {
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 20,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    },
+    "asset_get": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 800
+        },
+        "format": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^[a-z0-9_-]+$"
+        },
+        "resolution": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^\\d+k$"
+        },
+        "mapRoles": {
+          "minItems": 1,
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[a-z0-9_-]+$"
+          }
+        }
+      },
+      "required": ["assetId"],
+      "additionalProperties": false
+    },
+    "asset_download": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "planToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "acceptLicense": {
+          "type": "boolean",
+          "const": true
+        },
+        "maxBytes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": ["planToken", "acceptLicense"],
+      "additionalProperties": false
+    },
+    "creature_status": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "creature_guide": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "section": {
+          "type": "string",
+          "enum": ["overview", "syntax", "low", "mid", "high", "delivery"]
+        }
+      },
+      "required": ["section"],
+      "additionalProperties": false
+    },
+    "asset_inspect_rig": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "target": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "object",
+              "properties": {
+                "sourceId": {
+                  "type": "string",
+                  "enum": ["aether-02", "aether-02-retopo"],
+                  "description": "Explicitly acquire a pinned sample into the development cache."
+                }
+              },
+              "required": ["sourceId"]
+            }
+          ],
+          "description": "Absolute path to the humanoid GLB under inspection, or a pinned sample reference to acquire into the development cache."
+        },
+        "libraries": {
+          "description": "Optional local UAL ZIP archives or GLB libraries used as animation donors.",
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "required": ["target"]
+    },
+    "asset_auto_rig": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Absolute path to an unrigged humanoid GLB."
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Output .glb path under projectRoot."
+        },
+        "projectRoot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Project root that must contain the output."
+        },
+        "weightMode": {
+          "default": "smooth",
+          "type": "string",
+          "enum": ["smooth", "rigid"]
+        },
+        "replaceRig": {
+          "default": false,
+          "type": "boolean"
+        },
+        "maxInfluences": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "priorDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "overrides": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "orientation": {
+          "type": "object",
+          "properties": {
+            "up": {
+              "type": "string",
+              "enum": ["x", "y", "z"]
+            },
+            "arm": {
+              "type": "string",
+              "enum": ["x", "y", "z"]
+            },
+            "facing": {
+              "type": "string",
+              "enum": ["x", "y", "z"]
+            },
+            "facingSign": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "const": 1
+                },
+                {
+                  "type": "number",
+                  "const": -1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "required": ["target", "output", "projectRoot"]
+    },
+    "asset_preview_animation": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "prepared": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Absolute path to a prepared (rigged or retargeted) GLB."
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Output contact-sheet .png path under projectRoot."
+        },
+        "projectRoot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Project root that must contain the output."
+        },
+        "clip": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "times": {
+          "minItems": 1,
+          "maxItems": 12,
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "pose": {
+          "type": "object",
+          "properties": {
+            "bone": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "axis": {
+              "type": "string",
+              "enum": ["x", "y", "z"]
+            },
+            "degrees": {
+              "type": "number",
+              "minimum": -360,
+              "maximum": 360
+            }
+          },
+          "required": ["bone", "axis", "degrees"]
+        },
+        "focus": {
+          "description": "Frame the camera on this bone and its descendant bones, e.g. a hand with its fingers.",
+          "type": "object",
+          "properties": {
+            "bone": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "distance": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000
+            }
+          },
+          "required": ["bone"]
+        },
+        "angles": {
+          "default": 3,
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 6
+        },
+        "width": {
+          "default": 384,
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 1024
+        },
+        "height": {
+          "default": 384,
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 1024
+        },
+        "priorDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": ["prepared", "output", "projectRoot"]
+    },
+    "asset_retarget_animations": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Absolute path to the prepared target GLB (e.g. the AETHER sample)."
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Output .glb path under projectRoot."
+        },
+        "projectRoot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Project root that must contain the output."
+        },
+        "clips": {
+          "minItems": 1,
+          "maxItems": 24,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300,
+                "description": "Pinned donor clip id, e.g. ual1/Walk_Loop."
+              },
+              "variant": {
+                "type": "string",
+                "enum": ["in_place", "root_motion"],
+                "description": "Which donor variant to retarget."
+              }
+            },
+            "required": ["id", "variant"]
+          }
+        },
+        "keepExistingClips": {
+          "default": true,
+          "type": "boolean"
+        },
+        "mapping": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "priorDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": ["target", "output", "projectRoot", "clips"]
+    },
+    "fab_search_assets": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "priceMode": {
+          "default": "free",
+          "type": "string",
+          "enum": ["free", "any", "range"]
+        },
+        "minPrice": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxPrice": {
+          "type": "number",
+          "minimum": 0
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Za-z]{3}$"
+        },
+        "channels": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "listingTypes": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "categories": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "tags": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "licenses": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "minimumRating": {
+          "anyOf": [
+            {
+              "type": "number",
+              "const": 1
+            },
+            {
+              "type": "number",
+              "const": 2
+            },
+            {
+              "type": "number",
+              "const": 3
+            },
+            {
+              "type": "number",
+              "const": 4
+            },
+            {
+              "type": "number",
+              "const": 5
+            }
+          ]
+        },
+        "publishedSince": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "aiGenerated": {
+          "type": "boolean"
+        },
+        "allowsAiUse": {
+          "type": "boolean"
+        },
+        "sort": {
+          "default": "relevance",
+          "type": "string",
+          "enum": [
+            "relevance",
+            "rating",
+            "newest",
+            "oldest",
+            "price_asc",
+            "price_desc",
+            "discount_desc",
+            "recently_updated"
+          ]
+        },
+        "limit": {
+          "default": 24,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      }
+    },
+    "fab_get_asset": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "listingIdOrUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Za-z]{3}$"
+        }
+      },
+      "required": ["listingIdOrUrl"]
+    },
+    "fab_list_filters": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "kinds": {
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["channels", "listing_types", "categories", "licenses"]
+          }
+        },
+        "refresh": {
+          "default": false,
+          "type": "boolean"
+        }
+      }
+    },
+    "fab_list_limited_time_free": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "limit": {
+          "default": 24,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24
+        }
+      }
+    },
+    "fab_download_free_asset": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "listingIdOrUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "format": {
+          "type": "string",
+          "enum": ["blender", "fbx", "glb", "gltf", "maya", "obj", "unity"]
+        },
+        "acceptFabEula": {
+          "type": "boolean",
+          "const": true,
+          "description": "Required acknowledgement that the user accepts the Fab EULA linked by the listing."
+        }
+      },
+      "required": ["listingIdOrUrl", "format", "acceptFabEula"]
+    },
+    "fab_list_owned": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "query": {
+          "description": "Case-insensitive substring of the title or category. Omit to list everything.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "unrealOnly": {
+          "default": false,
+          "description": "Keep only what fab_import_asset can take through the Unreal route: a listing UID plus a published Unreal artifact. Drops the engine installs and code plugins a library also contains, and hides Unity-format artifacts (it also skips the per-listing `fabcli formats` lookups that find them).",
+          "type": "boolean"
+        }
+      }
+    },
+    "asset_import_unreal": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "sourceDir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "A local directory of Unreal .uasset/.umap files, for example an already downloaded Fab pack."
+        },
+        "outputDir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Directory the source GLBs are written to, normally <game>/assets/fab/<listing-id>. It must not already hold a different import; this tool never overwrites one."
+        },
+        "packages": {
+          "description": "Import only these package names, for example [\"SM_Rock\", \"DemoMap\"]. Omit to convert every supported mesh and level in the pack; a large marketplace pack is many gigabytes of GLBs.",
+          "maxItems": 500,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "maxTextureSize": {
+          "description": "Optional longest edge for embedded textures. Leave unset to keep Unreal's own resolution and let the ThreeNative asset compiler cap it.",
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 8192
+        }
+      },
+      "required": ["sourceDir", "outputDir"]
+    },
+    "fab_import_asset": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "listingIdOrUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "outputDir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Directory the source GLBs are written to, normally <game>/assets/fab/<listing-id>. It must not already hold a different import; this tool never overwrites one."
+        },
+        "packages": {
+          "description": "Import only these package names, for example [\"SM_Rock\", \"DemoMap\"]. Omit to convert every supported mesh and level in the pack; a large marketplace pack is many gigabytes of GLBs.",
+          "maxItems": 500,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "engine": {
+          "description": "Unreal engine selector, for example UE_4.21. When the listing publishes several artifacts and neither engine nor artifactId is given, the artifact with the best decoder route is chosen and the choice is reported in warnings.",
+          "type": "string",
+          "pattern": "^UE_\\d+\\.\\d+$"
+        },
+        "artifactId": {
+          "description": "Exact Unreal artifact to import, as listed by the library. Wins over engine when both are given, and is the only way to pick between artifacts whose engine lists overlap.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,128}$"
+        },
+        "maxTextureSize": {
+          "description": "Optional longest edge for embedded textures. Leave unset to keep Unreal's own resolution and let the ThreeNative asset compiler cap it.",
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 8192
+        },
+        "platform": {
+          "description": "Platform build to download when the artifact publishes several, for example Windows.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]{1,32}$"
+        },
+        "format": {
+          "description": "Which artifact to import. Omit to take the Unreal artifact, or the Unity one when the listing publishes only Unity. \"unity\" imports the listing's .unitypackage through the Unity importer (the result then has the asset_import_unity shape; `packages` names the models to convert). The Unity route can only run when FabCLI reports the Unity artifact's catalog coordinates; otherwise it stops with FABCLI_UNITY_DOWNLOAD_UNAVAILABLE and explains the manual route.",
+          "type": "string",
+          "enum": ["unreal", "unity"]
+        },
+        "acceptFabEula": {
+          "type": "boolean",
+          "const": true,
+          "description": "Required acknowledgement that the user accepts the Fab EULA for the listing they already own."
+        }
+      },
+      "required": ["listingIdOrUrl", "outputDir", "acceptFabEula"]
+    },
+    "unity_list_packages": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {}
+    },
+    "asset_import_unity": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "A .unitypackage, a UPM package tarball (.tgz) or a Unity project folder on this machine. unity_list_packages lists the Unity Editor's cached downloads."
+        },
+        "outputDir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Directory the GLBs, textures and import-report.json are written to. It must be new or empty: this tool never overwrites an import."
+        },
+        "assets": {
+          "description": "Import only these models and prefabs: a project path (Assets/Models/crate.fbx), a file name or a name without extension. Omit to convert every FBX, OBJ and .blend model and import every prefab. Models a selected prefab uses are converted too.",
+          "maxItems": 500,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "maxTextureSize": {
+          "description": "Optional longest edge for written textures. Leave unset to keep the source resolution.",
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 8192
+        },
+        "acceptUnityAssetStoreEula": {
+          "type": "boolean",
+          "const": true,
+          "description": "Required acknowledgement that the user owns the package, accepts the Unity Asset Store EULA for it, and has checked any Restricted Asset terms. The tool cannot check them: Asset Store terms forbid automated access."
+        }
+      },
+      "required": ["source", "outputDir", "acceptUnityAssetStoreEula"]
+    },
+    "blendkit_status": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "blendkit_import_asset": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "pattern": "^blendkit:[0-9a-f-]{36}$",
+          "description": "asset_search/asset_get id, blendkit:<uuid>."
+        },
+        "outputDir": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Private directory for the GLB and its provenance file. Keep the output out of version control and game builds."
+        },
+        "purpose": {
+          "type": "string",
+          "enum": ["project-use", "redistribution"],
+          "description": "project-use: your own project, files kept private. redistribution is always refused in this release, for CC0 items too."
+        },
+        "acceptLicense": {
+          "type": "boolean",
+          "const": true,
+          "description": "Acknowledge this item's license as reported by asset_get."
+        },
+        "projectUseConsent": {
+          "type": "boolean",
+          "description": "true confirms this single item is acquired for your own project. Required."
+        },
+        "resolution": {
+          "default": "resolution_2K",
+          "type": "string",
+          "enum": [
+            "ORIGINAL",
+            "resolution_0_5K",
+            "resolution_1K",
+            "resolution_2K",
+            "resolution_4K",
+            "resolution_8K"
+          ]
+        },
+        "maxBytes": {
+          "default": 1073741824,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 4294967296
+        }
+      },
+      "required": ["assetId", "outputDir", "purpose", "acceptLicense", "projectUseConsent"],
+      "additionalProperties": false
+    },
+    "polyhaven_search_assets": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "type": {
+          "default": "all",
+          "type": "string",
+          "enum": ["all", "hdris", "textures", "models"]
+        },
+        "categories": {
+          "default": [],
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "sort": {
+          "default": "relevance",
+          "type": "string",
+          "enum": ["relevance", "popular", "newest", "name"]
+        },
+        "limit": {
+          "default": 24,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^\\d+$"
+        }
+      }
+    },
+    "polyhaven_get_asset": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": ["assetId"]
+    },
+    "polyhaven_list_categories": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["hdris", "textures", "models"]
+        }
+      },
+      "required": ["type"]
+    },
+    "polyhaven_list_files": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "resolution": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^\\d+k$"
+        },
+        "format": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "includeDependencies": {
+          "default": true,
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 100,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^\\d+$"
+        }
+      },
+      "required": ["assetId"]
+    },
+    "ambientcg_search_assets": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "material",
+            "hdri",
+            "substance",
+            "decal",
+            "atlas",
+            "3d-model",
+            "plain-image",
+            "brush",
+            "terrain",
+            "hdri-element"
+          ]
+        },
+        "sort": {
+          "default": "popular",
+          "type": "string",
+          "enum": ["popular", "latest", "downloads", "oldest", "random", "alphabet"]
+        },
+        "limit": {
+          "default": 24,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^\\d+$"
+        }
+      }
+    },
+    "ambientcg_get_asset": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": ["assetId"]
+    },
+    "ambientcg_list_categories": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "material",
+            "hdri",
+            "substance",
+            "decal",
+            "atlas",
+            "3d-model",
+            "plain-image",
+            "brush",
+            "terrain",
+            "hdri-element"
+          ]
+        }
+      }
+    },
+    "ambientcg_list_files": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "attributes": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "extension": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "limit": {
+          "default": 100,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^\\d+$"
+        }
+      },
+      "required": ["assetId"]
+    },
+    "smithsonian_search_assets": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "fileType": {
+          "type": "string",
+          "enum": ["jpg", "glb", "ply", "zip"]
+        },
+        "modelType": {
+          "type": "string",
+          "enum": ["glb", "ply", "obj", "gltf", "f3z", "blend", "stl"]
+        },
+        "quality": {
+          "type": "string",
+          "enum": [
+            "Low",
+            "Medium",
+            "High",
+            "Thumb",
+            "Low_resolution",
+            "Medium_resolution",
+            "Full_resolution",
+            "Water_tight"
+          ]
+        },
+        "owningUnit": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^[A-Z]+$"
+        },
+        "dracoCompressed": {
+          "type": "boolean"
+        },
+        "gltfOrientationCompliant": {
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 24,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^\\d+$"
+        }
+      }
+    },
+    "smithsonian_get_asset": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "modelId": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^(?:3d_package:)?[0-9a-f]{8}-[0-9a-f-]{27}$"
+        }
+      },
+      "required": ["modelId"]
+    },
+    "smithsonian_list_files": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "modelId": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^(?:3d_package:)?[0-9a-f]{8}-[0-9a-f-]{27}$"
+        },
+        "fileType": {
+          "type": "string",
+          "enum": ["jpg", "glb", "ply", "zip"]
+        },
+        "modelType": {
+          "type": "string",
+          "enum": ["glb", "ply", "obj", "gltf", "f3z", "blend", "stl"]
+        },
+        "quality": {
+          "type": "string",
+          "enum": [
+            "Low",
+            "Medium",
+            "High",
+            "Thumb",
+            "Low_resolution",
+            "Medium_resolution",
+            "Full_resolution",
+            "Water_tight"
+          ]
+        },
+        "limit": {
+          "default": 100,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^\\d+$"
+        }
+      },
+      "required": ["modelId"]
+    },
+    "sketchfab_search_models": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "downloadable": {
+          "default": true,
+          "type": "boolean"
+        },
+        "animated": {
+          "type": "boolean"
+        },
+        "staffPicked": {
+          "type": "boolean"
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "licenses": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 50,
+            "pattern": "^[a-z0-9-]+$"
+          }
+        },
+        "sortBy": {
+          "default": "relevance",
+          "type": "string",
+          "enum": ["relevance", "likeCount", "viewCount", "publishedAt"]
+        },
+        "limit": {
+          "default": 24,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "sketchfab_get_model": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "modelId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        }
+      },
+      "required": ["modelId"]
+    },
+    "sketchfab_list_categories": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {}
+    },
+    "sketchfab_get_downloads": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "modelId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        }
+      },
+      "required": ["modelId"]
+    },
+    "audio_list_sources": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {}
+    },
+    "audio_search_assets": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "kind": {
+          "default": "all",
+          "type": "string",
+          "enum": ["all", "sfx", "music", "mixed"]
+        },
+        "source": {
+          "default": "all",
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "all"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "sonniss",
+                "kenney",
+                "tallbeard",
+                "scott-buckley",
+                "itch-io",
+                "mixkit",
+                "pixabay",
+                "freesound",
+                "opengameart",
+                "abstraction"
+              ]
+            }
+          ]
+        },
+        "limit": {
+          "default": 24,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^\\d+$"
+        }
+      }
+    },
+    "audio_download_asset": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "assetId": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[a-z0-9-]+$"
+        },
+        "acceptLicense": {
+          "type": "boolean",
+          "const": true,
+          "description": "Required acknowledgement that the caller reviewed and accepts the asset license returned by audio_search_assets."
+        }
+      },
+      "required": ["assetId", "acceptLicense"]
+    },
+    "audio_inspect_asset": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "loop": {
+          "type": "boolean",
+          "description": "Required: it decides whether the loop seam is checked at all, and a default would silently skip it."
+        },
+        "expectedDurationSeconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 3600
+        },
+        "expectedPrompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "alternativePrompts": {
+          "minItems": 1,
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "emotion": {
+          "type": "object",
+          "properties": {
+            "sourceDescription": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "What is audibly happening, with no emotional adjective: 'ocean waves washing onto a beach'."
+            },
+            "targetMood": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "alternativeMoods": {
+              "minItems": 1,
+              "maxItems": 5,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            }
+          },
+          "required": ["sourceDescription", "targetMood", "alternativeMoods"],
+          "additionalProperties": false
+        },
+        "bands": {
+          "type": "object",
+          "properties": {
+            "sub": {
+              "type": "object",
+              "properties": {
+                "min": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "max": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              },
+              "additionalProperties": false
+            },
+            "low": {
+              "type": "object",
+              "properties": {
+                "min": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "max": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              },
+              "additionalProperties": false
+            },
+            "mid": {
+              "type": "object",
+              "properties": {
+                "min": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "max": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              },
+              "additionalProperties": false
+            },
+            "high": {
+              "type": "object",
+              "properties": {
+                "min": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "max": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              },
+              "additionalProperties": false
+            },
+            "air": {
+              "type": "object",
+              "properties": {
+                "min": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "max": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "peakMax": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 10
+        },
+        "silenceRms": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "seamMaxRatio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000
+        },
+        "semantic": {
+          "default": "off",
+          "type": "string",
+          "enum": ["off", "clap", "earshot"]
+        }
+      },
+      "required": ["path", "loop"],
+      "additionalProperties": false
+    },
+    "audio_generate_sound": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "description": "A UUID you choose. Reusing it returns the saved result instead of generating and charging again."
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "durationSeconds": {
+          "default": 5,
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 30
+        },
+        "loop": {
+          "default": false,
+          "type": "boolean"
+        },
+        "promptInfluence": {
+          "default": 0.3,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "inspection": {
+          "type": "object",
+          "properties": {
+            "expectedPrompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "alternativePrompts": {
+              "minItems": 1,
+              "maxItems": 5,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            },
+            "emotion": {
+              "type": "object",
+              "properties": {
+                "sourceDescription": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "description": "What is audibly happening, with no emotional adjective: 'ocean waves washing onto a beach'."
+                },
+                "targetMood": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "alternativeMoods": {
+                  "minItems": 1,
+                  "maxItems": 5,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                }
+              },
+              "required": ["sourceDescription", "targetMood", "alternativeMoods"],
+              "additionalProperties": false
+            },
+            "bands": {
+              "type": "object",
+              "properties": {
+                "sub": {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "max": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "low": {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "max": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "mid": {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "max": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "high": {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "max": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "air": {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "max": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "peakMax": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 10
+            },
+            "silenceRms": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
+            "seamMaxRatio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000
+            },
+            "semantic": {
+              "default": "off",
+              "type": "string",
+              "enum": ["off", "clap", "earshot"]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["requestId", "prompt"],
+      "additionalProperties": false
+    },
+    "itch_list_downloads": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "packId": {
+          "type": "string",
+          "enum": [
+            "tallbeard-music-loop-bundle",
+            "quaternius-universal-animation-library-1",
+            "quaternius-universal-animation-library-2",
+            "brackeys-vfx-bundle",
+            "kaykit-platformer"
+          ]
+        }
+      },
+      "required": ["packId"]
+    },
+    "itch_download_asset": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "packId": {
+          "type": "string",
+          "enum": [
+            "tallbeard-music-loop-bundle",
+            "quaternius-universal-animation-library-1",
+            "quaternius-universal-animation-library-2",
+            "brackeys-vfx-bundle",
+            "kaykit-platformer"
+          ]
+        },
+        "uploadId": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^\\d+$"
+        },
+        "acceptLicense": {
+          "type": "boolean",
+          "const": true,
+          "description": "Required acknowledgement that the caller accepts the CC0 terms and any pack-specific cautions returned by itch_list_downloads."
+        }
+      },
+      "required": ["packId", "uploadId", "acceptLicense"]
+    },
+    "asset_list_bundle_entries": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "packId": {
+          "type": "string",
+          "enum": [
+            "tallbeard-music-loop-bundle",
+            "quaternius-universal-animation-library-1",
+            "quaternius-universal-animation-library-2",
+            "brackeys-vfx-bundle",
+            "kaykit-platformer"
+          ]
+        },
+        "uploadId": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^\\d+$"
+        }
+      },
+      "required": ["packId", "uploadId"]
+    },
+    "asset_download_bundle_entry": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "packId": {
+          "type": "string",
+          "enum": [
+            "tallbeard-music-loop-bundle",
+            "quaternius-universal-animation-library-1",
+            "quaternius-universal-animation-library-2",
+            "brackeys-vfx-bundle",
+            "kaykit-platformer"
+          ]
+        },
+        "uploadId": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^\\d+$"
+        },
+        "entryPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "acceptLicense": {
+          "type": "boolean",
+          "const": true,
+          "description": "Required acknowledgement of the pack license returned by itch_list_downloads or asset_list_bundle_entries."
+        }
+      },
+      "required": ["packId", "uploadId", "entryPath", "acceptLicense"]
+    },
+    "asset_list_bundle_animations": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "packId": {
+          "type": "string",
+          "enum": [
+            "tallbeard-music-loop-bundle",
+            "quaternius-universal-animation-library-1",
+            "quaternius-universal-animation-library-2",
+            "brackeys-vfx-bundle",
+            "kaykit-platformer"
+          ]
+        },
+        "uploadId": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^\\d+$"
+        },
+        "entryPath": {
+          "description": "Optional aggregate GLB path. Omit to select the standard non-root-motion GLB automatically.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": ["packId", "uploadId"]
+    },
+    "asset_download_bundle_animation": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "packId": {
+          "type": "string",
+          "enum": [
+            "tallbeard-music-loop-bundle",
+            "quaternius-universal-animation-library-1",
+            "quaternius-universal-animation-library-2",
+            "brackeys-vfx-bundle",
+            "kaykit-platformer"
+          ]
+        },
+        "uploadId": {
+          "type": "string",
+          "maxLength": 30,
+          "pattern": "^\\d+$"
+        },
+        "entryPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "animationName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "acceptLicense": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": ["packId", "uploadId", "animationName", "acceptLicense"]
+    },
+    "asset_list_sources": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "agentReadyOnly": {
+          "default": true,
+          "type": "boolean"
+        }
+      }
+    },
+    "asset_search_sources": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "category": {
+          "default": "all",
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "all"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "3d-model",
+                "animation",
+                "texture",
+                "hdri",
+                "vfx",
+                "2d",
+                "ui",
+                "icon",
+                "font",
+                "sfx",
+                "music",
+                "shader",
+                "directory"
+              ]
+            }
+          ]
+        },
+        "access": {
+          "default": "all",
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "all"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "mcp-api",
+                "mcp-curated",
+                "mcp-marketplace",
+                "provider-page",
+                "package-manager",
+                "git"
+              ]
+            }
+          ]
+        },
+        "license": {
+          "default": "all",
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "all"
+            },
+            {
+              "type": "string",
+              "enum": ["cc0", "cc-by", "mit", "open-source", "per-asset", "marketplace"]
+            }
+          ]
+        },
+        "agentReadyOnly": {
+          "default": true,
+          "type": "boolean"
+        }
+      }
+    },
+    "asset_download_file": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["polyhaven", "ambientcg", "smithsonian", "game-icons", "kenney"]
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096,
+          "format": "uri"
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 220
+        },
+        "acceptLicense": {
+          "type": "boolean",
+          "const": true,
+          "description": "Required acknowledgement that the caller reviewed and accepts the license metadata returned by the provider's search/detail/file tools."
+        }
+      },
+      "required": ["provider", "url", "fileName", "acceptLicense"]
+    },
+    "creature_compile": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "specPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "outputPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "expectedOutputSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": ["specPath", "outputPath"],
+      "additionalProperties": false
+    },
+    "creature_preview": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "glbPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["silhouettes", "hero"]
+        },
+        "previousPreviewId": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{8,80}$"
+        }
+      },
+      "required": ["glbPath", "mode"],
+      "additionalProperties": false
+    },
+    "creature_check": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "glbPath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "mode": {
+              "type": "string",
+              "const": "structural"
+            }
+          },
+          "required": ["glbPath", "mode"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "glbPath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "mode": {
+              "type": "string",
+              "const": "claims"
+            },
+            "claimsPath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "stage": {
+              "type": "string",
+              "enum": ["LOW", "MID", "HIGH"]
+            }
+          },
+          "required": ["glbPath", "mode", "claimsPath", "stage"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "descriptions": {
+    "asset_search": "Bounded credential-free item search with truthful per-item price, rights and acquisition capabilities. Provider text is untrusted data. Reports partial failures and provider-local continuation; no global cursor or catalog census.",
+    "asset_get": "Inspect authoritative current item terms and original source variants; create an expiring server-held file plan without downloading payloads. A plan grants no consent. Unsupported or authenticated workflows return honest alternatives.",
+    "asset_download": "Explicitly acknowledge a current server-held plan and acquire complete guarded originals atomically with a provenance receipt. Byte budget can only tighten the server cap. Archives require extraction; runtime readiness stays unverified. No project adoption or paid/authenticated acquisition.",
+    "creature_status": "Report the pinned anyCreature payload, currently available operations, and optional local tooling without starting a browser or requesting credentials.",
+    "creature_guide": "Read a bounded syntax or workflow section from the verified anyCreature 1.3.1 payload. This does not run or extract the compiler.",
+    "asset_inspect_rig": "Inspect a local humanoid GLB and optional local UAL ZIP/GLB libraries: meshes, joints, suggested bone mappings, clips, attributes, extensions, measured bounds and attachment candidates. Reads only caller-selected local files and downloads nothing.",
+    "asset_auto_rig": "Fit an 18-joint humanoid skeleton to an unrigged local GLB by measured geometry landmarks, bind smooth or rigid skin weights and publish the skinned GLB under the project root. Preserves an existing rig unless replaceRig is set; ambiguous anatomy returns a landmark correction request instead of a bad rig.",
+    "asset_preview_animation": "Render a prepared GLB from several angles with an optional clip sample time or explicit bone pose, and publish a nonblank contact sheet under the project root. A missing rendering backend returns an explicit unavailable result instead of claiming success.",
+    "asset_retarget_animations": "Fetch the selected pinned release donors, retarget their clips onto a prepared target skeleton with a world-space rest correction, preserve the target's mesh/materials/UVs and (by default) its existing clips, and publish a game minimal GLB. Root motion requires the matching _RM donor.",
+    "fab_search_assets": "Search public Fab marketplace listings. Free assets are returned by default. Results carry no file formats and there is no format filter: call fab_get_asset for a listing's formats.",
+    "fab_get_asset": "Get normalized public details and per-license prices for one Fab listing.",
+    "fab_list_filters": "List usable public Fab filter labels and slugs. A warning identifies versioned fallback or stale values.",
+    "fab_list_limited_time_free": "List Fab's dedicated curated limited-time-free promotions separately from general free search.",
+    "fab_download_free_asset": "Download one directly available free Fab file into the configured local download directory. This never purchases or adds an asset to a library. Every GLB result reports `sizeMeters`, its bounding-box size in the file's own units: a value near 890 for something meant to be 9 m means the source was authored in centimetres and the game must scale it.",
+    "fab_list_owned": "List every listing already in the signed-in Fab library, optionally filtered to the ones that publish an Unreal artifact fab_import_asset can convert. Each listing's `artifacts` array lists every Unreal artifact separately with its artifactId, oldest engine (its source format) and decoder route (umodel, mesh-description or cue4parse). Unless unrealOnly is set, a Unity-format artifact (a .unitypackage) is listed too, with route `unity`; this costs one `fabcli formats` lookup per listing. Search free assets first with fab_search_assets; reach for this when you want something already paid for. Read-only — it never claims or purchases.",
+    "asset_import_unreal": "Convert a local directory of Unreal .uasset/.umap files into self-contained model and scene GLBs under a game's assets directory, with reconstructed PBR materials, actor transforms, and a provenance report. Works on any already-downloaded Unreal pack, whatever downloaded it. Every GLB result reports `sizeMeters`, its bounding-box size in the file's own units: a value near 890 for something meant to be 9 m means the source was authored in centimetres and the game must scale it.",
+    "fab_import_asset": "Download an Unreal asset the signed-in Fab account already owns and convert it to source GLBs in one step. A Unity-format artifact (format \"unity\", or a listing that publishes only Unity) goes to the Unity importer instead and returns the asset_import_unity result shape; FabCLI does not yet report the catalog ids that download needs, so that route currently stops with FABCLI_UNITY_DOWNLOAD_UNAVAILABLE and points to asset_import_unity on a package downloaded by hand. Uses the FabCLI session the user established themselves; it never logs in, claims, or purchases anything. Every GLB result reports `sizeMeters`, its bounding-box size in the file's own units: a value near 890 for something meant to be 9 m means the source was authored in centimetres and the game must scale it.",
+    "unity_list_packages": "List the .unitypackage files the user's own Unity Editor has cached (ASSETSTORE_CACHE_PATH, else the OS default such as ~/.local/share/unity3d/Asset Store-5.x), with publisher, category, name, size and modification time. Reads local files only: it never contacts or signs in to Unity, and an empty or missing cache returns an empty list.",
+    "asset_import_unity": "Convert models (FBX, OBJ, .blend), textures and materials of a Unity package the user owns into self-contained GLBs plus import-report.json. Accepts a .unitypackage, a UPM tarball or a project folder, applies each model's import scale, binds FBX material slots to .mat files (externalObjects, then by name) and maps Standard, URP Lit/SimpleLit/ComplexLit and HDRP Lit to glTF PBR; other shaders fall back to their saved colour and texture and are reported. Needs Blender: THREENATIVE_BLENDER, PATH, or a pinned download (disable with THREENATIVE_TOOLCHAIN_AUTOINSTALL=0). Requires acceptUnityAssetStoreEula: true. It never contacts or signs in to Unity.",
+    "blendkit_status": "Report whether the user's official Blendkit-Client is running on loopback, its version and GLB recipe, whether live Blendkit access is enabled, and the exact setup steps that are missing. Local only: it never contacts Blendkit.",
+    "blendkit_import_asset": "Acquire one free Blendkit model (an asset_search id, blendkit:<uuid>) through the user's own Blendkit-Client, convert it with the Client's bundled export_glb recipe under headless Blender, inspect the GLB, and write a provenance file. Requires the item's license acknowledgement and explicit project-use consent. Output is for private use only: the Blendkit Terms forbid open-format models such as GLB in software and apply that to CC0 items too, so never commit, publish or ship it in game builds, demos or starter kits. Raw redistribution (purpose redistribution) is always refused, CC0 included. Existing outputs are never overwritten. Never purchases, signs in or bulk-downloads. Off until documented provider permission is configured (see blendkit_status).",
+    "polyhaven_search_assets": "Search CC0 HDRIs, textures, and models from Poly Haven. Results include explicit Poly Haven attribution.",
+    "polyhaven_get_asset": "Get normalized metadata, authorship, dimensions, and CC0 license information for one Poly Haven asset.",
+    "polyhaven_list_categories": "List Poly Haven category labels and asset counts for HDRIs, textures, or models.",
+    "polyhaven_list_files": "List official download URLs, byte sizes, MD5 hashes, and file dependencies for a Poly Haven asset, with format and resolution filters.",
+    "ambientcg_search_assets": "Search CC0 materials, HDRIs, models, decals, atlases, brushes, terrains, and other ambientCG assets.",
+    "ambientcg_get_asset": "Get normalized metadata and CC0 licensing for one ambientCG asset.",
+    "ambientcg_list_categories": "List ambientCG category metadata and asset counts.",
+    "ambientcg_list_files": "List official CC0 asset archives with variant attributes, extensions, URLs, and byte sizes.",
+    "smithsonian_search_assets": "Search Smithsonian Open Access 3D models and file variants by text, type, quality, and owning unit.",
+    "smithsonian_get_asset": "Get a normalized summary of one Smithsonian Open Access 3D model.",
+    "smithsonian_list_files": "List direct Smithsonian Open Access files with format, quality, compression, and orientation metadata.",
+    "sketchfab_search_models": "Search public Sketchfab models and return per-model license, author, geometry, and archive metadata.",
+    "sketchfab_get_model": "Get public metadata and explicit Creative Commons requirements for one Sketchfab model.",
+    "sketchfab_list_categories": "List public Sketchfab model category names and slugs.",
+    "sketchfab_get_downloads": "Get temporary download URLs for a downloadable Sketchfab model using the user's SKETCHFAB_API_TOKEN. This does not store credentials or download files.",
+    "audio_list_sources": "List supported audio libraries, best uses, licensing caveats, browse pages, and whether this MCP has a curated direct-download contract.",
+    "audio_search_assets": "Search the curated catalog of official audio packs with stable direct URLs and explicit license metadata. Use audio_list_sources for broader provider-page discovery.",
+    "audio_download_asset": "Download one catalog asset by ID into the dedicated audio directory after explicit license acknowledgement. URLs and redirects are restricted to curated official hosts; existing files are never overwritten.",
+    "audio_inspect_asset": "Measure one local WAV, Ogg, MP3 or FLAC with the pinned threenative-playtest inspector: decode integrity, silence, peak, DC, five-band spectrum, declared-loop seam and requested duration, plus a spectrogram. Needs no ElevenLabs key. Reports technical status, and prompt/emotion fit only when local CLAP is provisioned. It never repairs or rewrites the file, and it never certifies artistic quality: use the findings to decide whether to revise one specific property, then listen before shipping.",
+    "audio_generate_sound": "SPENDS PROVIDER CREDITS. Generate one sound effect or ambience from a prompt using the user's own ELEVENLABS_API_KEY, save the original response and a PCM16 WAV, and inspect the result automatically. Requires that key in the server environment; without it this tool fails and you should tell the user to set their own. Describe source, action, material, distance and timing in the prompt. Generate once, inspect, revise the specific property that failed, then explicitly generate again — never loop. Reusing a requestId returns the saved result instead of charging again.",
+    "itch_list_downloads": "Resolve a fresh no-account itch.io download page and list its upload IDs, names, sizes, license, and safe suggested filenames. Signed page tokens are never returned.",
+    "itch_download_asset": "Resolve a fresh signed itch.io file URL for a listed upload and stream it into guarded local storage after explicit license acknowledgement. Signed URLs are not exposed in the MCP result.",
+    "asset_list_bundle_entries": "Inspect a curated itch.io ZIP through HTTP byte ranges without downloading the whole archive. Returns individual entry paths and compressed/uncompressed sizes; signed URLs are never exposed.",
+    "asset_download_bundle_entry": "Extract one selected ZIP entry through HTTP byte ranges, cache it locally, and avoid downloading unrelated bundle contents. Requires explicit license acknowledgement. A `.glb`/`.gltf` entry also reports `sizeMeters`, its bounding-box size in the file's own units: a value near 890 for something meant to be 9 m means the source was authored in centimetres and the game must scale it.",
+    "asset_list_bundle_animations": "Range-extract and cache only the aggregate GLB from a curated bundle, then return its named animation clips. The standard non-root-motion GLB is selected automatically when entryPath is omitted.",
+    "asset_download_bundle_animation": "Export one named animation as a small standalone GLB after range-fetching only the aggregate source entry. Unrelated clips, meshes, materials, and textures are removed; cached source entries are reused.",
+    "asset_list_sources": "List agent-ready sources by default: every result has an MCP download path requiring no manual browser, login, checkout, or paywall. Set agentReadyOnly=false to inspect the broader research directory, including package-manager, Git, authenticated, and provider-page sources.",
+    "asset_search_sources": "Search agent-ready asset sources by category, license, access mode, or text query. Manual/provider-page sources are excluded unless agentReadyOnly=false.",
+    "asset_download_file": "Download a file URL returned by Poly Haven, ambientCG, or Smithsonian MCP tools, or a curated Game-icons.net/Kenney direct ZIP, into guarded local storage after license acknowledgement. Provider hosts and URL shapes are allowlisted, redirects are revalidated, files are streamed with a byte cap, and existing files are never overwritten.",
+    "creature_compile": "Compile a bounded project-relative anyCreature JSON spec with the fixed packaged 1.3.1 compiler, validate its GLB, and publish it atomically with hash-bound evidence.",
+    "creature_preview": "Render fresh, bounded silhouettes or a hero image for a project-relative creature GLB and return image artifacts with backend and camera identity; visual approval remains independent.",
+    "creature_check": "Inspect actual GLB mesh, rig, materials and animation bindings, or run validated claims through the fixed anyCreature judge; visual review remains independent."
+  }
 }

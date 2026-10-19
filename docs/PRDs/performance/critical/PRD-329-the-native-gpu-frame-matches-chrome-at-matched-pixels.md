@@ -12,6 +12,7 @@ re-verified against the current tree the same day (three had drifted: the surfac
 PRD-327's criterion 3 is the launch claim the phone owes first. Owner: the next lane to finish
 PRD-327's device acceptance.
 
+**Priority:** P2 — Open boxes capture native and web at matched pixels to name the gap.
 **Complexity:** +1 (1–5 files) + 2 (a new measurement arm across two runtimes on one phone) +
 1 (external: Chrome for Android) + 1 (device lane) = **5 → MEDIUM mode**. Checkpoint after every
 phase; manual device checkpoint after Phase 0.

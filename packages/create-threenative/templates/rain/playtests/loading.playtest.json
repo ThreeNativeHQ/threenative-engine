@@ -1,0 +1,57 @@
+{
+  "name": "rain-loading-curtain-lifts-on-the-storm",
+  "schemaVersion": 1,
+  "target": "web",
+  "awaitStartup": false,
+  "viewport": {
+    "width": 1024,
+    "height": 768
+  },
+  "warmupFrames": 0,
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "loading.ready",
+        "equals": true
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 90,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "loading.ready",
+        "equals": true,
+        "allowTrivial": "a warm pipeline cache can finish the launch before the first observation; the step capture records the curtain whenever it is still up"
+      },
+      {
+        "id": "state",
+        "path": "loading.progress",
+        "equals": 1,
+        "allowTrivial": "as above: progress reaches 1 when the engine reports the storm ready"
+      }
+    ]
+  }
+}

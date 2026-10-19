@@ -8,7 +8,10 @@
     "build": "node ../../packages/create-threenative/dist/threenative.js build",
     "build:android": "node ../../packages/create-threenative/dist/threenative.js build --target android",
     "playtest:loading-leak": "node ../../packages/playtest/dist/runner/cli.js playtests/loading-leak.playtest.json --url 'http://127.0.0.1:5180/?loading-leak' --server-command 'pnpm dev --host 127.0.0.1 --port 5180 --strictPort' --browser-recipe webgpu --headed",
-    "playtest:world": "pnpm build && node ../../packages/playtest/dist/runner/cli.js playtests/world-flythrough.playtest.json --url 'http://127.0.0.1:5181/?world' --server-command 'pnpm preview --host 127.0.0.1 --port 5181 --strictPort' --browser-recipe webgpu --headed",
+    "playtest:shadow-partial": "node ../../packages/playtest/dist/runner/cli.js playtests/shadow-partial.playtest.json --url 'http://127.0.0.1:5182/?world&shadowPartial&tnShadowGpuKeys=1' --server-command 'pnpm dev --host 127.0.0.1 --port 5182 --strictPort' --browser-recipe webgpu --headed",
+    "playtest:shadow-partial:desktop": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/world-native.ts --target desktop --output dist/world-native.js && sh ../../scripts/xvfb.sh env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET SDL_VIDEODRIVER=x11 TN_DEBUG_SHADOW_PARTIAL=1 node ../../packages/playtest/dist/runner/cli.js playtests/shadow-partial-desktop.playtest.json --target desktop --executable ../../packages/runtime-native/build/tn-linux/mystral --project . --host-arg run --host-arg dist/world-native.js",
+    "playtest:shadow-movers": "pnpm build && node ../../packages/playtest/dist/runner/cli.js playtests/shadow-movers.playtest.json --live-clock --url 'http://127.0.0.1:5181/?world&shadowMovers' --server-command 'pnpm preview --host 127.0.0.1 --port 5181 --strictPort' --browser-recipe webgpu --headed",
+    "playtest:world": "pnpm build && node ../../packages/playtest/dist/runner/cli.js playtests/world-flythrough.playtest.json --url 'http://127.0.0.1:5181/?world&viewDistance' --server-command 'pnpm preview --host 127.0.0.1 --port 5181 --strictPort' --browser-recipe webgpu --headed",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "preview": "vite preview"
   },
@@ -23,6 +26,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",
     "@threenative/assets": "workspace:*",
+    "@threenative/playtest": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@types/three": "0.185.3",
@@ -30,7 +34,8 @@
     "create-threenative": "workspace:*",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "@typescript/native": "catalog:"
   },
   "optionalDependencies": {
     "@threenative/runtime-native": "workspace:*"

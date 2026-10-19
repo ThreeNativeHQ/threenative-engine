@@ -13,8 +13,10 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
+import { decodeAstcKtx2 } from "../src/ktx2-encoder.js";
 import { modelPass } from "../src/passes/model.js";
 import { unpackGlb } from "../src/passes/shared-images.js";
+import { sine, wavClip } from "./audio-fixtures.js";
 
 const TRANSCODER = basisTranscoderPaths();
 const THREE_INSTALL = path.resolve(import.meta.dirname, "../node_modules/three");
@@ -22,6 +24,26 @@ const THREE_INSTALL = path.resolve(import.meta.dirname, "../node_modules/three")
 async function installThree(root: string): Promise<void> {
   await mkdir(path.join(root, "node_modules"), { recursive: true });
   await symlink(THREE_INSTALL, path.join(root, "node_modules/three"));
+}
+
+async function lightmapFixtureGlb(): Promise<Buffer> {
+  const source = await readFile(
+    new URL("../../create-threenative/templates/starter/assets/native-proof.glb", import.meta.url),
+  );
+  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+  const document = await io.readBinary(source);
+  const extension = document.createExtension(KHRLightsPunctual);
+  const light = extension.createLight("bake-light").setType("point").setIntensity(1);
+  document
+    .getRoot()
+    .listScenes()[0]
+    ?.addChild(
+      document
+        .createNode("bake-light")
+        .setTranslation([0, 3, 0])
+        .setExtension("KHR_lights_punctual", light),
+    );
+  return Buffer.from(await io.writeBinary(document));
 }
 
 /**
@@ -125,8 +147,7 @@ describe("compileAssets", () => {
   it("should write a hashed output and a manifest entry when an input exists", async () => {
     const root = await makeTempDir("threenative-compile-hashed-");
     await mkdir(path.join(root, "assets"));
-    // High-entropy pixels: the PNG stays large while the fixed-rate KTX2 encode shrinks,
-    // which is what the byte assertions below pin.
+    // A permissive floor isolates hashed publication from the quality-selection tests.
     const source = rgbaPng({
       blue: (x, y) => (x * 31 + y * 17) % 256,
       green: (x, y) => (x * 7 + y * 29) % 256,
@@ -136,7 +157,11 @@ describe("compileAssets", () => {
     });
     await writeFile(path.join(root, "assets", "rock.png"), source);
 
-    const result = await compileAssets({ cwd: root, transcoder: TRANSCODER });
+    const result = await compileAssets({
+      cwd: root,
+      transcoder: TRANSCODER,
+      config: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } },
+    });
 
     expect(result.written).toBe(1);
     const manifest = JSON.parse(
@@ -190,11 +215,8 @@ describe("compileAssets", () => {
     ).toBe(true);
   });
 
-  it("should drop compression for a platform that cannot decode it, and say which", async () => {
-    // Android and iOS run the native host without WebAssembly, so a `.ktx2` in the bundle is a
-    // black screen. Before this the author had to pin `textures: "none"` in the config to satisfy
-    // that one target, and the pin then followed their web build — a scaffolded game shipped
-    // 2,003 MB of uncompressed output for it. The build names the target; the engine decides.
+  it("should cook decoder-free ASTC on mobile while web keeps Basis", async () => {
+    // ASTC needs no runtime decoder; model Basis/Meshopt remain unavailable.
     const root = await makeTempDir("threenative-compile-platform-");
     await mkdir(path.join(root, "assets"));
     const source = rgbaPng({
@@ -206,31 +228,242 @@ describe("compileAssets", () => {
     });
     await writeFile(path.join(root, "assets", "rock.png"), source);
 
-    const mobile = await compileAssets({ cwd: root, platform: "android", transcoder: TRANSCODER });
+    const mobile = await compileAssets({
+      cwd: root,
+      platform: "android",
+      transcoder: TRANSCODER,
+      config: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } },
+    });
     const mobileManifest = JSON.parse(
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
     ) as { entries: Record<string, { output: string }> };
 
-    expect(mobileManifest.entries["rock.png"]?.output).toMatch(/\.png$/u);
+    expect(mobileManifest.entries["rock.png"]?.output).toMatch(/\.ktx2$/u);
     expect(mobile.skippedCompression).toEqual([
       {
         bytes: 0,
-        decoders: ["meshopt", "KTX2"],
+        decoders: ["meshopt"],
         files: 0,
         kind: "model",
         reason: "platform",
       },
-      { bytes: source.length, files: 1, kind: "texture", reason: "platform" },
     ]);
+
+    expect(
+      mobile.skippedCompression.flatMap((row) => ("decoders" in row ? row.decoders : [])),
+    ).not.toContain("KTX2");
 
     // The same config, the target that can decode it: compression ships.
     await rm(path.join(root, "public"), { force: true, recursive: true });
-    await compileAssets({ cwd: root, platform: "web", transcoder: TRANSCODER });
+    await compileAssets({
+      cwd: root,
+      platform: "web",
+      transcoder: TRANSCODER,
+      config: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } },
+    });
     const webManifest = JSON.parse(
       await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
     ) as { entries: Record<string, { output: string }> };
 
     expect(webManifest.entries["rock.png"]?.output).toMatch(/\.ktx2$/u);
+  });
+
+  it.each([
+    ["android", false],
+    ["android", true],
+    ["ios", false],
+    ["ios", true],
+  ] as const)(
+    "cooks embedded ASTC on %s with ktx2=%s while retaining Meshopt",
+    async (platform, ktx2) => {
+      const root = await makeTempDir("threenative-embedded-astc-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "character.glb"), await singleImageFixtureGlb());
+      const result = await compileAssets({
+        cwd: root,
+        platform,
+        runtimeDecoders: { ktx2, meshopt: true },
+        config: {
+          budget: "none",
+          textures: "none",
+          lod: "none",
+          models: {
+            sharedImages: false,
+            compact: false,
+            virtual: "none",
+            textures: { overrides: [{ slot: "baseColorTexture", codec: "etc1s" }] },
+          },
+        },
+      });
+      expect(result.skippedCompression.filter((row) => row.kind === "model")).toEqual([]);
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+      );
+      const bytes = await readFile(
+        path.join(root, "public", manifest.entries["character.glb"].output),
+      );
+      const { json, bin } = unpackGlb(bytes);
+      expect(json.extensionsRequired).toContain("EXT_texture_astc");
+      expect(json.extensionsUsed).not.toContain("KHR_texture_basisu");
+      expect(json.extensionsRequired).toContain("EXT_meshopt_compression");
+      const texture = json.textures?.[0];
+      const source = (texture?.extensions?.EXT_texture_astc as { source: number }).source;
+      expect(texture?.source).toBeUndefined();
+      const image = json.images?.[source];
+      const view = json.bufferViews?.[image?.bufferView ?? -1];
+      if (!view || !bin) throw new Error("embedded ASTC view missing");
+      const astc = readKtx2(
+        bin.subarray(view.byteOffset ?? 0, (view.byteOffset ?? 0) + view.byteLength),
+      );
+      expect(astc.vkFormat).toBe(158);
+      expect(astc.supercompressionScheme).toBe(0);
+      expect(astc.levelCount).toBe(
+        Math.floor(Math.log2(Math.max(astc.pixelWidth, astc.pixelHeight))) + 1,
+      );
+      expect(astc.dataFormatDescriptor[0]?.colorPrimaries).toBe(1);
+      await compileAssets({
+        cwd: root,
+        platform,
+        runtimeDecoders: { ktx2, meshopt: true },
+        config: {
+          budget: "none",
+          textures: "none",
+          lod: "none",
+          models: {
+            sharedImages: false,
+            compact: false,
+            virtual: "none",
+            textures: "none",
+          },
+        },
+      });
+      const disabled = JSON.parse(
+        await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+      );
+      const disabledJson = unpackGlb(
+        await readFile(path.join(root, "public", disabled.entries["character.glb"].output)),
+      ).json;
+      expect(disabledJson.extensionsUsed).not.toContain("EXT_texture_astc");
+      expect(disabledJson.images?.map((image) => image.mimeType)).toEqual(["image/png"]);
+    },
+  );
+
+  it.each([
+    ["android", true, true],
+    ["android", true, false],
+    ["android", false, true],
+    ["android", false, false],
+    ["ios", true, true],
+    ["ios", true, false],
+    ["ios", false, true],
+    ["ios", false, false],
+    ["web", true, false],
+    ["desktop", true, false],
+  ] as const)(
+    "honours standalone decoder capabilities on %s with ktx2=%s meshopt=%s",
+    async (platform, ktx2, meshopt) => {
+      const root = await makeTempDir("threenative-texture-decoder-map-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ width: 16, height: 16 }));
+      const result = await compileAssets({
+        cwd: root,
+        platform,
+        runtimeDecoders: { ktx2, meshopt },
+        transcoder: TRANSCODER,
+        config: {
+          models: "none",
+          textures: {
+            floor: { ssim: 0, meanDeltaE00: 100 },
+            overrides: [{ glob: "rock.png", codec: "etc1s" }],
+          },
+        },
+      });
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { output: string; format: string }> };
+      const entry = manifest.entries["rock.png"];
+      if (entry === undefined) throw new Error("fixture texture is missing from the manifest");
+      const mobile = platform === "android" || platform === "ios";
+      const bytes = await readFile(path.join(root, "public", entry.output));
+      const container = readKtx2(bytes);
+      expect(container.vkFormat).toBe(mobile ? 158 : 0);
+      expect(entry.format).toBe(mobile ? "astc4x4" : "etc1s");
+      expect(container.levelCount).toBeGreaterThan(1);
+      if (mobile) {
+        expect(container.supercompressionScheme).toBe(0);
+        expect(container.levelCount).toBe(
+          Math.floor(Math.log2(Math.max(container.pixelWidth, container.pixelHeight))) + 1,
+        );
+        await expect(
+          decodeAstcKtx2(bytes, container.pixelWidth, container.pixelHeight),
+        ).resolves.toHaveLength(container.pixelWidth * container.pixelHeight * 4);
+      }
+      expect(result.skippedCompression.filter((row) => row.kind === "texture")).toEqual([]);
+      for (const name of ["basis_transcoder.js", "basis_transcoder.wasm"]) {
+        const output = path.join(root, "public", "basis", name);
+        if (ktx2 && !mobile) expect((await stat(output)).size).toBeGreaterThan(0);
+        else await expect(stat(output)).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    },
+  );
+
+  it.each([
+    [true, true],
+    [true, false],
+    [false, true],
+    [false, false],
+  ] as const)(
+    "retains the custom decoder contract with ktx2=%s meshopt=%s",
+    async (ktx2, meshopt) => {
+      const root = await makeTempDir("threenative-custom-decoder-map-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "rock.txt"), "asset");
+      const apply = vi.fn((input: Buffer) => input);
+      const result = await compileAssets({
+        cwd: root,
+        platform: "android",
+        runtimeDecoders: { ktx2, meshopt },
+        passes: [{ name: "decoder-dependent", needsRuntimeDecoder: true, apply }],
+      });
+      expect(apply).toHaveBeenCalledTimes(ktx2 && meshopt ? 1 : 0);
+      expect(result.skippedCompression).toEqual(
+        ktx2 && meshopt ? [] : [{ kind: "pass", pass: "decoder-dependent", reason: "platform" }],
+      );
+    },
+  );
+
+  it.each([
+    ["android", "codec"],
+    ["android", "textures"],
+    ["ios", "codec"],
+    ["ios", "textures"],
+  ] as const)("keeps the mobile %s %s-none kill switch", async (platform, disabled) => {
+    const root = await makeTempDir("threenative-mobile-texture-none-");
+    await mkdir(path.join(root, "assets"));
+    const source = rgbaPng({ width: 16, height: 16 });
+    await writeFile(path.join(root, "assets", "rock.png"), source);
+    for (const runtimeDecoders of [undefined, { ktx2: true, meshopt: false }]) {
+      await compileAssets({
+        cwd: root,
+        platform,
+        runtimeDecoders,
+        transcoder: TRANSCODER,
+        config: {
+          models: "none",
+          textures:
+            disabled === "textures"
+              ? "none"
+              : { maxSize: 4, overrides: [{ glob: "rock.png", codec: "none" }] },
+        },
+      });
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      ) as { entries: Record<string, { output: string }> };
+      const entry = manifest.entries["rock.png"];
+      if (entry === undefined) throw new Error("fixture texture is missing from the manifest");
+      expect(entry.output).toMatch(/\.png$/u);
+      expect(await readFile(path.join(root, "public", entry.output))).toEqual(source);
+    }
   });
 
   it("should let a caller that probed the runtime drop decoders on desktop too", async () => {
@@ -371,7 +604,10 @@ describe("compileAssets", () => {
       expect(shared).toHaveLength(1);
       expect(shared[0]).toMatch(/\.none\.png$/u);
       expect(lines.join("\n")).toContain("meshopt");
-      expect(lines.join("\n")).toContain("KTX2");
+      expect(lines.join("\n")).not.toContain("KTX2");
+      expect(result.skippedCompression.find((row) => row.kind === "model")).toMatchObject({
+        decoders: ["meshopt"],
+      });
       expect(lines.join("\n")).not.toContain("dedupe");
     } finally {
       log.mockRestore();
@@ -713,9 +949,7 @@ describe("compileAssets", () => {
     expect(secondManifest.entries["rock.png"].output).not.toBe(first.entries["rock.png"].output);
   });
 
-  it("should skip compilation without touching the output when no source directory exists", async () => {
-    // The pre-pipeline state: projects built before this step have no assets/ and their
-    // builds must keep working unchanged.
+  it("should publish an empty manifest when no source directory exists", async () => {
     const root = await makeTempDir("threenative-compile-absent-");
 
     const result = await compileAssets({ cwd: root });
@@ -727,7 +961,18 @@ describe("compileAssets", () => {
       skippedCompression: [],
       written: 0,
     });
-    await expect(stat(path.join(root, "public"))).rejects.toThrow();
+    expect(
+      JSON.parse(await readFile(path.join(root, "public/assets.manifest.json"), "utf8")),
+    ).toEqual({ version: 1, entries: {} });
+  });
+
+  it("should publish an empty manifest when the source directory is empty", async () => {
+    const root = await makeTempDir("threenative-compile-empty-");
+    await mkdir(path.join(root, "assets"));
+    await compileAssets({ cwd: root });
+    expect(
+      JSON.parse(await readFile(path.join(root, "public/assets.manifest.json"), "utf8")),
+    ).toEqual({ version: 1, entries: {} });
   });
 
   it("should throw when the source path exists but is not a directory", async () => {
@@ -778,9 +1023,7 @@ describe("compileAssets", () => {
     expect(compiled).toEqual(source);
   });
 
-  it("should not publish an empty manifest when the source holds only dotfiles", async () => {
-    // A served manifest is authoritative at runtime: an empty one would reject every load
-    // in a game whose assets still live in public/ by hand. Empty source means no manifest.
+  it("should publish an empty manifest when the source holds only dotfiles", async () => {
     const root = await makeTempDir("threenative-compile-empty-source-");
     await mkdir(path.join(root, "assets"));
     await writeFile(path.join(root, "assets", ".gitkeep"), "");
@@ -794,10 +1037,12 @@ describe("compileAssets", () => {
       skippedCompression: [],
       written: 0,
     });
-    await expect(stat(path.join(root, "public", "assets.manifest.json"))).rejects.toThrow();
+    expect(
+      JSON.parse(await readFile(path.join(root, "public/assets.manifest.json"), "utf8")),
+    ).toEqual({ version: 1, entries: {} });
   });
 
-  it("should drop the stale manifest once the last input is removed", async () => {
+  it("should empty the stale manifest once the last input is removed", async () => {
     const root = await makeTempDir("threenative-compile-stale-manifest-");
     await mkdir(path.join(root, "assets"));
     await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
@@ -806,7 +1051,9 @@ describe("compileAssets", () => {
 
     await compileAssets({ cwd: root });
 
-    await expect(stat(path.join(root, "public", "assets.manifest.json"))).rejects.toThrow();
+    expect(
+      JSON.parse(await readFile(path.join(root, "public/assets.manifest.json"), "utf8")),
+    ).toEqual({ version: 1, entries: {} });
   });
 
   it("should throw on unknown config keys and duplicate logical paths", async () => {
@@ -895,6 +1142,24 @@ describe("compileAssets", () => {
       );
     }
 
+    for (const maxSize of [
+      null,
+      [],
+      { baseColorTexture: 0 },
+      { normalTexture: 3 },
+      { baseColorTexture: "2048" },
+      { baseColorTexture: Number.POSITIVE_INFINITY },
+      { mask: 1024 },
+      { unknownTexture: 1024 },
+    ]) {
+      await expect(
+        compileAssets({
+          config: { textures: { maxSize } } as unknown as IAssetSourceConfig,
+          cwd: root,
+        }),
+      ).rejects.toThrow(/TN_ASSETS_CONFIG_INVALID/u);
+    }
+
     for (const value of [1, 2, 3]) {
       const tooSmallMaxSize = { textures: { maxSize: value } } as unknown as IAssetSourceConfig;
       await expect(compileAssets({ config: tooSmallMaxSize, cwd: root })).rejects.toThrow(
@@ -944,26 +1209,7 @@ describe("compileAssets", () => {
   it("should run the configured lightmap UV pass through the built-in registry", async () => {
     const root = await makeTempDir("threenative-compile-lightmap-");
     await mkdir(path.join(root, "assets"));
-    const source = await readFile(
-      new URL(
-        "../../create-threenative/templates/starter/assets/native-proof.glb",
-        import.meta.url,
-      ),
-    );
-    const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
-    const document = await io.readBinary(source);
-    const extension = document.createExtension(KHRLightsPunctual);
-    const light = extension.createLight("bake-light").setType("point").setIntensity(1);
-    document
-      .getRoot()
-      .listScenes()[0]
-      ?.addChild(
-        document
-          .createNode("bake-light")
-          .setTranslation([0, 3, 0])
-          .setExtension("KHR_lights_punctual", light),
-      );
-    await writeFile(path.join(root, "assets", "room.glb"), await io.writeBinary(document));
+    await writeFile(path.join(root, "assets", "room.glb"), await lightmapFixtureGlb());
 
     await compileAssets({
       config: { models: { lightmap: { atlasSize: 128, padding: 2 } } },
@@ -987,6 +1233,100 @@ describe("compileAssets", () => {
     const json = JSON.parse(compiled.subarray(20, 20 + compiled.readUInt32LE(12)).toString("utf8"));
     expect(json.meshes[0].primitives[0].attributes.TEXCOORD_1).toEqual(expect.any(Number));
   });
+
+  it.each([
+    ["android", false],
+    ["android", true],
+    ["ios", false],
+    ["ios", true],
+  ] as const)(
+    "cooks linear lightmaps on %s with decoder capabilities=%s across workers and cache changes",
+    async (platform, decoders) => {
+      const root = await makeTempDir("threenative-mobile-lightmap-");
+      await mkdir(path.join(root, "assets"));
+      const input = await lightmapFixtureGlb();
+      await writeFile(path.join(root, "assets", "room.glb"), input);
+      const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+      const secondRoom = await io.readBinary(input);
+      secondRoom.getRoot().listNodes()[0]?.setTranslation([0.25, 0, 0]);
+      await writeFile(path.join(root, "assets", "room2.glb"), await io.writeBinary(secondRoom));
+      const config: IAssetSourceConfig = {
+        audio: "none",
+        textures: "none",
+        lod: false,
+        models: {
+          textures: "none",
+          passes: { meshopt: false },
+          lightmap: { atlasSize: 128, padding: 2 },
+        },
+      };
+      const options = {
+        config,
+        cwd: root,
+        platform,
+        runtimeDecoders: { ktx2: decoders, meshopt: decoders },
+      };
+      const worker = await compileAssets({ ...options, concurrency: 2 });
+      expect(worker.concurrencyUsed).toBe(2);
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      );
+      const lightmap = manifest.entries["room.glb"].lightmaps?.[0];
+      expect(lightmap).toMatchObject({ format: "astc4x4", texCoord: 1 });
+      const bytes = await readFile(path.join(root, "public", lightmap.output));
+      const container = readKtx2(bytes);
+      expect(container.vkFormat).toBe(157);
+      expect(container.supercompressionScheme).toBe(0);
+      expect(container.globalData).toBeNull();
+      expect(container.levelCount).toBe(
+        Math.floor(Math.log2(Math.max(container.pixelWidth, container.pixelHeight))) + 1,
+      );
+      expect(container.dataFormatDescriptor[0]).toMatchObject({
+        colorPrimaries: 0,
+        transferFunction: 1,
+        texelBlockDimension: [3, 3, 0, 0],
+      });
+      await expect(
+        decodeAstcKtx2(bytes, container.pixelWidth, container.pixelHeight),
+      ).resolves.toHaveLength(container.pixelWidth * container.pixelHeight * 4);
+      const warm = await compileAssets({ ...options, concurrency: 1 });
+      expect(warm.written).toBe(0);
+      expect(warm.skipped).toBe(2);
+      const serial = await compileAssets({ ...options, concurrency: 1, output: "serial" });
+      expect(serial.written).toBe(2);
+      const serialManifest = JSON.parse(
+        await readFile(path.join(root, "serial", "assets.manifest.json"), "utf8"),
+      );
+      for (const name of ["room.glb", "room2.glb"]) {
+        const parallelEntry = manifest.entries[name];
+        const serialEntry = serialManifest.entries[name];
+        expect(serialEntry.output).toBe(parallelEntry.output);
+        expect(serialEntry.lightmaps[0].output).toBe(parallelEntry.lightmaps[0].output);
+        for (const output of [parallelEntry.output, parallelEntry.lightmaps[0].output])
+          expect(await readFile(path.join(root, "serial", output))).toEqual(
+            await readFile(path.join(root, "public", output)),
+          );
+      }
+      const basis = await compileAssets({
+        ...options,
+        concurrency: 1,
+        platform: "web",
+        runtimeDecoders: { ktx2: true, meshopt: true },
+      });
+      expect(basis.written).toBe(2);
+      const basisManifest = JSON.parse(
+        await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+      );
+      const basisLightmap = basisManifest.entries["room.glb"].lightmaps[0];
+      expect(basisLightmap.format).toBe("etc1s");
+      expect(basisLightmap.output).not.toBe(lightmap.output);
+      const basisBytes = await readFile(path.join(root, "public", basisLightmap.output));
+      expect(readKtx2(basisBytes).vkFormat).toBe(0);
+      const restored = await compileAssets({ ...options, concurrency: 1 });
+      expect(restored.written).toBe(2);
+      expect(await readFile(path.join(root, "public", lightmap.output))).toEqual(bytes);
+    },
+  );
 
   it("should ship a model byte-identical when assets.models is none", async () => {
     const root = await makeTempDir("threenative-compile-model-none-");
@@ -1215,4 +1555,50 @@ describe("compile cache", () => {
     expect(fifth.written).toBe(1);
     expect(applied).toBe(6);
   });
+});
+
+describe("manifest and per-kind pass isolation", () => {
+  it("rejects a corrupt existing manifest instead of rebuilding over it silently", async () => {
+    const root = await makeTempDir("threenative-corrupt-manifest-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets/keep.txt"), "kept");
+    await mkdir(path.join(root, "public"));
+    const config = { audio: "none", models: "none", textures: "none" } as const;
+    const manifest = path.join(root, "public/assets.manifest.json");
+
+    await writeFile(manifest, "{not json");
+    await expect(compileAssets({ cwd: root, config })).rejects.toThrow(
+      "TN_ASSETS_MANIFEST_INVALID",
+    );
+    await writeFile(manifest, JSON.stringify({ version: 2, entries: {} }));
+    await expect(compileAssets({ cwd: root, config })).rejects.toThrow(
+      "TN_ASSETS_MANIFEST_INVALID",
+    );
+  });
+
+  it("keeps a non-audio entry unchanged when only the audio options change", async () => {
+    const root = await makeTempDir("threenative-pass-isolation-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets/notes.txt"), "notes");
+    await writeFile(
+      path.join(root, "assets/tone.wav"),
+      wavClip({ frames: 4_410, sample: sine(440) }),
+    );
+    const entriesWith = async (audio: Record<string, unknown>) => {
+      await compileAssets({
+        cwd: root,
+        config: { audio, models: "none", textures: "none" } as never,
+      });
+      const manifest = JSON.parse(
+        await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+      );
+      return manifest.entries as Record<string, unknown>;
+    };
+
+    const before = await entriesWith({});
+    const after = await entriesWith({ seamMaxRatio: 2 });
+
+    expect(after["tone.wav"]).not.toEqual(before["tone.wav"]);
+    expect(after["notes.txt"]).toEqual(before["notes.txt"]);
+  }, 30_000);
 });

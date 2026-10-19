@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-058: Performance, Reliability, and Privacy-Safe Observability
 
 **Status:** BLOCKED — IMPLEMENTATION COMMITTED IN ISOLATED LANE; NOT SQUASHED
+**Priority:** P1 — Fifty-two open boxes: reliability and observability tests plus user verification per platform.
 **Lane commit:** `5865937c4d9de45a4adc28961b17eefc80fad675`
 
 **Manager gate:** 21 declared controls reran with exact observed-red evidence; delivery remains blocked by unavailable physical/current-artifact evidence and the root marker-control collection mismatch.

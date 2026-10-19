@@ -19,21 +19,21 @@
       "kind": "input",
       "label": "collect",
       "press": "ArrowRight",
-      "holdTicks": 100,
+      "holdTicks": 142,
       "release": true
     },
     {
       "kind": "input",
       "label": "leave",
       "press": "ArrowLeft",
-      "holdTicks": 25,
+      "holdTicks": 50,
       "release": true
     },
     {
       "kind": "input",
       "label": "reenter-while-disabled",
       "press": "ArrowRight",
-      "holdTicks": 25,
+      "holdTicks": 50,
       "release": true
     }
   ],

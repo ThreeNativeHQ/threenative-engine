@@ -1,0 +1,874 @@
+{
+  "sourceSha": "e7f7baabc84bee7a4639f777c3bee5df5e169faf",
+  "qualification": "Actual frozen e7f7baabc merged-harness replay on NVIDIA RTX2080 using original scenarios, assertion thresholds and budgets. Browser/native gate-positive and missing-gate control, genuine validation scopes before1/after2/errors0, unchanged dam/coupling18 predicates. Validation scopes and actual host-console error/device-loss gates; no normalized-default diagnostics, unsupported internal scope, mobile or performance claim.",
+  "sourceFiles": [
+    {
+      "filename": "examples/prd476-fluid-particles/playtests/fluid-collision.playtest.json",
+      "sha256": "c50f2e0cc15f0019d2b2f2f2f916d08a06534fa358de8cb0d587630562e0ccda"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/proof.html",
+      "sha256": "22a2d1a0cdd8822a276be9e7a2afaacedab1f30162474e3adb954d1f0f38d439"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/proof.vite.config.ts",
+      "sha256": "485b60dd4120a7ec567ca7e32f57f0f2832b034fc31969d1112b82b876bb30cd"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/src/collision-proof.ts",
+      "sha256": "d7bb330b0a321675bec66fb66afa4bac40d8ffc0285acb32dbb03df868457c13"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/src/coupling.ts",
+      "sha256": "958946ca3b40d394182af9dd3242616676b09b90cf027108bc614d984e27a994"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/src/game.ts",
+      "sha256": "6f0f21eb822fc27a2455502f03794609d46fad6a42b0d55cf105819801dbf0a1"
+    },
+    {
+      "filename": "packages/core/patches/three@0.185.1.patch",
+      "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+    },
+    {
+      "filename": "packages/core/src/fluid-particles.ts",
+      "sha256": "474930855500cf2754fe5149ff2283200f9576470a3e3cf6844680ba5fde3f9d"
+    },
+    {
+      "filename": "packages/core/src/gpu-readback.ts",
+      "sha256": "fece052efd783927fc92f05f9536c27d9ab22e4c15f47f3f693d2bf10013e64f"
+    },
+    {
+      "filename": "packages/playtest/src/runner/androidRunner.ts",
+      "sha256": "6162555392fef25bbf75bc18818db1789ae3ca56c0cd0118d729aae34710cdc9"
+    },
+    {
+      "filename": "packages/playtest/src/runner/bridgeClient.ts",
+      "sha256": "3a574ac3593e0e8e14d5ebbcdfd5001e700c046630edd86d31fc04f46d30b9a9"
+    },
+    {
+      "filename": "packages/playtest/src/runner/desktopRunner.ts",
+      "sha256": "fff776fb3e82839003afad6d97170f0f202a1b92ae3e2c3ea1a6af72ba4c641e"
+    },
+    {
+      "filename": "packages/playtest/src/runner/observationSampling.ts",
+      "sha256": "4856030a6d2d131152379ce70057aaf7f112dc7beb1c60369eec0717d086c6eb"
+    },
+    {
+      "filename": "packages/playtest/src/runner/runner-support.ts",
+      "sha256": "1e2963450e08a364b4ca7a7af390aa947a9a5a8f054fced54a7a446f8fabfa86"
+    },
+    {
+      "filename": "packages/playtest/src/runner/runner.ts",
+      "sha256": "4cf96a264e5b4eebc2095014d3450b1721e2cf6e8b8e8d257c050ce0422a97bd"
+    },
+    {
+      "filename": "packages/runtime-native/scripts/bundle.mjs",
+      "sha256": "238f9cc17f995746e2575836103d81ec3401e7cf1f07602c5af1f2efc30a4d10"
+    },
+    {
+      "filename": "scripts/fluid-collision-proof.ts",
+      "sha256": "9889bbc4424d5919211a80aceec3043b1941ff1d4828904f6e803f0ecbb5a24e"
+    },
+    {
+      "filename": "scripts/verify-fluid-collision-native.ts",
+      "sha256": "5bbd8c07d613e13a7b4e8c2faf5b702f854843525656b60ed3e86f02216724a4"
+    },
+    {
+      "filename": "scripts/verify-fluid-collision.ts",
+      "sha256": "5d3457a52e53162a3a3e29db289391755a8f655d94542c2252124ad616223ab6"
+    },
+    {
+      "filename": "scripts/verify-fluid-consumers.ts",
+      "sha256": "a3ba12237a1afa74ccb65dd2dc90f4af9ae9856dd79434d846312e7505949022"
+    }
+  ],
+  "lanes": [
+    {
+      "lane": "fluid-collision",
+      "images": [
+        {
+          "sha256": "a70827bbfac684af9250d82420857e8f003dce1eb29438ad079a36bb4bf2cf75",
+          "size": [960, 540],
+          "uniqueColors": 243,
+          "filename": "docs/verification/prd479/ab9fa10f-browser/gate-after.png"
+        },
+        {
+          "sha256": "edc58721e2e85ba2d2b6d8d6ba43272d55962aa6d178dc7484a61223ab7539b6",
+          "size": [960, 540],
+          "uniqueColors": 244,
+          "filename": "docs/verification/prd479/ab9fa10f-browser/gate-before.png"
+        },
+        {
+          "sha256": "7612ba3c5b7cef9fdd74f2b588d866d86b8bcbc735ca493fec06112a907301cc",
+          "size": [960, 540],
+          "uniqueColors": 238,
+          "filename": "docs/verification/prd479/ab9fa10f-browser/gate-disabled-after.png"
+        },
+        {
+          "sha256": "795aecb354a041db6b5d813a5bb4967dc62ca6b6a722c41b3373a0c24d892b16",
+          "size": [960, 540],
+          "uniqueColors": 244,
+          "filename": "docs/verification/prd479/ab9fa10f-browser/gate-disabled-before.png"
+        }
+      ],
+      "proof": {
+        "sourceSha": "e7f7baabc84bee7a4639f777c3bee5df5e169faf",
+        "sourceFiles": [
+          {
+            "filename": "packages/core/src/fluid-particles.ts",
+            "sha256": "474930855500cf2754fe5149ff2283200f9576470a3e3cf6844680ba5fde3f9d"
+          },
+          {
+            "filename": "packages/core/src/gpu-readback.ts",
+            "sha256": "fece052efd783927fc92f05f9536c27d9ab22e4c15f47f3f693d2bf10013e64f"
+          },
+          {
+            "filename": "packages/core/patches/three@0.185.1.patch",
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          },
+          {
+            "filename": "examples/prd476-fluid-particles/src/collision-proof.ts",
+            "sha256": "d7bb330b0a321675bec66fb66afa4bac40d8ffc0285acb32dbb03df868457c13"
+          },
+          {
+            "filename": "examples/prd476-fluid-particles/playtests/fluid-collision.playtest.json",
+            "sha256": "c50f2e0cc15f0019d2b2f2f2f916d08a06534fa358de8cb0d587630562e0ccda"
+          },
+          {
+            "filename": "examples/prd476-fluid-particles/proof.html",
+            "sha256": "22a2d1a0cdd8822a276be9e7a2afaacedab1f30162474e3adb954d1f0f38d439"
+          },
+          {
+            "filename": "examples/prd476-fluid-particles/proof.vite.config.ts",
+            "sha256": "485b60dd4120a7ec567ca7e32f57f0f2832b034fc31969d1112b82b876bb30cd"
+          },
+          {
+            "filename": "scripts/fluid-collision-proof.ts",
+            "sha256": "9889bbc4424d5919211a80aceec3043b1941ff1d4828904f6e803f0ecbb5a24e"
+          },
+          {
+            "filename": "scripts/verify-fluid-collision.ts",
+            "sha256": "5d3457a52e53162a3a3e29db289391755a8f655d94542c2252124ad616223ab6"
+          }
+        ],
+        "qualification": "Rendered browser GPU correctness; no native or hardware-performance claim.",
+        "expectedOutcomesPassed": true,
+        "variants": [
+          {
+            "variant": "gate",
+            "pass": true,
+            "adapter": {
+              "architecture": "turing",
+              "vendor": "nvidia",
+              "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+              "limit.maxBindGroups": "4",
+              "limit.maxTextureDimension2D": "16384",
+              "limit.maxStorageBufferBindingSize": "2147483644"
+            },
+            "rendererKind": "webgpu",
+            "assertions": [
+              {
+                "id": "visual.0.region",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.collisionPassed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.measuredSteps",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.totalSteps",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.freeMotionPassed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalDistance",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalDirectionPassed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalSpeed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.ejectionSpeed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.finite",
+                "pass": true
+              },
+              {
+                "id": "diagnostics",
+                "pass": true
+              }
+            ],
+            "diagnostics": [],
+            "measurements": {
+              "before": {
+                "gateClosed": true,
+                "measuredSteps": 0,
+                "totalSteps": 1,
+                "initialX": -1.0499999523162842,
+                "collisionX": -1.0499999523162842,
+                "collisionPassed": 0,
+                "freeX": -1.0499999523162842,
+                "freeMotionPassed": 0,
+                "diagonalSpeed": 0,
+                "diagonalDistance": 0,
+                "diagonalDirectionPassed": 0,
+                "ejectionSpeed": 0,
+                "finite": 0
+              },
+              "after": {
+                "gateClosed": true,
+                "measuredSteps": 1,
+                "totalSteps": 2,
+                "initialX": -1.0499999523162842,
+                "collisionX": -1.0468000173568726,
+                "collisionPassed": 1,
+                "freeX": -0.75,
+                "freeMotionPassed": 1,
+                "diagonalSpeed": 18.00000091579126,
+                "diagonalDistance": 0.3000000311790893,
+                "diagonalDirectionPassed": 1,
+                "ejectionSpeed": 18,
+                "finite": 1
+              }
+            },
+            "gpuValidation": {
+              "before": {
+                "completedScopes": 1,
+                "errors": 0
+              },
+              "after": {
+                "completedScopes": 2,
+                "errors": 0
+              }
+            },
+            "images": [
+              {
+                "filename": "before.png",
+                "sha256": "edc58721e2e85ba2d2b6d8d6ba43272d55962aa6d178dc7484a61223ab7539b6"
+              },
+              {
+                "filename": "after.png",
+                "sha256": "a70827bbfac684af9250d82420857e8f003dce1eb29438ad079a36bb4bf2cf75"
+              }
+            ]
+          },
+          {
+            "variant": "gate-disabled",
+            "pass": false,
+            "adapter": {
+              "architecture": "turing",
+              "vendor": "nvidia",
+              "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+              "limit.maxBindGroups": "4",
+              "limit.maxTextureDimension2D": "16384",
+              "limit.maxStorageBufferBindingSize": "2147483644"
+            },
+            "rendererKind": "webgpu",
+            "assertions": [
+              {
+                "id": "visual.0.region",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.collisionPassed",
+                "pass": false
+              },
+              {
+                "id": "resource.FluidCollision.measuredSteps",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.totalSteps",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.freeMotionPassed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalDistance",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalDirectionPassed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalSpeed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.ejectionSpeed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.finite",
+                "pass": true
+              },
+              {
+                "id": "diagnostics",
+                "pass": true
+              }
+            ],
+            "diagnostics": ["TN_PLAYTEST_RESOURCE_ASSERTION_FAILED"],
+            "measurements": {
+              "before": {
+                "gateClosed": false,
+                "measuredSteps": 0,
+                "totalSteps": 1,
+                "initialX": -1.0499999523162842,
+                "collisionX": -1.0499999523162842,
+                "collisionPassed": 0,
+                "freeX": -1.0499999523162842,
+                "freeMotionPassed": 0,
+                "diagonalSpeed": 0,
+                "diagonalDistance": 0,
+                "diagonalDirectionPassed": 0,
+                "ejectionSpeed": 0,
+                "finite": 0
+              },
+              "after": {
+                "gateClosed": false,
+                "measuredSteps": 1,
+                "totalSteps": 2,
+                "initialX": -1.0499999523162842,
+                "collisionX": -0.75,
+                "collisionPassed": 0,
+                "freeX": -0.75,
+                "freeMotionPassed": 1,
+                "diagonalSpeed": 18.00000091579126,
+                "diagonalDistance": 0.3000000311790893,
+                "diagonalDirectionPassed": 1,
+                "ejectionSpeed": 18,
+                "finite": 1
+              }
+            },
+            "gpuValidation": {
+              "before": {
+                "completedScopes": 1,
+                "errors": 0
+              },
+              "after": {
+                "completedScopes": 2,
+                "errors": 0
+              }
+            },
+            "images": [
+              {
+                "filename": "before.png",
+                "sha256": "795aecb354a041db6b5d813a5bb4967dc62ca6b6a722c41b3373a0c24d892b16"
+              },
+              {
+                "filename": "after.png",
+                "sha256": "7612ba3c5b7cef9fdd74f2b588d866d86b8bcbc735ca493fec06112a907301cc"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "lane": "fluid-collision-native",
+      "images": [
+        {
+          "sha256": "43d222c0ed5e07d1afcc36d308e585013783e00f8b7d3a5c63cf47e64a86f8c6",
+          "size": [960, 540],
+          "uniqueColors": 243,
+          "filename": "docs/verification/prd479/76d0c96c-native/gate-after.png"
+        },
+        {
+          "sha256": "d1b622ed8a6cc7999f84f40e86e7cc870657f2f14f4799493c41e8f800393321",
+          "size": [960, 540],
+          "uniqueColors": 244,
+          "filename": "docs/verification/prd479/76d0c96c-native/gate-before.png"
+        },
+        {
+          "sha256": "25bad06d57f82a5d2f5cf7918f89c775595db9eb0980981d224863656a99641d",
+          "size": [960, 540],
+          "uniqueColors": 238,
+          "filename": "docs/verification/prd479/76d0c96c-native/gate-disabled-after.png"
+        },
+        {
+          "sha256": "f2a0e5dc2a646b671f87df82db456e44851b31ccb52d29b3fae188357d39a6a4",
+          "size": [960, 540],
+          "uniqueColors": 244,
+          "filename": "docs/verification/prd479/76d0c96c-native/gate-disabled-before.png"
+        }
+      ],
+      "proof": {
+        "sourceSha": "e7f7baabc84bee7a4639f777c3bee5df5e169faf",
+        "sourceFiles": [
+          {
+            "filename": "packages/core/src/fluid-particles.ts",
+            "sha256": "474930855500cf2754fe5149ff2283200f9576470a3e3cf6844680ba5fde3f9d"
+          },
+          {
+            "filename": "packages/core/src/gpu-readback.ts",
+            "sha256": "fece052efd783927fc92f05f9536c27d9ab22e4c15f47f3f693d2bf10013e64f"
+          },
+          {
+            "filename": "packages/core/patches/three@0.185.1.patch",
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          },
+          {
+            "filename": "examples/prd476-fluid-particles/src/collision-proof.ts",
+            "sha256": "d7bb330b0a321675bec66fb66afa4bac40d8ffc0285acb32dbb03df868457c13"
+          },
+          {
+            "filename": "examples/prd476-fluid-particles/playtests/fluid-collision.playtest.json",
+            "sha256": "c50f2e0cc15f0019d2b2f2f2f916d08a06534fa358de8cb0d587630562e0ccda"
+          },
+          {
+            "filename": "scripts/fluid-collision-proof.ts",
+            "sha256": "9889bbc4424d5919211a80aceec3043b1941ff1d4828904f6e803f0ecbb5a24e"
+          },
+          {
+            "filename": "scripts/verify-fluid-collision-native.ts",
+            "sha256": "5bbd8c07d613e13a7b4e8c2faf5b702f854843525656b60ed3e86f02216724a4"
+          },
+          {
+            "filename": "packages/runtime-native/scripts/bundle.mjs",
+            "sha256": "238f9cc17f995746e2575836103d81ec3401e7cf1f07602c5af1f2efc30a4d10"
+          }
+        ],
+        "runtimeSha256": "a051263ce8411160df261926b0f9a01e193fbe526368c81327d93115ac8a2a2b",
+        "qualification": "Linux desktop GPU correctness with actual initialization/measured-work validation scopes and real host-console error/device-loss checks; no generic normalized runtime-diagnostics, internal error-scope, mobile or hardware-performance claim. The desktop mailbox has no network observer; this bundled fixture has no external assets or runtime imports.",
+        "expectedOutcomesPassed": true,
+        "variants": [
+          {
+            "variant": "gate",
+            "pass": true,
+            "runtime": "native",
+            "target": "desktop",
+            "bundleSha256": "93124ce3e5201288ede0db4bdfe6d04e9f605d5e8b01071635ba987ed679fade",
+            "adapter": {
+              "architecture": "unknown",
+              "description": "615.71.09",
+              "device": "NVIDIA GeForce RTX 2080",
+              "vendor": "NVIDIA"
+            },
+            "assertions": [
+              {
+                "id": "resource.FluidCollision.collisionPassed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.measuredSteps",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.totalSteps",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.freeMotionPassed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalDistance",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalDirectionPassed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalSpeed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.ejectionSpeed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.finite",
+                "pass": true
+              },
+              {
+                "id": "diagnostics",
+                "pass": true
+              }
+            ],
+            "diagnostics": [],
+            "measurements": {
+              "before": {
+                "gateClosed": true,
+                "measuredSteps": 0,
+                "totalSteps": 1,
+                "initialX": -1.0499999523162842,
+                "collisionX": -1.0499999523162842,
+                "collisionPassed": 0,
+                "freeX": -1.0499999523162842,
+                "freeMotionPassed": 0,
+                "diagonalSpeed": 0,
+                "diagonalDistance": 0,
+                "diagonalDirectionPassed": 0,
+                "ejectionSpeed": 0,
+                "finite": 0
+              },
+              "after": {
+                "gateClosed": true,
+                "measuredSteps": 1,
+                "totalSteps": 2,
+                "initialX": -1.0499999523162842,
+                "collisionX": -1.0468000173568726,
+                "collisionPassed": 1,
+                "freeX": -0.75,
+                "freeMotionPassed": 1,
+                "diagonalSpeed": 18.00000091579126,
+                "diagonalDistance": 0.3000000311790893,
+                "diagonalDirectionPassed": 1,
+                "ejectionSpeed": 18,
+                "finite": 1
+              }
+            },
+            "gpuValidation": {
+              "before": {
+                "completedScopes": 1,
+                "errors": 0
+              },
+              "after": {
+                "completedScopes": 2,
+                "errors": 0
+              }
+            },
+            "images": [
+              {
+                "filename": "before.png",
+                "sha256": "d1b622ed8a6cc7999f84f40e86e7cc870657f2f14f4799493c41e8f800393321"
+              },
+              {
+                "filename": "after.png",
+                "sha256": "43d222c0ed5e07d1afcc36d308e585013783e00f8b7d3a5c63cf47e64a86f8c6"
+              }
+            ]
+          },
+          {
+            "variant": "gate-disabled",
+            "pass": false,
+            "runtime": "native",
+            "target": "desktop",
+            "bundleSha256": "0c1a53253827709d343509c0371d2707faf188d4c0efca3c64e982eae5c28563",
+            "adapter": {
+              "architecture": "unknown",
+              "description": "615.71.09",
+              "device": "NVIDIA GeForce RTX 2080",
+              "vendor": "NVIDIA"
+            },
+            "assertions": [
+              {
+                "id": "resource.FluidCollision.collisionPassed",
+                "pass": false
+              },
+              {
+                "id": "resource.FluidCollision.measuredSteps",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.totalSteps",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.freeMotionPassed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalDistance",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalDirectionPassed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.diagonalSpeed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.ejectionSpeed",
+                "pass": true
+              },
+              {
+                "id": "resource.FluidCollision.finite",
+                "pass": true
+              },
+              {
+                "id": "diagnostics",
+                "pass": true
+              }
+            ],
+            "diagnostics": ["TN_PLAYTEST_RESOURCE_ASSERTION_FAILED"],
+            "measurements": {
+              "before": {
+                "gateClosed": false,
+                "measuredSteps": 0,
+                "totalSteps": 1,
+                "initialX": -1.0499999523162842,
+                "collisionX": -1.0499999523162842,
+                "collisionPassed": 0,
+                "freeX": -1.0499999523162842,
+                "freeMotionPassed": 0,
+                "diagonalSpeed": 0,
+                "diagonalDistance": 0,
+                "diagonalDirectionPassed": 0,
+                "ejectionSpeed": 0,
+                "finite": 0
+              },
+              "after": {
+                "gateClosed": false,
+                "measuredSteps": 1,
+                "totalSteps": 2,
+                "initialX": -1.0499999523162842,
+                "collisionX": -0.75,
+                "collisionPassed": 0,
+                "freeX": -0.75,
+                "freeMotionPassed": 1,
+                "diagonalSpeed": 18.00000091579126,
+                "diagonalDistance": 0.3000000311790893,
+                "diagonalDirectionPassed": 1,
+                "ejectionSpeed": 18,
+                "finite": 1
+              }
+            },
+            "gpuValidation": {
+              "before": {
+                "completedScopes": 1,
+                "errors": 0
+              },
+              "after": {
+                "completedScopes": 2,
+                "errors": 0
+              }
+            },
+            "images": [
+              {
+                "filename": "before.png",
+                "sha256": "f2a0e5dc2a646b671f87df82db456e44851b31ccb52d29b3fae188357d39a6a4"
+              },
+              {
+                "filename": "after.png",
+                "sha256": "25bad06d57f82a5d2f5cf7918f89c775595db9eb0980981d224863656a99641d"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "lane": "fluid-consumers",
+      "images": [
+        {
+          "sha256": "df80b437fa5ce098050faf61f3d4d90b5660f68952ec10c547528f76728bd193",
+          "size": [1280, 720],
+          "uniqueColors": 1333,
+          "filename": "docs/verification/prd479/e7f7baabc-merged-harness/coupling-after.png"
+        },
+        {
+          "sha256": "b46fc6a345975ff85ee5aa8a5cbf65764dcc4a2c3294553f66c8aba968623878",
+          "size": [1280, 720],
+          "uniqueColors": 2319,
+          "filename": "docs/verification/prd479/e7f7baabc-merged-harness/coupling-falling.png"
+        },
+        {
+          "sha256": "df80b437fa5ce098050faf61f3d4d90b5660f68952ec10c547528f76728bd193",
+          "size": [1280, 720],
+          "uniqueColors": 1333,
+          "filename": "docs/verification/prd479/e7f7baabc-merged-harness/coupling-after.png"
+        },
+        {
+          "sha256": "7ebaa4a60343447a9b16c6ebdff52454bbc28e9167a168aacaaaad8d3c15260c",
+          "size": [1280, 720],
+          "uniqueColors": 2521,
+          "filename": "docs/verification/prd479/e7f7baabc-merged-harness/coupling-splash.png"
+        },
+        {
+          "sha256": "f2ac136d616a3355964a53545b25553f36bd1b76f2d9b2876cabaa31d6f86525",
+          "size": [1280, 720],
+          "uniqueColors": 677,
+          "filename": "docs/verification/prd479/e7f7baabc-merged-harness/dam-after.png"
+        },
+        {
+          "sha256": "f5ade860b855473fea19b440c24efb3a2c0c30edc6708c7dc25ed9c2a80be24b",
+          "size": [1280, 720],
+          "uniqueColors": 4358,
+          "filename": "docs/verification/prd479/e7f7baabc-merged-harness/dam-gated.png"
+        },
+        {
+          "sha256": "1b9100279eddb67054a2fe0a6c9b319f9bd6fd4ce6f63a024738b71ee64b559d",
+          "size": [1280, 720],
+          "uniqueColors": 4224,
+          "filename": "docs/verification/prd479/e7f7baabc-merged-harness/dam-running.png"
+        },
+        {
+          "sha256": "f2ac136d616a3355964a53545b25553f36bd1b76f2d9b2876cabaa31d6f86525",
+          "size": [1280, 720],
+          "uniqueColors": 677,
+          "filename": "docs/verification/prd479/e7f7baabc-merged-harness/dam-after.png"
+        }
+      ],
+      "proof": {
+        "sourceSha": "e7f7baabc84bee7a4639f777c3bee5df5e169faf",
+        "qualification": "Existing consumer correctness on browser WebGPU; no hardware frame-time claim.",
+        "pass": true,
+        "variants": [
+          {
+            "variant": "dam",
+            "adapter": {
+              "architecture": "turing",
+              "vendor": "nvidia",
+              "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+              "limit.maxBindGroups": "4",
+              "limit.maxTextureDimension2D": "16384",
+              "limit.maxStorageBufferBindingSize": "2147483644"
+            },
+            "assertions": [
+              {
+                "id": "visual.0.frameDiff",
+                "pass": true
+              },
+              {
+                "id": "visual.0.region",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.steps",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.count",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.peakFrontX",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.meanCompression",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.maxSpeed",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.inBounds",
+                "pass": true
+              },
+              {
+                "id": "diagnostics",
+                "pass": true
+              }
+            ],
+            "images": [
+              {
+                "filename": "after.png",
+                "sha256": "f2ac136d616a3355964a53545b25553f36bd1b76f2d9b2876cabaa31d6f86525"
+              },
+              {
+                "filename": "gated.png",
+                "sha256": "f5ade860b855473fea19b440c24efb3a2c0c30edc6708c7dc25ed9c2a80be24b"
+              },
+              {
+                "filename": "running.png",
+                "sha256": "1b9100279eddb67054a2fe0a6c9b319f9bd6fd4ce6f63a024738b71ee64b559d"
+              },
+              {
+                "filename": "settled.png",
+                "sha256": "f2ac136d616a3355964a53545b25553f36bd1b76f2d9b2876cabaa31d6f86525"
+              }
+            ]
+          },
+          {
+            "variant": "coupling",
+            "adapter": {
+              "architecture": "turing",
+              "vendor": "nvidia",
+              "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+              "limit.maxBindGroups": "4",
+              "limit.maxTextureDimension2D": "16384",
+              "limit.maxStorageBufferBindingSize": "2147483644"
+            },
+            "assertions": [
+              {
+                "id": "visual.0.frameDiff",
+                "pass": true
+              },
+              {
+                "id": "visual.0.region",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.steps",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.count",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.sphereY",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.sphereSpeed",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.boxSurfaceGap",
+                "pass": true
+              },
+              {
+                "id": "resource.GameState.surfaceDisturbance",
+                "pass": true
+              },
+              {
+                "id": "diagnostics",
+                "pass": true
+              }
+            ],
+            "images": [
+              {
+                "filename": "after.png",
+                "sha256": "df80b437fa5ce098050faf61f3d4d90b5660f68952ec10c547528f76728bd193"
+              },
+              {
+                "filename": "falling.png",
+                "sha256": "b46fc6a345975ff85ee5aa8a5cbf65764dcc4a2c3294553f66c8aba968623878"
+              },
+              {
+                "filename": "settled.png",
+                "sha256": "df80b437fa5ce098050faf61f3d4d90b5660f68952ec10c547528f76728bd193"
+              },
+              {
+                "filename": "splash.png",
+                "sha256": "7ebaa4a60343447a9b16c6ebdff52454bbc28e9167a168aacaaaad8d3c15260c"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "focusedChecks": {
+    "bridgeTests": 20,
+    "provenanceBrowserTests": 5,
+    "playtestTypecheck": "passed",
+    "playtestBuild": "passed"
+  },
+  "imageRetention": "Eight browser/native PNGs reuse existing public blobs with identical recomputed SHA256; eight new consumer capture records retain six distinct PNG blobs here (after/settled identical pairs share their blob). Historical evidence preserved. Raw console/mailbox retained locally for independent audit; public proof contains bounded actual observations."
+}

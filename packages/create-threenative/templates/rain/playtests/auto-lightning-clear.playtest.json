@@ -1,0 +1,66 @@
+{
+  "name": "rain-auto-lightning-waits-for-cloud-cover",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "warmupFrames": 30,
+  "steps": [
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "cloud"
+        }
+      },
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Home",
+      "label": "thin-cloud",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "past-due",
+      "waitTicks": 900,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "target.cloud",
+        "lte": 0.2
+      },
+      {
+        "id": "state",
+        "path": "weather.cloud",
+        "lte": 0.3
+      },
+      {
+        "id": "state",
+        "path": "elapsed",
+        "gte": 43
+      },
+      {
+        "id": "state",
+        "path": "strikes",
+        "equals": 0,
+        "allowTrivial": "the invariant under test: with cloud cover under 0.35 the scheduler never strikes, though its first strike (t = 37) has long passed"
+      }
+    ]
+  }
+}

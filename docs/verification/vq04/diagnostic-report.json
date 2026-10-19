@@ -1,0 +1,1712 @@
+{
+  "sourceSha": "691e917ebb870445415417c5566025f47c81e6a1",
+  "capture": {
+    "adapter": {
+      "architecture": "swiftshader",
+      "vendor": "google",
+      "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "8192",
+      "limit.maxStorageBufferBindingSize": "1073741824"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 720,
+      "width": 960
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "TN_PLAYTEST_CONSOLE_ERROR",
+      "message": "1 browser console error(s) were captured during playtest.",
+      "severity": "error",
+      "suggestion": "Open console.json in the playtest artifact directory and fix the first runtime error."
+    }
+  ],
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true,
+    "runtimeReady": true
+  },
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 121,
+  "trivialityOptOuts": [],
+  "observations": {
+    "components": {
+      "locomotion": {
+        "tick": {
+          "before": 0,
+          "after": 24
+        },
+        "reversals": {
+          "before": 0,
+          "after": 2
+        },
+        "returningRequests": {
+          "before": 0,
+          "after": 0
+        },
+        "bones": {
+          "before": 65,
+          "after": 65
+        },
+        "current": {
+          "before": "Idle_Loop",
+          "after": "Jog_Fwd_Loop"
+        },
+        "weights": {
+          "before": [
+            1,
+            0,
+            0
+          ],
+          "after": [
+            0.28117766203703715,
+            0.28117766203703703,
+            0.43764467592592576
+          ]
+        },
+        "phases": {
+          "before": [
+            0.08,
+            0,
+            0
+          ],
+          "after": [
+            0.24000000000000007,
+            0.2874999914318325,
+            0.19642857059228175
+          ]
+        },
+        "activeActions": {
+          "before": 1,
+          "after": 3
+        },
+        "maxWeightError": {
+          "before": 0,
+          "after": 0
+        },
+        "maxPoseJumpMetres": {
+          "before": 0,
+          "after": 0
+        },
+        "maxPoseJumpRadians": {
+          "before": 0,
+          "after": 4.2146848510894035e-8
+        },
+        "maxPhaseJump": {
+          "before": 0,
+          "after": 0
+        },
+        "maxAnimatedRadians": {
+          "before": 0,
+          "after": 1.1754697662269058
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "start-matched-trace",
+        "snapshots": {
+          "locomotion": {
+            "tick": 2,
+            "reversals": 1,
+            "returningRequests": 0,
+            "bones": 65,
+            "current": "Walk_Loop",
+            "weights": [
+              0.9949363425925926,
+              0.0050636574074074065,
+              0
+            ],
+            "phases": [
+              0.09333333333333334,
+              0.012499999627470981,
+              0
+            ],
+            "activeActions": 2,
+            "maxWeightError": 0,
+            "maxPoseJumpMetres": 0,
+            "maxPoseJumpRadians": 4.2146848510894035e-8,
+            "maxPhaseJump": 0,
+            "maxAnimatedRadians": 0.012193110049471701
+          }
+        },
+        "tick": 62
+      },
+      {
+        "label": "hold-capture-tick",
+        "snapshots": {
+          "locomotion": {
+            "tick": 24,
+            "reversals": 2,
+            "returningRequests": 0,
+            "bones": 65,
+            "current": "Jog_Fwd_Loop",
+            "weights": [
+              0.28117766203703715,
+              0.28117766203703703,
+              0.43764467592592576
+            ],
+            "phases": [
+              0.24000000000000007,
+              0.2874999914318325,
+              0.19642857059228175
+            ],
+            "activeActions": 3,
+            "maxWeightError": 0,
+            "maxPoseJumpMetres": 0,
+            "maxPoseJumpRadians": 4.2146848510894035e-8,
+            "maxPhaseJump": 0,
+            "maxAnimatedRadians": 1.1754697662269058
+          }
+        },
+        "tick": 182
+      }
+    ],
+    "console": [
+      {
+        "source": "browser-console",
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "type": "error"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "THREE.WebGPURenderer: Timestamp tracking is disabled.",
+        "type": "warning"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_ANIMATION_REVERSAL:{\"tick\":24,\"reversals\":2,\"returningRequests\":0,\"bones\":65,\"current\":\"Jog_Fwd_Loop\",\"weights\":[0.28117766203703715,0.28117766203703703,0.43764467592592576],\"phases\":[0.24000000000000007,0.2874999914318325,0.19642857059228175],\"activeActions\":3,\"maxWeightError\":0,\"maxPoseJumpMetres\":0,\"maxPoseJumpRadians\":4.2146848510894035e-8,\"maxPhaseJump\":0,\"maxAnimatedRadians\":1.1754697662269058}",
+        "type": "log"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "pipelineCensus": {
+      "version": 1,
+      "complete": true,
+      "overflowed": false,
+      "unsupported": false,
+      "limit": 512,
+      "clock": {
+        "originMs": 1618.6999999999534,
+        "source": "performance"
+      },
+      "backend": {
+        "kind": "webgpu",
+        "identity": "webgpu:vN"
+      },
+      "build": {
+        "identity": "@threenative/core@0.3.4"
+      },
+      "adapter": {
+        "identity": "webgpu:architecture=swiftshader|vendor=google",
+        "thermal": "unavailable"
+      },
+      "firstPresent": {
+        "boundaryMs": 46.70000000001164,
+        "eventsSettled": 1
+      },
+      "counts": {
+        "lookups": 3,
+        "creations": 3,
+        "failures": 0,
+        "pending": 0,
+        "uniquePrograms": 3,
+        "uniquePipelines": 3,
+        "recordedEvents": 3,
+        "droppedEvents": 0,
+        "deviceCreations": 3,
+        "directCreations": 0
+      },
+      "events": [
+        {
+          "sequence": 1,
+          "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+          "pipelineIdentity": "backend-pipeline-1",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1299,
+            "hash": "00fc0a8ad03630cc"
+          },
+          "fragment": {
+            "bytes": 1595,
+            "hash": "458120a84b226496"
+          },
+          "provenance": {
+            "material": {
+              "id": 15,
+              "name": "outputColorTransform",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 17,
+              "name": "Output Color Transform",
+              "uuid": "494e2b23-1d13-4933-8590-077525ae8e90"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 45.20000000001164,
+          "settledMs": 46,
+          "serviceMs": 0.7999999999883585,
+          "beforeFirstPresent": true
+        },
+        {
+          "sequence": 2,
+          "programIdentity": "17e2284eb3b1d919/2b7406b23b4323a4",
+          "pipelineIdentity": "backend-pipeline-2",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 3011,
+            "hash": "17e2284eb3b1d919"
+          },
+          "fragment": {
+            "bytes": 14272,
+            "hash": "2b7406b23b4323a4"
+          },
+          "provenance": {
+            "material": {
+              "id": 18,
+              "name": "M_Main",
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 96,
+              "name": "Mannequin_1",
+              "uuid": "aabaa977-06e1-4141-9942-eef1ad661626"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "skinning"
+          ],
+          "startedMs": 362.80000000004657,
+          "settledMs": 363,
+          "serviceMs": 0.19999999995343387,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 3,
+          "programIdentity": "ab7b80f17cceb339/c189fec47374fa64",
+          "pipelineIdentity": "backend-pipeline-3",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1953,
+            "hash": "ab7b80f17cceb339"
+          },
+          "fragment": {
+            "bytes": 14203,
+            "hash": "c189fec47374fa64"
+          },
+          "provenance": {
+            "material": {
+              "id": 20,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 92,
+              "uuid": "d413e3c1-1418-4559-8e81-e5795a8b291e"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 385.4000000000233,
+          "settledMs": 385.6000000000349,
+          "serviceMs": 0.20000000001164153,
+          "beforeFirstPresent": false
+        }
+      ],
+      "incompleteReasons": []
+    },
+    "resources": {
+      "state": {
+        "before": {},
+        "after": {
+          "tick": 24,
+          "reversals": 2,
+          "returningRequests": 0,
+          "bones": 65,
+          "current": "Jog_Fwd_Loop",
+          "weights": [
+            0.28117766203703715,
+            0.28117766203703703,
+            0.43764467592592576
+          ],
+          "phases": [
+            0.24000000000000007,
+            0.2874999914318325,
+            0.19642857059228175
+          ],
+          "activeActions": 3,
+          "maxWeightError": 0,
+          "maxPoseJumpMetres": 0,
+          "maxPoseJumpRadians": 4.2146848510894035e-8,
+          "maxPhaseJump": 0,
+          "maxAnimatedRadians": 1.1754697662269058
+        }
+      },
+      "GameState": {
+        "before": {},
+        "after": {
+          "tick": 24,
+          "reversals": 2,
+          "returningRequests": 0,
+          "bones": 65,
+          "current": "Jog_Fwd_Loop",
+          "weights": [
+            0.28117766203703715,
+            0.28117766203703703,
+            0.43764467592592576
+          ],
+          "phases": [
+            0.24000000000000007,
+            0.2874999914318325,
+            0.19642857059228175
+          ],
+          "activeActions": 3,
+          "maxWeightError": 0,
+          "maxPoseJumpMetres": 0,
+          "maxPoseJumpRadians": 4.2146848510894035e-8,
+          "maxPhaseJump": 0,
+          "maxAnimatedRadians": 1.1754697662269058
+        }
+      },
+      "assets": {
+        "before": {
+          "/assets/mannequin-BQQTERB4": {
+            "glb": {
+              "url": "/assets/mannequin-BQQTERB4.glb",
+              "via": "source"
+            }
+          }
+        },
+        "after": {
+          "/assets/mannequin-BQQTERB4": {
+            "glb": {
+              "url": "/assets/mannequin-BQQTERB4.glb",
+              "via": "source"
+            }
+          }
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "start-matched-trace",
+        "snapshots": {
+          "state": {
+            "tick": 2,
+            "reversals": 1,
+            "returningRequests": 0,
+            "bones": 65,
+            "current": "Walk_Loop",
+            "weights": [
+              0.9949363425925926,
+              0.0050636574074074065,
+              0
+            ],
+            "phases": [
+              0.09333333333333334,
+              0.012499999627470981,
+              0
+            ],
+            "activeActions": 2,
+            "maxWeightError": 0,
+            "maxPoseJumpMetres": 0,
+            "maxPoseJumpRadians": 4.2146848510894035e-8,
+            "maxPhaseJump": 0,
+            "maxAnimatedRadians": 0.012193110049471701
+          },
+          "GameState": {
+            "tick": 2,
+            "reversals": 1,
+            "returningRequests": 0,
+            "bones": 65,
+            "current": "Walk_Loop",
+            "weights": [
+              0.9949363425925926,
+              0.0050636574074074065,
+              0
+            ],
+            "phases": [
+              0.09333333333333334,
+              0.012499999627470981,
+              0
+            ],
+            "activeActions": 2,
+            "maxWeightError": 0,
+            "maxPoseJumpMetres": 0,
+            "maxPoseJumpRadians": 4.2146848510894035e-8,
+            "maxPhaseJump": 0,
+            "maxAnimatedRadians": 0.012193110049471701
+          },
+          "assets": {
+            "/assets/mannequin-BQQTERB4": {
+              "glb": {
+                "url": "/assets/mannequin-BQQTERB4.glb",
+                "via": "source"
+              }
+            }
+          }
+        },
+        "tick": 62
+      },
+      {
+        "label": "hold-capture-tick",
+        "snapshots": {
+          "state": {
+            "tick": 24,
+            "reversals": 2,
+            "returningRequests": 0,
+            "bones": 65,
+            "current": "Jog_Fwd_Loop",
+            "weights": [
+              0.28117766203703715,
+              0.28117766203703703,
+              0.43764467592592576
+            ],
+            "phases": [
+              0.24000000000000007,
+              0.2874999914318325,
+              0.19642857059228175
+            ],
+            "activeActions": 3,
+            "maxWeightError": 0,
+            "maxPoseJumpMetres": 0,
+            "maxPoseJumpRadians": 4.2146848510894035e-8,
+            "maxPhaseJump": 0,
+            "maxAnimatedRadians": 1.1754697662269058
+          },
+          "GameState": {
+            "tick": 24,
+            "reversals": 2,
+            "returningRequests": 0,
+            "bones": 65,
+            "current": "Jog_Fwd_Loop",
+            "weights": [
+              0.28117766203703715,
+              0.28117766203703703,
+              0.43764467592592576
+            ],
+            "phases": [
+              0.24000000000000007,
+              0.2874999914318325,
+              0.19642857059228175
+            ],
+            "activeActions": 3,
+            "maxWeightError": 0,
+            "maxPoseJumpMetres": 0,
+            "maxPoseJumpRadians": 4.2146848510894035e-8,
+            "maxPhaseJump": 0,
+            "maxAnimatedRadians": 1.1754697662269058
+          },
+          "assets": {
+            "/assets/mannequin-BQQTERB4": {
+              "glb": {
+                "url": "/assets/mannequin-BQQTERB4.glb",
+                "via": "source"
+              }
+            }
+          }
+        },
+        "tick": 182
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeDiagnosticsBefore": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeObservations": {
+      "gameplayBefore": {
+        "animation": {
+          "locomotion": {
+            "advancedFrames": 1,
+            "clip": "Idle_Loop",
+            "finished": false,
+            "stride": {
+              "clipGroundSpeed": 0,
+              "groundSpeed": 0,
+              "overridden": false,
+              "rate": 1,
+              "synced": false
+            }
+          }
+        },
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": null
+        }
+      },
+      "gameplay": {
+        "animation": {
+          "locomotion": {
+            "advancedFrames": 11,
+            "clip": "Jog_Fwd_Loop",
+            "finished": false,
+            "stride": {
+              "clipGroundSpeed": 5.980103862694172,
+              "groundSpeed": 0,
+              "overridden": true,
+              "rate": 0.15,
+              "synced": false
+            }
+          }
+        },
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [
+          {
+            "from": 1,
+            "path": "state.tick",
+            "tick": 61,
+            "to": 2
+          },
+          {
+            "from": 0.005792785394270303,
+            "path": "state.maxAnimatedRadians",
+            "tick": 61,
+            "to": 0.012193110049471701
+          },
+          {
+            "from": 2,
+            "path": "state.tick",
+            "tick": 62,
+            "to": 3
+          },
+          {
+            "from": 0.012193110049471701,
+            "path": "state.maxAnimatedRadians",
+            "tick": 62,
+            "to": 0.023630910323673586
+          },
+          {
+            "from": 3,
+            "path": "state.tick",
+            "tick": 63,
+            "to": 4
+          },
+          {
+            "from": 0.023630910323673586,
+            "path": "state.maxAnimatedRadians",
+            "tick": 63,
+            "to": 0.042515006394386566
+          },
+          {
+            "from": 4,
+            "path": "state.tick",
+            "tick": 64,
+            "to": 5
+          },
+          {
+            "from": 0.042515006394386566,
+            "path": "state.maxAnimatedRadians",
+            "tick": 64,
+            "to": 0.069017568925387
+          },
+          {
+            "from": 5,
+            "path": "state.tick",
+            "tick": 65,
+            "to": 6
+          },
+          {
+            "from": 0.069017568925387,
+            "path": "state.maxAnimatedRadians",
+            "tick": 65,
+            "to": 0.10258743618987531
+          },
+          {
+            "from": 6,
+            "path": "state.tick",
+            "tick": 66,
+            "to": 7
+          },
+          {
+            "from": 0.10258743618987531,
+            "path": "state.maxAnimatedRadians",
+            "tick": 66,
+            "to": 0.14337166326964224
+          },
+          {
+            "from": 7,
+            "path": "state.tick",
+            "tick": 67,
+            "to": 8
+          },
+          {
+            "from": 0.14337166326964224,
+            "path": "state.maxAnimatedRadians",
+            "tick": 67,
+            "to": 0.19119098805466825
+          },
+          {
+            "from": 8,
+            "path": "state.tick",
+            "tick": 68,
+            "to": 9
+          },
+          {
+            "from": 0.19119098805466825,
+            "path": "state.maxAnimatedRadians",
+            "tick": 68,
+            "to": 0.2461860570872399
+          },
+          {
+            "from": 9,
+            "path": "state.tick",
+            "tick": 69,
+            "to": 10
+          },
+          {
+            "from": 0.2461860570872399,
+            "path": "state.maxAnimatedRadians",
+            "tick": 69,
+            "to": 0.30833331170158496
+          },
+          {
+            "from": 10,
+            "path": "state.tick",
+            "tick": 70,
+            "to": 11
+          },
+          {
+            "from": 0.30833331170158496,
+            "path": "state.maxAnimatedRadians",
+            "tick": 70,
+            "to": 0.3772934859560291
+          },
+          {
+            "from": 11,
+            "path": "state.tick",
+            "tick": 71,
+            "to": 12
+          },
+          {
+            "from": 0.3772934859560291,
+            "path": "state.maxAnimatedRadians",
+            "tick": 71,
+            "to": 0.45590555415239853
+          },
+          {
+            "from": 12,
+            "path": "state.tick",
+            "tick": 72,
+            "to": 13
+          },
+          {
+            "from": 1,
+            "path": "state.reversals",
+            "tick": 72,
+            "to": 2
+          },
+          {
+            "from": "Walk_Loop",
+            "path": "state.current",
+            "tick": 72,
+            "to": "Jog_Fwd_Loop"
+          },
+          {
+            "from": 2,
+            "path": "state.activeActions",
+            "tick": 72,
+            "to": 3
+          },
+          {
+            "from": 0.45590555415239853,
+            "path": "state.maxAnimatedRadians",
+            "tick": 72,
+            "to": 0.5418354950461067
+          },
+          {
+            "from": 13,
+            "path": "state.tick",
+            "tick": 73,
+            "to": 14
+          },
+          {
+            "from": 0.5418354950461067,
+            "path": "state.maxAnimatedRadians",
+            "tick": 73,
+            "to": 0.5772320250832106
+          },
+          {
+            "from": 14,
+            "path": "state.tick",
+            "tick": 74,
+            "to": 15
+          },
+          {
+            "from": 0.5772320250832106,
+            "path": "state.maxAnimatedRadians",
+            "tick": 74,
+            "to": 0.6193384045607399
+          },
+          {
+            "from": 15,
+            "path": "state.tick",
+            "tick": 75,
+            "to": 16
+          },
+          {
+            "from": 0.6193384045607399,
+            "path": "state.maxAnimatedRadians",
+            "tick": 75,
+            "to": 0.6697003860109736
+          },
+          {
+            "from": 16,
+            "path": "state.tick",
+            "tick": 76,
+            "to": 17
+          },
+          {
+            "from": 0.6697003860109736,
+            "path": "state.maxAnimatedRadians",
+            "tick": 76,
+            "to": 0.7334745970750475
+          },
+          {
+            "from": 17,
+            "path": "state.tick",
+            "tick": 77,
+            "to": 18
+          },
+          {
+            "from": 0.7334745970750475,
+            "path": "state.maxAnimatedRadians",
+            "tick": 77,
+            "to": 0.8067859961565446
+          },
+          {
+            "from": 18,
+            "path": "state.tick",
+            "tick": 78,
+            "to": 19
+          },
+          {
+            "from": 0.8067859961565446,
+            "path": "state.maxAnimatedRadians",
+            "tick": 78,
+            "to": 0.8987612471462776
+          },
+          {
+            "from": 19,
+            "path": "state.tick",
+            "tick": 79,
+            "to": 20
+          },
+          {
+            "from": 0.8987612471462776,
+            "path": "state.maxAnimatedRadians",
+            "tick": 79,
+            "to": 0.9847201686454872
+          },
+          {
+            "from": 20,
+            "path": "state.tick",
+            "tick": 80,
+            "to": 21
+          },
+          {
+            "from": 0.9847201686454872,
+            "path": "state.maxAnimatedRadians",
+            "tick": 80,
+            "to": 1.0835685049384338
+          },
+          {
+            "from": 21,
+            "path": "state.tick",
+            "tick": 81,
+            "to": 22
+          },
+          {
+            "from": 1.0835685049384338,
+            "path": "state.maxAnimatedRadians",
+            "tick": 81,
+            "to": 1.1328452613571511
+          },
+          {
+            "from": 22,
+            "path": "state.tick",
+            "tick": 82,
+            "to": 23
+          },
+          {
+            "from": 1.1328452613571511,
+            "path": "state.maxAnimatedRadians",
+            "tick": 82,
+            "to": 1.1748035702072492
+          },
+          {
+            "from": 23,
+            "path": "state.tick",
+            "tick": 83,
+            "to": 24
+          },
+          {
+            "from": 1.1748035702072492,
+            "path": "state.maxAnimatedRadians",
+            "tick": 83,
+            "to": 1.1754697662269058
+          }
+        ],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": null
+        }
+      },
+      "gameplaySeries": [
+        {
+          "gameplay": {
+            "animation": {
+              "locomotion": {
+                "advancedFrames": 1,
+                "clip": "Walk_Loop",
+                "finished": false,
+                "stride": {
+                  "clipGroundSpeed": 0.9797428906622734,
+                  "groundSpeed": 0,
+                  "overridden": true,
+                  "rate": 0.15,
+                  "synced": false
+                }
+              }
+            },
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [
+              {
+                "from": 1,
+                "path": "state.tick",
+                "tick": 61,
+                "to": 2
+              },
+              {
+                "from": 0.005792785394270303,
+                "path": "state.maxAnimatedRadians",
+                "tick": 61,
+                "to": 0.012193110049471701
+              }
+            ],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": null
+            }
+          },
+          "label": "start-matched-trace",
+          "tick": 62
+        },
+        {
+          "gameplay": {
+            "animation": {
+              "locomotion": {
+                "advancedFrames": 11,
+                "clip": "Jog_Fwd_Loop",
+                "finished": false,
+                "stride": {
+                  "clipGroundSpeed": 5.980103862694172,
+                  "groundSpeed": 0,
+                  "overridden": true,
+                  "rate": 0.15,
+                  "synced": false
+                }
+              }
+            },
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [
+              {
+                "from": 1,
+                "path": "state.tick",
+                "tick": 61,
+                "to": 2
+              },
+              {
+                "from": 0.005792785394270303,
+                "path": "state.maxAnimatedRadians",
+                "tick": 61,
+                "to": 0.012193110049471701
+              },
+              {
+                "from": 2,
+                "path": "state.tick",
+                "tick": 62,
+                "to": 3
+              },
+              {
+                "from": 0.012193110049471701,
+                "path": "state.maxAnimatedRadians",
+                "tick": 62,
+                "to": 0.023630910323673586
+              },
+              {
+                "from": 3,
+                "path": "state.tick",
+                "tick": 63,
+                "to": 4
+              },
+              {
+                "from": 0.023630910323673586,
+                "path": "state.maxAnimatedRadians",
+                "tick": 63,
+                "to": 0.042515006394386566
+              },
+              {
+                "from": 4,
+                "path": "state.tick",
+                "tick": 64,
+                "to": 5
+              },
+              {
+                "from": 0.042515006394386566,
+                "path": "state.maxAnimatedRadians",
+                "tick": 64,
+                "to": 0.069017568925387
+              },
+              {
+                "from": 5,
+                "path": "state.tick",
+                "tick": 65,
+                "to": 6
+              },
+              {
+                "from": 0.069017568925387,
+                "path": "state.maxAnimatedRadians",
+                "tick": 65,
+                "to": 0.10258743618987531
+              },
+              {
+                "from": 6,
+                "path": "state.tick",
+                "tick": 66,
+                "to": 7
+              },
+              {
+                "from": 0.10258743618987531,
+                "path": "state.maxAnimatedRadians",
+                "tick": 66,
+                "to": 0.14337166326964224
+              },
+              {
+                "from": 7,
+                "path": "state.tick",
+                "tick": 67,
+                "to": 8
+              },
+              {
+                "from": 0.14337166326964224,
+                "path": "state.maxAnimatedRadians",
+                "tick": 67,
+                "to": 0.19119098805466825
+              },
+              {
+                "from": 8,
+                "path": "state.tick",
+                "tick": 68,
+                "to": 9
+              },
+              {
+                "from": 0.19119098805466825,
+                "path": "state.maxAnimatedRadians",
+                "tick": 68,
+                "to": 0.2461860570872399
+              },
+              {
+                "from": 9,
+                "path": "state.tick",
+                "tick": 69,
+                "to": 10
+              },
+              {
+                "from": 0.2461860570872399,
+                "path": "state.maxAnimatedRadians",
+                "tick": 69,
+                "to": 0.30833331170158496
+              },
+              {
+                "from": 10,
+                "path": "state.tick",
+                "tick": 70,
+                "to": 11
+              },
+              {
+                "from": 0.30833331170158496,
+                "path": "state.maxAnimatedRadians",
+                "tick": 70,
+                "to": 0.3772934859560291
+              },
+              {
+                "from": 11,
+                "path": "state.tick",
+                "tick": 71,
+                "to": 12
+              },
+              {
+                "from": 0.3772934859560291,
+                "path": "state.maxAnimatedRadians",
+                "tick": 71,
+                "to": 0.45590555415239853
+              },
+              {
+                "from": 12,
+                "path": "state.tick",
+                "tick": 72,
+                "to": 13
+              },
+              {
+                "from": 1,
+                "path": "state.reversals",
+                "tick": 72,
+                "to": 2
+              },
+              {
+                "from": "Walk_Loop",
+                "path": "state.current",
+                "tick": 72,
+                "to": "Jog_Fwd_Loop"
+              },
+              {
+                "from": 2,
+                "path": "state.activeActions",
+                "tick": 72,
+                "to": 3
+              },
+              {
+                "from": 0.45590555415239853,
+                "path": "state.maxAnimatedRadians",
+                "tick": 72,
+                "to": 0.5418354950461067
+              },
+              {
+                "from": 13,
+                "path": "state.tick",
+                "tick": 73,
+                "to": 14
+              },
+              {
+                "from": 0.5418354950461067,
+                "path": "state.maxAnimatedRadians",
+                "tick": 73,
+                "to": 0.5772320250832106
+              },
+              {
+                "from": 14,
+                "path": "state.tick",
+                "tick": 74,
+                "to": 15
+              },
+              {
+                "from": 0.5772320250832106,
+                "path": "state.maxAnimatedRadians",
+                "tick": 74,
+                "to": 0.6193384045607399
+              },
+              {
+                "from": 15,
+                "path": "state.tick",
+                "tick": 75,
+                "to": 16
+              },
+              {
+                "from": 0.6193384045607399,
+                "path": "state.maxAnimatedRadians",
+                "tick": 75,
+                "to": 0.6697003860109736
+              },
+              {
+                "from": 16,
+                "path": "state.tick",
+                "tick": 76,
+                "to": 17
+              },
+              {
+                "from": 0.6697003860109736,
+                "path": "state.maxAnimatedRadians",
+                "tick": 76,
+                "to": 0.7334745970750475
+              },
+              {
+                "from": 17,
+                "path": "state.tick",
+                "tick": 77,
+                "to": 18
+              },
+              {
+                "from": 0.7334745970750475,
+                "path": "state.maxAnimatedRadians",
+                "tick": 77,
+                "to": 0.8067859961565446
+              },
+              {
+                "from": 18,
+                "path": "state.tick",
+                "tick": 78,
+                "to": 19
+              },
+              {
+                "from": 0.8067859961565446,
+                "path": "state.maxAnimatedRadians",
+                "tick": 78,
+                "to": 0.8987612471462776
+              },
+              {
+                "from": 19,
+                "path": "state.tick",
+                "tick": 79,
+                "to": 20
+              },
+              {
+                "from": 0.8987612471462776,
+                "path": "state.maxAnimatedRadians",
+                "tick": 79,
+                "to": 0.9847201686454872
+              },
+              {
+                "from": 20,
+                "path": "state.tick",
+                "tick": 80,
+                "to": 21
+              },
+              {
+                "from": 0.9847201686454872,
+                "path": "state.maxAnimatedRadians",
+                "tick": 80,
+                "to": 1.0835685049384338
+              },
+              {
+                "from": 21,
+                "path": "state.tick",
+                "tick": 81,
+                "to": 22
+              },
+              {
+                "from": 1.0835685049384338,
+                "path": "state.maxAnimatedRadians",
+                "tick": 81,
+                "to": 1.1328452613571511
+              },
+              {
+                "from": 22,
+                "path": "state.tick",
+                "tick": 82,
+                "to": 23
+              },
+              {
+                "from": 1.1328452613571511,
+                "path": "state.maxAnimatedRadians",
+                "tick": 82,
+                "to": 1.1748035702072492
+              },
+              {
+                "from": 23,
+                "path": "state.tick",
+                "tick": 83,
+                "to": 24
+              },
+              {
+                "from": 1.1748035702072492,
+                "path": "state.maxAnimatedRadians",
+                "tick": 83,
+                "to": 1.1754697662269058
+              }
+            ],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": null
+            }
+          },
+          "label": "hold-capture-tick",
+          "tick": 182
+        }
+      ]
+    },
+    "scene": {
+      "background": "color:#263346",
+      "camera": {
+        "far": 50,
+        "forward": [
+          -0.49785263203126506,
+          -0.15409724324777252,
+          -0.8534616549107398
+        ],
+        "fov": 42,
+        "near": 0.1,
+        "position": [
+          2.1,
+          1.6,
+          3.6
+        ],
+        "type": "PerspectiveCamera"
+      },
+      "lights": [
+        {
+          "color": "#d5e3ff",
+          "intensity": 2,
+          "type": "AmbientLight",
+          "visible": true
+        },
+        {
+          "color": "#ffe4c4",
+          "intensity": 3,
+          "type": "DirectionalLight",
+          "visible": true
+        }
+      ],
+      "materials": {
+        "MeshStandardMaterial": 3
+      },
+      "objects": 74,
+      "truncated": false,
+      "worldExtent": {
+        "max": [
+          3.5,
+          1.7834981996247072,
+          3.5
+        ],
+        "min": [
+          -3.5,
+          -0.010000000000000777,
+          -3.5
+        ]
+      }
+    },
+    "sceneNodes": [
+      {
+        "matched": 2,
+        "nodes": [
+          {
+            "bounds": {
+              "max": [
+                0.38008763160408854,
+                1.7834981996247072,
+                0.3654025900997272
+              ],
+              "min": [
+                -0.3394674649412344,
+                -0.00009576644003039814,
+                -0.32747060986185084
+              ]
+            },
+            "geometry": {
+              "attributes": [
+                "normal",
+                "position",
+                "skinIndex",
+                "skinWeight"
+              ],
+              "triangles": 5732,
+              "vertices": 3389
+            },
+            "inFrustum": true,
+            "instances": 1,
+            "materials": [
+              {
+                "color": "#e7e7e7",
+                "emissive": "#000000",
+                "lit": true,
+                "maps": [],
+                "mapsUnloaded": [],
+                "metalness": 0,
+                "name": "M_Main",
+                "opacity": 1,
+                "roughness": 0.35,
+                "transparent": false,
+                "type": "MeshStandardMaterial",
+                "visible": true
+              }
+            ],
+            "name": "Mannequin_1",
+            "path": "Scene/Scene/Armature/Mannequin/Mannequin_1",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "skinned": {
+              "bones": 65
+            },
+            "type": "SkinnedMesh",
+            "visible": true,
+            "visibleInTree": true
+          },
+          {
+            "bounds": {
+              "max": [
+                0.37504559319931896,
+                1.6379611302808283,
+                0.20166003331715016
+              ],
+              "min": [
+                -0.3232569668120342,
+                0.09771703441645516,
+                -0.30445727360187114
+              ]
+            },
+            "geometry": {
+              "attributes": [
+                "normal",
+                "position",
+                "skinIndex",
+                "skinWeight"
+              ],
+              "triangles": 8012,
+              "vertices": 4233
+            },
+            "inFrustum": true,
+            "instances": 1,
+            "materials": [
+              {
+                "color": "#3c3d3f",
+                "emissive": "#000000",
+                "lit": true,
+                "maps": [],
+                "mapsUnloaded": [],
+                "metalness": 0.6,
+                "name": "M_Joints",
+                "opacity": 1,
+                "roughness": 0.45,
+                "transparent": false,
+                "type": "MeshStandardMaterial",
+                "visible": true
+              }
+            ],
+            "name": "Mannequin_2",
+            "path": "Scene/Scene/Armature/Mannequin/Mannequin_2",
+            "position": [
+              0,
+              0,
+              0
+            ],
+            "scale": [
+              1,
+              1,
+              1
+            ],
+            "skinned": {
+              "bones": 65
+            },
+            "type": "SkinnedMesh",
+            "visible": true,
+            "visibleInTree": true
+          }
+        ],
+        "selector": {
+          "type": "SkinnedMesh"
+        },
+        "truncated": false
+      }
+    ],
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "start-matched-trace",
+        "signals": [],
+        "tick": 62
+      },
+      {
+        "label": "hold-capture-tick",
+        "signals": [],
+        "tick": 182
+      }
+    ],
+    "startup": {
+      "phase": "ready",
+      "progress": 1,
+      "compileSettled": true,
+      "timeline": {
+        "loadStartedMs": 1631.7999999999884,
+        "enteredMs": 1758,
+        "compileSettledMs": 2747.0999999999767,
+        "frameworkReadyMs": 2747.0999999999767,
+        "readyMs": 2747.1999999999534
+      },
+      "rule": "compile-settled"
+    },
+    "visual": {
+      "changedPixelRatio": 0.04837384259259259,
+      "comparisonSource": "before-after",
+      "nonblankRegions": [
+        {
+          "height": 720,
+          "width": 960,
+          "x": 0,
+          "y": 0,
+          "minNonblankPixelRatio": 0.2,
+          "darkPixelRatio": 0.5574652777777778,
+          "nonblankPixelRatio": 1
+        }
+      ]
+    }
+  },
+  "artifactDirectory": "/home/runner/work/threenative/threenative/artifacts/vq04-animation/tick-24",
+  "assertionResults": [
+    {
+      "id": "visual.0.region",
+      "pass": true,
+      "details": {
+        "after": true,
+        "expected": {
+          "equals": true
+        },
+        "minimum": 0.2,
+        "observed": 1
+      }
+    },
+    {
+      "details": {
+        "after": 24,
+        "expected": {
+          "gte": 1
+        },
+        "id": "state",
+        "path": "tick",
+        "trivial": false
+      },
+      "id": "resource.state.tick",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 65,
+        "expected": {
+          "gte": 60
+        },
+        "id": "state",
+        "path": "bones",
+        "trivial": false
+      },
+      "id": "resource.state.bones",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 0,
+        "expected": {
+          "gte": 0,
+          "lte": 0.000001
+        },
+        "id": "state",
+        "path": "maxWeightError",
+        "trivial": false
+      },
+      "id": "resource.state.maxWeightError",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 0,
+        "expected": {
+          "gte": 0,
+          "lte": 0.000001
+        },
+        "id": "state",
+        "path": "maxPhaseJump",
+        "trivial": false
+      },
+      "id": "resource.state.maxPhaseJump",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 0,
+        "expected": {
+          "gte": 0,
+          "lte": 0.000001
+        },
+        "id": "state",
+        "path": "maxPoseJumpMetres",
+        "trivial": false
+      },
+      "id": "resource.state.maxPoseJumpMetres",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 4.2146848510894035e-8,
+        "expected": {
+          "gte": 0,
+          "lte": 0.000001
+        },
+        "id": "state",
+        "path": "maxPoseJumpRadians",
+        "trivial": false
+      },
+      "id": "resource.state.maxPoseJumpRadians",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 1.1754697662269058,
+        "expected": {
+          "gte": 0.2
+        },
+        "id": "state",
+        "path": "maxAnimatedRadians",
+        "trivial": false
+      },
+      "id": "resource.state.maxAnimatedRadians",
+      "pass": true
+    },
+    {
+      "details": {
+        "matched": 2,
+        "minCount": 1,
+        "selector": "type=SkinnedMesh"
+      },
+      "id": "sceneNodes[0].count",
+      "pass": true
+    },
+    {
+      "details": {
+        "expected": true,
+        "failing": [],
+        "observed": 2,
+        "of": 2,
+        "sampled": false
+      },
+      "id": "sceneNodes[0].visible",
+      "pass": true
+    },
+    {
+      "details": {
+        "expected": true,
+        "failing": [],
+        "observed": 2,
+        "of": 2,
+        "sampled": false
+      },
+      "id": "sceneNodes[0].inFrustum",
+      "pass": true
+    },
+    {
+      "details": {
+        "expected": 100,
+        "observed": 13744,
+        "sampled": false,
+        "selector": "type=SkinnedMesh"
+      },
+      "id": "sceneNodes[0].minTriangles",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 1,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": false
+    }
+  ],
+  "pass": false,
+  "runtime": "web",
+  "scenario": "animation-reversal-real-cc0-mannequin",
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 1631.7999999999884,
+      "enteredMs": 1758,
+      "compileSettledMs": 2747.0999999999767,
+      "frameworkReadyMs": 2747.0999999999767,
+      "readyMs": 2747.1999999999534
+    },
+    "rule": "compile-settled"
+  },
+  "target": "web",
+  "trivialityOptOutCount": 0,
+  "url": "http://127.0.0.1:35811/animation-reversal.html?tick=24"
+}

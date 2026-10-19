@@ -11,6 +11,7 @@ and the web gate remain open. Filed 2026-08-27 from the measured budget in
 PRD-226's ablation ladder was built to justify. PRD-226 stays live and owns the instrument; this one
 owns the fix.
 
+**Priority:** P1 — Open boxes need QuickJS and JSC lanes plus Pixel 8 doctor records; two changes land together.
 **The decisive measurement has now been taken, and it changes the PRD's subject.** Change 1 landed,
 Bayview's appearance was restored, and the device reads **20.02 fps — unchanged** — while per-frame
 work fell from 43–48 ms to 25.27 ms. **The frame rate is not work-bound.** It is pinned to a

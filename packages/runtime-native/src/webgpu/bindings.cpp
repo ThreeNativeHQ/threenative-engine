@@ -404,6 +404,7 @@ void destroyBindingsState(BindingsState*& state) {
 #endif
         state->canvas2D.canvas2DContexts.clear();
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
+        state->registries.ownedResources->releaseAll();
         while (!state->registries.textureRegistry.empty()) {
             releaseTextureRegistryEntry(state, state->registries.textureRegistry.begin()->first);
         }
@@ -916,6 +917,9 @@ static WGPUFeatureName jsFeatureNameToWGPU(const std::string& featureName) {
     // resolveQuerySet. Answered from the real adapter and device below, so an adapter without it
     // still reports false — the feature is advertised because it works, not because it is named.
     if (featureName == "timestamp-query") return WGPUFeatureName_TimestampQuery;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    if (featureName == "transient-attachments") return WGPUFeatureName_TransientAttachments;
+#endif
 #if defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU)
     // The feature behind three's SSGI target format (RGBFormat + UnsignedInt101111Type maps to
     // an rg11b10ufloat render target). Both shipped WebGPU C headers define this enum; without
@@ -954,7 +958,8 @@ static js::JSValueHandle getCurrentCanvasTexture(
     // acquisition/view bookkeeping as the main canvas or endFrame never presents them.
     const auto canvas = state->engine->getProperty(canvasContext, "canvas");
     if (!syncSurfaceSizeToCanvas(state, canvas)) {
-        state->engine->throwException("Canvas dimensions must be positive integer pixels");
+        if (!state->engine->hasException())
+            state->engine->throwException("Canvas dimensions must be positive integer pixels");
         return state->engine->newUndefined();
     }
 
@@ -1684,8 +1689,29 @@ static js::JSValueHandle handleGpuQueueWriteBuffer(BindingsState* state, Binding
                             size_t dataSize = 0;
                             void* dataPtr = state->engine->getArrayBufferData(args[2], &dataSize);
                             if (!dataPtr || dataSize == 0) {
-                                state->engine->throwException("writeBuffer: invalid data");
-                                return state->engine->newUndefined();
+                                // Empty backing stores may have no pointer; brand-check before accepting a no-op.
+                                js::JSValueGuard isEmptySource(*state->engine, state->engine->evalScriptWithResult(R"JS((data) => {
+                                    const typedArrays = Object.getPrototypeOf(Uint8Array.prototype);
+                                    const emptySource = (prototype, probe) => {
+                                        let empty;
+                                        try { empty = Object.getOwnPropertyDescriptor(prototype, "byteLength").get.call(data) === 0; }
+                                        catch { return false; }
+                                        if (!empty) return false;
+                                        try { probe(data); } catch { return false; }
+                                        return true;
+                                    };
+                                    // A detached ArrayBuffer or TypedArray still reports byteLength 0, so probe it:
+                                    // both probes throw on a detached receiver and run no user code.
+                                    if (emptySource(ArrayBuffer.prototype, (value) => new Uint8Array(value))) return true;
+                                    if (emptySource(typedArrays, (value) => typedArrays.values.call(value))) return true;
+                                    return emptySource(DataView.prototype, () => {});
+                                })JS", "write-buffer-empty-source.js"));
+                                js::JSValueGuard validEmpty(*state->engine, state->engine->call(
+                                    isEmptySource.get(), state->engine->newUndefined(), {args[2]}));
+                                if (!state->engine->toBoolean(validEmpty.get())) {
+                                    state->engine->throwException("writeBuffer: invalid data");
+                                    return state->engine->newUndefined();
+                                }
                             }
                             // WebGPU expresses dataOffset/size in elements for a TypedArray,
                             // but in bytes for ArrayBuffer and DataView inputs.
@@ -1712,6 +1738,7 @@ static js::JSValueHandle handleGpuQueueWriteBuffer(BindingsState* state, Binding
                                 state->engine->throwException("writeBuffer: source range exceeds the supplied buffer view");
                                 return state->engine->newUndefined();
                             }
+                            if (writeSize == 0) return state->engine->newUndefined();
                             const uint8_t* source = static_cast<uint8_t*>(dataPtr) + dataOffset;
                             if (buffer && state->queue) {
                                 const size_t alignedWriteSize = (writeSize + 3) & ~size_t(3);
@@ -1874,6 +1901,40 @@ static js::JSValueHandle handleGpuQueueSubmit(BindingsState* state, BindingDesti
 }
 
 
+// GPUSupportedLimits answered from the real adapter/device: the device is created with the
+// adapter's limits (context.cpp), so a hand-written subset misreports what the GPU allows and
+// hides limits (maxBufferSize, compute workgroup sizes) that games check before allocating.
+#define TN_WGPU_LIMIT_FIELDS(X) \
+    X(maxTextureDimension1D) X(maxTextureDimension2D) X(maxTextureDimension3D) X(maxTextureArrayLayers) \
+    X(maxBindGroups) X(maxBindingsPerBindGroup) X(maxDynamicUniformBuffersPerPipelineLayout) \
+    X(maxDynamicStorageBuffersPerPipelineLayout) X(maxSampledTexturesPerShaderStage) X(maxSamplersPerShaderStage) \
+    X(maxStorageBuffersPerShaderStage) X(maxStorageTexturesPerShaderStage) X(maxUniformBuffersPerShaderStage) \
+    X(maxUniformBufferBindingSize) X(maxStorageBufferBindingSize) X(minUniformBufferOffsetAlignment) \
+    X(minStorageBufferOffsetAlignment) X(maxVertexBuffers) X(maxBufferSize) X(maxVertexAttributes) \
+    X(maxVertexBufferArrayStride) X(maxColorAttachments) X(maxColorAttachmentBytesPerSample) \
+    X(maxComputeWorkgroupStorageSize) X(maxComputeInvocationsPerWorkgroup) X(maxComputeWorkgroupSizeX) \
+    X(maxComputeWorkgroupSizeY) X(maxComputeWorkgroupSizeZ) X(maxComputeWorkgroupsPerDimension)
+template <typename Handle, typename Query>
+static js::JSValueHandle realLimits(BindingsState* state, Handle handle, Query query) {
+    auto out = state->engine->newObject();
+#if defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU_MODERN)
+    WGPULimits limits = {};
+    if (query(handle, &limits) != WGPUStatus_Success) return out;
+#define TN_WGPU_LIMIT(name) state->engine->setProperty(out, #name, state->engine->newNumber(static_cast<double>(limits.name)));
+#elif defined(MYSTRAL_WEBGPU_WGPU)
+    WGPUSupportedLimits supported = {};
+    if (!query(handle, &supported)) return out;
+    const WGPULimits& limits = supported.limits;
+#define TN_WGPU_LIMIT(name) state->engine->setProperty(out, #name, state->engine->newNumber(static_cast<double>(limits.name)));
+#else
+#define TN_WGPU_LIMIT(name)
+    (void)handle; (void)query;
+#endif
+    TN_WGPU_LIMIT_FIELDS(TN_WGPU_LIMIT)
+#undef TN_WGPU_LIMIT
+    return out;
+}
+
 static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, BindingDestination bindingDestination, const std::vector<js::JSValueHandle>& args) {
                     // Return a device object wrapping our native device
                     auto device = createNativeWrapper(state, "GPUDevice", state->device);
@@ -1913,21 +1974,7 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                         &handleGpuDeviceDestroy
                     , device}}))) return state->engine->newUndefined();
                     // device.limits - expose device limits
-                    auto deviceLimits = state->engine->newObject();
-                    state->engine->setProperty(deviceLimits, "maxTextureDimension2D", state->engine->newNumber(8192));
-                    state->engine->setProperty(deviceLimits, "maxColorAttachmentBytesPerSample", state->engine->newNumber(64));
-                    state->engine->setProperty(deviceLimits, "maxBindGroups", state->engine->newNumber(4));
-                    state->engine->setProperty(deviceLimits, "maxBindingsPerBindGroup", state->engine->newNumber(1000));
-                    state->engine->setProperty(deviceLimits, "maxUniformBufferBindingSize", state->engine->newNumber(65536));
-                    state->engine->setProperty(deviceLimits, "maxStorageBufferBindingSize", state->engine->newNumber(134217728));
-                    state->engine->setProperty(deviceLimits, "maxSampledTexturesPerShaderStage", state->engine->newNumber(16));
-                    state->engine->setProperty(deviceLimits, "maxSamplersPerShaderStage", state->engine->newNumber(16));
-                    state->engine->setProperty(deviceLimits, "maxStorageTexturesPerShaderStage", state->engine->newNumber(8));
-                    state->engine->setProperty(deviceLimits, "maxUniformBuffersPerShaderStage", state->engine->newNumber(12));
-                    state->engine->setProperty(deviceLimits, "maxStorageBuffersPerShaderStage", state->engine->newNumber(8));
-                    state->engine->setProperty(deviceLimits, "maxDynamicUniformBuffersPerPipelineLayout", state->engine->newNumber(8));
-                    state->engine->setProperty(deviceLimits, "minUniformBufferOffsetAlignment", state->engine->newNumber(256));
-                    state->engine->setProperty(deviceLimits, "minStorageBufferOffsetAlignment", state->engine->newNumber(256));
+                    auto deviceLimits = realLimits(state, state->device, wgpuDeviceGetLimits);
                     state->engine->setProperty(device, "limits", deviceLimits);
                     // device.features - Set-like object with enabled features, answered from the
                     // real device so consumers (three's KTX2Loader.detectSupport among them)
@@ -2038,11 +2085,16 @@ static js::JSValueHandle handleGpuAdapterRequestDevice(BindingsState* state, Bin
                     , device}}))) return state->engine->newUndefined();
                     // device.lost - Promise that resolves when the device is lost
                     // Required by Three.js WebGPU renderer during init
-                    // We create a Promise that never resolves (device never lost in normal operation)
-                    auto deviceLostPromise = state->engine->evalWithResult(
-                        "new Promise(function(resolve) { globalThis.__mystral_device_lost_resolve = resolve; })",
+                    // We create a Promise that never resolves (device never lost in normal operation).
+                    // evalWithResult evaluates a module, whose result is the module's own evaluation
+                    // promise: it resolves at once, so returning it made every `device.lost` consumer
+                    // see a lost device. Keep the real promise on the global and read it back.
+                    state->engine->evalWithResult(
+                        "globalThis.__mystral_device_lost = new Promise(function(resolve) { globalThis.__mystral_device_lost_resolve = resolve; });",
                         "device.lost"
                     );
+                    auto deviceLostPromise =
+                        state->engine->getProperty(state->engine->getGlobal(), "__mystral_device_lost");
                     state->engine->setProperty(device, "lost", deviceLostPromise);
                     if (!state->profiling.disableFrameOpStreamForTesting) {
                         // Install the production frame recorder after every native method exists.
@@ -2139,19 +2191,7 @@ static js::JSValueHandle handleGpuRequestAdapter(BindingsState* state, BindingDe
             state->engine->setProperty(features, "size", state->engine->newNumber(1));
             state->engine->setProperty(adapter, "features", features);
             // adapter.limits
-            auto limits = state->engine->newObject();
-            state->engine->setProperty(limits, "maxTextureDimension2D", state->engine->newNumber(8192));
-            state->engine->setProperty(limits, "maxColorAttachmentBytesPerSample", state->engine->newNumber(64));
-            state->engine->setProperty(limits, "maxBindGroups", state->engine->newNumber(4));
-            state->engine->setProperty(limits, "maxBindingsPerBindGroup", state->engine->newNumber(1000));
-            state->engine->setProperty(limits, "maxUniformBufferBindingSize", state->engine->newNumber(65536));
-            state->engine->setProperty(limits, "maxStorageBufferBindingSize", state->engine->newNumber(134217728));
-            state->engine->setProperty(limits, "maxSampledTexturesPerShaderStage", state->engine->newNumber(16));
-            state->engine->setProperty(limits, "maxSamplersPerShaderStage", state->engine->newNumber(16));
-            state->engine->setProperty(limits, "maxStorageTexturesPerShaderStage", state->engine->newNumber(8));
-            state->engine->setProperty(limits, "maxUniformBuffersPerShaderStage", state->engine->newNumber(12));
-            state->engine->setProperty(limits, "maxStorageBuffersPerShaderStage", state->engine->newNumber(8));
-            state->engine->setProperty(limits, "maxDynamicUniformBuffersPerPipelineLayout", state->engine->newNumber(8));
+            auto limits = realLimits(state, state->adapter, wgpuAdapterGetLimits);
             state->engine->setProperty(adapter, "limits", limits);
             // Return the adapter directly
             // await on a non-Promise just returns the value
@@ -2725,9 +2765,13 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     , globalBindingHost},
         {"WebGPU", "__tnPresentedCount", 0, nullptr,
         &handleWebGpuPresentedCount
+    , globalBindingHost},
+        {"WebGPU", "__tnThreadCpuMs", 0, nullptr,
+        &handleWebGpuThreadCpuMs
     , globalBindingHost}})) ||
         !copyGlobalBinding(globalBindingHost, "__tnPresentationCap") ||
-        !copyGlobalBinding(globalBindingHost, "__tnPresentedCount")) return false;
+        !copyGlobalBinding(globalBindingHost, "__tnPresentedCount") ||
+        !copyGlobalBinding(globalBindingHost, "__tnThreadCpuMs")) return false;
 
     // Native helper that decodes image data off the frame thread
     if (!installBindingTable(state->engine, state, bindingTable({
@@ -2778,7 +2822,7 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
 #endif
 
 /** Initialize WebGPU bindings in the JS engine. */
-bool initBindings(BindingsState* state, js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void* wgpuQueue, void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode, uint32_t width, uint32_t height, bool debug, void* wgpuAdapter) {
+bool initBindings(BindingsState* state, js::Engine* engine, void* wgpuInstance, void* wgpuDevice, void* wgpuQueue, void* wgpuSurface, uint32_t surfaceFormat, uint32_t presentMode, uint32_t width, uint32_t height, bool debug, void* wgpuAdapter, void* surfaceNativeHandle) {
     if (!state || !engine) {
         std::cerr << "[WebGPU] No JS engine provided for bindings" << std::endl;
         return false;
@@ -2802,6 +2846,9 @@ bool initBindings(BindingsState* state, js::Engine* engine, void* wgpuInstance, 
     // Set canvas dimensions from window size
     state->presentation.canvasWidth = width;
     state->presentation.canvasHeight = height;
+    state->presentation.surfaceWidth = width;
+    state->presentation.surfaceHeight = height;
+    state->presentation.surfaceNativeHandle = surfaceNativeHandle;
     state->presentation.nativeSurfaceFormat = (WGPUTextureFormat)surfaceFormat;
     state->presentation.requiresSrgbPresentationBridge =
         state->surface != nullptr && isSrgbSurfaceFormat(state->presentation.nativeSurfaceFormat);
@@ -2924,6 +2971,10 @@ void endDawnFrame(BindingsState* state) {
                 state->profiling.androidJsNativeProfile.frameOpReplayNs += replayEndCpuNs - replayStartCpuNs;
             }
 #endif
+            if (replayed) {
+                state->profiling.frameOpStreamPendingOps = false;
+                startDeferredBufferMaps(state);
+            }
             if (!replayed && !state->engine->hasException()) {
                 state->engine->throwException("frame op stream: replay failed");
             }

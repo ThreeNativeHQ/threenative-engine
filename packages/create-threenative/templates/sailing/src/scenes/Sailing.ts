@@ -3,15 +3,18 @@ import {
   Scene,
   type SceneFrame,
   WaterSurface3D,
+  getPlatform,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
-import type { Group, PerspectiveCamera, Texture } from "three";
+import { type Group, type PerspectiveCamera, type Texture, Vector3 } from "three";
 import { Ship } from "../entities/Ship.js";
 import { followShip, setupCamera } from "../render/camera.js";
+import { loadedEnvironmentSample } from "../render/environmentSetup.js";
 import { followSun, setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { createMaterials } from "../render/materials.js";
 import {
   SEA_MIRROR,
@@ -22,9 +25,11 @@ import {
 } from "../render/ocean.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createBuoy, createIsland, getShipModel } from "../render/props.js";
+import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
+import { holdOceanHeight } from "./ocean-readiness.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
@@ -63,6 +68,9 @@ const MAX_WAKE_SPEED = 4.6;
 const WIND_DURATION = 120;
 
 export class Sailing extends Scene<GameState, IPhysicsContext> {
+  #observeRender: ((ctx: GameCtx) => void) | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+  #post: ReturnType<typeof setupPost> | undefined;
   static override readonly initialState: GameState = {
     buoysRounded: 0,
     elapsed: 0,
@@ -78,6 +86,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
   };
 
   #sea: ReturnType<typeof createWaterMesh> | undefined;
+  #stopOceanReadiness: (() => void) | undefined;
 
   // No `load()` here: `ship.glb` is fetched in `Boot.load()`, alongside the sky, so this scene's
   // `enter()` stays synchronous — a playtest runner reads the registry the instant it returns, and
@@ -89,10 +98,20 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     const software = ctx.renderer.softwareAdapter !== undefined;
     setupSky(ctx.scene, { software });
     const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+    const materialEnvironment = {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
+    this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      onTierChanged: (tier) =>
+        this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment)),
       godraysLight: sun,
       mobile: isMobile(),
       software,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     const loading = createLoadingScreen(ctx);
     const camera = ctx.camera as PerspectiveCamera;
@@ -107,6 +126,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     // passes in the warmup set. It draws nothing — the mesh and its material are this game's, and
     // both live in `src/render/ocean.ts`.
     const ocean = ctx.add(createOcean());
+    this.#stopOceanReadiness = holdOceanHeight(ctx, ocean);
     // The mirror is constructed here and handed to the material: `src/render/` reaches the engine
     // for the wave field it draws and nothing else, so the pass that draws the world a second time
     // is built in game code from the options that file authored.
@@ -126,12 +146,66 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
       buoy.position.set(mark.x, 0, mark.z);
       marks.push(buoy);
       markReflected(ctx.add(buoy));
+      ctx.interpolate(buoy);
     }
 
     const ship = new Ship(ctx, ocean, shipModel);
     // The ship is deliberately not in the sea's mirror: it is a second draw of the hull *and its
     // keel*, which the mirror sees from below as a black blot smeared under the stern.
     ctx.entities.add("player", ship);
+    const projected = new Vector3();
+    let previous: { time: number; x: number; y: number; vx?: number; vy?: number } | undefined;
+    let sampleFrame = -1;
+    let lowestY = Number.POSITIVE_INFINITY;
+    let highestY = Number.NEGATIVE_INFINITY;
+    this.#observeRender = (renderCtx) => {
+      if (renderCtx.startup.phase !== "ready") return;
+      projected.copy(ship.visual.position).project(camera);
+      if (Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1 || projected.z > 1) {
+        previous = undefined;
+        return;
+      }
+      const motion = ship.renderMotion;
+      lowestY = Math.min(lowestY, ship.visual.position.y);
+      highestY = Math.max(highestY, ship.visual.position.y);
+      motion.verticalRange = highestY - lowestY;
+      motion.frames += 1;
+      motion.fractionalFrames += Number(renderCtx.alpha > 0 && renderCtx.alpha < 1);
+      const sample = ocean.sampleHeight(ship.visual.position.x, ship.visual.position.z);
+      const frame = sample === undefined ? -1 : ocean.steps - sample.staleFrames;
+      motion.readbacks += Number(frame >= 0 && frame !== sampleFrame);
+      sampleFrame = frame;
+      const time = renderCtx.frameTime / 1_000;
+      const x = (projected.x * renderCtx.viewport.size.width) / 2;
+      const y = (projected.y * renderCtx.viewport.size.height) / 2;
+      const delta = time - (previous?.time ?? time);
+      if (previous === undefined || delta <= 0) {
+        previous = { time, x, y };
+        return;
+      }
+      const vx = (x - previous.x) / delta;
+      const vy = (y - previous.y) / delta;
+      motion.maxJitterPixels = Math.max(
+        motion.maxJitterPixels,
+        Math.hypot(vx - (previous.vx ?? vx), vy - (previous.vy ?? vy)) / 60,
+      );
+      previous = { time, x, y, vx, vy };
+    };
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, sun, {
+        ...materialEnvironment,
+        enabled: materialLightingEnabled(this.#post.tier, materialEnvironment),
+      }),
+    );
+    const sample = loadedEnvironmentSample();
+    if (sample !== undefined)
+      this.#materialLighting.setEnvironmentMeasurement(
+        sample.measurement,
+        sample.source,
+        sample.intensity,
+        sample,
+      );
     let elapsed = 0;
     let buoysRounded = 0;
     let markBearing = 0;
@@ -257,7 +331,18 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     };
   }
 
+  override render(ctx: GameCtx): void {
+    this.#observeRender?.(ctx);
+  }
+
   override exit(ctx: GameCtx): void {
+    this.#observeRender = undefined;
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
+    this.#stopOceanReadiness?.();
+    this.#stopOceanReadiness = undefined;
     // The mirror owns a render target and a pass. Nothing in the frame releases it, so a restart
     // — which is `goto("sailing")`, and this scene is entered again — would leak one every time.
     this.#sea?.dispose();

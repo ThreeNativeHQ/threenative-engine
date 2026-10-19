@@ -186,9 +186,6 @@ export function pads(places: readonly (readonly [number, number])[]): Group {
   return group;
 }
 
-/** How high a tower's muzzle stands, for beams and shells to leave from. */
-export const MUZZLE_HEIGHT = 1.28;
-
 export interface ITowerModel {
   readonly group: Group;
   /** Turns to face a target; its local +z is the way it shoots. */

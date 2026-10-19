@@ -3,6 +3,7 @@ import {
   Scene,
   type SceneFrame,
   afterPhysics,
+  getPlatform,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
@@ -18,13 +19,25 @@ import { emitPlaytestEvent } from "../playtest-events.js";
 import { loadProgress, saveProgress } from "../progress.js";
 import { createDungeonCamera } from "../render/camera.js";
 import { createDungeon, isSolid } from "../render/dungeon.js";
+import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createLootVisual } from "../render/props.js";
+import {
+  type QualityTier,
+  isWebGLFallbackRenderer,
+  materialLightingEnabled,
+} from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
-import { createArcaneSurge, createAttackArc, createHitBurst } from "../render/vfx.js";
+import {
+  type IActionRpgVfxOptions,
+  createArcaneSurge,
+  createAttackArc,
+  createHitBurst,
+} from "../render/vfx.js";
 import type { GameState } from "../state.js";
 import { StatBlock } from "../stats/StatBlock.js";
 
@@ -84,6 +97,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #mannequin: IMannequin | undefined;
   #sky: Texture | undefined;
 
+  #post: ReturnType<typeof setupPost> | undefined;
+  #environmentSample: IEnvironmentSample | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+
   override async load(ctx: GameCtx): Promise<void> {
     // One rig, five instances. Quaternius' Universal Animation Library combat mannequin (CC0) is
     // the shared figure: the hero, the raiders and the boss are the same asset, so "add an enemy"
@@ -92,6 +109,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.assets.model<IMannequin>("mannequin-combat.glb"),
       ctx.assets.texture("sky.jpg"),
     ]);
+    setupSky(ctx.scene, this.#sky);
+    this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -111,10 +136,23 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code, exactly like createRandom.
-    setupPost(ctx.renderer, ctx.scene, camera, {
+    const materialEnvironment = {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
+    let materialTier: QualityTier = "low";
+    this.#post = setupPost(ctx.renderer, ctx.scene, camera, {
+      onTierChanged: (tier) => {
+        materialTier = tier;
+        this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment));
+      },
       godraysLight: lighting.key,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     const loading = createLoadingScreen(ctx);
     ctx.add(camera);
@@ -177,23 +215,20 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     player.equippedItem = inventory.equipped?.itemId ?? "";
     ctx.entities.add("player", player);
 
-    const attackVfx = ctx.add(new GPUParticles3D(createAttackArc()));
-    const hitVfx = ctx.add(new GPUParticles3D(createHitBurst()));
-    const surgeVfx = ctx.add(new GPUParticles3D(createArcaneSurge()));
-    attackVfx.visible = false;
-    hitVfx.visible = false;
-    surgeVfx.visible = false;
+    const emitter = (options: IActionRpgVfxOptions) => ({
+      count: options.burstCount,
+      particles: ctx.add(new GPUParticles3D(options)),
+    });
+    const attackVfx = emitter(createAttackArc());
+    const hitVfx = emitter(createHitBurst());
+    const surgeVfx = emitter(createArcaneSurge());
+    // A burst is a request: the engine gives it its own slots, so an older burst keeps flying where it began.
     const burst = (
-      particles: GPUParticles3D,
+      vfx: ReturnType<typeof emitter>,
       position: { readonly x: number; readonly y: number; readonly z: number },
       name: string,
     ): void => {
-      particles.position.copy(position);
-      particles.visible = true;
-      particles.restart();
-      ctx.after(0.45, () => {
-        particles.visible = false;
-      });
+      vfx.particles.emitParticle({ count: vfx.count, origin: position });
       emitPlaytestEvent({ entity: "player", name });
     };
 
@@ -233,6 +268,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         .copy(player.mesh.position)
         .add(new Vector3(pendingVisuals.length * 0.8, 0, 1.2));
       ctx.add(visual);
+      this.#materialLighting?.enroll(visual);
       pendingStacks.push(stack);
       pendingVisuals.push(visual);
       syncPendingLoot();
@@ -266,7 +302,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           continue;
         }
         pendingStacks.splice(index, 1);
-        pendingVisuals[index]?.removeFromParent();
+        const visual = pendingVisuals[index];
+        if (visual !== undefined) this.#materialLighting?.release(visual);
+        visual?.removeFromParent();
         pendingVisuals.splice(index, 1);
         changed = true;
       }
@@ -443,6 +481,24 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     afterPhysics(ctx, (dt) => cameraRig.follow(player.mesh.position, dt));
     let lastSavedRoom = currentRoom;
     const frameState: Partial<GameState> = {};
+    // Collect only after the loaded character and scene receivers are attached.
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, lighting.key, {
+        ...materialEnvironment,
+        enabled: materialLightingEnabled(materialTier, materialEnvironment),
+      }),
+    );
+    if (this.#environmentSample !== undefined) {
+      const sample = this.#environmentSample;
+      this.#materialLighting.setEnvironmentMeasurement(
+        sample.measurement,
+        sample.source,
+        sample.intensity,
+        sample,
+      );
+    }
+
     return (frameCtx, dt) => {
       loading.update();
       elapsed += dt;
@@ -534,5 +590,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (boss.alive === false) frameCtx.state.set({ gameWon: 1, phase: "won" });
       if (player.dead) frameCtx.state.set({ gameOver: 1, phase: "lost" });
     };
+  }
+
+  override exit(ctx: GameCtx): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
+    this.#environmentSample = undefined;
+    super.exit(ctx);
   }
 }

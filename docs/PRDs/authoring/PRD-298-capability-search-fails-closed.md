@@ -7,6 +7,7 @@ prd_contract: v1
 **Status:** OPEN, filed 2026-08-31 against `77a68bec`. Planning only. The eight-wrong-answers
 measurement is executed and recorded at `docs/verification/capability-recall-baseline-2026-08-31.md`.
 
+**Priority:** P1 — Search still returns eight wrong answers; fail-closed shape and strict notOwned validation unlanded.
 **Outcome:** an authoring agent that searches for something the engine does not have gets told so,
 in the same breath as what to do instead — and stops getting eight coincidental capabilities
 ranked as if they were answers. Every other gate in this repository fails closed; capability

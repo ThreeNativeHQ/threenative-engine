@@ -44,9 +44,15 @@ import { VelocityTracker } from "./render/velocity.js";
  * the public API, the reconciliation loop, the report assembly and the deoptimization verdict.
  */
 
-/** Why the projection gave a frame back to the authored scene, or declined an object. */
+/**
+ * Why the projection gave a frame back to the authored scene, or declined an object.
+ *
+ * `hostProjected` is the verdict where the host renderer batches the authored scene itself and no
+ * mirror exists (see {@link SceneRenderProjection}); `projected` is the JS mirror's.
+ */
 export type ProjectionReasonCode =
   | "projected"
+  | "hostProjected"
   | "belowMeshFloor"
   | "renderHook"
   | "unsupportedLight"
@@ -137,6 +143,14 @@ export interface IRenderProjectionReport {
   readonly materialChecksPerFrame: number;
   readonly materialCheckStaleFrames: number;
   readonly materialChecksOverridden: boolean;
+  /**
+   * Who batched the frame: `"host"` where the native renderer batches the authored scene itself and
+   * core builds no mirror, `"js"` where core's mirror does (every web frame, and an engine frame
+   * under `renderer.projection: "js"`). `pathOverridden` says the game forced `"js"` on a host that
+   * would have batched, so a measurement taken under the override says so.
+   */
+  readonly path: "host" | "js";
+  readonly pathOverridden: boolean;
   readonly timings: {
     readonly compileMs: number;
     readonly reconcileMs: number;
@@ -164,9 +178,12 @@ export interface IRenderProjectionOptions {
    * A declined projection builds no mirror and runs no eligibility scan — the authored scene is
    * handed to the renderer every frame — so declining costs nothing rather than being re-judged
    * each frame. The verdict is reported as `disabled`, not as one of the measured declines.
+   *
+   * `"js"` forces core's JS mirror on a host whose renderer would batch the authored scene itself
+   * (the native engine player). It changes nothing on three, which always has the mirror.
    */
-  readonly projection?: boolean | { readonly materialChecks?: ProjectionMaterialChecks };
-  /** Allocates per-sub-draw previous matrices for the material-batching lane. */
+  readonly projection?: boolean | "js" | { readonly materialChecks?: ProjectionMaterialChecks };
+  /** Retains drawn-object history for temporal stages, independently of projection opt-out. */
   readonly velocity?: boolean | (() => boolean);
   /**
    * The engine's world-matrix walk, when the frame owns one. The authored scene is refreshed here
@@ -188,14 +205,67 @@ export { exactLaneReason } from "./projection-plan.js";
  */
 const DECLINE_RESCAN_FRAMES = 60;
 
+/**
+ * What a host renderer that batches the authored scene itself answers: the verdict and counts its own
+ * batching gives the scene, in the shape of the report's fields. `reasonCode` is the host's, with
+ * `"projected"` meaning it batched.
+ */
+interface IHostProjectionVerdict {
+  readonly projecting: boolean;
+  readonly reasonCode: ProjectionReasonCode;
+  readonly sourceRenderables: number;
+  readonly projectedObjects: number;
+  readonly instancedBatches: number;
+  readonly materialBatches: number;
+  readonly skinnedBatches: number;
+  readonly exactObjects: number;
+  readonly exact: Partial<Record<ProjectionExactReason, number>>;
+}
+
+/**
+ * A scene root whose host renderer batches it (the native engine's `RenderDatabase`), so core builds
+ * no mirror: one call per frame answers what that batching made of the scene, where the mirror reads
+ * `geometry`, `material`, visibility and a matrix of every object across the boundary. Optional: a
+ * root without it (three) takes the JS mirror, unchanged.
+ */
+interface IHostProjectionRoot {
+  __tnProjectionReport(minMeshes: number): IHostProjectionVerdict;
+}
+
+/** The host has not been asked yet: nothing is projected and the scene has not been counted. */
+const NO_HOST_VERDICT: IHostProjectionVerdict = {
+  projecting: false,
+  reasonCode: "belowMeshFloor",
+  sourceRenderables: 0,
+  projectedObjects: 0,
+  instancedBatches: 0,
+  materialBatches: 0,
+  skinnedBatches: 0,
+  exactObjects: 0,
+  exact: {},
+};
+
+function hostProjectionRoot(source: unknown): IHostProjectionRoot | undefined {
+  const candidate = source as Partial<IHostProjectionRoot> | null;
+  return typeof candidate?.__tnProjectionReport === "function"
+    ? (candidate as IHostProjectionRoot)
+    : undefined;
+}
+
 export class SceneRenderProjection {
   readonly #source: Scene;
   readonly #minMeshes: number;
   readonly #enabled: boolean;
   readonly #materialChecks: ProjectionMaterialChecks;
   readonly #onReport: ((report: IRenderProjectionReport) => void) | undefined;
-  /** Absent when the game opted out: an opted-out projection never builds one. */
+  /** Absent when the game opted out or the host batches the scene itself: either way none is built. */
   readonly #mirror: ProjectionMirror | undefined;
+  /** The host that batches the authored scene, when it has the seam and the game did not force `"js"`. */
+  readonly #host: IHostProjectionRoot | undefined;
+  /** The game forced `"js"` on a host that would have batched. */
+  readonly #hostOverridden: boolean;
+  /** The host's verdict for the last reconcile, which `report` reads. */
+  #hostVerdict: IHostProjectionVerdict | undefined;
   readonly #velocity: boolean | (() => boolean);
   readonly #matrixWorld: MatrixWorldPass | undefined;
   readonly #velocityTracker = new VelocityTracker();
@@ -235,9 +305,13 @@ export class SceneRenderProjection {
     this.#velocity = options.velocity ?? false;
     this.#velocityActive = resolveVelocityEnabled(this.#velocity);
     this.#matrixWorld = options.matrixWorld;
-    this.#mirror = this.#enabled
-      ? new ProjectionMirror(this.#velocityActive, this.#materialChecks)
-      : undefined;
+    const hostRoot = this.#enabled ? hostProjectionRoot(source) : undefined;
+    this.#hostOverridden = hostRoot !== undefined && options.projection === "js";
+    this.#host = this.#hostOverridden ? undefined : hostRoot;
+    this.#mirror =
+      this.#enabled && this.#host === undefined
+        ? new ProjectionMirror(this.#velocityActive, this.#materialChecks)
+        : undefined;
     this.#onReport = options.onReport;
   }
 
@@ -287,22 +361,27 @@ export class SceneRenderProjection {
    * scene is not what renders and nothing else refreshes it.
    */
   reconcile(): void {
-    if (!this.#enabled) {
-      // The game declined the projection: report the verdict once, then do nothing at all. No
-      // mirror is built, no eligibility scan runs, and `root` is the authored scene — the opt-out
-      // costs a compare, not a re-judged decline.
-      this.#deoptimize("disabled", "the game set renderer.projection to false");
-      this.#publish();
-      return;
-    }
-    const mirror = this.#mirror;
-    if (mirror === undefined) return;
-    const startedAt = globalThis.performance?.now() ?? 0;
     const velocityEnabled = resolveVelocityEnabled(this.#velocity);
     if (this.#velocityActive !== velocityEnabled) {
       this.#velocityTracker.clear();
       this.#velocityActive = velocityEnabled;
     }
+    if (!this.#enabled) {
+      // Temporal history belongs to the authored draw even when its optimization is declined.
+      // No mirror or eligibility scan runs; without a temporal consumer no history work runs.
+      if (velocityEnabled) this.#velocityTracker.update(this.#source);
+      this.#deoptimize("disabled", "the game set renderer.projection to false");
+      this.#publish();
+      return;
+    }
+    const host = this.#host;
+    if (host !== undefined) {
+      this.#reconcileHost(host, velocityEnabled);
+      return;
+    }
+    const mirror = this.#mirror;
+    if (mirror === undefined) return;
+    const startedAt = globalThis.performance?.now() ?? 0;
     if (mirror.setVelocityEnabled(velocityEnabled)) {
       this.#deoptimized = true;
       this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
@@ -405,16 +484,40 @@ export class SceneRenderProjection {
       this.#velocityTracker.update(this.#deoptimized ? this.#source : mirror.scene);
     else this.#velocityTracker.clear();
 
+    this.#recordReconcile(startedAt);
+    this.#publish();
+  }
+
+  /**
+   * The host renderer batches the authored scene, so there is nothing to mirror, scan or refresh
+   * here: one call reports what its batching made of the frame. The world-matrix pass stays the
+   * frame loop's (it runs on the root the renderer is handed, which is this scene).
+   */
+  #reconcileHost(host: IHostProjectionRoot, velocityEnabled: boolean): void {
+    const startedAt = globalThis.performance?.now() ?? 0;
+    if (velocityEnabled) this.#velocityTracker.update(this.#source);
+    else this.#velocityTracker.clear();
+    const verdict = host.__tnProjectionReport(this.#minMeshes);
+    this.#hostVerdict = verdict;
+    this.#sourceRenderables = verdict.sourceRenderables;
+    this.#reasonCode = verdict.reasonCode === "projected" ? "hostProjected" : verdict.reasonCode;
+    this.#reason = verdict.projecting
+      ? undefined
+      : `the host renderer declined this scene (${verdict.reasonCode})`;
+    this.#recordReconcile(startedAt);
+    this.#publish();
+  }
+
+  #recordReconcile(startedAt: number): void {
     const elapsed = (globalThis.performance?.now() ?? 0) - startedAt;
     this.#reconcileMs += elapsed;
     this.#lastReconcileMs = elapsed;
     this.#maxReconcileMs = Math.max(this.#maxReconcileMs, elapsed);
-    this.#publish();
   }
 
   /** Commits the rendered transform snapshot after the colour and velocity passes consume it. */
   commit(): void {
-    if (!this.#enabled || !this.#velocityActive) return;
+    if (!this.#velocityActive) return;
     this.#velocityTracker.commit(this.root);
   }
 
@@ -480,6 +583,9 @@ export class SceneRenderProjection {
           materialChecksPerFrame: r.materialChecksPerFrame,
           materialCheckStaleFrames: r.materialCheckStaleFrames,
           ...(r.materialChecksOverridden ? { materialChecksOverridden: true } : {}),
+          // Who batched the frame, so a measurement taken under `renderer.projection: "js"` says so.
+          path: r.path,
+          ...(r.pathOverridden ? { pathOverridden: true } : {}),
         })}`,
       );
       return;
@@ -491,6 +597,7 @@ export class SceneRenderProjection {
   }
 
   get report(): IRenderProjectionReport {
+    if (this.#host !== undefined) return this.#hostReport(this.#hostVerdict ?? NO_HOST_VERDICT);
     const exact: Partial<Record<ProjectionExactReason, number>> = {};
     for (const [reason, count] of this.#mirror?.exactCounts ?? []) exact[reason] = count;
     let resultDrawCandidates = 0;
@@ -523,9 +630,53 @@ export class SceneRenderProjection {
       materialChecksPerFrame: this.#mirror?.materialChecksPerFrame ?? 0,
       materialCheckStaleFrames: this.#mirror?.materialCheckStaleFrames ?? 0,
       materialChecksOverridden: this.#materialChecks !== "spread",
+      path: "js",
+      pathOverridden: this.#hostOverridden,
       exact,
       timings: {
         compileMs: this.#mirror?.compileMs ?? 0,
+        reconcileMs: this.#reconcileMs,
+        lastReconcileMs: this.#lastReconcileMs,
+        maxReconcileMs: this.#maxReconcileMs,
+      },
+    };
+  }
+
+  /**
+   * The report where the host batches the scene. The renderer is handed the authored scene, so the
+   * draw candidates are its renderables, and nothing here walks the scene to count them: that walk
+   * is the per-object boundary traffic this path exists to remove. `materialChecks*` describe the
+   * mirror's colour lane, which does not exist here, so they read as the unspent defaults.
+   */
+  #hostReport(verdict: IHostProjectionVerdict): IRenderProjectionReport {
+    const projecting = verdict.projecting;
+    const batches = projecting
+      ? verdict.instancedBatches + verdict.materialBatches + verdict.skinnedBatches
+      : 0;
+    const exactObjects = projecting ? verdict.exactObjects : 0;
+    return {
+      schemaVersion: 1,
+      projecting,
+      reasonCode: this.#reasonCode,
+      ...(this.#reason === undefined ? {} : { reason: this.#reason }),
+      sourceRenderables: verdict.sourceRenderables,
+      resultDrawCandidates: verdict.sourceRenderables,
+      projectedObjects: projecting ? verdict.projectedObjects : 0,
+      batches,
+      instancedBatches: projecting ? verdict.instancedBatches : 0,
+      materialBatches: projecting ? verdict.materialBatches : 0,
+      skinnedBatches: projecting ? verdict.skinnedBatches : 0,
+      exactObjects,
+      drawsPlanned: projecting ? batches + exactObjects : verdict.sourceRenderables,
+      materialChecks: this.#materialChecks,
+      materialChecksPerFrame: 0,
+      materialCheckStaleFrames: 0,
+      materialChecksOverridden: this.#materialChecks !== "spread",
+      path: "host",
+      pathOverridden: false,
+      exact: projecting ? verdict.exact : {},
+      timings: {
+        compileMs: 0,
         reconcileMs: this.#reconcileMs,
         lastReconcileMs: this.#lastReconcileMs,
         maxReconcileMs: this.#maxReconcileMs,
@@ -568,6 +719,7 @@ export class SceneRenderProjection {
    */
   dispose(): void {
     this.#mirror?.releaseAll();
+    this.#hostVerdict = undefined;
     this.#velocityTracker.clear();
     this.#forgetPlan();
     releaseProjectionScanWorkspace(this.#scanWorkspace);

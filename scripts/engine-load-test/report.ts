@@ -2,6 +2,7 @@
 // were not the same scene, and only then compute a knee. A missing field, a wrong type, or an
 // empty sample array is an error here — never a default, never a skip.
 
+import os from "node:os";
 import {
   FRAME_STAT_KEYS,
   type IFoxMeasurement,
@@ -15,6 +16,7 @@ import {
   ladderCountDiff,
   ladderRank,
 } from "../../examples/engine-load-test/src/ladder.js";
+import { PHASES, type Phase } from "../../examples/engine-load-test/src/phases.js";
 import {
   DEFAULT_AXES,
   type IWorkloadAxes,
@@ -24,11 +26,30 @@ import {
 } from "../../examples/engine-load-test/src/workload.js";
 import { blankFrameReason } from "../capture-guard.js";
 
+function parseFrameRgba(value: unknown, label: string): NonNullable<IRunReportRung["frameRgba"]> {
+  const frame = requireObject(value, `${label}.frameRgba`);
+  const width = requireNumber(frame, "width", label);
+  const height = requireNumber(frame, "height", label);
+  if (
+    !Number.isSafeInteger(width) ||
+    !Number.isSafeInteger(height) ||
+    width < 1 ||
+    height < 1 ||
+    typeof frame.data !== "string" ||
+    frame.data.length !== width * height * 8 ||
+    /[^0-9a-f]/u.test(frame.data)
+  )
+    throw new BenchError("TN_BENCH_VISUAL_MISSING", `${label}: invalid RGBA capture`);
+  return { width, height, data: frame.data };
+}
+
 export const KNEE_THRESHOLD_MS = 20;
 export const ARMS = [
   "tn-web",
   "tn-android",
   "tn-desktop",
+  "tn-engine-desktop",
+  "tn-engine-web",
   "godot-web",
   "godot-android",
   "godot-desktop",
@@ -73,7 +94,18 @@ export interface IPerformancePromotionPolicy {
 }
 
 export interface IRunReportRung {
+  /** Last measured frame, captured outside the timed window and persisted beside the run JSON. */
+  framePath?: string;
+  /** Capture transport only; saveFrames removes these before writing the report. */
+  framePng?: string;
+  /** Hex RGBA avoids retaining millions of boxed numbers in the native process. */
+  frameRgba?: { width: number; height: number; data: string };
   collapseMs?: number[];
+  /**
+   * CPU milliseconds the host process spent per frame inside the timed window (every thread), read by the
+   * runner from /proc at the page's window markers (`host-cpu.ts`). Absent on arms the runner cannot read.
+   */
+  cpuMsPerFrame?: number;
   /**
    * PRD-449 §7.4's primary metric: the wall window for N completed frames over N, cadence included.
    * Optional because reports written before it existed still parse; `null` with a reason when the arm
@@ -112,11 +144,45 @@ export interface IRunReportRung {
   objectCount: number;
   /** Optional on legacy/native reports; every initial built placement on new browser reports. */
   initialPlacementSha256?: string;
+  /**
+   * Pipelines the renderer created inside the measured window (the warmup's are excluded). Optional
+   * so reports from before the counter still parse; `scoreboardRows` refuses a rung without it.
+   */
+  pipelineCompiles?: number;
   positionHash: string;
   repeat: number;
   stepMs?: number[];
+  /**
+   * Main-thread CPU ms per drawn frame without the surface present call (CLOCK_THREAD_CPUTIME_ID), when the run
+   * asked for it. Both desktop arms print it.
+   */
+  threadCpuMs?: number[];
+  /** Thread CPU ms inside the surface present call per frame; the same instrument and clock in both desktop arms. */
+  presentCpuMs?: number[];
+  /** C ABI crossings per frame; only the owned engine player counts them. */
+  bridgeCalls?: number[];
+  /** Thread CPU ms per frame inside the engine player's own render call, which the page's `render` phase cannot see. */
+  renderCpuMs?: number[];
+  /**
+   * Where the page's own work went, per frame in thread CPU ms (the clock `threadCpuMs` uses): one series per
+   * `PHASES` name, each as long as `frameMs`. Present when the run turned the telemetry on (`--pair` does).
+   */
+  phases?: Record<Phase, number[]>;
+  /** The names the engine player crossed the C ABI with most, as crossings per frame (`TN_BENCH_CROSSINGS=1`). */
+  crossingTop?: Array<[string, number]>;
   triangles: number;
   visibleObjects: number;
+}
+
+/**
+ * The phases a summary can carry: the page's five, the host's `present` call, and `other`, which is whatever
+ * the frame's thread CPU holds beyond the five (host work, GC, bookkeeping), so the phases sum to the frame.
+ */
+export const SUMMARY_PHASES = [...PHASES, "present", "other"] as const;
+export type SummaryPhase = (typeof SUMMARY_PHASES)[number];
+export interface IPhaseStat {
+  mean: number;
+  p50: number;
 }
 
 export interface IDeviceCondition {
@@ -139,9 +205,82 @@ export interface IRunReport {
   display: { height: number; refreshHz: number; vsync: boolean; width: number };
   driver: { adapter: string; renderer: string };
   engine: { name: EngineName; version: string };
+  /** Host load when the run finished, stamped by the CLI; see `withHostLoad`. */
+  hostLoad?: IHostLoad;
   identity?: IPerformanceIdentity;
   provisional?: string[];
   rungs: IRunReportRung[];
+  /** A web arm's startup, memory and shipped bytes (PRD-573 slice 7); see `parseWebMetrics`. */
+  web?: IWebReport;
+}
+
+/** What a web arm measures beyond its frames: the page's own startup and memory, and the runner's byte count. */
+export interface IWebReport {
+  startup?: { entryMs: number; firstFrameMs: number | null; wasmInstantiateMs: number[] };
+  memory?: { jsHeapUsedBytes: number | null; wasmMemoryBytes: number | null };
+  artifact?: { jsBytes: number; jsGzipBytes: number; wasmBytes: number; wasmGzipBytes: number };
+  engineWasm?: { mtime: string; sha256: string };
+}
+
+const nonNegative = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+/** Fails closed on a web block whose fields are not what the page and runner write. */
+export function parseWebMetrics(value: unknown): IWebReport {
+  const root = requireObject(value, "report.web");
+  const fail = (field: string): never => {
+    throw new BenchError("TN_BENCH_BAD_SHAPE", `report.web.${field} is malformed`);
+  };
+  const out: IWebReport = {};
+  if (root.startup !== undefined) {
+    const startup = requireObject(root.startup, "report.web.startup");
+    const instantiate = startup.wasmInstantiateMs;
+    if (!nonNegative(startup.entryMs)) fail("startup.entryMs");
+    if (startup.firstFrameMs !== null && !nonNegative(startup.firstFrameMs))
+      fail("startup.firstFrameMs");
+    if (!Array.isArray(instantiate) || !instantiate.every(nonNegative))
+      fail("startup.wasmInstantiateMs");
+    out.startup = {
+      entryMs: startup.entryMs as number,
+      firstFrameMs: startup.firstFrameMs as number | null,
+      wasmInstantiateMs: instantiate as number[],
+    };
+  }
+  if (root.memory !== undefined) {
+    const memory = requireObject(root.memory, "report.web.memory");
+    for (const field of ["jsHeapUsedBytes", "wasmMemoryBytes"] as const)
+      if (memory[field] !== null && !nonNegative(memory[field])) fail(`memory.${field}`);
+    out.memory = {
+      jsHeapUsedBytes: memory.jsHeapUsedBytes as number | null,
+      wasmMemoryBytes: memory.wasmMemoryBytes as number | null,
+    };
+  }
+  if (root.artifact !== undefined) {
+    const artifact = requireObject(root.artifact, "report.web.artifact");
+    for (const field of ["jsBytes", "jsGzipBytes", "wasmBytes", "wasmGzipBytes"] as const)
+      if (!nonNegative(artifact[field])) fail(`artifact.${field}`);
+    out.artifact = artifact as unknown as NonNullable<IWebReport["artifact"]>;
+  }
+  if (root.engineWasm !== undefined) {
+    const wasm = requireObject(root.engineWasm, "report.web.engineWasm");
+    out.engineWasm = {
+      mtime: requireString(wasm, "mtime", "report.web.engineWasm"),
+      sha256: requireString(wasm, "sha256", "report.web.engineWasm"),
+    };
+  }
+  return out;
+}
+
+/**
+ * The one-minute load average and the core count of the machine that ran the bench. Absolute
+ * milliseconds measured while more than half the cores were busy are somebody else's contention.
+ */
+export interface IHostLoadReading {
+  cores: number;
+  load1: number;
+}
+export interface IHostLoad extends IHostLoadReading {
+  absolutes: "invalid-absolute" | "valid";
 }
 
 /** Identity fields that make a timed result comparable to its accepted baseline. */
@@ -163,13 +302,31 @@ export interface IPerformanceIdentity {
 }
 
 export interface IRungSummary {
+  godotRatio?: number;
+  /** Median across repeats of the host process's CPU ms per frame in the timed window; undefined when no repeat carried it. */
+  cpuMsPerFrame?: number;
   drawCalls: number;
+  /** Frames over `HITCH_FACTOR` times the rung's own p50, median across repeats. */
+  hitches: number;
   mode: RenderMode;
   objectCount: number;
   p50: number;
   p95: number;
+  p99: number;
+  /** Median across repeats; undefined when no repeat carried the counter. */
+  pipelineCompiles?: number;
   repeats: number;
   sampleCount: number;
+  /** Median across repeats of the main-thread CPU p50 per frame without the present call; undefined when no repeat carried it. */
+  threadCpuP50?: number;
+  /** Median across repeats of the thread CPU p50 spent inside the present call; undefined when no repeat carried it. */
+  presentCpuP50?: number;
+  /** Median across repeats of the crossings p50 per frame; undefined unless the arm counts them. */
+  crossingsP50?: number;
+  /** Per phase, the median across repeats of its p50 and its mean, in thread CPU ms per frame. */
+  phases?: Partial<Record<SummaryPhase, IPhaseStat>>;
+  /** The first repeat's most crossed names per frame; undefined unless the arm counts them. */
+  crossingTop?: Array<[string, number]>;
   triangles: number;
   visibleObjects: number;
 }
@@ -589,6 +746,33 @@ export function parseRunReport(value: unknown): IRunReport {
         );
       timingSeries[field] = samples as number[];
     }
+    const cpuMsPerFrame = rung.cpuMsPerFrame;
+    if (
+      cpuMsPerFrame !== undefined &&
+      (typeof cpuMsPerFrame !== "number" || !Number.isFinite(cpuMsPerFrame) || cpuMsPerFrame < 0)
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.cpuMsPerFrame must be a non-negative number when present`,
+      );
+    const threadCpuMs = rung.threadCpuMs;
+    if (
+      threadCpuMs !== undefined &&
+      (!Array.isArray(threadCpuMs) ||
+        threadCpuMs.length === 0 ||
+        threadCpuMs.some(
+          (sample) => typeof sample !== "number" || !Number.isFinite(sample) || sample < 0,
+        ))
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.threadCpuMs must be a non-empty array of non-negative numbers when present`,
+      );
+    const presentCpuMs = optionalSeries(rung, "presentCpuMs", path);
+    const bridgeCalls = optionalSeries(rung, "bridgeCalls", path);
+    const renderCpuMs = optionalSeries(rung, "renderCpuMs", path);
+    const phases = parsePhases(rung.phases, frameMs.length, `${path}.phases`);
+    const crossingTop = parseCrossingTop(rung.crossingTop, `${path}.crossingTop`);
     const initialPlacementSha256 = rung.initialPlacementSha256;
     if (
       initialPlacementSha256 !== undefined &&
@@ -686,9 +870,33 @@ export function parseRunReport(value: unknown): IRunReport {
         `${path}.ladder, .renderCheck and .foxMeasurement are only meaningful on a realistic-scene rung, not on ${mode}`,
       );
     }
+    const pipelineCompiles = rung.pipelineCompiles;
+    if (
+      pipelineCompiles !== undefined &&
+      (typeof pipelineCompiles !== "number" ||
+        !Number.isInteger(pipelineCompiles) ||
+        pipelineCompiles < 0)
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.pipelineCompiles must be a non-negative integer when present`,
+      );
     return {
+      ...(rung.framePath === undefined
+        ? {}
+        : { framePath: requireString(rung, "framePath", path) }),
+      ...(rung.framePng === undefined ? {} : { framePng: requireString(rung, "framePng", path) }),
+      ...(rung.frameRgba === undefined ? {} : { frameRgba: parseFrameRgba(rung.frameRgba, path) }),
       ...parseCompletedWork(rung, path, frameMs.length),
+      ...(cpuMsPerFrame === undefined ? {} : { cpuMsPerFrame }),
+      ...(threadCpuMs === undefined ? {} : { threadCpuMs: threadCpuMs as number[] }),
+      ...(presentCpuMs === undefined ? {} : { presentCpuMs }),
+      ...(bridgeCalls === undefined ? {} : { bridgeCalls }),
+      ...(renderCpuMs === undefined ? {} : { renderCpuMs }),
+      ...(phases === undefined ? {} : { phases }),
+      ...(crossingTop === undefined ? {} : { crossingTop }),
       drawCalls: requireNumber(rung, "drawCalls", path),
+      ...(pipelineCompiles === undefined ? {} : { pipelineCompiles }),
       frameMs: frameMs as number[],
       ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
       ...(ladder === undefined ? {} : { ladder }),
@@ -724,14 +932,240 @@ export function parseRunReport(value: unknown): IRunReport {
       name: engineName as EngineName,
       version: requireString(engine, "version", "report.engine"),
     },
+    ...(root.hostLoad === undefined ? {} : { hostLoad: parseHostLoad(root.hostLoad) }),
     ...(root.identity === undefined ? {} : { identity: parseReportIdentity(root.identity) }),
     ...(provisional === undefined ? {} : { provisional }),
     rungs,
+    ...(root.web === undefined ? {} : { web: parseWebMetrics(root.web) }),
   };
+}
+
+/** Absolutes are invalid once the one-minute load passes half the cores. */
+export function absolutesVerdict(reading: IHostLoadReading): IHostLoad["absolutes"] {
+  return reading.load1 > reading.cores / 2 ? "invalid-absolute" : "valid";
+}
+
+export interface IHostLoadSource {
+  cores(): number;
+  loadavg(): number[];
+}
+
+/** Defaults to this machine; a spec passes a stub. */
+export function readHostLoad(
+  source: IHostLoadSource = { cores: () => os.availableParallelism(), loadavg: os.loadavg },
+): IHostLoadReading {
+  const cores = source.cores();
+  const load1 = source.loadavg()[0];
+  if (!Number.isInteger(cores) || cores < 1 || load1 === undefined || !Number.isFinite(load1))
+    throw new BenchError(
+      "TN_BENCH_HOST_LOAD_UNREADABLE",
+      `cannot read host load (load1 ${String(load1)}, cores ${String(cores)}); an unmeasured load cannot vouch for absolutes`,
+    );
+  return { cores, load1 };
+}
+
+export function withHostLoad(run: IRunReport, reading: IHostLoadReading): IRunReport {
+  return { ...run, hostLoad: { ...reading, absolutes: absolutesVerdict(reading) } };
+}
+
+function parseHostLoad(value: unknown): IHostLoad {
+  const source = requireObject(value, "report.hostLoad");
+  const reading = {
+    cores: requireNumber(source, "cores", "report.hostLoad"),
+    load1: requireNumber(source, "load1", "report.hostLoad"),
+  };
+  // Recomputed, never trusted: a report that says "valid" above half the cores is lying.
+  const absolutes = absolutesVerdict(reading);
+  if (source.absolutes !== absolutes)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `report.hostLoad.absolutes is ${String(source.absolutes)} but load ${reading.load1} on ${reading.cores} cores is ${absolutes}`,
+    );
+  return { ...reading, absolutes };
 }
 
 export function rungKey(mode: RenderMode, objectCount: number): string {
   return `${mode}@${objectCount}`;
+}
+
+/** A hitch is a frame slower than this many times the rung's own median: a missed deadline. */
+export const HITCH_FACTOR = 2;
+
+function countHitches(frameMs: readonly number[]): number {
+  const limit = HITCH_FACTOR * percentile(frameMs, 0.5);
+  return frameMs.filter((sample) => sample > limit).length;
+}
+
+/**
+ * The scoreboard's rows: `summarize` plus the refusal to publish a row with a counter missing. The
+ * percentiles, hitches and draw calls come from the frame series, so the only counter a driver can
+ * leave out is `pipelineCompiles`, and a rung that did not report one is a hole, never a zero.
+ */
+export function scoreboardRows(report: IRunReport, godot?: IRunReport): IRungSummary[] {
+  report.rungs.forEach((rung, index) => {
+    const path = `report.rungs[${index}] (${rung.mode}@${rung.objectCount})`;
+    if (!Number.isInteger(rung.drawCalls) || rung.drawCalls < 1)
+      throw new BenchError("TN_BENCH_COUNTER_MISSING", `${path} drawCalls is ${rung.drawCalls}`);
+    const compiles = rung.pipelineCompiles;
+    // ponytail: Godot's load test has no pipeline counter (Godot 4.x exposes
+    // RENDERING_INFO_PIPELINE_COMPILATIONS_*; add it to load_test.gd and drop this exemption).
+    if (report.engine.name === "godot" && compiles === undefined) return;
+    if (compiles === undefined || !Number.isInteger(compiles) || compiles < 0)
+      throw new BenchError(
+        "TN_BENCH_COUNTER_MISSING",
+        `${path} reported no pipelineCompiles (${String(compiles)}); a scoreboard row needs the counter, not a default`,
+      );
+  });
+  const rows = summarize(report);
+  if (godot === undefined) return rows;
+  if (godot.arm !== "godot-desktop")
+    throw new BenchError("TN_BENCH_BAD_SHAPE", "godotRatio requires godot-desktop");
+  const reference = scoreboardRows(godot);
+  return rows.map((row) => {
+    const match = reference.find(
+      (other) => other.mode === row.mode && other.objectCount === row.objectCount,
+    );
+    if (!["R2", "R3", "R5"].includes(row.mode) || match === undefined) return row;
+    if (row.p50 <= 0 || match.p50 <= 0)
+      throw new BenchError("TN_BENCH_BAD_SHAPE", "godotRatio requires positive frame p50");
+    return { ...row, godotRatio: match.p50 / row.p50 };
+  });
+}
+
+/** A per-frame series a rung may carry: a non-empty array of non-negative numbers, or absent. */
+function optionalSeries(
+  rung: Record<string, unknown>,
+  field: string,
+  path: string,
+): number[] | undefined {
+  const series = rung[field];
+  if (series === undefined) return undefined;
+  if (
+    !Array.isArray(series) ||
+    series.length === 0 ||
+    series.some((sample) => typeof sample !== "number" || !Number.isFinite(sample) || sample < 0)
+  )
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.${field} must be a non-empty array of non-negative numbers when present`,
+    );
+  return series as number[];
+}
+
+/** A rung's phase series: exactly the `PHASES` names, each as long as `frameMs`, finite and non-negative. */
+function parsePhases(
+  value: unknown,
+  frames: number,
+  path: string,
+): Record<Phase, number[]> | undefined {
+  if (value === undefined) return undefined;
+  const series = requireObject(value, path);
+  const unknown = Object.keys(series).filter(
+    (name) => !(PHASES as readonly string[]).includes(name),
+  );
+  if (unknown.length > 0)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path} names unknown phases: ${unknown.join(", ")}`,
+    );
+  for (const name of PHASES) {
+    const samples = series[name];
+    if (
+      !Array.isArray(samples) ||
+      samples.length !== frames ||
+      samples.some((sample) => typeof sample !== "number" || !Number.isFinite(sample) || sample < 0)
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.${name} must carry ${frames} finite non-negative samples, one per frame`,
+      );
+  }
+  return series as Record<Phase, number[]>;
+}
+
+/** Up to five `[name, crossings per frame]` pairs, most crossed first. */
+function parseCrossingTop(value: unknown, path: string): Array<[string, number]> | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length > 5 ||
+    value.some(
+      (pair) =>
+        !Array.isArray(pair) ||
+        pair.length !== 2 ||
+        typeof pair[0] !== "string" ||
+        pair[0].length === 0 ||
+        typeof pair[1] !== "number" ||
+        !Number.isFinite(pair[1]) ||
+        pair[1] < 0,
+    )
+  )
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path} must be at most five [name, non-negative crossings per frame] pairs`,
+    );
+  return value as Array<[string, number]>;
+}
+
+const mean = (values: readonly number[]): number =>
+  values.reduce((sum, value) => sum + value, 0) / values.length;
+
+/**
+ * One repeat's phase stats. `present` and `other` need the host's frame line (`threadCpuMs` without the
+ * present call, `presentCpuMs`), joined to the page's frames by index from the start of the window; the
+ * host prints a frame or two more or fewer than the page measures, so the shortest series sets the length.
+ * The engine player's facade defers the real draw until the page's frame is over and reports it as
+ * `renderCpuMs`; it is added to `render`, so both arms' `render` is the whole draw call, Dawn work included.
+ */
+export function rungPhaseStats(
+  rung: IRunReportRung,
+): Partial<Record<SummaryPhase, IPhaseStat>> | undefined {
+  const phases = rung.phases;
+  if (phases === undefined) return undefined;
+  const { threadCpuMs: thread, presentCpuMs: present, renderCpuMs: host } = rung;
+  const hostSeries = [thread, present, host].filter((series) => series !== undefined);
+  const frames = Math.min(rung.frameMs.length, ...hostSeries.map((series) => series.length));
+  const stat = (series: readonly number[]): IPhaseStat => ({
+    mean: mean(series),
+    p50: percentile(series, 0.5),
+  });
+  const series = (name: Phase): number[] =>
+    phases[name]
+      .slice(0, frames)
+      .map((ms, index) =>
+        name === "render" && host !== undefined ? ms + (host[index] as number) : ms,
+      );
+  const out: Partial<Record<SummaryPhase, IPhaseStat>> = {};
+  for (const name of PHASES) out[name] = stat(series(name));
+  if (thread !== undefined && present !== undefined) {
+    const measured = PHASES.map(series);
+    out.present = stat(present.slice(0, frames));
+    out.other = stat(
+      thread
+        .slice(0, frames)
+        .map(
+          (ms, index) => ms - measured.reduce((sum, column) => sum + (column[index] as number), 0),
+        ),
+    );
+  }
+  return out;
+}
+
+/** The median across repeats of each phase's stats; a phase only some repeats carry is left out. */
+export function pooledPhaseStats(
+  stats: ReadonlyArray<Partial<Record<SummaryPhase, IPhaseStat>> | undefined>,
+): Partial<Record<SummaryPhase, IPhaseStat>> | undefined {
+  if (stats.some((entry) => entry === undefined)) return undefined;
+  const out: Partial<Record<SummaryPhase, IPhaseStat>> = {};
+  for (const name of SUMMARY_PHASES) {
+    const found = stats.map((entry) => entry?.[name]);
+    if (found.every((entry) => entry !== undefined))
+      out[name] = {
+        mean: median(found.map((entry) => (entry as IPhaseStat).mean)),
+        p50: median(found.map((entry) => (entry as IPhaseStat).p50)),
+      };
+  }
+  return out;
 }
 
 export function summarize(report: IRunReport): IRungSummary[] {
@@ -745,12 +1179,44 @@ export function summarize(report: IRunReport): IRungSummary[] {
   const summaries: IRungSummary[] = [];
   for (const bucket of groups.values()) {
     const first = bucket[0] as IRunReportRung;
+    const compiles = bucket.map((rung) => rung.pipelineCompiles);
+    const cpu = bucket.map((rung) => rung.cpuMsPerFrame);
+    const thread = bucket.map((rung) => rung.threadCpuMs);
+    const present = bucket.map((rung) => rung.presentCpuMs);
+    const crossings = bucket.map((rung) => rung.bridgeCalls);
+    const phaseStats = pooledPhaseStats(bucket.map(rungPhaseStats));
+    const crossingTop = bucket.find((rung) => rung.crossingTop !== undefined)?.crossingTop;
     summaries.push({
+      ...(phaseStats === undefined ? {} : { phases: phaseStats }),
+      ...(crossingTop === undefined ? {} : { crossingTop }),
+      ...(cpu.every((value) => value !== undefined)
+        ? { cpuMsPerFrame: median(cpu as number[]) }
+        : {}),
+      ...(thread.every((series) => series !== undefined)
+        ? { threadCpuP50: median((thread as number[][]).map((series) => percentile(series, 0.5))) }
+        : {}),
+      ...(present.every((series) => series !== undefined)
+        ? {
+            presentCpuP50: median((present as number[][]).map((series) => percentile(series, 0.5))),
+          }
+        : {}),
+      ...(crossings.every((series) => series !== undefined)
+        ? {
+            crossingsP50: median(
+              (crossings as number[][]).map((series) => percentile(series, 0.5)),
+            ),
+          }
+        : {}),
       drawCalls: median(bucket.map((rung) => rung.drawCalls)),
+      hitches: median(bucket.map((rung) => countHitches(rung.frameMs))),
       mode: first.mode,
       objectCount: first.objectCount,
       p50: median(bucket.map((rung) => percentile(rung.frameMs, 0.5))),
       p95: median(bucket.map((rung) => percentile(rung.frameMs, 0.95))),
+      p99: median(bucket.map((rung) => percentile(rung.frameMs, 0.99))),
+      ...(compiles.every((count) => count !== undefined)
+        ? { pipelineCompiles: median(compiles as number[]) }
+        : {}),
       repeats: bucket.length,
       sampleCount: first.frameMs.length,
       triangles: median(bucket.map((rung) => rung.triangles)),
@@ -1452,6 +1918,12 @@ export function checkPerformance(
       `${report.arm} report is provisional (${report.provisional.join(", ")}); a provisional number cannot clear a performance baseline.`,
     );
   }
+  if (report.hostLoad?.absolutes === "invalid-absolute") {
+    throw new BenchError(
+      "TN_BENCH_INVALID_ABSOLUTE",
+      `${report.arm} ran at load ${report.hostLoad.load1} on ${report.hostLoad.cores} cores; its absolute milliseconds cannot clear a performance baseline.`,
+    );
+  }
   if (!Number.isFinite(tolerance) || tolerance < 0) {
     throw new BenchError(
       "TN_BENCH_BAD_TOLERANCE",
@@ -1819,9 +2291,16 @@ export function renderArmMarkdown(report: IRunReport): string {
     `- adapter: ${report.driver.adapter}`,
     `- device: ${report.device.label}, ${report.display.width}×${report.display.height} @ ${report.display.refreshHz} Hz, vsync ${report.display.vsync ? "on" : "off"}`,
     "",
-    "| mode | N | p50 ms | p95 ms | draws | tris | visible | repeats × samples |",
-    "|---|---|---|---|---|---|---|---|",
+    "| mode | N | p50 ms | p95 ms | p99 ms | hitches | draws | compiles | tris | visible | repeats × samples |",
+    "|---|---|---|---|---|---|---|---|---|---|---|",
   ];
+  if (report.hostLoad !== undefined) {
+    lines.splice(
+      6,
+      0,
+      `- host load: ${report.hostLoad.load1.toFixed(2)} on ${report.hostLoad.cores} cores, absolutes ${report.hostLoad.absolutes}`,
+    );
+  }
   if (report.deviceCondition !== undefined) {
     lines.splice(
       6,
@@ -1838,7 +2317,7 @@ export function renderArmMarkdown(report: IRunReport): string {
   }
   for (const summary of summaries) {
     lines.push(
-      `| ${summary.mode} | ${summary.objectCount} | ${summary.p50.toFixed(2)} | ${summary.p95.toFixed(2)} | ${summary.drawCalls} | ${summary.triangles} | ${summary.visibleObjects} | ${summary.repeats} × ${summary.sampleCount} |`,
+      `| ${summary.mode} | ${summary.objectCount} | ${summary.p50.toFixed(2)} | ${summary.p95.toFixed(2)} | ${summary.p99.toFixed(2)} | ${summary.hitches} | ${summary.drawCalls} | ${summary.pipelineCompiles ?? "n/a"} | ${summary.triangles} | ${summary.visibleObjects} | ${summary.repeats} × ${summary.sampleCount} |`,
     );
   }
   lines.push(

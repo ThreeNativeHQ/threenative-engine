@@ -17,7 +17,14 @@ import {
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InstancedBatch } from "../src/instanced-batch.js";
-import { drainMeshPool, parkMesh, pooledMesh } from "../src/render/mesh-pool.js";
+import {
+  MESH_POOL_MAX_HELD,
+  MESH_POOL_MAX_PER_PAIR,
+  drainMeshPool,
+  dropPooledFor,
+  parkMesh,
+  pooledMesh,
+} from "../src/render/mesh-pool.js";
 import { VirtualShadowNode } from "../src/render/virtual-shadow.js";
 import { TerrainTiles } from "../src/world-tiles.js";
 import type { IWorldPackage } from "../src/world.js";
@@ -203,6 +210,49 @@ describe("mesh pool", () => {
     const second = pooledMesh(geometry, material, 8);
     expect(second).toBe(first);
     expect(second.uuid).toBe(first.uuid);
+    drainMeshPool();
+  });
+
+  it("refuses and disposes the ninth park of one pair, and the park past MESH_POOL_MAX_HELD", () => {
+    const geometry = new BoxGeometry();
+    const material = new MeshBasicMaterial();
+    for (let index = 0; index < MESH_POOL_MAX_PER_PAIR; index += 1)
+      expect(parkMesh(new InstancedMesh(geometry, material, 64))).toBe(true);
+    const ninth = new InstancedMesh(geometry, material, 64);
+    const ninthDispose = vi.spyOn(ninth, "dispose");
+    expect(parkMesh(ninth)).toBe(false);
+    expect(ninthDispose).toHaveBeenCalledOnce();
+
+    const pairs = MESH_POOL_MAX_HELD / MESH_POOL_MAX_PER_PAIR;
+    for (let pair = 1; pair < pairs; pair += 1) {
+      const anotherGeometry = new BoxGeometry();
+      const anotherMaterial = new MeshBasicMaterial();
+      for (let index = 0; index < MESH_POOL_MAX_PER_PAIR; index += 1)
+        parkMesh(new InstancedMesh(anotherGeometry, anotherMaterial, 64));
+    }
+    const pastFull = new InstancedMesh(new BoxGeometry(), new MeshBasicMaterial(), 64);
+    const fullDispose = vi.spyOn(pastFull, "dispose");
+    expect(parkMesh(pastFull)).toBe(false);
+    expect(fullDispose).toHaveBeenCalledOnce();
+    drainMeshPool();
+  });
+
+  it("dropPooledFor disposes the parked meshes of one pair and forgets the pair", () => {
+    const geometry = new BoxGeometry();
+    const material = new MeshBasicMaterial();
+    const first = new InstancedMesh(geometry, material, 64);
+    const second = new InstancedMesh(geometry, material, 64);
+    parkMesh(first);
+    parkMesh(second);
+    const firstDispose = vi.spyOn(first, "dispose");
+    const secondDispose = vi.spyOn(second, "dispose");
+    dropPooledFor(geometry, material);
+    expect(firstDispose).toHaveBeenCalledOnce();
+    expect(secondDispose).toHaveBeenCalledOnce();
+    // The pair has no parked capacity, so the pool mints a fresh mesh for the next caller.
+    const reclaimed = pooledMesh(geometry, material, 64);
+    expect(reclaimed).not.toBe(first);
+    expect(reclaimed).not.toBe(second);
     drainMeshPool();
   });
 });

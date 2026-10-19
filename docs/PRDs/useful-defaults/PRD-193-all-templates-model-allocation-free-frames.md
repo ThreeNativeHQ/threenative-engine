@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P2 — Open boxes remove per-frame allocation from six templates' movement, touch and HUD paths.
 **Complexity:** +3 for 10+ files = **3 → LOW mode**. The work is split so each phase touches at
 most five files.
 

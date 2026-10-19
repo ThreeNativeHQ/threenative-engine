@@ -1,0 +1,132 @@
+{
+  "oldPatchSha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b",
+  "currentPatchSha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0",
+  "result": [
+    {
+      "template": "action-rpg",
+      "before": "0b06ad9bbcddcb702497985eaaa855c5bfbc66d43809e720f2f9b445172b6dd3",
+      "after": "115e31cd5a319cf1407d94486a839304ca26cc6c532384129f6a3e8e7f1a3e36",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "minimal",
+      "before": "531c452baae7bbeb08a511f8cc06c2d94b5886b1de70c31de5968462584c82bd",
+      "after": "4149749167f26a50c4fe67b801cc71e3d9e26d737f7e43766813f69ac5804900",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "platformer",
+      "before": "616d63fb1b0fe888c39a4dbbae651ecd3e85b61d5fd396bc0f77fde122bef585",
+      "after": "87dc88a3a6d50e88c476cf80c5be501bca62ce27474aed5d8155e02d8e729c90",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "puzzle",
+      "before": "f0a302958d7607eb8438ddedea79241bf87f04620d28fe04d92dc8c5bd887742",
+      "after": "fc5d88b24b78db3830510360fe2a4e53a7d0805737ddc07047fb6530b23009bb",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "racing",
+      "before": "39c2eb35911939484c4be5c35b8b1fb1be2ccaa8fdb4c2269a7e7943f61ca93f",
+      "after": "502373fe0d07d97dca2bab70929ead5f7bafac123d3b97c2ae49b4a919e5124e",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "rain",
+      "before": "80a2c0297f451b096950bcdb7a7710776e063c4819c6b1b543f0bc320edda41c",
+      "after": "731042034a9c73824998c919137aa7002d75cac031713e6d309bc8301f8b4088",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "rts",
+      "before": "df5e7ef2ff5dedb7c234239141afbaae2d32f8d6f9e58be89e0731b47f857572",
+      "after": "2b875e1041e0e533d17f5bd5104094e11f8fbbdd06aef1e0156cba80fc21585b",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "runner",
+      "before": "cbeb5578241eab87a38307dd27f4ede42bf4058774d6dea4cf848fde0fd50bb2",
+      "after": "b66c2056b1256773911c0f6e46bea6c2f705cc3acbb2b8e2aa3ee8c461938cff",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "sailing",
+      "before": "adf775fd15287af4cc00b675264e157e0555b027e3bd32ad9a5e8aebbcd1f64d",
+      "after": "2d1ec2373e3697afa0d8f6341260911c24f988315dc2942d1328c0ddbd848011",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "shooter",
+      "before": "0b9dadf239d441709f214da3035792741f791fdf5349e44c063f619b048a3484",
+      "after": "2a4a5cb0b4c91b2cc7578df8bee854d3fa66ffd58f85a8c840964c5549cecc54",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "snow",
+      "before": "f3d4878829cf14ebee6355e720c223171529d550e8cafc9cd6328285a8000d3b",
+      "after": "7b634782b3bc6eff9cc9b15141bbe5bba9d1014e034d2a2e8859e785911a6424",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "starter",
+      "before": "fae9ee908d5c9370fdf95c1314f6845be5fcb9fd64114af21082331b21e53579",
+      "after": "212b3f23c97b60ad8475a9418a6f4eeb87202ebad570b424cab83ff6c3c4ef17",
+      "changedFile": "patches/three@0.185.1.patch"
+    },
+    {
+      "template": "tower-defense",
+      "before": "68ce595b3857e5ca3e94c7b4dc09f29cb0e16459b6642c235f391b7312da365e",
+      "after": "b72a0736abbcd3b2007852684b9298dc6d2069c8130337f140f15fb48f341511",
+      "changedFile": "patches/three@0.185.1.patch"
+    }
+  ],
+  "qualifiedSourceSha": "526bd237dc6938659abc48b0c3d78de956cfc06a",
+  "cause": "All13 generated trees embed the reviewed Three patch. Changing only that generated file reproduces all13 exact CI hashes; no template, version or other scaffold bytes change.",
+  "unchangedQualifiedRuntimeInputs": [
+    {
+      "filename": "examples/prd476-fluid-particles/playtests/fluid-collision.playtest.json",
+      "sha256": "c50f2e0cc15f0019d2b2f2f2f916d08a06534fa358de8cb0d587630562e0ccda"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/proof.html",
+      "sha256": "22a2d1a0cdd8822a276be9e7a2afaacedab1f30162474e3adb954d1f0f38d439"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/proof.vite.config.ts",
+      "sha256": "485b60dd4120a7ec567ca7e32f57f0f2832b034fc31969d1112b82b876bb30cd"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/src/collision-proof.ts",
+      "sha256": "d7bb330b0a321675bec66fb66afa4bac40d8ffc0285acb32dbb03df868457c13"
+    },
+    {
+      "filename": "packages/core/patches/three@0.185.1.patch",
+      "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+    },
+    {
+      "filename": "packages/core/src/fluid-particles.ts",
+      "sha256": "474930855500cf2754fe5149ff2283200f9576470a3e3cf6844680ba5fde3f9d"
+    },
+    {
+      "filename": "packages/core/src/gpu-readback.ts",
+      "sha256": "fece052efd783927fc92f05f9536c27d9ab22e4c15f47f3f693d2bf10013e64f"
+    },
+    {
+      "filename": "packages/runtime-native/scripts/bundle.mjs",
+      "sha256": "238f9cc17f995746e2575836103d81ec3401e7cf1f07602c5af1f2efc30a4d10"
+    },
+    {
+      "filename": "scripts/fluid-collision-proof.ts",
+      "sha256": "9889bbc4424d5919211a80aceec3043b1941ff1d4828904f6e803f0ecbb5a24e"
+    },
+    {
+      "filename": "scripts/verify-fluid-collision-native.ts",
+      "sha256": "5bbd8c07d613e13a7b4e8c2faf5b702f854843525656b60ed3e86f02216724a4"
+    },
+    {
+      "filename": "scripts/verify-fluid-collision.ts",
+      "sha256": "5d3457a52e53162a3a3e29db289391755a8f655d94542c2252124ad616223ab6"
+    }
+  ]
+}

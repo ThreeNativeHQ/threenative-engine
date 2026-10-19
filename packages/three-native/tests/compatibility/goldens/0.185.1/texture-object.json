@@ -1,0 +1,35 @@
+{
+  "name": "texture-object",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — texture(object, uv) over two DataTextures the material does not own as maps (three r185 TextureNode.js), as Midway's ocean and whitewater sample theirs",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:784293c91a4fb3f58c1bc0c27da9da52173102aed03544684047dc3839d94833",
+      "decimal": "784293c91a4fb3f58c1bc0c27da9da52173102aed03544684047dc3839d94833"
+    }
+  ],
+  "render": {
+    "png": "texture-object.png",
+    "pngSha256": "784293c91a4fb3f58c1bc0c27da9da52173102aed03544684047dc3839d94833",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

@@ -1,4 +1,11 @@
-import { CameraShake, type ICtx, Scene, type SceneFrame, isMobile } from "@threenative/core";
+import {
+  CameraShake,
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  getPlatform,
+  isMobile,
+} from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import { type Group, type Mesh, type PerspectiveCamera, type Texture, Vector3 } from "three";
 import {
@@ -27,10 +34,13 @@ import { Enemy } from "../enemies/Enemy.js";
 import { drainIntents } from "../intents.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { setupCamera } from "../render/camera.js";
+import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { palette } from "../render/palette.js";
 import { setupPost } from "../render/postprocessing.js";
+import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { ghostTower, rangeGeometry, rangeRing } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import { type GameState, INITIAL_STATE } from "../state.js";
@@ -64,12 +74,30 @@ function sameState(a: GameState, b: GameState): boolean {
 }
 
 export class Battle extends Scene<GameState, IPhysicsContext> {
+  #environmentSample: IEnvironmentSample | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+  #post: ReturnType<typeof setupPost> | undefined;
+  #materialEnvironment(ctx: GameCtx) {
+    return {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
+  }
   static override readonly initialState = INITIAL_STATE;
 
   #sky: Texture | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
     this.#sky = await ctx.assets.texture("sky.jpg");
+    setupSky(ctx.scene, this.#sky);
+    this.#environmentSample = await sampleEnvironment(
+      ctx.renderer.raw,
+      ctx.scene,
+      this.#materialEnvironment(ctx),
+    );
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -82,10 +110,15 @@ export class Battle extends Scene<GameState, IPhysicsContext> {
     );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+    this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
       godraysLight: key,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
+      onTierChanged: (tier) =>
+        this.#materialLighting?.setEnabled(
+          materialLightingEnabled(tier, this.#materialEnvironment(ctx)),
+        ),
     });
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
@@ -155,6 +188,7 @@ export class Battle extends Scene<GameState, IPhysicsContext> {
         pool.push(enemy);
         enemies.set(entityId, enemy);
         ctx.add(enemy.mesh);
+        this.#materialLighting?.enroll(enemy.mesh);
         ctx.entities.add(entityId, enemy);
       }
       enemy.reset(`${enemy.entityId}.w${wave}`, spawn.hp);
@@ -194,6 +228,7 @@ export class Battle extends Scene<GameState, IPhysicsContext> {
       towerAt.set(pad, tower);
       board.occupy(pad);
       ctx.add(tower.group);
+      this.#materialLighting?.enroll(tower.group);
       ctx.entities.add(`tower.${id}`, tower);
       return tower;
     };
@@ -328,7 +363,10 @@ export class Battle extends Scene<GameState, IPhysicsContext> {
         return;
       }
       tower.invested += cost;
+      const oldGroup = tower.group;
+      this.#materialLighting?.release(oldGroup);
       tower.upgrade();
+      this.#materialLighting?.enroll(tower.group);
       select(tower);
       setRing(selectRing, tower.stats.range);
       selectRadius = tower.stats.range;
@@ -343,6 +381,7 @@ export class Battle extends Scene<GameState, IPhysicsContext> {
       towerAt.delete(tower.padIndex);
       towers.delete(tower.id);
       select(undefined);
+      this.#materialLighting?.release(tower.group);
       ctx.entities.remove(`tower.${tower.id}`);
       toast(`Recycled  +${refund}`);
     };
@@ -516,6 +555,23 @@ export class Battle extends Scene<GameState, IPhysicsContext> {
       if (!sameState(next, previous)) frameCtx.state.set(next);
     };
 
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, key, {
+        ...this.#materialEnvironment(ctx),
+        enabled: materialLightingEnabled(this.#post.tier, this.#materialEnvironment(ctx)),
+      }),
+    );
+    if (this.#environmentSample !== undefined) {
+      const { measurement, source, intensity } = this.#environmentSample;
+      this.#materialLighting.setEnvironmentMeasurement(
+        measurement,
+        source,
+        intensity,
+        this.#environmentSample,
+      );
+    }
+
     return (frameCtx, rawDt) => {
       loading.update();
       const input = frameCtx.input;
@@ -535,5 +591,12 @@ export class Battle extends Scene<GameState, IPhysicsContext> {
       syncPreview();
       publish(frameCtx, speed);
     };
+  }
+  override exit(ctx: GameCtx): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
+    super.exit(ctx);
   }
 }

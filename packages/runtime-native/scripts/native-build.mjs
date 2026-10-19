@@ -5,7 +5,9 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { desktopBuildOverrides } from './desktop-build-profile.mjs';
 import { uiOverlayLibraryPath } from './build-native-ui-overlay.mjs';
+import { cssUiLibraryPath } from './build-native-css-ui.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const tools = join(root, '.runtime', 'tools-venv');
@@ -60,27 +62,37 @@ configureArgs.push(
 // The UI overlay is the desktop host's own, and every desktop host now has a backend: X11 on
 // Linux, WebView2 on Windows, WebKit on macOS. Build it wherever a desktop host is being built
 // and hand CMake the path the host toolchain actually wrote.
+//
+// `TN_ENABLE_UI_OVERLAY=0` is the opt-out, and it is the one that makes the CSS UI backend the
+// *only* UI: the web overlay crate is never built, so the host ends up with no browser in it at
+// all. Anything else (unset included) is the default above, unchanged.
 if (process.platform === 'linux' || process.platform === 'darwin' || process.platform === 'win32') {
-  run(process.execPath, [join(root, 'scripts', 'build-native-ui-overlay.mjs')]);
-  const uiOverlayLibrary = uiOverlayLibraryPath(root);
+  if (process.env.TN_ENABLE_UI_OVERLAY === '0') {
+    configureArgs.push('-DTN_ENABLE_UI_OVERLAY=OFF');
+  } else {
+    run(process.execPath, [join(root, 'scripts', 'build-native-ui-overlay.mjs')]);
+    const uiOverlayLibrary = uiOverlayLibraryPath(root);
+    configureArgs.push(
+      '-DTN_ENABLE_UI_OVERLAY=ON',
+      `-DTHREENATIVE_UI_OVERLAY_LIBRARY=${uiOverlayLibrary}`,
+    );
+  }
+}
+// The CSS UI backend, opted into with TN_ENABLE_CSS_UI=1: the same `src/ui/` rasterised on the CPU
+// with no WebView anywhere on the path. Off by default, like the option itself, so the default
+// desktop build is unchanged; on, the crate is built first and its staticlib handed to CMake, which
+// fails at configure time naming it if it is missing.
+if (process.env.TN_ENABLE_CSS_UI === '1') {
+  run(process.execPath, [join(root, 'scripts', 'build-native-css-ui.mjs')]);
   configureArgs.push(
-    '-DTN_ENABLE_UI_OVERLAY=ON',
-    `-DTHREENATIVE_UI_OVERLAY_LIBRARY=${uiOverlayLibrary}`,
+    '-DTN_ENABLE_CSS_UI=ON',
+    `-DTHREENATIVE_CSS_UI_LIBRARY=${cssUiLibraryPath(root)}`,
   );
 }
-// Linux arm64 has no V8 or Dawn prebuilt (kuoruan/libv8 ships Linux x64 only; Dawn's
-// `ubuntu-latest` asset is x64) and a source V8 build is not allowed in CI. Build the arm64
-// desktop host with the QuickJS engine over the wgpu-native backend — the combination that does
-// have an arm64 path (`wgpu-linux-aarch64`). Command-line cache entries override the tn-linux
-// preset's V8+Dawn defaults, so the binary directory the CI lane reads stays `build/tn-linux`.
-if (process.platform === 'linux' && process.arch === 'arm64') {
-  configureArgs.push(
-    '-DMYSTRAL_USE_V8=OFF',
-    '-DMYSTRAL_USE_QUICKJS=ON',
-    '-DMYSTRAL_USE_DAWN=OFF',
-    '-DMYSTRAL_USE_WGPU=ON',
-  );
-}
+// Linux arm64 selects cached V8 over wgpu-native. Cache entries override the tn-linux
+// preset's Dawn default while preserving the build/tn-linux directory consumed by CI.
+configureArgs.push(...Object.entries(desktopBuildOverrides()).map(([key, value]) => `-D${key}=${value}`));
+
 const vcpkgRoot = process.env.VCPKG_ROOT ?? process.env.VCPKG_INSTALLATION_ROOT;
 if (windows && vcpkgRoot) {
   configureArgs.push(

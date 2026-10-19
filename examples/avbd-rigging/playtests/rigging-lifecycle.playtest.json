@@ -1,0 +1,188 @@
+{
+  "name": "avbd-rigging-lifecycle",
+  "schemaVersion": 1,
+  "subject": "fifty real rigging retirements restore owned GPU allocations and registrations while preserving the renderer device",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 300,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "request-fifty-cycles",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "retired-generations-10",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 10
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "retired-generations-20",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 20
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "retired-generations-30",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 30
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "retired-generations-40",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 40
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "fifty-retired-generations",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 50
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "replacement-draw-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "measured",
+        "equals": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "mode",
+        "equals": "candidate",
+        "throughoutSteps": true,
+        "allowTrivial": "The candidate arm is a held invariant from load; completedCycles must independently reach 50."
+      },
+      {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 50
+      },
+      {
+        "id": "GameState",
+        "path": "lifecycleObserved",
+        "gte": 50
+      },
+      {
+        "id": "GameState",
+        "path": "releasedBuffers",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "releasedBytes",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "releasedQuerySets",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "releasedStorage",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "registryBaseline",
+        "equals": 0,
+        "allowTrivial": "The empty-registry baseline is held from load; it is rechecked after 50 attach/detach cycles."
+      },
+      {
+        "id": "GameState",
+        "path": "registryCount",
+        "equals": 1,
+        "allowTrivial": "One registration is the held steady state; 50 cycles must return it to exactly one."
+      },
+      {
+        "id": "GameState",
+        "path": "deviceMismatch",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Zero shared-device replacements is a held safety invariant, checked at every retained checkpoint."
+      },
+      {
+        "id": "GameState",
+        "path": "lifecycleFailures",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Zero lifecycle failures is a held safety invariant, checked at every retained checkpoint."
+      },
+      {
+        "id": "GameState",
+        "path": "cleanupFailed",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Zero cleanup failures is a held safety invariant, checked at every retained checkpoint."
+      },
+      {
+        "id": "GameState",
+        "path": "readbackFailures",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Zero readback failures is a held safety invariant, checked at every retained checkpoint."
+      },
+      {
+        "id": "GameState",
+        "path": "observationFailures",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Zero observation failures is a held safety invariant, checked at every retained checkpoint."
+      },
+      {
+        "id": "GameState",
+        "path": "rendererControl.solverAllocations",
+        "equals": 0,
+        "allowTrivial": "Zero renderer-owned solver allocations is a held ownership invariant; releasedStorage independently counts retirements."
+      },
+      {
+        "id": "GameState",
+        "path": "fixedColorsValidated",
+        "equals": 1,
+        "allowTrivial": "Fixed-colour validation holds from load and must still hold after 50 rebuilds."
+      }
+    ]
+  }
+}

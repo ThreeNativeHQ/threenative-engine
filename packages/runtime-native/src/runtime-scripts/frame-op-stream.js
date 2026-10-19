@@ -598,6 +598,18 @@
         u32(opt(z, 1));
       });
     },
+    dispatchWorkgroupsIndirect(b, o) {
+      const passId = receiverId(this, computePassIdKey, "compute pass");
+      if (planMode && reusable(35, passId, bufferId(b), o)) {
+        reuseRecord(0);
+        return;
+      }
+      emit(35, () => {
+        u32(passId);
+        u32(bufferId(b));
+        f64(o);
+      });
+    },
     end() {
       const passId = receiverId(this, computePassIdKey, "compute pass");
       if (planMode && reusable(22, passId)) {
@@ -1200,7 +1212,7 @@
   // drains everything, exactly as before. `planEpoch` is the retained-plan generation the host
   // reports; when it is not the one this recorder captured against, the plan is gone over there and
   // the frame is sent as a capture instead of as a patch.
-  return (partial, planEpoch) => {
+  const drain = (partial, planEpoch) => {
     const ops = partial ? safeOpCount : opCount;
     if (!ops) {
       // A fully consumed partial frame still has a real boundary: expire its wire wrappers.
@@ -1327,4 +1339,6 @@
     }
     return frame;
   };
+  Object.defineProperty(drain, "pendingOps", { get: () => opCount > 0 });
+  return drain;
 };

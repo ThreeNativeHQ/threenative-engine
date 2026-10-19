@@ -23,12 +23,6 @@ import { type IncomingMessage, type ServerResponse, createServer } from "node:ht
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { chromium } from "@playwright/test";
-import {
-  WEBGPU_BROWSER_ARGS,
-  softwareAdapterName,
-} from "../packages/playtest/src/runner/browser.js";
-import { compareCaptures } from "../packages/runtime-native/conformance/metrics.mjs";
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -101,6 +95,11 @@ await startVisualScene(canvas, ${JSON.stringify(DIMENSIONS)}, "exposure-ab", ({ 
 }
 
 async function main(): Promise<void> {
+  const { chromium } = await import("@playwright/test");
+  const { WEBGPU_BROWSER_ARGS, softwareAdapterName } = await import(
+    "../packages/playtest/src/runner/browser.js"
+  );
+  const { compareCaptures } = await import("../packages/runtime-native/conformance/metrics.mjs");
   const out = process.argv[2] ?? DEFAULT_OUT;
   const directory = await mkdtemp(path.join(REPO_ROOT, "artifacts/exposure-ab-"));
   const captures: { exposure: number; image: Buffer; adapter: Record<string, string> }[] = [];

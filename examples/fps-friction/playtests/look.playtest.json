@@ -42,9 +42,6 @@
     }
   ],
   "assert": {
-    "camera": {
-      "entity": "camera.main"
-    },
     "diagnostics": {
       "noConsoleErrors": true,
       "noRuntimeDiagnostics": true,

@@ -72,6 +72,40 @@ import type { IStandalonePlaytestReport } from "./shared.js";
 import type { ILabeledPlaytestSample, IMovementSampleInterval, IRunnerConsoleEntry } from "./shared.js";
 // Extracted verbatim from runner.ts (PRD-182 Phase 4); do not edit semantics here.
 
+/** Align only explicitly anchored scenarios; sample again even when already at the target. */
+export async function alignScenarioStartTick(
+  bridge: IPlaytestBridgeClient | undefined,
+  startTick: number | undefined,
+  liveClock = false,
+): Promise<void> {
+  if (startTick === undefined) return;
+  const fail = (reason: string): never => {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_START_TICK_INVALID",
+      `Scenario startTick ${startTick}: ${reason}`,
+      "Use a fixed-step bridge and an explicit safe integer anchor at or after startup readiness.",
+    ));
+  };
+  if (!Number.isSafeInteger(startTick) || startTick < 0) fail("anchor must be a nonnegative safe integer.");
+  const client = bridge ?? fail("requires an installed bridge.");
+  if (liveClock || !client.description.capabilities.includes("runtime.fixedStep")) {
+    fail("requires a counted runtime.fixedStep bridge, without --live-clock.");
+  }
+  const readTick = async (): Promise<number> => {
+    const { clock } = await client.sample({ entities: [], include: [] });
+    const tick = clock.tick;
+    if (clock.mode !== "fixed-step" || typeof tick !== "number" || !Number.isSafeInteger(tick) || tick < 0) {
+      return fail("requires an observed fixed-step clock with a nonnegative safe integer tick.");
+    }
+    return tick;
+  };
+  const tick = await readTick();
+  if (tick > startTick) fail(`startup already passed the anchor at tick ${tick}.`);
+  if (tick < startTick) await client.advance(startTick - tick);
+  const aligned = await readTick();
+  if (aligned !== startTick) fail(`clock reached tick ${aligned} instead of the exact anchor.`);
+}
+
 export function preflightDisplay(
   config: Pick<IStandalonePlaytestConfig, "headless">,
   scenario: Pick<IPlaytestScenario, "artifacts" | "assert" | "steps">,
@@ -80,7 +114,7 @@ export function preflightDisplay(
 ): IPlaytestDiagnostic | undefined {
   const takesScreenshot = scenario.artifacts?.screenshots !== false
     || scenario.steps.some(({ screenshot }) => screenshot !== undefined);
-  const evaluatesVisual = (scenario.assert?.visual?.length ?? 0) > 0;
+  const evaluatesVisual = (scenario.assert?.visual?.length ?? 0) > 0 || (scenario.assert?.tone?.length ?? 0) > 0;
   const evaluatesFramebuffer = scenario.assert?.framebufferCoverage !== undefined;
   if (platform !== "linux" || config.headless !== true || environment.DISPLAY || environment.WAYLAND_DISPLAY || (!takesScreenshot && !evaluatesVisual && !evaluatesFramebuffer)) {
     return undefined;
@@ -163,12 +197,12 @@ export function addPreflightDiagnostic(
 /**
  * The console cascade a lost WebGPU device leaves behind: core's `TN_DEVICE_LOST` report, three's
  * own `WebGPU Device Lost` line, the `mapAsync` rejections from the timestamp-query pool once the
- * device is gone, and Chromium's `OperationError: Instance dropped in popErrorScope` from three's
- * WebGPU backend when the fallback adapter's instance is dropped under SwiftShader. A device loss
- * is one event with several error lines, and they must be read as one so a declared software lane
- * can record it rather than fail on each derived line.
+ * device is gone, and Chromium's `OperationError: Instance dropped` messages from three's WebGPU
+ * backend when the fallback adapter's instance is dropped under SwiftShader. A device loss is one
+ * event with several error lines, and they must be read as one so a declared software lane can
+ * record it rather than fail on each derived line.
  */
-const SOFTWARE_DEVICE_LOSS = /TN_DEVICE_LOST|WebGPU Device Lost|A valid external Instance reference no longer exists|Instance dropped in popErrorScope/iu;
+const SOFTWARE_DEVICE_LOSS = /TN_DEVICE_LOST|WebGPU Device Lost|A valid external Instance reference no longer exists|Instance dropped (?:in popErrorScope|error in getCompilationInfo)/iu;
 
 function isSoftwareDeviceLossEntry(entry: IRunnerConsoleEntry): boolean {
   return (entry.type === "error" || entry.type === "assert" || entry.type === "pageerror")
@@ -196,6 +230,7 @@ export function buildReport(
   movementBaselineSnapshot: IPlaytestObservationSnapshot | undefined = undefined,
   startup: IStandalonePlaytestReport["startup"] = undefined,
   deviceLifecycle: IPlaytestObservations["deviceLifecycle"] = undefined,
+  tone: IPlaytestObservations["tone"] = undefined,
 ): IStandalonePlaytestReport {
   const movementSample = isAnonymousMovementScenario(scenario)
     ? observedMovementSample(movementSamples)
@@ -228,6 +263,17 @@ export function buildReport(
   const beforeRotation = entityRotation(movementBeforeSnapshot, entity);
   const afterRotation = entityRotation(movementAfterSnapshot, entity);
   const components = componentObservations(beforeSnapshot, afterSnapshot);
+  for (const assertion of scenario.assert?.components ?? []) {
+    const observed = components?.[assertion.entity]?.[assertion.component];
+    if (assertion.changed === undefined || observed === undefined || observed.before !== undefined) continue;
+    // Only temporal assertions use a spawned entity's measured lifetime; final-value guards keep the run baseline.
+    const baseline = labeledSamples.find(({ snapshot }) =>
+      snapshot.components?.[assertion.entity]?.[assertion.component] !== undefined
+      && (snapshot.clock.tick ?? snapshot.clock.timeMs ?? Number.POSITIVE_INFINITY)
+        < (afterSnapshot?.clock.tick ?? afterSnapshot?.clock.timeMs ?? Number.NEGATIVE_INFINITY))
+      ?.snapshot.components?.[assertion.entity]?.[assertion.component];
+    if (baseline !== undefined) observed.before = baseline;
+  }
   const movementDelta = beforePosition === undefined || afterPosition === undefined
     ? undefined
     : subtract(afterPosition, beforePosition);
@@ -287,6 +333,7 @@ export function buildReport(
     // Honest placement reporting: what the scenario asked to override, and what applied.
     ...(setup === undefined ? {} : { setup }),
     observations: buildObservations({
+      ...(tone === undefined || tone.length === 0 ? {} : { tone }),
       console: observedConsoleEntries,
       ...(components === undefined
         ? {}
@@ -409,6 +456,7 @@ export function buildReport(
     artifactDirectory: config.artifactDirectory,
     ...(capture === undefined ? {} : { capture }),
     assertionResults,
+    clock: config.liveClock === true ? "wall-clock" : "fixed-step",
     diagnostics: allDiagnostics,
     pass: assertionResults.every(({ pass }) => pass) && allDiagnostics.every(({ severity }) => severity !== "error"),
     runtime: "web",

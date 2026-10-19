@@ -1,0 +1,80 @@
+{
+  "name": "quaternion-slerp",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Quaternion.tests.js — slerp between two normalized quaternions, plus normalize",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "a",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fc8dab74fa3cf29,n:bfc6fcb5b2c698f0,n:3fd96a0ca32b30fd,n:3fec1f730bb88ecc",
+      "decimal": "0.19417468441644672, -0.17958708981786442, 0.39709773954815814, 0.8788390377926247"
+    },
+    {
+      "index": 1,
+      "id": "b",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fddabd2dad6a7fe,n:3fd6008b0a05cee6,n:bfc603b6df1b76fc,n:3fe98bbeb77dd7b7",
+      "decimal": "0.46361228342959737, 0.34378314951685096, -0.17198835271749846, 0.7983087142772466"
+    },
+    {
+      "index": 2,
+      "id": "quarter",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd22abef7fe1002,n:bfa770ca8fef4496,n:3fd10a42bc74fa5f,n:3fed70cf7e34580f",
+      "decimal": "0.28385900705347933, -0.045782404012819786, 0.26625126270292826, 0.9200208153658894"
+    },
+    {
+      "index": 3,
+      "id": "quarter",
+      "kind": "number",
+      "method": "length",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 4,
+      "id": "midpoint",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd717f3030a76da,n:3fb70eefe5efcdc4,n:3fbf9ccddc13e465,n:3fed70cbc8db3744",
+      "decimal": "0.3608367471405082, 0.09007167209329398, 0.12348639128676238, 0.9200190470671505"
+    },
+    {
+      "index": 5,
+      "id": "endpoint",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fddabd2dad6a7fe,n:3fd6008b0a05cee6,n:bfc603b6df1b76fc,n:3fe98bbeb77dd7b7",
+      "decimal": "0.46361228342959737, 0.34378314951685096, -0.17198835271749846, 0.7983087142772466"
+    },
+    {
+      "index": 6,
+      "id": "loose",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000",
+      "decimal": "1, 0, 0, 0"
+    },
+    {
+      "index": 7,
+      "id": "flipped",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfdafc8303648b01,n:8000000000000000,n:3f9966cb2e6a76f8,n:3fec1f68162c3cfc",
+      "decimal": "-0.4216620953686033, -0, 0.024806189258575778, 0.8788338120520218"
+    },
+    {
+      "index": 8,
+      "id": "flipped",
+      "kind": "number",
+      "path": "y",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "base": {
+    "id": "grass",
+    "tile": 4.2,
+    "tint": [0.72, 0.95, 0.55],
+    "normal": true,
+    "saturation": 1.25,
+    "far": {
+      "tile": 17,
+      "from": 4,
+      "to": 40,
+      "amount": 0.6
+    }
+  },
+  "breakup": {
+    "scale": 0.05,
+    "push": 0.28
+  },
+  "macro": {
+    "scale": 0.006,
+    "min": 0.6,
+    "max": 1.28
+  },
+  "layers": [
+    {
+      "id": "dirt",
+      "tile": 3.4,
+      "tint": [0.8, 0.72, 0.62],
+      "normal": true,
+      "mask": "dirt",
+      "lo": 0.45,
+      "hi": 0.85,
+      "far": {
+        "tile": 15,
+        "from": 4,
+        "to": 40,
+        "amount": 0.5
+      }
+    },
+    {
+      "id": "rock",
+      "tile": 3.8,
+      "tint": [1, 1, 1],
+      "normal": true,
+      "triplanar": true,
+      "mask": "rock",
+      "lo": 0.25,
+      "hi": 0.75
+    },
+    {
+      "id": "moss",
+      "tile": 3.6,
+      "tint": [1, 1, 1],
+      "normal": true,
+      "mask": "moss",
+      "lo": 0.25,
+      "hi": 0.75
+    }
+  ],
+  "textures": "textures",
+  "sources": {
+    "grass": {
+      "diff": "leafy_grass/leafy_grass_diff_1k.jpg",
+      "nrm": "leafy_grass/leafy_grass_nor_gl_1k.jpg"
+    },
+    "dirt": {
+      "diff": "forest_ground_04/forest_ground_04_diff_1k.jpg",
+      "nrm": "forest_ground_04/forest_ground_04_nor_gl_1k.jpg"
+    },
+    "rock": {
+      "diff": "rock_boulder_dry/rock_boulder_dry_diff_512.jpg",
+      "nrm": "rock_boulder_dry/rock_boulder_dry_nor_gl_512.jpg"
+    },
+    "moss": {
+      "diff": "mossy_rock/mossy_rock_diff_1k.jpg",
+      "nrm": "mossy_rock/mossy_rock_nor_gl_1k.jpg"
+    }
+  }
+}

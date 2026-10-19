@@ -50,6 +50,11 @@ const deviceLossCascade: IRunnerConsoleEntry[] = [
     text: "OperationError: Instance dropped in popErrorScope\n    at http://127.0.0.1:4176/node_modules/.vite/deps/three_webgpu.js?v=fe38ffa0:55823:38",
     type: "pageerror",
   },
+  {
+    source: "page-error",
+    text: "OperationError: Instance dropped error in getCompilationInfo\n    at WebGPUPipelineUtils._reportShaderDiagnostics",
+    type: "pageerror",
+  },
 ];
 
 const realError: IRunnerConsoleEntry = {

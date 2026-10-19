@@ -1,0 +1,258 @@
+{
+  "sourceSha": "76d0c96c40285b6033edfc1d93a910c0dad47daa",
+  "sourceFiles": [
+    {
+      "filename": "packages/core/src/fluid-particles.ts",
+      "sha256": "474930855500cf2754fe5149ff2283200f9576470a3e3cf6844680ba5fde3f9d"
+    },
+    {
+      "filename": "packages/core/src/gpu-readback.ts",
+      "sha256": "fece052efd783927fc92f05f9536c27d9ab22e4c15f47f3f693d2bf10013e64f"
+    },
+    {
+      "filename": "packages/core/patches/three@0.185.1.patch",
+      "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/src/collision-proof.ts",
+      "sha256": "d7bb330b0a321675bec66fb66afa4bac40d8ffc0285acb32dbb03df868457c13"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/playtests/fluid-collision.playtest.json",
+      "sha256": "c50f2e0cc15f0019d2b2f2f2f916d08a06534fa358de8cb0d587630562e0ccda"
+    },
+    {
+      "filename": "scripts/fluid-collision-proof.ts",
+      "sha256": "9889bbc4424d5919211a80aceec3043b1941ff1d4828904f6e803f0ecbb5a24e"
+    },
+    {
+      "filename": "scripts/verify-fluid-collision-native.ts",
+      "sha256": "5bbd8c07d613e13a7b4e8c2faf5b702f854843525656b60ed3e86f02216724a4"
+    },
+    {
+      "filename": "packages/runtime-native/scripts/bundle.mjs",
+      "sha256": "238f9cc17f995746e2575836103d81ec3401e7cf1f07602c5af1f2efc30a4d10"
+    }
+  ],
+  "runtimeSha256": "a051263ce8411160df261926b0f9a01e193fbe526368c81327d93115ac8a2a2b",
+  "qualification": "Linux desktop GPU correctness with actual initialization/measured-work validation scopes and real host-console error/device-loss checks; no generic normalized runtime-diagnostics, internal error-scope, mobile or hardware-performance claim. The desktop mailbox has no network observer; this bundled fixture has no external assets or runtime imports.",
+  "expectedOutcomesPassed": true,
+  "variants": [
+    {
+      "variant": "gate",
+      "pass": true,
+      "runtime": "native",
+      "target": "desktop",
+      "bundleSha256": "93124ce3e5201288ede0db4bdfe6d04e9f605d5e8b01071635ba987ed679fade",
+      "adapter": {
+        "architecture": "unknown",
+        "description": "615.71.09",
+        "device": "NVIDIA GeForce RTX 2080",
+        "vendor": "NVIDIA"
+      },
+      "assertions": [
+        {
+          "id": "resource.FluidCollision.collisionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.measuredSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.totalSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.freeMotionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDistance",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDirectionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.ejectionSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.finite",
+          "pass": true
+        },
+        {
+          "id": "diagnostics",
+          "pass": true
+        }
+      ],
+      "diagnostics": [],
+      "measurements": {
+        "before": {
+          "gateClosed": true,
+          "measuredSteps": 0,
+          "totalSteps": 1,
+          "initialX": -1.0499999523162842,
+          "collisionX": -1.0499999523162842,
+          "collisionPassed": 0,
+          "freeX": -1.0499999523162842,
+          "freeMotionPassed": 0,
+          "diagonalSpeed": 0,
+          "diagonalDistance": 0,
+          "diagonalDirectionPassed": 0,
+          "ejectionSpeed": 0,
+          "finite": 0
+        },
+        "after": {
+          "gateClosed": true,
+          "measuredSteps": 1,
+          "totalSteps": 2,
+          "initialX": -1.0499999523162842,
+          "collisionX": -1.0468000173568726,
+          "collisionPassed": 1,
+          "freeX": -0.75,
+          "freeMotionPassed": 1,
+          "diagonalSpeed": 18.00000091579126,
+          "diagonalDistance": 0.3000000311790893,
+          "diagonalDirectionPassed": 1,
+          "ejectionSpeed": 18,
+          "finite": 1
+        }
+      },
+      "gpuValidation": {
+        "before": {
+          "completedScopes": 1,
+          "errors": 0
+        },
+        "after": {
+          "completedScopes": 2,
+          "errors": 0
+        }
+      },
+      "images": [
+        {
+          "filename": "before.png",
+          "sha256": "d1b622ed8a6cc7999f84f40e86e7cc870657f2f14f4799493c41e8f800393321"
+        },
+        {
+          "filename": "after.png",
+          "sha256": "43d222c0ed5e07d1afcc36d308e585013783e00f8b7d3a5c63cf47e64a86f8c6"
+        }
+      ]
+    },
+    {
+      "variant": "gate-disabled",
+      "pass": false,
+      "runtime": "native",
+      "target": "desktop",
+      "bundleSha256": "0c1a53253827709d343509c0371d2707faf188d4c0efca3c64e982eae5c28563",
+      "adapter": {
+        "architecture": "unknown",
+        "description": "615.71.09",
+        "device": "NVIDIA GeForce RTX 2080",
+        "vendor": "NVIDIA"
+      },
+      "assertions": [
+        {
+          "id": "resource.FluidCollision.collisionPassed",
+          "pass": false
+        },
+        {
+          "id": "resource.FluidCollision.measuredSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.totalSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.freeMotionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDistance",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDirectionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.ejectionSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.finite",
+          "pass": true
+        },
+        {
+          "id": "diagnostics",
+          "pass": true
+        }
+      ],
+      "diagnostics": ["TN_PLAYTEST_RESOURCE_ASSERTION_FAILED"],
+      "measurements": {
+        "before": {
+          "gateClosed": false,
+          "measuredSteps": 0,
+          "totalSteps": 1,
+          "initialX": -1.0499999523162842,
+          "collisionX": -1.0499999523162842,
+          "collisionPassed": 0,
+          "freeX": -1.0499999523162842,
+          "freeMotionPassed": 0,
+          "diagonalSpeed": 0,
+          "diagonalDistance": 0,
+          "diagonalDirectionPassed": 0,
+          "ejectionSpeed": 0,
+          "finite": 0
+        },
+        "after": {
+          "gateClosed": false,
+          "measuredSteps": 1,
+          "totalSteps": 2,
+          "initialX": -1.0499999523162842,
+          "collisionX": -0.75,
+          "collisionPassed": 0,
+          "freeX": -0.75,
+          "freeMotionPassed": 1,
+          "diagonalSpeed": 18.00000091579126,
+          "diagonalDistance": 0.3000000311790893,
+          "diagonalDirectionPassed": 1,
+          "ejectionSpeed": 18,
+          "finite": 1
+        }
+      },
+      "gpuValidation": {
+        "before": {
+          "completedScopes": 1,
+          "errors": 0
+        },
+        "after": {
+          "completedScopes": 2,
+          "errors": 0
+        }
+      },
+      "images": [
+        {
+          "filename": "before.png",
+          "sha256": "f2a0e5dc2a646b671f87df82db456e44851b31ccb52d29b3fae188357d39a6a4"
+        },
+        {
+          "filename": "after.png",
+          "sha256": "25bad06d57f82a5d2f5cf7918f89c775595db9eb0980981d224863656a99641d"
+        }
+      ]
+    }
+  ]
+}

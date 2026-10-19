@@ -9,6 +9,7 @@ Phases 2 and 4 are done; Phase 1 is done and **refutes this PRD's own ≥2 ms pr
 NOT STARTED and is now bounded at roughly 0.3 ms before anyone writes it. Evidence:
 [`docs/verification/runtime-perf-state.md`](../../verification/runtime-perf-state.md).
 
+**Priority:** P3 — Its own A/B prices the remaining work at about 0.3 ms of a 24 ms frame.
 | Phase | State | What the executable said |
 | --- | --- | --- |
 | 1 — frame pricing | **DONE** | Paired desktop arms, three runs each: class tables ON **24.0207 ms** work/frame against OFF **24.0426 ms**. **Flat.** |

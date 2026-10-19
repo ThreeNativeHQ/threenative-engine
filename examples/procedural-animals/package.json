@@ -1,0 +1,26 @@
+{
+  "name": "procedural-animals-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "assets": "tsx scripts/bake-assets.ts",
+    "dev": "vite",
+    "build": "vite build",
+    "build:desktop": "TN_BENCH_TARGET=native node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/animals-native.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "@threenative/physics": "workspace:*",
+    "@threenative/procedural-animals": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@threenative/assets": "workspace:*",
+    "@types/three": "0.185.3",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "@threenative/playtest": "workspace:*"
+  }
+}

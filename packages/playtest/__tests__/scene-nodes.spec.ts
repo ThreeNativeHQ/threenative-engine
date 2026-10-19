@@ -143,6 +143,15 @@ describe("assert.sceneNodes measures what a screenshot would have shown", () => 
     expect(diagnostics[0]?.message).toContain("normalMap");
   });
 
+  test("a node with no materials is not textured, even though every empty list passes .every", () => {
+    const { assertions, diagnostics } = evaluate(
+      { sceneNodes: [{ select: { nameContains: "crate" }, texturesLoaded: true }] },
+      observation([node({ materials: [] })]),
+    );
+    expect(assertions.find(({ id }) => id === "sceneNodes[0].texturesLoaded")?.pass).toBe(false);
+    expect(diagnostics[0]?.code).toBe("TN_PLAYTEST_SCENE_NODE_TEXTURE_UNLOADED");
+  });
+
   test("a node that is present, visible, framed and textured passes every bound", () => {
     const { assertions, diagnostics } = evaluate(
       { sceneNodes: [{ inFrustum: true, minTriangles: 12, select: { nameContains: "crate" }, texturesLoaded: true, visible: true }] },

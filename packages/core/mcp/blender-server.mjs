@@ -439,7 +439,7 @@ async function runRecipe(name, request, options = {}) {
 
 // src/index.ts
 var SERVER_NAME = "threenative-blender-mcp";
-var SERVER_VERSION = "0.1.4";
+var SERVER_VERSION = "0.1.5";
 var AUTHORING_INSTRUCTIONS = "Call blender_status before anything else: it answers whether this machine can convert models at all, and when it cannot it names the install command rather than failing. Blender is never installed for the user \u2014 ask first, then let them run the command. An .fbx, .blend, .obj or .dae placed in a game's assets directory is converted by the build itself; these tools are for inspecting a source before committing it and for operations the build does not perform. For anything no named tool covers, read a shipped recipe with blender_recipes and adapt it, then run it with blender_run_python.";
 var TOOL_DEFINITIONS = [
   {
@@ -626,10 +626,13 @@ async function handleToolCall(params) {
   }
   if (name === "blender_run_python") {
     const script = requiredString(argumentsValue, "script", "blender_run_python");
-    const request = isRecord(argumentsValue.arguments) ? argumentsValue.arguments : {};
+    const request = argumentsValue.arguments === void 0 ? {} : argumentsValue.arguments;
+    if (!isRecord(request)) throw new Error("blender_run_python 'arguments' must be an object.");
     const timeoutMs = argumentsValue.timeoutMs;
-    if (timeoutMs !== void 0 && typeof timeoutMs !== "number") {
-      throw new Error("blender_run_python 'timeoutMs' must be a number.");
+    if (timeoutMs !== void 0 && (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs <= 0)) {
+      throw new Error(
+        "blender_run_python 'timeoutMs' must be a positive whole number of milliseconds."
+      );
     }
     return toolText(
       await runBlenderScript(script, request, timeoutMs === void 0 ? {} : { timeoutMs })

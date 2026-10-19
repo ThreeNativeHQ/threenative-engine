@@ -3,9 +3,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   BoxGeometry,
+  type BufferAttribute,
   type BufferGeometry,
+  Frustum,
   Group,
+  InstancedInterleavedBuffer,
   InstancedMesh,
+  type InterleavedBufferAttribute,
   type Material,
   Matrix4,
   Mesh,
@@ -16,7 +20,16 @@ import {
   Texture,
   Vector3,
 } from "three";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { getCurrentStack, setCurrentStack, stack } from "three/tsl";
+import {
+  BufferAttributeNode,
+  EventNode,
+  type Node,
+  NodeBuilder,
+  type NodeMaterial,
+  NodeUpdateType,
+} from "three/webgpu";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * The loader a world builds for itself, overridable per test. A world only releases the cache of a
@@ -41,8 +54,83 @@ import {
 } from "../src/render/world-impostor-surface.js";
 import { type IImpostorRawRenderer, WorldImpostorAtlas } from "../src/render/world-impostor.js";
 import type { IRendererLike } from "../src/renderer.js";
+import { type IKernelInput, WorldGpuScene, cullAndSelect } from "../src/world-gpu-scene.js";
 import { type IWorldAsset, type IWorldRun, cellPlacements } from "../src/world-package.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
+
+// Exercise the installed renderer's actual upload decision; its private module has no declarations.
+interface ITestAttributes {
+  update(attribute: BufferAttribute | InterleavedBufferAttribute, type: number): void;
+}
+const { default: ThreeAttributes } = (await import(
+  import.meta.resolve("three/src/renderers/common/Attributes.js")
+)) as { default: new (backend: object, info: object) => ITestAttributes };
+const { AttributeType } = (await import(
+  import.meta.resolve("three/src/renderers/common/Constants.js")
+)) as { AttributeType: { readonly VERTEX: number } };
+
+function attributeUploads(attribute: BufferAttribute | InterleavedBufferAttribute) {
+  const copies: number[][] = [];
+  const backend = {
+    createAttribute: vi.fn(),
+    updateAttribute: vi.fn((written: BufferAttribute | InterleavedBufferAttribute) => {
+      copies.push(Array.from(written.array));
+    }),
+  };
+  const attributes = new ThreeAttributes(backend, { createAttribute: vi.fn() });
+  const submit = () => attributes.update(attribute, AttributeType.VERTEX);
+  submit(); // Initial allocation/upload is required even if nothing changed afterward.
+  return { backend, copies, submit };
+}
+
+/** Build only the real surface's CPU column bindings, not a GPU shader or a mirrored usage branch. */
+function farMatrixRoute(mesh: InstancedMesh) {
+  const material = mesh.material as NodeMaterial;
+  const body = (
+    material.positionNode as unknown as {
+      node: { shaderNode: { jsFunc: (inputs: unknown, builder: { object: Object3D }) => Node } };
+    }
+  ).node.shaderNode.jsFunc;
+  const previous = getCurrentStack();
+  const scope = stack();
+  const columns = new Set<BufferAttributeNode<unknown>>();
+  const events = new Set<EventNode>();
+  const collect = (node: Node) => {
+    if (node instanceof EventNode) events.add(node);
+    if (
+      node instanceof BufferAttributeNode &&
+      node.value instanceof InstancedInterleavedBuffer &&
+      node.value.array === mesh.instanceMatrix.array
+    )
+      columns.add(node);
+  };
+  setCurrentStack(scope);
+  try {
+    body([], { object: mesh }).traverse(collect);
+    scope.traverse(collect);
+  } finally {
+    setCurrentStack(previous);
+  }
+  expect(columns.size).toBe(4);
+  // The installed JS base implements attribute setup; its declarations require a shader subclass.
+  // No shader generation or renderer/backend method is invoked by this CPU binding setup.
+  const AttributeBuilder = NodeBuilder as unknown as new (
+    object: InstancedMesh,
+    renderer: null,
+    parser: null,
+  ) => NodeBuilder;
+  const builder = new AttributeBuilder(mesh, null, null);
+  for (const column of columns) column.setup(builder);
+  const attribute = [...columns][0]?.attribute as InterleavedBufferAttribute;
+  expect(attribute.data.array).toBe(mesh.instanceMatrix.array);
+  expect(events.size).toBe(1);
+  const event = [...events][0];
+  if (event === undefined) throw new Error("Production far matrix FRAME sync was not observed.");
+  expect(event.updateType).toBe(NodeUpdateType.FRAME);
+  const sync = () => event.update({} as never);
+  sync();
+  return { attribute, sync };
+}
 
 /**
  * The automatic runtime impostor path, on the real streaming class over the committed package.
@@ -298,6 +386,49 @@ function rendererStub(options: { readonly throwOnRender?: boolean } = {}): IRend
   } as unknown as IRendererLike;
 }
 
+/** Return the committed kernel answer through the public readback seam, including its gate table. */
+function gpuValidationRenderer(scene: WorldGpuScene, camera: PerspectiveCamera): IRendererLike {
+  const base = rendererStub();
+  const raw = base.raw as IImpostorRawRenderer;
+  const input = (): IKernelInput => {
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
+    const planes = new Float32Array(24);
+    for (const [index, plane] of frustum.planes.entries()) {
+      const at = index * 4;
+      planes[at] = plane.normal.x;
+      planes[at + 1] = plane.normal.y;
+      planes[at + 2] = plane.normal.z;
+      planes[at + 3] = plane.constant;
+    }
+    return {
+      camera: {
+        planes,
+        x: camera.position.x,
+        y: camera.position.y,
+        z: camera.position.z,
+      },
+      count: scene.placements.length,
+      placements: scene.placements,
+      regionCount: scene.regions.length,
+      regions: scene.regions,
+      slots: scene.gates(),
+    };
+  };
+  return {
+    compute: (): void => {},
+    kind: "webgpu",
+    raw: { ...raw, backend: { hasFeature: (): boolean => true } },
+    readback: async (attribute: { readonly array: Uint32Array | Float32Array }) => {
+      const result = cullAndSelect(input());
+      for (const region of scene.regions) result.args[region.argsIndex * 5] = region.indexCount;
+      const bytes = attribute.array instanceof Uint32Array ? result.args : result.drawn;
+      return bytes.slice().buffer;
+    },
+  } as unknown as IRendererLike;
+}
+
 async function flush(rounds = 12): Promise<void> {
   for (let round = 0; round < rounds; round += 1)
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -321,8 +452,7 @@ async function loadPine(
     admissionBudgetMs: Number.POSITIVE_INFINITY,
     budgets: { bytes: 64 * 1024 * 1024, instances: 50000, residentCells: 25 },
     follow: { position: { x: -32, z: -32 } },
-    // Impostors are opt-in (default false); this suite is about them.
-    impostors: true,
+    // The automatic path is the default; this suite also covers its explicit opt-out.
     loadModel: loader.load,
     prefetchSeconds: 0,
     ring: 1,
@@ -373,6 +503,12 @@ function runBake(world: WorldCells, renderer: IRendererLike): void {
   for (let view = 0; view < 16; view += 1) world.update(renderer);
 }
 
+// Impostors are opt-in (PRD-473 AC-3): this suite launches with the opt-in so the default path under
+// test is the automatic one; the first spec below pins the unset launch to the source levels.
+beforeEach(() => {
+  vi.stubGlobal("__tnImpostors", "1");
+});
+
 afterEach(() => {
   internalLoader.load = undefined;
   vi.unstubAllGlobals();
@@ -413,6 +549,121 @@ describe("WorldCells automatic impostors", () => {
     // The bake is independent of the GPU-driven main pass: this renderer is WebGPU but carries no
     // GPU-scene features, so the scene stays off while the atlas still lands on the CPU path.
     expect(world.stats().gpuScene.on).toBe(false);
+    expect(world.stats().levelRefilters).toBeGreaterThan(0);
+    world.dispose();
+  });
+
+  it("holds mesh validation to the dispatch gates during an impostor handoff", async () => {
+    const pkg = pineOnly();
+    const cell = pkg.cells[0];
+    const run = cell?.runs[0];
+    if (cell === undefined || run === undefined) throw new Error("pine fixture run missing");
+    stubManifestFetch({
+      ...pkg,
+      cells: [
+        {
+          ...cell,
+          runs: [
+            { ...run, count: 40 },
+            { ...run, offset: run.offset + 40, count: run.count - 40 },
+          ],
+        },
+      ],
+    });
+    const keyed = vi.spyOn(WorldGpuScene.prototype, "key");
+    const world = await loadPine(treeLoader(), {
+      autoLod: { fovY: 120, viewportHeight: 100 },
+      gpuScene: true,
+      gpuSceneValidate: true,
+    });
+    await flushed(world);
+    const camera = new PerspectiveCamera(120, 1, 0.1, 10_000);
+    camera.position.set(200, 4, -32);
+    camera.lookAt(-32, 4, -32);
+    camera.updateMatrixWorld(true);
+    const first = rendererStub();
+    const firstRenderer = {
+      ...first,
+      raw: { ...(first.raw as IImpostorRawRenderer), backend: { hasFeature: (): boolean => true } },
+    } as unknown as IRendererLike;
+    // The first render enables the scene and advances bake view 1; only then does the world's key
+    // dressing expose the scene instance needed by the readback fixture.
+    world.update(firstRenderer, camera);
+    await flush();
+    const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
+    const renderer = gpuValidationRenderer(scene, camera);
+    expect(world.stats().admission.backlog).toBe(0);
+    expect(world.stats().admission.deferred).toBe(0);
+    expect(world.stats().impostor.pending).toBe(1);
+    const refilters = world.stats().levelRefilters;
+    const sources = scene.placements.map((placement) => ({ ...placement }));
+    // Offset the cadence so the first check lands on the exact update that finishes the 16-view bake.
+    for (let dispatch = 0; dispatch < 14; dispatch += 1) scene.dispatch(renderer, camera);
+    for (let view = 0; view < 15; view += 1) {
+      world.update(renderer, camera);
+      await flush();
+    }
+    await flush();
+
+    // Drain any post-publication admission: the regression used to enqueue two real CPU jobs.
+    world.update(renderer, camera);
+    await flush();
+    expect(world.stats().levelRefilters - refilters).toBe(0);
+    expect(scene.placements).toEqual(sources);
+    expect(world.stats().impostor.assets).toBe(1);
+    const terminal = partsOf(world, "pine", 2, 0)[0];
+    const region = scene.regionOf("pine:2:0");
+    if (terminal === undefined || region === undefined || scene.args === undefined)
+      throw new Error("terminal impostor GPU draw missing");
+    expect(terminal.geometry.index?.count).toBe(6);
+    expect((terminal.material as Material).userData.tnWholeAssetImpostor).toBe(true);
+    expect(terminal.geometry.indirect).toBe(scene.args);
+    expect(terminal.instanceMatrix).toBe(scene.drawn);
+    expect(terminal.material).not.toBe(partsOf(world, "pine", 0, 0)[0]?.material);
+    const args = new Uint32Array(await renderer.readback(scene.args));
+    expect(args[region.argsIndex * 5]).toBe(6);
+    expect(args[region.argsIndex * 5 + 1]).toBeGreaterThan(0);
+    expect(scene.validation.compared).toBeGreaterThan(0);
+    expect(scene.validation.mismatched).toBe(0);
+    expect(scene.validation.matricesMismatched).toBe(0);
+    expect(scene.validation.meshMismatched).toBe(0);
+
+    // The kernel and its count/matrix reference must be allowed to agree on bad GPU metadata; the
+    // owner's published source snapshot is the independent third check that must reject it.
+    const published = scene.gates()[0];
+    if (published === undefined) throw new Error("pine GPU slot was not published");
+    const corruptions = [
+      { cull: 0 },
+      { distances: [...published.distances.slice(0, -1), Number.POSITIVE_INFINITY] },
+      // The terminal flag only changes the projected terminal gate; move that gate far enough to
+      // make the flag's corruption observable without changing the published CPU snapshot.
+      {
+        distances: [...published.distances.slice(0, -1), Number.POSITIVE_INFINITY],
+        impostor: !published.impostor,
+      },
+    ];
+    for (const corruption of corruptions) {
+      scene.slot("pine", { ...published, ...corruption });
+      for (let dispatch = 0; dispatch < 30; dispatch += 1) scene.dispatch(renderer, camera);
+      await flush();
+      expect(scene.validation.verdict).toBe("mismatch");
+      expect(scene.validation.meshMismatched).toBeGreaterThan(0);
+      scene.slot("pine", published);
+    }
+    world.dispose();
+  });
+
+  it("keeps the source levels and bakes nothing when the launch does not opt in", async () => {
+    vi.stubGlobal("__tnImpostors", undefined);
+    stubManifestFetch(pineOnly());
+    const world = await loadPine(treeLoader());
+    await flushed(world);
+    runBake(world, rendererStub());
+    await flushed(world);
+
+    expect(world.stats().impostor.atlasBytes).toBe(0);
+    expect(partsOf(world, "pine", 2, 0).length).toBe(0);
+    expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
     world.dispose();
   });
 
@@ -429,10 +680,13 @@ describe("WorldCells automatic impostors", () => {
     world.dispose();
   });
 
-  it("bakes nothing by default: the source levels stay the forest's shadow casters", async () => {
+  it.each([
+    ["authored parts", { preserveAuthoredParts: true }],
+    ["CPU LOD hysteresis", { gpuScene: false, lodHysteresis: 0.2 }],
+  ])("keeps source levels when %s omits impostors", async (_name, options) => {
     stubManifestFetch(pineOnly());
     const loader = treeLoader();
-    const world = await loadPine(loader, { impostors: undefined });
+    const world = await loadPine(loader, options);
     await flushed(world);
     runBake(world, rendererStub());
     await flushed(world);
@@ -1388,6 +1642,103 @@ describe("WorldCells far impostor residency", () => {
     world.dispose();
   });
 
+  it.each(["source", "shader-columns"] as const)(
+    "uploads no unchanged far %s buffer over 60 frames or camera-only movement",
+    async (route) => {
+      const follow = { position: { x: -32, z: -32 } };
+      const world = await loadPineEverywhere(follow);
+      try {
+        const far = farMeshes(world)[0] as InstancedMesh;
+        const columns = farMatrixRoute(far);
+        const tracked = attributeUploads(
+          route === "source" ? far.instanceMatrix : columns.attribute,
+        );
+        const version = far.instanceMatrix.version;
+        for (let frame = 0; frame < 60; frame++) {
+          world.update();
+          columns.sync();
+          tracked.submit();
+        }
+        expect(tracked.backend.createAttribute).toHaveBeenCalledTimes(1);
+        expect(tracked.backend.updateAttribute).not.toHaveBeenCalled();
+        const camera = new PerspectiveCamera(60, 1, 0.1, 2000);
+        for (let frame = 0; frame < 10; frame++) {
+          camera.position.set(frame * 20, 3, 200);
+          camera.lookAt(0, 0, 0);
+          camera.updateMatrixWorld();
+          world.update(rendererStub(), camera);
+          columns.sync();
+          tracked.submit();
+        }
+        expect(far.instanceMatrix.version).toBe(version);
+        expect(tracked.backend.updateAttribute).not.toHaveBeenCalled();
+      } finally {
+        world.dispose();
+      }
+    },
+  );
+  it.each(["source", "shader-columns"] as const)(
+    "uploads real near/far handoffs once to the %s route and preserves cull/disposal",
+    async (route) => {
+      const follow = { position: { x: -32, z: -32 } };
+      const world = await loadPineEverywhere(follow);
+      try {
+        const far = farMeshes(world)[0] as InstancedMesh;
+        const columns = farMatrixRoute(far);
+        const tracked = attributeUploads(
+          route === "source" ? far.instanceMatrix : columns.attribute,
+        );
+        const cull = far.geometry.getAttribute(IMPOSTOR_FAR_CULL_ATTRIBUTE) as BufferAttribute;
+        expect(cull).toBeDefined();
+        const cullUploads = attributeUploads(cull);
+        const version = far.instanceMatrix.version;
+        const initial = Array.from(far.instanceMatrix.array);
+        expect(farLive(far)).toBe(263);
+        follow.position.x = 100_000;
+        follow.position.z = 100_000;
+        world.update();
+        await flushed(world);
+        columns.sync();
+        tracked.submit();
+        cullUploads.submit();
+        expect(far.instanceMatrix.version).toBeGreaterThan(version);
+        expect(tracked.backend.updateAttribute).toHaveBeenCalledTimes(1);
+        expect(tracked.copies[0]).toEqual(Array.from(far.instanceMatrix.array));
+        expect(tracked.copies[0]).not.toEqual(initial);
+        expect(farLive(far)).toBe(799);
+        expect(cullUploads.backend.updateAttribute).toHaveBeenCalledTimes(1);
+        for (let frame = 0; frame < 20; frame++) {
+          world.update();
+          columns.sync();
+          tracked.submit();
+          cullUploads.submit();
+        }
+        expect(tracked.backend.updateAttribute).toHaveBeenCalledTimes(1);
+        expect(cullUploads.backend.updateAttribute).toHaveBeenCalledTimes(1);
+        follow.position.x = -32;
+        follow.position.z = -32;
+        world.update();
+        await flushed(world);
+        for (let frame = 0; frame < 32; frame++) world.update();
+        columns.sync();
+        tracked.submit();
+        expect(tracked.backend.updateAttribute).toHaveBeenCalledTimes(2);
+        expect(tracked.copies[1]).toEqual(Array.from(far.instanceMatrix.array));
+        expect(farLive(far)).toBe(263);
+        const disposal = vi.fn();
+        far.addEventListener("dispose", disposal);
+        world.dispose();
+        world.update();
+        world.dispose();
+        expect(disposal).toHaveBeenCalledTimes(1);
+        expect(far.parent).toBeNull();
+        expect(farMeshes(world)).toHaveLength(0);
+      } finally {
+        world.dispose();
+      }
+    },
+  );
+
   it("draws the far mesh from CPU instance matrices with the GPU scene off", async () => {
     const follow = { position: { x: -32, z: -32 } };
     stubManifestFetch(pineEverywhere());
@@ -1504,6 +1855,25 @@ describe("WorldCells far impostor residency", () => {
     expect(farLive(oak as InstancedMesh)).toBe(1);
     // Its temporary source is released the moment the retried aggregate lands.
     expect(world.stats().impostor.atlasBytes).toBe(2 * 2_796_160);
+    world.dispose();
+  });
+
+  it("lets the far half receive shadows when the world is configured to receive them", async () => {
+    const follow = { position: { x: -32, z: -32 } };
+    stubManifestFetch(pineEverywhere());
+    const world = await loadPine(treeLoader(), {
+      follow,
+      shadows: { cast: true, castLevels: 3, receive: true },
+    });
+    await flushed(world);
+    runBake(world, rendererStub());
+    await flushed(world);
+    for (let pass = 0; pass < 32; pass += 1) world.update();
+
+    // A far tree that never receives is lit full-bright while the near tree beside it is shaded by
+    // its neighbours, which reads as a lighter band of canopy where the impostors begin.
+    const far = farMeshes(world)[0] as InstancedMesh;
+    expect(far.receiveShadow).toBe(true);
     world.dispose();
   });
 
@@ -1829,6 +2199,12 @@ describe("WorldCells far impostor cohorts", () => {
     expect(world.stats().impostor.far.aggregates).toBe(1);
     expect(world.stats().impostor.far.instances).toBe(85);
     expect(farMeshes(world).some((mesh) => mesh.name === "tn-far:alpha_b")).toBe(false);
+    const original = farMeshes(world)[0] as InstancedMesh;
+    const originalColumns = farMatrixRoute(original);
+    const originalMatrixUploads = attributeUploads(original.instanceMatrix);
+    const originalColumnUploads = attributeUploads(originalColumns.attribute);
+    const originalDisposed = vi.fn();
+    original.addEventListener("dispose", originalDisposed);
 
     // Leaving the ring frees alpha_a's near allocation; the retry grows the one existing aggregate.
     follow.position.x = 100_000;
@@ -1841,6 +2217,30 @@ describe("WorldCells far impostor cohorts", () => {
     expect(world.stats().impostor.far.instances).toBe(86);
     const grown = farMeshes(world)[0] as InstancedMesh;
     expect(grown.name).toBe("tn-far:alpha_a");
+    expect(grown).not.toBe(original);
+    expect(grown.instanceMatrix).not.toBe(original.instanceMatrix);
+    expect(originalDisposed).toHaveBeenCalledTimes(1);
+    expect(original.parent).toBeNull();
+    expect(farLive(grown)).toBe(86);
+    const grownColumns = farMatrixRoute(grown);
+    expect(grownColumns.attribute.data).not.toBe(originalColumns.attribute.data);
+    expect(Array.from(grown.instanceMatrix.array).slice(0, 85 * 16)).toEqual(
+      Array.from(original.instanceMatrix.array),
+    );
+    const grownMatrixUploads = attributeUploads(grown.instanceMatrix);
+    const grownColumnUploads = attributeUploads(grownColumns.attribute);
+    for (let frame = 0; frame < 20; frame++) {
+      world.update();
+      grownColumns.sync();
+      grownMatrixUploads.submit();
+      grownColumnUploads.submit();
+    }
+    expect(grownMatrixUploads.backend.createAttribute).toHaveBeenCalledTimes(1);
+    expect(grownColumnUploads.backend.createAttribute).toHaveBeenCalledTimes(1);
+    expect(grownMatrixUploads.backend.updateAttribute).not.toHaveBeenCalled();
+    expect(grownColumnUploads.backend.updateAttribute).not.toHaveBeenCalled();
+    expect(originalMatrixUploads.backend.updateAttribute).not.toHaveBeenCalled();
+    expect(originalColumnUploads.backend.updateAttribute).not.toHaveBeenCalled();
     // The aggregate's own surface was reused by the grow, never disposed: the grown mesh still draws
     // it. Only the two near terminal surfaces and alpha_b's unused deferred surface are gone.
     expect(disposed.some((surface) => surface.geometry === grown.geometry)).toBe(false);

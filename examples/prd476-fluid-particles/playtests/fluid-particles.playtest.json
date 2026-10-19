@@ -1,0 +1,97 @@
+{
+  "name": "prd476-fluid-particles-dam-break",
+  "schemaVersion": 1,
+  "subject": "a released dam-break column runs across the tank and settles on the GPU",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "artifacts": {
+    "screenshots": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "gated",
+      "waitTicks": 30,
+      "release": true,
+      "screenshot": "gated"
+    },
+    {
+      "kind": "wait",
+      "label": "running",
+      "waitTicks": 90,
+      "release": true,
+      "screenshot": "running"
+    },
+    {
+      "kind": "wait",
+      "label": "settling",
+      "waitTicks": 300,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 400,
+      "release": true,
+      "screenshot": "settled"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "steps",
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "count",
+        "gte": 1600
+      },
+      {
+        "id": "GameState",
+        "path": "peakFrontX",
+        "gte": 1.0
+      },
+      {
+        "id": "GameState",
+        "path": "meanCompression",
+        "lte": 0.05
+      },
+      {
+        "id": "GameState",
+        "path": "maxSpeed",
+        "lte": 1.0
+      },
+      {
+        "id": "GameState",
+        "path": "inBounds",
+        "equals": 1
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        },
+        "frameDiff": {
+          "minChangedPixelRatio": 0.002
+        }
+      }
+    ]
+  }
+}

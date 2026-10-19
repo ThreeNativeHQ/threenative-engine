@@ -1,0 +1,355 @@
+{
+  "name": "vq04-two-mannequin-speed-consumers-and-a-kaykit-direction-consumer",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 960,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "steps": [
+    {
+      "kind": "input",
+      "label": "start-shared-speed-trace",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "walk",
+      "waitTicks": 33,
+      "screenshot": "locomotion-walk-forward"
+    },
+    {
+      "kind": "wait",
+      "label": "jog",
+      "waitTicks": 29,
+      "screenshot": "locomotion-jog-strafe-right"
+    },
+    {
+      "kind": "wait",
+      "label": "sprint",
+      "waitTicks": 30,
+      "screenshot": "locomotion-sprint-backwards"
+    },
+    {
+      "kind": "wait",
+      "label": "decelerating",
+      "waitTicks": 30,
+      "screenshot": "locomotion-walk-strafe-left"
+    },
+    {
+      "kind": "wait",
+      "label": "idle-before-reversals",
+      "waitTicks": 20,
+      "screenshot": "locomotion-idle-sweep"
+    },
+    {
+      "kind": "wait",
+      "label": "after-reversals",
+      "waitTicks": 22,
+      "screenshot": "locomotion-after-reversals"
+    },
+    {
+      "kind": "wait",
+      "label": "to-the-first-tick-of-the-second-pass",
+      "waitTicks": 8
+    },
+    {
+      "kind": "input",
+      "label": "switch-to-the-gait-view",
+      "press": "KeyC",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "gait-forward",
+      "waitTicks": 33,
+      "screenshot": "gait-forward"
+    },
+    {
+      "kind": "wait",
+      "label": "gait-diagonal",
+      "waitTicks": 15,
+      "screenshot": "gait-diagonal"
+    },
+    {
+      "kind": "wait",
+      "label": "gait-strafe-right",
+      "waitTicks": 15,
+      "screenshot": "gait-strafe-right"
+    },
+    {
+      "kind": "wait",
+      "label": "gait-backward",
+      "waitTicks": 30,
+      "screenshot": "gait-backward"
+    },
+    {
+      "kind": "wait",
+      "label": "gait-strafe-left",
+      "waitTicks": 30,
+      "screenshot": "gait-strafe-left"
+    },
+    {
+      "kind": "wait",
+      "label": "gait-after-reversals",
+      "waitTicks": 49,
+      "screenshot": "gait-after-reversals"
+    },
+    {
+      "kind": "wait",
+      "label": "finish-both-passes-and-release",
+      "waitTicks": 240
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true,
+      "noNetworkErrors": false,
+      "noRuntimeDiagnostics": true,
+      "networkErrorsOptOutReason": "The identical scenario runs on desktop, whose device transport has no network observer; console errors and runtime diagnostics stay asserted, and this fixture loads only local files."
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "complete",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "passes",
+        "equals": 2
+      },
+      {
+        "id": "state",
+        "path": "third.maxWeightError",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "third.maxPhaseGap",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "first.maxPhaseGap",
+        "gte": 0.05
+      },
+      {
+        "id": "state",
+        "path": "third.maxPoseRadians",
+        "gte": 0.01,
+        "lte": 0.65
+      },
+      {
+        "id": "state",
+        "path": "third.maxPoseMetres",
+        "gte": 0.005,
+        "lte": 0.21
+      },
+      {
+        "id": "state",
+        "path": "first.maxPoseRadians",
+        "gte": 0.01,
+        "lte": 0.65
+      },
+      {
+        "id": "state",
+        "path": "first.maxPoseMetres",
+        "gte": 0.005,
+        "lte": 0.21
+      },
+      {
+        "id": "state",
+        "path": "third.maxActiveActions",
+        "gte": 1,
+        "lte": 4
+      },
+      {
+        "id": "state",
+        "path": "first.maxActiveActions",
+        "gte": 1,
+        "lte": 4
+      },
+      {
+        "id": "state",
+        "path": "third.settledActions",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "first.settledActions",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "third.settledClips",
+        "equals": "Idle_Loop"
+      },
+      {
+        "id": "state",
+        "path": "first.settledClips",
+        "equals": "Idle_Loop"
+      },
+      {
+        "id": "state",
+        "path": "third.disposed",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "first.disposed",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "third.releasedActions",
+        "equals": 0
+      },
+      {
+        "id": "state",
+        "path": "first.releasedActions",
+        "equals": 0
+      },
+      {
+        "id": "state",
+        "path": "kaykit.maxWeightError",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "kaykit.maxPhaseGap",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "kaykit.maxPoseRadians",
+        "gte": 0.18,
+        "lte": 0.5
+      },
+      {
+        "id": "state",
+        "path": "kaykit.maxPoseMetres",
+        "gte": 0.05,
+        "lte": 0.15
+      },
+      {
+        "id": "state",
+        "path": "kaykit.maxActiveActions",
+        "gte": 3,
+        "lte": 6
+      },
+      {
+        "id": "state",
+        "path": "kaykit.settledActions",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "kaykit.settledClips",
+        "equals": "Idle_A"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.disposed",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "kaykit.releasedActions",
+        "equals": 0
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.idle.clips",
+        "equals": "Idle_A"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.forward.clips",
+        "equals": "Running_A"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.forward.weight",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.right.clips",
+        "equals": "Running_Strafe_Right"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.right.weight",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.back.clips",
+        "equals": "Walking_Backwards"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.back.weight",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.left.clips",
+        "equals": "Running_Strafe_Left"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.left.weight",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.diagForwardRight.clips",
+        "equals": "Running_A+Running_Strafe_Right"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.diagForwardRight.weight",
+        "equals": 0.5
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.diagRightBack.clips",
+        "equals": "Running_Strafe_Right+Walking_Backwards"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.diagBackLeft.clips",
+        "equals": "Walking_Backwards+Running_Strafe_Left"
+      },
+      {
+        "id": "state",
+        "path": "kaykit.poses.diagLeftForward.clips",
+        "equals": "Running_A+Running_Strafe_Left"
+      }
+    ],
+    "sceneNodes": [
+      {
+        "select": {
+          "type": "SkinnedMesh"
+        },
+        "minCount": 10,
+        "visible": true,
+        "minTriangles": 200
+      }
+    ]
+  },
+  "artifacts": {
+    "screenshots": "after"
+  }
+}

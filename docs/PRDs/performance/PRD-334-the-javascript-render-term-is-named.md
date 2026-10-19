@@ -7,6 +7,7 @@ prd_contract: v1
 **Status:** PROPOSED, filed 2026-09-02 against `8d680023`. Planning only. Nothing here is
 implemented.
 
+**Priority:** P2 — Proposed JS self-time naming and sampling windows against a real game.
 **Complexity:** +1 (1–5 files) + 2 (a new measurement arm across two runtimes) + 2 (multi-package:
 `playtest`, `runtime-native`) + 1 (device lane) = **6 → MEDIUM mode**. Automated checkpoint after
 every phase; manual checkpoint after Phase 2.

@@ -1,6 +1,7 @@
 # PRD-324 — The capability manifest cannot forget an export between two `budgets` runs
 
 **Status:** PROPOSED (scoping complete, measured on `HEAD` 2026-09-01)
+**Priority:** P2 — Staleness gate between budgets runs unlanded across four phases.
 **Complexity:** 3 (10+ files) + 2 (multi-package) + 2 (new module: the session hook) = **7 → HIGH mode**
 **Owner:** unassigned
 **Predecessors:** PRD-187 (built the search mechanism; proved prose lists fail at authoring time);

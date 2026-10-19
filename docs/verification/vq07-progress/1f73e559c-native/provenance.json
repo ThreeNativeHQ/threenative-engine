@@ -1,0 +1,249 @@
+{
+  "repository": "ThreeNativeHQ/threenative",
+  "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+  "pass": false,
+  "qualification": "Software WebGPU correctness only. Fifteen native arms passed; resize failed. No hardware performance or complete native acceptance claim.",
+  "runId": 37005493900,
+  "runUrl": "https://github.com/ThreeNativeHQ/threenative/actions/runs/37005493900",
+  "artifactId": 11226555526,
+  "artifactSha256": "cc5cc8f973b8edc9f16a188f3ae68f1e0afb6b2f508ee4a392df222191587af5",
+  "nativeBuild": {
+    "runtimeSha256": "da16138cc37938a14ce6831476aa58972a0d469ba2172b6a06faf6d1d56c6042",
+    "bundleSha256": "d2be9b3d0efa3247ff63c772421f75b77e8ea1fd9b271c4791ec7934f88c3e86",
+    "buildSourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+    "packageVersion": "0.3.4",
+    "wgpuNativeVersion": "25.0.2.2"
+  },
+  "capture": {
+    "adapter": "llvmpipe (LLVM 20.1.2, 128 bits); Mesa 25.2.8-0ubuntu0.24.04.3",
+    "rendererKind": "webgpu",
+    "captureMethod": "device.screenshot",
+    "target": "desktop",
+    "viewport": {
+      "width": 640,
+      "height": 400
+    }
+  },
+  "acceptedArms": [
+    "off",
+    "zero",
+    "fog",
+    "inside",
+    "sunOff",
+    "pointOff",
+    "overlap",
+    "half",
+    "wallOff",
+    "blackOff",
+    "scatter",
+    "scatterSunOff",
+    "scatterPointOff",
+    "lifecycle",
+    "lifecycleOff"
+  ],
+  "images": {
+    "off": {
+      "sha256": "340699e0cb4c8740fd083df7b0ed1484e3364efae2b6ce17f0e117f1e73e9d15",
+      "nonblankPixelRatio": 0.99937109375,
+      "passesMinimum005": true,
+      "file": "off.png"
+    },
+    "zero": {
+      "sha256": "340699e0cb4c8740fd083df7b0ed1484e3364efae2b6ce17f0e117f1e73e9d15",
+      "nonblankPixelRatio": 0.99937109375,
+      "passesMinimum005": true
+    },
+    "fog": {
+      "sha256": "95e2d1a14559df4a6778916e3192d15127d59e4e83b9a76f433e7c829add464a",
+      "nonblankPixelRatio": 0.99998828125,
+      "passesMinimum005": true,
+      "file": "fog.png"
+    },
+    "inside": {
+      "sha256": "1bec85d68b3bed2d79b8eeb7e3fd4f3aa4f64140f1e9e44165971c49b123c9bf",
+      "nonblankPixelRatio": 1,
+      "passesMinimum005": true,
+      "file": "inside.png"
+    },
+    "sunOff": {
+      "sha256": "65050dc6819eb17bef27df1215351c485324c1e0c2fd49014b777292a0fa11c3",
+      "nonblankPixelRatio": 0.999984375,
+      "passesMinimum005": true
+    },
+    "pointOff": {
+      "sha256": "badc6fd442e064320d244cdc24b09487d487af31316215cfb532c2b71c29a6d4",
+      "nonblankPixelRatio": 0.99893359375,
+      "passesMinimum005": true
+    },
+    "overlap": {
+      "sha256": "2ed15c18e59c9936c5d1df7b1816278450b81a2d28cc5b329ef6d4b59b7c1ff6",
+      "nonblankPixelRatio": 0.99998828125,
+      "passesMinimum005": true
+    },
+    "half": {
+      "sha256": "05238af75c2a820556e6360bfa9b5dad467c145b6f8e0408c33cca4c4c3efbd3",
+      "nonblankPixelRatio": 0.9999921875,
+      "passesMinimum005": true
+    },
+    "wallOff": {
+      "sha256": "85487cc1dd56d7baf5e18e4b8ef33befda91ca2c1004cf6877b067a10959531a",
+      "nonblankPixelRatio": 0.99998828125,
+      "passesMinimum005": true
+    },
+    "blackOff": {
+      "sha256": "b3d4f1282739ab51813d412fc278fe6ec8555ab44baaf68e145e4007ca4bc0ea",
+      "nonblankPixelRatio": 0.05625,
+      "passesMinimum005": true,
+      "file": "blackOff.png"
+    },
+    "scatter": {
+      "sha256": "eca0f87d4e38a72c378753f62cdeaadbdc14901193b33716ebe64daef3e0be26",
+      "nonblankPixelRatio": 0.23834375,
+      "passesMinimum005": true,
+      "file": "scatter.png"
+    },
+    "scatterSunOff": {
+      "sha256": "d1412a75a5612ff4653692c1c9314102124e135335f17ef0d4daff9857e4be49",
+      "nonblankPixelRatio": 0.236296875,
+      "passesMinimum005": true,
+      "file": "scatterSunOff.png"
+    },
+    "scatterPointOff": {
+      "sha256": "5b272a565aa3eca8c45b4dea7671f3183d6f91c0f2cde2bf95ced43151b144dc",
+      "nonblankPixelRatio": 0.23907421875,
+      "passesMinimum005": true,
+      "file": "scatterPointOff.png"
+    },
+    "lifecycle": {
+      "sha256": "95e2d1a14559df4a6778916e3192d15127d59e4e83b9a76f433e7c829add464a",
+      "nonblankPixelRatio": 0.99998828125,
+      "passesMinimum005": true
+    },
+    "lifecycleOff": {
+      "sha256": "340699e0cb4c8740fd083df7b0ed1484e3364efae2b6ce17f0e117f1e73e9d15",
+      "nonblankPixelRatio": 0.99937109375,
+      "passesMinimum005": true
+    }
+  },
+  "nonblankMethod": "Existing playtest regionMetrics on decoded PNGs, full frame, luminance >0.01, alpha >0; frozen minimum 0.05. All fifteen pass; minimum 0.05625.",
+  "postCaptureMetrics": {
+    "zeroIdentity": true,
+    "offIdentity": true,
+    "lights": {
+      "baselineMaxRgb": 0,
+      "wallMaxRgb": 0,
+      "roi": {
+        "x": 260,
+        "y": 155,
+        "width": 150,
+        "height": 90
+      },
+      "wallRoi": {
+        "x": 184,
+        "y": 216,
+        "width": 18,
+        "height": 18
+      },
+      "evaluationRoi": {
+        "x": 0,
+        "y": 0,
+        "width": 500,
+        "height": 400
+      },
+      "calibrationRoi": {
+        "x": 515,
+        "y": 25,
+        "width": 110,
+        "height": 110
+      },
+      "calibrationMinimum": 146,
+      "calibrationMaxDifference": 0,
+      "sun": {
+        "meanRgbDelta": 15.957703703703704,
+        "changedPixelRatio": 0.9933333333333333
+      },
+      "point": {
+        "meanRgbDelta": 48.772123456790126,
+        "changedPixelRatio": 1
+      },
+      "thresholds": {
+        "minMeanRgbDelta": 1,
+        "minChangedPixelRatio": 0.1,
+        "maxBlackRgb": 0,
+        "minCalibrationRgb": 32,
+        "maxCalibrationDifference": 0
+      },
+      "pass": true
+    }
+  },
+  "postCaptureMetricMethod": "After downloading and digest-checking the failed-run artifact, decoded actual PNGs were evaluated with fogLightPixelMetrics exported from the exact source verifier; exact pixel identities were compared from decoded bytes. These cross-arm checks did not execute in the hosted script because resize aborted first.",
+  "resourceSummary": {
+    "createdTargets": 4,
+    "releasedTargetsBeforeOff": 3,
+    "liveTargetsBeforeOff": 1,
+    "releasedTargetsAfterOff": 4,
+    "liveTargetsAfterOff": 0,
+    "matchingMaterialReleaseCounts": true,
+    "rendererTexturesOffActiveReturnedOff": [5, 10, 5],
+    "minimumObservedStableRenderIntervals": 3
+  },
+  "resizeFailure": {
+    "case": "resizeSmall",
+    "code": "TN_PLAYTEST_HOST_EXITED",
+    "surfaceError": "Surface image is already acquired",
+    "termination": "SIGABRT",
+    "screenshotPresent": false,
+    "consoleFilePresent": false
+  },
+  "sameSourceBrowser": {
+    "artifactId": 11225682361,
+    "artifactSha256": "5cc58198f77714817c43c486cf8b83d7b7e3ef23730e4010c1026b2918740c35",
+    "pass": true,
+    "cases": 17,
+    "qualification": "Google SwiftShader browser WebGPU software correctness; includes each intermediate graph rendering before replacement, full teardown and portable target/depth resize."
+  },
+  "resizeDiagnosticRevalidation": {
+    "sourceSha": "7f710b7d3af5e2da18017e4a0f707d4217ddf85d",
+    "runId": 37011447056,
+    "runUrl": "https://github.com/ThreeNativeHQ/threenative/actions/runs/37011447056",
+    "artifactId": 11227694772,
+    "artifactSha256": "8ae66c5a60cba94b1d2b96c771ee2f3f7dbb98472b95ea980a067c83976da2f2",
+    "nativeBuild": {
+      "runtimeSha256": "da16138cc37938a14ce6831476aa58972a0d469ba2172b6a06faf6d1d56c6042",
+      "bundleSha256": "d2be9b3d0efa3247ff63c772421f75b77e8ea1fd9b271c4791ec7934f88c3e86",
+      "buildSourceSha": "7f710b7d3af5e2da18017e4a0f707d4217ddf85d",
+      "packageVersion": "0.3.4",
+      "wgpuNativeVersion": "25.0.2.2"
+    },
+    "pass": false,
+    "acceptedNativeArms": 15,
+    "allAcceptedPngBytesIdenticalToOriginal": true,
+    "browserCasesPassed": 17,
+    "resizeControl": {
+      "pass": false,
+      "capturedPngs": 0,
+      "firstErrorCode": "TN_SURFACE_ACQUIRE_FAILED",
+      "surfaceStatus": 2,
+      "nextError": "Failed to get current texture",
+      "correction": "The diagnostic step normalized conclusion was success, but its retained summary.pass was false and the mandatory final guard failed. No control capture passed."
+    },
+    "originalResizeFailure": {
+      "case": "resizeSmall",
+      "code": "TN_PLAYTEST_HOST_EXITED",
+      "surfaceError": "Surface image is already acquired",
+      "termination": "SIGABRT",
+      "screenshotPresent": false
+    },
+    "currentDevelopComparison": {
+      "sha": "924b92f825d602485ef4e682f434b4757a825cd7",
+      "method": "Connector-read file content compared byte-for-byte against7f710b7d3 checkout before the fix. All five equal.",
+      "baselineGitBlobs": {
+        "packages/runtime-native/include/mystral/webgpu_compat.h": "d826bdaeb9850bb3f3632bf50c4542e146d2c5e5",
+        "packages/runtime-native/src/webgpu/bindings_presentation.cpp": "cbedaa40abf9d7f26b2bad60318dc915b33c8365",
+        "packages/runtime-native/src/webgpu/bindings_resources.cpp": "d7c15f425ca65d2f4ee2f9bf6b7fa78d8c1092ef",
+        "packages/runtime-native/src/webgpu/bindings.cpp": "28789db6974dc0fd250e63c4f70ef07091412ad5",
+        "packages/runtime-native/scripts/download-deps.mjs": "a6cc308a8377e4c7255fe51d4e83e01abf22e31d"
+      }
+    }
+  }
+}

@@ -5,10 +5,11 @@ prd_contract: v1
 # PRD-288 — the first frame is not the compile bill
 
 **Status: OPEN — filed 2026-08-30 against `728f72e8`. Nothing below has been executed.** Part of
-the [decent-defaults batch](./ORIGIN-decent-defaults-2026-08-30.md). Depends on
+the decent-defaults batch. Depends on
 [PRD-278](../done/PRD-278-every-template-ships-the-render-chain-and-says-what-ran.md) for a chain that
 has pipelines to compile.
 
+**Priority:** P2 — Open ACs warm the post-chain output graph and count first-frame compile cost.
 **Goal: a scaffolded game's loading screen ends when the game is ready to run, not when the scene is
 ready and the post chain has not been compiled yet.** A five-stage TSL chain in seven templates adds
 pipelines that nothing currently warms, on the platform least able to absorb the stall.

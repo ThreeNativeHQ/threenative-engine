@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "entries": {
+    "receiver.glb": {
+      "output": "receiver.glb",
+      "lod": {
+        "runtime": {
+          "maxPixelError": 1,
+          "hysteresis": 0.15
+        }
+      }
+    }
+  }
+}

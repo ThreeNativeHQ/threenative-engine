@@ -1,7 +1,9 @@
-import { Scene } from "@threenative/core";
+import { Scene, getPlatform, isMobile } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import type { Texture } from "three";
+import { prepareEnvironmentSample } from "../render/environmentSetup.js";
 import { loadShipModel } from "../render/props.js";
+import { isWebGLFallbackRenderer } from "../render/quality.js";
 import { loadSky } from "../render/sky.js";
 import type { GameState } from "../state.js";
 import { Sailing } from "./Sailing.js";
@@ -19,12 +21,21 @@ export class Boot extends Scene<GameState, IPhysicsContext> {
   // is read the instant `Boot.enter()` returns — not once `Sailing.enter()` eventually does. See
   // `loadSky` and `loadShipModel`.
   override async load(ctx: {
+    readonly renderer?: Parameters<Sailing["enter"]>[0]["renderer"];
     readonly assets: {
       model<T>(path: string): Promise<T>;
       texture(path: string): Promise<Texture>;
     };
   }): Promise<void> {
     await Promise.all([loadSky(ctx.assets), loadShipModel(ctx.assets)]);
+    if (ctx.renderer !== undefined)
+      await prepareEnvironmentSample(ctx.renderer.raw, {
+        web: getPlatform().runtime === "web",
+        rendererKind: ctx.renderer.kind,
+        webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+        mobile: isMobile(),
+        software: ctx.renderer.softwareAdapter !== undefined,
+      });
   }
 
   override enter(ctx: Parameters<Sailing["enter"]>[0]): void {

@@ -218,6 +218,9 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
     await run("tar", ["-xzf", join(archiveDirectory, archive), "-C", archiveDirectory]);
 
     const packed = join(archiveDirectory, "package");
+    expect(
+      await readFile(join(packed, "patches", "three@0.185.1-prd269-upgrade.patch"), "utf8"),
+    ).toBe(await readFile(join(coreRoot, "patches", "three@0.185.1-prd269-upgrade.patch"), "utf8"));
     const packageManifest = JSON.parse(await readFile(join(packed, "package.json"), "utf8")) as {
       scripts?: { postinstall?: string };
     };
@@ -312,6 +315,14 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
       expect(backend).toContain("data.bindGroupLayoutKeys !== bindGroupLayoutKeys");
       expect(backend).toContain("data.bindGroupLayoutKeys = bindGroupLayoutKeys");
       expect(backend).toContain("bindGroupLayoutKeys,");
+      expect(backend).toContain("renderObject.getGeometryCacheKey( false )");
+    }
+
+    for (const file of ["src/renderers/common/RenderObject.js", "build/three.webgpu.js"]) {
+      expect(patched.get(file)).toContain("getGeometryCacheKey( useMorphTargetIds = true )");
+      expect(patched.get(file)).toContain("targets.length + ',' + geometry.morphTargetsRelative");
+      expect(patched.get(file)).toContain("useMorphTargetIds ? attribute.id");
+      expect(patched.get(file)).toContain("attribute.count + ',' + attribute.itemSize");
     }
 
     await run(process.execPath, ["./scripts/postinstall.mjs"], {

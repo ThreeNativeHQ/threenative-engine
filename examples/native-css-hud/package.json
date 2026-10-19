@@ -1,0 +1,37 @@
+{
+  "name": "threenative-native-css-hud",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:web": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:desktop": "threenative build --target desktop",
+    "verify:desktop": "node scripts/verify-desktop.mjs",
+    "bench:desktop": "sh ../../scripts/xvfb.sh node bench/run.mjs",
+    "verify:desktop:plain": "node scripts/verify-desktop.mjs plain"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-reconciler": "0.33.0",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@threenative/runtime-native": "workspace:*",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@types/three": "0.185.3",
+    "@vitejs/plugin-react": "catalog:",
+    "create-threenative": "workspace:*",
+    "pngjs": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "@typescript/native": "catalog:"
+  }
+}

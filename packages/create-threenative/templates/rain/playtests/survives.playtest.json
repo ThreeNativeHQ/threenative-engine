@@ -1,0 +1,58 @@
+{
+  "name": "rain-survives-real-frame-boot",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "label": "forward",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "elapsed",
+        "changed": true
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 3
+    }
+  },
+  "subject": "player"
+}

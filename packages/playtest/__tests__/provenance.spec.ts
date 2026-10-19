@@ -79,7 +79,30 @@ test("generic WebGPU features and limits do not count as adapter identity", asyn
   expect(report.pass).toBe(false);
   expect(report.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING");
   await expect(readFile(join(artifactDirectory, "capture.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  // An adapter that resolved is not a rejected request; the message has to keep them apart.
+  expect(provenanceMessage(report)).toContain("resolved");
+  expect(provenanceMessage(report)).not.toContain("rejected");
 });
+
+test("the missing-adapter diagnostic names why the adapter request failed", async () => {
+  // `.catch(() => null)` used to throw the browser's reason away, so a page with no GPU and a page
+  // misconfigured to request one reported the same unexplained "no adapter description".
+  const artifactDirectory = await makeTempDir("playtest-provenance-rejected-");
+  const report = await runVisualPlaytest(artifactDirectory, "adapter-rejected", ["--disable-gpu"]);
+
+  expect(exitCodeForReport(report)).toBe(2);
+  expect(report.pass).toBe(false);
+  expect(provenanceMessage(report)).toContain("rejected");
+  expect(provenanceMessage(report)).toContain("fixture-adapter-rejected");
+  await expect(readFile(join(artifactDirectory, "capture.json"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+function provenanceMessage(report: { diagnostics: ReadonlyArray<{ code: string; message: string }> }): string {
+  return report.diagnostics
+    .filter(({ code }) => code === "TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING")
+    .map(({ message }) => message)
+    .join(" ");
+}
 
 async function runVisualPlaytest(
   artifactDirectory: string,

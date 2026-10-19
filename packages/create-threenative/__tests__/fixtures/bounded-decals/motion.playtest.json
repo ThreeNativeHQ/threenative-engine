@@ -1,0 +1,119 @@
+{
+  "name": "vq11-motion",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 960,
+    "height": 540
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "lod-and-pool",
+      "waitFrames": 40
+    },
+    {
+      "kind": "input",
+      "label": "motion",
+      "press": "KeyM",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitFrames": 90
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    },
+    "components": [
+      {
+        "entity": "decals",
+        "component": "active",
+        "equals": 256,
+        "allowTrivial": "Real projected marks survive more than 256 impacts and eviction."
+      },
+      {
+        "entity": "decals",
+        "component": "created",
+        "gte": 321,
+        "allowTrivial": "320 initial marks plus a real post-LOD raycast hit."
+      },
+      {
+        "entity": "decals",
+        "component": "geometryBytes",
+        "allowTrivial": "Measures actual projected GPU-upload buffer bytes, not an empty field.",
+        "gte": 1
+      },
+      {
+        "entity": "decals",
+        "component": "renderTriangles",
+        "equals": 2,
+        "allowTrivial": "The loaded 128-triangle authored receiver actually selects its two-triangle LOD."
+      },
+      {
+        "entity": "decals",
+        "component": "motionError",
+        "lte": 1e-6,
+        "allowTrivial": "Measures mark vertices against receiver-local coordinates during actual rigid motion."
+      },
+      {
+        "entity": "decals",
+        "component": "generation",
+        "equals": 1,
+        "allowTrivial": "The restart input must construct a new scene; unchanged initial state is not evidence."
+      },
+      {
+        "entity": "decals",
+        "component": "receiverMotion",
+        "allowTrivial": "The actual receiver transform must change, so a dropped motion input cannot pass.",
+        "gte": 0.1
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 960,
+          "height": 540,
+          "minNonblankPixelRatio": 0.15
+        }
+      },
+      {
+        "region": {
+          "x": 270,
+          "y": 185,
+          "width": 170,
+          "height": 125,
+          "minNonblankPixelRatio": 0.9,
+          "maxLuminance": 0.35,
+          "minDarkPixelRatio": 0.01,
+          "maxDarkPixelRatio": 0.2
+        }
+      },
+      {
+        "region": {
+          "x": 550,
+          "y": 190,
+          "width": 95,
+          "height": 90,
+          "minNonblankPixelRatio": 0.9,
+          "maxLuminance": 0.35,
+          "minDarkPixelRatio": 0.01,
+          "maxDarkPixelRatio": 0.2
+        }
+      }
+    ]
+  }
+}

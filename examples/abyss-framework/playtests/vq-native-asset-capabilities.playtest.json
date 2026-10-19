@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "name": "vq01-packaged-quickjs-assets",
+  "target": "desktop",
+  "viewport": {
+    "width": 960,
+    "height": 640
+  },
+  "warmupFrames": 30,
+  "steps": [
+    {
+      "waitFrames": 90
+    }
+  ],
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "assert": {
+    "resources": [
+      {
+        "id": "state",
+        "path": "loadedModels",
+        "equals": 2,
+        "allowTrivial": "Both real normalized GLBs must finish loading before enter and the first observation."
+      },
+      {
+        "id": "state",
+        "path": "texturedMeshes",
+        "equals": 2,
+        "allowTrivial": "A texture image on each loaded GLB is counted before the first observation."
+      },
+      {
+        "id": "state",
+        "path": "vertices",
+        "gte": 100,
+        "allowTrivial": "Decoded GLB geometry is measured at scene entry."
+      },
+      {
+        "id": "state",
+        "path": "frames",
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "maxPoseDelta",
+        "gte": 0.05,
+        "allowTrivial": "The native warm-up can already advance both authored animation tracks."
+      }
+    ],
+    "startup": {
+      "maxEnteredMs": 120000,
+      "maxReadyMs": 120000
+    }
+  }
+}

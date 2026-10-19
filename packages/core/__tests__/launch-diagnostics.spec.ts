@@ -7,6 +7,7 @@ import {
   watchDeviceLoss,
   watchStartupStall,
 } from "../src/launch-diagnostics.js";
+import { StartupReadiness } from "../src/startup-readiness.js";
 
 /** A hand-driven clock and interval, so a 20-second stall costs the test nothing. */
 function fakeScheduler() {
@@ -33,6 +34,50 @@ describe("launch diagnostics", () => {
   beforeEach(() => {
     resetLaunchFailures();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  it("observes completed held work while the displayed percentage stays fixed, then detects a real stall", async () => {
+    const scheduler = fakeScheduler();
+    const readiness = new StartupReadiness();
+    let completed = 0;
+    let release = () => {};
+    readiness.hold(
+      "strata-spawn",
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+      120_000,
+      () => completed,
+    );
+    const failures: ILaunchFailure[] = [];
+    const off = onLaunchFailure((failure) => failures.push(failure));
+    const stop = watchStartupStall({
+      clearInterval: scheduler.clearInterval,
+      now: scheduler.now,
+      pending: () => readiness.pendingHolds,
+      progress: () => 0.95,
+      workProgress: () => readiness.workProgress,
+      setInterval: scheduler.setInterval,
+      stallMs: 45_000,
+    });
+    try {
+      for (let slice = 0; slice < 5; slice += 1) {
+        completed += 401;
+        scheduler.advance(20_000);
+      }
+      expect(failures).toEqual([]);
+      scheduler.advance(44_999);
+      expect(failures).toEqual([]);
+      scheduler.advance(1);
+      expect(failures).toHaveLength(1);
+      expect(failures[0]?.message).toContain("strata-spawn");
+      expect(failures[0]?.message).toContain("45s");
+    } finally {
+      stop();
+      off();
+      release();
+      await Promise.resolve();
+    }
   });
 
   it("reports a launch whose progress stops moving, naming what it is still waiting for", () => {

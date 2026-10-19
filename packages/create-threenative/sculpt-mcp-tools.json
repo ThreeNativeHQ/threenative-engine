@@ -1,6 +1,6 @@
 {
-  "comment": "The sculpt MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.1.1 installed from the published npm tarball into a clean directory; that run also served 31 technique-safe grimoire resources. `recommended` is the complete ordered authoring loop documented by every template.",
-  "version": "0.1.1",
+  "comment": "The sculpt MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.2.2 installed from the published npm tarball into a clean directory; that run also served 31 technique-safe grimoire resources. `inputSchemas` and `descriptions` come from that same response. `recommended` is the complete ordered authoring loop documented by every template. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`. The recorded surface serves 12 tools.",
+  "version": "0.2.2",
   "profile": null,
   "recommended": [
     "sculpt_plan",
@@ -10,10 +10,520 @@
     "sculpt_grimoire"
   ],
   "tools": [
+    "sculpt_action_design",
+    "sculpt_clip_measure",
     "sculpt_compare",
     "sculpt_grimoire",
+    "sculpt_mesh_parity",
     "sculpt_pass_gate",
     "sculpt_plan",
+    "sculpt_rig_gate",
+    "sculpt_rig_reference",
+    "sculpt_rig_spec_gate",
+    "sculpt_skin_condition",
     "sculpt_spec_gate"
-  ]
+  ],
+  "inputSchemas": {
+    "sculpt_plan": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "referencePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "profile": {
+          "default": "generic",
+          "type": "string",
+          "enum": ["generic", "character", "animated-character"]
+        }
+      },
+      "required": ["referencePath", "intent"]
+    },
+    "sculpt_spec_gate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "spec": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": ["spec"]
+    },
+    "sculpt_compare": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "referencePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capturePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "regions": {
+          "default": [],
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "x": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "width": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              },
+              "height": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": ["id", "x", "y", "width", "height"]
+          }
+        }
+      },
+      "required": ["referencePath", "capturePath"]
+    },
+    "sculpt_pass_gate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "passId": {
+          "type": "string",
+          "enum": [
+            "blockout",
+            "structural-pass",
+            "form-refinement",
+            "material-pass",
+            "surface-pass",
+            "lighting-pass",
+            "interaction-pass",
+            "optimization-pass"
+          ]
+        },
+        "compareResult": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "evidence"
+            },
+            "authority": {
+              "type": "string",
+              "const": "diagnostic-only"
+            },
+            "referencePath": {
+              "type": "string"
+            },
+            "capturePath": {
+              "type": "string"
+            },
+            "dimensions": {
+              "type": "object",
+              "properties": {
+                "reference": {
+                  "type": "object",
+                  "properties": {
+                    "width": {
+                      "type": "number"
+                    },
+                    "height": {
+                      "type": "number"
+                    }
+                  },
+                  "required": ["width", "height"]
+                },
+                "capture": {
+                  "type": "object",
+                  "properties": {
+                    "width": {
+                      "type": "number"
+                    },
+                    "height": {
+                      "type": "number"
+                    }
+                  },
+                  "required": ["width", "height"]
+                },
+                "normalizedForComparison": {
+                  "type": "object",
+                  "properties": {
+                    "width": {
+                      "type": "number"
+                    },
+                    "height": {
+                      "type": "number"
+                    }
+                  },
+                  "required": ["width", "height"]
+                }
+              },
+              "required": ["reference", "capture", "normalizedForComparison"]
+            },
+            "overall": {
+              "type": "object",
+              "properties": {
+                "score": {
+                  "type": "number"
+                },
+                "confidence": {
+                  "type": "number"
+                }
+              },
+              "required": ["score", "confidence"]
+            },
+            "regions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "pixels": {
+                    "type": "number"
+                  },
+                  "score": {
+                    "type": "number"
+                  },
+                  "confidence": {
+                    "type": "number"
+                  },
+                  "signals": {
+                    "type": "object",
+                    "properties": {
+                      "structuralSimilarity": {
+                        "type": "number"
+                      },
+                      "perceptualHashSimilarity": {
+                        "type": "number"
+                      },
+                      "colorSimilarity": {
+                        "type": "number"
+                      },
+                      "deltaE00": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "structuralSimilarity",
+                      "perceptualHashSimilarity",
+                      "colorSimilarity",
+                      "deltaE00"
+                    ]
+                  },
+                  "corrections": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": ["id", "pixels", "score", "confidence", "signals", "corrections"]
+              }
+            },
+            "ambiguous": {
+              "type": "boolean"
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "status",
+            "authority",
+            "referencePath",
+            "capturePath",
+            "dimensions",
+            "overall",
+            "regions",
+            "ambiguous",
+            "notes"
+          ]
+        },
+        "semanticReview": {
+          "type": "object",
+          "properties": {
+            "score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "notes": {
+              "type": "string",
+              "minLength": 1
+            },
+            "criticalFeatures": {
+              "maxItems": 5,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "score": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "critical": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["id", "score", "threshold", "critical"]
+              }
+            }
+          },
+          "required": ["score", "confidence", "notes", "criticalFeatures"]
+        },
+        "threshold": {
+          "default": 0.7,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "minimumConfidence": {
+          "default": 0.65,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "attempt": {
+          "default": 1,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxAttempts": {
+          "default": 3,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": ["passId", "compareResult"]
+    },
+    "sculpt_grimoire": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["topic"]
+    },
+    "sculpt_clip_measure": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "payload": {}
+      },
+      "required": ["payload"],
+      "additionalProperties": false
+    },
+    "sculpt_rig_reference": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "glbPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "skinIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "landmarks": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            ]
+          }
+        },
+        "sampleCount": {
+          "default": 25,
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 1000
+        },
+        "figureHeight": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": ["glbPath"],
+      "additionalProperties": false
+    },
+    "sculpt_rig_spec_gate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "payload": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": ["payload"],
+      "additionalProperties": false
+    },
+    "sculpt_skin_condition": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "binding": {},
+        "figureHeight": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "radius": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": ["binding", "figureHeight"],
+      "additionalProperties": false
+    },
+    "sculpt_mesh_parity": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": ["freeze", "verify"]
+        },
+        "payload": {},
+        "manifest": {}
+      },
+      "required": ["operation", "payload"],
+      "additionalProperties": false
+    },
+    "sculpt_action_design": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": ["resolve-chains", "foot-slide", "accept", "synthesize"]
+        },
+        "nodes": {
+          "type": "array",
+          "items": {}
+        },
+        "sideLabels": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "payload": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "clipName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "intendedClass": {
+          "type": "string",
+          "enum": ["walk", "run"]
+        },
+        "figureHeight": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "limit": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": ["operation"],
+      "additionalProperties": false
+    },
+    "sculpt_rig_gate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "payload": {}
+      },
+      "required": ["payload"],
+      "additionalProperties": false
+    }
+  },
+  "descriptions": {
+    "sculpt_plan": "Validate a reference image and return the locked eight-pass sculpt order plus relevant technique-safe grimoire resources.",
+    "sculpt_spec_gate": "Validate the MCP runtime ObjectSculptSpec contract and canonical complexity depth thresholds before code is written.",
+    "sculpt_compare": "Produce deterministic diagnostic evidence from an existing capture and reference, globally and per normalized region. Never launches a browser and never authorizes advancement.",
+    "sculpt_pass_gate": "Return advance, retry, or stop. Semantic review controls advancement; deterministic scores supply corrections, while an explicitly ambiguous comparison blocks advancement.",
+    "sculpt_grimoire": "Fetch a technique-safe grimoire page by topic. Unknown and concrete shader/material recipe topics fail and list valid topics.",
+    "sculpt_clip_measure": "Measure every sampled animation clip, classify all matching motion labels, name intent honestly, decide looping from pose return, and surface joint scale.",
+    "sculpt_rig_reference": "Read the GLB's own skin joint order, inverse binds, animation channels and sampled landmark clips; ambiguous skins, landmarks and interpolation fail closed.",
+    "sculpt_rig_spec_gate": "Validate a structural Stage R rig payload: hierarchy, matrices, four-slot weights, joint indices and coverage.",
+    "sculpt_skin_condition": "Blend four-slot skin weights across nearby multipart seams, report the deliberate crease trade, and fail if Gate R2 rejects the result.",
+    "sculpt_mesh_parity": "Freeze packed position, normal, UV and index buffers before rigging or verify them afterward; skin attributes are legal additions.",
+    "sculpt_action_design": "Resolve topology-based limb chains, measure foot contact, accept a measured clip against walk/run targets, or synthesize an explicit gait payload.",
+    "sculpt_rig_gate": "Run every Stage R G1-G12 observation gate without short-circuiting; fail closed when any result is failed or unevaluated."
+  }
 }

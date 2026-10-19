@@ -1,0 +1,209 @@
+{
+  "name": "scene-cameras-vector-project",
+  "adaptedFrom": "three@0.185.1 Vector3.project/unproject: perspective and orthographic matrix order without implicit camera updates",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "perspective",
+      "class": "PerspectiveCamera",
+      "args": [45, 1.6, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "perspective",
+      "path": "position.x",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "perspective",
+      "path": "position.y",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "perspective",
+      "path": "position.z",
+      "value": 5
+    },
+    {
+      "op": "call",
+      "id": "perspective",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "perspective",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "perspectiveProjected",
+      "class": "Vector3",
+      "args": [1.5, -0.25, 2]
+    },
+    {
+      "op": "call",
+      "id": "perspectiveProjected",
+      "method": "project",
+      "args": [
+        {
+          "ref": "perspective"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "perspectiveProjected",
+      "method": "clone",
+      "args": [],
+      "result": "perspectiveRoundTrip"
+    },
+    {
+      "op": "call",
+      "id": "perspectiveRoundTrip",
+      "method": "unproject",
+      "args": [
+        {
+          "ref": "perspective"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "orthographic",
+      "class": "OrthographicCamera",
+      "args": [-3, 3, 2, -2, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "orthographic",
+      "path": "position.x",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "orthographic",
+      "path": "position.y",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "orthographic",
+      "path": "position.z",
+      "value": 5
+    },
+    {
+      "op": "call",
+      "id": "orthographic",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "orthographic",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "orthographicProjected",
+      "class": "Vector3",
+      "args": [1.5, -0.25, 2]
+    },
+    {
+      "op": "call",
+      "id": "orthographicProjected",
+      "method": "project",
+      "args": [
+        {
+          "ref": "orthographic"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "orthographicProjected",
+      "method": "clone",
+      "args": [],
+      "result": "orthographicRoundTrip"
+    },
+    {
+      "op": "call",
+      "id": "orthographicRoundTrip",
+      "method": "unproject",
+      "args": [
+        {
+          "ref": "orthographic"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "perspectiveProjected",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "perspectiveProjected",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "perspectiveProjected",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "perspectiveRoundTrip",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "perspectiveRoundTrip",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "perspectiveRoundTrip",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "orthographicProjected",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "orthographicProjected",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "orthographicProjected",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "orthographicRoundTrip",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "orthographicRoundTrip",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "orthographicRoundTrip",
+      "kind": "number",
+      "path": "z"
+    }
+  ]
+}

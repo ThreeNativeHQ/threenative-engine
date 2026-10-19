@@ -7,6 +7,7 @@ brief still failing that contract, run and pasted. Both need an archive replayed
 current sealed hashes; the round-8 archives cannot serve, because the physics-puzzle brief moved to
 `a2a40e96` and `sweep:proof` refuses the mismatch rather than re-scoring.
 
+**Priority:** P1 — Blocked only on editing the brief and playtest json that leak player and goal names.
 Originally: **BLOCKED — 2026-08-15, after three repair lanes.** Option C was implemented. The `r2` lane
 stopped at `93c76b7`; repair r1 (`46187a8`) and repair r2 (`8412788`) each drew REQUEST_CHANGES for
 accepting autonomous motion as input-driven evidence, and repair r3 closed that thread at

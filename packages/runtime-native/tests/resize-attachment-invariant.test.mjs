@@ -20,8 +20,8 @@ function assertResizeAttachmentContract(definitions) {
   );
   assert.match(
     definitions.syncSize,
-    /config\.width = width;[\s\S]*?config\.height = height;[\s\S]*?wgpuSurfaceConfigure\(state->surface, &config\)/u,
-    "canvas backing dimensions must reconfigure the native surface before acquisition",
+    /config\.width = surfaceWidth;[\s\S]*?config\.height = surfaceHeight;[\s\S]*?(?:wgpuSurfaceConfigure|configurePresentationSurface)\(state->surface, &config\)/u,
+    "only physical drawable dimensions may configure the native surface",
   );
   assert.match(
     definitions.currentTextureHandler,

@@ -1,7 +1,7 @@
 # Native C++ coverage — first measurement, 2026-08-28
 
 **What this is:** a scouting run, not a gate. It exists because
-[PRD-229](../PRDs/done/refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md) plans a
+[PRD-229](../PRDs/done/PRD-229-the-native-host-is-provable-before-it-is-moved.md) plans a
 coverage instrument for `packages/runtime-native` and a plan that names a baseline it has never
 taken is a plan built on a guess. This run establishes that the toolchain works here, and what the
 number is today. It is **not** the PRD's Phase 1 deliverable — there is no script, no gate, no

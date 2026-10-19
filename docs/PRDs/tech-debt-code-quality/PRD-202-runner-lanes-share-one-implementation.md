@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P1 — Device and browser lanes still compute different path lengths for one walk.
 **Complexity:** +2 for 6–10 files, +2 for multi-platform correctness (browser vs device),
 +1 for splitting a grab-bag module, +1 divergent-math fix = **6 → MEDIUM mode**.
 

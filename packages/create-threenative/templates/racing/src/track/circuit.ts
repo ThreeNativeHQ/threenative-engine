@@ -466,12 +466,3 @@ export const GRID_DISTANCE = {
 export function lineDistance(fraction: number): number {
   return fraction * CIRCUIT.totalLength;
 }
-
-/**
- * A point on the tarmac: `offset` metres right of the centreline at `distance`, on the banked
- * surface rather than on a flat plane through it, so anything parked on the track sits on it.
- */
-export function pointOnTrack(distance: number, offset: number, target: Vector3): Vector3 {
-  const sample = CIRCUIT.at(distance, CIRCUIT.createSample());
-  return target.lerpVectors(sample.left, sample.rightEdge, (offset + HALF) / TRACK_WIDTH);
-}

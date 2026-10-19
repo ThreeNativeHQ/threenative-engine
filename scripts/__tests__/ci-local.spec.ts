@@ -179,6 +179,13 @@ describe("PRD-373 local selection", () => {
     for (const name of ["ci-local.sh", "ci-change-scope.mjs"]) {
       await copyFile(path.join(repo, "scripts", name), path.join(fixture.root, "scripts", name));
     }
+    await mkdir(path.join(fixture.root, "packages/create-threenative/templates/starter"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(fixture.root, "packages/create-threenative/templates/starter/kit.json"),
+      '{"name":"starter"}',
+    );
     await writeFile(path.join(fixture.root, "scripts/xvfb.sh"), '#!/bin/sh\nexec "$@"\n');
     await writeFile(path.join(fixture.root, ".gitignore"), "bin/\ntrace.log\nlogs/\n");
     const git = (...args: string[]) => {

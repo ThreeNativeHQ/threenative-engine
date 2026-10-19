@@ -47,6 +47,23 @@ function isQualityTier(value: string): value is QualityTier {
 }
 
 /**
+ * Where each GPU family starts, from `ctx.renderer.gpuClass`.
+ *
+ * A start, not a ceiling: the measured frame-budget windows move the look from here, and an
+ * explicit `tier` above still wins. A class absent from this table — `unknown`, an adapter no
+ * family rule matched — falls back to the `mobile` flag, exactly as before families existed.
+ * Edit the right-hand side to change what a family looks like; nothing outside this file reads it.
+ */
+const START_TIER_BY_GPU_CLASS: Readonly<Record<string, QualityTier | undefined>> = {
+  software: "low",
+  "mobile-low": "low",
+  "mobile-mid": "low",
+  "mobile-high": "medium",
+  integrated: "medium",
+  discrete: "high",
+};
+
+/**
  * Picks the tier: an explicit `tier` always wins, otherwise the platform decides.
  *
  * Fails closed. An unrecognised tier name throws with the value it was handed rather than
@@ -54,7 +71,12 @@ function isQualityTier(value: string): value is QualityTier {
  * turned out to have no effect.
  */
 export function resolveQualityTier(
-  request: { readonly mobile?: boolean; readonly software?: boolean; readonly tier?: string } = {},
+  request: {
+    readonly gpuClass?: string;
+    readonly mobile?: boolean;
+    readonly software?: boolean;
+    readonly tier?: string;
+  } = {},
 ): QualityTier {
   const requested = request.tier;
   if (requested !== undefined) {
@@ -71,6 +93,9 @@ export function resolveQualityTier(
   // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
   // `tier` above still wins over it.
   if (request.software === true) return "low";
+  const family =
+    request.gpuClass === undefined ? undefined : START_TIER_BY_GPU_CLASS[request.gpuClass];
+  if (family !== undefined) return family;
   return request.mobile === true ? "low" : "high";
 }
 
@@ -85,6 +110,7 @@ export function resolveQualityTier(
  * smooth sky gradient into visible bands. Both are one line to turn back on for a glossy scene.
  */
 const shared: IWorldEnvironmentOptions = {
+  autoExposureEnabled: false,
   // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,
   bloomRadius: 0.6,
@@ -109,7 +135,7 @@ const high: IWorldEnvironmentOptions = {
 };
 
 /** The rung in between: the same occlusion at half the directions. Saving unmeasured. */
-const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8 };
+const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8, renderChainTier: "medium" };
 
 /** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
 const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
@@ -125,4 +151,37 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
     );
   }
   return preset;
+}
+
+/** First admitted material lane: high desktop hardware WebGPU in the browser only. */
+export interface IMaterialLightingEnvironment {
+  readonly web: boolean;
+  readonly rendererKind: string;
+  readonly mobile?: boolean;
+  readonly software?: boolean;
+  readonly webglFallback?: boolean;
+}
+export function materialLightingEnabled(
+  tier: QualityTier,
+  environment: IMaterialLightingEnvironment,
+): boolean {
+  return (
+    tier === "high" &&
+    environment.web &&
+    environment.rendererKind === "webgpu" &&
+    environment.mobile !== true &&
+    environment.software !== true &&
+    environment.webglFallback !== true
+  );
+}
+
+/** A WebGPURenderer wrapper may run an ordinary WebGL fallback backend. */
+export function isWebGLFallbackRenderer(renderer: unknown): boolean {
+  if (renderer === null || typeof renderer !== "object") return false;
+  const backend = Reflect.get(renderer, "backend");
+  return (
+    backend !== null &&
+    typeof backend === "object" &&
+    Reflect.get(backend, "isWebGLBackend") === true
+  );
 }

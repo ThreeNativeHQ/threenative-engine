@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "recipe": {
+    "version": 1,
+    "config": {
+      "size": 512,
+      "resolution": 129,
+      "seed": 73
+    },
+    "layers": [
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "hills",
+        "type": "noise",
+        "params": {
+          "base": 18,
+          "amplitude": 16,
+          "scale": 180,
+          "warp": 35,
+          "octaves": 5
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "eroded-hill",
+        "type": "stamp",
+        "params": {
+          "at": [-40, -60],
+          "radius": [130, 105],
+          "amplitude": 65,
+          "shape": "mountain",
+          "roughness": 0.17
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "weathering",
+        "type": "erode",
+        "params": {
+          "method": "hydraulic",
+          "droplets": 2400,
+          "maxSteps": 40
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "surfaces",
+        "type": "materials",
+        "params": {
+          "rules": [
+            {
+              "material": "dirt",
+              "mask": {
+                "type": "noise",
+                "scale": 36,
+                "threshold": 0.67,
+                "seed": 73,
+                "fade": 0.14
+              },
+              "strength": 0.55
+            },
+            {
+              "material": "rock",
+              "mask": {
+                "type": "slope",
+                "min": 34,
+                "max": 90,
+                "fade": 9
+              }
+            }
+          ]
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "access-road",
+        "type": "road",
+        "params": {
+          "points": [[-240, 20, 160], [-100, 22, 160], [30, 25, 160], [230, 28, 160]],
+          "width": 10,
+          "shoulder": 8
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "building-pad",
+        "type": "flatten",
+        "params": {
+          "at": [-120, 150],
+          "radius": 18,
+          "height": 22,
+          "falloff": 0.35
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "pad-surface",
+        "type": "paint",
+        "params": {
+          "at": [-120, 150],
+          "radius": 18,
+          "material": "dirt"
+        }
+      },
+      {
+        "enabled": true,
+        "opacity": 1,
+        "id": "river",
+        "type": "river",
+        "params": {
+          "points": [[55, 18, -240], [80, 12, -80], [70, 6, 80], [85, 3, 240]],
+          "width": 12,
+          "depth": 4,
+          "shoulder": 8,
+          "enforceDownhill": true
+        }
+      },
+      {
+        "id": "preview-pines",
+        "type": "scatter",
+        "name": "100 editable spruce placements",
+        "params": {
+          "asset": "spruce",
+          "count": 100,
+          "minDistance": 8,
+          "minSlope": 0,
+          "maxSlope": 50,
+          "avoidWater": true,
+          "scale": [0.9, 1.5]
+        }
+      }
+    ]
+  }
+}

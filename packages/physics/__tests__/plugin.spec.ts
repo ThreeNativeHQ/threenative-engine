@@ -188,4 +188,52 @@ describe("rapier plugin", () => {
     expect(worldFree).toHaveBeenCalledTimes(10);
     expect(eventQueueFree).toHaveBeenCalledTimes(10);
   });
+
+  it("syncs transforms for an Area3D id and ignores unknown ids in visible transforms", async () => {
+    const { ctx, plugin } = await setup();
+    const area = new Area3D({
+      physics: ctx.physics,
+      shape: CollisionShape3D.box(1, 1, 1),
+    });
+    const areaApplyTransformSpy = vi.spyOn(area, "applyTransform");
+
+    // Run an update: the Area's transform is synced via areas.get(id)?.applyTransform
+    plugin.update?.(ctx, 1 / 60);
+    expect(areaApplyTransformSpy).toHaveBeenCalled();
+
+    // Now mock readVisibleTransforms to return an Area id and an unknown id (e.g. 99999)
+    const sim = ctx.physics.simulation as unknown as {
+      readVisibleTransforms: (buffer: Float32Array) => number;
+    };
+    const originalRead = sim.readVisibleTransforms.bind(ctx.physics.simulation);
+    vi.spyOn(sim, "readVisibleTransforms").mockImplementation((buffer: Float32Array) => {
+      // Return two transforms: the area body id, and an unregistered id 99999
+      const areaId = area.body.id;
+      buffer[0] = areaId;
+      buffer[1] = 1;
+      buffer[2] = 2;
+      buffer[3] = 3; // position
+      buffer[4] = 0;
+      buffer[5] = 0;
+      buffer[6] = 0;
+      buffer[7] = 1; // quat
+
+      buffer[8] = 99999;
+      buffer[9] = 4;
+      buffer[10] = 5;
+      buffer[11] = 6;
+      buffer[12] = 0;
+      buffer[13] = 0;
+      buffer[14] = 0;
+      buffer[15] = 1;
+      return 2;
+    });
+
+    // Must not throw for unknown id 99999
+    expect(() => plugin.update?.(ctx, 1 / 60)).not.toThrow();
+    expect(areaApplyTransformSpy).toHaveBeenCalled();
+
+    area.dispose();
+    plugin.dispose?.(ctx);
+  });
 });

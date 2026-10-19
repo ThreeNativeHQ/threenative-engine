@@ -5,7 +5,18 @@ import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { loadConfig } from "../src/config.js";
+import * as assetKeys from "../../assets/src/config-keys.js";
+import type { IThreeNativeModelsConfig } from "../../core/src/config.js";
+import {
+  ASSETS_CONFIG_KEYS,
+  LIGHTMAP_CONFIG_KEYS,
+  MODELS_CONFIG_KEYS,
+  MODEL_PASS_KEYS,
+  MODEL_QUANTIZE_KEYS,
+  MODEL_VIRTUAL_KEYS,
+  loadConfig,
+} from "../src/config.js";
+import { createProject, discoverTemplateNames } from "../src/index.js";
 
 const execFileAsync = promisify(execFile);
 const roots: string[] = [];
@@ -44,6 +55,35 @@ it("should carry asset exclusions from the real config loader into the compiler"
   expect(manifest.entries["keep.txt"]).toBeDefined();
   expect(manifest.entries["library.glb"]).toBeUndefined();
 });
+it.each([undefined, "threejs", "threenative"])(
+  "resolves engine %j with threenative as the default",
+  async (engine) => {
+    const root = await project();
+    await config(root, `export default ${JSON.stringify({ engine })};`);
+    expect((await loadConfig(root)).engine).toBe(engine ?? "threenative");
+  },
+);
+
+it.each([
+  ["native", "threenative"],
+  ["legacy", "threejs"],
+])("names the new value for the renamed engine %j", async (engine, renamed) => {
+  const root = await project();
+  await config(root, `export default ${JSON.stringify({ engine })};`);
+  const error = await loadConfig(root).catch((caught: unknown) => caught);
+  expect(String(error)).toContain("TN_CONFIG_ENGINE_RENAMED");
+  expect(String(error)).toContain(`engine "${engine}" was renamed: use "${renamed}".`);
+});
+
+it.each(["unknown", null, 1, false, {}])(
+  "rejects invalid engine %j with a named error",
+  async (engine) => {
+    const root = await project();
+    await config(root, `export default ${JSON.stringify({ engine })};`);
+    await expect(loadConfig(root)).rejects.toThrow("TN_CONFIG_ENGINE_INVALID");
+  },
+);
+
 const VALID_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAXUlEQVR4AaXBQRHEAAgEwclWHGDivIBckIWG3Hf/dD/frz9MdOK2BhedOHEkjsTRG524rcFFJ25rcOJIHImjd2tw0YnbGlx04sSROBJHb3TitgYXnbitwYkjcSSO/o/fGRJxtqYFAAAAAElFTkSuQmCC",
   "base64",
@@ -135,7 +175,8 @@ export const rejected: IAudioConfig = { ${rejectedKey}: 2 };
 `,
   );
   const outcome = (await execFileAsync(process.execPath, [
-    path.resolve("packages/core/node_modules/typescript/bin/tsc"),
+    path.resolve("packages/core/node_modules/@typescript/native/bin/tsc"),
+    "--ignoreConfig",
     "--noEmit",
     "--strict",
     "--target",
@@ -266,6 +307,7 @@ describe("threenative.config.ts", () => {
     );
 
     await expect(loadConfig(root)).resolves.toEqual({
+      engine: "threenative",
       app: { id: "com.studio.fox", name: "Fox", version: "1.2.3", build: 7, icon: "icon.png" },
       display: { orientation: "portrait", fullscreen: false, keepScreenOn: true, maxFps: 120 },
       window: {
@@ -316,10 +358,21 @@ describe("threenative.config.ts", () => {
     });
   });
 
-  it.each(["web", "native"])("preserves an explicit %s UI renderer", async (renderer) => {
+  it.each(["web", "native", "native-css"])(
+    "preserves an explicit %s UI renderer",
+    async (renderer) => {
+      const root = await project();
+      await config(root, `export default { ui: { renderer: "${renderer}" } };`);
+      await expect(loadConfig(root)).resolves.toMatchObject({ ui: { renderer } });
+    },
+  );
+
+  it("names every valid UI renderer when the value is not one of them", async () => {
     const root = await project();
-    await config(root, `export default { ui: { renderer: "${renderer}" } };`);
-    await expect(loadConfig(root)).resolves.toMatchObject({ ui: { renderer } });
+    await config(root, 'export default { ui: { renderer: "canvas" } };');
+    await expect(loadConfig(root)).rejects.toThrow(
+      /TN_CONFIG_UI_RENDERER_INVALID[\s\S]*web, native or native-css/u,
+    );
   });
 
   it("uses the Vite-owned esbuild without invoking Vite's config loader", async () => {
@@ -563,6 +616,32 @@ describe("threenative.config.ts", () => {
     }
   });
 
+  it("accepts per-slot texture caps and rejects malformed maps", async () => {
+    const root = await project();
+    const maxSize = { baseColorTexture: 2048, normalTexture: 1024 };
+    await config(
+      root,
+      `export default { assets: { textures: { maxSize: ${JSON.stringify(maxSize)} }, models: { textures: { maxSize: ${JSON.stringify(maxSize)} } } } };`,
+    );
+    expect((await loadConfig(root)).assets).toMatchObject({
+      textures: { maxSize },
+      models: { textures: { maxSize } },
+    });
+    for (const value of [
+      null,
+      [],
+      { baseColorTexture: 0 },
+      { normalTexture: "1024" },
+      { mask: 1024 },
+    ]) {
+      await config(
+        root,
+        `export default { assets: { textures: { maxSize: ${JSON.stringify(value)} } } };`,
+      );
+      await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    }
+  });
+
   it("parses the models block and the none shorthand into the resolved config", async () => {
     const configured = await project();
     await config(
@@ -739,6 +818,29 @@ describe("threenative.config.ts", () => {
     await config(root, 'export default { assets: { concurrency: "lots" } };');
     await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
     await expect(loadConfig(root)).rejects.toThrow(/assets\.concurrency/u);
+  });
+
+  it("hands assets.nativePackage to the pipeline that receives it", async () => {
+    // The same seam: the compiler grew the native cooked package, and this validator's key list is
+    // where the opt-in dies before an asset compiles.
+    const root = await project();
+    await config(root, "export default { assets: { nativePackage: true } };");
+    const resolved = await loadConfig(root);
+    expect(resolved.assets).toMatchObject({ nativePackage: true });
+    await expect(compileAssets({ config: resolved.assets, cwd: root })).resolves.toEqual({
+      concurrencyUsed: 1,
+      passCosts: [],
+      skipped: 0,
+      skippedCompression: [],
+      written: 0,
+    });
+  });
+
+  it("rejects a non-boolean assets.nativePackage with the named code", async () => {
+    const root = await project();
+    await config(root, 'export default { assets: { nativePackage: "yes" } };');
+    await expect(loadConfig(root)).rejects.toThrow(/TN_CONFIG_ASSETS_INVALID/u);
+    await expect(loadConfig(root)).rejects.toThrow(/assets\.nativePackage/u);
   });
 
   it("hands assets.audio to the pipeline that receives it and ships the declared bytes", async () => {
@@ -1119,4 +1221,128 @@ describe("threenative.config.ts", () => {
     const files = await readdir(root);
     expect(files.some((file) => /^\\.threenative\\.config\\./u.test(file))).toBe(false);
   });
+});
+
+// One valid value for every key the loader accepts under `assets.*`, nested sections included.
+const SEAM_SAMPLE = {
+  audio: "none",
+  budget: { uncooked: "none", total: 1000000 },
+  concurrency: 2,
+  exclude: ["*.glb"],
+  lod: false,
+  models: {
+    compact: false,
+    lightmap: { atlasSize: 128, padding: 2 },
+    passes: { dedup: true, meshopt: false, prune: true, quantize: true, reorder: false },
+    quantize: { normalBits: 8, positionBits: 12, uvBits: 12 },
+    sharedImages: true,
+    simplify: { ratio: 0.5 },
+    textures: "none",
+    virtual: {
+      groupSize: 4,
+      maxTriangles: 1000,
+      minSourceTriangles: 500,
+      minTriangles: 100,
+      simplifyRatio: 0.5,
+    },
+  },
+  nativePackage: true,
+  output: "public",
+  source: "assets",
+  targets: { maxTriangles: 100_000, maxTextureDimension: 2048 },
+  textures: "none",
+};
+type Equals<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+it("accepts every assets.* key on both sides of the config/compiler seam", async () => {
+  const sorted = (keys: readonly string[]) => [...keys].sort();
+  // The sample names every key of each list, and each list is the code's own.
+  expect(sorted(Object.keys(SEAM_SAMPLE))).toEqual(sorted(ASSETS_CONFIG_KEYS));
+  expect(sorted(Object.keys(SEAM_SAMPLE.models))).toEqual(sorted(MODELS_CONFIG_KEYS));
+  expect(sorted(Object.keys(SEAM_SAMPLE.models.lightmap))).toEqual(sorted(LIGHTMAP_CONFIG_KEYS));
+  expect(sorted(Object.keys(SEAM_SAMPLE.models.passes))).toEqual(sorted(MODEL_PASS_KEYS));
+  expect(sorted(Object.keys(SEAM_SAMPLE.models.quantize))).toEqual(sorted(MODEL_QUANTIZE_KEYS));
+  expect(sorted(Object.keys(SEAM_SAMPLE.models.virtual))).toEqual(sorted(MODEL_VIRTUAL_KEYS));
+  // The compiler's lists must name the same keys as the loader's, in both directions.
+  expect(sorted(assetKeys.ASSETS_CONFIG_KEYS)).toEqual(sorted(ASSETS_CONFIG_KEYS));
+  expect(sorted(assetKeys.MODELS_CONFIG_KEYS)).toEqual(sorted(MODELS_CONFIG_KEYS));
+  expect(sorted(assetKeys.LIGHTMAP_CONFIG_KEYS)).toEqual(sorted(LIGHTMAP_CONFIG_KEYS));
+  expect(sorted(assetKeys.MODEL_PASS_KEYS)).toEqual(sorted(MODEL_PASS_KEYS));
+  expect(sorted(assetKeys.MODEL_QUANTIZE_KEYS)).toEqual(sorted(MODEL_QUANTIZE_KEYS));
+  expect(sorted(assetKeys.MODEL_VIRTUAL_KEYS)).toEqual(sorted(MODEL_VIRTUAL_KEYS));
+  // Core's public type must name the same model keys as the loader.
+  const coreModelKeysMatch: Equals<
+    keyof IThreeNativeModelsConfig,
+    (typeof MODELS_CONFIG_KEYS)[number]
+  > = true;
+  expect(coreModelKeysMatch).toBe(true);
+
+  const root = await project();
+  await mkdir(path.join(root, "assets"));
+  await writeFile(path.join(root, "assets/keep.txt"), "kept");
+  await config(root, `export default { assets: ${JSON.stringify(SEAM_SAMPLE)} };`);
+  const loaded = await loadConfig(root);
+  await compileAssets({ cwd: root, config: loaded.assets });
+  await compileAssets({ cwd: root, config: SEAM_SAMPLE as never });
+});
+
+it("rejects an unknown assets.* key at every level on both sides of the seam", async () => {
+  const levels = [
+    { assets: { bogus: true } },
+    { assets: { models: { bogus: true } } },
+    { assets: { models: { lightmap: { atlasSize: 128, padding: 2, bogus: true } } } },
+    { assets: { models: { passes: { bogus: true } } } },
+    { assets: { models: { quantize: { bogus: 8 } } } },
+    { assets: { models: { virtual: { bogus: 2 } } } },
+  ];
+  for (const level of levels) {
+    // A fresh project per level, so a cached config module cannot answer for the next one.
+    const root = await project();
+    await mkdir(path.join(root, "assets"));
+    await writeFile(path.join(root, "assets/keep.txt"), "kept");
+    await config(root, `export default ${JSON.stringify(level)};`);
+    await expect(loadConfig(root)).rejects.toThrow("TN_CONFIG_UNKNOWN_KEY");
+    await expect(compileAssets({ cwd: root, config: level.assets as never })).rejects.toThrow(
+      "TN_ASSETS_CONFIG_UNKNOWN_KEY",
+    );
+  }
+});
+
+it("rejects a lightmap atlas size that is not a multiple of four on both sides of the seam", async () => {
+  const root = await project();
+  await mkdir(path.join(root, "assets"));
+  await writeFile(path.join(root, "assets/keep.txt"), "kept");
+  await config(
+    root,
+    "export default { assets: { models: { lightmap: { atlasSize: 130, padding: 2 } } } };",
+  );
+  await expect(loadConfig(root)).rejects.toThrow("TN_CONFIG_ASSETS_INVALID");
+  await expect(
+    compileAssets({
+      cwd: root,
+      config: { models: { lightmap: { atlasSize: 130, padding: 2 } } } as never,
+    }),
+  ).rejects.toThrow("TN_ASSETS_CONFIG_INVALID");
+});
+
+// Templates whose imports the native engine does not bind yet (PRD-573 slice 8). Each pins
+// `engine: "threejs"` with a comment, and leaves this list when the pin goes.
+const LEGACY_PINNED_TEMPLATES = ["action-rpg", "runner", "sailing", "snow"];
+
+it("gives every freshly scaffolded template the threenative engine unless it names its threejs pin", async () => {
+  const root = await makeTempDir("threenative-scaffold-engine-");
+  roots.push(root);
+  const templates = discoverTemplateNames(path.resolve("packages/create-threenative/templates"));
+  expect(templates.filter((name) => LEGACY_PINNED_TEMPLATES.includes(name))).toEqual(
+    LEGACY_PINNED_TEMPLATES,
+  );
+  for (const template of templates) {
+    const { target } = await createProject({ install: false, target: template, template }, root);
+    const pinned = LEGACY_PINNED_TEMPLATES.includes(template);
+    expect(await loadConfig(target), template).toMatchObject({
+      engine: pinned ? "threejs" : "threenative",
+    });
+    const source = await readFile(path.join(target, "threenative.config.ts"), "utf8");
+    expect(source.includes("PRD-573 slice 8"), `${template} names its pin`).toBe(pinned);
+  }
 });

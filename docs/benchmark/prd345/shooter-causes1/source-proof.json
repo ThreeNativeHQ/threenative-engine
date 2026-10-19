@@ -1,0 +1,54 @@
+[
+  {
+    "arm": "current",
+    "project": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/current",
+    "materialSha256": "149652e27c6d6ede66f110a28c7d97b458eeb9d5770b7fddec8ae6533d960c67",
+    "otherSourceUnchanged": true,
+    "scenarioUnchanged": true,
+    "borrowedFrozenNodeModules": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/gameplay5/projects/shooter/node_modules"
+  },
+  {
+    "arm": "runtime-zero",
+    "project": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/runtime-zero",
+    "materialSha256": "366f1b28456aace8f9d096d74772166bc41b141c6ee2f94129b6d8d0d9a021f8",
+    "otherSourceUnchanged": true,
+    "scenarioUnchanged": true,
+    "borrowedFrozenNodeModules": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/gameplay5/projects/shooter/node_modules"
+  },
+  {
+    "arm": "copy-only",
+    "project": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/copy-only",
+    "materialSha256": "3397d1e3930200f30acc63788f8d2a7ee5649f48a4a77452a7b251a34a34fa13",
+    "otherSourceUnchanged": true,
+    "scenarioUnchanged": true,
+    "borrowedFrozenNodeModules": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/gameplay5/projects/shooter/node_modules"
+  },
+  {
+    "arm": "material-emissive",
+    "project": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/material-emissive",
+    "materialSha256": "d1102b1dfbdcc277a39d59196429d0d0771ecc0a76535f6305dbebceec01c4f5",
+    "otherSourceUnchanged": true,
+    "scenarioUnchanged": true,
+    "borrowedFrozenNodeModules": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/gameplay5/projects/shooter/node_modules"
+  },
+  {
+    "arm": "compiled-rim-only",
+    "project": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/compiled-rim-only",
+    "materialSha256": "a2972789d74f196f0aeb2fe9860cf64597f033f6d7280e73faa33aa4d8f8fcfe",
+    "otherSourceUnchanged": true,
+    "scenarioUnchanged": true,
+    "borrowedFrozenNodeModules": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/gameplay5/projects/shooter/node_modules"
+  },
+  {
+    "arm": "shared-graph",
+    "project": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/shooter-causes1/shared-graph",
+    "materialSha256": "4ab922b740fa53c57f5130c36d651a63dbc8b5d399a1a50cb8277a204efdeaed",
+    "candidateSource": "/home/joao/Documents/Codex/2026-10-02/task-3/prd345-retained/performance-optimization/backlightMaterial.ts",
+    "otherSourceUnchanged": true,
+    "scenarioUnchanged": true,
+    "candidateFiles": {
+      "backlightMaterial.ts": "4ab922b740fa53c57f5130c36d651a63dbc8b5d399a1a50cb8277a204efdeaed",
+      "backlightControls.ts": "955c67c8f77130c7af85709a80a957c80b67d05282b286adf2e1b2dcaf9dc6d3"
+    }
+  }
+]

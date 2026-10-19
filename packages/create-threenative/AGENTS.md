@@ -30,6 +30,7 @@ output look worse than vanilla.
 
 - `minimal` — no React, no UI folder. Core + physics: a test arena, a photographed sky and a rigged mannequin, with no HUD.
 - `starter` — adds React 19, Tailwind 4, `src/ui/`. The default.
+- `rain` — a procedural coastal storm with a free-fly camera, weather controls and a React interface; no physics dependency.
 - `platformer` — adds `PathFollow3D` steering with avoidance. Nothing in `templates/` imports
   `@threenative/physics/navigation`: its Recast WASM is web/desktop only, and every kit is
   expected to run on all four targets, so each kit's `AGENTS.md` steers an authoring agent to the

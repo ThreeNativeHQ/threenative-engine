@@ -11,6 +11,7 @@ three libuv close-then-clear sites) cannot land honestly because their own negat
 cannot fire — see the stop record
 ([prd177-phase1-shipped-23-stopped-2026-08-22.md](../../../verification/prd177-phase1-shipped-23-stopped-2026-08-22.md)).
 
+**Priority:** P1 — Shutdown use-after-free real by inspection stays unfixed and unproven; ownership transfer waits on an ASan libuv build.
 **Outcome:** the host exits 0, 50/50 runs, with a live keep-alive socket, an active interval, and
 an active file watch, and the exit stays clean when each fix's named lines are reverted and the
 harness turns red within the same 50 runs. Both halves of that sentence need an allocator-error

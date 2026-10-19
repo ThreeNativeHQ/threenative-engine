@@ -32,6 +32,22 @@ That makes one mistake fatal: gameplay, state transitions, or scoring written in
 component are simply missing on native, with no gate reporting it. Components read state and
 draw; the game writes state. A HUD is a view of `ctx.state`, never its owner.
 
+## `native-css`: the same tree, no web view
+
+`ui.renderer: "native-css"` is an opt-in experimental value, **Linux desktop only** — the build
+admits no other platform, and Android and iOS refuse it by name rather than falling back to a web
+view. The host must be built from source with `TN_ENABLE_CSS_UI=1`; the published prebuilt has no
+CSS backend and desktop packaging refuses it by name (`TN_CSS_UI_HOST_MISSING`). Text is system
+fonts only, and the renderer ships stylesheets only: a `url()` naming a font or an image instead of
+a `data:` URI or a `#fragment` fails the build (`TN_CSS_UI_ASSET_UNSUPPORTED`).
+The game's `src/ui/*.tsx` runs in the game's
+own JS realm instead of a second one: standard JSX plus the same Tailwind/CSS, mounted from the
+native entry with `createCssUiRoot().render(<App />)` from `@threenative/core/react-css`, and the
+stylesheet comes out of the very same Vite + Tailwind build the web renderer uses. So
+`src/ui/main.tsx` is still required — it is the web bootstrap, and it is where the stylesheet is
+imported from — while the game mounts the tree natively. No WebView, no second process. Treat it
+as experimental: it is refused on every mobile target and off by default.
+
 ## State follows the rendered frame
 
 The game coalesces simulation writes and publishes once per rendered frame. React subscribes

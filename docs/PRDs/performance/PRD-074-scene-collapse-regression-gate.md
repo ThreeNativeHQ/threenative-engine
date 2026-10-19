@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-074 — SceneCollapse measured outcome and regression gate
 
 **Status:** IMPLEMENTED — browser regression gate complete; Pixel 8 open.
+**Priority:** P2 — Only Pixel 8 draw-count and timing verification of a landed browser gate remains.
 **Depends on:** truthful draw-count access from the reconciled PRD-071 scope; PRD-EXP-002 for optional deeper attribution.
 **Evidence:** `docs/verification/render-work-reduction-2026-08-11.md`; `docs/verification/prd-074-scene-collapse-regression-2026-08-11.md`.
 

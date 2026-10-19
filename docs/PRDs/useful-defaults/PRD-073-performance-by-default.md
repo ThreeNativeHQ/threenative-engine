@@ -11,6 +11,7 @@ now measures the real render loop and fails closed when performance observations
 Compressed-asset decoder design and implementation remain open. No mobile-readiness, device
 performance, or physical-hardware claim is made.
 
+**Priority:** P2 — Only Phase 2 remains; decoders undecided, blocked on Phase 0 numbers and PRD-071.
 No mobile-readiness claim, no iOS claim, no physical-hardware claim is made anywhere in this
 document.
 

@@ -39,9 +39,10 @@ revisit later is the engine's job, not yours.
   how many objects it actually drops. Shadow casters are never dropped on the main view alone, so a
   scene of small casters stays expensive — `castShadow = false` on props the cut would otherwise
   drop is the game's call.
-- **Resolution.** `render.resolutionScale: "auto"` holds GPU headroom and never lowers resolution
-  on a CPU overrun; `TN_FRAME_BUDGET` reports the scale actually used. A number is the named pin
-  override.
+- **Resolution.** `render.resolutionScale` defaults to `"auto"`: it starts at 0.85 for
+  `mobile-low`, otherwise 1, then measured windows adapt it. `TN_GPU_CLASS` reports the WebGPU
+  family once per launch. It holds GPU headroom and never lowers resolution on a CPU overrun; `TN_FRAME_BUDGET` reports the scale actually used. A number
+  is the named pin override.
 - **Quality.** Each template ships `src/render/quality.ts` (three tiers, platform default,
   `TN_QUALITY_TIER`) and `adaptiveQuality.ts` (measured frame windows). Use the tiers; do not invent
   a fourth switch.
@@ -84,7 +85,7 @@ A GPU that is idle with a slow `render` phase is an object-count problem, not a 
 | A particle surface | `GPUParticles3D` | Pooled dispatch, game-owned appearance |
 | Bullet streaks | `TracerPool3D` | Pooled travelling meshes |
 | A sprite that faces the camera | `Billboard3D` | No hand-written per-frame orientation |
-| One directional shadow over an open world | `VirtualShadowNode` | Camera-centred, texel-snapped clip levels; `trackCaster` for movers |
+| One directional shadow over an open world | `VirtualShadowNode` | Camera-centred, texel-snapped clip levels; movers sort themselves; `trackCaster` pins one, `pinStatic` excludes one |
 | Distance detail swaps | three's `LOD` | Standard, and the engine can still batch it |
 | Raycasts over a large static scene | `GPUSceneBVH` / `ScenePicker` | Built once, queried many times |
 

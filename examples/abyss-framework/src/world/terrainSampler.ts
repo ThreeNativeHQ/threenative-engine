@@ -30,18 +30,27 @@ export function sampleTerrainHeight(seed: number, x: number, z: number): number 
     throw new Error("Terrain sampler inputs must be finite.");
   if (Math.abs(x) > WORLD_HALF_EXTENT || Math.abs(z) > WORLD_HALF_EXTENT)
     throw new Error(`Terrain sample (${String(x)}, ${String(z)}) is outside the proof region.`);
-  const warpX = valueNoise(seed + 17, x / 180, z / 180) * 42;
-  const warpZ = valueNoise(seed + 31, x / 180, z / 180) * 38;
-  const basin = -0.00018 * (x * x + z * z);
-  const ridge = Math.max(0, Math.abs(valueNoise(seed + 401, x / 34, z / 34)) - 0.58);
+  // A converging catchment keeps tributaries connected instead of draining off every edge.
+  const absoluteX = Math.abs(x);
+  const absoluteZ = Math.abs(z);
+  const warpX = valueNoise(seed + 17, absoluteX / 180, absoluteZ / 180) * 42;
+  const warpZ = valueNoise(seed + 31, absoluteX / 180, absoluteZ / 180) * 38;
+  const basin =
+    0.8 * (absoluteX + absoluteZ) + 0.0001 * (absoluteX * absoluteX + absoluteZ * absoluteZ);
+  const ridge = Math.max(
+    0,
+    Math.abs(valueNoise(seed + 401, absoluteX / 34, absoluteZ / 34)) - 0.58,
+  );
   return (
     basin +
-    valueNoise(seed, (x + warpX) / 520, (z + warpZ) / 520) * 52 +
-    valueNoise(seed + 101, (x + warpX) / 220, (z + warpZ) / 220) * 18 +
-    valueNoise(seed + 211, (x + warpX) / 82, (z + warpZ) / 82) * 7 +
-    ridge * ridge * 700
+    valueNoise(seed + 601, absoluteX / 8, absoluteZ / 8) * 2 +
+    valueNoise(seed, (absoluteX + warpX) / 520, (absoluteZ + warpZ) / 520) * 52 +
+    valueNoise(seed + 101, (absoluteX + warpX) / 220, (absoluteZ + warpZ) / 220) * 18 +
+    valueNoise(seed + 211, (absoluteX + warpX) / 82, (absoluteZ + warpZ) / 82) * 20 +
+    ridge * ridge * 70
   );
 }
 
+// Mirror the catchment across its diagonal so neither horizontal direction dominates.
 export const terrainHeight = (x: number, z: number): number =>
-  sampleTerrainHeight(TERRAIN_SEED, x, z);
+  (sampleTerrainHeight(TERRAIN_SEED, x, z) + sampleTerrainHeight(TERRAIN_SEED, z, x)) * 0.2;

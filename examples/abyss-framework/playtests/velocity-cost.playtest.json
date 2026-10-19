@@ -1,0 +1,99 @@
+{
+  "name": "actual-temporal-off-render-cost",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 640,
+    "height": 360
+  },
+  "warmupFrames": 2,
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "measured",
+      "waitTicks": 150
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    },
+    "resources": [
+      {
+        "id": "cost",
+        "path": "samples",
+        "allowTrivial": "The pinned temporal-off qualification compares 150 actual FrameBudget samples per balanced arm and refuses missing resources or excessive control noise.",
+        "lte": 150,
+        "gte": 150
+      },
+      {
+        "id": "cost",
+        "path": "cycles",
+        "allowTrivial": "The pinned temporal-off qualification compares 150 actual FrameBudget samples per balanced arm and refuses missing resources or excessive control noise.",
+        "gte": 150
+      },
+      {
+        "id": "cost",
+        "path": "frames",
+        "allowTrivial": "The pinned temporal-off qualification compares 150 actual FrameBudget samples per balanced arm and refuses missing resources or excessive control noise.",
+        "gte": 540
+      },
+      {
+        "id": "cost",
+        "path": "velocityTargets",
+        "allowTrivial": "The pinned temporal-off qualification compares 150 actual FrameBudget samples per balanced arm and refuses missing resources or excessive control noise.",
+        "lte": 0,
+        "gte": 0
+      },
+      {
+        "id": "cost",
+        "path": "historyObjects",
+        "allowTrivial": "The pinned temporal-off qualification compares 150 actual FrameBudget samples per balanced arm and refuses missing resources or excessive control noise.",
+        "lte": 0,
+        "gte": 0
+      },
+      {
+        "id": "cost",
+        "path": "temporalStages",
+        "allowTrivial": "The pinned temporal-off qualification compares 150 actual FrameBudget samples per balanced arm and refuses missing resources or excessive control noise.",
+        "lte": 0,
+        "gte": 0
+      },
+      {
+        "id": "cost",
+        "path": "velocityProvisioned",
+        "allowTrivial": "The pinned temporal-off qualification compares 150 actual FrameBudget samples per balanced arm and refuses missing resources or excessive control noise.",
+        "lte": 0,
+        "gte": 0
+      },
+      {
+        "id": "cost",
+        "path": "p50NoiseExcessMs",
+        "allowTrivial": "The pinned temporal-off qualification compares 150 actual FrameBudget samples per balanced arm and refuses missing resources or excessive control noise.",
+        "lte": 0
+      },
+      {
+        "id": "cost",
+        "path": "p50OverheadExcessMs",
+        "allowTrivial": "The pinned temporal-off qualification compares 150 actual FrameBudget samples per balanced arm and refuses missing resources or excessive control noise.",
+        "lte": 0
+      },
+      {
+        "id": "cost",
+        "path": "p95NoiseExcessMs",
+        "allowTrivial": "The pinned temporal-off qualification compares 150 actual FrameBudget samples per balanced arm and refuses missing resources or excessive control noise.",
+        "lte": 0
+      },
+      {
+        "id": "cost",
+        "path": "p95OverheadExcessMs",
+        "allowTrivial": "The pinned temporal-off qualification compares 150 actual FrameBudget samples per balanced arm and refuses missing resources or excessive control noise.",
+        "lte": 0
+      }
+    ]
+  }
+}

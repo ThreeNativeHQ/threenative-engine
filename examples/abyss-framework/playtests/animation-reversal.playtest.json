@@ -1,0 +1,108 @@
+{
+  "name": "animation-reversal-real-cc0-mannequin",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 960,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "start-matched-trace",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "hold-capture-tick",
+      "waitTicks": 120
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "tick",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "bones",
+        "gte": 60
+      },
+      {
+        "id": "state",
+        "path": "maxWeightError",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "maxPhaseJump",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "maxPoseJumpMetres",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "maxPoseJumpRadians",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "maxAnimatedRadians",
+        "gte": 0.2
+      }
+    ],
+    "sceneNodes": [
+      {
+        "select": {
+          "type": "SkinnedMesh"
+        },
+        "minCount": 1,
+        "visible": true,
+        "inFrustum": true,
+        "minTriangles": 100
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 960,
+          "height": 720,
+          "minNonblankPixelRatio": 0.2
+        }
+      },
+      {
+        "region": {
+          "x": 350,
+          "y": 150,
+          "width": 260,
+          "height": 450,
+          "maxLuminance": 0.75,
+          "maxDarkPixelRatio": 0.92
+        }
+      }
+    ]
+  }
+}

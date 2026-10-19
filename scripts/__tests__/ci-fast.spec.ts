@@ -55,11 +55,12 @@ describe("ci-fast bounded hook", () => {
   it("should run bounded checks when the pre-push hook executes", async () => {
     const result = await runHook();
     expect(result.status, result.output).toBe(0);
-    expect(result.trace).toEqual([
-      "lint",
+    // Stages run in parallel, so the trace order is not fixed.
+    expect([...result.trace].sort()).toEqual([
       "check:docs",
-      "sync:agents --check",
       expect.stringContaining("exec vitest run"),
+      "lint",
+      "sync:agents --check",
     ]);
     expect(result.trace.join("\n")).not.toMatch(/typecheck|budgets/u);
   });
@@ -67,7 +68,7 @@ describe("ci-fast bounded hook", () => {
   it("should fail the hook when lint fails", async () => {
     const result = await runHook("lint");
     expect(result.status, result.output).not.toBe(0);
-    expect(result.trace[0]).toBe("lint");
+    expect(result.trace).toContain("lint");
   });
 
   it("should not invoke build, typecheck or budgets when fast checks run", async () => {

@@ -14,11 +14,12 @@ import {
   type IPlaytestStartupObservation,
   type JsonValue,
   type PlaytestClockMode,
+  requestedPlaytestClockMode,
 } from "../protocol.js";
 import type { Camera, Scene } from "three";
 
 import { ThreePlaytestEntityRegistry, type IThreePlaytestEntity } from "./entities.js";
-import { sampleThreeObservations, type IThreePlaytestRenderer } from "./observations.js";
+import { isResourceOnlySample, sampleThreeObservations, type IThreePlaytestRenderer } from "./observations.js";
 import { ThreePlaytestPhysicsRecorder, type IThreePlaytestPhysics } from "./physics.js";
 import {
   connectDevicePlaytestBridge,
@@ -54,7 +55,13 @@ export interface IThreePlaytestBridgeOptions {
    */
   diagnostics?: () => JsonValue[];
   entities?: readonly IThreePlaytestEntity[] | (() => readonly IThreePlaytestEntity[]);
-  fixedStep?: (ticks: number) => Promise<number | void> | number | void;
+  fixedStep?: (ticks: number, options?: { render?: boolean }) => Promise<number | void> | number | void;
+  /**
+   * Draw the current world once without advancing it, for a capture taken while the loop is driven
+   * and presents nothing between ticks. Optional: a bridge without it advertises no
+   * `runtime.renderOnly`, and a capture that needs a render-only frame is never sent one.
+   */
+  renderCurrent?: () => Promise<number | void> | number | void;
   gameplay?: () => IPlaytestGameplayObservation;
   gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags" | "runtime.transitions" | "runtime.world")[];
   runtimeDiagnosticsSeries?: () => readonly IPlaytestRuntimeDiagnosticsSample[];
@@ -87,9 +94,12 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     throw new Error("A physics provider requires the authoritative tick provider, and therefore fixedStep.");
   const recorder = options.physics === undefined ? undefined : new ThreePlaytestPhysicsRecorder(options.physics);
   // The producer's own answer, with the capability-gated default every existing installation has
-  // always reported. A wall-clock producer still needs `fixedStep`, so the capability is unchanged.
+  // always reported, and the host's request read at the moment it is needed: an installer that
+  // passed a mode outranks it, and a bridge installed without one still honours a wall clock the
+  // runner asked for, rather than judging a live frame pump by a count it never chose. A
+  // wall-clock producer still needs `fixedStep`, so the capability is unchanged.
   const clockMode = (): PlaytestClockMode =>
-    options.clockMode ?? (options.fixedStep === undefined ? "render-frame" : "fixed-step");
+    options.clockMode ?? requestedPlaytestClockMode() ?? (options.fixedStep === undefined ? "render-frame" : "fixed-step");
   const host = globalThis as IPlaytestBridgeHost;
   const previous = host[PLAYTEST_BRIDGE_GLOBAL];
   const registry = new ThreePlaytestEntityRegistry();
@@ -110,6 +120,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(options.physics === undefined ? [] : ["runtime.physics"]),
     ...(options.runtimeDiagnosticsSeries === undefined ? [] : ["runtime.performance"]),
     ...(options.renderChain === undefined ? [] : ["runtime.renderChain"]),
+    ...(options.renderCurrent === undefined ? [] : ["runtime.renderOnly"]),
     ...(options.startup === undefined ? [] : ["runtime.startup"]),
     ...(options.gameplayChannels?.().includes("runtime.contacts") === true ? ["runtime.contacts"] : []),
     ...(options.gameplayChannels?.().includes("runtime.tags") === true ? ["runtime.tags"] : []),
@@ -120,10 +131,10 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(options.fixedStep === undefined
       ? {}
       : {
-          advance: async (ticks) => {
+          advance: async (ticks, advanceOptions) => {
             if (!Number.isInteger(ticks) || ticks <= 0) throw new Error("advance ticks must be a positive integer.");
             const startTick = options.tick!();
-            await options.fixedStep!(ticks);
+            await options.fixedStep!(ticks, advanceOptions);
             const tick = options.tick!();
             const advanced = tick - startTick;
             // A fixed-step producer is asked for a count and must deliver exactly that count. A
@@ -151,6 +162,13 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
             return events.slice(0, Math.min(limit, PLAYTEST_PROTOCOL_LIMITS.maxEventsPerDrain));
           },
         }),
+    ...(options.renderCurrent === undefined
+      ? {}
+      : {
+          renderOnly: async (): Promise<number | void> => {
+            await options.renderCurrent!();
+          },
+        }),
     describe: () => ({
       capabilities: capabilities(),
       limits: PLAYTEST_PROTOCOL_LIMITS,
@@ -167,7 +185,8 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
       return { ready: true, startup };
     },
     sample: (request) => {
-      syncEntities(registry, options.entities);
+      const resourceOnly = isResourceOnlySample(request);
+      if (!resourceOnly) syncEntities(registry, options.entities);
       const snapshot = sampleThreeObservations({
         camera: options.camera,
         clockMode: clockMode(),
@@ -181,7 +200,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
         scene: options.scene,
         tick: options.tick?.(),
       }, request);
-      const components = options.components?.();
+      const components = resourceOnly ? undefined : options.components?.();
       const withComponents = components === undefined || Object.keys(components).length === 0
         ? snapshot
         : { ...snapshot, components };

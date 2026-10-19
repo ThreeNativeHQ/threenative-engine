@@ -225,13 +225,13 @@
       "payloads": [
         {
           "id": "dawn-ubuntu",
-          "url": "https://github.com/google/dawn/releases/download/v20260117.152313/Dawn-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2-ubuntu-latest-Release.tar.gz",
-          "sha256": "34f042447836b2d36204b05cbc76ec8186eedf9c58fbcdca8c1f0607d8b9826d",
-          "bytes": 28197558,
+          "url": "https://github.com/ThreeNativeHQ/threenative-engine/releases/download/dawn-linux-x64-v1/Dawn-d14ae3d97ad74100e9f382efef5e9c0872ddbeb2-ubuntu-latest-Release.tar.gz",
+          "sha256": "bafce657936c161dc14642ddb61f71dcf6528b7ae90c40698831797e9c43d530",
+          "bytes": 28193047,
           "targets": [
             "desktop-linux"
           ],
-          "bootstrap": "two-run-fetch-2026-09-11"
+          "bootstrap": "github-release-digest-2026-10-15"
         },
         {
           "id": "dawn-macos-arm64",
@@ -298,6 +298,28 @@
             "desktop-linux-x64"
           ],
           "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "v8-linux-arm64",
+          "url": "https://github.com/ThreeNativeHQ/threenative-engine/releases/download/ci-v8-linux-arm64/v8-linux-arm64-1632c350bb78a60721a092ab696f0b3d274dbb0e5b926ebdca2c1b5edb8bb262.tgz",
+          "sha256": "ac379519d7e26039831ee7945018c67b48d98e30d04fe760bf5c684d61b82081",
+          "bytes": 18745524,
+          "targets": [
+            "desktop-linux-arm64"
+          ],
+          "bootstrap": "verified-source-run-38720103918-and-release-roundtrip-2026-10-15",
+          "source": {
+            "repository": "https://chromium.googlesource.com/v8/v8.git",
+            "revision": "9c09e7876ff830e1f9a731aa930040d1028ff5a1"
+          },
+          "provenance": {
+            "runId": 38720103918,
+            "artifactId": 11964493465,
+            "assetId": 643500847,
+            "producerRevision": "4ea2e7851f2e3f88758d908290da9b79d66a1727",
+            "recipeHash": "1632c350bb78a60721a092ab696f0b3d274dbb0e5b926ebdca2c1b5edb8bb262",
+            "receiptSha256": "dbec689e6213490b1a581b27cc44fe86c5e6e54dfba2fb1235902f3cc074ab11"
+          }
         },
         {
           "id": "v8-macos-arm64",
@@ -489,6 +511,16 @@
           "bootstrap": "two-run-fetch-2026-09-11"
         },
         {
+          "id": "quiche-linux-aarch64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-4/quiche-linux-arm64.zip",
+          "sha256": "5e316678246fdf7390845bdd81ea815a8018f3ad5a22d0fe7d42361835f3e843",
+          "bytes": 19682417,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "github-release-digest-2026-10-14"
+        },
+        {
           "id": "quiche-mac-arm64",
           "url": "https://github.com/mystralengine/library-builder/releases/download/quiche-0.24.6-3/quiche-mac-arm64.zip",
           "sha256": "bfb75867965a3f13a740bd3ce886b424023a778abda4462779953bd7da24ff4b",
@@ -651,6 +683,34 @@
       ]
     },
     {
+      "name": "cgltf",
+      "version": "1.15",
+      "source": {
+        "repository": "jkuhlmann/cgltf",
+        "revision": "v1.15"
+      },
+      "license": {
+        "spdx": "MIT",
+        "evidence": {
+          "url": "https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.15/LICENSE",
+          "sha256": "f619925f80ef862497aaf8e8155ef218fa6a2190055129523ca3df9119a9ba95",
+          "bytes": 1066
+        }
+      },
+      "payloads": [
+        {
+          "id": "cgltf-cgltf.h",
+          "url": "https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.15/cgltf.h",
+          "sha256": "e378a21c084bf1f288bb799de827bb26906efb024255f1ecf1705ea13f11c6ec",
+          "bytes": 202865,
+          "targets": [
+            "all"
+          ],
+          "bootstrap": "two-run-fetch-2026-10-05-tag-v1.15"
+        }
+      ]
+    },
+    {
       "name": "webp",
       "version": "1.5.0",
       "source": {
@@ -675,6 +735,16 @@
             "desktop-linux"
           ],
           "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "webp-linux-aarch64",
+          "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.5.0-linux-aarch64.tar.gz",
+          "sha256": "ec874dd2e52097f11dd4999176ae6b6fb0ecb165bc1e05d3ecc9b29014fb003e",
+          "bytes": 10138687,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "download-sha256-2026-10-14"
         },
         {
           "id": "webp-mac-arm64",
@@ -760,6 +830,16 @@
             "desktop-linux"
           ],
           "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "skia-linux-aarch64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/chrome%2Fm145/skia-build-linux-arm64-gpu-release.zip",
+          "sha256": "1cd646e55a6abd4a97935939bb419c11ea7a1bb6f8ccd6cf324da305cf2d982a",
+          "bytes": 41600223,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "github-release-digest-2026-10-14"
         },
         {
           "id": "skia-mac-arm64",
@@ -878,6 +958,16 @@
             "desktop"
           ],
           "bootstrap": "two-run-fetch-2026-09-11"
+        },
+        {
+          "id": "swc-linux-aarch64",
+          "url": "https://github.com/mystralengine/library-builder/releases/download/swc-41/swc-linux-arm64.zip",
+          "sha256": "63ce88b0d943709c3c80cc07afe9a37455d4724fd2e50bba605bd74219f8b69d",
+          "bytes": 12933800,
+          "targets": [
+            "desktop"
+          ],
+          "bootstrap": "github-release-digest-2026-10-14"
         },
         {
           "id": "swc-mac-arm64",

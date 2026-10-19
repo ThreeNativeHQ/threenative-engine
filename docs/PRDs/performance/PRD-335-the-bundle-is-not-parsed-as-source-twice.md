@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** PROPOSED, filed 2026-09-03 by PRD-328 Phase 3's pre-registered rule. Planning only.
 
+**Priority:** P2 — Three open boxes: repair the Bayview build, measure the compile segment, or close it.
 **Complexity:** +1 (1–5 files) + 1 (external API: V8's code-cache entry points) + 1 (device lane)
 = **3 → MEDIUM mode**.
 

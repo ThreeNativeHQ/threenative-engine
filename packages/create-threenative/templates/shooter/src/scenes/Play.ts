@@ -4,6 +4,7 @@ import {
   Scene,
   type SceneFrame,
   TracerPool3D,
+  getPlatform,
   isMobile,
 } from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
@@ -27,12 +28,19 @@ import { Target } from "../entities/Target.js";
 import { TouchControls } from "../entities/TouchControls.js";
 import { onAfterPhysics } from "../postPhysics.js";
 import { DecalField, bulletHoleTexture } from "../render/decals.js";
+import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { ImpactBursts, MuzzleFlash, MuzzleFlashPool, softCircleTexture } from "../render/gunfx.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { BoxOccluders } from "../render/occlusion.js";
 import { PooledBillboards } from "../render/pooled-billboards.js";
 import { setupPost } from "../render/postprocessing.js";
+import {
+  type QualityTier,
+  isWebGLFallbackRenderer,
+  materialLightingEnabled,
+} from "../render/quality.js";
 import { scale } from "../render/scale.js";
 import { setupSky } from "../render/sky.js";
 import { TOWN_HALF, type Town, buildTown } from "../render/town.js";
@@ -101,6 +109,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       }
     | undefined;
 
+  #post: ReturnType<typeof setupPost> | undefined;
+  #environmentSample: IEnvironmentSample | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+
   override async load(ctx: GameCtx): Promise<void> {
     // Three files, and one of them is the whole town: the geometry is procedural
     // (`render/town.ts`), so the only downloads are two rigs and one photograph.
@@ -119,9 +131,23 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.assets.texture("sky.jpg"),
     ]);
     this.#assets = { enemy, viewmodel, sky };
+    setupSky(ctx.scene, this.#assets.sky);
+    this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
   }
 
   override exit(): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
+    this.#environmentSample = undefined;
+
     // The hook closes over this scene's player. Leaving it registered means a restart keeps
     // syncing the camera to the torn-down body until `enter` happens to overwrite it.
     onAfterPhysics(undefined);
@@ -145,10 +171,23 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       TOWN_HALF,
       mobile,
     );
-    setupPost(ctx.renderer, ctx.scene, camera, {
+    const materialEnvironment = {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
+    let materialTier: QualityTier = "low";
+    this.#post = setupPost(ctx.renderer, ctx.scene, camera, {
+      onTierChanged: (tier) => {
+        materialTier = tier;
+        this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment));
+      },
       godraysLight: key,
       mobile,
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     ctx.add(camera);
 
@@ -392,9 +431,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // Bullet holes. They stay put: a mark that fades tells the player their rounds went nowhere.
     // What colour the crushed rim comes out is per material — steel burns bare and cold, plaster
     // and stone go pale, wood darkens. See `decals.ts` for why the pool is shaped this way.
+    const decalTexture = bulletHoleTexture();
     const decals = new DecalField(ctx.scene, {
       countPerVariant: 56,
-      map: bulletHoleTexture(),
+      map: decalTexture,
       size: 0.13,
       tints: {
         plaster: 0xf3ead8,
@@ -404,7 +444,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       },
     });
     ctx.entities.remove("decals");
+    ctx.entities.remove("decal-texture");
     ctx.entities.add("decals", decals);
+    // The field borrows its map. Register the scene-owned texture after its borrowers so
+    // registry teardown releases their materials first, then the texture, exactly once.
+    ctx.entities.add("decal-texture", decalTexture);
     // `hit.face.normal` is object-local; transform it into world space before any
     // spawn math, or rotated meshes send their bursts into the wall.
     const impactNormal = new Vector3();
@@ -680,6 +724,24 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
     ctx.entities.remove("render");
     ctx.entities.add("render", { debug: renderInfo });
+    // Collect only after the loaded character and scene receivers are attached.
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, key, {
+        ...materialEnvironment,
+        enabled: materialLightingEnabled(materialTier, materialEnvironment),
+      }),
+    );
+    if (this.#environmentSample !== undefined) {
+      const sample = this.#environmentSample;
+      this.#materialLighting.setEnvironmentMeasurement(
+        sample.measurement,
+        sample.source,
+        sample.intensity,
+        sample,
+      );
+    }
+
     return (frameCtx, dt) => {
       loading.update();
       // The totals of the frame that just finished, read before this frame's

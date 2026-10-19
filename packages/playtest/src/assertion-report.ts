@@ -1,3 +1,4 @@
+import type { IPlaytestToneCaptureObservation } from "./tone.js";
 import type {
   IPlaytestComponentAssertion,
   IPlaytestDiagnosticsAssertion,
@@ -50,6 +51,7 @@ export interface IPlaytestVisualElementRegionObservation {
 }
 
 export interface IPlaytestObservations {
+  tone?: IPlaytestToneCaptureObservation[];
   animation?: unknown;
   components?: Record<string, Record<string, { after?: unknown; before?: unknown }>>;
   componentSeries?: Array<{ label: string; snapshots: Record<string, Record<string, unknown>>; tick: number }>;
@@ -113,10 +115,10 @@ export interface IPlaytestObservations {
 /**
  * Targets whose network observation is hardwired empty.
  *
- * `androidRunner.ts` builds every device report with `network: []` — there is no CDP session on a
- * device transport to fill it. The browser lane is the only one that observes network at all.
+ * Android and iOS do not yet consume a network observer. Desktop reads the native host
+ * fetch observation through its playtest mailbox; browser uses request events.
  */
-const NETWORK_BLIND_TARGETS = new Set(["android", "desktop", "ios"]);
+const NETWORK_BLIND_TARGETS = new Set(["android", "ios"]);
 
 /** The reason the runner writes for itself when it waives a channel the target cannot observe. */
 export const UNOBSERVABLE_NETWORK_REASON =

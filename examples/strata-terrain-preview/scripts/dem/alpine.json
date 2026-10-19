@@ -1,0 +1,31 @@
+{
+  "site": "Longs Peak — Diamond / Chasm Lake headwall, Colorado",
+  "size": 512,
+  "resolution": 257,
+  "spacing": 2,
+  "encoding": "int16-le-decimetres-relative-to-elevationOffset",
+  "rowOrder": "north-to-south (world +Z south), west-to-east (+X east)",
+  "crs": "EPSG:26913",
+  "verticalCRS": "NAVD88 metres",
+  "sourceCRS": "EPSG:26913",
+  "center": [447870, 4456250],
+  "bbox": [447614, 4455994, 448126, 4456506],
+  "bboxWGS84": [-105.61602589925799, 40.25276285840791, -105.60996401278022, 40.25740729901479],
+  "elevationOffset": 3690,
+  "relativeElevationRange": [1.2, 654.5],
+  "tileIds": ["USGS_1M_13_x44y446_CO_DRCOG_2020_B20"],
+  "acquisitionDate": {
+    "begin": "2020-05-26",
+    "end": "2021-03-13",
+    "basis": "USGS project metadata temporal extent"
+  },
+  "acquisitionDateNote": "Project temporal extent, not a claim that every crop pixel was flown on one day.",
+  "downloadURL": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/CO_DRCOG_2020_B20/TIFF/USGS_1M_13_x44y446_CO_DRCOG_2020_B20.tif",
+  "metadataURL": "https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1m/Projects/CO_DRCOG_2020_B20/metadata/USGS_1M_13_x44y446_CO_DRCOG_2020_B20.xml",
+  "accessed": "2026-10-03",
+  "filter": "2×2 1 m area/box filter at each 2 m vertex; rounded to 0.1 m; no vertical exaggeration",
+  "sha256": "a9e5d93cf9178f7e743694729d7b71b1ff0701273a5b32f79689bdd5798ab002",
+  "citation": "U.S. Geological Survey, 3D Elevation Program (3DEP), The National Map, 1 meter and 1/3 arc-second Digital Elevation Models, accessed October 3, 2026. Cropped, filtered, translated vertically and quantized by this example; not endorsed by USGS.",
+  "license": "U.S. Government public domain",
+  "licenseURL": "https://data.usgs.gov/datacatalog/data/USGS:77ae0551-c61e-4979-aedd-d797abdcde0e"
+}

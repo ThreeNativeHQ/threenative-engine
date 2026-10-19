@@ -8,6 +8,7 @@ prd_contract: v1
 questions are answered, the third negatively. The **permitted failure in §7 fired**, in a different
 place than it was expected to.
 
+**Priority:** P2 — Open boxes write the /dev/uinput injector and conformance cases; runtime multitouch already works.
 The PRD anticipated being blocked on opening `/dev/uinput`. That is not the blocker — writing works
 unprivileged through an ACL. The blocker is on the **read** side, and delivery is a read:
 `/dev/input/event*` is `root:input 0660`, this user is not in the `input` group, and the lane runs

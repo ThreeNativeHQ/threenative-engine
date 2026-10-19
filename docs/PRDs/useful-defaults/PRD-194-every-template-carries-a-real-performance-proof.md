@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P2 — Open boxes freeze draw and triangle ceilings for six templates whose scenarios assert nothing.
 **Complexity:** +3 for 10+ files = **3 → LOW mode**. Performance-sensitive manual verification
 is required.
 

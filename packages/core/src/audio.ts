@@ -1,7 +1,40 @@
 import { AudioListener, Object3D, PositionalAudio, Audio as ThreeAudio, type Vector3 } from "three";
 
+/**
+ * Bus-level dynamics compression, every value the game's.
+ *
+ * All five are required and none has an engine default: a compressor is a mix decision, and a
+ * bus that filled in the threshold itself would be deciding how loud the game is. The ranges are
+ * Web Audio's own — threshold -100 to 0 dBFS, knee 0–40 dB, ratio 1–20, attack and release
+ * 0–1 s, where 0 is an instant response — and anything outside them throws rather than being
+ * quietly clamped into a mix the game did not ask for.
+ */
+export interface IAudioCompressorOptions {
+  /** Level above which the bus is compressed, in dBFS. Must be finite and between -100 and 0. */
+  readonly threshold: number;
+  /** Width of the soft transition around `threshold`, in dB. Must be finite and 0–40. */
+  readonly knee: number;
+  /** Input:output ratio above the threshold. Must be finite and 1–20. */
+  readonly ratio: number;
+  /** Seconds to reach full compression once a peak arrives. Must be finite and 0–1. */
+  readonly attack: number;
+  /** Seconds to return to unity once the mix falls back. Must be finite and 0–1. */
+  readonly release: number;
+}
+
 export interface IAudioBusOptions {
   readonly camera: Object3D;
+  /**
+   * A compressor on this bus's master, holding a loud mix below clipping.
+   *
+   * Every voice sums into it before the bus's volume gain, so it sees the mix rather than each
+   * cue alone — which is the whole point: three cues that are each fine and add up to a clipped
+   * master is a defect no per-voice option can see, and a compressor that sat after the gain
+   * would be working on a level the bus volume had already moved. Opt in, and every value comes
+   * from the game. A runtime with no dynamics node reports `compressor` in `unsupported` rather
+   * than playing on uncompressed and quiet about it.
+   */
+  readonly compressor?: IAudioCompressorOptions;
   readonly gestureTarget?: EventTarget;
   readonly listener?: AudioListener;
   readonly source?: () => EventTarget | undefined;
@@ -84,8 +117,8 @@ export interface IAudioRuntimeSnapshot {
   /**
    * Cue-shaping options this runtime accepted and could not honour, sorted and de-duplicated.
    *
-   * The native host binds neither a biquad filter nor a schedulable `detune`, so `lowpassHz` and
-   * `detune` are silently dropped there. A mix tuned on the web and shipped to a phone is flat in
+   * The native host binds a biquad filter and a compressor but no schedulable `detune`, so
+   * `detune` is silently dropped there. A mix tuned on the web and shipped to a phone is flat in
    * a way nothing else reports, and a build can be failed on this.
    */
   readonly unsupported: readonly string[];
@@ -205,6 +238,8 @@ export class AudioBus {
   #freeFlat: PooledVoice[] = [];
   #freePositional: PooledVoice[] = [];
   #maxVoices: number;
+  /** The bus master compressor, ahead of the listener's volume gain. See `#installCompressor`. */
+  #compressor: DynamicsCompressorNode | undefined;
   #unlocked = false;
   #disposed = false;
   #paused = false;
@@ -219,6 +254,7 @@ export class AudioBus {
     this.#maxVoices = maxVoices;
     this.#camera = options.camera;
     this.listener = options.listener ?? new AudioListener();
+    if (options.compressor !== undefined) this.#installCompressor(options.compressor);
     const source = options.source ?? (() => (typeof window === "undefined" ? undefined : window));
     this.#gestureTarget = options.gestureTarget ?? source();
     this.setCamera(options.camera);
@@ -228,7 +264,21 @@ export class AudioBus {
     for (const event of ["keydown", "pointerdown", "touchstart"] as const) {
       this.#gestureTarget?.addEventListener(event, this.#gesture);
     }
+    if (this.#unsupported.size > 0) this.#flushUnsupported();
     audioState().buses.add(this);
+  }
+
+  /**
+   * Warn about cue shaping this runtime dropped, once per option, before the first frame.
+   *
+   * `#dropped` is reached while a cue plays, which is too late to act on and easy to miss in a
+   * device log. A bus asked for a compressor it cannot have knows at construction, so that case
+   * is reported here instead of waiting for a mix to prove it.
+   */
+  #flushUnsupported(): void {
+    for (const option of this.#unsupported) {
+      console.warn(`AudioBus: this runtime cannot honour "${option}"; the cue sounds without it.`);
+    }
   }
 
   get queued(): number {
@@ -267,6 +317,17 @@ export class AudioBus {
   /** @see IAudioRuntimeSnapshot.unsupported */
   get unsupported(): readonly string[] {
     return [...this.#unsupported].sort();
+  }
+
+  /**
+   * The compressor on this bus's master, or `undefined` when the bus has none — either because
+   * the game did not ask for one or because this runtime has no dynamics node.
+   *
+   * Exposed so a game can read `reduction` off it, which is the only observation that answers
+   * "is the compressor doing anything", and so a playtest can assert on it.
+   */
+  get compressor(): DynamicsCompressorNode | undefined {
+    return this.#compressor;
   }
 
   /**
@@ -340,6 +401,51 @@ export class AudioBus {
       this.#sound(entry, CLICKLESS_SECONDS);
     }
     this.#flushQueue();
+  }
+
+  /**
+   * Put a compressor where every voice sums, ahead of this bus's volume gain.
+   *
+   * Three wires a voice's gain straight to `listener.getInput()` in its own constructor, and the
+   * listener's input is the bus's volume gain — so the only honest place for a bus compressor is
+   * the voice side of that junction, which is what `#attachToMaster` splices it into. Its
+   * alternative, `AudioListener.setFilter`, sits *after* the gain and would compress a mix the
+   * volume slider had already moved. It also shares the listener's single filter slot, so a game
+   * with two buses on one listener would have the second compressor overwrite the first.
+   */
+  #installCompressor(options: IAudioCompressorOptions): void {
+    assertCompressor(options);
+    const context = this.listener.context as AudioContext & {
+      createDynamicsCompressor?: () => DynamicsCompressorNode;
+    };
+    if (context.createDynamicsCompressor === undefined) {
+      this.#dropped("compressor");
+      return;
+    }
+    const compressor = context.createDynamicsCompressor();
+    // Every value is the game's, written before the node hears a sample.
+    for (const name of ["threshold", "knee", "ratio", "attack", "release"] as const) {
+      compressor[name].value = options[name];
+    }
+    // The compressor's own output is the bus gain, so it is the one node every voice reaches
+    // through rather than past. A bus sharing a provided listener still reaches that gain
+    // directly, so installing a compressor here never silences another bus.
+    compressor.connect(this.listener.getInput());
+    this.#compressor = compressor;
+  }
+
+  /**
+   * Route a freshly constructed voice into the bus master, through the compressor when there is one.
+   *
+   * The splice is the price of three not offering a way to route a voice anywhere but straight
+   * into the listener. It is paid once per pooled voice, at claim time, so a bus pays for it at
+   * peak concurrency and never again.
+   */
+  #attachToMaster(voice: ThreeAudio<AudioNode>): ThreeAudio<AudioNode> {
+    if (this.#compressor === undefined) return voice;
+    voice.gain.disconnect();
+    voice.gain.connect(this.#compressor);
+    return voice;
   }
 
   setCamera(camera: Object3D): void {
@@ -452,6 +558,12 @@ export class AudioBus {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    // Every voice feeds the compressor, so it has to be lifted out again: leaving it connected
+    // keeps a node the game may still hold alive, still holding this bus's voices.
+    if (this.#compressor !== undefined) {
+      this.#compressor.disconnect();
+      this.#compressor = undefined;
+    }
     this.stop();
     // `stop` retires the live voices; `#retire` short-circuits its free-list push once disposed,
     // so the only thing left is to unhook the ones already parked there.
@@ -633,7 +745,7 @@ export class AudioBus {
       return reused;
     }
     return {
-      voice: new ThreeAudio(this.listener),
+      voice: this.#attachToMaster(new ThreeAudio(this.listener)),
       startedAt: 0,
       filter: undefined,
       looping,
@@ -654,7 +766,7 @@ export class AudioBus {
       return reused;
     }
     return {
-      voice: new PositionalAudio(this.listener),
+      voice: this.#attachToMaster(new PositionalAudio(this.listener)),
       startedAt: 0,
       filter: undefined,
       looping,
@@ -718,6 +830,30 @@ export function audioRuntimeSnapshot(): IAudioRuntimeSnapshot {
     unsupported: [...unsupported].sort(),
     voices,
   };
+}
+
+/**
+ * The compressor contract, checked before the node is built rather than after it is wired in.
+ *
+ * Ranges are Web Audio's own, so a value the platform would reject is refused here with its name
+ * rather than clamped into something the game did not ask for.
+ */
+function assertCompressor(options: IAudioCompressorOptions): void {
+  for (const name of ["threshold", "knee", "ratio", "attack", "release"] as const) {
+    if (!Number.isFinite(options[name])) {
+      throw new TypeError(`compressor.${name} must be a finite number.`);
+    }
+  }
+  if (options.threshold < -100 || options.threshold > 0)
+    throw new RangeError("compressor.threshold must be between -100 and 0 dBFS.");
+  if (options.knee < 0 || options.knee > 40)
+    throw new RangeError("compressor.knee must be between 0 and 40 dB.");
+  if (options.ratio < 1 || options.ratio > 20)
+    throw new RangeError("compressor.ratio must be between 1 and 20.");
+  if (options.attack < 0 || options.attack > 1)
+    throw new RangeError("compressor.attack must be between 0 and 1 second.");
+  if (options.release < 0 || options.release > 1)
+    throw new RangeError("compressor.release must be between 0 and 1 second.");
 }
 
 /** Every numeric contract on a cue, checked before a voice is claimed rather than after. */

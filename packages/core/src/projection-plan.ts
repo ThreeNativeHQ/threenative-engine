@@ -119,8 +119,11 @@ function specializedLaneReason(
 }
 
 export function hasMorphAttributes(geometry: BufferGeometry): boolean {
-  for (const name in geometry.morphAttributes) {
-    if (Object.hasOwn(geometry.morphAttributes, name)) return true;
+  const targets = geometry.morphAttributes as Record<string, readonly unknown[] | undefined>;
+  for (const name in targets) {
+    // Three's holder is `{}` until a morph target is added. The native engine's holder always names
+    // `position` and `normal`, as empty arrays, so a key alone is not a target: count the targets.
+    if (Object.hasOwn(targets, name) && (targets[name]?.length ?? 0) > 0) return true;
   }
   return false;
 }
@@ -920,11 +923,7 @@ function addToMaterialGroup(
  * still listed in it, so the below-floor sweep hands them to the exact lane exactly once. What
  * this removes them from is the batch they can no longer honestly join.
  */
-function evictGeometryMembers(
-  workspace: IProjectionScanWorkspace,
-  group: IProjectionMaterialGroup,
-  geometry: BufferGeometry,
-): void {
+function evictGeometryMembers(group: IProjectionMaterialGroup, geometry: BufferGeometry): void {
   let writeIndex = 0;
   for (let readIndex = 0; readIndex < group.memberCount; readIndex += 1) {
     const member = group.members[readIndex] as Mesh;
@@ -955,7 +954,7 @@ function watchMaterialGroupGeometries(workspace: IProjectionScanWorkspace): void
       workspace.streamedGeometries.add(geometry);
       group.geometries.delete(geometry);
       group.revision += 1;
-      evictGeometryMembers(workspace, group, geometry);
+      evictGeometryMembers(group, geometry);
     }
   }
 }
@@ -1023,8 +1022,9 @@ function visitProjectionObject(
 
 function walkProjection(source: Scene, workspace: IProjectionScanWorkspace): IProjectionWalkState {
   const state: IProjectionWalkState = { renderables: 0 };
-  for (let index = source.children.length - 1; index >= 0; index -= 1) {
-    workspace.walkStack[workspace.walkStackCount] = source.children[index] as Object3D;
+  const roots = source.children;
+  for (let index = roots.length - 1; index >= 0; index -= 1) {
+    workspace.walkStack[workspace.walkStackCount] = roots[index] as Object3D;
     workspace.walkStackCount += 1;
   }
   while (workspace.walkStackCount > 0) {
@@ -1033,8 +1033,9 @@ function walkProjection(source: Scene, workspace: IProjectionScanWorkspace): IPr
     workspace.walkStack[workspace.walkStackCount] = undefined;
     visitProjectionObject(object, workspace, state);
     if (isLight(object) || (object as { isLOD?: boolean }).isLOD === true) continue;
-    for (let index = object.children.length - 1; index >= 0; index -= 1) {
-      workspace.walkStack[workspace.walkStackCount] = object.children[index] as Object3D;
+    const children = object.children;
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      workspace.walkStack[workspace.walkStackCount] = children[index] as Object3D;
       workspace.walkStackCount += 1;
     }
   }

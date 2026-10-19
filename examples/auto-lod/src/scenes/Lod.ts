@@ -1,4 +1,4 @@
-import { type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import { type ICtx, Scene, type SceneFrame, baseGeometryOf } from "@threenative/core";
 import { AmbientLight, DirectionalLight, type Group, Mesh, type PerspectiveCamera } from "three";
 
 /** Close enough that the model's own error projects past a one-pixel budget. */
@@ -16,10 +16,17 @@ const FAR = 140;
  * engine swaps `mesh.geometry` before the render, so a frame after a settle reads the selected level.
  */
 export class Lod extends Scene {
-  static override readonly initialState = { camera: "far", triangles: 0 };
+  static override readonly initialState = {
+    camera: "far",
+    cardCopies: 0,
+    cardTriangles: 0,
+    triangles: 0,
+  };
 
   #loaded = false;
   readonly #meshes: Mesh[] = [];
+  /** The card crown: its levels draw scaled copies appended after LOD0's vertices (PRD-541). */
+  readonly #cards: Mesh[] = [];
 
   override async load(ctx: ICtx): Promise<void> {
     const model = await ctx.assets.model<{ scene: Group }>("hull.glb");
@@ -30,6 +37,15 @@ export class Lod extends Scene {
       this.#meshes.push(object);
     });
     ctx.scene.add(model.scene);
+    const crown = await ctx.assets.model<{ scene: Group }>("cards.glb");
+    crown.scene.name = "cards";
+    crown.scene.position.set(3, 0, 0);
+    crown.scene.traverse((object) => {
+      if (!(object instanceof Mesh)) return;
+      object.name = "cards-mesh";
+      this.#cards.push(object);
+    });
+    ctx.scene.add(crown.scene);
     this.#loaded = true;
   }
 
@@ -54,7 +70,23 @@ export class Lod extends Scene {
         const drawn = mesh.geometry.index?.count ?? mesh.geometry.getAttribute("position")?.count;
         triangles += Math.floor((drawn ?? 0) / 3);
       }
-      frameCtx.state.set({ triangles });
+      // A level that reaches a vertex LOD0 never indexes is drawing the scaled card copies.
+      let cardTriangles = 0;
+      let cardCopies = 0;
+      for (const mesh of this.#cards) {
+        const drawn = mesh.geometry.index;
+        const lod0 = baseGeometryOf(mesh).index;
+        if (drawn === null || lod0 === null) continue;
+        cardTriangles += Math.floor(drawn.count / 3);
+        let lod0Max = 0;
+        for (let at = 0; at < lod0.count; at += 1) lod0Max = Math.max(lod0Max, lod0.getX(at));
+        for (let at = 0; at < drawn.count; at += 1)
+          if (drawn.getX(at) > lod0Max) {
+            cardCopies = 1;
+            break;
+          }
+      }
+      frameCtx.state.set({ cardCopies, cardTriangles, triangles });
       if (!frameCtx.input.justPressed("toggleNear")) return;
       // Toggle, so a scenario can drive the value and prove the selection follows the camera
       // rather than reporting a number that never changed.

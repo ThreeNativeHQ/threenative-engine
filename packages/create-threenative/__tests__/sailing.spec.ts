@@ -62,7 +62,18 @@ vi.mock("../templates/sailing/src/render/ocean.js", () => ({
   surfaceHeight: vi.fn(() => 0),
 }));
 vi.mock("../templates/sailing/src/render/postprocessing.js", () => ({
-  setupPost: vi.fn(),
+  setupPost: vi.fn(() => ({ tier: "high", dispose: vi.fn() })),
+}));
+// These cases exercise course scoring, not appearance; material lifecycle has dedicated tests.
+vi.mock("../templates/sailing/src/render/materialLighting.js", () => ({
+  createMaterialLighting: vi.fn(() => ({
+    setEnabled: vi.fn(),
+    setEnvironmentMeasurement: vi.fn(),
+    dispose: vi.fn(),
+  })),
+}));
+vi.mock("../templates/sailing/src/render/environmentSetup.js", () => ({
+  loadedEnvironmentSample: vi.fn(() => undefined),
 }));
 vi.mock("../templates/sailing/src/render/props.js", () => ({
   createBuoy: vi.fn(() => ({ position: { set: vi.fn() } })),
@@ -99,12 +110,14 @@ async function createScene(): Promise<{
     add: <T>(object: T): T => object,
     camera: {},
     entities: { add: <T>(_id: string, entity: T): T => entity },
+    interpolate: () => () => undefined,
     input: {
       justPressed: () => false,
       raw: { pointers: new Map() },
     },
     physics: {},
     renderer: { raw: {} },
+    startup: { phase: "ready" },
     scene: {},
     state: {
       flush: vi.fn(),

@@ -1,0 +1,375 @@
+{
+  "name": "phase477-world-capture",
+  "schemaVersion": 1,
+  "subject": "world",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "phase477-pose-start",
+      "release": true,
+      "waitTicks": 1,
+      "screenshot": "phase477-pose-start"
+    },
+    {
+      "label": "phase477-walk-01",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-01"
+    },
+    {
+      "label": "phase477-walk-02",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-02"
+    },
+    {
+      "label": "phase477-walk-03",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-03"
+    },
+    {
+      "label": "phase477-walk-04",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-04"
+    },
+    {
+      "label": "phase477-walk-05",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-05"
+    },
+    {
+      "label": "phase477-walk-06",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-06"
+    },
+    {
+      "label": "phase477-walk-07",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-07"
+    },
+    {
+      "label": "phase477-walk-08",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-08"
+    },
+    {
+      "label": "phase477-walk-09",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-09"
+    },
+    {
+      "label": "phase477-walk-10",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-10"
+    },
+    {
+      "label": "phase477-walk-11",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-11"
+    },
+    {
+      "label": "phase477-walk-12",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-12"
+    },
+    {
+      "label": "phase477-walk-13",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-13"
+    },
+    {
+      "label": "phase477-walk-14",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-14"
+    },
+    {
+      "label": "phase477-walk-15",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-15"
+    },
+    {
+      "label": "phase477-walk-16",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-16"
+    },
+    {
+      "label": "phase477-walk-17",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-17"
+    },
+    {
+      "label": "phase477-walk-18",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-18"
+    },
+    {
+      "label": "phase477-walk-19",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-19"
+    },
+    {
+      "label": "phase477-walk-20",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-20"
+    },
+    {
+      "label": "phase477-walk-21",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-21"
+    },
+    {
+      "label": "phase477-walk-22",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-22"
+    },
+    {
+      "label": "phase477-walk-23",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-23"
+    },
+    {
+      "label": "phase477-walk-24",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-24"
+    },
+    {
+      "label": "phase477-walk-25",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-25"
+    },
+    {
+      "label": "phase477-walk-26",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-26"
+    },
+    {
+      "label": "phase477-walk-27",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-27"
+    },
+    {
+      "label": "phase477-walk-28",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-28"
+    },
+    {
+      "label": "phase477-walk-29",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-29"
+    },
+    {
+      "label": "phase477-walk-30",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-30"
+    },
+    {
+      "label": "phase477-walk-31",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-31"
+    },
+    {
+      "label": "phase477-walk-32",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 9,
+      "screenshot": "phase477-walk-32"
+    },
+    {
+      "kind": "wait",
+      "label": "phase477-pose-end",
+      "release": true,
+      "waitTicks": 120,
+      "screenshot": "phase477-pose-end"
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "component": "residentCells",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "The route starts and ends with the same resident count. Measured residenceChanges and evictions prove churn; throughoutSteps preserves the residency ceiling.",
+        "lte": 25
+      },
+      {
+        "component": "maxResidentCells",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "The peak is reported from the first observation; the run proves it only stayed at least one.",
+        "lte": 25
+      },
+      {
+        "component": "residenceChanges",
+        "entity": "world",
+        "changed": true,
+        "gte": 1,
+        "allowTrivial": "Residency changes during warm-up too; the changed check requires additional observed transitions during the route."
+      },
+      {
+        "component": "evictions",
+        "entity": "world",
+        "gte": 1
+      },
+      {
+        "component": "instances",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "A resident cell always carries placement instances from the first observation.",
+        "lte": 20000
+      },
+      {
+        "component": "failures",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "A cumulative failure counter is zero at the baseline by construction; the run is what keeps it there."
+      },
+      {
+        "component": "loadsInFlight",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "This is the settle guarantee at the end of the run, not a value that starts life wrong."
+      },
+      {
+        "entity": "world",
+        "component": "maxInstances",
+        "gte": 1,
+        "lte": 20000,
+        "allowTrivial": "The cumulative instance peak may already be nonzero at warmup; its ceiling must hold for the whole flythrough."
+      },
+      {
+        "entity": "world",
+        "component": "loadsQueued",
+        "equals": 0,
+        "allowTrivial": "The final settle must drain model loads even if the baseline was already idle."
+      },
+      {
+        "entity": "world",
+        "component": "admissionBacklog",
+        "equals": 0,
+        "allowTrivial": "The final settle must drain work queued by the flight; the baseline may already be settled."
+      },
+      {
+        "entity": "world",
+        "component": "admissionDeferred",
+        "equals": 0,
+        "allowTrivial": "No cell-asset build may still be deferred after the final settle."
+      },
+      {
+        "entity": "world",
+        "component": "maxAdmissionSpentMs",
+        "gte": 0,
+        "allowTrivial": "Measured admission time must be observable and nonnegative. The final unit can exceed the 2ms allowance, so this is a diagnostic, not a hard 2ms cap."
+      },
+      {
+        "entity": "world",
+        "component": "gpuSceneReason",
+        "changed": false
+      },
+      {
+        "entity": "world",
+        "component": "cameraPosition",
+        "equals": [180, 24, 0]
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "stats.residentCells",
+        "gte": 1,
+        "lte": 25,
+        "throughoutSteps": true,
+        "allowTrivial": "Warmup already streams resident cells; check the reported residency ceiling after every labeled step."
+      },
+      {
+        "id": "state",
+        "path": "stats.instances",
+        "gte": 1,
+        "lte": 20000,
+        "throughoutSteps": true,
+        "allowTrivial": "Resident placement counts may already be positive at warmup; every labeled step must stay inside the existing game override."
+      },
+      {
+        "id": "state",
+        "path": "stats.admission.spentMs",
+        "gte": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Keep the actual admission measurement for every labeled step. It can exceed the allowance by the last work unit."
+      }
+    ]
+  }
+}

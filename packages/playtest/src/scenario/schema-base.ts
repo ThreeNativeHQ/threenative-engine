@@ -1,3 +1,4 @@
+import type { IToneMetrics, IToneRegion, IToneComparison } from "../tone.js";
 import type { IPlaytestGeometryCaptureRequest, PlaytestFramePassKind, PlaytestFramePhase } from "../protocol.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -25,6 +26,15 @@ export interface IPlaytestPointer {
 export interface IPlaytestWheel {
   deltaX?: number;
   deltaY: number;
+  /** Normalized viewport point the wheel turns over (both or neither); the viewport centre when absent. */
+  x?: number;
+  y?: number;
+}
+
+/** Emulated media features, Playwright's `emulateMedia` vocabulary; an absent key keeps its value. */
+export interface IPlaytestMedia {
+  colorScheme?: "dark" | "light";
+  reducedMotion?: "no-preference" | "reduce";
 }
 
 export type IPlaytestResourceWait =
@@ -40,6 +50,8 @@ export interface IPlaytestStep {
   /** A viewport-pixel click target, resolved directly or from a registered entity's bounds. */
   at?: IPlaytestClickTarget;
   label?: string;
+  /** Emulate media features from this step on (browser, and the desktop native-css UI). */
+  media?: IPlaytestMedia;
   /**
    * One device-lifecycle operation the runner drives through the platform driver, so the phases it
    * then reports are read off the device rather than asserted by the game about itself.
@@ -93,7 +105,15 @@ export type IPlaytestLifecycleStep =
   | { operation: "foreground"; rotation?: never }
   | { operation: "rotate"; rotation: number };
 
-export type IPlaytestClickTarget = { entity: string } | { x: number; y: number };
+/**
+ * Where a click lands: viewport pixels, a registered entity's screen bounds, or (browser only) the
+ * centre of a DOM element by `id` or CSS `selector`. Pixels depend on the page's layout, which
+ * depends on the fonts a machine has; an element target does not.
+ */
+export type IPlaytestClickTarget =
+  | { entity: string }
+  | { element: IPlaytestVisualRegionTarget }
+  | { x: number; y: number };
 
 export interface IPlaytestMovementAssertion {
   axis?: string;
@@ -428,11 +448,22 @@ export interface IPlaytestRenderChainAssertion extends IPlaytestRenderChainExpec
    * whose adapter cannot be classified is a failed observation, not a hardware one: a missing
    * branch is not a licence to pass.
    */
-  perAdapter?: Partial<Record<PlaytestAdapterClass, IPlaytestRenderChainExpectation>>;
+  perAdapter?: Partial<Record<PlaytestAdapterClass | PlaytestGpuFamily, IPlaytestRenderChainExpectation>>;
 }
 
 /** What the harness read out of `adapter.info` for this run, before any game code answered. */
 export type PlaytestAdapterClass = "hardware" | "software";
+
+/**
+ * The GPU family the same `adapter.info` fields prove on a hardware run. A family row beside
+ * `hardware` is how a scenario holds an iGPU or a phone to the tier a template starts that family
+ * at; it overrides `hardware` only when the observed fields prove the family.
+ */
+export const PLAYTEST_GPU_FAMILIES = ["discrete", "integrated", "mobile-high", "mobile-low", "mobile-mid"] as const;
+export type PlaytestGpuFamily = (typeof PLAYTEST_GPU_FAMILIES)[number];
+
+/** Every key a `perAdapter` assertion accepts. */
+export const PLAYTEST_PER_ADAPTER_KEYS = ["hardware", "software", ...PLAYTEST_GPU_FAMILIES] as const;
 
 /** Ceilings on the application's startup milestones, in milliseconds since navigation. */
 export interface IPlaytestStartupAssertion {
@@ -442,6 +473,15 @@ export interface IPlaytestStartupAssertion {
   maxCompileSettledMs?: number;
   /** `whenReady()` resolved: the world is safe to show. */
   maxReadyMs?: number;
+}
+
+/** Ceilings on work observed after the runtime's explicit shader warm-up settled. */
+export interface IPlaytestPipelineCensusAssertion {
+  maxNodeBuildsAfterWarmUpSettled?: number;
+  maxRenderPipelineCreationsAfterWarmUpSettled?: number;
+  warmUpScope?: string;
+  maxNodeBuildsAfterWarmUpScope?: number;
+  maxRenderPipelineCreationsAfterWarmUpScope?: number;
 }
 
 export interface IPlaytestFramebufferCoverageAssertion {
@@ -567,7 +607,15 @@ export interface IPlaytestAudioAssertion {
   minGapMs?: number;
 }
 
+export interface IPlaytestToneAssertion extends Partial<Record<keyof IToneMetrics, { min?: number; max?: number }>> {
+  region?: IToneRegion;
+  compare?: IToneComparison;
+  /** Omit to bound the final capture, otherwise capture after this named step. */
+  atStep?: string;
+}
+
 export interface IPlaytestScenarioAssertions {
+  tone?: IPlaytestToneAssertion[];
   aerodynamics?: IPlaytestAerodynamicsAssertion[];
   audio?: IPlaytestAudioAssertion[];
   animation?: IPlaytestAnimationAssertion[];
@@ -589,6 +637,7 @@ export interface IPlaytestScenarioAssertions {
   overlayNodes?: IPlaytestOverlayNodeAssertion[];
   parity?: IPlaytestParityAssertion;
   performance?: IPlaytestPerformanceAssertion;
+  pipelineCensus?: IPlaytestPipelineCensusAssertion;
   renderChain?: IPlaytestRenderChainAssertion;
   reachability?: IPlaytestReachabilityAssertion;
   resources?: IPlaytestResourceAssertion[];
@@ -655,7 +704,8 @@ export interface IPlaytestArtifactRequest {
   effectLog?: "focused" | boolean;
   network?: boolean;
   runtimeTrace?: boolean;
-  screenshots?: "before-after" | "after" | false;
+  /** `true` captures like `"after"`; only `false` and `"before-after"` change the runner. */
+  screenshots?: "before-after" | "after" | boolean;
 }
 
 export interface IPlaytestSetupEntityTransform {
@@ -721,9 +771,16 @@ export interface IPlaytestScenario {
   inputDelivery?: PlaytestInputDelivery;
   name: string;
   parity?: IPlaytestParityConfig;
+  /**
+   * Browser-only: open the page with `prefers-reduced-motion: reduce` emulated, so a game that
+   * honours the preference can prove it. Applied before navigation, so the first read sees it.
+   */
+  reducedMotion?: "reduce";
   schemaVersion: 1;
   setup?: IPlaytestScenarioSetup;
   sourcePath?: string;
+  /** Absolute fixed-step tick reached after startup and warmup, before baseline and input. */
+  startTick?: number;
   steps: IPlaytestStep[];
   subject?: string;
   target: PlaytestTarget;

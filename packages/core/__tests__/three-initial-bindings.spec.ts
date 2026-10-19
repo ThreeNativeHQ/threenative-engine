@@ -1,5 +1,4 @@
 import { DepthTexture, LinearFilter, Mesh, NearestFilter, Texture } from "three";
-// @ts-expect-error Three's private binding manager has no public declarations.
 import Bindings from "three/src/renderers/common/Bindings.js";
 // @ts-expect-error Exercise Three's real node-based texture reference binding.
 import { NodeSampledTexture } from "three/src/renderers/common/nodes/NodeSampledTexture.js";

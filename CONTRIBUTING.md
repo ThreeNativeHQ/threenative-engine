@@ -3,13 +3,45 @@
 Thanks for being here. Issues, discussions, docs fixes and pull requests are all welcome, and a
 first contribution does not have to be code.
 
-- **Found a bug?** [Open an issue](https://github.com/ThreeNativeHQ/threenative/issues/new/choose)
+- **Found a bug?** [Open an issue](https://github.com/ThreeNativeHQ/threenative-engine/issues/new/choose)
   with the reproduction — a scenario file or a scaffolded project beats a description.
 - **Have a question or an idea?**
-  [Start a discussion](https://github.com/ThreeNativeHQ/threenative/discussions).
+  [Start a discussion](https://github.com/ThreeNativeHQ/threenative-engine/discussions).
 - **Wondering what needs doing?** [`docs/CURRENT-CHALLENGES.md`](docs/CURRENT-CHALLENGES.md) is
   the honest list of what the framework does not yet do well, and what the plan is for each.
 - **Found a security issue?** Follow [`SECURITY.md`](SECURITY.md) instead of opening an issue.
+
+## AI contributions welcome
+
+We accept AI-written pull requests, including agent-led contributions. We prefer a current
+frontier Claude or Codex model for implementation and review, but neither is required. The
+same architecture rules, tests, runtime evidence and maintainer review apply to everyone;
+AI authorship is not a reason to reject a useful, verified contribution.
+
+Point your coding agent at the public, repository-shipped
+[`contribute` skill](.agents/skills/contribute/SKILL.md). It checks live PRDs, code and open
+pull requests, recommends the three best eligible tasks, and picks the highest-value one by
+default. It does not treat an unchecked box as proof that work is missing or unclaimed.
+
+Copy this prompt into your coding provider from an engine checkout:
+
+```text
+Read .agents/skills/contribute/SKILL.md and its linked discovery reference. Follow the
+repository instructions, recommend the best three currently eligible open PRDs with
+evidence, then implement the highest-value eligible task on an isolated branch from
+upstream develop (origin/develop for an upstream checkout, upstream/develop for a
+fork checkout). Keep one PR per PRD and target ThreeNativeHQ/threenative-engine:develop.
+I authorize creating/using my fork if needed, pushing only the contribution branch
+and opening/updating its draft PR at the first planning commit before implementation.
+Do not push upstream develop/main, merge, deploy or publish a release.
+Record actual test/playtest/platform results and leave unverified claims open.
+```
+
+For recommendations only, replace the last instructions with “Read-only: recommend tasks;
+do not change files, push or open a PR.” Without explicit publication authorization, the
+skill keeps work local and reports the draft-PR step as pending. Read
+[`AGENTS.md`](AGENTS.md) and [`docs/PRDs/AGENTS.md`](docs/PRDs/AGENTS.md) for the live
+branch, draft, progress and verification rules.
 
 ## Setup
 

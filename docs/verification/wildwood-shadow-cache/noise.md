@@ -20,7 +20,7 @@ followed from not knowing that:
    sharpening down was the wrong place to act. The grain was one term of one stage.
 2. **The matched captures were not matched.** Wind and dust are vertex programs driven by TSL
    `time`, so two captures taken at two wall-clock instants hold two different sets of plants.
-   `noise-before.png` and `noise-after.png` in this directory differ in foliage pose as well as in
+   [historical noise-before.png](https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/verification/wildwood-shadow-cache/noise-before.png) and [historical noise-after.png](https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/verification/wildwood-shadow-cache/noise-after.png) in this directory differ in foliage pose as well as in
    shading, and crop-level reading of them is unsound. The replacement harness pins `time`.
 
 The deeper reason no screenshot pair could have settled it: **two captures of the same build

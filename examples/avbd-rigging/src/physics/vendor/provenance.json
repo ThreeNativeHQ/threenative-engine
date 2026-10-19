@@ -1,0 +1,178 @@
+{
+  "windward": "83b25adb24f671e93a55683913ca9a794dc0f613",
+  "solver": "b3675dea83c78aba9644b059975f48285bf02a47",
+  "imports": [
+    {
+      "path": "src/avbd2d/gpu/layout.ts",
+      "sha256": "341eb25b1e9af92c8035328abd0f28d47125c54ae87949ef671dcf0e94330f90",
+      "bytes": 10057,
+      "lines": 299,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd2d/gpu/layout.ts",
+      "portedSha256": "87904471ff10b86f92555014394a8c8ffe239343c94b23d6eb76776809ae2897"
+    },
+    {
+      "path": "src/avbd2d/gpu/scan.ts",
+      "sha256": "8efb445a90e6ffff6fa20d8dd65f0f57a708f868c288651dd59eba8cc0009bd7",
+      "bytes": 4739,
+      "lines": 127,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd2d/gpu/scan.ts",
+      "portedSha256": "eea3dd959343f407ff6379b383984be368df650be1a7975eeb8ea4165af37fd3"
+    },
+    {
+      "path": "src/avbd2d/gpu/wgsl-topology.ts",
+      "sha256": "d07c0b8a0abcd3a347fb2e805208fa3c0bb90ca9e897f05131867259a683fb13",
+      "bytes": 12898,
+      "lines": 325,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd2d/gpu/wgsl-topology.ts",
+      "portedSha256": "def4d18e50a91d5faf540101583353e64262c788d95d08ab9c6eac28c64c1138"
+    },
+    {
+      "path": "src/avbd3d/gpu/layout.ts",
+      "sha256": "e79b2b86076443f7cdd32e74bf73454586440273266769db41bdb17c07a66a2c",
+      "bytes": 10807,
+      "lines": 294,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/gpu/layout.ts",
+      "portedSha256": "a64da9b9993b76b7619b651ce5343e97f9147b8dd3defbc3bce50cd5f96759b6"
+    },
+    {
+      "path": "src/avbd3d/gpu/radii.ts",
+      "sha256": "8f75f4a4ecd555003850fea0706c1103f62f13f8825aac7dcf807e279b611f0a",
+      "bytes": 2142,
+      "lines": 55,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/gpu/radii.ts",
+      "portedSha256": "9ea03d36d43eae30f9019bd1066dec729453541099b7fb03e53d7cba6f0e3328"
+    },
+    {
+      "path": "src/avbd3d/gpu/solver.ts",
+      "sha256": "1a1437eeb7e9666f04c14e0092a4a083d59b19fa47c6f6d1b87e733fa18ed4e8",
+      "bytes": 74975,
+      "lines": 1565,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/gpu/solver.ts",
+      "portedSha256": "63bf5095ab5401cc29d61e3be501fe3b8154e7a7c97038177d575861e333581a"
+    },
+    {
+      "path": "src/avbd3d/gpu/wgsl-collision.ts",
+      "sha256": "1da3c99884937ffcc6d6318615a3f733dad5a5ded401e653f75c10c91c7d909f",
+      "bytes": 29656,
+      "lines": 812,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/gpu/wgsl-collision.ts",
+      "portedSha256": "9ecf1d13cabe6b0bc6a2d93072e3682dc8cba0941e5c05b9ab02f32fd583e32e"
+    },
+    {
+      "path": "src/avbd3d/gpu/wgsl-hull.ts",
+      "sha256": "f1eeaa4a7857ed7a5afb554eb2a8b9bf54184ca48a294008362a5f4c3c2d425e",
+      "bytes": 15299,
+      "lines": 406,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/gpu/wgsl-hull.ts",
+      "portedSha256": "9ab9def50d577e407efde4a8f6748e6e41ebaee3e4c68d215fd50991a811f7c1"
+    },
+    {
+      "path": "src/avbd3d/gpu/wgsl-solve.ts",
+      "sha256": "c1a1f73851155e7d3e8f7629025536e41d8f429aac6111e4038dd0b2b4a2c414",
+      "bytes": 22955,
+      "lines": 550,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/gpu/wgsl-solve.ts",
+      "portedSha256": "d70d26293d2cbd6d8f59a1f5a78134e1ca22a18519691d79b70caadecdd459f8"
+    },
+    {
+      "path": "src/avbd3d/hull.ts",
+      "sha256": "7ccd52ec5774a04f9914999d3a8ca11c430f7f9dda96a61e2835a737851cb7cb",
+      "bytes": 18675,
+      "lines": 407,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/hull.ts",
+      "portedSha256": "aae46193638d44d4433a2dbdaf666fd3abf6757a6ecef1054f5c6a5344ba630b"
+    },
+    {
+      "path": "src/avbd3d/ref/body.ts",
+      "sha256": "fcfa5684faca4fe953f68b7dd1a55bdb759e60c708aebb4c91124ce8a46a6cbf",
+      "bytes": 3922,
+      "lines": 112,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/ref/body.ts",
+      "portedSha256": "aee3f6841aec73dfa598d476259e1ae22f30a305a8ac48f85a3c72762940f574"
+    },
+    {
+      "path": "src/avbd3d/ref/collide.ts",
+      "sha256": "a097c86ec3abc0575ab4cfe88dc39e81baece3f05b324779b3ff7ccf49bf1d39",
+      "bytes": 11998,
+      "lines": 345,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/ref/collide.ts",
+      "portedSha256": "f4f7f3d2a79cbb86b33f25ef882cc20544829c79931a24b781dc8dce8cdc506b"
+    },
+    {
+      "path": "src/avbd3d/ref/forces.ts",
+      "sha256": "7d83dc85bd6c2e031d14ddeb7986f9a1d89ea2bf292a517d6168aad1c818c5ef",
+      "bytes": 9609,
+      "lines": 306,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/ref/forces.ts",
+      "portedSha256": "9d899561c5301943ea5884f3e694f2371648b6fb872113cab07cdbb0da7e9102"
+    },
+    {
+      "path": "src/avbd3d/ref/manifold.ts",
+      "sha256": "1b40217c1a58ecdebdfb83a171eed055dd2aaa9157f43e406294d0083d243b75",
+      "bytes": 6746,
+      "lines": 218,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/ref/manifold.ts",
+      "portedSha256": "2efe4e394a260f171199c31175fec45e657eeea02e7826630d34b4d610d440a4"
+    },
+    {
+      "path": "src/avbd3d/ref/math.ts",
+      "sha256": "a9f970a45772601982aac0094b783119c88d409f3b4891cc6259bace36daa2a6",
+      "bytes": 10727,
+      "lines": 285,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/ref/math.ts",
+      "portedSha256": "9630cae3fbfe8a0abf8cc368a2bb677759eef9706041aa77dae6708ef09c024b"
+    },
+    {
+      "path": "src/avbd3d/ref/solver.ts",
+      "sha256": "ac82c78bce5b7fdb272c957833bfb4d114b34f19a9a4566a3e97439c2361be13",
+      "bytes": 7405,
+      "lines": 223,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/ref/solver.ts",
+      "portedSha256": "d7222b0c4786fb6305a240aafb3f8a73de06f63281301de57cfd302e85442536"
+    },
+    {
+      "path": "src/avbd3d/shapes.ts",
+      "sha256": "bda068d1721d1b9df8d3cf5d93f5a1b4e24cd95d8a3099f4d107ebe09f4909d9",
+      "bytes": 3132,
+      "lines": 70,
+      "matchesPinnedSolver": true,
+      "portedPath": "avbd3d/shapes.ts",
+      "portedSha256": "7468b5372991a49b57a50e1d8b72e93e1a939bfacdb23e95b91d4140904ed7b6"
+    }
+  ],
+  "fileCount": 17,
+  "lines": 6399,
+  "archiveSha256": {
+    "windward": "2f74256dfaea48fc16e2d37cd0b41460d10a173e3de8de50fb6f43725edc545a",
+    "solver": "a36e9b02b1ccad99eb484b3faa597c02471b899bf0c5d86633c31b9619a493e3",
+    "newerComparison": "345feedfeaa303d5f6173fe07e51e550811f42f99bc86328a4b7dc4e13f4e7f4"
+  },
+  "adaptations": [
+    "Relative ESM import suffixes use .js.",
+    "Interfaces use the repository I prefix.",
+    "Unchecked indexed reads and increments use fail-closed guards; destructured expressions are evaluated once.",
+    "Nullable observations fail through requiredValue; repeated destructuring expressions are evaluated once. Multiple variable declarations and equivalent forwarding/style forms follow Biome without new suppressions.",
+    "No WGSL string, packed layout constant or solver numerical parameter has been changed.",
+    "Pinned GPU body initialization retains the original optional metadata reads for previously unpopulated slots; external topology and existing-slot validation remain guarded.",
+    "Qualification host hooks stamp before mandatory clears and each frozen solver phase, and an explicit profileTimings option disables the unused pinned single-read profiler. Solver WGSL, layouts and numerical parameters remain unchanged."
+  ],
+  "compatibility": "Temporary original-versus-adapted controls: all emitted WGSL identical; three seeded CPU chains match exactly at each of 200 ticks. GPU/native acceptance is pending.",
+  "originalDonorsIdentical": true,
+  "originalAudit": "The hashes and matchesPinnedSolver fields compare Windward83b25 source against solverb3675 before the mechanical adaptations."
+}

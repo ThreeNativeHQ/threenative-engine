@@ -1,0 +1,1234 @@
+[
+  {
+    "text": "TN_COLD_START:{\"segment\":\"process\",\"atMs\":0.000}",
+    "type": "log"
+  },
+  {
+    "text": "=== ThreeNative Native Runtime ===",
+    "type": "log"
+  },
+  {
+    "text": "Version: 0.3.4",
+    "type": "log"
+  },
+  {
+    "text": "Script: .threenative/game.js",
+    "type": "log"
+  },
+  {
+    "text": "Window: 960x540",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Initializing runtime...",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Window: 960x540",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Presentation cap: 60 fps",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Creating window: ThreeNative (960x540)",
+    "type": "log"
+  },
+  {
+    "text": "[Window] SDL initialized",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Running in hidden mode (MYSTRAL_HEADLESS=1)",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Brand icon unavailable in embedded bundle; using compositor default",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Actual window size: 960x540",
+    "type": "log"
+  },
+  {
+    "text": "[Window] Window created successfully",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Lifecycle watch installed; backgroundMode=pause",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Actual window size: 960x540",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Initializing...",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Instance created",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Using X11 display: 0xaae1a72e9610 window: 4194350",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Creating surface for platform type 4 with display pointer",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Creating X11 surface with display: 0xaae1a72e9610 window: 0x40002e",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Surface created",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Adapter acquired successfully",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Adapter: llvmpipe (LLVM 20.1.2, 128 bits)",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Vendor: llvmpipe",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Backend: Vulkan",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe indirect-first-instance: yes",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Requesting IndirectFirstInstance feature (supported)",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe texture-compression-bc: yes",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe texture-compression-etc2: no",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe texture-compression-astc: no",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe timestamp-query: yes",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] adapter feature probe rg11b10ufloat-renderable: yes",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Device acquired successfully",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] TN_WEBGPU_FEATURES:{\"timestamp-query\":true,\"texture-compression-bc\":true,\"texture-compression-etc2\":false,\"texture-compression-astc\":false,\"indirect-first-instance\":true,\"rg11b10ufloat-renderable\":true}",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Queue acquired",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] configureSurface called: 960x540",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] surface_=0xaae1a7351e20, device_=0xaae1a74719d0, adapter_=0xaae1a74553c0",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Getting surface capabilities...",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Got capabilities: formatCount=2",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Available surface formats:",
+    "type": "log"
+  },
+  {
+    "text": "  [0] = 24",
+    "type": "log"
+  },
+  {
+    "text": "  [1] = 23",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Using surface format: 23",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Surface configured: 960x540",
+    "type": "log"
+  },
+  {
+    "text": "[WebGPU] Present mode: fifo (vsync=true)",
+    "type": "log"
+  },
+  {
+    "text": "[JS] Creating QuickJS engine (fallback)",
+    "type": "log"
+  },
+  {
+    "text": "[QuickJS] Creating engine...",
+    "type": "log"
+  },
+  {
+    "text": "[QuickJS] Engine created successfully",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Using JS engine: QuickJS",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Fetch API initialized (file://, http://, https://)",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Web Streams API initialized (ReadableStream/WritableStream/TransformStream)",
+    "type": "log"
+  },
+  {
+    "text": "[WorkerRegistry] Initialized",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] URL and native Worker facade initialized",
+    "type": "log"
+  },
+  {
+    "text": "[DOM] Canvas element created with addEventListener, style, etc.",
+    "type": "log"
+  },
+  {
+    "text": "[log] [Mystral] WebP format support: NO",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] DOM event system initialized",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] localStorage initialized: /home/runner/.local/share/mystral/storage/bounded-decals.json",
+    "type": "log"
+  },
+  {
+    "text": "[Audio] Web Audio API bindings initialized",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_CAPTURE:{\"version\":1,\"build\":{\"identity\":\"mystral-native@0.3.4\"},\"adapter\":{\"identity\":\"native:vulkan/llvmpipe/llvmpipe (LLVM 20.1.2, 128 bits)/Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)\",\"thermal\":\"unavailable\"},\"clock\":{\"source\":\"steady\",\"originMs\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_CACHE:{\"version\":1,\"phase\":\"device\",\"mode\":\"unsupported\",\"featureGranted\":false,\"renderAttached\":0,\"computeAttached\":0,\"emptyBytes\":0,\"serializedBytes\":0,\"load\":\"unavailable\",\"loadedBytes\":0,\"loadMs\":0,\"store\":\"not-attempted\",\"storedBytes\":0,\"storeMs\":0,\"snapshotMs\":0,\"reason\":\"this build's WebGPU backend declares no pipeline cache API\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FORMAT:{\"native\":\"bgra8unorm\",\"render\":\"bgra8unorm\",\"bridge\":false,\"present\":\"fifo\"}",
+    "type": "log"
+  },
+  {
+    "text": "[MystralRT] No hardware RT available, using stub backend",
+    "type": "log"
+  },
+  {
+    "text": "[MystralRT] Bindings initialized (backend: none)",
+    "type": "log"
+  },
+  {
+    "text": "[EventLoop] libuv 1.51.0 initialized",
+    "type": "log"
+  },
+  {
+    "text": "[AsyncHttp] Initialized with curl_multi + libuv",
+    "type": "log"
+  },
+  {
+    "text": "[AsyncFile] Initialized with libuv thread pool",
+    "type": "log"
+  },
+  {
+    "text": "[FileWatcher] Initialized with libuv fs_event",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Runtime initialized",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"runtime_created\",\"atMs\":580.324}",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Evaluating script: threenative-playtest-mailbox.js (246 bytes)",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_begin\",\"atMs\":580.344}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"compile_complete\",\"atMs\":580.397}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_begin\",\"atMs\":580.407}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"execute_complete\",\"atMs\":580.412}",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Desktop playtest mailbox configured",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"game_eval_begin\",\"atMs\":580.415}",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Loading script: .threenative/game.js",
+    "type": "log"
+  },
+  {
+    "text": "[Fetch] Read 212 bytes from bundle: assets.manifest.json",
+    "type": "log"
+  },
+  {
+    "text": "[Mystral] Starting main loop...",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"cf01b5890b1b6101\",\"bytes\":28,\"requestId\":\"ready\",\"requestMethod\":\"\",\"requestOrder\":-1,\"pump\":{\"observed\":true,\"pumpCount\":1,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":853.834,\"maxGapMs\":0.000,\"maxGapAtMs\":-1.000,\"trailingGapMs\":0.988,\"atMs\":854.823,\"longGaps\":[],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "[Fetch] Read 4712 bytes from bundle: receiver.glb",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_NATIVE_SMOKE_READY:webgpu",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_NATIVE_SMOKE_FIRST_FRAME",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":1,\"pipelineIdentity\":\"native-render-1\",\"programIdentity\":\"00fc0a8ad03630cc/458120a84b226496\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":0.00027999999999999998,\"settledMs\":6.401694,\"queueMs\":0,\"serviceMs\":6.4014139999999999,\"wallMs\":6.4014139999999999,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"00fc0a8ad03630cc\",\"bytes\":1299},\"fragment\":{\"hash\":\"458120a84b226496\",\"bytes\":1595},\"cache\":\"unsupported\",\"label\":\"renderPipeline_outputColorTransform_18\"}",
+    "type": "log"
+  },
+  {
+    "text": "[warn] THREE.WebGPURenderer: Timestamp tracking is disabled.",
+    "type": "warning"
+  },
+  {
+    "text": "TN_SLOW_FRAME_OPS:{\"replayMs\":421.24257799999998,\"ops\":18,\"top\":[{\"op\":\"submit\",\"n\":2,\"ms\":421.13237700000002},{\"op\":\"render.end\",\"n\":2,\"ms\":0.075402999999999998},{\"op\":\"beginRenderPass\",\"n\":2,\"ms\":0.016678999999999999},{\"op\":\"createCommandEncoder\",\"n\":2,\"ms\":0.008175},{\"op\":\"finish\",\"n\":2,\"ms\":0.0021359999999999999},{\"op\":\"render.setBindGroup\",\"n\":2,\"ms\":0.001872}]}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":1}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_FIRST_PRESENT:{\"version\":1,\"boundaryMs\":540.37911299999996}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"first_frame\",\"atMs\":1411.164}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_SILENCE:{\"observed\":true,\"pumpCount\":1,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":853.834,\"maxGapMs\":0.000,\"maxGapAtMs\":-1.000,\"trailingGapMs\":557.333,\"longGaps\":[],\"droppedLongGaps\":0}",
+    "type": "log"
+  },
+  {
+    "text": "TN_STALL_SEGMENTS:{\"toFirstFrameMs\":1411.178,\"frameBeganAtMs\":857.006,\"gapMs\":554.172,\"segments\":{\"pipelineCompile\":{\"ms\":6.468,\"calls\":1},\"shaderCompile\":{\"ms\":0.445,\"calls\":2},\"textureUpload\":{\"ms\":0.183,\"calls\":4},\"bufferUpload\":{\"ms\":0.183,\"calls\":3},\"queueSubmit\":{\"ms\":0.000,\"calls\":0}},\"attributedMs\":7.279,\"residualMs\":546.893,\"attributedShare\":0.0131}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":1,\"requested\":1,\"emitted\":1,\"outstanding\":0}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SLOW_END_FRAME:{\"totalMs\":533.67494299999998,\"drainMs\":0.029454000000000001,\"replayMs\":421.29363799999999,\"uiMs\":0.00078399999999999997,\"presentMs\":112.30627699999999,\"pollMs\":0.043206000000000001,\"gpuDrainMs\":0,\"otherMs\":0.0015839999999999999}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SLOW_PHASE:{\"phase\":\"endDawnFrame\",\"ms\":533.68100000000004,\"atMs\":1411.2539899999999}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SLOW_PHASE:{\"phase\":\"pollEvents\",\"ms\":557.68200000000002,\"atMs\":1411.518525}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"d51d0ecd79920230\",\"bytes\":596,\"requestId\":\"1\",\"requestMethod\":\"describe\",\"requestOrder\":1,\"pump\":{\"observed\":true,\"pumpCount\":2,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":1411.531,\"maxGapMs\":557.697,\"maxGapAtMs\":853.834,\"trailingGapMs\":1122.184,\"atMs\":2533.715,\"longGaps\":[557.697],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_DECAL_FIXTURE:{\"generation\":1,\"active\":256,\"capacity\":256,\"created\":320,\"released\":64,\"geometryBytes\":259896,\"maxDrawCalls\":0,\"motionError\":0,\"receiverMotion\":0,\"lodHit\":false,\"renderTriangles\":128,\"receiverRemoved\":false,\"atlasFade\":false,\"averageOpacity\":1,\"residency\":[],\"residencySamples\":0,\"stableResidencyFrames\":0}",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_DECAL_FIXTURE:{\"generation\":1,\"active\":256,\"capacity\":256,\"created\":320,\"released\":64,\"geometryBytes\":259896,\"maxDrawCalls\":0,\"motionError\":0,\"receiverMotion\":0,\"lodHit\":false,\"renderTriangles\":128,\"receiverRemoved\":false,\"atlasFade\":false,\"averageOpacity\":1,\"residency\":[],\"residencySamples\":0,\"stableResidencyFrames\":0}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":2,\"pipelineIdentity\":\"native-render-2\",\"programIdentity\":\"2eb07d0bdc0da0c6/e792f11cd4d28ee0\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":1827.715976,\"settledMs\":1831.635959,\"queueMs\":0,\"serviceMs\":3.919983000000002,\"wallMs\":3.919983000000002,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"2eb07d0bdc0da0c6\",\"bytes\":1953},\"fragment\":{\"hash\":\"e792f11cd4d28ee0\",\"bytes\":14203},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshStandardMaterial_19\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":3,\"pipelineIdentity\":\"native-render-3\",\"programIdentity\":\"2eb07d0bdc0da0c6/e792f11cd4d28ee0\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":1869.3319839999999,\"settledMs\":1872.7200909999999,\"queueMs\":0,\"serviceMs\":3.3881069999999909,\"wallMs\":3.3881069999999909,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"2eb07d0bdc0da0c6\",\"bytes\":1953},\"fragment\":{\"hash\":\"e792f11cd4d28ee0\",\"bytes\":14203},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshStandardMaterial_21\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":4,\"pipelineIdentity\":\"native-render-4\",\"programIdentity\":\"effe698ea684daf6/957687f9bd1af7aa\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":1884.9268770000001,\"settledMs\":1886.2407189999999,\"queueMs\":0,\"serviceMs\":1.313841999999795,\"wallMs\":1.313841999999795,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"effe698ea684daf6\",\"bytes\":1482},\"fragment\":{\"hash\":\"957687f9bd1af7aa\",\"bytes\":3294},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshBasicMaterial_89\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":5,\"pipelineIdentity\":\"native-render-5\",\"programIdentity\":\"effe698ea684daf6/957687f9bd1af7aa\",\"kind\":\"render\",\"pass\":\"unknown\",\"mode\":\"sync\",\"status\":\"created\",\"startedMs\":1894.9154160000001,\"settledMs\":1896.334564,\"queueMs\":0,\"serviceMs\":1.4191479999999501,\"wallMs\":1.4191479999999501,\"provenance\":{\"unknown\":true},\"vertex\":{\"hash\":\"effe698ea684daf6\",\"bytes\":1482},\"fragment\":{\"hash\":\"957687f9bd1af7aa\",\"bytes\":3294},\"cache\":\"unsupported\",\"label\":\"renderPipeline_MeshBasicMaterial_89\"}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SLOW_PHASE:{\"phase\":\"animationFrames\",\"ms\":1754.6659999999999,\"atMs\":3166.772508}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SLOW_FRAME_OPS:{\"replayMs\":577.880135,\"ops\":3889,\"top\":[{\"op\":\"submit\",\"n\":2,\"ms\":574.93500800000004},{\"op\":\"render.end\",\"n\":2,\"ms\":1.5463789999999999},{\"op\":\"render.setBindGroup\",\"n\":519,\"ms\":0.363147},{\"op\":\"writeBuffer\",\"n\":1552,\"ms\":0.26949899999999999},{\"op\":\"writeTexture\",\"n\":2,\"ms\":0.23605699999999999},{\"op\":\"render.setVertexBuffer\",\"n\":517,\"ms\":0.16612399999999999}]}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":2}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":2,\"requested\":5,\"emitted\":5,\"outstanding\":0}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SLOW_END_FRAME:{\"totalMs\":583.17345999999998,\"drainMs\":0.084194000000000005,\"replayMs\":577.93781100000001,\"uiMs\":0.00084800000000000001,\"presentMs\":5.1016579999999996,\"pollMs\":0.047364999999999997,\"gpuDrainMs\":0,\"otherMs\":0.0015839999999999999}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SLOW_PHASE:{\"phase\":\"endDawnFrame\",\"ms\":583.18899999999996,\"atMs\":3749.9956529999999}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SLOW_PHASE:{\"phase\":\"pollEvents\",\"ms\":2343.7020000000002,\"atMs\":3755.2437260000002}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"19bbb4273bc7b242\",\"bytes\":168,\"requestId\":\"2\",\"requestMethod\":\"ready\",\"requestOrder\":2,\"pump\":{\"observed\":true,\"pumpCount\":3,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":3755.271,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.611,\"atMs\":3759.882,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_FRAME_HITCH:{\"gapMs\":2343.24,\"uptimeMs\":3823.79,\"wallClock\":1790946973685}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":3}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"78b95576888a52b7\",\"bytes\":72,\"requestId\":\"3\",\"requestMethod\":\"advance\",\"requestOrder\":3,\"pump\":{\"observed\":true,\"pumpCount\":4,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":3858.159,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":21.716,\"atMs\":3879.875,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":4}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"9c7a1dd6c70ad0e0\",\"bytes\":168,\"requestId\":\"4\",\"requestMethod\":\"ready\",\"requestOrder\":4,\"pump\":{\"observed\":true,\"pumpCount\":5,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":3965.014,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.618,\"atMs\":3966.632,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":5}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"af6e700c4e3f1fca\",\"bytes\":71,\"requestId\":\"5\",\"requestMethod\":\"advance\",\"requestOrder\":5,\"pump\":{\"observed\":true,\"pumpCount\":6,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":4051.185,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.065,\"atMs\":4055.251,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":6}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"adcce64027efbb36\",\"bytes\":168,\"requestId\":\"6\",\"requestMethod\":\"ready\",\"requestOrder\":6,\"pump\":{\"observed\":true,\"pumpCount\":7,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":4140.260,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.689,\"atMs\":4141.950,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":7}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"8f2dad1d0d1a33ab\",\"bytes\":71,\"requestId\":\"7\",\"requestMethod\":\"advance\",\"requestOrder\":7,\"pump\":{\"observed\":true,\"pumpCount\":8,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":4238.374,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.149,\"atMs\":4241.524,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":8}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"07870d7be2b04b74\",\"bytes\":168,\"requestId\":\"8\",\"requestMethod\":\"ready\",\"requestOrder\":8,\"pump\":{\"observed\":true,\"pumpCount\":9,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":4327.281,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.556,\"atMs\":4328.837,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":9}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"89debabef68245d0\",\"bytes\":71,\"requestId\":\"9\",\"requestMethod\":\"advance\",\"requestOrder\":9,\"pump\":{\"observed\":true,\"pumpCount\":10,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":4414.522,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.995,\"atMs\":4418.518,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":10}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"2aad096ed3467ddf\",\"bytes\":169,\"requestId\":\"10\",\"requestMethod\":\"ready\",\"requestOrder\":10,\"pump\":{\"observed\":true,\"pumpCount\":11,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":4504.263,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.653,\"atMs\":4505.915,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":11}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"cdf6d448b2ecb5ae\",\"bytes\":72,\"requestId\":\"11\",\"requestMethod\":\"advance\",\"requestOrder\":11,\"pump\":{\"observed\":true,\"pumpCount\":12,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":4591.308,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":2.871,\"atMs\":4594.180,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":12}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"58699643da11af6d\",\"bytes\":169,\"requestId\":\"12\",\"requestMethod\":\"ready\",\"requestOrder\":12,\"pump\":{\"observed\":true,\"pumpCount\":13,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":4680.403,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.745,\"atMs\":4682.148,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":13}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"dd22e9348bd1a591\",\"bytes\":72,\"requestId\":\"13\",\"requestMethod\":\"advance\",\"requestOrder\":13,\"pump\":{\"observed\":true,\"pumpCount\":14,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":4769.194,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.191,\"atMs\":4773.384,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":14}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"7ce7cd2a47a1920b\",\"bytes\":169,\"requestId\":\"14\",\"requestMethod\":\"ready\",\"requestOrder\":14,\"pump\":{\"observed\":true,\"pumpCount\":15,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":4859.995,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.748,\"atMs\":4861.744,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":15}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"c7dbbaecf9618974\",\"bytes\":72,\"requestId\":\"15\",\"requestMethod\":\"advance\",\"requestOrder\":15,\"pump\":{\"observed\":true,\"pumpCount\":16,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":4949.326,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.267,\"atMs\":4952.594,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":16}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"9655fa46e0d42b79\",\"bytes\":169,\"requestId\":\"16\",\"requestMethod\":\"ready\",\"requestOrder\":16,\"pump\":{\"observed\":true,\"pumpCount\":17,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":5038.885,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.641,\"atMs\":5040.526,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":17}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"cad80a66f9a59b2b\",\"bytes\":72,\"requestId\":\"17\",\"requestMethod\":\"advance\",\"requestOrder\":17,\"pump\":{\"observed\":true,\"pumpCount\":18,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":5125.853,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.031,\"atMs\":5129.885,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":18}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"b4268cb69df16ee7\",\"bytes\":169,\"requestId\":\"18\",\"requestMethod\":\"ready\",\"requestOrder\":18,\"pump\":{\"observed\":true,\"pumpCount\":19,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":5217.293,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.795,\"atMs\":5219.087,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":19}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"1dd915307902036a\",\"bytes\":72,\"requestId\":\"19\",\"requestMethod\":\"advance\",\"requestOrder\":19,\"pump\":{\"observed\":true,\"pumpCount\":20,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":5306.854,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":2.911,\"atMs\":5309.765,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":20}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"216b29bcb8e05b1c\",\"bytes\":169,\"requestId\":\"20\",\"requestMethod\":\"ready\",\"requestOrder\":20,\"pump\":{\"observed\":true,\"pumpCount\":21,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":5395.859,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.656,\"atMs\":5397.516,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":21}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"279fed16396dcd86\",\"bytes\":72,\"requestId\":\"21\",\"requestMethod\":\"advance\",\"requestOrder\":21,\"pump\":{\"observed\":true,\"pumpCount\":22,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":5484.510,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.170,\"atMs\":5488.680,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":22}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"ce289c8a103aa272\",\"bytes\":169,\"requestId\":\"22\",\"requestMethod\":\"ready\",\"requestOrder\":22,\"pump\":{\"observed\":true,\"pumpCount\":23,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":5573.880,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.578,\"atMs\":5575.458,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":23}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"72275fb20f5bcf70\",\"bytes\":72,\"requestId\":\"23\",\"requestMethod\":\"advance\",\"requestOrder\":23,\"pump\":{\"observed\":true,\"pumpCount\":24,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":5664.399,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.315,\"atMs\":5667.714,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":24}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"93e3cef21e462b50\",\"bytes\":169,\"requestId\":\"24\",\"requestMethod\":\"ready\",\"requestOrder\":24,\"pump\":{\"observed\":true,\"pumpCount\":25,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":5754.409,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.773,\"atMs\":5756.182,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":25}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"279ca0192310c4c7\",\"bytes\":72,\"requestId\":\"25\",\"requestMethod\":\"advance\",\"requestOrder\":25,\"pump\":{\"observed\":true,\"pumpCount\":26,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":5842.468,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.228,\"atMs\":5846.696,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":26}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"8d4bb9970b4ae526\",\"bytes\":169,\"requestId\":\"26\",\"requestMethod\":\"ready\",\"requestOrder\":26,\"pump\":{\"observed\":true,\"pumpCount\":27,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":5932.559,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.921,\"atMs\":5934.481,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":27}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"198f6d5cdea59b3a\",\"bytes\":72,\"requestId\":\"27\",\"requestMethod\":\"advance\",\"requestOrder\":27,\"pump\":{\"observed\":true,\"pumpCount\":28,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6021.134,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.081,\"atMs\":6025.214,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":28}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f25763a78bc64424\",\"bytes\":169,\"requestId\":\"28\",\"requestMethod\":\"ready\",\"requestOrder\":28,\"pump\":{\"observed\":true,\"pumpCount\":29,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6110.901,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.614,\"atMs\":6112.515,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":29}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"c83dac86f371d28d\",\"bytes\":72,\"requestId\":\"29\",\"requestMethod\":\"advance\",\"requestOrder\":29,\"pump\":{\"observed\":true,\"pumpCount\":30,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6199.084,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.100,\"atMs\":6203.184,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":30}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"47b9e49bdf111499\",\"bytes\":169,\"requestId\":\"30\",\"requestMethod\":\"ready\",\"requestOrder\":30,\"pump\":{\"observed\":true,\"pumpCount\":31,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6291.960,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.703,\"atMs\":6293.663,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":31}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"823675271fc907f5\",\"bytes\":72,\"requestId\":\"31\",\"requestMethod\":\"advance\",\"requestOrder\":31,\"pump\":{\"observed\":true,\"pumpCount\":32,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6379.675,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.192,\"atMs\":6382.866,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":32}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"31c93cedd3583d2b\",\"bytes\":169,\"requestId\":\"32\",\"requestMethod\":\"ready\",\"requestOrder\":32,\"pump\":{\"observed\":true,\"pumpCount\":33,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6466.923,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.620,\"atMs\":6468.543,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":33}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"640a7c0fe169f9f6\",\"bytes\":72,\"requestId\":\"33\",\"requestMethod\":\"advance\",\"requestOrder\":33,\"pump\":{\"observed\":true,\"pumpCount\":34,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6553.725,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.086,\"atMs\":6557.811,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":34}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"dd3f5c7ad916b98d\",\"bytes\":169,\"requestId\":\"34\",\"requestMethod\":\"ready\",\"requestOrder\":34,\"pump\":{\"observed\":true,\"pumpCount\":35,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6642.950,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.688,\"atMs\":6644.638,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":35}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"93e707672ccc448f\",\"bytes\":72,\"requestId\":\"35\",\"requestMethod\":\"advance\",\"requestOrder\":35,\"pump\":{\"observed\":true,\"pumpCount\":36,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6729.996,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":2.838,\"atMs\":6732.834,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":36}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"0b65d747bac6607f\",\"bytes\":169,\"requestId\":\"36\",\"requestMethod\":\"ready\",\"requestOrder\":36,\"pump\":{\"observed\":true,\"pumpCount\":37,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6817.951,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.770,\"atMs\":6819.720,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":37}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f8f056c81673203c\",\"bytes\":72,\"requestId\":\"37\",\"requestMethod\":\"advance\",\"requestOrder\":37,\"pump\":{\"observed\":true,\"pumpCount\":38,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6904.066,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.081,\"atMs\":6908.147,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":38}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"ef2e395a3bdfb4a1\",\"bytes\":169,\"requestId\":\"38\",\"requestMethod\":\"ready\",\"requestOrder\":38,\"pump\":{\"observed\":true,\"pumpCount\":39,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":6993.401,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.537,\"atMs\":6994.937,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":39}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"e526ad18bf498959\",\"bytes\":72,\"requestId\":\"39\",\"requestMethod\":\"advance\",\"requestOrder\":39,\"pump\":{\"observed\":true,\"pumpCount\":40,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":7079.625,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.197,\"atMs\":7082.822,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":40}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"81f6430656d4a536\",\"bytes\":169,\"requestId\":\"40\",\"requestMethod\":\"ready\",\"requestOrder\":40,\"pump\":{\"observed\":true,\"pumpCount\":41,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":7165.846,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.456,\"atMs\":7167.301,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":41}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"117b49d130b50c15\",\"bytes\":72,\"requestId\":\"41\",\"requestMethod\":\"advance\",\"requestOrder\":41,\"pump\":{\"observed\":true,\"pumpCount\":42,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":7251.308,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.776,\"atMs\":7255.084,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":42}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"70a37a9cf5efbae0\",\"bytes\":169,\"requestId\":\"42\",\"requestMethod\":\"ready\",\"requestOrder\":42,\"pump\":{\"observed\":true,\"pumpCount\":43,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":7348.435,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.657,\"atMs\":7350.092,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":43}",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_DECAL_FIXTURE:{\"generation\":1,\"active\":256,\"capacity\":256,\"created\":321,\"released\":65,\"geometryBytes\":275076,\"maxDrawCalls\":0,\"motionError\":0,\"receiverMotion\":0,\"lodHit\":true,\"renderTriangles\":2,\"receiverRemoved\":false,\"atlasFade\":false,\"averageOpacity\":1,\"residency\":[],\"residencySamples\":0,\"stableResidencyFrames\":0}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"e31f767984275c39\",\"bytes\":72,\"requestId\":\"43\",\"requestMethod\":\"advance\",\"requestOrder\":43,\"pump\":{\"observed\":true,\"pumpCount\":44,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":7433.785,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.883,\"atMs\":7438.669,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":44}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"ede510ed6aac9c42\",\"bytes\":169,\"requestId\":\"44\",\"requestMethod\":\"ready\",\"requestOrder\":44,\"pump\":{\"observed\":true,\"pumpCount\":45,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":7522.708,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.542,\"atMs\":7524.250,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":45}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"477caedf27ed1792\",\"bytes\":72,\"requestId\":\"45\",\"requestMethod\":\"advance\",\"requestOrder\":45,\"pump\":{\"observed\":true,\"pumpCount\":46,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":7607.341,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.009,\"atMs\":7611.349,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":46}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"347d2fcdb8d947ac\",\"bytes\":169,\"requestId\":\"46\",\"requestMethod\":\"ready\",\"requestOrder\":46,\"pump\":{\"observed\":true,\"pumpCount\":47,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":7695.968,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.564,\"atMs\":7697.533,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":47}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"c458ea380df770a3\",\"bytes\":72,\"requestId\":\"47\",\"requestMethod\":\"advance\",\"requestOrder\":47,\"pump\":{\"observed\":true,\"pumpCount\":48,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":7793.298,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.162,\"atMs\":7796.460,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":48}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"3e262161873c549e\",\"bytes\":169,\"requestId\":\"48\",\"requestMethod\":\"ready\",\"requestOrder\":48,\"pump\":{\"observed\":true,\"pumpCount\":49,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":7881.718,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.601,\"atMs\":7883.319,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":49}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"fdb55682e517f658\",\"bytes\":72,\"requestId\":\"49\",\"requestMethod\":\"advance\",\"requestOrder\":49,\"pump\":{\"observed\":true,\"pumpCount\":50,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":7968.599,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.097,\"atMs\":7972.695,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":50}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"1d9b12d3ab425c3b\",\"bytes\":169,\"requestId\":\"50\",\"requestMethod\":\"ready\",\"requestOrder\":50,\"pump\":{\"observed\":true,\"pumpCount\":51,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":8058.345,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.634,\"atMs\":8059.980,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":51}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"7782b2b6cb71c8dc\",\"bytes\":72,\"requestId\":\"51\",\"requestMethod\":\"advance\",\"requestOrder\":51,\"pump\":{\"observed\":true,\"pumpCount\":52,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":8150.988,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.655,\"atMs\":8155.643,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":52}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"b6a103b889890fa9\",\"bytes\":169,\"requestId\":\"52\",\"requestMethod\":\"ready\",\"requestOrder\":52,\"pump\":{\"observed\":true,\"pumpCount\":53,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":8247.187,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":2.347,\"atMs\":8249.533,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":53}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"9d71a81816380853\",\"bytes\":72,\"requestId\":\"53\",\"requestMethod\":\"advance\",\"requestOrder\":53,\"pump\":{\"observed\":true,\"pumpCount\":54,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":8342.500,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.664,\"atMs\":8347.164,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":54}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"6f98cda10b366c4f\",\"bytes\":169,\"requestId\":\"54\",\"requestMethod\":\"ready\",\"requestOrder\":54,\"pump\":{\"observed\":true,\"pumpCount\":55,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":8438.992,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.736,\"atMs\":8440.728,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":55}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"337ebeaa86ffbade\",\"bytes\":72,\"requestId\":\"55\",\"requestMethod\":\"advance\",\"requestOrder\":55,\"pump\":{\"observed\":true,\"pumpCount\":56,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":8526.854,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.155,\"atMs\":8530.009,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":56}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"16cf2f9ca6fd47dd\",\"bytes\":169,\"requestId\":\"56\",\"requestMethod\":\"ready\",\"requestOrder\":56,\"pump\":{\"observed\":true,\"pumpCount\":57,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":8613.976,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.586,\"atMs\":8615.562,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":57}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"da4470c0057f3901\",\"bytes\":72,\"requestId\":\"57\",\"requestMethod\":\"advance\",\"requestOrder\":57,\"pump\":{\"observed\":true,\"pumpCount\":58,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":8699.938,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.049,\"atMs\":8703.987,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":58}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"271183c751d68ce3\",\"bytes\":169,\"requestId\":\"58\",\"requestMethod\":\"ready\",\"requestOrder\":58,\"pump\":{\"observed\":true,\"pumpCount\":59,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":8788.066,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.644,\"atMs\":8789.710,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":59}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"de33de02ae45f990\",\"bytes\":72,\"requestId\":\"59\",\"requestMethod\":\"advance\",\"requestOrder\":59,\"pump\":{\"observed\":true,\"pumpCount\":60,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":8874.535,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.077,\"atMs\":8878.612,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":60}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PRESENTS_TICK:{\"frames\":60,\"presents\":60,\"textureMB\":29,\"textures\":6,\"bufferMB\":0,\"capHz\":60}",
+    "type": "log"
+  },
+  {
+    "text": "TN_GPU_TEXTURES:{\"totalMB\":29,\"count\":6,\"buckets\":[{\"k\":\"960x540 rgba16float msaa4\",\"n\":1,\"mb\":15},{\"k\":\"960x540 depth24plus msaa4\",\"n\":1,\"mb\":7},{\"k\":\"960x540 rgba16float\",\"n\":1,\"mb\":3},{\"k\":\"960x540 depth24plus\",\"n\":1,\"mb\":1},{\"k\":\"64x64 rgba8unorm\",\"n\":1,\"mb\":0},{\"k\":\"16x16 rg16float\",\"n\":1,\"mb\":0}],\"bucketsTotal\":6}",
+    "type": "log"
+  },
+  {
+    "text": "TN_GPU_BUFFERS:{\"totalMB\":0,\"count\":1296,\"buckets\":[{\"k\":\"vertex|copysrc|copydst\",\"n\":517,\"mb\":0},{\"k\":\"uniform|copydst\",\"n\":519,\"mb\":0},{\"k\":\"index|copysrc|copydst\",\"n\":258,\"mb\":0},{\"k\":\"copydst|mapread\",\"n\":1,\"mb\":0},{\"k\":\"copysrc\",\"n\":1,\"mb\":0}]}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"18b2ef1e76e5bce8\",\"bytes\":169,\"requestId\":\"60\",\"requestMethod\":\"ready\",\"requestOrder\":60,\"pump\":{\"observed\":true,\"pumpCount\":61,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":8965.798,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.626,\"atMs\":8967.424,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":61}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"09d5f00b59a5a2e0\",\"bytes\":72,\"requestId\":\"61\",\"requestMethod\":\"advance\",\"requestOrder\":61,\"pump\":{\"observed\":true,\"pumpCount\":62,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":9052.530,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.171,\"atMs\":9056.701,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":62}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"c2911562e037c03e\",\"bytes\":169,\"requestId\":\"62\",\"requestMethod\":\"ready\",\"requestOrder\":62,\"pump\":{\"observed\":true,\"pumpCount\":63,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":9143.789,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.601,\"atMs\":9145.390,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":63}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"0e85742f46a37379\",\"bytes\":73,\"requestId\":\"63\",\"requestMethod\":\"advance\",\"requestOrder\":63,\"pump\":{\"observed\":true,\"pumpCount\":64,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":9233.151,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.170,\"atMs\":9236.321,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":64}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"9baadaa99db7dd94\",\"bytes\":169,\"requestId\":\"64\",\"requestMethod\":\"ready\",\"requestOrder\":64,\"pump\":{\"observed\":true,\"pumpCount\":65,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":9322.870,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.543,\"atMs\":9324.414,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":65}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"9966ef2d4e6708b2\",\"bytes\":73,\"requestId\":\"65\",\"requestMethod\":\"advance\",\"requestOrder\":65,\"pump\":{\"observed\":true,\"pumpCount\":66,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":9409.915,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.106,\"atMs\":9414.020,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":66}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"69d6de25bf7a182a\",\"bytes\":169,\"requestId\":\"66\",\"requestMethod\":\"ready\",\"requestOrder\":66,\"pump\":{\"observed\":true,\"pumpCount\":67,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":9500.117,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.627,\"atMs\":9501.744,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":67}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"f6598f5c20cca33b\",\"bytes\":73,\"requestId\":\"67\",\"requestMethod\":\"advance\",\"requestOrder\":67,\"pump\":{\"observed\":true,\"pumpCount\":68,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":9590.236,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":2.862,\"atMs\":9593.097,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":68}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"bf9d77b1364a0e80\",\"bytes\":169,\"requestId\":\"68\",\"requestMethod\":\"ready\",\"requestOrder\":68,\"pump\":{\"observed\":true,\"pumpCount\":69,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":9679.332,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.679,\"atMs\":9681.011,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":69}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"af051c6ddb763330\",\"bytes\":73,\"requestId\":\"69\",\"requestMethod\":\"advance\",\"requestOrder\":69,\"pump\":{\"observed\":true,\"pumpCount\":70,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":9765.724,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.146,\"atMs\":9769.869,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":70}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"3cdb38250d95b1e5\",\"bytes\":169,\"requestId\":\"70\",\"requestMethod\":\"ready\",\"requestOrder\":70,\"pump\":{\"observed\":true,\"pumpCount\":71,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":9854.890,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.591,\"atMs\":9856.481,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":71}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"c7c209b160e92ec6\",\"bytes\":73,\"requestId\":\"71\",\"requestMethod\":\"advance\",\"requestOrder\":71,\"pump\":{\"observed\":true,\"pumpCount\":72,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":9941.189,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.153,\"atMs\":9944.342,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":72}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"520e454b3c904f77\",\"bytes\":169,\"requestId\":\"72\",\"requestMethod\":\"ready\",\"requestOrder\":72,\"pump\":{\"observed\":true,\"pumpCount\":73,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10028.046,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.620,\"atMs\":10029.666,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":73}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"52b64084ebb918ed\",\"bytes\":73,\"requestId\":\"73\",\"requestMethod\":\"advance\",\"requestOrder\":73,\"pump\":{\"observed\":true,\"pumpCount\":74,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10114.864,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.924,\"atMs\":10118.787,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":74}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"6380c227074b8691\",\"bytes\":169,\"requestId\":\"74\",\"requestMethod\":\"ready\",\"requestOrder\":74,\"pump\":{\"observed\":true,\"pumpCount\":75,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10201.862,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.617,\"atMs\":10203.479,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":75}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"be3dc3260f36fe3c\",\"bytes\":73,\"requestId\":\"75\",\"requestMethod\":\"advance\",\"requestOrder\":75,\"pump\":{\"observed\":true,\"pumpCount\":76,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10288.000,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.102,\"atMs\":10292.102,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":76}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"1f677084102d9b83\",\"bytes\":169,\"requestId\":\"76\",\"requestMethod\":\"ready\",\"requestOrder\":76,\"pump\":{\"observed\":true,\"pumpCount\":77,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10378.999,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.538,\"atMs\":10380.537,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":77}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"c4d75c1cfeb82787\",\"bytes\":73,\"requestId\":\"77\",\"requestMethod\":\"advance\",\"requestOrder\":77,\"pump\":{\"observed\":true,\"pumpCount\":78,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10464.486,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.966,\"atMs\":10468.452,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":78}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"94350233bec333fd\",\"bytes\":169,\"requestId\":\"78\",\"requestMethod\":\"ready\",\"requestOrder\":78,\"pump\":{\"observed\":true,\"pumpCount\":79,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10551.853,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.557,\"atMs\":10553.410,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":79}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"d07ed5024424a452\",\"bytes\":73,\"requestId\":\"79\",\"requestMethod\":\"advance\",\"requestOrder\":79,\"pump\":{\"observed\":true,\"pumpCount\":80,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10636.856,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.068,\"atMs\":10639.924,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":80}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"89741c4f3d5d2262\",\"bytes\":169,\"requestId\":\"80\",\"requestMethod\":\"ready\",\"requestOrder\":80,\"pump\":{\"observed\":true,\"pumpCount\":81,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10724.017,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.691,\"atMs\":10725.708,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":81}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"301571c6a38e0434\",\"bytes\":73,\"requestId\":\"81\",\"requestMethod\":\"advance\",\"requestOrder\":81,\"pump\":{\"observed\":true,\"pumpCount\":82,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10809.833,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.308,\"atMs\":10814.141,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":82}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"90fedf35eedd2fcc\",\"bytes\":169,\"requestId\":\"82\",\"requestMethod\":\"ready\",\"requestOrder\":82,\"pump\":{\"observed\":true,\"pumpCount\":83,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10906.953,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.531,\"atMs\":10908.483,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":83}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"036f4c51138a9c58\",\"bytes\":73,\"requestId\":\"83\",\"requestMethod\":\"advance\",\"requestOrder\":83,\"pump\":{\"observed\":true,\"pumpCount\":84,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":10991.263,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.801,\"atMs\":10995.064,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":84}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"14a16ced8cf51356\",\"bytes\":169,\"requestId\":\"84\",\"requestMethod\":\"ready\",\"requestOrder\":84,\"pump\":{\"observed\":true,\"pumpCount\":85,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":11077.669,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.637,\"atMs\":11079.306,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":85}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"a3ee970b2a64450f\",\"bytes\":73,\"requestId\":\"85\",\"requestMethod\":\"advance\",\"requestOrder\":85,\"pump\":{\"observed\":true,\"pumpCount\":86,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":11162.818,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":4.012,\"atMs\":11166.830,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":86}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"64b8e924b0b5ab80\",\"bytes\":169,\"requestId\":\"86\",\"requestMethod\":\"ready\",\"requestOrder\":86,\"pump\":{\"observed\":true,\"pumpCount\":87,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":11253.412,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.620,\"atMs\":11255.032,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":87}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"a323689e1d42692a\",\"bytes\":73,\"requestId\":\"87\",\"requestMethod\":\"advance\",\"requestOrder\":87,\"pump\":{\"observed\":true,\"pumpCount\":88,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":11352.263,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":3.304,\"atMs\":11355.567,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":88}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"795a5d9268e0ad67\",\"bytes\":249,\"requestId\":\"88\",\"requestMethod\":\"ready\",\"requestOrder\":88,\"pump\":{\"observed\":true,\"pumpCount\":89,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":11439.123,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":1.671,\"atMs\":11440.794,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":89}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"9224ca862071dfa0\",\"bytes\":6165,\"requestId\":\"89\",\"requestMethod\":\"sample\",\"requestOrder\":89,\"pump\":{\"observed\":true,\"pumpCount\":90,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":11525.048,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":23.764,\"atMs\":11548.812,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":90}",
+    "type": "log"
+  },
+  {
+    "text": "TN_COLD_START:{\"segment\":\"first_playable\",\"atMs\":11633.833}",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_DECAL_FIXTURE:{\"generation\":1,\"active\":256,\"capacity\":256,\"created\":321,\"released\":65,\"geometryBytes\":275076,\"maxDrawCalls\":0,\"motionError\":0,\"receiverMotion\":0,\"lodHit\":true,\"renderTriangles\":2,\"receiverRemoved\":false,\"atlasFade\":false,\"averageOpacity\":1,\"residency\":[],\"residencySamples\":0,\"stableResidencyFrames\":0}",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_DECAL_FIXTURE:{\"generation\":1,\"active\":256,\"capacity\":256,\"created\":321,\"released\":65,\"geometryBytes\":275076,\"maxDrawCalls\":0,\"motionError\":0,\"receiverMotion\":0,\"lodHit\":true,\"renderTriangles\":2,\"receiverRemoved\":false,\"atlasFade\":false,\"averageOpacity\":1,\"residency\":[],\"residencySamples\":0,\"stableResidencyFrames\":0}",
+    "type": "log"
+  },
+  {
+    "text": "[log] TN_DECAL_FIXTURE:{\"generation\":1,\"active\":256,\"capacity\":256,\"created\":321,\"released\":65,\"geometryBytes\":275076,\"maxDrawCalls\":0,\"motionError\":0,\"receiverMotion\":0,\"lodHit\":true,\"renderTriangles\":2,\"receiverRemoved\":false,\"atlasFade\":false,\"averageOpacity\":1,\"residency\":[],\"residencySamples\":0,\"stableResidencyFrames\":0}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"6878ee373e5f987e\",\"bytes\":74,\"requestId\":\"90\",\"requestMethod\":\"advance\",\"requestOrder\":90,\"pump\":{\"observed\":true,\"pumpCount\":91,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":11633.919,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":132.181,\"atMs\":11766.100,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":91}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"8bd550e42e078f4d\",\"bytes\":6165,\"requestId\":\"91\",\"requestMethod\":\"sample\",\"requestOrder\":91,\"pump\":{\"observed\":true,\"pumpCount\":92,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":11856.224,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":14.205,\"atMs\":11870.429,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":92}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"8e69a825d07469a4\",\"bytes\":6165,\"requestId\":\"92\",\"requestMethod\":\"sample\",\"requestOrder\":92,\"pump\":{\"observed\":true,\"pumpCount\":93,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":11961.372,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":14.562,\"atMs\":11975.935,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":93}",
+    "type": "log"
+  },
+  {
+    "text": "TN_PUMP_ENDPOINT:{\"path\":\"/tmp/threenative-playtest-desktop-b6Dgxs/tn-playtest-response.json\",\"stored\":true,\"payloadHash\":\"9534902c1c41adeb\",\"bytes\":6165,\"requestId\":\"93\",\"requestMethod\":\"sample\",\"requestOrder\":93,\"pump\":{\"observed\":true,\"pumpCount\":94,\"firstPumpAtMs\":853.834,\"lastPumpAtMs\":12065.898,\"maxGapMs\":2343.740,\"maxGapAtMs\":1411.531,\"trailingGapMs\":14.339,\"atMs\":12080.237,\"longGaps\":[557.697,2343.740],\"droppedLongGaps\":0}}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":94}",
+    "type": "log"
+  },
+  {
+    "text": "TN_SURFACE_FRAME:{\"view\":true,\"present\":95}",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] First 16 bytes (BGRA raw): 47 35 23 255 47 35 23 255 47 35 23 255 47 35 23 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Middle bytes (BGRA raw): 47 35 23 255 47 35 23 255 47 35 23 255 47 35 23 255 ",
+    "type": "log"
+  },
+  {
+    "text": "[Screenshot] Saved: /home/runner/work/threenative/threenative/artifacts/vq11-decals-native/static/after.png (960x540)",
+    "type": "log"
+  }
+]

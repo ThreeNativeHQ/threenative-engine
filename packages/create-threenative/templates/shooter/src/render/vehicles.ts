@@ -252,8 +252,6 @@ const VAN = {
   track: 0.8,
   archRadius: 0.48,
   archCentre: 0.58,
-  /** Half-width including the wing mirrors — outside the collider on purpose. */
-  halfWithMirrors: 1.14,
 } as const;
 
 function vanParts(batch: PartBatch, m: VehicleMaterials): void {
@@ -417,21 +415,6 @@ export function addVan(
     min: [at.x - spanX, 0, at.z - spanZ],
     max: [at.x + spanX, VAN.roof, at.z + spanZ],
   };
-}
-
-/** Footprint a placement table can be audited against without building anything. */
-export function vanFootprint(at: VanPlacement): {
-  readonly minX: number;
-  readonly maxX: number;
-  readonly minZ: number;
-  readonly maxZ: number;
-} {
-  const cos = Math.abs(Math.cos(at.yaw));
-  const sin = Math.abs(Math.sin(at.yaw));
-  const halfX = (VAN.bumper - VAN.tail) / 2;
-  const spanX = halfX * cos + VAN.halfWithMirrors * sin;
-  const spanZ = halfX * sin + VAN.halfWithMirrors * cos;
-  return { minX: at.x - spanX, maxX: at.x + spanX, minZ: at.z - spanZ, maxZ: at.z + spanZ };
 }
 
 // ---------------------------------------------------------------------------

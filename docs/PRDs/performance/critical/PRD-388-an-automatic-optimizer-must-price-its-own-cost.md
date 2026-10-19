@@ -23,6 +23,7 @@ frame rather than predicted from draw candidates, must account for its effect on
 be trivially and honestly disableable by a game, and must report its verdict and reason honestly.**
 
 **Status:** NOT STARTED — specification only.
+**Priority:** P2 — Spec only: reproduce the optimizer A/B and price it from measured reconcile cost.
 **Date:** 2026-09-15.
 **Scope:** Engine render-projection policy in `@threenative/core`, plus the one game-facing opt-out
 that policy requires. No new optimizer, no new render pass, no scene format.

@@ -5,7 +5,14 @@
 // cool sky-to-moss hemisphere that keeps the shaded sides from going black, and a faint cold rim from
 // behind that separates the towers from the slab. The photographed sky in `sky.ts` is the fourth
 // source: it is what metal reflects.
-import { DirectionalLight, HemisphereLight, PCFSoftShadowMap, type Scene } from "three";
+import {
+  Color,
+  DirectionalLight,
+  HemisphereLight,
+  PCFSoftShadowMap,
+  type Scene,
+  Vector3,
+} from "three";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
@@ -39,4 +46,29 @@ export function setupLighting(
   // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
   // shadow map, so `setupPost` needs the light itself.
   return { key };
+}
+
+/** Existing authored rim/fill is preserved; opt in to extra terms with the named gains. */
+export interface ILightingConvention {
+  rimGain: number;
+  fillGain: number;
+  fillColor: Color;
+  fillDirection: Vector3;
+  fillAngularSize: number;
+  darkThreshold: number;
+  maxSourceTexels: number;
+}
+export function createLightingConvention(
+  overrides: Partial<ILightingConvention> = {},
+): ILightingConvention {
+  return {
+    rimGain: 0,
+    fillGain: 0,
+    fillColor: new Color(0x667b9d),
+    fillDirection: new Vector3(0, 1, 1).normalize(),
+    fillAngularSize: 0.7,
+    darkThreshold: 0.001,
+    maxSourceTexels: 65536,
+    ...overrides,
+  };
 }

@@ -1,4 +1,5 @@
 import type { IEvaluationContext } from "./context.js";
+import { fpsFromFrameTimes } from "./render-evidence.js";
 
 /**
  * Judges a PRD-222 Tier 2 parity pair: the same scene on the same device, once in the browser,
@@ -59,8 +60,7 @@ export function emitParity(ctx: IEvaluationContext): void {
     });
     return;
   }
-  const median = (values: number[]): number => [...values].sort((left, right) => left - right)[Math.floor(values.length / 2)] as number;
-  const thisFps = 1_000 / median(frameTimes);
+  const thisFps = fpsFromFrameTimes(frameTimes) as number;
   // The directed ratio the Tier 2 table names: nativeFps ÷ webFps, whichever half the reference is.
   const ratio = assertion.referenceSide === "native" ? reference.fps / thisFps : thisFps / reference.fps;
   assertions.push({

@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P2 — Planned removal of per-call Vector2, store spread and metric allocations.
 **Complexity:** +2 for 6–10 files, +2 for state/snapshot semantics = **4 → MEDIUM mode**.
 
 ## Context

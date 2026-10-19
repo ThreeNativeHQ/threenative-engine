@@ -98,4 +98,35 @@ describe("the frame-budget marker reports the resolved target", () => {
     expect(reported.targetFps).toBe(120);
     expect(reported.targetSource).toBe("display");
   });
+
+  it("counts the frames that ran past the target frame, so a pooled p95 can be read exactly", () => {
+    // A pooled p95 is under the target exactly when at most 5 % of the pooled frames are over it;
+    // window quantiles can only bound that (PRD-478 AC-1/AC-2). The first window learns the target.
+    const lines: string[] = [];
+    const budget = new FrameBudget({
+      readTarget: (): ITargetFps => ({ source: "config", targetFps: 120 }),
+      reportEvery: 4,
+      report: (line) => lines.push(line),
+    });
+    let now = 0;
+    const renders = [5, 5, 5, 5, 9, 5, 12, 5, 5, 5, 5, 5];
+    const gpus = [3, 3, 3, 3, 3, 9, 3, 3, 3, 3, 3, 3];
+    for (const [frame, render] of renders.entries()) {
+      now += 16;
+      budget.beginFrame(now, now);
+      budget.markSimulationEnd(now, 1);
+      budget.addRender(render);
+      budget.addGpuMs(gpus[frame], frame);
+      budget.endFrame(now);
+    }
+    const windows = lines
+      .filter((line) => line.startsWith("TN_FRAME_BUDGET:"))
+      .map((line) => JSON.parse(line.slice("TN_FRAME_BUDGET:".length)));
+    expect(windows.length).toBeGreaterThanOrEqual(2);
+    expect(
+      windows[0].overTarget,
+      "the first window had no target to count against",
+    ).toBeUndefined();
+    expect(windows[1].overTarget).toEqual({ frameMs: 8.33, gpu: 1, render: 2 });
+  });
 });

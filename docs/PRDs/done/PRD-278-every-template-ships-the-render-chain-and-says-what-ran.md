@@ -34,10 +34,10 @@ problems below are the work.
 
 **Scope grew 2026-08-30, by ruling.** The composer, the stage graph, the composite maths and the
 tier→parameter table are this PRD's, not `packages/core`'s: the owner-delegated answer to
-[PRD-266](../useful-defaults/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md)'s blocking
+PRD-266's blocking
 question was no. This file also gains the mapping from the framework's tier **ordinal** to which
 stages run at which quality — the ordinal arrives as an argument, exactly as the platform decision
-in §3 does. Sequenced in [useful-defaults](../useful-defaults/README.md); the batch this PRD was first filed under is kept as [its origin memo](../useful-defaults/ORIGIN-decent-defaults-2026-08-30.md).
+in §3 does. Sequenced in [useful-defaults](../useful-defaults/README.md); the batch this PRD was first filed under is kept as its origin memo.
 
 ## Where it goes, and why it is not a package export
 

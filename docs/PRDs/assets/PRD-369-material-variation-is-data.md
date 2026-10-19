@@ -6,6 +6,7 @@ game and templates) + 2 (new generated material source) + 2 (multiple consumers)
 **Depends on:** [367](PRD-367-doctor-explains-shader-compilation.md) and the
 [shared batch contract](README.md). Persistent caching is not a prerequisite.
 
+**Priority:** P1 — Open: first install meets program and playable targets with no GPU frame-time regression.
 ## Problem and outcome
 
 The measured town creates 96 distinct programs, not merely 96 material values. A cold first install

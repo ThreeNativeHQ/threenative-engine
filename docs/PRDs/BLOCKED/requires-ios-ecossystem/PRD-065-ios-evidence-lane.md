@@ -7,6 +7,7 @@ prd_contract: v1
 **Status: OPEN, filed 2026-08-10. Phase 0 landed the same day.** The iOS simulator lane exists,
 is deeper than most proposals for one, and had two defects at once.
 
+**Priority:** P2 — Open boxes repair the red handoff: rendered summary, simctl video, workflow_call trigger.
 **The first is why this PRD's order changed: the lane was not running on iOS.**
 `chooseSimulator()` flattened away the runtime key from `simctl list devices available --json`
 and took the first device, which on `macos-15` is an **Apple Vision Pro**. Both the last green

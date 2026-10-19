@@ -24,8 +24,6 @@
  * to put around a per-draw call — and the names exist only in the report.
  */
 
-import type { Object3D } from "three";
-
 /** Marker printed once per report window when spans are installed. */
 export const SPANS_MARKER = "TN_FRAME_SPANS";
 
@@ -72,9 +70,48 @@ export const SPANS = {
   sort: 12,
   /** Per-draw submission inside a render call, accumulated across the draws of one pass. */
   draw: 13,
+  /** Terrain block rebuild and merged-attribute swap on the calling thread. */
+  terrainBlock: 14,
+  /** Terrain seam reconciliation and bridge-attribute swap on the calling thread. */
+  terrainSeam: 15,
 } as const;
 
 export type SpanId = (typeof SPANS)[keyof typeof SPANS];
+
+/**
+ * Native game-JS spans use the player's monotonic clock, independent of the simulation clock. They
+ * follow {@link SPANS} in one id space (`__tnGameSpan` takes either), so a new render span moves
+ * every id here; the engine player's name table (`run.cpp` `kGameSpanNames`) is pinned to these
+ * numbers by `native-engine-game-spans.spec.ts`. `hostUpdate`, `hostFrame`, `gc` and `view` are
+ * opened by the host itself and have no id here.
+ */
+export const GAME_SPANS = {
+  input: 16,
+  scheduler: 17,
+  plugins: 18,
+  sceneCallbacks: 19,
+  entities: 20,
+  afterPhysics: 21,
+  mixer: 22,
+  stride: 23,
+  blend: 24,
+  transport: 25,
+  publish: 26,
+  playtest: 27,
+  ui: 30,
+  loop: 33,
+  state: 34,
+  contacts: 35,
+  transitions: 36,
+  objectGraph: 37,
+  physicsStep: 38,
+  physicsRead: 39,
+  physicsApply: 40,
+  characterMove: 41,
+  animationPlay: 42,
+  inputVector: 43,
+  graphVisit: 44,
+} as const;
 
 /** Names, indexed by id. The only place a span name is a string. */
 export const SPAN_NAMES: readonly string[] = [
@@ -92,6 +129,8 @@ export const SPAN_NAMES: readonly string[] = [
   "projectObject",
   "sort",
   "draw",
+  "terrainBlock",
+  "terrainSeam",
 ];
 
 export const SPAN_COUNT = SPAN_NAMES.length;
@@ -263,7 +302,7 @@ export class SpanRecorder {
     this.#depth = depth;
     const ms = now - (this.#stackStart[depth] ?? now);
     this.#own[id] = (this.#own[id] ?? 0) + ms;
-    this.#attribute(id, ms);
+    this.#attribute(ms);
   }
 
   /**
@@ -274,10 +313,10 @@ export class SpanRecorder {
   add(id: SpanId, ms: number): void {
     this.#own[id] = (this.#own[id] ?? 0) + ms;
     this.#entries[id] = (this.#entries[id] ?? 0) + 1;
-    this.#attribute(id, ms);
+    this.#attribute(ms);
   }
 
-  #attribute(id: SpanId, ms: number): void {
+  #attribute(ms: number): void {
     if (this.#depth === 0) {
       this.#topLevelMs += ms;
       return;
@@ -410,19 +449,29 @@ export class SpanRecorder {
 /**
  * The installed recorder, or `undefined` when spans are off.
  *
- * Module state rather than a parameter because the call sites are the frame loop and the renderer's
- * own wrappers, and threading a recorder through either would put a parameter on the hot path for a
- * diagnostic that is off in every shipped build.
+ * `Symbol.for` on `globalThis` rather than module state, because core is built once per entry: a
+ * game that imports `@threenative/core/world` gets a second copy of this module, and a recorder
+ * installed by the main entry is invisible to it. The world's own spans (terrain block rebuild and
+ * seam swap) recorded nothing in a browser walk for exactly that reason — two copies, two states.
+ * The global symbol is one slot every copy reads, and a parameter would still put a recorder on the
+ * hot path for a diagnostic that is off in every shipped build.
  */
-let recorder: SpanRecorder | undefined;
+const RECORDER_SLOT = Symbol.for("threenative.frameSpans.recorder");
 
-/** Installs or removes the recorder every `beginSpan`/`endSpan` routes to. */
+type RecorderHost = { [key: symbol]: SpanRecorder | undefined };
+
+function recorderHost(): RecorderHost {
+  // quality-allow: the recorder lives on globalThis under a private symbol, which no lib type names.
+  return globalThis as unknown as RecorderHost;
+}
+
+/** Installs or removes the recorder every `beginSpan`/`endSpan` routes to, in every entry copy. */
 export function setSpanRecorder(next: SpanRecorder | undefined): void {
-  recorder = next;
+  recorderHost()[RECORDER_SLOT] = next;
 }
 
 export function spanRecorder(): SpanRecorder | undefined {
-  return recorder;
+  return recorderHost()[RECORDER_SLOT];
 }
 
 /** The one clock the spans and the frame budget share, so their numbers are comparable. */
@@ -430,25 +479,35 @@ export function spanNow(): number {
   return globalThis.performance?.now() ?? Date.now();
 }
 
+/** Player sink only; does not alter the render recorder. No clock read or allocation when off. */
+export function nativeSpan(id: number, action: number): void {
+  (globalThis as { __tnGameSpan?: (id: number, action: number) => number }).__tnGameSpan?.(
+    id,
+    action,
+  );
+}
+
 /**
  * Opens a span. One guarded return when spans are off — no clock read, no allocation, no branch on
- * anything but the recorder's own presence.
+ * anything but the recorder's own presence. The opt-in native wall-time sink sees it first.
  */
 export function beginSpan(id: SpanId): void {
-  const active = recorder;
+  nativeSpan(id, 0);
+  const active = spanRecorder();
   if (active === undefined) return;
   active.begin(id, spanNow());
 }
 
 export function endSpan(id: SpanId): void {
-  const active = recorder;
+  nativeSpan(id, 1);
+  const active = spanRecorder();
   if (active === undefined) return;
   active.end(id, spanNow());
 }
 
 /** Adds an already-measured duration to a span entered many times per frame. */
 export function addSpan(id: SpanId, ms: number): void {
-  const active = recorder;
+  const active = spanRecorder();
   if (active === undefined) return;
   active.add(id, ms);
 }

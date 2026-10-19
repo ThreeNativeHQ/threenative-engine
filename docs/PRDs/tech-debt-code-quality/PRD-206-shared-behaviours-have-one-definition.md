@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P2 — Open boxes define the binding-tree walk and pointer conversion once instead of twice.
 **Complexity:** +2 for 6–10 files, +2 multi-package (core, physics, navigation subpath),
 +1 for the reachability semantics change = **5 → MEDIUM mode**.
 

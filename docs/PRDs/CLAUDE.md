@@ -76,6 +76,36 @@ Linux all do X *and* Y *and* Z") can never be ticked, because some clause is alw
 Split it: one box per platform, per artifact, per property. A clause nobody can reach is a
 `## Blocked on` line (R3), not a box that will never be ticked.
 
+## Priority header
+
+Every PRD that still has unfinished work carries one canonical header next to its status line:
+
+```markdown
+**Priority:** <P0|P1|P2|P3> — <one line citing this PRD's own unfinished outcome>
+```
+
+| Tier | Meaning |
+|---|---|
+| `P0` | a confirmed immediate release, runtime, security or data-loss blocker, or the indispensable prerequisite for one |
+| `P1` | high-impact core correctness, supported-platform parity or performance, or a primary-workflow blocker needed soon |
+| `P2` | planned improvement or regular feature work |
+| `P3` | optional, speculative or low-impact work |
+
+- Rate the **unfinished** scope, not the phases already landed. Status, progress and blocking are
+  separate from priority: never derive a tier from tick count, folder name or "it is in flight".
+- The rationale cites that PRD's own open boxes, acceptance criteria or blocked item. It is triage
+  judgement, not a verified incident report, and it never claims a fact the file does not carry.
+- `P0` needs explicit blocker evidence in the document. Without it, use `P1`.
+- An unfinished **indispensable** prerequisite inherits the highest tier of the urgent work it gates;
+  an urgent prerequisite never lifts an optional consumer. Raise a dependency only where
+  `**Depends on:**` names it and it still has unfinished work — open boxes, or a blocked-only
+  remainder waiting on something outside this repository. Several named prerequisites are not
+  optional because several are listed: raise each one the dependent names as required, or cite the
+  sentence that marks it optional, non-gating, absorbed or already satisfied. Keep the real
+  dependencies and any stated order, and check for a dependency cycle before you claim an order.
+- Triage pending work only. A finished, cancelled or superseded PRD keeps the tier it was filed
+  with, or none at all.
+
 ## One PR per PRD
 
 **A PRD gets exactly one pull request, opened as a draft before phase 1 starts.** Never one PR per

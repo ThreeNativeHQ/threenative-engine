@@ -1,0 +1,44 @@
+{
+  "name": "prd339-exposure-native-180-rendered-updates",
+  "schemaVersion": 1,
+  "target": "desktop",
+  "viewport": {
+    "width": 640,
+    "height": 360
+  },
+  "warmupFrames": 20,
+  "artifacts": {
+    "screenshots": "before-after",
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "validationDone",
+        "equals": true
+      },
+      "timeoutMs": 60000
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "state",
+        "path": "sampleFrames",
+        "equals": 180,
+        "allowTrivial": "Deterministic startup holds readiness until 180 GPU exposure updates complete. The held counter must stay exactly 180 after readiness; actual metering and applied output are separately qualified from GPU console evidence and the captured frame."
+      },
+      {
+        "id": "state",
+        "path": "validationDone",
+        "equals": true,
+        "allowTrivial": "GPU validation scopes may complete before startup readiness. Their observed clean marker, 180 paired GPU readbacks, meter reference, applied exposure and captured pixels remain mandatory in verifyNative.ts."
+      }
+    ],
+    "startup": {
+      "maxReadyMs": 60000
+    }
+  }
+}

@@ -88,7 +88,13 @@ export function run(command, args, options = {}) {
 }
 
 export function buildNativeTarget(cmake, buildDirectory, target, timeout = 1_800_000) {
-  return run(cmake, ["--build", buildDirectory, "--target", target, "--parallel"], { timeout });
+  const requested = process.env.CMAKE_BUILD_PARALLEL_LEVEL;
+  if (requested !== undefined &&
+      (!/^[1-9]\d*$/u.test(requested) || !Number.isSafeInteger(Number(requested)))) {
+    throw new Error("CMAKE_BUILD_PARALLEL_LEVEL must be a positive integer");
+  }
+  const parallel = requested === undefined ? ["--parallel"] : ["--parallel", requested];
+  return run(cmake, ["--build", buildDirectory, "--target", target, ...parallel], { timeout });
 }
 
 export function nativeTestExecutable(buildDirectory, target) {

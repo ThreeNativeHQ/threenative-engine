@@ -1,6 +1,6 @@
 # PRD-364 drafting audit — 2026-09-06
 
-Scope: planning only at checkout `713ca111`. The [PRD](../PRDs/CI/PRD-364-remove-development-gate-bloat.md) records inspected callers and read-only GitHub run observations. No runtime or workflow implementation changed.
+Scope: planning only at checkout `713ca111`. The [PRD](../PRDs/done/PRD-364-remove-development-gate-bloat.md) records inspected callers and read-only GitHub run observations. No runtime or workflow implementation changed.
 
 ## Executed commands
 

@@ -24,7 +24,7 @@ the physical device — no emulator, no simulator, no desktop substitute.
 | [2](#bug-2) | No HUD, no loading screen, no touch controls on native | blocker | templates (**regression**, `0aaacc12` + `acabc39d`) | open, **cause found** |
 | [3](#bug-3) | 18.3 fps — 68% of the frame is JS outside the renderer | blocker | `packages/runtime-native` / core | open, diagnosed — **shadows ARE a lever**, 46.15→35.20 ms; see below |
 | [4](#bug-4) | Intermittent SIGSEGV, no tombstone | high | `packages/runtime-native` | **fix landed** `89c785ef` — device proof open |
-| [5](#bug-5) | Android APK not reproducible from the repo | high | `packages/runtime-native` | open |
+| [5](#bug-5) | Android APK not reproducible from the repo | high | `packages/runtime-native` | **fixed** — PRD-211; emulator boot proof 2026-10-07 |
 | [6](#bug-6) | Published install cannot build for Android | high | `packages/runtime-native` | **gated** `8df8e6b2` — clean-room gate green offline; real release waits on PRD-078 |
 | [7](#bug-7) | `catalog:` specifiers leak into the published tarball | high | publishing | **fixed** `439b9fd7` — tarball specifier census in `publish:check` |
 | [8](#bug-8) | 393 MB of GPU resources requested, 828 MB held | medium | game + driver | open, **attributed** — a ~480 MiB floor, not a 2.11x multiplier |
@@ -413,7 +413,7 @@ open and listed in [`../verification/prd-210-2026-08-23.md`](../verification/prd
 <a id="bug-5"></a>
 ## Bug 5 — the Android APK cannot be reproduced from this repository
 
-**Severity:** high. **Status:** open.
+**Severity:** high. **Status:** fixed — the runtime decodes Ogg Vorbis; proof in `docs/PRDs/done/PRD-211-android-asset-lane-boots-from-repo-assets.md`.
 
 ### What happens
 

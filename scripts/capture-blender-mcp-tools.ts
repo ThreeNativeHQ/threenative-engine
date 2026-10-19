@@ -103,7 +103,19 @@ async function main(): Promise<void> {
       arguments: {},
       name: "blender_status",
     });
-    const tools = (listed.tools as { name: string }[]).map((tool) => tool.name).sort();
+    // The schemas come from the same live response, so the docs never restate an argument by hand.
+    const listedTools = listed.tools as readonly {
+      name: string;
+      description?: unknown;
+      inputSchema?: unknown;
+    }[];
+    const tools = listedTools.map((tool) => tool.name).sort();
+    const inputSchemas = Object.fromEntries(
+      listedTools.map((tool) => [tool.name, tool.inputSchema ?? {}]),
+    );
+    const descriptions = Object.fromEntries(
+      listedTools.map((tool) => [tool.name, tool.description ?? ""]),
+    );
     const statusText = (status.content as { text: string }[])[0]?.text ?? "{}";
     const snapshot = {
       comment: `The blender MCP surface a generated project actually gets. \`tools\` is set-equal to the live tools/list response of version ${manifest.version}, packed from this workspace and installed from that tarball into a clean directory — never read from src/. \`recommended\` is the ordered loop the shipped agent docs describe. Regenerate with \`pnpm tsx scripts/capture-blender-mcp-tools.ts\`.`,
@@ -111,6 +123,8 @@ async function main(): Promise<void> {
       serverInfo: initialized.serverInfo,
       recommended: [...RECOMMENDED],
       tools,
+      inputSchemas,
+      descriptions,
       statusShape: Object.keys(JSON.parse(statusText) as Record<string, unknown>).sort(),
     };
     writeFileSync(SNAPSHOT, `${JSON.stringify(snapshot, null, 2)}\n`);

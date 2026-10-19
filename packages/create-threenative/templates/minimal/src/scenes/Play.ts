@@ -3,6 +3,7 @@ import {
   Scene,
   type SceneFrame,
   afterPhysics,
+  getPlatform,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
@@ -24,8 +25,10 @@ import {
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { type IPlayerModel, Player } from "../entities/Player.js";
 import { followCamera, setupCamera } from "../render/camera.js";
+import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import {
   floorMaterial,
   propMaterial,
@@ -33,6 +36,7 @@ import {
   worldGridUVs,
 } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
+import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
@@ -47,12 +51,23 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
   #model: IPlayerModel | undefined;
   #sky: Texture | undefined;
+  #environmentSample: IEnvironmentSample | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+  #post: ReturnType<typeof setupPost> | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
     [this.#model, this.#sky] = await Promise.all([
       ctx.assets.model<IPlayerModel>("mannequin.glb"),
       ctx.assets.texture("sky.jpg"),
     ]);
+    setupSky(ctx.scene, this.#sky);
+    this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -67,10 +82,20 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code, exactly like createRandom.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
-      godraysLight: lighting.key,
+    const materialEnvironment = {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+    };
+    this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      godraysLight: lighting.key,
+      onTierChanged: (tier) =>
+        this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment)),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     setupCamera(ctx.camera as PerspectiveCamera);
     const loading = createLoadingScreen(ctx);
@@ -174,6 +199,23 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (body === player.body) ctx.state.set((state) => ({ score: state.score + 1 }));
     });
 
+    // Loaded character and all arena meshes are attached before the single material traversal.
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, lighting.key, {
+        ...materialEnvironment,
+        enabled: materialLightingEnabled(this.#post.tier, materialEnvironment),
+      }),
+    );
+    if (this.#environmentSample !== undefined) {
+      const { measurement, source, intensity } = this.#environmentSample;
+      this.#materialLighting.setEnvironmentMeasurement(
+        measurement,
+        source,
+        intensity,
+        this.#environmentSample,
+      );
+    }
     const statePatch: Partial<GameState> = {};
     return (frameCtx, dt) => {
       loading.update();
@@ -185,5 +227,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       statePatch.playerX = player.mesh.position.x;
       frameCtx.state.set(statePatch);
     };
+  }
+  override exit(): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
+    this.#environmentSample = undefined;
   }
 }

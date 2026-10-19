@@ -652,34 +652,53 @@ public:
             return false;
         }
 #elif defined(__linux__)
-        // Linux: Use X11 from SDL (Wayland support would need additional work)
+        // Linux: use whichever handles SDL actually gave us. The driver is named here because the
+        // receipt for "this ran on Wayland" has to come from SDL, not from an environment variable
+        // a caller set.
         SDL_Window* sdlWindow = platform::getSDLWindow();
         if (!sdlWindow) {
             std::cerr << "[Mystral] Failed to get SDL window" << std::endl;
             return false;
         }
 
-        // Try X11 first
-        void* xdisplay = SDL_GetPointerProperty(SDL_GetWindowProperties(sdlWindow),
-            SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
-        if (xdisplay) {
-            auto xwindow = static_cast<unsigned long>(SDL_GetNumberProperty(SDL_GetWindowProperties(sdlWindow),
-                SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
-            if (xwindow) {
-                std::cout << "[Mystral] Using X11 display: " << xdisplay << " window: " << xwindow << std::endl;
-                // Pass both display and window pointer for proper X11 surface creation
-                // Dawn requires the display pointer, wgpu-native can work with just window
-                if (!webgpu_->createSurfaceWithDisplay(xdisplay, reinterpret_cast<void*>(xwindow), webgpu::Context::PLATFORM_XLIB)) {
-                    std::cerr << "[Mystral] Failed to create WebGPU surface" << std::endl;
-                    return false;
-                }
-            } else {
-                std::cerr << "[Mystral] Failed to get X11 window" << std::endl;
+        SDL_PropertiesID windowProps = SDL_GetWindowProperties(sdlWindow);
+        std::cout << "[Mystral] SDL video driver: "
+                  << (SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "none") << std::endl;
+
+        void* wlDisplay = SDL_GetPointerProperty(windowProps,
+            SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nullptr);
+        if (wlDisplay) {
+            void* wlSurface = SDL_GetPointerProperty(windowProps,
+                SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, nullptr);
+            if (!wlSurface) {
+                std::cerr << "[Mystral] Wayland display without a surface" << std::endl;
+                return false;
+            }
+            std::cout << "[Mystral] Using Wayland display: " << wlDisplay << " surface: " << wlSurface << std::endl;
+            if (!webgpu_->createSurfaceWithDisplay(wlDisplay, wlSurface, webgpu::Context::PLATFORM_WAYLAND)) {
+                std::cerr << "[Mystral] Failed to create WebGPU surface" << std::endl;
                 return false;
             }
         } else {
-            std::cerr << "[Mystral] X11 display not available. Wayland not yet supported." << std::endl;
-            return false;
+            void* xdisplay = SDL_GetPointerProperty(windowProps,
+                SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
+            if (!xdisplay) {
+                std::cerr << "[Mystral] Wayland or X11 display not available." << std::endl;
+                return false;
+            }
+            auto xwindow = static_cast<unsigned long>(SDL_GetNumberProperty(windowProps,
+                SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+            if (!xwindow) {
+                std::cerr << "[Mystral] Failed to get X11 window" << std::endl;
+                return false;
+            }
+            std::cout << "[Mystral] Using X11 display: " << xdisplay << " window: " << xwindow << std::endl;
+            // Pass both display and window pointer for proper X11 surface creation
+            // Dawn requires the display pointer, wgpu-native can work with just window
+            if (!webgpu_->createSurfaceWithDisplay(xdisplay, reinterpret_cast<void*>(xwindow), webgpu::Context::PLATFORM_XLIB)) {
+                std::cerr << "[Mystral] Failed to create WebGPU surface" << std::endl;
+                return false;
+            }
         }
 #else
         std::cerr << "[Mystral] WebGPU surface creation not implemented for this platform" << std::endl;
@@ -799,13 +818,14 @@ public:
         bindingsState_ = webgpu::createBindingsState();
         bindingsState_->pipelineCache.identity.app = config_.pipelineCacheAppIdentity;
         bindingsState_->pipelineCache.identity.shaders = config_.pipelineCacheSourceIdentity;
-        if (!webgpu::initBindings(bindingsState_, jsEngine_.get(), webgpu_->getInstance(), webgpu_->getDevice(), webgpu_->getQueue(), surface, webgpu_->getPreferredFormat(), webgpu_->getPresentMode(), width_, height_, config_.debug, webgpu_->getAdapter())) {
+        if (!webgpu::initBindings(bindingsState_, jsEngine_.get(), webgpu_->getInstance(), webgpu_->getDevice(), webgpu_->getQueue(), surface, webgpu_->getPreferredFormat(), webgpu_->getPresentMode(), width_, height_, config_.debug, webgpu_->getAdapter(), webgpu_->getSurfaceNativeHandle())) {
             std::cerr << "[Mystral] Failed to initialize WebGPU bindings" << std::endl;
             webgpu::destroyBindingsState(bindingsState_);
             bindingsState_ = nullptr;
             return false;
         }
-        webgpu_->setBindingsState(bindingsState_);
+        frameCapture_ = webgpu::makeFrameCaptureSource(bindingsState_);
+        webgpu_->setFrameCaptureSource(frameCapture_.get());
 
         // In no-SDL mode, set the offscreen texture for headless rendering
         if (config_.noSdl) {
@@ -946,7 +966,8 @@ public:
         }
 
         if (bindingsState_) {
-            if (webgpu_) webgpu_->setBindingsState(nullptr);
+            if (webgpu_) webgpu_->setFrameCaptureSource(nullptr);
+            frameCapture_.reset();
             webgpu::destroyBindingsState(bindingsState_);
             bindingsState_ = nullptr;
         }
@@ -985,6 +1006,24 @@ public:
             });
             if (watchId_ >= 0) {
                 std::cout << "[HotReload] Watching for changes: " << path << std::endl;
+            }
+        }
+
+        // The clock the run asked for, read before the game module evaluates so the request cannot
+        // land after the producer that owns the loop was installed. Unset changes nothing.
+        const char* requestedClock = std::getenv("TN_PLAYTEST_CLOCK");
+        if (requestedClock != nullptr && requestedClock[0] != '\0') {
+            if (std::string(requestedClock) != "wall-clock") {
+                // Refuse rather than fall back: a misspelling that quietly left the loop frozen
+                // would publish a frame rate for a game that was not playing.
+                std::cerr << "TN_PLAYTEST_CLOCK_UNSUPPORTED: '" << requestedClock
+                          << "' is not a known clock; expected 'wall-clock'." << std::endl;
+                return false;
+            }
+            if (!jsEngine_->evalScript("globalThis.__THREENATIVE_PLAYTEST_CLOCK__ = \"wall-clock\";",
+                                      "tn-playtest-clock.js")) {
+                std::cerr << "[Mystral] TN_PLAYTEST_CLOCK=wall-clock was not installed" << std::endl;
+                return false;
             }
         }
 
@@ -1073,7 +1112,14 @@ private:
 
     // A screenshot the mailbox asked for, waiting for its requested frame to be captured.
     std::string pendingScreenshotPath_;
-    int pendingScreenshotTicks_ = 0;
+    std::chrono::steady_clock::time_point pendingScreenshotStartedAt_{};
+
+    // How long the host waits for the requested present before giving up. This replaced a count of
+    // host poll iterations: in a driven frame loop the host spins so fast that 120 iterations
+    // expired in about a millisecond — before the runner could see its request was consumed and ask
+    // the game for its render-only frame. A wall-clock budget matches the ~120 frames a normal
+    // presenting loop would spend, and does not depend on how fast the loop spins.
+    static constexpr auto kScreenshotCaptureBudget = std::chrono::seconds(2);
 
     void processPlaytestScreenshotRequest() {
         const char* configuredRoot = std::getenv("TN_PLAYTEST_MAILBOX_ROOT");
@@ -1102,15 +1148,17 @@ private:
             const std::string screenshotPath = contents.str();
             if (screenshotPath.empty() || screenshotPath.size() > 4096) return;
             pendingScreenshotPath_ = screenshotPath;
-            pendingScreenshotTicks_ = 0;
+            pendingScreenshotStartedAt_ = std::chrono::steady_clock::now();
         }
 
-        // The capture lands at a present boundary after the request below; poll briefly rather
-        // than failing on the first not-yet-captured tick. Bounded so a dead surface errors once,
-        // like the single-shot failure this replaced.
+        // The capture lands at a present boundary after the request below; poll rather than failing
+        // on the first not-yet-captured tick. A driven loop presents nothing on its own, so the
+        // runner asks the game for one render-only frame once it sees this request consumed; the
+        // budget is wall-clock so that wait fits inside it whatever the loop's spin rate. Bounded
+        // so a dead surface errors once, like the single-shot failure this replaced.
         if (!webgpu_->isFrameScreenshotReady()) {
             webgpu_->requestFrameScreenshot();
-            if (++pendingScreenshotTicks_ > 120) {
+            if (std::chrono::steady_clock::now() - pendingScreenshotStartedAt_ > kScreenshotCaptureBudget) {
                 std::cerr << "[Playtest] Native screenshot request failed: " << pendingScreenshotPath_ << std::endl;
                 pendingScreenshotPath_.clear();
             }
@@ -1300,7 +1348,8 @@ public:
 
         webgpu::republishSurface(bindingsState_, webgpu_->getSurface(),
                                  webgpu_->getPreferredFormat(), webgpu_->getPresentMode(),
-                                 static_cast<uint32_t>(width_), static_cast<uint32_t>(height_));
+                                 static_cast<uint32_t>(width_), static_cast<uint32_t>(height_),
+                                 webgpu_->getSurfaceNativeHandle());
 
         std::ostringstream marker;
         marker << "TN_LIFECYCLE_SURFACE:{\"event\":\"revalidated\",\"previousWindow\":\""
@@ -2729,49 +2778,7 @@ private:
      * platform. Fail closed: a malformed publication leaves the previous rectangles in place and
      * every later click is decided against rectangles that no longer exist, so it is named.
      */
-    bool applyUiHitRegions(const std::string& frame) {
-        if (frame.find("\"tn:hit-regions\"") == std::string::npos) return false;
-        // The registry emits each rectangle as x, y, width, height and nothing else lives in this
-        // frame, so reading the four keys in order is the whole parse. Named keys rather than
-        // "every number after a colon": a payload that grows a field would otherwise silently
-        // shift every rectangle by one.
-        static constexpr const char* kKeys[] = {"\"x\":", "\"y\":", "\"width\":", "\"height\":"};
-        std::vector<float> regions;
-        size_t cursor = 0;
-        while (true) {
-            float rectangle[4];
-            size_t next = cursor;
-            bool complete = true;
-            for (size_t index = 0; index < 4; ++index) {
-                const size_t found = frame.find(kKeys[index], next);
-                if (found == std::string::npos) {
-                    complete = false;
-                    break;
-                }
-                const size_t value = found + std::strlen(kKeys[index]);
-                char* end = nullptr;
-                rectangle[index] = std::strtof(frame.c_str() + value, &end);
-                if (end == frame.c_str() + value) {
-                    complete = false;
-                    break;
-                }
-                next = static_cast<size_t>(end - frame.c_str());
-            }
-            if (!complete) break;
-            regions.insert(regions.end(), std::begin(rectangle), std::end(rectangle));
-            cursor = next;
-        }
-        platform::setUiHitRegions(regions);
-        // The rectangles themselves, not just the count: a hit that lands in the wrong place is a
-        // layout or coordinate question, and only the published rectangles can answer it.
-        std::cout << "TN_UI_HIT_REGIONS:{\"count\":" << regions.size() / 4 << ",\"regions\":[";
-        for (size_t index = 0; index < regions.size(); ++index) {
-            if (index > 0) std::cout << ",";
-            std::cout << regions[index];
-        }
-        std::cout << "]}" << std::endl;
-        return true;
-    }
+    bool applyUiHitRegions(const std::string& frame) { return platform::applyUiHitRegionsFrame(frame); }
 
     void drainUiMessages() {
         if (!jsEngine_) return;
@@ -3043,6 +3050,7 @@ private:
 
     std::unique_ptr<webgpu::Context> webgpu_;
     webgpu::BindingsState* bindingsState_ = nullptr;
+    std::unique_ptr<host::IFrameCaptureSource> frameCapture_;
     std::unique_ptr<js::Engine> jsEngine_;
     std::unique_ptr<js::ModuleSystem> moduleSystem_;
     std::unordered_set<int> activeWorkerIds_;
@@ -3640,6 +3648,23 @@ private:
                 event.type = jsEngine_->toString(args[0]);
                 event.key = jsEngine_->toString(args[1]);
                 event.code = jsEngine_->toString(args[2]);
+                // A chord arrives as a held set (`["Shift","Tab"]`), one key at a time, so the held
+                // modifiers are remembered here the way SDL's mod state is for a real keyboard.
+                static platform::UiKeyModifiers held;
+                platform::uiOverlayTrackModifier(event.key, event.type == "keydown", held);
+                event.shiftKey = held.shift;
+                event.ctrlKey = held.ctrl;
+                event.altKey = held.alt;
+                event.metaKey = held.meta;
+                // A synthetic key is offered to the UI first, exactly as a real one is by the SDL
+                // filter, and a key the UI consumed is not also a game event. Without this a
+                // playtest that pressed Tab into a focused control would drive the game's own Tab
+                // binding at the same moment, and a HUD could only be proven keyboard-driven by a
+                // run where the game never saw the key it was pressed with.
+                if (platform::uiOverlayRouteKey(event.key.c_str(), event.type == "keydown", event.shiftKey)) {
+                    // Reported so a device runner does not add an OS copy of a key the UI took.
+                    return jsEngine_->newBoolean(true);
+                }
                 dispatchKeyboardEvent(event);
                 return jsEngine_->newUndefined();
             })
@@ -3693,6 +3718,9 @@ private:
                 // ones the OS route is built from, so a playtest cannot disagree with a real click;
                 // without an overlay attached this is a plain game dispatch.
                 if (platform::uiOverlayAttached() && width_ > 0 && height_ > 0) {
+                    // The pointer kind follows the event, as `pollEvents` does for a real mouse or
+                    // finger: a touch pointer does not hover, so a tap leaves no `:hover` behind.
+                    platform::uiOverlaySetPointerKind(event.pointerType == "touch");
                     const float nx = std::clamp(
                         static_cast<float>(event.clientX) / static_cast<float>(width_), 0.0f, 1.0f);
                     const float ny = std::clamp(
@@ -3715,8 +3743,53 @@ private:
                 return jsEngine_->newUndefined();
             })
         );
+        // wheel(x, y, deltaX, deltaY): viewport pixels and DOM wheel deltas, offered to the UI first
+        // exactly as `routeWheelToUi` offers a real one; a scroller that took it is not a game wheel.
+        jsEngine_->setProperty(playtestHost, "wheel",
+            jsEngine_->newFunction("wheel", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.size() < 4) return jsEngine_->newBoolean(false);
+                platform::WheelEventData event{};
+                event.type = "wheel";
+                event.clientX = jsEngine_->toNumber(args[0]);
+                event.clientY = jsEngine_->toNumber(args[1]);
+                event.deltaX = jsEngine_->toNumber(args[2]);
+                event.deltaY = jsEngine_->toNumber(args[3]);
+                if (platform::uiOverlayAttached() && width_ > 0 && height_ > 0) {
+                    platform::uiOverlaySetPointerKind(false);
+                    const float nx = static_cast<float>(event.clientX) / static_cast<float>(width_);
+                    const float ny = static_cast<float>(event.clientY) / static_cast<float>(height_);
+                    const bool took = platform::uiOverlayRouteWheel(
+                        nx, ny, static_cast<float>(event.deltaX), static_cast<float>(event.deltaY));
+                    std::cout << "TN_UI_WHEEL_ROUTE:{\"nx\":" << nx << ",\"ny\":" << ny
+                              << ",\"dy\":" << event.deltaY << ",\"hit\":" << (took ? "true" : "false")
+                              << "}" << std::endl;
+                    if (took) return jsEngine_->newBoolean(true);
+                }
+                dispatchWheelEvent(event);
+                return jsEngine_->newBoolean(true);
+            })
+        );
+        // media(dark, reducedMotion): 1 sets, 0 clears, -1 keeps; false when no CSS UI can take it.
+        jsEngine_->setProperty(playtestHost, "media",
+            jsEngine_->newFunction("media", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.size() < 2) return jsEngine_->newBoolean(false);
+                return jsEngine_->newBoolean(platform::uiOverlaySetEnvironment(
+                    static_cast<int>(jsEngine_->toNumber(args[0])),
+                    static_cast<int>(jsEngine_->toNumber(args[1]))));
+            })
+        );
+        // advanceClock(ticks): the fixed CSS clock moves with the run's ticks (TN_CSS_UI_FIXED_STEP_MS).
+        jsEngine_->setProperty(playtestHost, "advanceClock",
+            jsEngine_->newFunction("advanceClock", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.empty()) return jsEngine_->newBoolean(false);
+                return jsEngine_->newBoolean(
+                    platform::uiOverlayAdvanceClock(static_cast<int>(jsEngine_->toNumber(args[0]))));
+            })
+        );
         jsEngine_->setProperty(nativeHost, "playtestInput", playtestHost);
         auto playtestMailbox = jsEngine_->newObject();
+        jsEngine_->setProperty(playtestMailbox, "network",
+            jsEngine_->getProperty(jsEngine_->getGlobalProperty("fetch"), "network"));
         jsEngine_->setProperty(playtestMailbox, "receive",
             jsEngine_->newFunction("receive", [this](void*, const std::vector<js::JSValueHandle>& args) {
                 if (args.empty()) return jsEngine_->newUndefined();

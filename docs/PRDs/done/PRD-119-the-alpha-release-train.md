@@ -91,7 +91,7 @@ does `runtime-native`. Neither is marked `private`. They are intended to be publ
 been.
 
 **`create-threenative` is the first command in the documented golden path.**
-[PRD-106](../tooling/PRD-106-reference-image-generation.md) diagrams the whole scaffold flow starting at
+PRD-106 diagrams the whole scaffold flow starting at
 `npx create-threenative my-game`, and the architecture docs describe what
 `pnpm create threenative my-game` generates. That command 404s for every person on earth.
 

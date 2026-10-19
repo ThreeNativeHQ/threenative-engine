@@ -1,5 +1,6 @@
 # PRD-394 — An honest launch: progress you can read, failures that fail closed, a load that is not 104 seconds
 
+**Priority:** P1 — Measured 104 s desktop load behind an opaque screen; honest progress unlanded.
 Status: PHASE 3 (the launch freeze is fixed and measured; asset decode still to cut)
 Owner: engine + `midway-open-pacific` (sandbox)
 

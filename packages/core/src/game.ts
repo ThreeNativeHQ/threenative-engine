@@ -6,7 +6,7 @@ import {
   Scene as ThreeScene,
   Vector2,
 } from "three";
-import { type IAssetLoader, type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
+import { type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
 import { CanvasLayer } from "./canvas-layer.js";
 import { updateClusteredMeshes } from "./clustered-mesh.js";
 import { ComputeDrivenRegistry, isComputeDriven } from "./compute-driven.js";
@@ -20,7 +20,8 @@ import {
   rendererBackendIdentity,
 } from "./geometry-capture.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
-import { watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
+import { PhysicsInterpolation } from "./interpolation.js";
+import { reportLaunchFailure, watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
 import {
   FixedStepLoop,
   type IAfterPhysicsPhase,
@@ -51,6 +52,7 @@ import {
   formatValidationReport,
   renderListValidationRequested,
 } from "./profiling/render-list-validate.js";
+import { renderTrapAudit } from "./profiling/render-trap-audit.js";
 import {
   describeSceneShape,
   describeSceneWarning,
@@ -58,6 +60,11 @@ import {
   sceneWarning,
 } from "./profiling/scene-warning.js";
 import { installSpanProbes } from "./profiling/span-probes.js";
+import {
+  UNLIT_FOLIAGE_FIX,
+  formatUnlitFoliageWarning,
+  unlitFoliageWarning,
+} from "./profiling/unlit-foliage-warning.js";
 import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
 import { RenderCameraCull } from "./render-camera-cull.js";
@@ -65,6 +72,7 @@ import { RenderPassBudget } from "./render-pass-budget.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import {
   resolveMatrixWorldMode,
+  resolvePlatformResolutionFloor,
   resolveRendererAlphaAntialiasing,
   resolveRendererAntialias,
   resolveRendererScaleSetting,
@@ -75,7 +83,7 @@ import {
   type RendererKind,
   createRenderer,
 } from "./renderer.js";
-import { ResolutionScaler } from "./resolution-scaler.js";
+import { RESOLUTION_SCALER, ResolutionScaler } from "./resolution-scaler.js";
 import type {
   ICtx,
   IStartupStatus,
@@ -142,7 +150,9 @@ export interface IGameRuntimeObservations {
 }
 
 export interface IGamePluginRuntime {
-  readonly fixedStep: (ticks: number) => number;
+  readonly fixedStep: (ticks: number, options?: { render?: boolean }) => number;
+  /** Completed scene updates and primary world render requests, independent of budget windows. */
+  readonly frameCounts?: () => { updates: number; renders: number };
   /**
    * Announces that a diagnostics consumer is going to read render metrics, turning per-frame
    * sample collection on for the rest of the run. Optional: a runtime without collection
@@ -160,6 +170,13 @@ export interface IGamePluginRuntime {
    * used to land. Optional: a runtime without a clock just never freezes one.
    */
   readonly freezeClock?: () => void;
+  /**
+   * Draw the current world once without advancing it, for a screenshot taken while the loop is
+   * driven by `fixedStep` and presents nothing between ticks. Optional: a runtime without a frozen
+   * render loop just never draws a standing frame. The runner asks for it only when the bridge
+   * advertises it and the capture cannot otherwise see a present.
+   */
+  readonly renderCurrent?: () => number;
   /**
    * Hold start-scene entry until `gate` settles.
    *
@@ -384,6 +401,8 @@ export interface IGameConfig<
    * Maximum simulation steps per rendered frame. Default 5. Caps the catch-up burst after a
    * stall so a slow frame cannot cascade into a spiral of longer frames.
    */
+  /** Smooth physics objects and the camera between fixed ticks. Default true. */
+  readonly physicsInterpolation?: boolean;
   readonly maxSteps?: number;
   readonly platform?: IGamePlatformSource;
   readonly plugins?: readonly GamePlugin<TState, TPhysics>[];
@@ -557,6 +576,13 @@ function rendererDrawCallCount(raw: unknown): number | undefined {
   return typeof calls === "number" && Number.isFinite(calls) && calls >= 0 ? calls : undefined;
 }
 
+/** Cumulative render() calls the renderer declined to draw (the Wasm web engine's frame gate), when it counts them. */
+function rendererFrameGateSkips(raw: unknown): number | undefined {
+  const info = (raw as { info?: { engine?: { frameGateSkips?: unknown } } } | null)?.info;
+  const skips = info?.engine?.frameGateSkips;
+  return typeof skips === "number" && Number.isFinite(skips) ? skips : undefined;
+}
+
 function rendererPerformanceMetrics(raw: unknown): {
   drawCalls?: number;
   triangles?: number;
@@ -681,13 +707,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #state: GameStore<TState>;
   #initialState: TState;
   #loop: FixedStepLoop | undefined;
+  #interpolation: PhysicsInterpolation | undefined;
   #projection: SceneRenderProjection | undefined;
   #cameraCull: RenderCameraCull | undefined;
   #matrixWorld: MatrixWorldPass | undefined;
   #cleanup: Array<() => void> = [];
   #computeDriven = new ComputeDrivenRegistry();
   #entities: Registry | undefined;
-  #random: IRandom | undefined;
   #picker: ScenePicker | undefined;
   #pointerEvents: PointerEvents3D | undefined;
   #scheduler: Scheduler | undefined;
@@ -845,6 +871,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#sceneFrame = undefined;
     this.#afterPhysicsPhase?.clear();
     this.#beforeRenderCallbacks.clear();
+    this.#interpolation?.clear();
+    this.#interpolation?.track(ctx.camera);
     this.#scene?.exit(ctx);
     this.#pointerEvents?.clear();
     this.#sceneEntered = false;
@@ -873,8 +901,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       if (this.#pendingSceneEnter === transition) this.#pendingSceneEnter = undefined;
     };
     // Handled here as well as by the caller: a start scene that navigates inside `enter()` throws
-    // its transition away, and the gate below still has to learn that no world arrived.
-    void transition.then(settled, settled);
+    // its transition away, and the gate below still has to learn that no world arrived. The failure
+    // is reported by name: a swallowed rejection left the loading screen up as a "stall" with
+    // nothing outstanding (midway-open-pacific on the Wasm engine).
+    void transition.then(settled, (error: unknown) => {
+      settled();
+      reportLaunchFailure({
+        kind: "scene-load-failed",
+        message: `Scene '${name}' failed to load: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    });
     this.#pendingSceneEnter = transition;
     return transition;
   }
@@ -888,6 +924,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#scene !== scene) return false;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
     this.#sceneEntered = true;
+    for (const line of renderTrapAudit(ctx.scene)) console.error(line);
+    // Cutout PBR with no image-based light renders as cardboard, and the compensating tint the
+    // author reaches for is invisible in a screenshot review. Once per scene entry, right after
+    // `enter()`: `load()` and `enter()` are where the game builds its meshes and sets its own
+    // environment, so an earlier read would be a census of an empty scene and a later one would be
+    // a census of a scene the author already fixed.
+    const unlit = unlitFoliageWarning(ctx.scene);
+    if (unlit !== undefined)
+      console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
     return true;
   }
 
@@ -935,8 +980,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       () => {
         if (this.#pendingStart === pendingStart) this.#pendingStart = undefined;
       },
-      () => {
+      (error: unknown) => {
         if (this.#pendingStart === pendingStart) this.#pendingStart = undefined;
+        // Reported by name: a game that writes `void game.start()` otherwise keeps its loading
+        // screen up until the stall watcher says "no asset is outstanding".
+        reportLaunchFailure({
+          kind: "start-failed",
+          message: `The game failed to start: ${error instanceof Error ? error.message : String(error)}`,
+        });
       },
     );
     return pendingStart;
@@ -1009,6 +1060,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#state.start();
     const threeScene = new ThreeScene();
     const camera = createCamera(this.#config.camera);
+    const interpolation = new PhysicsInterpolation(this.#config.physicsInterpolation);
+    this.#interpolation = interpolation;
+    interpolation.track(camera);
     const viewport = new Viewport({ camera, renderer: this.#renderer, source: platform?.viewport });
     const canvasLayer = new CanvasLayer(viewport);
     this.#viewport = viewport;
@@ -1160,8 +1214,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
      * device, with the only account of either on a terminal the player does not have.
      */
     const stopStallWatch = watchStartupStall({
-      pending: () => assets.progress.pending,
+      pending: () => [...assets.progress.pending, ...startupReadiness.pendingHolds],
       progress: () => this.#ctx?.startup.progress ?? 0,
+      workProgress: () => assets.progress.settled + startupReadiness.workProgress,
       stallMs: STARTUP_STALL_MS,
     });
     watchDeviceLoss(
@@ -1193,6 +1248,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       // than on five in-budget frames, so a fast 300-frame run finishes before the world is shown
       // and captures the loading state. The native screenshot path waits on this flag.
       (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
+      // Again at ready: a world that streams its foliage in under `startup.hold` has none at entry.
+      const unlit = unlitFoliageWarning(threeScene);
+      if (unlit !== undefined)
+        console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
     });
     const warmUp = async (marker: string, budgetMs: number, stamp: boolean): Promise<void> => {
       if (this.#aborted || this.#renderer === undefined) return;
@@ -1215,6 +1274,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
+      // With an explicit warm-up, this held pass is only the first half of startup. Stamp after
+      // the explicit pass so its own pipelines remain inside the settled boundary; without one,
+      // this is the only warm-up completion.
+      if (stamp || !this.#warmUpConfiguredExplicitly()) renderer.warmUpSettled?.();
       warmUpStatus =
         report === undefined
           ? { status: "unavailable" }
@@ -1263,6 +1326,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       | (() => { readonly instances: number; readonly triangles: number } | undefined)
       | undefined;
     const ctx: ICtx<TState, TPhysics> = {
+      get frameTime() {
+        return loopState.current?.frameTime ?? 0;
+      },
+      get alpha() {
+        return loopState.current?.alpha ?? 0;
+      },
+      interpolate: (object) => interpolation.track(object),
+      resetInterpolation: (object) => interpolation.reset(object),
       add: (object) => {
         // Narrowed through a plain `Object3D` rather than the type parameter: a type guard applied
         // to `T` yields `T & IComputeDriven`, which TypeScript will not carry to the registry's
@@ -1345,8 +1416,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           reportedProgress = Math.max(reportedProgress, measuredProgress());
           return reportedProgress;
         },
-        hold: (label, work, budgetMs) => {
-          startupReadiness.hold(label, work, budgetMs);
+        hold: (label, work, budgetMs, progress) => {
+          startupReadiness.hold(label, work, budgetMs, progress);
         },
         get timeline() {
           return { ...timeline };
@@ -1363,7 +1434,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     };
     this.#ctx = ctx;
     this.#entities = entities;
-    this.#random = random;
     this.#scheduler = scheduler;
     this.#afterPhysicsPhase = afterPhysicsPhase;
     const devToolsHost =
@@ -1381,16 +1451,37 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     );
     this.#scene = new SceneType();
     this.#sceneName = bootSceneName;
-    // The scaler exists only when the game asked for one. A pinned number leaves this undefined,
-    // which is what makes "pinned" a guarantee rather than a preference the loop may overrule.
-    // `maxFps: 0` removes the ceiling, and a scaler with no budget is not a scaler with a loose
-    // one, so an uncapped game simply does not get adaptive scaling.
+    // The scaler exists whenever the scale is automatic, which now includes a game that said
+    // nothing about it. A pinned number leaves this undefined, which is what makes "pinned" a
+    // guarantee rather than a preference the loop may overrule. `maxFps: 0` removes the ceiling,
+    // and a scaler with no budget is not a scaler with a loose one, so an uncapped game simply
+    // does not get adaptive scaling.
     const initialTarget = resolveTargetFps(this.#config, getPlatform());
     let heldTargetFps = initialTarget.targetFps;
+    // Frame-share budgets elsewhere (the world's adaptive LOD) read the target, not the last frame.
+    renderer.noteTargetFps?.(initialTarget.targetFps);
     const scaler =
       renderer.surface().scaleSource === "auto" && initialTarget.targetFps > 0
-        ? new ResolutionScaler({ targetFps: initialTarget.targetFps })
+        ? new ResolutionScaler({
+            // Phones keep the device ladder; a desktop stops before its bottom, where a picture
+            // with nothing reconstructing it stops being a faster frame and becomes a blur.
+            minScale: resolvePlatformResolutionFloor(getPlatform().os),
+            // The adapter family picks the first rung; the first eligible window still decides.
+            start:
+              renderer.gpuClass === undefined
+                ? undefined
+                : RESOLUTION_SCALER.startScaleByGpuClass[renderer.gpuClass.class],
+            targetFps: initialTarget.targetFps,
+            // No floor lift from motion data: consuming velocity is not upscaling. Three's TRAA
+            // accumulates at the canvas's own size, so lifting the floor for it let a forest frame
+            // fall to 0.23 (442x248 on a 1920x1080 canvas). Only a stage that reconstructs a
+            // display-resolution frame may pass `temporalUpscale`, and none ships today.
+          })
         : undefined;
+    // A class that starts below the ceiling must draw there from the first frame; the scaler only
+    // reports a scale, and nothing else would apply it until a window steps.
+    if (scaler !== undefined && scaler.scale !== 1)
+      renderer.setResolutionScale(scaler.scale, scaler.scaleSource);
     // The panel's own rate, once a window of presented frames can say it. The native host's
     // present counter is the only series there that counts displays rather than loop iterations;
     // on the web one rAF callback is one vblank, so the median presented interval is the period.
@@ -1415,9 +1506,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         ? undefined
         : new FrameBudget({
             ...this.#config.frameBudget,
+            simulation: {
+              tick: () => gameLoop.tick(),
+              get step() {
+                return gameLoop.step;
+              },
+            },
             // The scaler reads the same windows the marker reports, so what it acted on and what
             // the record shows are the same measurement rather than two sampling paths.
             onWindow: (reported) => {
+              const sink =
+                this.#config.frameBudget === false ? undefined : this.#config.frameBudget?.report;
+              const reportInfo = sink ?? console.info;
+              const reportWarning = sink ?? console.warn;
               observeCompilation();
               const compileObserved = compilingInWindow;
               compilingInWindow = false;
@@ -1428,6 +1529,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 reported.presentedFps ??
                 (reported.presented.p50 > 0 ? 1_000 / reported.presented.p50 : undefined);
               const target = resolveTargetFps(this.#config, getPlatform(), measuredRefreshHz);
+              renderer.noteTargetFps?.(target.targetFps);
               if (
                 scaler !== undefined &&
                 target.targetFps > 0 &&
@@ -1437,12 +1539,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 scaler.retarget(heldTargetFps);
               }
               renderer.observeRenderChainBudget?.(reported);
+              this.#computeDriven.observeBudget(reported);
               const projection = this.#projection;
               // Printed every window, projecting or declined. `TN_RENDER_PROJECTION` says once
               // whether the optimizer engaged; this says, repeatedly, what it is still leaving on
               // the exact lane and whether the renderer agrees with the plan.
               if (projection !== undefined) {
-                console.info(
+                reportInfo(
                   formatProjectionWindow(
                     projection.report,
                     reported.window,
@@ -1457,21 +1560,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               // The span tree closes on the same window, so the two lines in a log describe the
               // same frames and a reader can subtract one from the other without a second clock.
               const spanWindow = spans?.window();
-              if (spanWindow !== undefined) console.info(formatSpansWindow(spanWindow));
+              if (spanWindow !== undefined) reportInfo(formatSpansWindow(spanWindow));
               // The scene-shape verdict, on by default, from the census the frame already took.
               // An agent building a scene of the wrong shape reads it in the log before a human
               // ever plays the game and calls it slow.
               const staticCensus = staticTransformCensus();
               if (staticCensus.roots > 0)
-                console.info(`${STATIC_TRANSFORM_MARKER}:${JSON.stringify(staticCensus)}`);
+                reportInfo(`${STATIC_TRANSFORM_MARKER}:${JSON.stringify(staticCensus)}`);
               const validation = renderListValidator?.report();
-              if (validation !== undefined) console.info(formatValidationReport(validation));
+              if (validation !== undefined) reportInfo(formatValidationReport(validation));
               const warning = sceneWarning(
                 reported,
                 describeSceneShape(reported, this.#cameraCull?.report),
                 target.targetFps,
               );
-              if (warning !== undefined) console.warn(formatSceneWarning(warning));
+              if (warning !== undefined) reportWarning(formatSceneWarning(warning));
               // The same sentence goes to the UI on a dev launch, so a human watching the window
               // and an agent reading the log are told the same thing at the same time. No frame
               // rate rides it: the loop's own rAF rate reads throttled under a compositor or a
@@ -1524,7 +1627,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               return {
                 ...renderer.surface(),
                 ...(scaler === undefined ? {} : { atFloor: scaler.atFloor }),
-                ...(compilingInWindow ? { compiling: true } : {}),
+                compiling: compilingInWindow,
               };
             },
           });
@@ -1572,17 +1675,24 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // say nothing new.
     const devMetricsEnabled = isDevLaunch();
     let postedVerdict: string | undefined;
-    const gameLoop = new FixedStepLoop({
+    let updates = 0;
+    let renders = 0;
+    let lastGateSkips = 0;
+    const gameLoop: FixedStepLoop = new FixedStepLoop({
+      interpolation,
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
       maxSteps: this.#config.maxSteps,
-      onRender: () => {
-        observeCompilation();
+      onBeginFrame: () => {
         // The engine owns this requestAnimationFrame loop instead of delegating to Three's
         // setAnimationLoop(). Three's renderer therefore cannot reset its frame counters for us;
         // a concurrent internal renderer callback can otherwise leave stale work in the first
         // sample after a held playtest start.
         resetRendererPerformanceMetrics(renderer.raw);
+        renderer.beginFrame?.();
+      },
+      onRender: (alpha) => {
+        observeCompilation();
         renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
@@ -1610,20 +1720,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               : undefined,
           );
         }
-        // Render-cadence compute is first-use work too: keep it behind an opaque startup layer
-        // until readiness settles, or a particle process dispatch compiles in the loader frame.
-        //
-        // It is charged to the render phase, because it is render-path work and a bake hidden in
-        // `residual` leaves the frame budget unable to enforce its per-frame limit. It cannot be
-        // called from inside the render block below to get that attribution, though: that block
-        // runs on `!opaque || !ready`, which is exactly the window this dispatch has to stay out
-        // of. Moving the call in there dispatched on every loader frame and never once after
-        // readiness — the inverse of the rule — so it stays here and adds its own render time.
+        // Ordinary render compute waits for startup readiness. Streaming explicitly opts in
+        // after compilation so a spawn hold can finish behind the curtain. Present the loader
+        // first; charge this admission to the same render phase as normal render compute.
         if (
           this.#renderer !== undefined &&
           this.#sceneEntered &&
           !explicitWarmUpPending &&
-          (!startupCoverActive() || startupReadiness.ready)
+          !mustPresentLoader &&
+          (!startupCoverActive() || startupReadiness.compileSettled)
         ) {
           const computeStart = frameBudget === undefined ? 0 : budgetNow();
           beginSpan(SPANS.compute);
@@ -1631,7 +1736,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // The render camera comes with it, because a render-cadence consumer that culls by the
             // view — a streamed world's main batches — has to be driven from here and not from a draw
             // three skips for a mesh that is hidden because it has nothing to draw.
-            this.#computeDriven.processRender(this.#renderer, camera);
+            this.#computeDriven.processRender(
+              this.#renderer,
+              camera,
+              startupCoverActive() && !startupReadiness.ready,
+              gameLoop,
+            );
           } finally {
             endSpan(SPANS.compute);
           }
@@ -1644,7 +1754,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (
           !mustPresentLoader &&
           !waitingForFirstUse &&
-          (!canvasLayer.opaque || !startupReadiness.ready)
+          (!canvasLayer.opaque ||
+            (!startupReadiness.ready && canvasLayer.renderWorldDuringStartup) ||
+            canvasLayer.keepWorldRendering)
         ) {
           // The projection's own scene when it is faithful, the game's when it is not. Nothing
           // here branches on which: `root` is the single render input either way, so there is no
@@ -1675,176 +1787,204 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               this.#beforeRenderDepth -= 1;
             }
           }
-          // Let a depth-coupled scene update its output node while the scene pass is still the
-          // next render. Ordinary scenes keep the historical hook order and timing.
-          const depthCoupledOutput = this.#hasDepthCoupledOutput;
-          if (depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
-          // The engine's own walk owns the frame's world matrices, so the count starts here and
-          // covers both applications below: the authored scene the projection reconciles from and
-          // the root the renderer is actually handed.
-          this.#matrixWorld?.beginFrame();
-          if (this.#projection !== undefined) {
-            beginSpan(SPANS.reconcile);
-            try {
-              this.#projection.reconcile();
-            } finally {
-              endSpan(SPANS.reconcile);
+          interpolation.render(gameLoop.clockFrozen || this.#paused ? 1 : alpha, () => {
+            // Let a depth-coupled scene update its output node while the scene pass is still the
+            // next render. Ordinary scenes keep the historical hook order and timing.
+            const depthCoupledOutput = this.#hasDepthCoupledOutput;
+            if (depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
+            // The engine's own walk owns the frame's world matrices, so the count starts here and
+            // covers both applications below: the authored scene the projection reconciles from and
+            // the root the renderer is actually handed.
+            this.#matrixWorld?.beginFrame();
+            if (this.#projection !== undefined) {
+              beginSpan(SPANS.reconcile);
+              try {
+                this.#projection.reconcile();
+              } finally {
+                endSpan(SPANS.reconcile);
+              }
             }
-          }
-          // Virtual geometry ships on by default, so the engine takes the cut rather than waiting
-          // for a game to know it should. It runs here, before the render and after the reconcile,
-          // because an empty cut has to skip its draw rather than submit a zero-count one — and a
-          // scene holding no clustered mesh pays no traversal at all, only the tracked set.
-          beginSpan(SPANS.clustered);
-          try {
-            updateClusteredMeshes(
+            // Virtual geometry ships on by default, so the engine takes the cut rather than waiting
+            // for a game to know it should. It runs here, before the render and after the reconcile,
+            // because an empty cut has to skip its draw rather than submit a zero-count one — and a
+            // scene holding no clustered mesh pays no traversal at all, only the tracked set.
+            beginSpan(SPANS.clustered);
+            try {
+              updateClusteredMeshes(
+                this.#projection?.root ?? threeScene,
+                camera,
+                renderer.surfaceDrawingBufferHeight?.() ?? renderer.surface().drawingBufferHeight,
+              );
+            } finally {
+              endSpan(SPANS.clustered);
+            }
+            // Automatic discrete LOD ships on with the pipeline, so the engine takes the selection
+            // too. It shares the render root and the same drawing-buffer height, and a scene with no
+            // managed mesh pays only the tracked-set walk.
+            beginSpan(SPANS.lod);
+            try {
+              updateModelLods(
+                this.#projection?.root ?? threeScene,
+                camera,
+                renderer.surface().drawingBufferHeight,
+              );
+            } finally {
+              endSpan(SPANS.lod);
+            }
+            // Projected-size cull, per render camera, default on. It writes only `object.visible` —
+            // the one per-frame flag the projection's batch key ignores — and restores what it hid
+            // immediately after the draw, so the authored scene is untouched between frames. The
+            // renderer walks the same root the projection is about to draw, so a declined projection
+            // and an active one both get the gate.
+            const drawingBufferHeight = renderer.surface().drawingBufferHeight;
+            const cullApplyStart = spans === undefined ? 0 : spanNow();
+            this.#cameraCull?.apply(
               this.#projection?.root ?? threeScene,
               camera,
-              renderer.surfaceDrawingBufferHeight?.() ?? renderer.surface().drawingBufferHeight,
+              drawingBufferHeight,
             );
-          } finally {
-            endSpan(SPANS.clustered);
-          }
-          // Automatic discrete LOD ships on with the pipeline, so the engine takes the selection
-          // too. It shares the render root and the same drawing-buffer height, and a scene with no
-          // managed mesh pays only the tracked-set walk.
-          beginSpan(SPANS.lod);
-          try {
-            updateModelLods(
-              this.#projection?.root ?? threeScene,
-              camera,
-              renderer.surface().drawingBufferHeight,
+            // Added, not bracketed: the render call sits between the apply and the restore, and a
+            // span that contained it would report the world pass as cull work.
+            if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullApplyStart);
+            const capturing = geometryCapture.armed();
+            if (capturing) {
+              // The mirror is what the renderer sees; arming the authored scene would attribute the
+              // frame to objects that were never submitted.
+              geometryCapture.beginFrame({
+                camera,
+                generation: this.#sceneGeneration,
+                root: this.#projection?.root ?? threeScene,
+                tick: gameLoop.tick(),
+                viewportHeight: renderer.surface().drawingBufferHeight,
+                viewportWidth: renderer.surface().drawingBufferWidth,
+                ...(renderPassBudget === undefined
+                  ? {}
+                  : { activePassKind: () => renderPassBudget.activeKind() }),
+                ...(this.#projection === undefined
+                  ? {}
+                  : { ownership: this.#projection.describeOwnership() }),
+                ...(rendererBackendIdentity(renderer.raw) === undefined
+                  ? {}
+                  : { backend: rendererBackendIdentity(renderer.raw) as string }),
+              });
+            }
+            const renderRoot = this.#projection?.root ?? threeScene;
+            // three's renderer walks whatever scene it is handed, so it is told not to: the pass above
+            // is the walk. Handing it the mirror sets the mirror scene's flag; the authored scene was
+            // marked at construction.
+            renderRoot.matrixWorldAutoUpdate = false;
+            this.#matrixWorld?.apply(renderRoot);
+            renderer.render(renderRoot, camera);
+            renders += 1;
+            // Count declined frames without treating them as drawn-frame render cost.
+            const gateSkips = rendererFrameGateSkips(renderer.raw);
+            if (gateSkips !== undefined) {
+              if (gateSkips > lastGateSkips) frameBudget?.addRenderSkip();
+              lastGateSkips = gateSkips;
+            }
+            // *After* the render, because that is where the draw happened. The matrices read here are
+            // the ones drawn: the walk above refreshed them and `render()` did not touch them. The
+            // frozen roots are passed because the draw root is the projection's mirror when the
+            // engine is collapsing, and validating only that reassured about a scene it never
+            // looked at. `?.` short-circuits before the spread, so `staticRoots()` is not called
+            // at all on a frame without the flag — verified, a million optional calls evaluate the
+            // argument zero times — and this stays a single undefined check in a shipped game.
+            renderListValidator?.frame(renderRoot, ...staticRoots());
+            const cullRestoreStart = spans === undefined ? 0 : spanNow();
+            this.#cameraCull?.restore();
+            if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullRestoreStart);
+            this.#projection?.commit();
+            renderer.observeRenderChainFrame?.();
+            frameBudget?.addRender(budgetNow() - renderStart);
+            // Read the split before the overlay renders: the overlay is its own draw, not part of the
+            // world pass, and the budget window already accounts for it in its own phase.
+            worldPasses = renderPassBudget?.passes();
+            if (worldPasses !== undefined && worldPasses.length > 0)
+              frameBudget?.addRenderPasses(worldPasses);
+            // After the passes are read, so the rows reconcile against this frame's own totals.
+            if (capturing) geometryCapture.finishFrame(worldPasses ?? []);
+            // Resolve the GPU timestamps every frame, not once per reported window.
+            //
+            // `trackTimestamp` spends two queries per render pass, and three's pool holds 2048.
+            // A scene with a post-processing chain runs tens of passes per frame — a cathedral
+            // with SSGI, denoise, godrays, SSR and bloom measured 27 — so the pool fills in
+            // 2048 / (2 x 27) = 38 frames. The resolve used to be wired to the frame-budget
+            // window boundary, 300 frames by default, which is eight times too slow: three
+            // warned `Maximum number of queries exceeded`, stopped recording, and every window
+            // after the first reported `gpuMs: undefined`. The one instrument that exists so the
+            // GPU record is not wall-clock algebra was reading nothing.
+            //
+            // This does not put the GPU on the frame path. `resolveTimestampsAsync` is
+            // fire-and-forget and already catch-guarded, which was the original cadence's only
+            // stated concern.
+            // Deliberately unspanned. The resolve runs *after* `addRender` closed the render phase,
+            // so its milliseconds are in the frame's `residual`, not in `render`. A span for it was
+            // measured on the native smoke game at 0.18 ms and showed up as exactly that much
+            // negative residual — the tree reporting, correctly, that it had been handed a term from
+            // outside the phase it is dividing up. The frame budget already carries this cost.
+            renderer.resolveGpuFrame();
+            frameBudget?.addGpuPyramidMs(renderer.gpuPyramidMs?.());
+            // The budget's GPU series is fed every frame, not read once per reported window. A
+            // single window-close read is one instantaneous, lagged `info.render.timestamp` — the
+            // sample that made a 17.6 ms frame read as 2.98–10.40 ms. The sample carries the
+            // resolved frame id so a resolve still in flight is counted stale, not measured twice.
+            //
+            // The reading is the frame's own passes out of three's per-pass map, handed out one
+            // resolved frame per presented frame. Three's resolve answers with one number for the
+            // batch — the last frame in it — so reading that instead dropped every frame a batch
+            // caught up on, and because the resolve is asked for on the same 1-in-8 stride the
+            // sampler uses, how many frames a batch caught up on was a function of frame rate.
+            // The pass recorder is what reads three's per-pass map back into per-frame numbers; a
+            // renderer it cannot instrument falls back to the batch's own single number, which is the
+            // reading there was before — one sample per resolve rather than one per sampled frame.
+            const gpuFrame = renderPassBudget?.nextGpuFrame();
+            const gpuSample = gpuFrame === undefined ? renderer.gpuFrameSample?.() : undefined;
+            frameBudget?.addGpuMs(
+              gpuFrame?.total ?? gpuSample?.ms,
+              gpuFrame?.frame ?? gpuSample?.frame,
             );
-          } finally {
-            endSpan(SPANS.lod);
-          }
-          // Projected-size cull, per render camera, default on. It writes only `object.visible` —
-          // the one per-frame flag the projection's batch key ignores — and restores what it hid
-          // immediately after the draw, so the authored scene is untouched between frames. The
-          // renderer walks the same root the projection is about to draw, so a declined projection
-          // and an active one both get the gate.
-          const drawingBufferHeight = renderer.surface().drawingBufferHeight;
-          const cullApplyStart = spans === undefined ? 0 : spanNow();
-          this.#cameraCull?.apply(
-            this.#projection?.root ?? threeScene,
-            camera,
-            drawingBufferHeight,
-          );
-          // Added, not bracketed: the render call sits between the apply and the restore, and a
-          // span that contained it would report the world pass as cull work.
-          if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullApplyStart);
-          const capturing = geometryCapture.armed();
-          if (capturing) {
-            // The mirror is what the renderer sees; arming the authored scene would attribute the
-            // frame to objects that were never submitted.
-            geometryCapture.beginFrame({
-              camera,
-              generation: this.#sceneGeneration,
-              root: this.#projection?.root ?? threeScene,
-              tick: gameLoop.tick(),
-              viewportHeight: renderer.surface().drawingBufferHeight,
-              viewportWidth: renderer.surface().drawingBufferWidth,
-              ...(renderPassBudget === undefined
-                ? {}
-                : { activePassKind: () => renderPassBudget.activeKind() }),
-              ...(this.#projection === undefined
-                ? {}
-                : { ownership: this.#projection.describeOwnership() }),
-              ...(rendererBackendIdentity(renderer.raw) === undefined
-                ? {}
-                : { backend: rendererBackendIdentity(renderer.raw) as string }),
-            });
-          }
-          const renderRoot = this.#projection?.root ?? threeScene;
-          // three's renderer walks whatever scene it is handed, so it is told not to: the pass above
-          // is the walk. Handing it the mirror sets the mirror scene's flag; the authored scene was
-          // marked at construction.
-          renderRoot.matrixWorldAutoUpdate = false;
-          this.#matrixWorld?.apply(renderRoot);
-          renderer.render(renderRoot, camera);
-          // *After* the render, because that is where the draw happened. The matrices read here are
-          // the ones drawn: the walk above refreshed them and `render()` did not touch them. The
-          // frozen roots are passed because the draw root is the projection's mirror when the
-          // engine is collapsing, and validating only that reassured about a scene it never
-          // looked at. `?.` short-circuits before the spread, so `staticRoots()` is not called
-          // at all on a frame without the flag — verified, a million optional calls evaluate the
-          // argument zero times — and this stays a single undefined check in a shipped game.
-          renderListValidator?.frame(renderRoot, ...staticRoots());
-          const cullRestoreStart = spans === undefined ? 0 : spanNow();
-          this.#cameraCull?.restore();
-          if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullRestoreStart);
-          this.#projection?.commit();
-          renderer.observeRenderChainFrame?.();
-          frameBudget?.addRender(budgetNow() - renderStart);
-          // Read the split before the overlay renders: the overlay is its own draw, not part of the
-          // world pass, and the budget window already accounts for it in its own phase.
-          worldPasses = renderPassBudget?.passes();
-          if (worldPasses !== undefined && worldPasses.length > 0)
-            frameBudget?.addRenderPasses(worldPasses);
-          // After the passes are read, so the rows reconcile against this frame's own totals.
-          if (capturing) geometryCapture.finishFrame(worldPasses ?? []);
-          // Resolve the GPU timestamps every frame, not once per reported window.
-          //
-          // `trackTimestamp` spends two queries per render pass, and three's pool holds 2048.
-          // A scene with a post-processing chain runs tens of passes per frame — a cathedral
-          // with SSGI, denoise, godrays, SSR and bloom measured 27 — so the pool fills in
-          // 2048 / (2 x 27) = 38 frames. The resolve used to be wired to the frame-budget
-          // window boundary, 300 frames by default, which is eight times too slow: three
-          // warned `Maximum number of queries exceeded`, stopped recording, and every window
-          // after the first reported `gpuMs: undefined`. The one instrument that exists so the
-          // GPU record is not wall-clock algebra was reading nothing.
-          //
-          // This does not put the GPU on the frame path. `resolveTimestampsAsync` is
-          // fire-and-forget and already catch-guarded, which was the original cadence's only
-          // stated concern.
-          // Deliberately unspanned. The resolve runs *after* `addRender` closed the render phase,
-          // so its milliseconds are in the frame's `residual`, not in `render`. A span for it was
-          // measured on the native smoke game at 0.18 ms and showed up as exactly that much
-          // negative residual — the tree reporting, correctly, that it had been handed a term from
-          // outside the phase it is dividing up. The frame budget already carries this cost.
-          renderer.resolveGpuFrame();
-          // The budget's GPU series is fed every frame, not read once per reported window. A
-          // single window-close read is one instantaneous, lagged `info.render.timestamp` — the
-          // sample that made a 17.6 ms frame read as 2.98–10.40 ms. The sample carries the
-          // resolved frame id so a resolve still in flight is counted stale, not measured twice.
-          const gpuSample = renderer.gpuFrameSample?.();
-          frameBudget?.addGpuMs(gpuSample?.ms, gpuSample?.frame);
-          // The one summed render timestamp split by pass: main and shadow come from the pass
-          // recorder's per-uid query results, and everything else in that pool (post chain,
-          // reflections, HUD) is the remainder. Compute is its own pool.
-          const gpuSplit =
-            gpuSample === undefined || gpuSample.frame === undefined
-              ? undefined
-              : renderPassBudget?.gpuPassMs(gpuSample.frame);
-          if (gpuSplit !== undefined && gpuSample !== undefined) {
-            const computeMs = renderer.gpuComputeMs?.();
-            frameBudget?.addGpuBucketMs({
-              main: gpuSplit.main,
-              shadow: gpuSplit.shadow,
-              other: Math.max(0, gpuSample.ms - gpuSplit.main - gpuSplit.shadow),
-              ...(computeMs === undefined ? {} : { compute: computeMs }),
-            });
-          }
-          // The main pass's own GPU series, for the adaptive LOD control loop: the frame budget's
-          // `gpuMain` bucket is the record, and this is the same number smoothed on the renderer so
-          // a world holding only the renderer can read it. Fed every frame, fresh or not.
-          renderer.noteGpuMainMs?.(gpuSplit?.main, gpuSample?.frame);
-          if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
-          if (this.#sceneEntered) {
-            if (!worldRendered) gameLoop.clearRuntimeDiagnostics();
-            worldRendered = true;
-          }
-          if (this.#renderMetricsEnabled) {
-            const metrics = rendererPerformanceMetrics(renderer.raw);
-            worldMetrics =
-              worldPasses === undefined || worldPasses.length === 0
-                ? metrics
-                : { ...metrics, passes: worldPasses.map((pass) => ({ ...pass })) };
-          }
-          // Read whether or not the game asked for render metrics: the projection line reports
-          // the measured draw count, and a convention's measurement does not switch off with the
-          // convention that happens to sit beside it.
-          lastWorldDrawCalls = rendererDrawCallCount(renderer.raw);
+            // Where one resolved frame's GPU time went: main and shadow come from the pass
+            // recorder's per-uid query results, and everything else in that pool (post chain,
+            // reflections, HUD) is the remainder. Compute is its own pool.
+            if (gpuFrame !== undefined) {
+              const computeMs = renderer.gpuComputeMs?.();
+              // The recorder hands out a frame only when every pass it recorded resolved, so `total`
+              // is the whole frame and never a partial sum; `main` and `shadow` are whole or zero.
+              // `other` is the remainder of the frame (post chain, reflection, HUD). `shadowPasses`
+              // rides along so a consumer can tell a frame that rendered a shadow from one that drew
+              // none, since a real render can resolve to 0 ms.
+              frameBudget?.addGpuBucketMs({
+                main: gpuFrame.main,
+                shadow: gpuFrame.shadow,
+                shadowPasses: gpuFrame.shadowPasses,
+                other: Math.max(0, gpuFrame.total - gpuFrame.main - gpuFrame.shadow),
+                ...(computeMs === undefined ? {} : { compute: computeMs }),
+              });
+              // The main pass's own GPU series, for the adaptive LOD control loop: the frame
+              // budget's `gpuMain` bucket is the record, and this is the same number smoothed on the
+              // renderer so a world holding only the renderer can read it. Fed per delivered frame,
+              // fresh or not.
+              renderer.noteGpuMainMs?.(gpuFrame.main, gpuFrame.frame);
+            } else {
+              renderer.noteGpuMainMs?.(undefined);
+            }
+            if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
+            if (this.#sceneEntered) {
+              if (!worldRendered) gameLoop.clearRuntimeDiagnostics();
+              worldRendered = true;
+            }
+            if (this.#renderMetricsEnabled) {
+              const metrics = rendererPerformanceMetrics(renderer.raw);
+              worldMetrics =
+                worldPasses === undefined || worldPasses.length === 0
+                  ? metrics
+                  : { ...metrics, passes: worldPasses.map((pass) => ({ ...pass })) };
+            }
+            // Read whether or not the game asked for render metrics: the projection line reports
+            // the measured draw count, and a convention's measurement does not switch off with the
+            // convention that happens to sit beside it.
+            lastWorldDrawCalls = rendererDrawCallCount(renderer.raw);
+          });
         }
         if (mustPresentLoader) loadingFramePresented = true;
         // Include state written by beforeRender and Scene.render in this frame's UI snapshot.
@@ -1856,7 +1996,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // so this charges the phase to the frame that paid it, one frame late rather than never.
         // Absent on the web target and on any host with no overlay, where the work is zero rather
         // than unknown, so an absent global must read as zero and not as a missing measurement.
-        if (frameCounters !== undefined) frameBudget?.addCounters(frameCounters.read());
+        // The boundary counts ride the span flag, but the simulation tick does not need them: it is
+        // fed every frame so a plain `TN_FRAME_BUDGET` log can join a window's start and end ticks
+        // without `TN_FRAME_SPANS`. `addCounters` keeps the last tick a caller did provide.
+        frameBudget?.addCounters({
+          ...(frameCounters?.read() ?? {}),
+          simulationTick: gameLoop.tick(),
+        });
         const uiHost = globalThis as { __tnUiCompositeMs?: () => number };
         frameBudget?.addUi(
           typeof uiHost.__tnUiCompositeMs === "function" ? (uiHost.__tnUiCompositeMs() ?? 0) : 0,
@@ -1894,19 +2040,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
         const scene = this.#scene;
         const frame = this.#sceneFrame;
-        if (frame !== undefined) frame(ctx, dt);
+        if (frame !== undefined) {
+          frame(ctx, dt);
+          updates += 1;
+        }
         // An async goto() installs the incoming scene before its load resolves; until enter()
         // has run there is no gameplay to step and a game-overridden update() would run against
         // a cleared graph.
-        else if (this.#sceneEntered && scene !== undefined) scene.update(ctx, dt);
+        else if (this.#sceneEntered && scene !== undefined) {
+          scene.update(ctx, dt);
+          updates += 1;
+        }
         if (this.#scene !== scene || this.#sceneFrame !== frame) return;
         for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
         this.#entities?.sweep();
-        const computeBlockedByStartup =
-          !worldRendered &&
-          ((this.#warmUpConfiguredExplicitly() && !explicitWarmUpSettled) ||
-            (startupCoverActive() && !this.#warmUpConfiguredExplicitly()));
-        if (this.#renderer !== undefined && this.#sceneEntered && !computeBlockedByStartup)
+        if (this.#renderer !== undefined && this.#sceneEntered)
           this.#computeDriven.process(this.#renderer);
       },
       onFrame: (frameMs) => startupReadiness.observe(frameMs),
@@ -1920,9 +2068,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       readonly resolveEntered: () => void;
     }> = [];
     const runtime: IGamePluginRuntime = {
-      fixedStep: (ticks) => gameLoop.advance(ticks),
+      fixedStep: (ticks, options) => gameLoop.advance(ticks, options),
+      frameCounts: () => ({ updates, renders }),
       frameBudgetWindow: () => this.#frameBudget?.window(),
       freezeClock: () => gameLoop.freezeClock(),
+      renderCurrent: () => gameLoop.renderCurrentFrame(),
       enableRuntimeDiagnostics: () => {
         this.#renderMetricsEnabled = true;
         gameLoop.setCollectMetrics(true);
@@ -1949,6 +2099,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       step: gameLoop.step,
       runtimeDiagnosticsSeries: () => gameLoop.runtimeDiagnosticsSeries(),
     };
+    Object.assign(runtime, {
+      _setClockMode: (mode: "fixed-step" | "wall-clock") => gameLoop._setClockMode(mode),
+    });
     // A boot that throws must end exactly like an aborted boot: every cleanup attempted, every
     // resource released — and the original error rethrown, not a teardown error standing in
     // for it. The abort branches below stay outside these guards: they tear down themselves.
@@ -2063,6 +2216,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       } catch (error) {
         failure = error instanceof Error ? error.message : String(error);
       }
+      this.#renderer.warmUpSettled?.();
       warmUpStatus =
         report === undefined
           ? { status: "unavailable" }
@@ -2142,9 +2296,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const failures: unknown[] = [];
     this.#disconnectUi();
     this.#loop?.stop();
+    this.#frameBudget?.dispose();
     this.#afterPhysicsPhase?.clear();
     this.#beforeRenderCallbacks.clear();
-    if (this.#sceneEntered && ctx !== undefined) this.#scene?.exit(ctx);
+    this.#interpolation?.clear();
+    this.#interpolation = undefined;
+    if (this.#sceneEntered && ctx !== undefined) {
+      try {
+        this.#scene?.exit(ctx);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
     this.#sceneFrame = undefined;
     this.#sceneEntered = false;
     this.#scheduler?.clear();
@@ -2188,7 +2351,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#ctx = undefined;
     this.#hasDepthCoupledOutput = false;
     this.#loop = undefined;
-    this.#random = undefined;
     this.#pointerEvents?.dispose();
     this.#pointerEvents = undefined;
     this.#picker?.dispose();

@@ -45,6 +45,12 @@ use webkit2gtk::{
     WebContextExt, WebView, WebViewExt,
 };
 
+/// `TN_UI_OVERLAY_CAPTURE=snapshot` keeps the `get_snapshot` capture; anything else reads the
+/// page's own compositor frames.
+fn compositor_capture_enabled() -> bool {
+    std::env::var("TN_UI_OVERLAY_CAPTURE").map_or(true, |value| value != "snapshot")
+}
+
 /// The private script-message channel the page reports keyboard focus on.
 ///
 /// Not part of the bridge contract: `@threenative/core/ui-bridge` knows nothing about it and must
@@ -68,6 +74,37 @@ const BUSY_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_INTERVAL: Duration = Duration::from_millis(250);
 /// How often the web thread looks for work from the game. This is the ceiling on pointer latency.
 const SERVICE_INTERVAL: Duration = Duration::from_millis(8);
+
+/// The compositor capture's coverage layer: a full-viewport, near-invisible plate (alpha 1/255).
+///
+/// WebKitGTK's compositor hands the host a buffer holding only the region it repainted when the
+/// view background is not opaque, so a frame is complete only if the whole surface was damaged. This
+/// layer is that damage: `will-change: transform` makes it a layer of its own and the `data-tn-fx`
+/// attribute moves it by 0.01 px, which repaints the surface each time `COMPOSITOR_NUDGE` runs. An
+/// attribute rather than a class or a custom property, because a page that rewrites `className`
+/// drops a class and a custom property on the root does not repaint the layer. Every pixel the
+/// layer covers is non-zero, so a zero word in a buffer means the buffer is partial. It sits over
+/// everything and takes no input.
+const COMPOSITOR_STYLE: &str = "html::before{content:'';position:fixed;inset:0;pointer-events:none;\
+background:rgba(0,0,0,.004);will-change:transform;z-index:2147483647}\
+html[data-tn-fx]::before{transform:translateX(.01px)}";
+
+/// Moves the coverage layer, so the next compositor frame covers the whole surface.
+const COMPOSITOR_NUDGE: &str = "document.documentElement.toggleAttribute('data-tn-fx')";
+
+/// What the coverage layer leaves on a pixel nothing else touched: premultiplied BGRA, alpha 1.
+const COVERAGE_PIXEL: u32 = 0x0100_0000;
+
+/// How long a compositor capture may wait for a complete frame before it counts as missed.
+const COMPOSITOR_TIMEOUT: Duration = Duration::from_millis(250);
+
+/// Consecutive missed captures after which the overlay goes back to `get_snapshot` for good.
+const COMPOSITOR_MISS_LIMIT: u32 = 3;
+/// A game slower than this is not paced: its next frame is too far off to aim a capture at.
+const PACE_CEILING: Duration = Duration::from_millis(100);
+/// How early a paced capture starts, so a service tick that lands late still delivers in time.
+const PACE_MARGIN: Duration = Duration::from_millis(8);
+
 /// Attach waits this long for the web thread to say whether it came up.
 const READY_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -93,10 +130,19 @@ struct MailboxState {
     published: u64,
 }
 
+/// The origin the game thread's frame times are measured from, so they fit in an atomic.
+static EPOCH: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
+
 #[derive(Default)]
 pub struct Mailbox {
     state: Mutex<MailboxState>,
     held: Mutex<Option<Frame>>,
+    /// When the game last took a frame, and how long its frames take (moving average), in
+    /// microseconds since `EPOCH`. Zero until the game has taken two. The web thread paces its
+    /// captures against these: a frame it makes sooner than the game takes one is overwritten
+    /// before anyone sees it.
+    last_acquire_us: AtomicU64,
+    frame_us: AtomicU64,
     counter: AtomicU64,
 }
 
@@ -132,10 +178,28 @@ impl Mailbox {
         self.counter.load(Ordering::Acquire)
     }
 
+    /// Time since the game last took a frame, and how long its frames take.
+    fn game_pacing(&self) -> (Duration, Duration) {
+        let last = self.last_acquire_us.load(Ordering::Relaxed);
+        let since = EPOCH.elapsed().as_micros() as u64;
+        (
+            Duration::from_micros(since.saturating_sub(last)),
+            Duration::from_micros(self.frame_us.load(Ordering::Relaxed)),
+        )
+    }
+
     /// Give the game the newest frame, keeping it when nothing newer has arrived.
     ///
     /// Returns `None` only before the page's first paint. Called once per frame by the game thread.
     pub fn acquire(&self) -> Option<FrameView> {
+        let now = EPOCH.elapsed().as_micros() as u64;
+        let last = self.last_acquire_us.swap(now, Ordering::Relaxed);
+        if last != 0 {
+            let gap = now - last;
+            let average = self.frame_us.load(Ordering::Relaxed);
+            let average = if average == 0 { gap } else { (average * 7 + gap) / 8 };
+            self.frame_us.store(average, Ordering::Relaxed);
+        }
         let mut held = self.held.lock().unwrap_or_else(|error| error.into_inner());
         if let Some(pending) = self
             .state
@@ -367,6 +431,17 @@ fn web_thread(
         &[],
     ));
 
+    let compositor = compositor_capture_enabled();
+    if compositor {
+        content_manager.add_style_sheet(&webkit2gtk::UserStyleSheet::new(
+            COMPOSITOR_STYLE,
+            webkit2gtk::UserContentInjectedFrames::TopFrame,
+            webkit2gtk::UserStyleLevel::User,
+            &[],
+            &[],
+        ));
+    }
+
     let settings = webkit2gtk::Settings::new();
     // See the module comment: accelerated compositing aborts the process on an offscreen window.
     settings.set_hardware_acceleration_policy(webkit2gtk::HardwareAccelerationPolicy::Never);
@@ -391,7 +466,18 @@ fn web_thread(
         window.clone(),
         width,
         height,
+        compositor,
     )));
+
+    // The compositor capture reads the view when WebKit commits a frame. `try_borrow_mut`: a frame
+    // committed while the driver is mid-service is read at the next one, the request still waits.
+    let damaged = Rc::clone(&driver);
+    window.connect_damage_event(move |_, _| {
+        if let Ok(mut driver) = damaged.try_borrow_mut() {
+            driver.damaged();
+        }
+        false
+    });
 
     let loaded = Rc::clone(&driver);
     let loaded_handler = view.connect_load_changed(move |_, event| {
@@ -724,6 +810,34 @@ impl Cadence {
     }
 }
 
+// Share libc's stdout FILE lock with the C++ diagnostics; Rust stdout has a separate lock.
+fn write_snapshot_line(line: &str) -> std::io::Result<()> {
+    unsafe extern "C" {
+        static stdout: *mut std::ffi::c_void;
+        fn puts(line: *const std::ffi::c_char) -> std::ffi::c_int;
+        fn fflush(stream: *mut std::ffi::c_void) -> std::ffi::c_int;
+    }
+    let line = std::ffi::CString::new(line)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
+    // puts writes the entire string and its newline while holding the FILE lock.
+    unsafe {
+        if puts(line.as_ptr()) < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        if fflush(stdout) != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}
+
+fn emit_snapshot_line(line: &str) {
+    if let Err(error) = write_snapshot_line(line) {
+        use std::io::Write;
+        let _ = writeln!(std::io::stderr().lock(), "UI snapshot diagnostic write failed: {error}");
+    }
+}
+
 /// One line per snapshot asked for and answered, only when `TN_UI_SNAPSHOT_TRACE` is set.
 ///
 /// `TN_UI_SNAPSHOT` aggregates a second, and a second cannot separate the two reasons a gap appears
@@ -737,7 +851,7 @@ fn trace_snapshot(event: &str, request: u64, detail: &str) {
     if !*ENABLED {
         return;
     }
-    println!("TN_UI_SNAPSHOT_TRACE:{{\"event\":\"{event}\",\"n\":{request}{detail}}}");
+    emit_snapshot_line(&format!("TN_UI_SNAPSHOT_TRACE:{{\"event\":\"{event}\",\"n\":{request}{detail}}}"));
 }
 
 /// The web thread's state machine: drain the game's requests, then take a snapshot if one is due.
@@ -778,6 +892,19 @@ struct Driver {
     /// the page's own rAF, which invalidates exactly what changed; forcing a full redraw per poll
     /// makes WebKit re-raster the whole page on every ask, which is most of the measured round trip.
     force_draw: bool,
+    /// Whether captures read the page's compositor frames rather than asking for a snapshot.
+    /// Starts true unless `TN_UI_OVERLAY_CAPTURE=snapshot`, and goes false for good after
+    /// `COMPOSITOR_MISS_LIMIT` captures in a row that never produced a complete frame.
+    compositor: bool,
+    /// Compositor captures in a row that timed out, and frames dropped for being partial.
+    misses: u32,
+    partial_frames: u64,
+    /// The surface the view is drawn into, kept between frames and replaced when the size changes.
+    surface: Option<gtk::cairo::ImageSurface>,
+    /// Moving average of a capture's round trip, which the pacing aims by.
+    capture_time: Duration,
+    /// `TN_UI_OVERLAY_PACE=off` captures as often as the cadence allows, whatever the game does.
+    paced: bool,
 }
 
 impl Driver {
@@ -787,6 +914,7 @@ impl Driver {
         window: gtk::OffscreenWindow,
         width: u32,
         height: u32,
+        compositor: bool,
     ) -> Self {
         Self {
             shared,
@@ -806,6 +934,12 @@ impl Driver {
             previous: None,
             pool: Vec::new(),
             force_draw: true,
+            compositor,
+            misses: 0,
+            partial_frames: 0,
+            surface: None,
+            capture_time: Duration::ZERO,
+            paced: std::env::var("TN_UI_OVERLAY_PACE").map_or(true, |value| value != "off"),
         }
     }
 
@@ -817,16 +951,19 @@ impl Driver {
         self.last_report = Instant::now();
         let now = self.last_report;
         let waiting = in_flight_since.map(|at| at.elapsed().as_millis()).unwrap_or(0);
-        println!(
-            "TN_UI_SNAPSHOT:{{\"requests\":{},\"inFlight\":{},\"waitingMs\":{},\"lastRoundTripMs\":{},\"intervalMs\":{},\"quietMs\":{},\"counter\":{}}}",
+        emit_snapshot_line(&format!(
+            "TN_UI_SNAPSHOT:{{\"requests\":{},\"inFlight\":{},\"waitingMs\":{},\"lastRoundTripMs\":{},\"intervalMs\":{},\"quietMs\":{},\"counter\":{},\"capture\":\"{}\",\"partialFrames\":{},\"gameFrameMs\":{}}}",
             self.requests,
             in_flight_since.is_some(),
             waiting,
             self.last_round_trip.as_millis(),
             self.cadence.wait(now).as_millis(),
             self.cadence.quiet(now).as_millis(),
-            self.shared.frames.published()
-        );
+            self.shared.frames.published(),
+            if self.compositor { "compositor" } else { "snapshot" },
+            self.partial_frames,
+            self.shared.frames.game_pacing().1.as_millis()
+        ));
     }
 
     fn loaded(&mut self) {
@@ -876,9 +1013,12 @@ impl Driver {
                 }
             }
         }
+        if this.compositor && this.in_flight && this.in_flight_since.elapsed() > COMPOSITOR_TIMEOUT {
+            this.compositor_missed();
+        }
         let waiting = this.in_flight.then_some(this.in_flight_since);
         this.report(waiting);
-        if this.loaded && !this.in_flight && this.cadence.due(Instant::now()) {
+        if this.loaded && !this.in_flight && this.cadence.due(Instant::now()) && this.pace_open() {
             this.request(driver);
         }
     }
@@ -1005,12 +1145,27 @@ impl Driver {
         );
     }
 
-    fn request(&mut self, driver: &Rc<RefCell<Driver>>) {
+    /// Mark one capture as asked for.
+    fn begin_request(&mut self) {
         self.in_flight = true;
         self.in_flight_since = Instant::now();
         self.cadence.requested(self.in_flight_since);
         self.requests += 1;
         trace_snapshot("request", self.requests, "");
+    }
+
+    /// Ask the page for a frame that covers the whole surface. `damaged` takes it from there and
+    /// `service` gives up on it after `COMPOSITOR_TIMEOUT`.
+    fn request_compositor(&mut self) {
+        self.begin_request();
+        self.evaluate(COMPOSITOR_NUDGE);
+    }
+
+    fn request(&mut self, driver: &Rc<RefCell<Driver>>) {
+        if self.compositor {
+            return self.request_compositor();
+        }
+        self.begin_request();
         // See `force_draw`: only the first ask after create, and the first after a resize, need a
         // full invalidation. The page's own rAF invalidates every later change, and re-rasterizing
         // the whole page on every poll is the cost this avoids.
@@ -1033,9 +1188,51 @@ impl Driver {
         // Request -> callback: WebKit's raster and snapshot IPC. The copy and compare that follow
         // are this thread's own work and are timed separately, so a run can say which dominates.
         self.last_round_trip = self.in_flight_since.elapsed();
+        self.capture_time = (self.capture_time * 3 + self.last_round_trip) / 4;
         let read_started = Instant::now();
         let read = self.read(result);
         self.last_read = read_started.elapsed();
+        self.settle(read, now);
+    }
+
+    /// A compositor frame was committed. Take it if a capture is waiting and the frame is whole.
+    fn damaged(&mut self) {
+        trace_snapshot("damage", self.requests, &format!(",\"waiting\":{}", self.in_flight));
+        if !self.compositor || !self.in_flight {
+            return;
+        }
+        let read_started = Instant::now();
+        let Some(read) = self.read_view() else {
+            self.partial_frames += 1;
+            return;
+        };
+        self.in_flight = false;
+        self.misses = 0;
+        let now = Instant::now();
+        self.last_round_trip = self.in_flight_since.elapsed();
+        self.capture_time = (self.capture_time * 3 + self.last_round_trip) / 4;
+        self.last_read = read_started.elapsed();
+        self.settle(Some(read), now);
+    }
+
+    /// No complete frame arrived in time. A page that cannot be read this way is read the old way.
+    fn compositor_missed(&mut self) {
+        self.in_flight = false;
+        self.misses += 1;
+        self.last_round_trip = self.in_flight_since.elapsed();
+        self.cadence.settled(Instant::now(), false);
+        if self.misses >= COMPOSITOR_MISS_LIMIT {
+            emit_snapshot_line(&format!(
+                "TN_UI_SNAPSHOT:{{\"fallback\":\"snapshot\",\"misses\":{}}}",
+                self.misses
+            ));
+            self.compositor = false;
+            self.force_draw = true;
+        }
+    }
+
+    /// Publish what a capture read, or back off when it read nothing usable.
+    fn settle(&mut self, read: Option<(u32, u32, u32, Vec<u8>, bool)>, now: Instant) {
         let Some((width, height, stride, buffer, unchanged)) = read else {
             // A snapshot that failed or came back in a shape we cannot upload: try again, but not
             // in a tight loop, so a permanently broken web view cannot spin a core.
@@ -1119,6 +1316,57 @@ impl Driver {
     }
 }
 
+impl Driver {
+    /// Whether the game is about to want a frame, so a capture started now is not wasted.
+    fn pace_open(&self) -> bool {
+        if !self.paced {
+            return true;
+        }
+        let (since_acquire, frame) = self.shared.frames.game_pacing();
+        pace_open(since_acquire, self.in_flight_since.elapsed(), frame, self.capture_time)
+    }
+
+    /// Draw the view into the kept surface and copy it out, or `None` when the frame is partial.
+    fn read_view(&mut self) -> Option<(u32, u32, u32, Vec<u8>, bool)> {
+        use gtk::cairo::{Context, Format, ImageSurface, Operator};
+        let (width, height) = (self.view.allocated_width(), self.view.allocated_height());
+        if width <= 0 || height <= 0 {
+            return None;
+        }
+        if self.surface.as_ref().map(|s| (s.width(), s.height())) != Some((width, height)) {
+            self.surface = Some(ImageSurface::create(Format::ARgb32, width, height).ok()?);
+        }
+        let surface = self.surface.as_mut()?;
+        {
+            let context = Context::new(&*surface).ok()?;
+            context.set_operator(Operator::Clear);
+            context.paint().ok()?;
+            context.set_operator(Operator::Over);
+            self.view.draw(&context);
+        }
+        surface.flush();
+        let stride = surface.stride();
+        let length = stride as usize * height as usize;
+        let data = surface.data().ok()?;
+        let previous = self.previous.clone();
+        let mut buffer = self.pool.pop().unwrap_or_default();
+        let unchanged = copy_composited(
+            &data[..length],
+            stride as usize,
+            width as usize,
+            previous.as_deref().map(Vec::as_slice),
+            &mut buffer,
+        );
+        match unchanged {
+            Some(unchanged) => Some((width as u32, height as u32, stride as u32, buffer, unchanged)),
+            None => {
+                self.pool.push(buffer);
+                None
+            }
+        }
+    }
+}
+
 /// Copy `data` into `buffer` one row at a time, deciding equality against `previous` as it goes.
 ///
 /// `row` is the stride in bytes. Returns true only when every copied byte matches a `previous` of
@@ -1153,6 +1401,66 @@ fn copy_and_compare(
     unchanged
 }
 
+/// Copy a compositor frame into `buffer`, or `None` when the frame is partial.
+///
+/// `width` is in pixels and `row` is the stride in bytes. A frame is complete only if no pixel is
+/// zero, because the coverage layer (`COMPOSITOR_STYLE`) leaves a non-zero word on every pixel it
+/// covers. The coverage word itself is written back as transparent, so what the game blends is the
+/// page. Equality against `previous` is decided in the same pass, as `copy_and_compare` does.
+fn copy_composited(
+    data: &[u8],
+    row: usize,
+    width: usize,
+    previous: Option<&[u8]>,
+    buffer: &mut Vec<u8>,
+) -> Option<bool> {
+    buffer.clear();
+    buffer.resize(data.len(), 0);
+    let previous = previous.filter(|previous| previous.len() == data.len());
+    let mut unchanged = previous.is_some();
+    let mut start = 0;
+    while start < data.len() {
+        let end = (start + row).min(data.len());
+        let used = (start + width * 4).min(end);
+        let out = &mut buffer[start..end];
+        for (source, target) in data[start..used].chunks_exact(4).zip(out.chunks_exact_mut(4)) {
+            let word = u32::from_ne_bytes([source[0], source[1], source[2], source[3]]);
+            if word == 0 {
+                return None;
+            }
+            let word = if word == COVERAGE_PIXEL { 0 } else { word };
+            target.copy_from_slice(&word.to_ne_bytes());
+        }
+        if unchanged && previous.is_some_and(|previous| out != &previous[start..end]) {
+            unchanged = false;
+        }
+        start = end;
+    }
+    Some(unchanged)
+}
+
+/// Whether a capture started now lands just before the game takes its next frame.
+///
+/// `since_acquire` is the time since the game last took a frame, `since_capture` the time since the
+/// last capture started, `frame` how long the game's frames take and `capture` how long a capture
+/// takes. One capture per game frame is enough, because the game sees only the newest. A game that
+/// outruns the capture, one that has not taken two frames yet and one too slow to aim at are not
+/// paced, and neither is one that has stopped taking frames: the capture runs back to back.
+fn pace_open(
+    since_acquire: Duration,
+    since_capture: Duration,
+    frame: Duration,
+    capture: Duration,
+) -> bool {
+    if frame.is_zero() || frame > PACE_CEILING || frame < capture * 2 || since_acquire > frame * 2 {
+        return true;
+    }
+    if since_capture < since_acquire {
+        return false;
+    }
+    since_acquire + capture + PACE_MARGIN >= frame
+}
+
 /// A JSON string literal holding `frame`, so a quote or a newline in the payload cannot end it.
 fn serde_frame(frame: &str) -> String {
     let mut out = String::with_capacity(frame.len() + 2);
@@ -1174,6 +1482,54 @@ fn serde_frame(frame: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn snapshot_writer_rejects_embedded_nul() {
+        let error = super::write_snapshot_line("TN_UI_SNAPSHOT:before\0after").unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn snapshot_writer_waits_for_the_c_stdout_lock() {
+        unsafe extern "C" {
+            static stdout: *mut std::ffi::c_void;
+            fn flockfile(stream: *mut std::ffi::c_void);
+            fn funlockfile(stream: *mut std::ffi::c_void);
+        }
+        struct TraceEnv(Option<std::ffi::OsString>);
+        impl Drop for TraceEnv {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(value) => std::env::set_var("TN_UI_SNAPSHOT_TRACE", value),
+                    None => std::env::remove_var("TN_UI_SNAPSHOT_TRACE"),
+                }
+            }
+        }
+        struct StdoutLock;
+        impl Drop for StdoutLock {
+            fn drop(&mut self) {
+                unsafe { funlockfile(stdout) };
+            }
+        }
+        let _trace_env = TraceEnv(std::env::var_os("TN_UI_SNAPSHOT_TRACE"));
+        std::env::set_var("TN_UI_SNAPSHOT_TRACE", "1");
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        unsafe { flockfile(stdout) };
+        let stdout_lock = StdoutLock;
+        let writer = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            super::trace_snapshot("stdio-lock-test", 0, "");
+            done_tx.send(()).unwrap();
+        });
+        started_rx.recv().unwrap();
+        let while_locked = done_rx.recv_timeout(std::time::Duration::from_millis(100));
+        drop(stdout_lock);
+        writer.join().unwrap();
+        assert!(matches!(while_locked, Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
+            "the actual snapshot writer bypassed the C stdout FILE lock");
+        done_rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+    }
+
     #[test]
     #[ignore = "requires an X11 display with WebKitGTK; run through test:ui-native"]
     fn ordinary_controls_use_native_focus_and_editing() {
@@ -1260,6 +1616,80 @@ send('loaded');
         std::fs::remove_dir_all(directory).unwrap();
     }
     use super::*;
+
+    fn words(values: &[u32]) -> Vec<u8> {
+        values.iter().flat_map(|word| word.to_ne_bytes()).collect()
+    }
+
+    #[test]
+    fn a_complete_compositor_frame_loses_the_coverage_pixel_and_keeps_the_page() {
+        let page = 0x80_40_20_10u32;
+        let data = words(&[COVERAGE_PIXEL, page, COVERAGE_PIXEL, 0xff_00_00_00]);
+        let mut buffer = Vec::new();
+        assert_eq!(copy_composited(&data, 8, 2, None, &mut buffer), Some(false));
+        assert_eq!(buffer, words(&[0, page, 0, 0xff_00_00_00]));
+    }
+
+    #[test]
+    fn a_compositor_frame_with_an_undamaged_pixel_is_partial() {
+        let data = words(&[COVERAGE_PIXEL, 0, COVERAGE_PIXEL, COVERAGE_PIXEL]);
+        assert_eq!(copy_composited(&data, 8, 2, None, &mut Vec::new()), None);
+    }
+
+    #[test]
+    fn a_compositor_frame_is_unchanged_only_against_the_same_page() {
+        let data = words(&[COVERAGE_PIXEL, 0x80_40_20_10]);
+        let mut buffer = Vec::new();
+        copy_composited(&data, 8, 2, None, &mut buffer).unwrap();
+        let published = buffer.clone();
+        assert_eq!(copy_composited(&data, 8, 2, Some(&published), &mut buffer), Some(true));
+        let moved = words(&[COVERAGE_PIXEL, 0x80_40_20_11]);
+        assert_eq!(copy_composited(&moved, 8, 2, Some(&published), &mut buffer), Some(false));
+        assert_eq!(
+            copy_composited(&data, 8, 2, Some(&published[..4]), &mut buffer),
+            Some(false),
+            "a frame of another size is never unchanged"
+        );
+    }
+
+    #[test]
+    fn padding_after_the_last_pixel_of_a_row_is_not_a_hole() {
+        // Two pixels of 4 bytes in a 12-byte stride: the last word is padding and may be zero.
+        let data = words(&[COVERAGE_PIXEL, 0x80_40_20_10, 0, COVERAGE_PIXEL, 0xff_00_00_00, 0]);
+        let mut buffer = Vec::new();
+        assert_eq!(copy_composited(&data, 12, 2, None, &mut buffer), Some(false));
+        assert_eq!(&buffer[..8], &words(&[0, 0x80_40_20_10])[..]);
+    }
+
+    #[test]
+    fn a_capture_is_aimed_at_the_games_next_frame_only_when_it_would_otherwise_be_wasted() {
+        let ms = Duration::from_millis;
+        // 60 ms game frames, 24 ms captures, the last capture was a frame ago.
+        assert!(!pace_open(ms(10), ms(70), ms(60), ms(24)), "a capture now would finish 26 ms early");
+        assert!(pace_open(ms(30), ms(70), ms(60), ms(24)), "30 + 24 + margin reaches the next frame");
+        // Already captured since the game last took a frame: the game would never see a second one.
+        assert!(!pace_open(ms(50), ms(20), ms(60), ms(24)));
+        // A game that outruns the capture, an unknown game, one too slow to aim at, one that stopped.
+        assert!(pace_open(ms(0), ms(0), ms(16), ms(24)));
+        assert!(pace_open(ms(0), ms(0), Duration::ZERO, ms(24)));
+        assert!(pace_open(ms(0), ms(0), ms(500), ms(24)));
+        assert!(pace_open(ms(130), ms(20), ms(60), ms(24)));
+    }
+
+    #[test]
+    fn the_mailbox_learns_how_long_the_games_frames_take() {
+        let mailbox = Mailbox::default();
+        assert_eq!(mailbox.game_pacing().1, Duration::ZERO, "nothing learned before two frames");
+        mailbox.acquire();
+        mailbox.acquire();
+        let first = mailbox.game_pacing().1;
+        std::thread::sleep(Duration::from_millis(30));
+        mailbox.acquire();
+        let (since, average) = mailbox.game_pacing();
+        assert!(first < Duration::from_millis(5), "back-to-back acquires are fast: {first:?}");
+        assert!(average > first && average < Duration::from_millis(30), "average moves toward the gap: {average:?}");
+        assert!(since < Duration::from_millis(5));
+    }
 
     #[test]
     fn startup_timeout_does_not_wait_for_an_unresponsive_worker() {

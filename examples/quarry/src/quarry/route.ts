@@ -10,8 +10,6 @@ import { floorHeight } from "./terrain.js";
 export const EYE_HEIGHT = 1.7;
 /** Frames the route takes end to end at the game's fixed 1/60 step: thirty seconds of walking. */
 export const ROUTE_FRAMES = 1800;
-/** Discarded before anything is measured: first-frame compiles and uploads are not the walk. */
-export const ROUTE_WARMUP_FRAMES = 90;
 /** How close the walk's last frame stands to the rock. */
 export const CONTACT_DISTANCE = 0.4;
 
@@ -30,8 +28,6 @@ export const ROUTE_MARKS = [
   // relief is what a reader and an image difference can both see.
   { frame: 1740, label: "contact" },
 ] as const;
-
-export type RouteMark = (typeof ROUTE_MARKS)[number]["label"];
 
 /**
  * Ground-plane control points, walked in order. The final point is placed against the rock rather
@@ -98,5 +94,3 @@ export function routePose(frameIndex: number): IRoutePose {
     return { position, target: [position[0], position[1], position[2] - 1] };
   return { position, target };
 }
-
-export const ROUTE_LENGTH_METRES = path.totalLength;

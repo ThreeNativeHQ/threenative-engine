@@ -96,8 +96,8 @@ thesis: each spends the training-data advantage to buy a surface the model then 
 
 | Not building | Why |
 |---|---|
-| An IR, a compiler, a serialized scene format | Your game is TypeScript. The compiler was 25,898 LOC and bought nothing a model can't do with a `.ts` file. |
-| A second *renderer* | 32% of v1's commits went to a runtime no benchmark ever measured. §7's host is the bounded exception: it runs Three.js, it does not replace it. The moment the host starts drawing, it has become v1. |
+| An authored IR, a compiler of game code, a serialized scene format | Your game is TypeScript. The compiler was 25,898 LOC and bought nothing a model can't do with a `.ts` file. The opt-in native engine's shader IR is internal: no game or author writes it. |
+| A second *renderer* | 32% of v1's commits went to a runtime no benchmark ever measured. §7's host runs Three.js, it does not replace it. **One exception (owner, 2026-10-12):** ThreeNative owns one C++ engine, renderer plus internal shader IR, behind the Three.js API. The engine is the default for web and desktop since 2026-10-15 (owner), and a game sets `engine: "threejs"` to keep the legacy host ([`NATIVE-ENGINE-DECISION.md`](NATIVE-ENGINE-DECISION.md)). Any renderer beyond that one engine has become v1. |
 | A JSON/structured-source ECS | Measured at **14x vanilla Three.js** on greenfield work, and scored lower on playability and visuals. |
 | An editor | Not in v1. The paid editor is a separate product in a separate repository. |
 | A bespoke CLI vocabulary | 178 command forms, a 2,477-word root help. Models are worst at discovering novel API surfaces. |
@@ -106,6 +106,16 @@ thesis: each spends the training-data advantage to buy a surface the model then 
 
 > An LLM's greatest strength is writing code in languages already in its weights. Its greatest
 > weakness is discovering bespoke API surfaces.
+
+**Narrow terrain-authoring allowance (owner, 2026-09-30).** `@threenative/terrain` may
+recover the supplied Strata authoring implementation, editable terrain starter documents,
+and terrain-only authoring companions for live inspection, gizmos, controller cameras,
+atmosphere and project asset imports (PRDs 466–468). This optional dependency boundary also
+qualifies under the package rule: ordinary games inherit none of its authoring code or tooling.
+Recipes compile into ordinary arrays, assets and game-owned render source; they are not a
+runtime scene format. The addon creates no renderer or physics world, owns no game appearance,
+and does no authoring work during steady play. This allowance admits neither a general game
+editor nor a genre/preset system; the closed list and the appearance veto otherwise remain binding.
 
 **This is the founding constraint.** Everything below is downstream of it.
 
@@ -270,7 +280,11 @@ geometry, placement, colour and material all come from the game); **`clipPoseErr
 `clipTrackBindings`, `clipBoneCoverage`, `boneContact`** (instruments that drive a clip, read the
 pose and report degrees, names and metres — they select no clip and move nothing); and
 **`Heightfield`** (one row-major buffer, interpolation, normals, and the ordering physics consumes;
-every height comes from the game's own sampler); **`FlightModel`** (lift, drag, thrust, stall,
+every height comes from the game's own sampler); **`SnowField`** (indentation, displaced bank,
+compaction and disturbance channels over one canonical `Heightfield`, load-dependent penetration
+and bounded sparse recovery; the game supplies the terrain, the snow depth, the contact footprint,
+the load and every response coefficient, and no renderer or GPU encoding is involved);
+**`FlightModel`** (lift, drag, thrust, stall,
 control moments and the carrier-deck run for a fixed-wing aircraft; every mass, wing area, power,
 inertia, wind and damage multiplier comes from the game, which the model moves but never dresses);
 and **automatic discrete LOD** (error-driven level selection for a model the asset cook baked a
@@ -377,12 +391,23 @@ a UI that is part of the rendered frame, a target with no WebView, or zero extra
 owns the appearance difference that comes with it — the quad renderer implements twenty style keys
 and a bitmap font against the browser's whole CSS, SVG and font stack.
 
+**A native CSS renderer is available as an experimental opt-in, desktop only.** The same JSX and
+the same Tailwind or plain CSS run with no WebView: the game's own JS realm reconciles React into
+an element tree held by an in-process, third-party CSS engine (Stylo, Taffy and Parley through
+Blitz), and the result is painted into a CPU surface that the compositor draws over the frame. This
+is also an exception to "no second renderer": the engine owns a UI-only element tree and a UI-only
+surface. It never renders the 3D game, exposes no scene or style IR to game code, does not replace
+Three.js, and imposes no look — the stylesheet is the game's own, from the same Vite and Tailwind
+build the web renderer uses. It claims only what its fixtures prove; unsupported CSS is not
+diagnosed yet, so anything outside the fixtures is unverified.
+
 ```ts
-ui: { renderer: 'web' }      // default — the platform picks the surface
-ui: { renderer: 'native' }   // CanvasLayer quads, no WebView
+ui: { renderer: 'web' }        // default — the platform picks the surface
+ui: { renderer: 'native' }     // CanvasLayer quads, no WebView
+ui: { renderer: 'native-css' } // real CSS, in-process engine, no WebView (experimental)
 ```
 
-Neither renderer touches `THREE.Scene`, and `react-dom` stays out of the **portable entry** on
+No renderer touches `THREE.Scene`, and `react-dom` stays out of the **portable entry** on
 every target.
 
 **The 60fps problem.** React must never re-render on the game loop. The bridge is a plain external
@@ -436,8 +461,11 @@ Mystral is absorbed as the owned `packages/runtime-native/` fork. Its C++ and pl
 in one workspace package; Dawn, V8, QuickJS, SDL3, wgpu-native and other dependency trees stay
 downloaded into an untracked `third_party/`.
 
-**The runtime is a host, not a renderer.** It must not own Three's renderer, fork Three.js, or
-replace the JavaScript `GLTFLoader`. Three.js compatibility must equal the workspace catalog.
+**The default runtime is a host, not a renderer.** It must not own Three's renderer, fork Three.js, or
+replace the JavaScript `GLTFLoader`. Three.js compatibility must equal the workspace catalog. The
+opt-in native engine of [`NATIVE-ENGINE-DECISION.md`](NATIVE-ENGINE-DECISION.md) is the one
+exception: it implements the Three.js API in C++ and is the default engine for web and desktop since
+2026-10-15. A game that sets `engine: "threejs"` runs on the host exactly as before.
 
 Native physics is compiled into the runtime and exposed through a coarse, host-neutral typed-array
 ABI, with bulk `step`/`readVisibleTransforms` crossings rather than per-object frame calls. The
@@ -665,7 +693,7 @@ fifteen lines.
 
 **Four things this does not loosen:**
 
-1. **§2's closed list outranks both questions.** An IR, a scene format, an editor, a
+1. **§2's closed list outranks both questions.** An authored IR, a scene format, an editor, a
    preset/genre/recipe system, a code-first ECS and a bespoke CLI vocabulary stay closed however
    cleanly they pass.
 2. **§11.2 applies retroactively to everything admitted here.** Generous on the way in is only safe

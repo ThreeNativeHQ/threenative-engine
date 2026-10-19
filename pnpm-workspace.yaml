@@ -6,7 +6,13 @@ packages: ['packages/*', 'examples/*']
 confirmModulesPurge: false
 
 catalog:
+  '@pmndrs/labs': 0.9.0
   three: 0.185.1
+  '@types/node': 20.19.43
+  '@types/three': 0.185.3
+  tsup: 8.5.1
+  procedural-animals: https://codeload.github.com/majidmanzarpour/threejs-procedural-animals/tar.gz/c95ae49346aa8e140a924376cec6cf0073d99512
+  '@jridgewell/trace-mapping': 0.3.31
   '@gltf-transform/core': 4.4.2
   '@gltf-transform/extensions': 4.4.2
   '@gltf-transform/functions': 4.4.2
@@ -26,7 +32,9 @@ catalog:
   '@tailwindcss/vite': 4.3.3
   '@vitejs/plugin-react': 6.0.5
   zod: 4.4.3
-  typescript: 5.9.3
+  typescript: npm:@typescript/typescript6@6.0.2
+  '@typescript/native': npm:typescript@7.0.2
+  '@typescript/typescript6': 6.0.2
   vite: 8.2.0
   vitest: 4.1.10
   esbuild: 0.27.0
@@ -38,3 +46,6 @@ catalog:
 
 patchedDependencies:
   three@0.185.1: packages/core/patches/three@0.185.1.patch
+  tsup@8.5.1: patches/tsup@8.5.1.patch
+  vite@8.2.0: patches/vite@8.2.0.patch
+  "@tailwindcss/node@4.3.3": patches/@tailwindcss__node@4.3.3.patch

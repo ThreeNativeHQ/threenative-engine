@@ -1,0 +1,27 @@
+{
+  "name": "rain-held-strike-lights-the-scene",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1440, "height": 900 },
+  "warmupFrames": 30,
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "kind": "input", "press": "Space", "label": "paused", "waitTicks": 2, "release": true },
+    { "kind": "input", "press": "KeyL", "label": "strike", "waitTicks": 10, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "state", "path": "paused", "equals": true },
+      { "id": "state", "path": "strikes", "equals": 1 },
+      { "id": "state", "path": "flash", "gte": 0.5 },
+      { "id": "state", "path": "elapsed", "changed": false }
+    ],
+    "visual": [{ "frameDiff": { "minChangedPixelRatio": 0.3 } }]
+  }
+}

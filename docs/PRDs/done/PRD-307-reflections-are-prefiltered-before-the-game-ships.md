@@ -22,7 +22,7 @@ one rule separating a baking pass from v1's IR is that deleting the baked output
 running, just slower.
 
 **Task 4 of Band 2, and the largest single measured win the direction document lists.** See
-[README](../architecture/README.md) for the tick-back rule.
+README for the tick-back rule.
 
 ---
 

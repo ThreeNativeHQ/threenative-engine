@@ -1,0 +1,77 @@
+{
+  "name": "rain-drizzle-control-changes-the-rendered-weather",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 60,
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "preset-drizzle"
+        }
+      },
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 180,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "preset",
+        "equals": "drizzle"
+      },
+      {
+        "id": "state",
+        "path": "target.rain",
+        "equals": 0.24
+      },
+      {
+        "id": "state",
+        "path": "weather.rain",
+        "changed": true,
+        "lte": 0.32
+      },
+      {
+        "id": "state",
+        "path": "dropCount",
+        "changed": true,
+        "lte": 4000
+      }
+    ],
+    "visual": [
+      {
+        "frameDiff": {
+          "minChangedPixelRatio": 0.1
+        }
+      },
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

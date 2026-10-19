@@ -168,6 +168,47 @@ describe("workspace package derivation", () => {
     ]);
   });
 
+  it("reads two targeted package builds in unrelated jobs as two builds, not a list", async () => {
+    // One workflow file now carries every integration lane, and two lanes each build their own
+    // package. That is two commands; the drift this gate exists for is one command naming a set.
+    const root = await fixtureRoot();
+    await mkdir(path.join(root, ".github/workflows"), { recursive: true });
+    await writeFile(
+      path.join(root, ".github/workflows/integration.yml"),
+      [
+        "jobs:",
+        "  decals:",
+        "    steps:",
+        "      - run: pnpm --filter @threenative/runtime-native native:build",
+        "  tone:",
+        "    steps:",
+        "      - run: pnpm --filter @threenative/playtest build",
+      ].join("\n"),
+    );
+
+    expect(findLiteralPackageEnumerationViolations(root)).toEqual([]);
+  });
+
+  it("still reads one run block naming two packages as a hand-listed set", async () => {
+    const root = await fixtureRoot();
+    await mkdir(path.join(root, ".github/workflows"), { recursive: true });
+    await writeFile(
+      path.join(root, ".github/workflows/integration.yml"),
+      [
+        "jobs:",
+        "  tone:",
+        "    steps:",
+        "      - run: |",
+        "          pnpm --filter @threenative/playtest build",
+        "          pnpm --filter @threenative/physics build",
+      ].join("\n"),
+    );
+
+    expect(findLiteralPackageEnumerationViolations(root)).toEqual([
+      ".github/workflows/integration.yml",
+    ]);
+  });
+
   it("detects chained literal package commands on one workflow line", async () => {
     const root = await fixtureRoot();
     await mkdir(path.join(root, ".github/workflows"), { recursive: true });

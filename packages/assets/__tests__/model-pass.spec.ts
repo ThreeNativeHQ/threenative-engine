@@ -10,7 +10,12 @@ import {
   buildFixtureDocument,
   buildFixtureGlb,
 } from "../../../test-support/generate-fixture-model.js";
-import { assertNoDrift, modelPass, reachableStats } from "../src/passes/model.js";
+import {
+  assertNoDrift,
+  assertSimplifiedWithinBounds,
+  modelPass,
+  reachableStats,
+} from "../src/passes/model.js";
 
 /** Re-reads pass output exactly as self-verification does: codecs registered. */
 async function readVerified(buffer: Buffer): Promise<ReturnType<Document["getRoot"]>> {
@@ -89,14 +94,68 @@ describe("modelPass", () => {
     }
   });
 
-  it("should throw naming bounding-box drift when positions quantize to 4 bits", async () => {
-    const input = Buffer.from(await buildFixtureGlb());
-    await expect(
-      modelPass({ quantize: { normalBits: 16, positionBits: 4, uvBits: 12 } }).apply(
-        input,
-        "character.glb",
-      ),
-    ).rejects.toThrow(/TN_ASSETS_MODEL_DRIFT.*bounding box drifted/u);
+  it("should leave deforming positions alone at a depth below the quantization floor", async () => {
+    // Four bits is the destructive pre-round the library refuses to express: the pass snaps floats
+    // onto a 15-level grid over each accessor's own bounds and lets the self-verify reject the
+    // result. That request used to land on the fixture's skinned head — and used to trip the
+    // self-verify at 0.167% drift. Deforming geometry is now held in source space at every depth,
+    // so the request never reaches it and there is nothing left to reject; the fail-closed path
+    // itself is covered by the drift-kind comparison further down. The static half of the document
+    // still quantizes, which is what keeps the two halves of the rule honest.
+    const document = buildFixtureDocument({ textured: false });
+    const root = document.getRoot();
+    const head = root.listMeshes()[0]?.listPrimitives()[1];
+    const buffer = head?.getAttribute("POSITION")?.getBuffer() ?? null;
+    if (head === undefined || buffer === null) throw new Error("Fixture lost its rig.");
+    const prop = document
+      .createPrimitive()
+      .setIndices(
+        document
+          .createAccessor("prop-indices")
+          .setBuffer(buffer)
+          .setType("SCALAR")
+          .setArray(
+            Uint32Array.from([
+              0, 10, 20, 1, 11, 21, 2, 12, 22, 3, 13, 23, 4, 14, 24, 5, 15, 25, 6, 16, 26, 7, 17, 8,
+              18, 19, 9,
+            ]),
+          ),
+      )
+      .setAttribute(
+        "POSITION",
+        document
+          .createAccessor("prop-positions")
+          .setBuffer(buffer)
+          .setType("VEC3")
+          .setArray(new Float32Array(Array.from({ length: 81 }, (_, index) => index))),
+      );
+    root
+      .listScenes()[0]
+      ?.addChild(
+        document.createNode("prop-root").setMesh(document.createMesh("prop").addPrimitive(prop)),
+      );
+    const positions = [...(head.getAttribute("POSITION")?.getArray() ?? [])];
+    const result = await modelPass({
+      compact: false,
+      quantize: { normalBits: 16, positionBits: 4, uvBits: 12 },
+      textures: "none",
+      virtual: "none",
+    }).apply(Buffer.from(await new NodeIO().writeBinary(document)), "character.glb");
+    expect(Buffer.isBuffer(result)).toBe(false);
+    if (Buffer.isBuffer(result)) return;
+    const output = await readVerified(result.buffer);
+    expect([
+      ...(output.listMeshes()[0]?.listPrimitives()[1]?.getAttribute("POSITION")?.getArray() ?? []),
+    ]).toEqual(positions);
+    expect(
+      output
+        .listMeshes()
+        .find((mesh) => mesh.getName() === "prop")
+        ?.listPrimitives()[0]
+        ?.getAttribute("POSITION")
+        ?.getComponentSize(),
+      // Eight bits is the floor the request resolves to, and it lands as normalized Int8.
+    ).toBe(1);
   });
 
   it("should declare EXT_meshopt_compression and not Draco", async () => {
@@ -149,6 +208,209 @@ describe("modelPass", () => {
       // FLOAT32, exactly as the generator declared — never narrowed by quantization.
       expect(attribute?.getComponentSize()).toBe(4);
     }
+  });
+
+  it("should keep a deforming primitive's vertex order and still reorder a static one", async () => {
+    // A vertex index is an address, and something outside this cook may already hold one: a
+    // MetaHuman sidecar records the head vertex each brow strand root rides, and reads the position
+    // back at that index every frame. The cook cannot know who holds an index, so deforming
+    // geometry — skinned, morph-targeted, or carrying joint data — keeps its exact vertex order and
+    // count, and everything else is still reordered for transmission size.
+    const document = buildFixtureDocument({ textured: false });
+    const root = document.getRoot();
+    const character = root.listMeshes()[0];
+    const cloth = character?.listPrimitives()[0];
+    const head = character?.listPrimitives()[1];
+    if (cloth === undefined || head === undefined) throw new Error("Fixture lost a primitive.");
+    // Both reasons in one cook: the cloth stays skinned-only, the head also gains a morph target.
+    const buffer = head.getAttribute("POSITION")?.getBuffer() ?? null;
+    head.addTarget(
+      document.createPrimitiveTarget("head-jaw-open").setAttribute(
+        "POSITION",
+        document
+          .createAccessor("head-jaw-open-deltas")
+          .setBuffer(buffer)
+          .setType("VEC3")
+          .setArray(new Float32Array(Array.from({ length: 18 }, (_, index) => (index % 3) * 0.01))),
+      ),
+    );
+    // A static mesh whose index buffer is not already in draw order, so the reorder has real work
+    // to do on it: the jumbled order below is a non-identity meshoptimizer remap.
+    const staticIndices = [6, 1, 8, 0, 7, 3, 2, 4, 5];
+    const prop = document
+      .createPrimitive()
+      .setIndices(
+        document
+          .createAccessor("prop-indices")
+          .setBuffer(buffer)
+          .setType("SCALAR")
+          .setArray(Uint32Array.from(staticIndices)),
+      )
+      .setAttribute(
+        "POSITION",
+        document
+          .createAccessor("prop-positions")
+          .setBuffer(buffer)
+          .setType("VEC3")
+          .setArray(new Float32Array(Array.from({ length: 27 }, (_, index) => index))),
+      );
+    root
+      .listScenes()[0]
+      ?.addChild(
+        document.createNode("prop-root").setMesh(document.createMesh("prop").addPrimitive(prop)),
+      );
+
+    const source = (meshName: string, primitive: number): number[] => [
+      ...(root
+        .listMeshes()
+        .find((mesh) => mesh.getName() === meshName)
+        ?.listPrimitives()
+        [primitive]?.getAttribute("POSITION")
+        ?.getArray() ?? []),
+    ];
+    const before = {
+      cloth: source("character", 0),
+      head: source("character", 1),
+      prop: source("prop", 0),
+    };
+    // Lossless options, so the only stage that can move a vertex is `reorder` itself.
+    const result = await modelPass({
+      compact: false,
+      passes: { quantize: false },
+      textures: "none",
+      virtual: "none",
+    }).apply(Buffer.from(await new NodeIO().writeBinary(document)), "character.glb");
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const output = await readVerified(result.buffer);
+    const cooked = (meshName: string, primitive: number): number[] => [
+      ...(output
+        .listMeshes()
+        .find((mesh) => mesh.getName() === meshName)
+        ?.listPrimitives()
+        [primitive]?.getAttribute("POSITION")
+        ?.getArray() ?? []),
+    ];
+
+    expect(cooked("character", 0)).toEqual(before.cloth);
+    expect(cooked("character", 1)).toEqual(before.head);
+    // And the static half of the rule: reordered, and nothing but reordered.
+    expect(cooked("prop", 0)).not.toEqual(before.prop);
+    expect([...cooked("prop", 0)].sort((a, b) => a - b)).toEqual(
+      [...before.prop].sort((a, b) => a - b),
+    );
+  });
+
+  it("should keep a deforming primitive's positions in source metres and still quantize a static one", async () => {
+    // One metre is one metre. `quantize` snaps POSITION onto a grid whose step is the mesh's own
+    // volume over 2^bits, so a head cooked at 16 bits over half a metre lands within ~8 µm of
+    // where the author put it — and the metahuman-lab sidecar, which names the head vertex each
+    // brow strand root rides and reads that position back every frame, was prepared to 1e-5 m.
+    // Quantization also compensates by folding a shift into the node, the skin's inverse bind
+    // matrices and any volumetric material, so the whole mesh stays in source space instead:
+    // deforming POSITION and its morph-target deltas keep float32, everything else still quantizes.
+    const document = buildFixtureDocument({ textured: false });
+    const root = document.getRoot();
+    const character = root.listMeshes().find((mesh) => mesh.getName() === "character");
+    const cloth = character?.listPrimitives()[0];
+    const head = character?.listPrimitives()[1];
+    const skin = root.listSkins()[0];
+    const buffer = head?.getAttribute("POSITION")?.getBuffer() ?? null;
+    if (cloth === undefined || head === undefined || skin === undefined || buffer === null)
+      throw new Error("Fixture lost its rig.");
+    // Both reasons in one cook, as in the vertex-order twin: the head is skinned and morph-targeted.
+    const deltas = new Float32Array(Array.from({ length: 18 }, (_, index) => (index % 3) * 0.004));
+    head.addTarget(
+      document
+        .createPrimitiveTarget("jaw-open")
+        .setAttribute(
+          "POSITION",
+          document
+            .createAccessor("jaw-open-deltas")
+            .setBuffer(buffer)
+            .setType("VEC3")
+            .setArray(deltas),
+        ),
+    );
+    // A static mesh in the same document, on its own node: the half of the rule that must not regress.
+    const prop = document
+      .createPrimitive()
+      .setIndices(
+        document
+          .createAccessor("prop-indices")
+          .setBuffer(buffer)
+          .setType("SCALAR")
+          .setArray(
+            // Every vertex referenced exactly once, so the library's own vertex compaction inside
+            // `quantize` has nothing to drop and the bbox the self-verify reads is the authored one.
+            Uint32Array.from([
+              0, 10, 20, 1, 11, 21, 2, 12, 22, 3, 13, 23, 4, 14, 24, 5, 15, 25, 6, 16, 26, 7, 17, 8,
+              18, 19, 9,
+            ]),
+          ),
+      )
+      .setAttribute(
+        "POSITION",
+        document
+          .createAccessor("prop-positions")
+          .setBuffer(buffer)
+          .setType("VEC3")
+          // 27 vertices, every one of them referenced by the indices above.
+          .setArray(new Float32Array(Array.from({ length: 81 }, (_, index) => index))),
+      );
+    root
+      .listScenes()[0]
+      ?.addChild(
+        document.createNode("prop-root").setMesh(document.createMesh("prop").addPrimitive(prop)),
+      );
+
+    const positions = [...(head.getAttribute("POSITION")?.getArray() ?? [])];
+    const binds = [...(skin.getInverseBindMatrices()?.getArray() ?? [])];
+    const result = await modelPass({ compact: false, textures: "none", virtual: "none" }).apply(
+      Buffer.from(await new NodeIO().writeBinary(document)),
+      "character.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+    const output = await readVerified(result.buffer);
+    const cookedHead = output
+      .listMeshes()
+      .find((mesh) => mesh.getName() === "character")
+      ?.listPrimitives()[1];
+    const cookedCloth = output
+      .listMeshes()
+      .find((mesh) => mesh.getName() === "character")
+      ?.listPrimitives()[0];
+    const cookedProp = output
+      .listMeshes()
+      .find((mesh) => mesh.getName() === "prop")
+      ?.listPrimitives()[0];
+
+    const cookedPositions = cookedHead?.getAttribute("POSITION");
+    expect(cookedPositions?.getComponentType()).toBe(5126);
+    const after = [...(cookedPositions?.getArray() ?? [])];
+    expect(after.length).toBe(positions.length);
+    for (const [index, value] of after.entries())
+      expect(Math.abs((value as number) - (positions[index] as number))).toBeLessThan(1e-6);
+    // The deltas ride the same space, so they keep their float32 metres too.
+    const cookedDeltas = cookedHead?.listTargets()[0]?.getAttribute("POSITION");
+    expect(cookedDeltas?.getComponentType()).toBe(5126);
+    expect([...(cookedDeltas?.getArray() ?? [])]).toEqual([...deltas]);
+    // Nothing moved to compensate: the bind poses the deformation is measured against are the
+    // authored ones, and the normals that do not address a vertex still quantized.
+    const cookedBinds = [...(output.listSkins()[0]?.getInverseBindMatrices()?.getArray() ?? [])];
+    expect(cookedBinds.length).toBe(binds.length);
+    for (const [index, value] of cookedBinds.entries())
+      expect(Math.abs((value as number) - (binds[index] as number))).toBeLessThan(1e-6);
+    expect(cookedCloth?.getAttribute("POSITION")?.getComponentType()).toBe(5126);
+    expect(cookedCloth?.getAttribute("NORMAL")?.getComponentSize()).toBeLessThan(4);
+    // And the static half of the rule, unchanged: quantized, normalized, KHR_mesh_quantization on.
+    expect(cookedProp?.getAttribute("POSITION")?.getComponentSize()).toBe(2);
+    expect(cookedProp?.getAttribute("POSITION")?.getNormalized()).toBe(true);
+    expect(
+      output
+        .listExtensionsUsed()
+        .map((extension) => extension.extensionName)
+        .includes("KHR_mesh_quantization"),
+    ).toBe(true);
   });
 
   it("decodes normalized ushort joint weights by their own component type in reachableStats", async () => {
@@ -283,5 +545,84 @@ describe("modelPass", () => {
   it("should regenerate the committed fixture byte-for-byte (staleness guard)", async () => {
     const committed = await readFile(FIXTURE_PATH);
     expect(Buffer.from(await buildFixtureGlb()).equals(committed)).toBe(true);
+  });
+});
+
+describe("assertSimplifiedWithinBounds", () => {
+  type IStats = Parameters<typeof assertSimplifiedWithinBounds>[0];
+  // A 1000-triangle unit cube with one skeleton and one clip; each test moves one thing.
+  const stats = (overrides: Partial<IStats> = {}): IStats => ({
+    boundingBox: { max: [1, 1, 1], min: [0, 0, 0] },
+    clips: 1,
+    joints: 2,
+    triangles: 1000,
+    vertices: 600,
+    ...overrides,
+  });
+
+  it("accepts a reduction that keeps the skeleton, clips and bounds", () => {
+    expect(() =>
+      assertSimplifiedWithinBounds(
+        stats(),
+        stats({ triangles: 600, vertices: 400 }),
+        0.5,
+        "tree.glb",
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects a skeleton or animation clip count that changed", () => {
+    expect(() =>
+      assertSimplifiedWithinBounds(stats(), stats({ joints: 1, triangles: 600 }), 0.5, "rig.glb"),
+    ).toThrow("joints 2 -> 1");
+    expect(() =>
+      assertSimplifiedWithinBounds(stats(), stats({ clips: 0, triangles: 600 }), 0.5, "rig.glb"),
+    ).toThrow("animation clips 1 -> 0");
+  });
+
+  it("rejects a result with more triangles than its source", () => {
+    expect(() =>
+      assertSimplifiedWithinBounds(stats(), stats({ triangles: 1001 }), 0.5, "tree.glb"),
+    ).toThrow("triangles grew 1000 -> 1001");
+  });
+
+  it("rejects a reduction below the floor the requested ratio allows", () => {
+    // The floor is 1000 * 0.5 * 0.5 = 250 triangles.
+    expect(() =>
+      assertSimplifiedWithinBounds(stats(), stats({ triangles: 249 }), 0.5, "tree.glb"),
+    ).toThrow("below the 250 floor");
+    expect(() =>
+      assertSimplifiedWithinBounds(stats(), stats({ triangles: 250 }), 0.5, "tree.glb"),
+    ).not.toThrow();
+  });
+
+  it("rejects a result that lost its bounding box", () => {
+    expect(() =>
+      assertSimplifiedWithinBounds(
+        stats(),
+        stats({ boundingBox: undefined, triangles: 600 }),
+        0.5,
+        "tree.glb",
+      ),
+    ).toThrow("bounding box lost");
+  });
+
+  it("rejects a bounding box that moved past the tolerance and accepts one inside it", () => {
+    expect(() =>
+      assertSimplifiedWithinBounds(
+        stats(),
+        stats({ boundingBox: { max: [1.05, 1, 1], min: [0, 0, 0] }, triangles: 600 }),
+        0.5,
+        "tree.glb",
+      ),
+    ).toThrow("bounding box drifted");
+    expect(() =>
+      assertSimplifiedWithinBounds(
+        stats(),
+        stats({ boundingBox: { max: [1.005, 1, 1], min: [0, 0, 0] }, triangles: 600 }),
+        0.5,
+        "tree.glb",
+      ),
+    ).not.toThrow();
   });
 });

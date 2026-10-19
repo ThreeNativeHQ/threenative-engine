@@ -294,6 +294,46 @@ constexpr const char* kAudioScript = R"JS((() => {
   audioCtx.suspend();
   audioCtx.resume();
 
+  // BiquadFilterNode - the low-pass `AudioBus` builds for `lowpassHz`. A write that never reached
+  // C++ would still read back here, so the round trip is checked against the native default.
+  const biquad = audioCtx.createBiquadFilter();
+  if (biquad.frequency.value !== 350) throw new Error("biquad frequency default is not the Web Audio 350");
+  biquad.type = "lowpass";
+  if (biquad.type !== "lowpass") throw new Error("biquad type did not read back");
+  biquad.frequency.value = 900;
+  if (biquad.frequency.value !== 900) throw new Error("biquad frequency did not read back");
+  biquad.Q.value = 2.5;
+  let refusedType = false;
+  try {
+    biquad.type = "highpass";
+  } catch {
+    refusedType = true;
+  }
+  if (!refusedType) throw new Error("a biquad accepted a filter type it does not implement");
+  biquad.connect(dest);
+  biquad.disconnect();
+
+  // DynamicsCompressorNode - the bus master compressor. Every value must reach C++ before the node
+  // sees a sample, and `reduction` is the readout that says it is doing anything.
+  const compressor = audioCtx.createDynamicsCompressor();
+  const webDefaults = { threshold: -24, knee: 30, ratio: 12, attack: 0.003, release: 0.25 };
+  for (const [name, value] of Object.entries(webDefaults)) {
+    if (Math.abs(compressor[name].value - value) > 1e-6) {
+      throw new Error(`compressor ${name} default is not the Web Audio ${value}`);
+    }
+  }
+  compressor.threshold.value = -15;
+  compressor.knee.value = 6;
+  compressor.ratio.value = 5;
+  compressor.attack.value = 0.004;
+  compressor.release.value = 0.18;
+  compressor.threshold.setValueAtTime(-20, curTime);
+  compressor.knee.linearRampToValueAtTime(12, curTime + 0.5);
+  compressor.ratio.setTargetAtTime(4, curTime, 0.1);
+  if (compressor.reduction !== 0) throw new Error("a fresh compressor must report no reduction");
+  compressor.connect(dest);
+  compressor.disconnect();
+
   // AudioContext close
   audioCtx.close();
 

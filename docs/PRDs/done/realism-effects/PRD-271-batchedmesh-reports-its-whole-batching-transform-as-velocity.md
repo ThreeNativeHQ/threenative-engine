@@ -5,9 +5,9 @@ prd_contract: v1
 # PRD-271 — a `BatchedMesh` reports its whole batching transform as velocity, every frame, standing still
 
 **Status:** PROPOSED — filed 2026-08-30, measured at `1eeecf1e`. Depends on
-[PRD-266](../../useful-defaults/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md) for the chain
+PRD-266 for the chain
 seam only; the defect and its fix are independent of it. **Supersedes the `BatchedMesh` half of
-[PRD-269](../../lighting/PRD-269-motion-vectors-or-the-temporal-filters-lie.md)** — see
+[PRD-269](../PRD-269-motion-vectors-or-the-temporal-filters-lie.md)** — see
 [the batch README](./README.md) for why the rest of PRD-269 no longer has a problem to solve.
 Batch: [docs/PRDs/realism-effects](./README.md).
 

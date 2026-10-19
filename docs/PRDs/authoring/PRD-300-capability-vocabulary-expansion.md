@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** OPEN, filed 2026-08-31 against `77a68bec`. Planning only.
 
+**Priority:** P2 — One @situation tag plus optional @alias across 30 vocabulary boxes, not a synonym dictionary.
 **Outcome:** `third person camera follow` and `make a platformer with double jump` reach the
 capabilities that serve them. A capability stops being findable only through the single phrasing
 its author happened to write, and the phrasings that get added are the ones a measured corpus says

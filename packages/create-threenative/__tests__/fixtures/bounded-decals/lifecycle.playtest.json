@@ -1,0 +1,215 @@
+{
+  "name": "vq11-lifecycle",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 960,
+    "height": 540
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "rendered-residency-1",
+      "waitForResource": {
+        "id": "state",
+        "path": "residencyGeneration",
+        "gte": 1
+      },
+      "timeoutMs": 30000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reset-1",
+      "press": "KeyR",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "rendered-residency-2",
+      "waitForResource": {
+        "id": "state",
+        "path": "residencyGeneration",
+        "gte": 2
+      },
+      "timeoutMs": 30000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reset-2",
+      "press": "KeyR",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "rendered-residency-3",
+      "waitForResource": {
+        "id": "state",
+        "path": "residencyGeneration",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reset-3",
+      "press": "KeyR",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "rendered-residency-4",
+      "waitForResource": {
+        "id": "state",
+        "path": "residencyGeneration",
+        "gte": 4
+      },
+      "timeoutMs": 30000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reset-4",
+      "press": "KeyR",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "rendered-residency-5",
+      "waitForResource": {
+        "id": "state",
+        "path": "residencyGeneration",
+        "gte": 5
+      },
+      "timeoutMs": 30000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reset-5",
+      "press": "KeyR",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "rendered-residency-6",
+      "waitForResource": {
+        "id": "state",
+        "path": "residencyGeneration",
+        "gte": 6
+      },
+      "timeoutMs": 30000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    },
+    "components": [
+      {
+        "entity": "decals",
+        "component": "active",
+        "equals": 256,
+        "allowTrivial": "Real projected marks survive more than 256 impacts and eviction."
+      },
+      {
+        "entity": "decals",
+        "component": "created",
+        "gte": 321,
+        "allowTrivial": "320 initial marks plus a real post-LOD raycast hit."
+      },
+      {
+        "entity": "decals",
+        "component": "geometryBytes",
+        "allowTrivial": "Measures actual projected GPU-upload buffer bytes, not an empty field.",
+        "gte": 1
+      },
+      {
+        "entity": "decals",
+        "component": "renderTriangles",
+        "equals": 2,
+        "allowTrivial": "The loaded 128-triangle authored receiver actually selects its two-triangle LOD."
+      },
+      {
+        "entity": "decals",
+        "component": "generation",
+        "equals": 6,
+        "allowTrivial": "The restart input must construct a new scene; unchanged initial state is not evidence."
+      },
+      {
+        "entity": "decals",
+        "component": "residencySamples",
+        "equals": 6,
+        "allowTrivial": "One memory sample per scene after three stable completed world-render intervals and real LOD/cap readiness."
+      },
+      {
+        "entity": "decals",
+        "component": "geometryGrowth",
+        "lte": 0,
+        "allowTrivial": "GPU resource counts and bytes must not grow across the five warmed scene instances."
+      },
+      {
+        "entity": "decals",
+        "component": "textureGrowth",
+        "lte": 0,
+        "allowTrivial": "GPU resource counts and bytes must not grow across the five warmed scene instances."
+      },
+      {
+        "entity": "decals",
+        "component": "memoryGrowth",
+        "lte": 0,
+        "allowTrivial": "GPU resource counts and bytes must not grow across the five warmed scene instances."
+      },
+      {
+        "entity": "decals",
+        "component": "stableResidencyFrames",
+        "gte": 3,
+        "allowTrivial": "Fixed simulation ticks cannot substitute for completed render intervals."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 960,
+          "height": 540,
+          "minNonblankPixelRatio": 0.15
+        }
+      },
+      {
+        "region": {
+          "x": 270,
+          "y": 185,
+          "width": 170,
+          "height": 125,
+          "minNonblankPixelRatio": 0.9,
+          "maxLuminance": 0.35,
+          "minDarkPixelRatio": 0.01,
+          "maxDarkPixelRatio": 0.2
+        }
+      },
+      {
+        "region": {
+          "x": 550,
+          "y": 190,
+          "width": 95,
+          "height": 90,
+          "minNonblankPixelRatio": 0.9,
+          "maxLuminance": 0.35,
+          "minDarkPixelRatio": 0.01,
+          "maxDarkPixelRatio": 0.2
+        }
+      }
+    ]
+  }
+}

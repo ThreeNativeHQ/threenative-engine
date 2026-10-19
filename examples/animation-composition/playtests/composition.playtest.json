@@ -1,0 +1,689 @@
+{
+  "schemaVersion": 1,
+  "name": "animation-composition",
+  "subject": "character",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 5,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "KeyW",
+      "holdTicks": 60,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "run",
+      "press": ["KeyW", "ShiftLeft"],
+      "holdTicks": 45,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "strafe",
+      "press": ["KeyW", "KeyD"],
+      "holdTicks": 45,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "reset",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "reload",
+      "press": ["KeyW", "KeyR"],
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "reload-finish",
+      "press": "KeyW",
+      "holdTicks": 75,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "recoil",
+      "press": ["KeyW", "KeyF"],
+      "holdTicks": 20,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "cancel",
+      "press": ["KeyW", "KeyC"],
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "pause",
+      "press": ["KeyW", "KeyP"],
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "paused",
+      "press": "KeyW",
+      "holdTicks": 30,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "resume",
+      "press": ["KeyW", "KeyP"],
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "blocked",
+      "press": "KeyW",
+      "holdTicks": 360,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "reset-after-wall",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 1
+    },
+    {
+      "kind": "input",
+      "label": "cycle-01",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-02",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-03",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-04",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-05",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-06",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-07",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-08",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-09",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-10",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-11",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-12",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-13",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-14",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-15",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-16",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-17",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-18",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-19",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-20",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-21",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-22",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-23",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-24",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-25",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-26",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-27",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-28",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-29",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-30",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-31",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-32",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-33",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-34",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-35",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-36",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-37",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-38",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-39",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-40",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-41",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-42",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-43",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-44",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-45",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-46",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-47",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-48",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-49",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    },
+    {
+      "kind": "input",
+      "label": "cycle-50",
+      "press": "KeyL",
+      "holdTicks": 1,
+      "release": true,
+      "waitTicks": 2
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "history.walk",
+        "gte": 60,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.run",
+        "gte": 45,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.strafe",
+        "gte": 45,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.reload",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.reloadFinished",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.recoil",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.cancelled",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.pause",
+        "gte": 2,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.reset",
+        "gte": 2,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.blocked",
+        "gte": 30,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.cycles",
+        "gte": 50,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.exitActions",
+        "equals": 0,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.exitOwnedBytes",
+        "equals": 0,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "history.clipsUnchanged",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "lowerError",
+        "lte": 1e-5,
+        "throughoutSteps": true,
+        "allowTrivial": "Held invariant is sampled after real fixed ticks and scene transitions; separate history assertions require those operations."
+      },
+      {
+        "id": "GameState",
+        "path": "zeroError",
+        "lte": 1e-5,
+        "allowTrivial": "Held invariant is sampled after real fixed ticks and scene transitions; separate history assertions require those operations."
+      },
+      {
+        "id": "GameState",
+        "path": "skinRootZ",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Held invariant is sampled after real fixed ticks and scene transitions; separate history assertions require those operations."
+      },
+      {
+        "id": "GameState",
+        "path": "poseBeforeIK",
+        "equals": true,
+        "throughoutSteps": true,
+        "allowTrivial": "Held invariant is sampled after real fixed ticks and scene transitions; separate history assertions require those operations."
+      },
+      {
+        "id": "GameState",
+        "path": "ikError",
+        "lte": 0.05,
+        "throughoutSteps": true,
+        "allowTrivial": "Held invariant is sampled after real fixed ticks and scene transitions; separate history assertions require those operations."
+      },
+      {
+        "id": "GameState",
+        "path": "paused",
+        "atSteps": [
+          {
+            "label": "paused",
+            "equals": true
+          },
+          {
+            "label": "resume",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "actions",
+        "lte": 8,
+        "throughoutSteps": true,
+        "allowTrivial": "Held invariant is sampled after real fixed ticks and scene transitions; separate history assertions require those operations."
+      },
+      {
+        "id": "GameState",
+        "path": "layersRemoved",
+        "atSteps": [
+          {
+            "label": "cancel",
+            "equals": true
+          }
+        ]
+      }
+    ],
+    "scene": {
+      "cameraClearsScene": true,
+      "litMaterialsAreLit": true,
+      "minVisibleLights": 1
+    },
+    "sceneNodes": [
+      {
+        "select": {
+          "name": "characterSkin"
+        },
+        "minCount": 1,
+        "maxCount": 1,
+        "visible": true,
+        "inFrustum": true,
+        "minTriangles": 96
+      }
+    ]
+  }
+}

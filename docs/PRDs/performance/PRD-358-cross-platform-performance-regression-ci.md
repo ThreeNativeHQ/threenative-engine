@@ -14,6 +14,7 @@ this does not change rendering defaults or move appearance decisions into packag
 **Owner:** implementing engineer owns integration; repository maintainer owns baseline approval and
 required-check configuration; hardware-lane operator owns runner availability and calibration.
 
+**Priority:** P2 — Sixteen open boxes wire regression collection and paired policy across platforms.
 ## Problem and intended result
 
 A change can pass today's CI while increasing frame cost, startup time, or memory on a shipping

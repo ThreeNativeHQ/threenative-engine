@@ -166,7 +166,7 @@ async function recordTrace(args: ITraceArgs, output: string): Promise<ITraceSumm
  */
 export function installGpuPipelineDiagnostics(): void {
   type PipelineDescriptor = {
-    readonly depthStencil?: Readonly<Record<string, unknown>>;
+    readonly depthStencil?: { readonly format?: unknown };
     readonly label?: string;
   };
   type PipelineDiagnostic = {
@@ -174,11 +174,12 @@ export function installGpuPipelineDiagnostics(): void {
     readonly label?: string;
     readonly stack: string;
   };
-  const globals = globalThis as typeof globalThis & {
-    GPUDevice?: { prototype?: { createRenderPipelineAsync?: (descriptor: PipelineDescriptor) => Promise<unknown> } };
+  const globals: {
+    console: Pick<Console, "error">;
+    GPUDevice?: { prototype?: { createRenderPipelineAsync?(descriptor: PipelineDescriptor): Promise<unknown> } };
     __TN_TRACE_INVALID_GPU_PIPELINES__?: PipelineDiagnostic[];
     __TN_TRACE_GPU_PIPELINES_INSTALLED__?: boolean;
-  };
+  } = globalThis;
   globals.__TN_TRACE_INVALID_GPU_PIPELINES__ = [];
   if (globals.__TN_TRACE_GPU_PIPELINES_INSTALLED__ === true) return;
   const prototype = globals.GPUDevice?.prototype;
@@ -194,7 +195,7 @@ export function installGpuPipelineDiagnostics(): void {
         stack: new Error("createRenderPipelineAsync called without depthStencil.format").stack ?? "stack unavailable",
       };
       globals.__TN_TRACE_INVALID_GPU_PIPELINES__?.push(diagnostic);
-      console.error("TN_INVALID_DEPTH_PIPELINE", diagnostic);
+      globals.console.error("TN_INVALID_DEPTH_PIPELINE", diagnostic);
     }
     return create.call(this, descriptor);
   };

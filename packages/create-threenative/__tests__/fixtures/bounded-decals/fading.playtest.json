@@ -1,0 +1,142 @@
+{
+  "name": "vq11-fading",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 960,
+    "height": 540
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "lod-and-pool",
+      "waitFrames": 90
+    },
+    {
+      "kind": "input",
+      "label": "start-fade",
+      "press": "KeyF",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fading",
+      "waitFrames": 60
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    },
+    "components": [
+      {
+        "entity": "decals",
+        "component": "active",
+        "equals": 256,
+        "allowTrivial": "Real projected marks survive more than 256 impacts and eviction."
+      },
+      {
+        "entity": "decals",
+        "component": "created",
+        "gte": 321,
+        "allowTrivial": "320 initial marks plus a real post-LOD raycast hit."
+      },
+      {
+        "entity": "decals",
+        "component": "geometryBytes",
+        "allowTrivial": "Measures actual projected GPU-upload buffer bytes, not an empty field.",
+        "gte": 1
+      },
+      {
+        "entity": "decals",
+        "component": "renderTriangles",
+        "equals": 2,
+        "allowTrivial": "The loaded 128-triangle authored receiver actually selects its two-triangle LOD."
+      },
+      {
+        "entity": "decals",
+        "component": "generation",
+        "equals": 1,
+        "allowTrivial": "The restart input must construct a new scene; unchanged initial state is not evidence."
+      },
+      {
+        "entity": "decals",
+        "component": "atlasFade",
+        "equals": true,
+        "allowTrivial": "The same atlas is sampled through two distinct authored UV rectangles."
+      },
+      {
+        "entity": "decals",
+        "component": "averageOpacity",
+        "gte": 0.4,
+        "lte": 0.6,
+        "allowTrivial": "Observe actual cloned material opacity and exact expiry, not a timer counter."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 960,
+          "height": 540,
+          "minNonblankPixelRatio": 0.15
+        }
+      },
+      {
+        "region": {
+          "x": 270,
+          "y": 185,
+          "width": 170,
+          "height": 125,
+          "minNonblankPixelRatio": 0.9,
+          "maxLuminance": 0.35,
+          "maxDarkPixelRatio": 0.001
+        }
+      },
+      {
+        "region": {
+          "x": 550,
+          "y": 190,
+          "width": 95,
+          "height": 90,
+          "minNonblankPixelRatio": 0.9,
+          "maxLuminance": 0.35,
+          "maxDarkPixelRatio": 0.001
+        }
+      },
+      {
+        "region": {
+          "x": 280,
+          "y": 195,
+          "width": 150,
+          "height": 100,
+          "minNonblankPixelRatio": 0.9,
+          "maxLuminance": 0.65,
+          "minDarkPixelRatio": 0.01,
+          "maxDarkPixelRatio": 0.3
+        }
+      },
+      {
+        "region": {
+          "x": 555,
+          "y": 195,
+          "width": 85,
+          "height": 80,
+          "minNonblankPixelRatio": 0.9,
+          "maxLuminance": 0.6,
+          "minDarkPixelRatio": 0.1,
+          "maxDarkPixelRatio": 0.65
+        }
+      }
+    ]
+  }
+}

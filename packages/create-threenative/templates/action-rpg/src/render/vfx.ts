@@ -1,19 +1,21 @@
 import {
   Fn,
+  If,
   abs,
   atan,
   cos,
   cross,
   exp,
   float,
-  fract,
   hash,
   instanceIndex,
   mix,
   normalize,
   sin,
   smoothstep,
+  step,
   time,
+  uint,
   uv,
   varying,
   vec2,
@@ -22,23 +24,47 @@ import {
 } from "three/tsl";
 import {
   type ComputeNode,
+  type Node,
   SpriteNodeMaterial as SpriteMaterial,
   type SpriteNodeMaterial,
   type StorageBufferNode,
+  type UniformNode,
 } from "three/webgpu";
 import * as THREE from "three/webgpu";
 
+/** `positions` hold world positions; `velocities` hold each particle's burst origin. */
 export interface IActionRpgVfxBuffers {
   readonly positions: StorageBufferNode<"vec3">;
   readonly velocities: StorageBufferNode<"vec3">;
+  readonly births: StorageBufferNode<"float">;
+}
+
+export interface IActionRpgVfxSpawnRequest {
+  readonly first: UniformNode<"uint", number>;
+  readonly count: UniformNode<"uint", number>;
+  readonly origin: UniformNode<"vec3", THREE.Vector3>;
 }
 
 export interface IActionRpgVfxOptions {
+  /** Ring capacity: room for `RING_BURSTS` overlapping bursts. Emit `burstCount` per hit. */
   readonly amount: number;
+  readonly burstCount: number;
+  /** Longest particle life in seconds, so the engine can report slots recycled while alive. */
+  readonly lifetime: number;
   readonly material: SpriteNodeMaterial;
-  readonly start: (buffers: IActionRpgVfxBuffers) => ComputeNode;
-  readonly process: (buffers: IActionRpgVfxBuffers) => ComputeNode;
+  readonly spawn: (
+    buffers: IActionRpgVfxBuffers,
+    request: IActionRpgVfxSpawnRequest,
+  ) => ComputeNode;
+  readonly process: (
+    buffers: IActionRpgVfxBuffers,
+    runtime: { readonly time: Node<"float"> },
+  ) => ComputeNode;
+  readonly onCull?: "pause" | "clear";
 }
+
+/** The ring holds this many overlapping bursts before a new one takes the oldest slots. */
+const RING_BURSTS = 4;
 
 type DonorRecipe = {
   readonly amount: number;
@@ -61,44 +87,64 @@ type DonorRecipe = {
 
 const TAU = Math.PI * 2;
 
-function random(seed: number, salt: number) {
-  return hash(instanceIndex.add(seed + salt));
+/** Each burst reads its own random stream: the key is the engine's birth stamp of the slot. */
+function burstKey(born: Node<"float">) {
+  return born.max(0).mul(1000).toUint();
 }
 
-function phase(recipe: DonorRecipe, seed: number) {
-  const lifetime = float(recipe.lifetime[0]).add(
-    random(seed, 13).mul(recipe.lifetime[1] - recipe.lifetime[0]),
+type Key = ReturnType<typeof burstKey>;
+
+function random(seed: number, salt: number, key: Key) {
+  return hash(instanceIndex.add(seed + salt).add(key));
+}
+
+function lifetimeOf(recipe: DonorRecipe, seed: number, key: Key) {
+  return float(recipe.lifetime[0]).add(
+    random(seed, 13, key).mul(recipe.lifetime[1] - recipe.lifetime[0]),
   );
-  return fract(time.div(lifetime).add(random(seed, 19)));
 }
 
-function spawnPosition(recipe: DonorRecipe, seed: number) {
+function spawnPosition(recipe: DonorRecipe, seed: number, key: Key) {
   const lineStart = recipe.lineStart ?? [0, 0, 0];
   const lineEnd = recipe.lineEnd ?? [0, 0, 0];
-  const along = random(seed, 3);
+  const along = random(seed, 3, key);
   if (recipe.shape === "line") {
     return vec3(...lineStart)
       .mul(float(1).sub(along))
       .add(vec3(...lineEnd).mul(along));
   }
-  const angle = random(seed, 7).mul(TAU);
-  const radius = random(seed, 11).sqrt().mul(recipe.radius);
+  const angle = random(seed, 7, key).mul(TAU);
+  const radius = random(seed, 11, key).sqrt().mul(recipe.radius);
   return vec3(
     cos(angle).mul(radius),
     sin(angle).mul(radius),
-    random(seed, 17)
+    random(seed, 17, key)
       .sub(0.5)
       .mul(recipe.radius * 0.16),
   );
 }
 
-function launch(recipe: DonorRecipe, seed: number) {
-  const speed = float(recipe.speed[0]).add(random(seed, 23).mul(recipe.speed[1] - recipe.speed[0]));
+/**
+ * The axis a burst's cone is built around `direction` with. It must not be parallel to `direction`:
+ * `cross(direction, tangent)` is then zero, its `normalize` is NaN, every launch velocity is NaN, and
+ * the three.js arm's GPU hangs on the first frame the NaN reaches a sprite (VK_ERROR_DEVICE_LOST).
+ * The test is on the *normalised* direction, so `[0, 0.2, 0]` is straight up like `[0, 1, 0]`.
+ */
+export function launchTangent(
+  direction: readonly [number, number, number],
+): readonly [number, number, number] {
+  return Math.abs(direction[1] / Math.hypot(...direction)) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+}
+
+function launch(recipe: DonorRecipe, seed: number, key: Key) {
+  const speed = float(recipe.speed[0]).add(
+    random(seed, 23, key).mul(recipe.speed[1] - recipe.speed[0]),
+  );
   const direction = normalize(vec3(...recipe.direction));
-  const tangent = Math.abs(recipe.direction[1] ?? 1) > 0.9 ? vec3(1, 0, 0) : vec3(0, 1, 0);
+  const tangent = vec3(...launchTangent(recipe.direction));
   const bitangent = normalize(cross(direction, tangent));
-  const cone = float(recipe.cone).mul(random(seed, 29).sqrt());
-  const azimuth = random(seed, 31).mul(TAU);
+  const cone = float(recipe.cone).mul(random(seed, 29, key).sqrt());
+  const azimuth = random(seed, 31, key).mul(TAU);
   return normalize(
     direction
       .mul(cos(cone))
@@ -136,52 +182,81 @@ function mask(style: DonorRecipe["style"]) {
 
 function createDonorEmitter(recipe: DonorRecipe, seed: number): IActionRpgVfxOptions {
   const material = new SpriteMaterial({
-    blending: recipe.style === "glow" ? THREE.AdditiveBlending : THREE.AdditiveBlending,
+    blending: THREE.AdditiveBlending,
     depthWrite: false,
     toneMapped: false,
     transparent: true,
   });
-  const particlePhase = varying(phase(recipe, seed));
-  const scale =
-    recipe.shape === "line"
-      ? vec2(
-          Math.max(recipe.size * 3.8, recipe.lineEnd?.[0] ?? recipe.size),
-          recipe.ribbonWidth ?? recipe.size,
-        )
-      : vec2(recipe.size);
-  material.scaleNode = scale
-    .mul(recipe.style === "glow" ? mix(1.08, 0.66, particlePhase) : mix(1.16, 0.36, particlePhase))
-    .mul(0.52);
-  material.colorNode = vec4(
-    mix(vec3(...recipe.colour), vec3(...recipe.highlight), particlePhase),
-    mask(recipe.style)
-      .mul(float(1).sub(smoothstep(0.96, 1, particlePhase)))
-      .mul(0.96),
-  );
-  const start = ({ positions, velocities }: IActionRpgVfxBuffers): ComputeNode =>
+  const capacity = recipe.amount * RING_BURSTS;
+  // The material reads the birth stamp the engine writes, so it binds once the engine has made the buffer.
+  const bindMaterial = (born: Node<"float">): void => {
+    const key = burstKey(born);
+    const age = time.sub(born);
+    const lifetime = lifetimeOf(recipe, seed, key);
+    const alive = varying(step(0, age).mul(step(age, lifetime)));
+    const particlePhase = varying(age.div(lifetime).clamp(0, 1));
+    const scale =
+      recipe.shape === "line"
+        ? vec2(
+            Math.max(recipe.size * 3.8, recipe.lineEnd?.[0] ?? recipe.size),
+            recipe.ribbonWidth ?? recipe.size,
+          )
+        : vec2(recipe.size);
+    material.scaleNode = scale
+      .mul(
+        recipe.style === "glow" ? mix(1.08, 0.66, particlePhase) : mix(1.16, 0.36, particlePhase),
+      )
+      .mul(0.52)
+      .mul(alive);
+    material.colorNode = vec4(
+      mix(vec3(...recipe.colour), vec3(...recipe.highlight), particlePhase),
+      mask(recipe.style)
+        .mul(float(1).sub(smoothstep(0.96, 1, particlePhase)))
+        .mul(0.96)
+        .mul(alive),
+    );
+    const direction = launch(recipe, seed, key);
+    material.rotationNode = atan(direction.y, direction.x);
+  };
+  const spawn = (
+    { positions, velocities, births }: IActionRpgVfxBuffers,
+    request: IActionRpgVfxSpawnRequest,
+  ): ComputeNode => {
+    bindMaterial(births.toAttribute());
+    return Fn(() => {
+      If(instanceIndex.lessThan(request.count), () => {
+        const slot = request.first.add(instanceIndex).mod(uint(capacity));
+        velocities.element(slot).assign(request.origin);
+        positions.element(slot).assign(request.origin);
+      });
+    })().compute(capacity);
+  };
+  const process = (
+    { positions, velocities, births }: IActionRpgVfxBuffers,
+    runtime: { readonly time: Node<"float"> },
+  ): ComputeNode =>
     Fn(() => {
-      const spawn = spawnPosition(recipe, seed);
-      positions.element(instanceIndex).assign(spawn);
-      velocities.element(instanceIndex).assign(launch(recipe, seed));
-    })().compute(recipe.amount);
-  const process = ({ positions, velocities }: IActionRpgVfxBuffers): ComputeNode =>
-    Fn(() => {
-      const spawn = spawnPosition(recipe, seed);
-      const velocity = launch(recipe, seed);
-      const lifetime = float(recipe.lifetime[0]).add(
-        random(seed, 13).mul(recipe.lifetime[1] - recipe.lifetime[0]),
-      );
-      const elapsed = phase(recipe, seed).mul(lifetime);
-      const nextPosition = spawn
-        .add(velocity.mul(elapsed))
+      const born = births.element(instanceIndex);
+      const key = burstKey(born);
+      const lifetime = lifetimeOf(recipe, seed, key);
+      const elapsed = runtime.time.sub(born).clamp(0, lifetime);
+      const local = spawnPosition(recipe, seed, key)
+        .add(launch(recipe, seed, key).mul(elapsed))
         .add(vec3(...recipe.acceleration).mul(elapsed.mul(elapsed).mul(0.5)))
         .mul(exp(float(-recipe.drag).mul(elapsed)));
-      positions.element(instanceIndex).assign(nextPosition);
-      velocities.element(instanceIndex).assign(velocity);
-    })().compute(recipe.amount);
-  const direction = launch(recipe, seed);
-  material.rotationNode = atan(direction.y, direction.x);
-  return { amount: recipe.amount, material, start, process };
+      positions.element(instanceIndex).assign(velocities.element(instanceIndex).add(local));
+    })().compute(capacity);
+  // A burst ages on the engine clock, so one that expires while the camera is away stays gone.
+  // emitParticle still writes a burst emitted off-screen; it shows when the camera returns.
+  return {
+    amount: capacity,
+    burstCount: recipe.amount,
+    lifetime: recipe.lifetime[1],
+    material,
+    onCull: "pause",
+    process,
+    spawn,
+  };
 }
 
 /** The attack arc uses the Kenney particle-pack slash-arc layer: line, width, colour and timing. */

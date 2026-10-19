@@ -260,7 +260,9 @@ function buildVelocityUpdateNodes(object: Object3D, node: Node): IInspectableVel
 }
 
 function runObjectUpdate(builder: IInspectableVelocityBuilder, object: Object3D): void {
-  const event = [...builder.nodes].find(isObjectEvent);
+  const event =
+    [...builder.nodes].find((node) => Reflect.get(node, "eventType") === "beforeObject") ??
+    [...builder.nodes].find(isObjectEvent);
   if (event === undefined) throw new Error("velocity fixture did not build an object update");
   event.update({ frameId: 2, object });
 }

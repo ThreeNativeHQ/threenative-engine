@@ -3,6 +3,7 @@ import {
   Scene,
   type SceneFrame,
   afterPhysics,
+  getPlatform,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
@@ -13,9 +14,16 @@ import { RacingCar } from "../entities/RacingCar.js";
 import { Rival } from "../entities/Rival.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { cameraBank, chaseCamera, setupCamera } from "../render/camera.js";
+import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { setupPost } from "../render/postprocessing.js";
+import {
+  type QualityTier,
+  isWebGLFallbackRenderer,
+  materialLightingEnabled,
+} from "../render/quality.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, type RaceStatus, resolveRaceStatus } from "../state.js";
@@ -98,11 +106,42 @@ export class Race extends Scene<GameState, IPhysicsContext> {
    * the moment it decodes, which is also what a player sees — a sky that arrives rather than a
    * black screen that waits.
    */
+  #post: ReturnType<typeof setupPost> | undefined;
+  #environmentSample: IEnvironmentSample | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+  #lightingGeneration = 0;
+
   override load(ctx: GameCtx): void {
-    void ctx.assets.texture("sky.jpg").then((texture) => {
+    const generation = ++this.#lightingGeneration;
+    void ctx.assets.texture("sky.jpg").then(async (texture) => {
+      if (generation !== this.#lightingGeneration) return;
       this.#sky = texture;
       const scene = ctx.scene;
-      if (scene !== undefined) setupSky(scene, texture);
+      if (scene === undefined) return;
+      setupSky(scene, texture);
+      const controller = this.#materialLighting;
+      const sample = await sampleEnvironment(ctx.renderer.raw, scene, {
+        web: getPlatform().runtime === "web",
+        rendererKind: ctx.renderer.kind,
+        webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+        mobile: isMobile(),
+        software: ctx.renderer.softwareAdapter !== undefined,
+      });
+      if (generation !== this.#lightingGeneration || ctx.scene !== scene) return;
+      this.#environmentSample = sample;
+      // A cached sky may start sampling before enter creates the receiver controller.
+      // A controller that already existed when sampling began must still be the same one.
+      const currentController = this.#materialLighting;
+      if (
+        currentController !== undefined &&
+        (controller === undefined || controller === currentController)
+      )
+        currentController.setEnvironmentMeasurement(
+          sample.measurement,
+          sample.source,
+          sample.intensity,
+          sample,
+        );
     });
   }
 
@@ -115,10 +154,23 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code, exactly like createRandom.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+    const materialEnvironment = {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
+    let materialTier: QualityTier = "low";
+    this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      onTierChanged: (tier) => {
+        materialTier = tier;
+        this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment));
+      },
       godraysLight: lighting.key,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     const loading = createLoadingScreen(ctx);
     const camera = ctx.camera as PerspectiveCamera;
@@ -137,6 +189,14 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     const rival = new Rival(ctx, GRID_DISTANCE.rival);
     ctx.entities.add("player", car);
     ctx.entities.add("rival", rival);
+    // The sun's aim as three reads it: the target's world matrix, which only a scene traversal refreshes.
+    ctx.entities.add("sun", {
+      get targetGap(): number {
+        return new Vector3()
+          .setFromMatrixPosition(lighting.key.target.matrixWorld)
+          .distanceTo(car.body.position);
+      },
+    });
 
     // `travelDirection` is the car's **measured** velocity, not the heading it was asked for: a
     // car that is sliding through a corner is travelling somewhere other than where it points, and
@@ -229,6 +289,24 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       camera.rotateZ(cameraBank(car.lateralLoad, FEEL.lateral));
     });
 
+    // Collect only after the loaded character and scene receivers are attached.
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, lighting.key, {
+        ...materialEnvironment,
+        enabled: materialLightingEnabled(materialTier, materialEnvironment),
+      }),
+    );
+    if (this.#environmentSample !== undefined) {
+      const sample = this.#environmentSample;
+      this.#materialLighting.setEnvironmentMeasurement(
+        sample.measurement,
+        sample.source,
+        sample.intensity,
+        sample,
+      );
+    }
+
     return (frameCtx, dt) => {
       loading.update();
       if (frameCtx.input.justPressed("restart")) {
@@ -276,5 +354,15 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       statePatch.reverseRejects = lap.reverseRejects;
       frameCtx.state.set(statePatch);
     };
+  }
+
+  override exit(ctx: GameCtx): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
+    this.#environmentSample = undefined;
+    this.#lightingGeneration += 1;
+    super.exit(ctx);
   }
 }

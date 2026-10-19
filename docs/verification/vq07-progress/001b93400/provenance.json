@@ -1,0 +1,587 @@
+{
+  "sourceSha": "001b934008cbc6e3ab196678506ae9b14f751f1e",
+  "runId": 36997361343,
+  "runUrl": "https://github.com/ThreeNativeHQ/threenative/actions/runs/36997361343",
+  "artifactId": 11221669862,
+  "artifactSha256": "2c88ec8b13a525986867301a735ede33f5b76ab3b6d9db3c46459554b5b7a4ca",
+  "overallRunPass": false,
+  "qualification": "Actual browser WebGPU software correctness progress. All isolated-scattering arms pass normal runtime/capture guards and the pinned pixel metrics. Overall run stops at lifecycle setup-count mismatch; no complete lifecycle, resize, native or performance claim.",
+  "images": {
+    "blackOff": {
+      "file": "blackOff.png",
+      "sha256": "8949e59556dd3e14b91756277782d8a98c2fd4af47bc27b232266540c2e1d3c0",
+      "mode": "blackOff",
+      "sourceSha": "001b934008cbc6e3ab196678506ae9b14f751f1e",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    "scatter": {
+      "file": "scatter.png",
+      "sha256": "89df2275163ca948f5ef8b5e18b3f94e57b9e01e5a6f5137dcf2fbe32aece809",
+      "mode": "scatter",
+      "sourceSha": "001b934008cbc6e3ab196678506ae9b14f751f1e",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    "scatterSunOff": {
+      "file": "scatterSunOff.png",
+      "sha256": "b10e9a6bea07b1f01b9b2b239882653d1538c115bc6911c20de95c0d517fe429",
+      "mode": "scatterSunOff",
+      "sourceSha": "001b934008cbc6e3ab196678506ae9b14f751f1e",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    "scatterPointOff": {
+      "file": "scatterPointOff.png",
+      "sha256": "d05cd825f2b4779e2abadd111517195bfb2b0fdca593b371992a23b534cd761f",
+      "mode": "scatterPointOff",
+      "sourceSha": "001b934008cbc6e3ab196678506ae9b14f751f1e",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    }
+  },
+  "pixelMetrics": {
+    "computedWithVerifierSourceSha": "001b934008cbc6e3ab196678506ae9b14f751f1e",
+    "baselineMaxRgb": 0,
+    "wallMaxRgb": 0,
+    "roi": {
+      "x": 260,
+      "y": 155,
+      "width": 150,
+      "height": 90
+    },
+    "wallRoi": {
+      "x": 184,
+      "y": 216,
+      "width": 18,
+      "height": 18
+    },
+    "evaluationRoi": {
+      "x": 0,
+      "y": 0,
+      "width": 500,
+      "height": 400
+    },
+    "calibrationRoi": {
+      "x": 515,
+      "y": 25,
+      "width": 110,
+      "height": 110
+    },
+    "calibrationMinimum": 146,
+    "calibrationMaxDifference": 0,
+    "sun": {
+      "meanRgbDelta": 15.958518518518519,
+      "changedPixelRatio": 0.9933333333333333
+    },
+    "point": {
+      "meanRgbDelta": 48.77553086419753,
+      "changedPixelRatio": 1
+    },
+    "thresholds": {
+      "minMeanRgbDelta": 1,
+      "minChangedPixelRatio": 0.1,
+      "maxBlackRgb": 0,
+      "minCalibrationRgb": 32,
+      "maxCalibrationDifference": 0
+    },
+    "pass": true
+  },
+  "lifecycleFailure": {
+    "mode": "lifecycle",
+    "sourceSha": "001b934008cbc6e3ab196678506ae9b14f751f1e",
+    "pass": false,
+    "capture": {
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 400,
+        "width": 640
+      }
+    },
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_COMPONENT_ASSERTION_FAILED",
+        "message": "Component 'disposedGraphs' on entity 'fog' did not satisfy the assertion.",
+        "observedRuntimePath": "observations.json/components/fog/disposedGraphs",
+        "severity": "error",
+        "suggestion": "Expected {\"changed\":true,\"component\":\"disposedGraphs\",\"entity\":\"fog\",\"gte\":4}, observed before=0 after=3. Check the owning script and runtime component synchronization."
+      }
+    ],
+    "lights": {
+      "directional": {
+        "name": "fog-directional",
+        "type": "DirectionalLight",
+        "shadow": "ordinary-map"
+      },
+      "point": {
+        "name": "fog-point",
+        "type": "PointLight",
+        "shadow": "none",
+        "range": 8
+      }
+    }
+  },
+  "successfulRevalidation": {
+    "sourceSha": "1c9534fe9fdd29458d880afe70c45dc4aa5f22ce",
+    "runId": 36998309685,
+    "runUrl": "https://github.com/ThreeNativeHQ/threenative/actions/runs/36998309685",
+    "artifactId": 11222836638,
+    "artifactSha256": "9f0c207b9ba0cbc024b78104cc025a09acb8c925e13cba6fc22e17d78195c551",
+    "capture": {
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 400,
+        "width": 640
+      }
+    },
+    "allFourControlPngBytesIdentical": true,
+    "results": [
+      {
+        "mode": "off",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "zero",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "fog",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "inside",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "sunOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "pointOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "overlap",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "half",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "wallOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "blackOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "scatter",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "scatterSunOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "scatterPointOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "lifecycle",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "lifecycleOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "assertion": "zero-density pixel identity",
+        "pass": true
+      },
+      {
+        "assertion": "repeated lifecycle restores baseline pixels",
+        "pass": true
+      },
+      {
+        "assertion": "isolated light-scattering pixels",
+        "baselineMaxRgb": 0,
+        "wallMaxRgb": 0,
+        "roi": {
+          "x": 260,
+          "y": 155,
+          "width": 150,
+          "height": 90
+        },
+        "wallRoi": {
+          "x": 184,
+          "y": 216,
+          "width": 18,
+          "height": 18
+        },
+        "evaluationRoi": {
+          "x": 0,
+          "y": 0,
+          "width": 500,
+          "height": 400
+        },
+        "calibrationRoi": {
+          "x": 515,
+          "y": 25,
+          "width": 110,
+          "height": 110
+        },
+        "calibrationMinimum": 146,
+        "calibrationMaxDifference": 0,
+        "sun": {
+          "meanRgbDelta": 15.958518518518519,
+          "changedPixelRatio": 0.9933333333333333
+        },
+        "point": {
+          "meanRgbDelta": 48.77553086419753,
+          "changedPixelRatio": 1
+        },
+        "thresholds": {
+          "minMeanRgbDelta": 1,
+          "minChangedPixelRatio": 0.1,
+          "maxBlackRgb": 0,
+          "minCalibrationRgb": 32,
+          "maxCalibrationDifference": 0
+        },
+        "pass": true
+      }
+    ],
+    "lifecycleObservations": {
+      "lifecycle": {
+        "mode": {
+          "before": "off",
+          "after": "fog"
+        },
+        "ready": {
+          "before": false,
+          "after": true
+        },
+        "builds": {
+          "before": 0,
+          "after": 5
+        },
+        "disposedGraphs": {
+          "before": 0,
+          "after": 4
+        },
+        "createdTargets": {
+          "before": 0,
+          "after": 4
+        },
+        "releasedTargets": {
+          "before": 0,
+          "after": 3
+        },
+        "releasedMaterials": {
+          "before": 0,
+          "after": 3
+        },
+        "liveTargets": {
+          "before": 0,
+          "after": 1
+        },
+        "scatteringOnly": {
+          "before": false,
+          "after": false
+        },
+        "targets": {
+          "before": 0,
+          "after": 1
+        },
+        "pixels": {
+          "before": 0,
+          "after": 256000
+        },
+        "steps": {
+          "before": 0,
+          "after": 48
+        },
+        "inside": {
+          "before": false,
+          "after": false
+        },
+        "sun": {
+          "before": true,
+          "after": true
+        },
+        "point": {
+          "before": true,
+          "after": true
+        },
+        "overlaps": {
+          "before": false,
+          "after": false
+        }
+      },
+      "lifecycleOff": {
+        "mode": {
+          "before": "off",
+          "after": "off"
+        },
+        "ready": {
+          "before": false,
+          "after": true
+        },
+        "builds": {
+          "before": 0,
+          "after": 6
+        },
+        "disposedGraphs": {
+          "before": 0,
+          "after": 5
+        },
+        "createdTargets": {
+          "before": 0,
+          "after": 4
+        },
+        "releasedTargets": {
+          "before": 0,
+          "after": 4
+        },
+        "releasedMaterials": {
+          "before": 0,
+          "after": 4
+        },
+        "liveTargets": {
+          "before": 0,
+          "after": 0
+        },
+        "scatteringOnly": {
+          "before": false,
+          "after": false
+        },
+        "targets": {
+          "before": 0,
+          "after": 0
+        },
+        "pixels": {
+          "before": 0,
+          "after": 0
+        },
+        "steps": {
+          "before": 0,
+          "after": 0
+        },
+        "inside": {
+          "before": false,
+          "after": false
+        },
+        "sun": {
+          "before": true,
+          "after": true
+        },
+        "point": {
+          "before": true,
+          "after": true
+        },
+        "overlaps": {
+          "before": false,
+          "after": false
+        }
+      }
+    }
+  }
+}

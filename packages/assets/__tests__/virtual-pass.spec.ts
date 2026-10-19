@@ -1,7 +1,7 @@
 import { Document, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
-import { TorusKnotGeometry } from "three";
+import { SphereGeometry, TorusKnotGeometry } from "three";
 import { describe, expect, it } from "vitest";
 import { modelPass } from "../src/passes/model.js";
 import { formatModelSizes } from "../src/report.js";
@@ -58,6 +58,77 @@ async function sourceGlb(geometry: TorusKnotGeometry): Promise<Buffer> {
   return Buffer.from(await io.writeBinary(document));
 }
 
+/**
+ * Twelve closed shells that touch nothing, in one primitive: the body whose DAG halves a dozen
+ * times and then floors out above one cluster, which is the `stalled` the decline must not read as
+ * "reduced nothing" (PRD-485).
+ */
+async function shellsGlb(shellCount: number): Promise<Buffer> {
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const scene = document.createScene();
+  const shell = new SphereGeometry(0.5, 32, 16);
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+  const source = shell.attributes.position?.array ?? [];
+  const sourceNormals = shell.attributes.normal?.array ?? [];
+  const shellIndices = Array.from(shell.index?.array ?? []);
+  // A three.js sphere leaves two pole vertices no triangle references, and the pass's self-verify
+  // fails a cook that drops them — the same trap `denseGlb` avoids with a torus knot. Compacting to
+  // the used vertices is the whole fix.
+  const used = [...new Set(shellIndices)].sort((left, right) => left - right);
+  const remap = new Map(used.map((vertex, slot) => [vertex, slot]));
+  for (let count = 0; count < shellCount; count += 1) {
+    const base = positions.length / 3;
+    for (const vertex of used) {
+      const slot = vertex * 3;
+      positions.push(
+        (source[slot] as number) + count * 40,
+        source[slot + 1] as number,
+        source[slot + 2] as number,
+      );
+      normals.push(
+        sourceNormals[slot] as number,
+        sourceNormals[slot + 1] as number,
+        sourceNormals[slot + 2] as number,
+      );
+    }
+    for (const vertex of shellIndices) indices.push(base + (remap.get(vertex) as number));
+  }
+  const primitive = document
+    .createPrimitive()
+    .setAttribute(
+      "POSITION",
+      document
+        .createAccessor()
+        .setType("VEC3")
+        .setArray(Float32Array.from(positions))
+        .setBuffer(buffer),
+    )
+    .setAttribute(
+      "NORMAL",
+      document
+        .createAccessor()
+        .setType("VEC3")
+        .setArray(Float32Array.from(normals))
+        .setBuffer(buffer),
+    )
+    .setIndices(
+      document
+        .createAccessor()
+        .setType("SCALAR")
+        .setArray(Uint32Array.from(indices))
+        .setBuffer(buffer),
+    )
+    .setMaterial(document.createMaterial("stone"));
+  scene.addChild(
+    document.createNode("cavern").setMesh(document.createMesh("cavern").addPrimitive(primitive)),
+  );
+  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+  return Buffer.from(await io.writeBinary(document));
+}
+
 async function readBack(buffer: Buffer, registerVirtual: boolean): Promise<Document> {
   await MeshoptDecoder.ready;
   const io = new NodeIO()
@@ -81,6 +152,72 @@ async function compile(virtual: boolean): Promise<{ buffer: Buffer; entry: unkno
   ).apply(input, "quarry-face.glb");
   if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
   return { buffer: result.buffer, entry: result.entry };
+}
+
+/**
+ * A canopy of disconnected alpha-cutout cards: what a Fab foliage primitive is, and what the
+ * Hornbeam's two of them are (PRD-485).
+ *
+ * Every card is its own connected component with its own four vertices, so the whole rim is a
+ * border edge and the cluster builder — which simplifies each group with the rim locked — has
+ * nothing it is allowed to collapse. The card count is what puts the far level under a tenth of the
+ * source: the ladder's terminal target is `max(1500, 5% of LOD0)`, and only above 30,000 triangles
+ * is the ratio the binding half of that.
+ */
+async function foliageGlb(cardCount: number): Promise<Buffer> {
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const scene = document.createScene();
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  const perRow = Math.ceil(Math.sqrt(cardCount));
+  for (let card = 0; card < cardCount; card += 1) {
+    const base = positions.length / 3;
+    const x = (card % perRow) * 2;
+    const y = Math.floor(card / perRow) * 2;
+    const height = 0.5 + ((card * 37) % 11) / 22;
+    positions.push(x, y, 0, x + height, y, 0, x + height, y + height, 0, x, y + height, 0);
+    normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
+    uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  const primitive = document
+    .createPrimitive()
+    .setAttribute(
+      "POSITION",
+      document
+        .createAccessor()
+        .setType("VEC3")
+        .setArray(Float32Array.from(positions))
+        .setBuffer(buffer),
+    )
+    .setAttribute(
+      "NORMAL",
+      document
+        .createAccessor()
+        .setType("VEC3")
+        .setArray(Float32Array.from(normals))
+        .setBuffer(buffer),
+    )
+    .setAttribute(
+      "TEXCOORD_0",
+      document.createAccessor().setType("VEC2").setArray(Float32Array.from(uvs)).setBuffer(buffer),
+    )
+    .setIndices(
+      document
+        .createAccessor()
+        .setType("SCALAR")
+        .setArray(Uint32Array.from(indices))
+        .setBuffer(buffer),
+    )
+    .setMaterial(document.createMaterial("Foliage").setAlphaMode("MASK").setAlphaCutoff(0.5));
+  scene.addChild(
+    document.createNode("canopy").setMesh(document.createMesh("canopy").addPrimitive(primitive)),
+  );
+  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+  return Buffer.from(await io.writeBinary(document));
 }
 
 describe("the virtual-geometry pass", () => {
@@ -219,6 +356,84 @@ describe("the virtual-geometry pass", () => {
     expect(summary.skipped).toBe(1);
   });
 
+  it("hands cards it cannot reduce to the discrete ladder, which does reduce them", async () => {
+    // PRD-485. A body of disconnected alpha-cutout cards is the one shape the cluster builder
+    // refuses: every edge of every card is a border, `LockBorder` holds all of it, and the first
+    // fold simplifies nothing — so a stalled DAG reports 100% of the triangles at every level and
+    // owns 745,328 Hornbeam foliage triangles with no coarse representation at all. The bake hands
+    // that primitive back and the ladder gives it the far level the DAG could not.
+    const result = await modelPass({
+      lod: true,
+      virtual: { minSourceTriangles: 1024 },
+    }).apply(await foliageGlb(16384), "canopy.glb");
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+
+    expect(jsonOf(result.buffer).extensionsUsed ?? []).not.toContain("TN_virtual_geometry");
+    const virtual = (
+      result.entry as {
+        virtual: { clusters: number; declined: number; payloadBytes: number; primitives: number };
+      }
+    ).virtual;
+    expect(virtual).toMatchObject({ clusters: 0, declined: 1, payloadBytes: 0, primitives: 0 });
+
+    const lod = (
+      result.entry as {
+        lod: {
+          primitives: {
+            cardLevels: { cellCoverage: number }[];
+            levels: { absoluteError: number; triangles: number }[];
+            strategy: string;
+            trianglesBefore: number;
+          }[];
+          reasons: string[];
+          skipped: number;
+        };
+      }
+    ).lod;
+    // Not `virtual-owned` any more, and not skipped for anything else either.
+    expect(lod.reasons).not.toContain("virtual-owned");
+    expect(lod.skipped).toBe(0);
+    const chain = lod.primitives[0];
+    if (chain === undefined) throw new Error("the declined cards got no chain at all");
+    expect(chain.strategy).toBe("cards");
+
+    const far = chain.levels[chain.levels.length - 1]?.triangles ?? 0;
+    expect(far).toBeGreaterThan(0);
+    expect(far / chain.trianglesBefore).toBeLessThanOrEqual(0.1);
+    // The crown keeps a card in every occupied cell at every level, and each level's error is
+    // wider than the one before it — the two properties the runtime's distance switch reads.
+    for (const level of chain.cardLevels ?? []) expect(level.cellCoverage).toBe(1);
+    for (let level = 1; level < chain.levels.length; level += 1)
+      expect(chain.levels[level]?.absoluteError).toBeGreaterThanOrEqual(
+        chain.levels[level - 1]?.absoluteError ?? 0,
+      );
+
+    // And the cook still decides nothing about how it looks: the alpha cutoff the asset was
+    // authored with is the one that ships.
+    const material = (
+      JSON.parse(
+        result.buffer.subarray(20, 20 + result.buffer.readUInt32LE(12)).toString("utf8"),
+      ) as { materials?: { alphaCutoff?: number; alphaMode?: string }[] }
+    ).materials?.[0];
+    expect(material).toMatchObject({ alphaCutoff: 0.5, alphaMode: "MASK" });
+  }, 300_000);
+
+  it("keeps a DAG that stalled only after it had already shed its triangles", async () => {
+    // The decline is measured, not `stalled => gone`: twelve closed shells cannot become one
+    // cluster — meshoptimizer will not take a shell below about 64 triangles — but the DAG has
+    // halved several times before it floors out, and that payload is worth keeping.
+    const result = await modelPass({ virtual: { minSourceTriangles: 1024 } }).apply(
+      await shellsGlb(12),
+      "cavern.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("model pass returned an unchanged buffer");
+
+    expect(
+      (result.entry as { virtual: { declined: number; primitives: number; stopReason: string } })
+        .virtual,
+    ).toMatchObject({ declined: 0, primitives: 1, stopReason: "stalled" });
+  }, 600_000);
+
   it("AC8 — a reader that has never heard of the extension gets the source mesh", async () => {
     const { buffer } = await compile(true);
     const stock = await readBack(buffer, false);
@@ -264,6 +479,7 @@ describe("the virtual-geometry pass", () => {
         virtual: {
           bakeSeconds: 12.34,
           clusters: 512,
+          declined: 0,
           levels: 6,
           payloadBytes: 4096,
           primitives: 1,
@@ -287,6 +503,7 @@ describe("the virtual-geometry pass", () => {
         virtual: {
           bakeSeconds: 1,
           clusters: 8,
+          declined: 0,
           levels: 2,
           payloadBytes: 64,
           primitives: 1,
@@ -297,5 +514,29 @@ describe("the virtual-geometry pass", () => {
     ]);
 
     expect(lines.join("\n")).toContain("a DAG hit the level cap and is unfinished");
+  });
+
+  it("AC7 — the report names the primitives it handed to the LOD ladder", () => {
+    const lines = formatModelSizes([
+      {
+        after: 900,
+        before: 1000,
+        logicalPath: "canopy.glb",
+        virtual: {
+          bakeSeconds: 0.1,
+          clusters: 0,
+          declined: 2,
+          levels: 0,
+          payloadBytes: 0,
+          primitives: 0,
+          skipped: 1,
+          stopReason: "root",
+        },
+      },
+    ]);
+
+    // "no primitive was dense enough" would be the wrong reason for a body whose cards were dense
+    // enough and whose DAG reduced nothing.
+    expect(lines.join("\n")).toContain("1 skipped, 2 declined to the LOD ladder");
   });
 });

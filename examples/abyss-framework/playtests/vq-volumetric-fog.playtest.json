@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "name": "vq-volumetric-fog-lifecycle",
+  "target": "web",
+  "viewport": {
+    "width": 640,
+    "height": 400
+  },
+  "warmupFrames": 60,
+  "steps": [
+    {
+      "press": ["KeyF"],
+      "holdTicks": 1,
+      "release": true,
+      "label": "install-fog-baseline"
+    },
+    {
+      "kind": "wait",
+      "waitFrames": 60
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "stableTextureFrames",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": true,
+      "label": "initial-fog-rendered"
+    },
+    {
+      "press": ["KeyI"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitFrames": 20
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "stableTextureFrames",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": true,
+      "label": "inside-rendered"
+    },
+    {
+      "press": ["KeyO"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitFrames": 20
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "stableTextureFrames",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": true,
+      "label": "off-rendered"
+    },
+    {
+      "press": ["KeyF"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitFrames": 20
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "stableTextureFrames",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": true,
+      "label": "fog-return-rendered"
+    },
+    {
+      "press": ["KeyC"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitFrames": 60
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "stableTextureFrames",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": true,
+      "label": "rebuild-rendered"
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "fog",
+        "component": "ready",
+        "equals": true,
+        "allowTrivial": "The graph must be ready after repeated reconstruction."
+      },
+      {
+        "entity": "fog",
+        "component": "mode",
+        "equals": "fog",
+        "allowTrivial": "The fixture returns to the initial authored medium."
+      },
+      {
+        "entity": "fog",
+        "component": "targets",
+        "equals": 1,
+        "allowTrivial": "Exactly the current fog RTT remains after replacement."
+      },
+      {
+        "entity": "fog",
+        "component": "disposedGraphs",
+        "gte": 4,
+        "changed": true
+      },
+      {
+        "entity": "fog",
+        "component": "createdTargets",
+        "equals": 4,
+        "allowTrivial": "Observe actual owned teardown events and the live target balance after reconstruction."
+      },
+      {
+        "entity": "fog",
+        "component": "releasedTargets",
+        "equals": 3,
+        "allowTrivial": "Observe actual owned teardown events and the live target balance after reconstruction."
+      },
+      {
+        "entity": "fog",
+        "component": "releasedMaterials",
+        "equals": 3,
+        "allowTrivial": "Observe actual owned teardown events and the live target balance after reconstruction."
+      },
+      {
+        "entity": "fog",
+        "component": "liveTargets",
+        "equals": 1,
+        "allowTrivial": "Observe actual owned teardown events and the live target balance after reconstruction."
+      },
+      {
+        "entity": "fog",
+        "component": "settledRenderFrames",
+        "gte": 3,
+        "allowTrivial": "Resource counts must be observed stable over completed rendered frames."
+      },
+      {
+        "entity": "fog",
+        "component": "stableTextureFrames",
+        "gte": 3,
+        "allowTrivial": "Resource counts must be observed stable over completed rendered frames."
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 400,
+          "minNonblankPixelRatio": 0.05
+        }
+      }
+    ]
+  },
+  "artifacts": {
+    "screenshots": "after",
+    "console": true,
+    "runtimeTrace": true
+  }
+}

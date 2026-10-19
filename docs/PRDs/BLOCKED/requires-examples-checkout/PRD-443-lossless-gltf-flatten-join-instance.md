@@ -1,6 +1,7 @@
 # PRD-443 — Lossless flatten/join/instance pass for `@threenative/assets` model pipeline
 
 **Status:** BLOCKED (R6, 2026-09-25) — every box is ticked (`prd:100%`); the only remaining work is the `## Blocked on` list. Phases 1–4 landed and verified, including the engine-side release (0.3.4, content-hashed tarball, install proof). The Midway rollout lives in the `ThreeNativeHQ/examples` checkout this repository does not contain, and `tools/run-handoff.sh` is red on three of Midway's own gates that read no compacted asset. Filed in `docs/PRDs/BLOCKED/requires-examples-checkout/`.
+**Priority:** P3 — All phases ticked; only the Blocked-on list remains, itself gated on Midway's red gates.
 **Complexity:** 6 (MEDIUM); risk override: none
 **Owner:** Joao Furtado
 **Depends on:** None

@@ -1,0 +1,303 @@
+{
+  "base": "c16786fe3ab506bd63379b6e082fafb659c2ad2a",
+  "patchSha256": "da2946afe29e02b413e94279a6f7c59cb86e40d3c10e745c62d7b02a7db2f919",
+  "sourceRuntimeUnchanged": true,
+  "mismatches": [],
+  "reportSha256": "3afdbbceddf2d6397e17e4eb5061d001698f722e226b57516d7cc3216d5fdbcc",
+  "exitCode": "0",
+  "pass": true,
+  "frames": 330,
+  "capture": {
+    "adapter": {
+      "architecture": "swiftshader",
+      "vendor": "google",
+      "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "8192",
+      "limit.maxStorageBufferBindingSize": "1073741824"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan",
+      "--use-vulkan=swiftshader",
+      "--use-angle=swiftshader"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  "diagnostics": [],
+  "assertionResults": [
+    {
+      "details": {
+        "after": 331,
+        "before": 1,
+        "component": "oceanSteps",
+        "entity": "player",
+        "expected": {
+          "changed": true,
+          "component": "oceanSteps",
+          "entity": "player",
+          "allowTrivial": "The ocean's compute passes must actually dispatch: a SpectralOcean whose process() never runs holds whatever the warmup left in its cascade buffers, and the water is then a still photograph that every other assertion here passes on.",
+          "gte": 200
+        },
+        "trivial": false
+      },
+      "id": "component.player.oceanSteps.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 0.11529439627584934,
+        "before": 0,
+        "component": "seaHeight",
+        "entity": "player",
+        "expected": {
+          "changed": true,
+          "component": "seaHeight",
+          "entity": "player",
+          "allowTrivial": "The sea under the hull must move: a spectral ocean whose compute passes never dispatch reads back the same height every frame, and every other assertion here still passes on a frozen sheet of water."
+        },
+        "trivial": false
+      },
+      "id": "component.player.seaHeight.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 0,
+        "before": 0,
+        "component": "floatGap",
+        "entity": "player",
+        "expected": {
+          "component": "floatGap",
+          "entity": "player",
+          "allowTrivial": "The drawn hull's design waterline sits on the sea surface; a hull riding above its own water is the failure this row exists to catch.",
+          "gte": -0.08,
+          "lte": 0.08
+        },
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "component.player.floatGap.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 326,
+        "before": -1,
+        "component": "readbackStaleFrames",
+        "entity": "player",
+        "expected": {
+          "component": "readbackStaleFrames",
+          "entity": "player",
+          "allowTrivial": "A negative age means the GPU height copy never landed, so nothing downstream of it can be trusted.",
+          "gte": 0
+        },
+        "trivial": false
+      },
+      "id": "component.player.readbackStaleFrames.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "warmup": {
+      "attempted": 1,
+      "candidates": 24,
+      "observed": {
+        "created": 0,
+        "failed": 0,
+        "pending": 0,
+        "uniquePrograms": 0,
+        "uniquePipelines": 0,
+        "status": "complete"
+      },
+      "status": "complete"
+    },
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 1716.5999999940395,
+      "enteredMs": 2134.2999999821186,
+      "compileSettledMs": 6982.5999999940395,
+      "frameworkReadyMs": 8571.59999999404,
+      "readyMs": 13194.299999982119
+    },
+    "rule": "compile-settled"
+  },
+  "frameworkToReadyMs": 4622.699999988079,
+  "actualHeldWarmupMarkers": [
+    {
+      "source": "browser-console",
+      "text": "TN_STARTUP_WARMUP_HELD:{\"compiled\":1,\"pipelines\":24,\"candidates\":24,\"attempted\":1,\"observed\":{\"created\":0,\"failed\":0,\"pending\":0,\"uniquePrograms\":0,\"uniquePipelines\":0,\"status\":\"complete\"},\"slices\":1,\"elapsedMs\":2603,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false,\"computeCompiled\":43,\"computeAbandoned\":0,\"computeUnsupported\":false,\"computeTimedOut\":false,\"passes\":[\"main\",\"shadow\"],\"passPipelines\":0,\"cullingForced\":33,\"visibilityForced\":0,\"cache\":\"disabled\"}",
+      "type": "log"
+    }
+  ],
+  "heightFailureMarkers": [],
+  "components": {
+    "player": {
+      "capsized": {
+        "before": false,
+        "after": false
+      },
+      "linearVelocity": {
+        "before": [0, 0.042420580983161926, 0],
+        "after": [0, 3.8614704608917236, 0]
+      },
+      "normaliseFactor": {
+        "before": 0.18655969261625796,
+        "after": 0.18655969261625796
+      },
+      "demandedSpeed": {
+        "before": 0,
+        "after": 0
+      },
+      "groundSpeed": {
+        "before": 0,
+        "after": 0
+      },
+      "position": {
+        "before": [0, 0.2232588678598404, 7],
+        "after": [0, -0.20480135083198547, 7]
+      },
+      "immersion": {
+        "before": 0.5,
+        "after": 0.18122098462059855
+      },
+      "seaHeight": {
+        "before": 0,
+        "after": 0.11529439627584934
+      },
+      "sailBelly": {
+        "before": 0,
+        "after": 0.8207000494003296
+      },
+      "sailMotion": {
+        "before": 0,
+        "after": 0
+      },
+      "sailSamples": {
+        "before": 0,
+        "after": 1
+      },
+      "floatGap": {
+        "before": 0,
+        "after": 0
+      },
+      "readbackStaleFrames": {
+        "before": -1,
+        "after": 326
+      },
+      "oceanSteps": {
+        "before": 1,
+        "after": 331
+      },
+      "submergedFraction": {
+        "before": 0.62002008035779,
+        "after": 0.745596881124898
+      }
+    }
+  },
+  "componentSeries": [
+    {
+      "label": "settle",
+      "snapshots": {
+        "player": {
+          "capsized": false,
+          "linearVelocity": [0, 1.6521852016448975, 0],
+          "normaliseFactor": 0.18655969261625796,
+          "demandedSpeed": 0,
+          "groundSpeed": 0,
+          "position": [0, 0.1518602967262268, 7],
+          "immersion": 0.20853529847413654,
+          "seaHeight": 0.109712509157416,
+          "sailBelly": 0,
+          "sailMotion": 0,
+          "sailSamples": 0,
+          "floatGap": 0,
+          "readbackStaleFrames": 89,
+          "oceanSteps": 91,
+          "submergedFraction": 0.8491040541503587
+        }
+      },
+      "tick": 150
+    },
+    {
+      "label": "swell",
+      "snapshots": {
+        "player": {
+          "capsized": false,
+          "linearVelocity": [0, 3.8614704608917236, 0],
+          "normaliseFactor": 0.18655969261625796,
+          "demandedSpeed": 0,
+          "groundSpeed": 0,
+          "position": [0, -0.20480135083198547, 7],
+          "immersion": 0.18122098462059855,
+          "seaHeight": 0.11529439627584934,
+          "sailBelly": 0.8207000494003296,
+          "sailMotion": 0,
+          "sailSamples": 1,
+          "floatGap": 0,
+          "readbackStaleFrames": 326,
+          "oceanSteps": 331,
+          "submergedFraction": 0.745596881124898
+        }
+      },
+      "tick": 390
+    }
+  ],
+  "cookedPublicFiles": {
+    "public/assets.manifest.json": "e629bb62648fda0ab4955266c7a723e552332714ac87a5fd11306f4fc6e71290",
+    "public/bake.receipt.json": "8c139cc8c04b3abe230d1950f992e15f5cca03ea3601a371175d0e2b4a0402e6",
+    "public/basis/basis_transcoder.js": "8478b5b6d6b74e7d3082b89f6417321d8d1dc0307f2b30d4484bb11b441696a1",
+    "public/basis/basis_transcoder.wasm": "6cf17dc889352c42e9acf8897107978d127005fe3386c36a0e3845e27967630a",
+    "public/favicon.svg": "2f86404187eb48667a1460cddac180307ad8112013401d0fa42f053f2be51059",
+    "public/icon.png": "e6284520e340124d9300889add523251d93705457e7cd8c2d6e05aebd7ed04b7",
+    "public/shared/images/0c5f91fb276ab9c2.none.jpg": "ebb8eb71021af6790cde8ccc832e63fe2313d095807972830882ba26212f3180",
+    "public/shared/images/5a7175c851d40332.etc1s.ktx2": "a79a9036b1eaeb8ca4ebbb0d82822c84bec66ca1f6cf782192c7288b6b5da1e9",
+    "public/shared/images/8809fb22e00c164a.none.jpg": "3c4f4b5be3f4027ffd58f857427a7d5604545252f6abfa9193bbd980eb85811c",
+    "public/shared/images/96b480334b9885d7.etc1s.ktx2": "ab91632a991742765dd0f901cf302d6727676c154ecf33973cb288034b42ce85",
+    "public/shared/images/eb02f7399f942c57.none.jpg": "e9ca677d9ed5fb3d069404e8c541f1247880d0049f2374a8d3012f191354710c",
+    "public/shared/images/f374ecf0e919caba.none.jpg": "fbb67b7332776c5c07a05e1a9ba30e0a81442c35988a61740eea6c53cbc9e2d0",
+    "public/ship.b935aafd.glb": "63c6735f892ca2f92a203ce2284272ea7d2eddad42f51cdb7fbee39622483de7",
+    "public/sky.0913654f.jpg": "c1e616ec08d7132f09dd5ce46b780d63934c0df5043ab81d7eeaf16f309c9cc5"
+  },
+  "readinessEvidenceInterpretation": "Oceansteps1 before scenario proves priming dispatch occurred; held warmup proves a startup hold existed and completed. Sealed sources register no other hold in this game. No height-failure marker, no scene exit/restart during original scenario, and explicit finite-sample-only success path establish readiness path executed. Public startup timestamps include held warmup work and do not expose the precise first-height landing timestamp or hold labels. No instrumentation added.",
+  "limitations": [
+    "Single SwiftShader scenario, not CI sequential contexts",
+    "Local Node20.19.6 vs CI20.20.2",
+    "Workspace outputs copied and hash-verified rather than packed tgz install",
+    "Two explicit SwiftShader flags beyond CI original five",
+    "No hardware/mobile/native validation; no later-copy timing guarantee"
+  ],
+  "leaseReleaseReadback": {
+    "holderPath": "/tmp/threenative-playtest-capture/lock/holder.json",
+    "holderPresent": false,
+    "holder": null,
+    "remainingQueueEntries": 0,
+    "checkedAtUTC": "2026-10-04T04:41:27.007983+00:00"
+  }
+}

@@ -1,0 +1,220 @@
+{
+  "name": "rain-strike-flashes-and-thunder-follows",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "warmupFrames": 30,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "sound"
+        }
+      },
+      "label": "sound",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyX",
+      "label": "safe",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyL",
+      "label": "safe-strike",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyX",
+      "label": "unsafe",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyL",
+      "label": "strike",
+      "waitTicks": 6,
+      "screenshot": "strike",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "in-the-air",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "heard",
+      "waitTicks": 150,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "audioEnabled",
+        "atSteps": [
+          {
+            "equals": true,
+            "label": "sound"
+          }
+        ],
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "safe",
+        "atSteps": [
+          {
+            "equals": true,
+            "label": "safe-strike"
+          },
+          {
+            "equals": false,
+            "label": "strike"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "autoLightning",
+        "atSteps": [
+          {
+            "equals": false,
+            "label": "safe"
+          }
+        ],
+        "equals": false
+      },
+      {
+        "id": "state",
+        "path": "flash",
+        "atSteps": [
+          {
+            "equals": 0,
+            "label": "safe-strike"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "strikes",
+        "atSteps": [
+          {
+            "equals": 0,
+            "label": "safe-strike"
+          },
+          {
+            "equals": 1,
+            "label": "strike"
+          },
+          {
+            "equals": 1,
+            "label": "heard"
+          }
+        ],
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "status",
+        "atSteps": [
+          {
+            "equals": "flashing",
+            "label": "strike"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lastStrike.delay",
+        "gte": 0.7,
+        "lte": 1.6
+      },
+      {
+        "id": "state",
+        "path": "lastStrike.metres",
+        "gte": 250,
+        "lte": 520
+      },
+      {
+        "id": "state",
+        "path": "pendingThunderAt",
+        "atSteps": [
+          {
+            "equals": -1,
+            "label": "heard"
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "storm-audio",
+        "atSteps": [
+          {
+            "equals": 0,
+            "label": "safe-strike"
+          },
+          {
+            "equals": 1,
+            "label": "strike"
+          },
+          {
+            "equals": 1,
+            "label": "in-the-air"
+          },
+          {
+            "equals": 0,
+            "label": "heard"
+          }
+        ],
+        "component": "pendingThunder"
+      },
+      {
+        "entity": "storm-audio",
+        "atSteps": [
+          {
+            "equals": 0,
+            "label": "in-the-air"
+          },
+          {
+            "equals": 1,
+            "label": "heard"
+          }
+        ],
+        "equals": 1,
+        "component": "thunderVoices"
+      }
+    ],
+    "audio": [
+      {
+        "cue": "thunder",
+        "minPlays": 1,
+        "maxPlays": 1
+      }
+    ]
+  }
+}

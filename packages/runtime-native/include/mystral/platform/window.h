@@ -87,6 +87,11 @@ void setMetalLayerDrawableSize(void* metalLayer, int width, int height);
  */
 void getWindowSize(int* width, int* height);
 
+// Actual drawable pixels, independent of the canvas/input-coordinate cache. Android uses
+// the native handle owned by the live WebGPU surface, not a replacement SDL window.
+// Called on the SDL/main thread. False means no valid drawable is currently available.
+bool getWindowDrawableSize(void* surfaceNativeHandle, int* width, int* height);
+
 /**
  * Set fullscreen mode
  */

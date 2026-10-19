@@ -65,15 +65,21 @@ export function checkSourceList({ cmakeSource, sourceRoot, sourcePaths } = {}) {
   return { unlisted, missing, excluded: [...excluded].sort() };
 }
 
+/** CMakeLists.txt plus the modules it includes (cmake/NativeEngine.cmake lists engine sources). */
+export function readCmakeSource(packageRoot) {
+  const cmakeModules = join(packageRoot, "cmake");
+  const modules = readdirSync(cmakeModules)
+    .filter((name) => name.endsWith(".cmake"))
+    .sort()
+    .map((name) => readFileSync(join(cmakeModules, name), "utf8"));
+  return [readFileSync(join(packageRoot, "CMakeLists.txt"), "utf8"), ...modules].join("\n");
+}
+
 function main() {
   const scriptDirectory = dirname(fileURLToPath(import.meta.url));
   const packageRoot = resolve(scriptDirectory, "..");
-  const cmakePath = join(packageRoot, "CMakeLists.txt");
   const sourceRoot = join(packageRoot, "src");
-  const report = checkSourceList({
-    cmakeSource: readFileSync(cmakePath, "utf8"),
-    sourceRoot,
-  });
+  const report = checkSourceList({ cmakeSource: readCmakeSource(packageRoot), sourceRoot });
   if (report.unlisted.length > 0 || report.missing.length > 0) {
     if (report.unlisted.length > 0)
       console.error(`Unlisted native C++ sources: ${report.unlisted.join(", ")}`);

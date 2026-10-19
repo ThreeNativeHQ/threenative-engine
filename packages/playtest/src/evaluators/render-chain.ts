@@ -163,7 +163,7 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
 }
 
 interface ISelectedExpectation {
-  /** The branch key that applied: `perAdapter.software`, `perAdapter.hardware`, or `flat`. */
+  /** The independently observed adapter class; `provenance.gpuFamily` names a proven family. */
   readonly classification: PlaytestAdapterClass | undefined;
   readonly expectation: IPlaytestRenderChainExpectation;
   /** Independent of the game: what the harness read out of `adapter.info` itself. */
@@ -187,27 +187,19 @@ function selectExpectation(ctx: IEvaluationContext, assertion: IPlaytestRenderCh
     ...(assertion.velocity === undefined ? {} : { velocity: assertion.velocity }),
   };
   const provenance = classifyAdapter(ctx.input.report);
-  const { adapterClass } = provenance;
-  const branch = adapterClass === undefined ? undefined : assertion.perAdapter?.[adapterClass];
+  const { adapterClass, gpuFamily } = provenance;
+  // A family row beats the generic class row only for the family the observed fields proved; with no
+  // proven family, or no row for it, the `hardware` / `software` selection is exactly what it was.
+  const branch =
+    adapterClass === undefined
+      ? undefined
+      : ((gpuFamily === undefined ? undefined : assertion.perAdapter?.[gpuFamily]) ??
+        assertion.perAdapter?.[adapterClass]);
   return {
     classification: adapterClass,
     expectation: branch ?? flat,
     provenance,
   };
-}
-
-export function renderChainAssertionIsMeaningful(assertion: IPlaytestRenderChainAssertion): boolean {
-  return assertion.tier !== undefined
-    || assertion.stages !== undefined
-    || assertion.contributions !== undefined
-    || assertion.velocity !== undefined
-    || Object.values(assertion.perAdapter ?? {}).some(
-      (branch) => branch !== undefined
-        && (branch.tier !== undefined
-          || branch.stages !== undefined
-          || branch.contributions !== undefined
-          || branch.velocity !== undefined),
-    );
 }
 
 function emitStageCheck(

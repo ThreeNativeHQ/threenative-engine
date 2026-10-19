@@ -44,6 +44,27 @@ function surfaceArea(positions: Float32Array, indices: Uint16Array | Uint32Array
   return area;
 }
 
+/** The `UAssetError` code a call throws; any other thrown value is named, so it fails a code check. */
+function errorCodeOf(read: () => unknown): string | undefined {
+  try {
+    read();
+    return undefined;
+  } catch (error) {
+    return error instanceof UAssetError ? error.code : `not a UAssetError: ${String(error)}`;
+  }
+}
+
+/** The first `byteLength` bytes of a package summary: the tag, the legacy version, and the engine
+ * version, with the rest zero. A cut inside the licensee field is what a truncated file looks like. */
+function summaryPrefix(legacyFileVersion: number, byteLength: number): Uint8Array {
+  const bytes = new Uint8Array(byteLength);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 0x9e2a83c1, true);
+  if (byteLength >= 8) view.setInt32(4, legacyFileVersion, true);
+  if (byteLength >= 16) view.setInt32(12, 516, true);
+  return bytes;
+}
+
 describe("readPackageSummary", () => {
   it("rejects data that is not an Unreal package", async () => {
     expect(() => readPackageSummary(new Uint8Array([0, 1, 2, 3]))).toThrowError(UAssetError);
@@ -61,6 +82,24 @@ describe("readPackageSummary", () => {
     expect(summary.legacyFileVersion).toBeLessThanOrEqual(-8);
     expect(summary.fileVersionUE5).toBeGreaterThan(0);
   });
+
+  it("reports a package tag with no summary behind it as TRUNCATED_PACKAGE", () => {
+    expect(errorCodeOf(() => readPackageSummary(summaryPrefix(-7, 4)))).toBe("TRUNCATED_PACKAGE");
+  });
+
+  it.each([-7, -8])(
+    "reports every cut inside the licensee field as TRUNCATED_PACKAGE (legacy %i)",
+    (legacyFileVersion) => {
+      // The licensee version sits at 16 for LegacyFileVersion -7 and at 20 for -8.
+      const licenseeEnd = legacyFileVersion <= -8 ? 24 : 20;
+      for (let length = 16; length < licenseeEnd; length += 1) {
+        expect(
+          errorCodeOf(() => readPackageSummary(summaryPrefix(legacyFileVersion, length))),
+          `cut at ${length} bytes`,
+        ).toBe("TRUNCATED_PACKAGE");
+      }
+    },
+  );
 });
 
 describe("parseUAssetStaticMesh", () => {
@@ -228,5 +267,76 @@ describe("parseUAssetStaticMesh", () => {
       expect(error).toBeInstanceOf(UAssetError);
       expect((error as UAssetError).code).toBe("INVALID_MESH_DESCRIPTION");
     }
+  });
+
+  it("reports an FCompressedBuffer with the wrong magic as INVALID_COMPRESSED_BUFFER", () => {
+    const bytes = new Writer().uint32BE(0xdeadbeef).bytes(new Uint8Array(60)).concat();
+    expect(errorCodeOf(() => parseCompressedBuffer(bytes))).toBe("INVALID_COMPRESSED_BUFFER");
+  });
+
+  it("reports a compression method Unreal does not define as UNSUPPORTED_COMPRESSION_METHOD", () => {
+    const bytes = new Writer()
+      .uint32BE(0xb7756362)
+      .uint32BE(0) // CRC32, unchecked by the parser
+      .uint8(7) // not NONE, OODLE, or LZ4
+      .uint8(0)
+      .uint8(0)
+      .uint8(0)
+      .uint32BE(0) // block count
+      .uint64BE(0n) // total raw size
+      .uint64BE(64n) // total compressed size: the header alone
+      .bytes(new Uint8Array(32)) // BLAKE3 hash
+      .concat();
+    expect(errorCodeOf(() => parseCompressedBuffer(bytes))).toBe("UNSUPPORTED_COMPRESSION_METHOD");
+  });
+
+  it("reports a payload that decompresses short of its declared size as INCOMPLETE_DECOMPRESSION", () => {
+    // One block of 2^3 bytes: the codec can supply 8 of the 16 bytes the header declares.
+    const block = Uint8Array.from([9, 9, 9, 9]);
+    const bytes = new Writer()
+      .uint32BE(0xb7756362)
+      .uint32BE(0)
+      .uint8(COMPRESSION_METHOD.LZ4)
+      .uint8(0)
+      .uint8(0)
+      .uint8(3) // block size exponent
+      .uint32BE(1) // block count
+      .uint64BE(16n) // total raw size
+      .uint64BE(BigInt(64 + 4 + block.length)) // header, block table, and block
+      .bytes(new Uint8Array(32))
+      .uint32BE(block.length) // block size table
+      .bytes(block)
+      .concat();
+    const buffer = parseCompressedBuffer(bytes);
+    expect(
+      errorCodeOf(() => decompressCompressedBuffer(buffer, { lz4: () => new Uint8Array(8) })),
+    ).toBe("INCOMPLETE_DECOMPRESSION");
+  });
+
+  it("throws only UAssetError when the real package is cut at any sampled length", async () => {
+    const bytes = await fixtureBytes();
+    // A full parse of a cut near the end costs ~0.5 s, so the sweep is exhaustive only where the
+    // summary's versions and licensee field live (every byte of the first 64), with strides through
+    // the rest. bulk-data.spec.ts sweeps every byte of a synthetic summary through readPackageLayout.
+    const lengths = new Set<number>();
+    for (let length = 0; length < 64; length += 1) lengths.add(length);
+    for (let length = 64; length < Math.min(bytes.byteLength, 1024); length += 37)
+      lengths.add(length);
+    for (let length = 1024; length < bytes.byteLength; length += 4096) lengths.add(length);
+    lengths.add(bytes.byteLength - 1);
+
+    const escaped: string[] = [];
+    let rejected = 0;
+    for (const length of lengths) {
+      try {
+        parseUAssetStaticMesh(bytes.subarray(0, length), { oodle });
+      } catch (error) {
+        rejected += 1;
+        if (!(error instanceof UAssetError)) escaped.push(`${length} bytes: ${String(error)}`);
+      }
+    }
+    expect(escaped).toEqual([]);
+    // A cut that parses is a fail-open candidate; most cuts of a real package must be refused.
+    expect(rejected).toBeGreaterThan(lengths.size / 2);
   });
 });

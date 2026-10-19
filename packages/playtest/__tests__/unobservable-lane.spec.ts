@@ -20,8 +20,8 @@ describe("1. the default diagnostics policy on a lane with no network observer",
     expect(resolveDiagnosticsPolicy(undefined, "browser").networkErrorsOptOutReason).toBeUndefined();
   });
 
-  it("should waive it on every device lane, and say why in the policy the report prints", () => {
-    for (const target of ["android", "desktop", "ios"]) {
+  it("should waive it on device lanes without an observer, and say why in the policy the report prints", () => {
+    for (const target of ["android", "ios"]) {
       const policy = resolveDiagnosticsPolicy(undefined, target);
       // The mutation the PRD names: revert the default-on-device handling and this flips to true,
       // which is then compared against `network: []` and reported as a passing row.
@@ -31,6 +31,11 @@ describe("1. the default diagnostics policy on a lane with no network observer",
       expect(policy.noConsoleErrors).toBe(true);
       expect(policy.noRuntimeDiagnostics).toBe(true);
     }
+  });
+
+  it("asserts the observed desktop network channel by default", () => {
+    expect(resolveDiagnosticsPolicy(undefined, "desktop").noNetworkErrors).toBe(true);
+    expect(resolveDiagnosticsPolicy(undefined, "desktop").networkErrorsOptOutReason).toBeUndefined();
   });
 
   it("should treat `diagnostics: {}` exactly as an absent block", () => {

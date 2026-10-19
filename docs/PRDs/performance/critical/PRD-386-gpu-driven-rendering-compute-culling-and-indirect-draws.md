@@ -17,8 +17,17 @@ Wanted: an engine-owned compute pass that culls on the GPU and writes an indirec
 CPU submitting on the order of one `drawIndirect` per material and never touching per-object state. The
 existing CPU cut stays: it is the oracle and the fallback, not the thing being replaced.
 
-**Status:** NOT STARTED — specification only; this document enables and qualifies no feature.
-**Date:** 2026-09-15.
+**Status:** PARTIAL — the mechanism shipped as PRD-473's Phase 1, this PRD's gates did not.
+**Priority:** P1 — Open gates are platform parity: no Android or iOS evidence, no desktop `--target` conformance case, and CPU submission is still per key instead of per material.
+**Evidence:** `a602467db` (PR #375) landed `packages/core/src/world-gpu-scene.ts` (2,353 lines) plus
+`world-gpu-scene.spec.ts` (3,431 lines): one compute dispatch culls and LOD-selects every resident
+placement and each main key draws its own region through a `BufferGeometry.setIndirect` record, with a
+CPU fallback that names its `reasonCode`. See
+[PRD-473 Phase 1](../../done/PRD-473-open-worlds-hold-120-fps-gpu-driven.md) for those boxes.
+What this PRD still owns, unchanged: the gates below — Android and iOS evidence, the desktop native
+conformance case through `--target`, and the per-material one-`drawIndirect` CPU submission this
+document asks for (the shipped path draws per key, not per material).
+**Date:** filed 2026-09-15.
 **Scope:** Engine render mechanism in `@threenative/core` plus the compute/indirect seam in the owned
 native host. No game code, no new package, no new scene format.
 **Complexity:** HIGH — it moves the cut from a JavaScript walk to a GPU pass, on two runtimes, without

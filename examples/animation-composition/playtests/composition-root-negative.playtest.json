@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "animation-composition-root-negative",
+  "subject": "character",
+  "warmupFrames": 5,
+  "steps": [
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "KeyW",
+      "holdTicks": 30,
+      "release": true,
+      "waitTicks": 1
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "skinRootZ",
+        "gte": 0.5,
+        "changed": true
+      }
+    ]
+  }
+}

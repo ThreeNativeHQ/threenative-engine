@@ -234,10 +234,6 @@ function sampleReaderFor(format: number, bits: number): SampleReader | undefined
   return undefined;
 }
 
-/** Vorbis VBR quality, the same -1 to 10 scale the reference encoder takes. */
-export const MIN_QUALITY = -1;
-export const MAX_QUALITY = 10;
-
 /**
  * Encodes PCM to Ogg Vorbis with a serial number derived from the asset's own path.
  *

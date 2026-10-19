@@ -14,6 +14,8 @@
  * buffer moves, which is the arrangement the device ladder measured and accepted.
  */
 
+import type { GpuClass } from "./gpu-class.js";
+
 /** How the active scale was arrived at, reported beside every fps number. */
 export type ScaleSource = "pinned" | "auto" | "auto-pinned";
 
@@ -23,6 +25,28 @@ export const RESOLUTION_SCALER = {
    * reallocates render targets on WebGPU, and fine granularity buys smoothness with hitches.
    */
   rungs: [1.0, 0.85, 0.72, 0.61, 0.52, 0.44, 0.38, 0.32, 0.27, 0.23] as const,
+  /**
+   * The lowest rung a desktop may take while nothing in the render chain reconstructs a
+   * full-resolution frame from the smaller one.
+   *
+   * The ladder above is the device arm's, and it ends at 0.23 because a phone buys the pixels back
+   * differently. A desktop has nothing: no temporal stage, no reconstruction, just 5% of the
+   * pixels stretched across the panel, which is blocky mush rather than a slow frame — and the
+   * report at that point claims the budget was met. 0.61 is where surrendering more pixels stops
+   * buying frame time worth what it costs to look at, and it is reported as `atFloor` rather than
+   * passed in silence. A host whose chain *does* reconstruct the frame says so, and the deep
+   * rungs come back; `renderer-config.ts` decides which floor a platform starts with.
+   */
+  desktopFloorScale: 0.61,
+  /**
+   * The rung a class of adapter starts on instead of the ceiling; a class not named here starts at
+   * 1.0. Only `mobile-low` moves: one rung down is 0.85, close to the 0.8 content scale Unreal's
+   * Low Android bucket sets. A start is a guess the first eligible window corrects — it steps down
+   * at once and climbs after `upWindows` clean ones — so a wrong row costs windows, not a stuck
+   * look. `unknown` and `discrete` keep the ceiling on purpose: a strong GPU is never capped by a
+   * table row.
+   */
+  startScaleByGpuClass: { "mobile-low": 0.85 } as Partial<Record<GpuClass, number>>,
   /**
    * The signal is **fps against the configured target**, not the presented interval.
    *
@@ -76,8 +100,16 @@ export const RESOLUTION_SCALER = {
   upWindows: 4,
   /** Eight frames for the sampled GPU reading plus eight for asynchronous query resolution. */
   maxGpuAgeFrames: 16,
+  /** Window GPU samples that make the window's own median fresh evidence; see `IScalerWindow.gpu`. */
+  minWindowGpuSamples: 4,
   /** The resize frame is itself a hitch and must never feed the controller. */
   cooldownWindows: 1,
+  /** Continuous sub-rectangle changes are separated by this many rendered frames. */
+  continuousChangeFrames: 8,
+  /** Ignore a continuous estimate that moves less than this fraction of the current scale. */
+  continuousChangeThreshold: 0.02,
+  /** Move this fraction of the way toward an up-estimate to preserve temporal history. */
+  continuousUpFraction: 0.9,
   /**
    * Windows discarded outright at the start. "Window 1 always lies" is already the perf CLI's
    * rule; the controller was the one consumer that believed it. A scaffolded template took its
@@ -142,11 +174,33 @@ export const RESOLUTION_SCALE_INSENSITIVE_MARKER = "TN_RESOLUTION_SCALE_INSENSIT
 /** Pixels retained per rung: 0.85 linear on each axis. */
 const RUNG_PIXEL_RATIO = 0.85 * 0.85;
 
+/** One rung value to its index, failing closed on anything the ladder does not contain. */
+function rungIndex(value: number, label: string): number {
+  const index = RESOLUTION_SCALER.rungs.indexOf(value as never);
+  if (index < 0)
+    throw new Error(
+      `ResolutionScaler ${label} must be one of the pre-registered rung values, received ${String(value)}.`,
+    );
+  return index;
+}
+
 export interface IResolutionScalerOptions {
   /** The `display.maxFps` the loop is holding the budget against. */
   readonly targetFps: number;
   /** Which rung to start on. Must be one of the rungs; defaults to the ceiling. */
   readonly start?: number;
+  /**
+   * The lowest rung this platform may take, and the rung `atFloor` is reported at. Must be one of
+   * the rungs; defaults to the last one, which is the whole ladder the device arm measured with.
+   * A desktop host passes `RESOLUTION_SCALER.desktopFloorScale`.
+   */
+  readonly minScale?: number;
+  /**
+   * Read whenever the floor is consulted, so the scaler can see a render chain that arrived or
+   * changed under it: a chain that reconstructs a display-resolution frame from these pixels
+   * lifts the floor for as long as it is installed.
+   */
+  readonly temporalUpscale?: () => boolean;
 }
 
 /** A closed frame-budget window's presentation distribution and optional GPU observation. */
@@ -154,8 +208,22 @@ export interface IScalerWindow {
   /** The last resolved GPU duration and its age; absent/old observations may only probe. */
   readonly gpuMs?: number;
   readonly gpuAgeFrames?: number;
+  /**
+   * This window's own GPU samples. When the last resolve is past `maxGpuAgeFrames` but the window
+   * holds `minWindowGpuSamples` of them, their median stands in: they were drawn in this window.
+   */
+  readonly gpu?: { readonly p50: number; readonly samples: number };
   /** Frames per second this window achieved, from the mean presented interval. */
   readonly fps: number;
+  /** Loop frames represented by this closed window, used for the sub-rectangle cadence guard. */
+  readonly frames?: number;
+  /** Current drawing surface, used to quantize a continuous estimate to eight pixels. */
+  readonly surface?: {
+    readonly drawingBufferWidth: number;
+    readonly drawingBufferHeight: number;
+    readonly resolutionScale: number;
+    readonly resolutionSubrect?: boolean;
+  };
   /**
    * `p50` says what an ordinary frame cost; `p99` and `max` expose recurring and isolated stalls.
    * The controller needs them to tell a slow game from a stalled one: `fps` alone cannot, because
@@ -183,6 +251,10 @@ export class ResolutionScaler {
   /** presented p95 above this is dropping frames, whatever the mean says. */
   tailMs = 0;
   #index: number;
+  #continuousScale: number;
+  /** The lowest rung this platform may take; the whole ladder's last index when it states none. */
+  readonly #minIndex: number;
+  readonly #temporalUpscale: (() => boolean) | undefined;
   #scaleSource: Exclude<ScaleSource, "pinned"> = "auto";
   #cleanWindows = 0;
   #cooldown = 0;
@@ -210,22 +282,25 @@ export class ResolutionScaler {
   // downward step; `#insensitiveFloor` is the rung a refunded one proved worth holding (no
   // downward step may cross it while it stands), `#insensitiveSignal` its measured GPU time, and
   // `#insensitiveRise` the consecutive windows of sustained rise that clear both.
-  #insensitiveProbe: { fromIndex: number; toIndex: number; signal: number } | undefined = undefined;
+  #insensitiveProbe:
+    | { fromIndex: number; toIndex: number; fromScale?: number; toScale?: number; signal: number }
+    | undefined = undefined;
   #insensitiveFloor = -1;
   #insensitiveSignal = 0;
   #insensitiveRise = 0;
   #insensitiveHold = 0;
   #lastInsensitiveMarker = Number.NEGATIVE_INFINITY;
+  #continuousFrames = 0;
+  #continuousLastChangeFrame = Number.NEGATIVE_INFINITY;
 
   constructor(options: IResolutionScalerOptions) {
-    const { start, targetFps } = options;
+    const { minScale, start, targetFps, temporalUpscale } = options;
     this.retarget(targetFps);
-    const index = start === undefined ? 0 : RESOLUTION_SCALER.rungs.indexOf(start as never);
-    if (index < 0)
-      throw new Error(
-        `ResolutionScaler start must be one of the pre-registered rung values, received ${String(start)}.`,
-      );
-    this.#index = index;
+    this.#index = start === undefined ? 0 : rungIndex(start, "start");
+    this.#continuousScale = RESOLUTION_SCALER.rungs[this.#index] ?? 1;
+    this.#minIndex =
+      minScale === undefined ? RESOLUTION_SCALER.rungs.length - 1 : rungIndex(minScale, "minScale");
+    this.#temporalUpscale = temporalUpscale;
   }
 
   /**
@@ -248,7 +323,15 @@ export class ResolutionScaler {
 
   /** The scale the renderer should be applying right now. */
   get scale(): number {
-    return RESOLUTION_SCALER.rungs[this.#index] ?? 1;
+    return this.#continuousScale;
+  }
+
+  /**
+   * The lowest rung the scaler may take right now. The platform's own floor, lifted for as long
+   * as the render chain reconstructs the frame from the pixels it is being asked to surrender.
+   */
+  get #limitIndex(): number {
+    return this.#temporalUpscale?.() === true ? RESOLUTION_SCALER.rungs.length - 1 : this.#minIndex;
   }
 
   get scaleSource(): Exclude<ScaleSource, "pinned"> {
@@ -271,6 +354,9 @@ export class ResolutionScaler {
    */
   observe(window: IScalerWindow): number | undefined {
     this.#windowIndex += 1;
+    const frames = window.frames;
+    this.#continuousFrames +=
+      frames !== undefined && Number.isFinite(frames) && frames > 0 ? Math.floor(frames) : 1;
     if (this.#scaleSource === "auto-pinned" && --this.#pinWindows === 0) {
       this.#scaleSource = "auto";
       this.#guardLegs = this.#guardCycles = this.#cleanWindows = 0;
@@ -292,13 +378,20 @@ export class ResolutionScaler {
     // game that hitches more often than once every `cooldownWindows + upWindows` windows: one
     // 400 ms frame every third window pinned a scaler at 0.44 through seventeen minutes of
     // otherwise perfect 60 fps, which is a forest streaming its next hillside.
-    if (this.#stalled(window)) return undefined;
+    //
+    // Unless the stalls are not what makes the frame slow: a weak GPU whose shadow redraws stall
+    // every window and whose ordinary frame still misses the budget is judged on that frame,
+    // downward only (see `#slowUnderStalls`).
+    const stalled = this.#stalled(window);
+    if (stalled && !this.#slowUnderStalls(window)) return undefined;
     const gpuMs = this.#freshGpuMs(window);
     this.#noteGpuObservation(window, gpuMs);
     if (this.#insensitiveHold > 0) this.#insensitiveHold -= 1;
     this.#trackInsensitiveRise(gpuMs);
     const refunded = this.#settleInsensitiveProbe(gpuMs);
     if (refunded !== undefined) return refunded;
+    if (gpuMs !== undefined && this.#continuousActive(window))
+      return this.#observeContinuous(window, gpuMs, stalled);
     if (window.fps < this.targetFps && (gpuMs === undefined || gpuMs > this.budgetMs)) {
       // **Only the mean is under target: hold.** `fps` is `1000 / mean`, and on the one panel
       // arrangement every game actually ships into — `display.maxFps` equal to the refresh rate,
@@ -328,7 +421,7 @@ export class ResolutionScaler {
       // does not become pixel-bound just because this window lost its GPU timestamp.
       if (this.#insensitiveHold > 0 || this.#insensitiveFloor >= 0) return undefined;
       if (gpuMs === undefined) return this.#probeUnknown(window);
-      if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
+      if (this.#index >= this.#limitIndex) {
         this.#atFloor = true;
         return undefined;
       }
@@ -345,6 +438,8 @@ export class ResolutionScaler {
       return stepped;
     }
     this.#atFloor = false;
+    // A stalled window is never grounds to climb.
+    if (stalled) return undefined;
     if (this.#scaleSource === "auto-pinned") return undefined;
     const nextScale = RESOLUTION_SCALER.rungs[Math.max(0, this.#index - 1)] ?? 1;
     const canClimb =
@@ -389,15 +484,20 @@ export class ResolutionScaler {
     this.#insensitiveProbe = undefined;
     const gain = (probe.signal - gpuMs) / probe.signal;
     if (gain >= RESOLUTION_SCALER.insensitiveGainFraction) return undefined;
-    const restored = RESOLUTION_SCALER.rungs[probe.fromIndex] ?? 1;
+    const restored = probe.fromScale ?? RESOLUTION_SCALER.rungs[probe.fromIndex] ?? 1;
     this.#index = probe.fromIndex;
+    this.#continuousScale = restored;
     this.#insensitiveFloor = probe.fromIndex;
     this.#insensitiveSignal = probe.signal;
     this.#insensitiveHold = RESOLUTION_SCALER.insensitiveHoldWindows;
     this.#cleanWindows = 0;
     // The restore is itself a resize and must not feed the controller.
     this.#cooldown = RESOLUTION_SCALER.cooldownWindows;
-    this.#emitInsensitive(RESOLUTION_SCALER.rungs[probe.toIndex] ?? 1, restored, gain);
+    this.#emitInsensitive(
+      probe.toScale ?? RESOLUTION_SCALER.rungs[probe.toIndex] ?? 1,
+      restored,
+      gain,
+    );
     return restored;
   }
 
@@ -450,14 +550,14 @@ export class ResolutionScaler {
         this.#probeBlind = true;
         return this.#step(-1, false);
       }
-      if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
+      if (this.#index >= this.#limitIndex) {
         this.#atFloor = true;
         return undefined;
       }
       this.#probeFps = window.fps;
       return this.#step(1);
     }
-    if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
+    if (this.#index >= this.#limitIndex) {
       this.#atFloor = true;
       return undefined;
     }
@@ -467,6 +567,130 @@ export class ResolutionScaler {
     this.#probeFps = window.fps;
     return this.#step(1);
   }
+
+  #continuousActive(window: IScalerWindow): boolean {
+    return window.surface?.resolutionSubrect === true;
+  }
+
+  #observeContinuous(
+    window: IScalerWindow,
+    gpuMs: number | undefined,
+    stalled: boolean,
+  ): number | undefined {
+    const overBudget =
+      window.fps < this.targetFps && (gpuMs === undefined || gpuMs > this.budgetMs);
+    const floor = RESOLUTION_SCALER.rungs[this.#limitIndex] ?? 0.23;
+    if (overBudget) {
+      this.#cleanWindows = 0;
+      if (!this.#overBudget(window) || gpuMs === undefined) {
+        this.#atFloor = this.#continuousScale <= floor;
+        return undefined;
+      }
+      if (this.#insensitiveHold > 0 || this.#insensitiveFloor >= 0) return undefined;
+      const estimate = this.#continuousScale * Math.sqrt(this.budgetMs / gpuMs);
+      const target = this.#quantizeContinuous(Math.max(floor, estimate), window);
+      this.#atFloor = target <= floor;
+      const fromIndex = this.#index;
+      const fromScale = this.#continuousScale;
+      const changed = this.#continuousChange(Math.max(floor, target), false);
+      if (
+        changed !== undefined &&
+        this.#scaleSource === "auto" &&
+        1 - (changed / fromScale) ** 2 >= RESOLUTION_SCALER.insensitiveMinPixelDrop
+      )
+        this.#insensitiveProbe = {
+          fromIndex,
+          toIndex: this.#index,
+          fromScale,
+          toScale: changed,
+          signal: gpuMs,
+        };
+      return changed;
+    }
+    this.#atFloor = false;
+    if (stalled || this.#scaleSource === "auto-pinned") return undefined;
+    const nextScale = Math.min(1, this.#continuousScale + 0.01);
+    const canClimb =
+      gpuMs === undefined
+        ? window.presented.p95 <= this.tailMs
+        : gpuMs * (nextScale / this.#continuousScale) ** 2 <= this.budgetMs;
+    if (!canClimb) {
+      this.#cleanWindows = 0;
+      return undefined;
+    }
+    this.#cleanWindows += 1;
+    if (this.#cleanWindows < RESOLUTION_SCALER.upWindows) return undefined;
+    this.#cleanWindows = 0;
+    const estimate =
+      gpuMs === undefined
+        ? 1
+        : Math.min(1, this.#continuousScale * Math.sqrt(this.budgetMs / gpuMs));
+    const amortized =
+      this.#continuousScale +
+      RESOLUTION_SCALER.continuousUpFraction *
+        (Math.max(this.#continuousScale, estimate) - this.#continuousScale);
+    return this.#continuousChange(this.#quantizeContinuous(amortized, window), true);
+  }
+
+  #quantizeContinuous(scale: number, window: IScalerWindow): number {
+    const surface = window.surface;
+    if (
+      surface === undefined ||
+      !Number.isFinite(surface.drawingBufferWidth) ||
+      !Number.isFinite(surface.drawingBufferHeight) ||
+      !Number.isFinite(surface.resolutionScale) ||
+      surface.drawingBufferWidth <= 0 ||
+      surface.drawingBufferHeight <= 0 ||
+      surface.resolutionScale <= 0
+    )
+      return Math.min(1, Math.max(0, scale));
+    const fullWidth =
+      surface.resolutionSubrect === true
+        ? surface.drawingBufferWidth
+        : surface.drawingBufferWidth / surface.resolutionScale;
+    const fullHeight =
+      surface.resolutionSubrect === true
+        ? surface.drawingBufferHeight
+        : surface.drawingBufferHeight / surface.resolutionScale;
+    const width = Math.max(8, Math.ceil((fullWidth * scale) / 8) * 8);
+    const height = Math.max(8, Math.ceil((fullHeight * scale) / 8) * 8);
+    return Math.min(1, width / fullWidth, height / fullHeight);
+  }
+
+  #continuousChange(target: number, up: boolean): number | undefined {
+    const current = this.#continuousScale;
+    const change = Math.abs(target - current) / Math.max(current, Number.EPSILON);
+    if (change < RESOLUTION_SCALER.continuousChangeThreshold) return undefined;
+    if (
+      this.#continuousFrames - this.#continuousLastChangeFrame <
+      RESOLUTION_SCALER.continuousChangeFrames
+    )
+      return undefined;
+    const next = Math.min(1, Math.max(RESOLUTION_SCALER.rungs[this.#limitIndex] ?? 0.23, target));
+    if (next === current) return undefined;
+    const previousIndex = this.#index;
+    this.#continuousScale = next;
+    this.#syncRungIndex(next);
+    this.#continuousLastChangeFrame = this.#continuousFrames;
+    this.#cooldown = RESOLUTION_SCALER.cooldownWindows;
+    const direction = next < current ? 1 : -1;
+    const boundary = direction > 0 ? previousIndex : this.#index;
+    this.#noteForOscillationGuard(boundary, direction);
+    return this.#continuousScale;
+  }
+
+  #syncRungIndex(scale: number): void {
+    let closest = 0;
+    let distance = Number.POSITIVE_INFINITY;
+    for (const [index, rung] of RESOLUTION_SCALER.rungs.entries()) {
+      const nextDistance = Math.abs(rung - scale);
+      if (nextDistance >= distance) continue;
+      closest = index;
+      distance = nextDistance;
+    }
+    this.#index = closest;
+  }
+
   /**
    * True when the median or tail corroborates the missed presentation budget. This alone cannot
    * identify a pixel bottleneck; fresh GPU timing takes precedence in observe().
@@ -486,19 +710,44 @@ export class ResolutionScaler {
    * window: jitter from the compositor, a GC, an input burst, an audio callback. None of that is
    * bought back with pixels, and spending a rung on it is how the picture walks to the floor.
    */
+  /**
+   * Whether a stalled window's ordinary frame misses the budget on its own: the window is under
+   * target and fresh GPU timing alone exceeds the budget, so setting the stalls aside still leaves
+   * a slow frame that fewer pixels can speed up. A game whose GPU meets the budget keeps the stall
+   * deferral; a weak GPU does not stay at full resolution forever because its hitches recur. On an
+   * Intel Iris Xe, Machinefall's shadow redraws (120-350 ms) put presented p99 at 15-63x p50 in
+   * all but one judged window, p50 sat at 9-12 ms against 8.33, and the scale held 1.0 for the
+   * whole walk (PRD-549).
+   */
+  #slowUnderStalls(window: IScalerWindow): boolean {
+    const gpuMs = this.#freshGpuMs(window);
+    // Fresh GPU over budget in a window under target. Not the present median: on the Iris Xe it
+    // read 7 ms while the main pass took 30 ms and the window ran at 35 fps (PRD-549, live11).
+    return window.fps < this.targetFps && gpuMs !== undefined && gpuMs > this.budgetMs;
+  }
+
   #overBudget(window: IScalerWindow): boolean {
     return window.presented.p50 > this.budgetMs || window.presented.p95 > this.tailMs;
   }
 
-  #freshGpuMs({ gpuMs, gpuAgeFrames }: IScalerWindow): number | undefined {
-    return gpuMs !== undefined &&
+  #freshGpuMs({ gpu, gpuMs, gpuAgeFrames }: IScalerWindow): number | undefined {
+    if (
+      gpuMs !== undefined &&
       Number.isFinite(gpuMs) &&
       gpuMs > 0 &&
       gpuAgeFrames !== undefined &&
       Number.isInteger(gpuAgeFrames) &&
       gpuAgeFrames >= 0 &&
       gpuAgeFrames <= RESOLUTION_SCALER.maxGpuAgeFrames
-      ? gpuMs
+    )
+      return gpuMs;
+    // An integrated GPU resolves timestamps hundreds of frames late (Iris Xe: 233-593, PRD-549),
+    // so the last reading is always old while the window is full of its own samples.
+    return gpu !== undefined &&
+      gpu.samples >= RESOLUTION_SCALER.minWindowGpuSamples &&
+      Number.isFinite(gpu.p50) &&
+      gpu.p50 > 0
+      ? gpu.p50
       : undefined;
   }
 
@@ -535,14 +784,15 @@ export class ResolutionScaler {
   #step(direction: number, countGuard = true): number {
     // The boundary a fall from rung n crosses is the same one the climb back to n crosses.
     const boundary = direction > 0 ? this.#index : this.#index - 1;
-    this.#index = Math.min(
-      RESOLUTION_SCALER.rungs.length - 1,
-      Math.max(0, this.#index + direction),
-    );
+    // The platform's floor is a limit, not a step count: a jump sized on a deficit can ask for
+    // more rungs than the floor allows, and it must land on the floor rather than past it.
+    const next = this.#index + direction;
+    this.#index = direction > 0 ? Math.min(next, this.#limitIndex) : Math.max(0, next);
     this.#cooldown = RESOLUTION_SCALER.cooldownWindows;
     // A refund is a measurement correction, not workload oscillation: counting it would let
     // probe/refund cycles pin the scaler at a rung pixels were just proven not to earn.
     if (countGuard) this.#noteForOscillationGuard(boundary, direction);
+    this.#continuousScale = RESOLUTION_SCALER.rungs[this.#index] ?? 1;
     return this.scale;
   }
 

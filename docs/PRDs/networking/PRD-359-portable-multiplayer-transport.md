@@ -14,6 +14,7 @@ asynchronous lifecycle/backpressure (+2), multiple packages (+2), external serve
 **Owner layer:** engine transport mechanisms in `packages/runtime-native` and
 `packages/core`; example gameplay and authoritative simulation remain example source.
 
+**Priority:** P1 — Open boxes need one unchanged client doing real cross-play plus limits and backpressure tests.
 ## Decision and product outcome
 
 Use **WebTransport over HTTP/3 for both browser and native clients**. Keep quiche as

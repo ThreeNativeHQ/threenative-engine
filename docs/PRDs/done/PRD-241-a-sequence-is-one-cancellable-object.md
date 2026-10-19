@@ -19,7 +19,7 @@ Sources read at depth 1 on 2026-08-28:
 [`pmndrs/timeline`](https://github.com/pmndrs/timeline) (MIT). **Both are refused as dependencies,
 and most of what they offer is refused as scope**, on evidence from this repository.
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 
 **Complexity:** +1 touches 3 files, +1 the surface is public and versioned, +1 timing sits in the
 frame budget = **3 → LOW mode.** Minimal template.

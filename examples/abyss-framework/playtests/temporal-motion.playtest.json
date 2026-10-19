@@ -1,0 +1,125 @@
+{
+  "name": "matched-temporal-aa-motion",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 640,
+    "height": 360
+  },
+  "warmupFrames": 0,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "frame-21",
+      "waitTicks": 1,
+      "screenshot": "frame-21"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-22",
+      "waitTicks": 1,
+      "screenshot": "frame-22"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-23",
+      "waitTicks": 1,
+      "screenshot": "frame-23"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-24",
+      "waitTicks": 1,
+      "screenshot": "frame-24"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-25",
+      "waitTicks": 1,
+      "screenshot": "frame-25"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-26",
+      "waitTicks": 1,
+      "screenshot": "frame-26"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-27",
+      "waitTicks": 1,
+      "screenshot": "frame-27"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-28",
+      "waitTicks": 1,
+      "screenshot": "frame-28"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-29",
+      "waitTicks": 1,
+      "screenshot": "frame-29"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-30",
+      "waitTicks": 1,
+      "screenshot": "frame-30"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-31",
+      "waitTicks": 1,
+      "screenshot": "frame-31"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-32",
+      "waitTicks": 1,
+      "screenshot": "frame-32"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-33",
+      "waitTicks": 1,
+      "screenshot": "frame-33"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-34",
+      "waitTicks": 1,
+      "screenshot": "frame-34"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-35",
+      "waitTicks": 1,
+      "screenshot": "frame-35"
+    },
+    {
+      "kind": "wait",
+      "label": "frame-36",
+      "waitTicks": 1,
+      "screenshot": "frame-36"
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "temporal",
+        "path": "frame",
+        "gte": 36,
+        "changed": true
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    }
+  }
+}

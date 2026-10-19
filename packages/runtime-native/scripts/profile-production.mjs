@@ -3,7 +3,7 @@
 import { createServer } from 'node:http';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -1085,6 +1085,23 @@ export async function installNativeProfileEntry(project, target, options) {
   await writeFile(profileMarkerPath, profileMarker);
   await writeFile(entryPath, source);
   await setNativeProfileEntry(project, 'src/profile-native-entry.ts', options.renderSize);
+  if (target === 'desktop') await pinThreejsDesktopHost(project);
+}
+
+/**
+ * A desktop profile launches the Three.js host's packaged executable (`mystral`), but a config that
+ * sets no `engine` now builds a directory around the V8 engine player. Name the override in the
+ * staged copy, once, and leave an `engine` the game declares as authored.
+ */
+export async function pinThreejsDesktopHost(project) {
+  const configPath = join(project, 'threenative.config.ts');
+  const config = await readFile(configPath, 'utf8').catch(() => undefined);
+  if (config === undefined || /^\s*["']?engine["']?\s*:/mu.test(config)) return;
+  const opening = /(?:=|export default)\s*\{/u;
+  if (!opening.test(config)) {
+    throw new ProductionEvidenceError('TN_PROD_ENGINE_PIN_FAILED', `${configPath} has no config object to pin engine: "threejs" into.`);
+  }
+  await writeFile(configPath, config.replace(opening, '$&\n  engine: "threejs",'));
 }
 
 export async function setNativeProfileEntry(project, entry, renderSize = undefined) {
@@ -1712,6 +1729,7 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
       dirty: context.sourceState.dirty,
       ...(context.sourceState.diffSha === undefined ? {} : { diffSha: context.sourceState.diffSha }),
       sha: context.sourceSha,
+      ...(context.sourceState.rawStatus === undefined ? {} : { snapshot: { rawStatus: context.sourceState.rawStatus, normalizedTrackedFiles: context.sourceState.normalizedTrackedFiles } }),
     },
     target,
     timestamps: { endedAt: new Date().toISOString(), startedAt },
@@ -2271,15 +2289,52 @@ function applyNegativeControl(input, control) {
   return evidence;
 }
 
-async function currentSourceState() {
+export async function currentSourceState(root = commandRoot, execute = execFileAsync) {
   try {
-    const [{ stdout: sha }, { stdout: status }, { stdout: diff }] = await Promise.all([
-      execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: commandRoot }),
-      execFileAsync('git', ['status', '--porcelain'], { cwd: commandRoot }),
-      execFileAsync('git', ['diff', 'HEAD'], { cwd: commandRoot }),
-    ]);
-    const dirty = status.trim().length > 0;
-    return { dirty, ...(dirty ? { diffSha: sha256(Buffer.from(diff)) } : {}), sha: sha.trim() };
+    // Git can report an LF rewrite of a CRLF checkout as modified even though its
+    // normalized candidate blob is identical. Preserve that raw status and prove
+    // each byte identity explicitly; an empty diff alone never grants cleanliness.
+    const git = async (...args) => (await execute('git', ['--literal-pathspecs', ...args], { cwd: root })).stdout;
+    const sha = (await git('rev-parse', 'HEAD')).trim();
+    const rawStatus = await git('status', '--porcelain=v1', '-z', '--untracked-files=all');
+    const diff = await git('diff', '--no-ext-diff', '--no-textconv', 'HEAD');
+    let dirty = rawStatus.length > 0;
+    const normalizedTrackedFiles = [];
+    const entries = rawStatus.split('\0').filter(Boolean);
+    if (dirty && diff === '' && entries.every((entry) => entry.startsWith(' M '))) {
+      for (const entry of entries) {
+        const name = entry.slice(3);
+        const file = join(root, name);
+        if (!(await lstat(file)).isFile()) break;
+        const head = /^(100644|100755) blob ([a-f0-9]{40,64})\t/u.exec(await git('ls-tree', '-z', 'HEAD', '--', name));
+        const index = /^(100644|100755) ([a-f0-9]{40,64}) 0\t/u.exec(await git('ls-files', '--stage', '-z', '--', name));
+        if (!head || !index || head[1] !== index[1] || head[2] !== index[2]) break;
+        const raw = await readFile(file);
+        const before = sha256(raw);
+        const { stdout: headBytes } = await execute('git', ['cat-file', 'blob', head[2]], { cwd: root, encoding: 'buffer', maxBuffer: 16 * 1024 * 1024 });
+        // Restrict the accepted transformation to line endings. Git clean filters
+        // or working-tree encodings must never conceal executable byte changes.
+        const lfBytes = Buffer.from(raw.toString('latin1').replace(/\r\n/gu, '\n'), 'latin1');
+        if (!Buffer.isBuffer(headBytes) || !lfBytes.equals(headBytes)) break;
+        const worktreeBlob = (await git('hash-object', `--path=${name}`, '--', name)).trim();
+        if (worktreeBlob !== head[2] || sha256(await readFile(file)) !== before) break;
+        normalizedTrackedFiles.push({ path: name, headBlob: head[2], worktreeBlob, rawSha256: before, normalization: 'crlf-to-lf-only' });
+      }
+      dirty = normalizedTrackedFiles.length !== entries.length;
+    }
+    // A changing tree or HEAD is never a coherent candidate snapshot.
+    if ((await git('rev-parse', 'HEAD')).trim() !== sha ||
+        (await git('status', '--porcelain=v1', '-z', '--untracked-files=all')) !== rawStatus) dirty = true;
+    if (!dirty && normalizedTrackedFiles.length) {
+      for (const proof of normalizedTrackedFiles) {
+        const file = join(root, proof.path);
+        if (!(await lstat(file)).isFile() || sha256(await readFile(file)) !== proof.rawSha256) dirty = true;
+      }
+      if ((await git('diff', '--no-ext-diff', '--no-textconv', 'HEAD')) !== '') dirty = true;
+      if ((await git('rev-parse', 'HEAD')).trim() !== sha ||
+          (await git('status', '--porcelain=v1', '-z', '--untracked-files=all')) !== rawStatus) dirty = true;
+    }
+    return { dirty, ...(dirty ? { diffSha: sha256(Buffer.from(diff)) } : {}), sha, rawStatus, normalizedTrackedFiles };
   } catch {
     return { dirty: true, diffSha: sha256(Buffer.from('source-state-unavailable')), sha: '0000000' };
   }

@@ -1,5 +1,5 @@
 // Generated for you. This is ordinary Three.js; tune the key for your sea.
-import { DirectionalLight, PCFSoftShadowMap, type Scene, Vector3 } from "three";
+import { Color, DirectionalLight, PCFSoftShadowMap, type Scene, Vector3 } from "three";
 import { palette } from "./palette.js";
 import { SUN_DIRECTION } from "./sky.js";
 
@@ -60,4 +60,29 @@ export function followSun(
     target.z + SUN_DIRECTION.z * SUN_DISTANCE,
   );
   key.target.updateMatrixWorld();
+}
+
+/** Material conventions are game-owned; each scene gets independent mutable controls. */
+export interface ILightingConvention {
+  rimGain: number;
+  fillGain: number;
+  fillColor: Color;
+  fillDirection: Vector3;
+  fillAngularSize: number;
+  darkThreshold: number;
+  maxSourceTexels: number;
+}
+export function createLightingConvention(
+  overrides: Partial<ILightingConvention> = {},
+): ILightingConvention {
+  return {
+    rimGain: 0.12,
+    fillGain: 1,
+    fillColor: new Color(0x667b9d),
+    fillDirection: new Vector3(0, 1, 1).normalize(),
+    fillAngularSize: 0.7,
+    darkThreshold: 0.001,
+    maxSourceTexels: 65536,
+    ...overrides,
+  };
 }

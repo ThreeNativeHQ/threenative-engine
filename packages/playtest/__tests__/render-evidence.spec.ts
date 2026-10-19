@@ -43,6 +43,18 @@ describe("render evidence", () => {
     expect(projectedPixelsForEntity(renderedSnapshot(undefined), "ghost", viewport)).toBeUndefined();
   });
 
+  test("clamps out-of-range NDC bounds to the viewport before counting pixels", () => {
+    expect(projectedPixelsForEntity(renderedSnapshot({ min: [-2, -1], max: [0, 1] }), "player", viewport)).toBe(10_000);
+  });
+
+  test("minFps fails at 29.9967 against a floor of 30", () => {
+    const frameMs = 1_000 / 29.9967;
+    const samples = Array.from({ length: 4 }, () => ({ frameMs }));
+    const result = evaluatePerformanceAssertion({ minFps: 30 }, samples, "test");
+    const minFps = result.assertions.find(({ id }) => id === "performance.minFps");
+    expect(minFps?.pass).toBe(false);
+  });
+
   test("counts only entries containing every requested token", () => {
     const log = effectLog([{ entity: "player", service: "animation.play", clip: "run" }, { entity: "enemy" }]);
     expect(countMatchingEntries(undefined, ["player"])).toBe(0);

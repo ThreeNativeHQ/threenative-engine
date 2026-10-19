@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -7,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const THREE_VERSION = "0.185.1";
 const PATCH_NAME = `three@${THREE_VERSION}.patch`;
+const UPGRADE_PATCH_NAME = `three@${THREE_VERSION}-prd269-upgrade.patch`;
 
 /** Apply the package-owned Three.js patch to the dependency resolved for the consumer. */
 export async function applyThreePatch(options = {}) {
@@ -29,7 +31,11 @@ export async function applyThreePatch(options = {}) {
 
   const patchPath = path.join(packageRoot, "patches", PATCH_NAME);
   const patch = parsePatch(await readFile(patchPath, "utf8"), patchPath);
-  const plans = await planPatch(threeRoot, patch);
+  const upgradePath = path.join(packageRoot, "patches", UPGRADE_PATCH_NAME);
+  const upgrades = existsSync(upgradePath)
+    ? parsePatch(await readFile(upgradePath, "utf8"), upgradePath)
+    : [];
+  const plans = await planPatch(threeRoot, patch, upgrades);
   // `planPatch` refuses any file it does not fully recognise, so every plan that is not already
   // `patched` is safe to write — including the files an older release of this patch already
   // touched, which is the state a project upgrading from the previous `latest` is in.
@@ -139,6 +145,12 @@ function parsePatchFiles(text, patchPath) {
 }
 
 function parsePatchLine(line, current, hunk, patchPath) {
+  const blobs = /^index ([a-f0-9]{40})\.\.([a-f0-9]{40}) /u.exec(line);
+  if (blobs !== null) {
+    current.oldBlob = blobs[1];
+    current.newBlob = blobs[2];
+    return hunk;
+  }
   if (line.startsWith("--- ")) {
     current.oldPath = patchPathFromHeader(line.slice(4), patchPath);
     return hunk;
@@ -205,7 +217,7 @@ function patchPathFromHeader(header, patchPath) {
   return relative;
 }
 
-async function planPatch(threeRoot, files) {
+async function planPatch(threeRoot, files, upgrades) {
   const plans = [];
   for (const file of files) {
     const target = path.resolve(threeRoot, file.oldPath);
@@ -215,7 +227,8 @@ async function planPatch(threeRoot, files) {
       );
     }
     const original = await readFile(target, "utf8");
-    const lines = original.replaceAll("\r\n", "\n").split("\n");
+    const recognised = upgradeKnownFile(original, file.oldPath, upgrades);
+    const lines = recognised.replaceAll("\r\n", "\n").split("\n");
     const states = classifyFile(lines, file.hunks);
     const unknown = states.findIndex((state) => state === "unknown");
     if (unknown !== -1) {
@@ -228,8 +241,13 @@ async function planPatch(threeRoot, files) {
       : states.some((state) => state === "patched")
         ? "extended"
         : "stock";
+    assertKnownExtension(status, recognised === original, file.oldPath, upgrades);
     if (status === "patched") {
-      plans.push({ contents: original, file: target, status });
+      plans.push({
+        contents: recognised,
+        file: target,
+        status: recognised === original ? status : "extended",
+      });
       continue;
     }
     plans.push({
@@ -239,6 +257,46 @@ async function planPatch(threeRoot, files) {
     });
   }
   return plans;
+}
+
+/** Registered migration files must not fall through to permissive hunk-only upgrades. */
+function assertKnownExtension(status, unchanged, file, upgrades) {
+  if (
+    status === "extended" &&
+    unchanged &&
+    upgrades.some((candidate) => candidate.oldPath === file)
+  ) {
+    throw new Error(
+      `TN_THREE_PATCH_PARTIAL: ${file} is partly patched but does not match an exact supported predecessor; refusing an unrecognised installation.`,
+    );
+  }
+}
+
+/** Upgrade only exact known prior blobs; a custom edit never enters this migration. */
+function upgradeKnownFile(original, file, upgrades, seen = new Set()) {
+  const normalized = original.replaceAll("\r\n", "\n");
+  const upgrade = upgrades.find(
+    (candidate) => candidate.oldPath === file && candidate.oldBlob === blobHash(normalized),
+  );
+  if (upgrade === undefined) return original;
+  if (seen.has(upgrade.oldBlob))
+    throw new Error(`TN_THREE_PATCH_INVALID: cyclic known upgrade for ${file}.`);
+  seen.add(upgrade.oldBlob);
+  const lines = normalized.split("\n");
+  const states = classifyFile(lines, upgrade.hunks);
+  if (states.some((state) => state !== "stock"))
+    throw new Error(`TN_THREE_PATCH_INVALID: known upgrade hunks do not match ${file}.`);
+  const contents = applyFile(lines, upgrade.hunks, states, file).join("\n");
+  if (blobHash(contents) !== upgrade.newBlob)
+    throw new Error(`TN_THREE_PATCH_INVALID: known upgrade output does not match ${file}.`);
+  return upgradeKnownFile(contents, file, upgrades, seen);
+}
+
+function blobHash(contents) {
+  return createHash("sha1")
+    .update(`blob ${Buffer.byteLength(contents)}\0`)
+    .update(contents)
+    .digest("hex");
 }
 
 /**

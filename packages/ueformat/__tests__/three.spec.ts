@@ -139,6 +139,120 @@ describe("createThreeObject", () => {
   });
 });
 
+describe("INVALID_GEOMETRY", () => {
+  /** A fresh parsed LOD per case, so one case's edit cannot leak into the next. */
+  const freshLod = () =>
+    structuredClone(requiredLod(parseUEModel(modelFile({ body: staticModelBody() }))));
+  const freshRichLod = () =>
+    structuredClone(requiredLod(parseUEModel(modelFile({ body: richModelBody() }))));
+  const first = <T>(items: readonly T[]): T => {
+    const [item] = items;
+    if (item === undefined) throw new Error("fixture has no entry to corrupt");
+    return item;
+  };
+  const codeOf = (build: () => unknown): string | undefined => {
+    try {
+      build();
+      return undefined;
+    } catch (error) {
+      return error instanceof UEFormatError ? error.code : String(error);
+    }
+  };
+
+  // One case per rejection in three-adapter.ts, so each branch names the input that reaches it.
+  const faults: [string, () => unknown][] = [
+    ["a unit scale of zero", () => createThreeGeometry(freshLod(), { unitScale: 0 })],
+    [
+      "a LOD with no vertices",
+      () => {
+        const lod = freshLod();
+        lod.vertices = [];
+        return createThreeGeometry(lod);
+      },
+    ],
+    [
+      "an index count that is not a multiple of three",
+      () => {
+        const lod = freshLod();
+        lod.indices = [0, 1];
+        return createThreeGeometry(lod);
+      },
+    ],
+    [
+      "an index past the last vertex",
+      () => {
+        const lod = freshLod();
+        lod.indices[0] = 99;
+        return createThreeGeometry(lod);
+      },
+    ],
+    [
+      "a normal count that disagrees with the vertex count",
+      () => {
+        const lod = freshLod();
+        lod.normals = lod.normals.slice(0, 2);
+        return createThreeGeometry(lod);
+      },
+    ],
+    [
+      "a UV channel of the wrong length",
+      () => {
+        const lod = freshLod();
+        const channel = first(lod.texCoords);
+        channel.uvs = channel.uvs.slice(0, 2);
+        return createThreeGeometry(lod);
+      },
+    ],
+    [
+      "a vertex-color channel of the wrong length",
+      () => {
+        const lod = freshLod();
+        const channel = first(lod.vertexColors);
+        channel.colors = channel.colors.slice(0, 2);
+        return createThreeGeometry(lod);
+      },
+    ],
+    [
+      "a material section that runs past the index buffer",
+      () => {
+        const lod = freshLod();
+        first(lod.materials).numFaces = 2;
+        return createThreeGeometry(lod);
+      },
+    ],
+    [
+      "a morph delta that names a missing vertex",
+      () => {
+        const lod = freshRichLod();
+        first(first(lod.morphTargets).deltas).vertexIndex = 99;
+        return createThreeGeometry(lod);
+      },
+    ],
+    [
+      "a skin weight that names a missing vertex",
+      () => {
+        const lod = freshRichLod();
+        first(lod.weights).vertexIndex = 99;
+        return createThreeGeometry(lod);
+      },
+    ],
+    [
+      "a negative LOD distance",
+      () =>
+        createThreeObject(
+          parseUEModel(
+            modelFile({ body: staticModelBody([triangleLod("LOD0"), triangleLod("LOD1")]) }),
+          ),
+          { lodDistances: [0, -1] },
+        ),
+    ],
+  ];
+
+  it.each(faults)("rejects %s", (_label, build) => {
+    expect(codeOf(build)).toBe("INVALID_GEOMETRY");
+  });
+});
+
 describe("UEFormatLoader", () => {
   it("parse returns a Three.js object", () => {
     const loader = new UEFormatLoader(undefined, { three: { unitScale: 0.01 } });

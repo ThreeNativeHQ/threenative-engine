@@ -852,10 +852,15 @@ export function packageDesktopContainer({
   const format = desktopContainerFormat(platform);
   if (!output) throw new Error('TN_DESKTOP_OUTPUT_MISSING: packageDesktopContainer needs an output path.');
   assertFile(executable, 'desktop executable');
-  if (uiRenderer === 'web') {
+  if (uiRenderer === 'web' || uiRenderer === 'native-css') {
     assertDirectory(uiDirectory, 'built UI bundle');
-    if (!existsSync(join(uiDirectory, 'index.html'))) {
+    // The web renderer loads a page; the native-css renderer paints stylesheets in the game's own
+    // JS realm and ships no page at all.
+    if (uiRenderer === 'web' && !existsSync(join(uiDirectory, 'index.html'))) {
       throw new Error(`TN_UI_BUNDLE_MISSING: ${uiDirectory} has no index.html, which is the page the overlay loads.`);
+    }
+    if (uiRenderer === 'native-css' && listFiles(uiDirectory).every((file) => !file.relative.endsWith('.css'))) {
+      throw new Error(`TN_UI_BUNDLE_MISSING: ui.renderer is "native-css" but ${uiDirectory} has no .css to paint.`);
     }
   } else if (uiDirectory) {
     throw new Error(`TN_UI_BUNDLE_UNEXPECTED: a UI bundle was staged for a game whose ui.renderer is '${uiRenderer}'.`);
@@ -890,15 +895,24 @@ export function packageDesktopContainer({
     record(paths.bundle);
 
     let ui = null;
-    if (uiRenderer === 'web') {
+    if (uiRenderer === 'web' || uiRenderer === 'native-css') {
       for (const file of listFiles(uiDirectory)) {
         const destination = `${paths.ui}/${file.relative}`;
         mkdirSync(dirname(stage(destination)), { recursive: true });
         copyFileSync(file.absolute, stage(destination));
         record(destination);
       }
-      ui = { directory: paths.ui, entry: `${paths.ui}/index.html` };
-      if (!existsSync(stage(ui.entry))) throw new Error('TN_UI_BUNDLE_MISSING: no index.html staged for the web renderer.');
+      // The web renderer's entry is the page the overlay loads; the native-css one is its first
+      // stylesheet, which is what the manifest can name as a single required resource.
+      const entry =
+        uiRenderer === 'web'
+          ? 'index.html'
+          : listFiles(uiDirectory)
+              .map((file) => file.relative)
+              .sort()[0];
+      if (entry === undefined) throw new Error('TN_UI_BUNDLE_MISSING: nothing staged for the UI renderer.');
+      ui = { directory: paths.ui, entry: `${paths.ui}/${entry}` };
+      if (!existsSync(stage(ui.entry))) throw new Error(`TN_UI_BUNDLE_MISSING: no ${entry} staged for ${uiRenderer}.`);
     }
 
     const bundled = [];

@@ -28,7 +28,7 @@ reference, not a dependency; no source is copied. The scale claim is independent
 [`Grasslands: 8.8 million blades of grass in a browser tab`](https://threenames.dev/posts/grasslands),
 published 2026-06-16.
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 
 **Complexity:** +2 GPU storage, atomic compaction and indirect draw state, +2 compute lifecycle and
 projection interaction across frames, +2 browser/native conformance, +1 public surface if the

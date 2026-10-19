@@ -1,0 +1,27 @@
+{
+  "assets": {},
+  "cellSize": 64,
+  "cells": [],
+  "extent": {
+    "maxY": 3.0,
+    "minX": -63.0,
+    "minY": -3.0,
+    "minZ": -63.0,
+    "sizeX": 126.0,
+    "sizeZ": 126.0
+  },
+  "placements": "placements.bin",
+  "terrain": {
+    "columns": 64,
+    "heightMax": 3.0,
+    "heightMin": -3.0,
+    "heightmap": "terrain/heightmap.u16",
+    "layers": {
+      "splat": "terrain/splat.rgba8",
+      "table": "terrain/layers.json"
+    },
+    "rows": 64,
+    "spacing": 2.0
+  },
+  "version": 1
+}

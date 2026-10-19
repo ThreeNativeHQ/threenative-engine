@@ -42,9 +42,20 @@ export interface IDeviceResponseObservation {
   requestId: string;
 }
 
+/** One outstanding mailbox request; large arguments retain only a bounded preview. */
+export interface IDeviceRequestContext {
+  argument?: JsonValue;
+  argumentTruncated?: boolean;
+  method: string;
+  order: number;
+  requestId: string;
+  timeoutMs: number;
+}
+
 export interface IDevicePlaytestTransport extends IBridgeTransport {
   start(): Promise<void>;
   setResponseObserver?(observer: (observation: IDeviceResponseObservation) => void): void;
+  getPendingRequest?(): IDeviceRequestContext | undefined;
 }
 
 interface IPendingCall {
@@ -172,6 +183,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
   private closed = false;
   private nextId = 1;
   private nextOrder = 1;
+  private pendingRequest?: IDeviceRequestContext;
   // Calls that gave up before the host answered. The host still answers them, late, and that
   // answer is theirs, not an error in whichever call is waiting when it lands.
   private readonly abandonedIds = new Set<string>();
@@ -187,11 +199,16 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     this.responseObserver = observer;
   }
 
+  getPendingRequest(): IDeviceRequestContext | undefined {
+    return this.pendingRequest;
+  }
+
   async start(): Promise<void> {
     this.closed = false;
     this.connected = false;
     this.nextId = 1;
     this.nextOrder = 1;
+    this.pendingRequest = undefined;
     this.abandonedIds.clear();
     await this.mailbox.remove(this.paths.request);
     await this.mailbox.remove(this.paths.response);
@@ -203,6 +220,14 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     if (argument !== undefined) assertBounded(argument);
     const id = String(this.nextId++);
     const order = this.nextOrder++;
+    const serializedArgument = argument === undefined ? undefined : JSON.stringify(argument);
+    this.pendingRequest = {
+      requestId: id, method, order, timeoutMs,
+      ...(serializedArgument === undefined ? {} : {
+        argument: serializedArgument.length > 4096 ? serializedArgument.slice(0, 4096) : JSON.parse(serializedArgument) as JsonValue,
+        ...(serializedArgument.length > 4096 ? { argumentTruncated: true } : {}),
+      }),
+    };
     await this.mailbox.remove(this.paths.response);
     await this.mailbox.write(this.paths.request, JSON.stringify({
       ...(argument === undefined ? {} : { argument: argument as JsonValue }),
@@ -210,12 +235,14 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
       method,
     } satisfies IPlaytestDeviceRequest));
     const response = await this.waitForResponse(id, method, order, timeoutMs);
+    this.pendingRequest = undefined;
     if (response.error !== undefined) throw new Error(response.error.message);
     return response.result as T;
   }
 
   async close(): Promise<void> {
     this.closed = true;
+    this.pendingRequest = undefined;
     await this.mailbox.remove(this.paths.request).catch(() => undefined);
     await this.mailbox.remove(this.paths.response).catch(() => undefined);
   }

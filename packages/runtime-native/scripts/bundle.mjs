@@ -148,52 +148,40 @@ function generateVFSHeader(files, outputPath) {
 }
 
 /**
- * Three's compressed-asset decoders that cannot run on a mobile native target.
- *
- * Android runs QuickJS and iOS runs JavaScriptCore without a WASM JIT: neither has
- * `WebAssembly`, so the Basis/zstd transcoder behind `KTX2Loader`, the Meshopt decoder and
- * Draco's wasm decoder have nothing to instantiate there. Their specifiers are static strings
- * inside `await import(...)`, so a bundler resolves and inlines them whether or not the game
- * ships a single compressed asset — which is how one `.ktx2`-free game came to fail
- * `TN_NATIVE_WASM_ON_MOBILE`. Replacing them here keeps that guard intact by keeping WASM out
- * of the bundle instead of by ignoring it.
- *
- * The replacements construct and configure exactly like the originals so a game that ships no
- * compressed asset boots normally (`createAssetLoader` builds the shared KTX2 loader eagerly);
- * they refuse, by name, only when asked to decode. A game whose compiled assets do need one is
- * refused earlier and louder, by `threenative build`, before this bundle is written.
+ * Decoder-free targets retain Three's raw KTX2 loader but refuse Basis and ZSTD decoding.
+ * A mobile bundle keeps full decoding only for a codec `--decoders` admits; raw KTX2 stays.
+ * `threenative build` resolves the list per engine (Android V8: ktx2,meshopt). Desktop QuickJS and an
+ * unknown desktop artifact use the same refusing stubs.
  */
 const MOBILE_KTX2_MESSAGE =
-  // Deliberately never spells the WASM host object: `TN_NATIVE_WASM_ON_MOBILE` greps the
-  // finished bundle for that identifier, and a refusal message must not read as the thing it
-  // refuses.
-  "TN_NATIVE_KTX2_UNSUPPORTED: this Android/iOS bundle carries no Basis transcoder, because the mobile native runtime has no WASM engine. Compiled .ktx2 textures cannot be decoded here; native compilation automatically keeps decoder-free authored textures, or keep compressed textures on the web target.";
+  // Never spell the WASM host global: the bundle guard must not mistake diagnostics for code.
+  "TN_NATIVE_KTX2_UNSUPPORTED: this decoder-free native bundle carries no qualified Basis or ZSTD decoder. Use GPU-ready KTX2 textures without supercompression, or keep transcoded textures on the web target.";
 const MOBILE_MESH_MESSAGE =
-  "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: this Android/iOS bundle carries no Meshopt or Draco decoder, because the mobile native runtime has no WASM engine. Compressed model geometry cannot be decoded here; native compilation keeps shared images and decoder-free model geometry, or keep compressed models on the web target.";
+  "TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: this decoder-free native bundle carries no qualified Meshopt or Draco decoder. Compressed model geometry cannot be decoded here; native compilation keeps shared images and decoder-free model geometry, or keep compressed models on the web target.";
 
 const MOBILE_DECODER_STUBS = [
   {
+    codec: 'ktx2',
     endsWith: '/examples/jsm/loaders/KTX2Loader.js',
-    source: `const message = "${MOBILE_KTX2_MESSAGE}";
-export class KTX2Loader {
-  constructor() { this.transcoderPath = ""; this.workerConfig = undefined; }
-  setTranscoderPath(path) { this.transcoderPath = path; return this; }
-  setWorkerLimit() { return this; }
-  // Support detection is where core asks whether this platform can transcode at all. Throwing
-  // is the documented "renderer exposed no surface to probe" answer: the asset loader resolves
-  // its shared loader to undefined and the game boots without compressed textures.
-  detectSupport() { throw new Error(message); }
-  load(url, onLoad, onProgress, onError) {
-    const error = new Error(\`\${message} (requested '\${url}')\`);
-    if (typeof onError === "function") onError(error);
-    else throw error;
-  }
-  parse() { throw new Error(message); }
-  dispose() { return this; }
+    // The private query bypasses this exact-path replacement once; upstream owns raw parsing.
+    source: (id) => `import { KTX2Loader as RawKTX2Loader } from ${JSON.stringify(`${id}?threenative-raw-ktx2`)};
+export class KTX2Loader extends RawKTX2Loader {
+  init() { return Promise.reject(new Error(${JSON.stringify(MOBILE_KTX2_MESSAGE)})); }
 }
 `,
   },
   {
+    codec: 'ktx2',
+    endsWith: '/examples/jsm/libs/zstddec.module.js',
+    source: `export class ZSTDDecoder {
+  // Upstream awaits init inside an async Promise executor; reject at decode to avoid hanging.
+  init() { return Promise.resolve(); }
+  decode() { throw new Error(${JSON.stringify(MOBILE_KTX2_MESSAGE)}); }
+}
+`,
+  },
+  {
+    codec: 'meshopt',
     endsWith: '/examples/jsm/libs/meshopt_decoder.module.js',
     source: `const message = "${MOBILE_MESH_MESSAGE}";
 function refuse() { throw new Error(message); }
@@ -210,6 +198,7 @@ export const MeshoptDecoder = {
 `,
   },
   {
+    codec: 'draco',
     endsWith: '/examples/jsm/loaders/DRACOLoader.js',
     source: `const message = "${MOBILE_MESH_MESSAGE}";
 export class DRACOLoader {
@@ -235,15 +224,18 @@ export class DRACOLoader {
  * the same file — `three/addons/...`, `three/examples/jsm/...`, or a relative import from
  * inside three — lands on the same replacement.
  */
-function mobileDecoderStub(id) {
+function mobileDecoderStub(id, admitted) {
   const normalized = id.split('\\').join('/');
-  return MOBILE_DECODER_STUBS.find((stub) => normalized.endsWith(stub.endsWith))?.source;
+  const stub = MOBILE_DECODER_STUBS.find(
+    (stub) => normalized.endsWith(stub.endsWith) && !admitted.includes(stub.codec),
+  );
+  return typeof stub?.source === 'function' ? stub.source(id) : stub?.source;
 }
 
 /**
  * Main
  */
-async function bundleProject(project, entryPoint, outputPath, target, nativeBackend) {
+async function bundleProject(project, entryPoint, outputPath, target, nativeBackend, decoders = []) {
   const absoluteProject = resolve(project);
   const absoluteEntry = resolve(absoluteProject, entryPoint);
   const absoluteOutput = resolve(outputPath);
@@ -311,7 +303,7 @@ if (typeof globalThis.requestAnimationFrame === "function") {
     name: 'threenative-mobile-decoders',
     enforce: 'pre',
     load(id) {
-      const stub = mobileDecoderStub(id);
+      const stub = mobileDecoderStub(id, decoders);
       return stub === undefined ? null : stub;
     },
   };
@@ -340,7 +332,7 @@ void game.start().catch((error) => console.error(
     root: absoluteProject,
     define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV) },
     plugins:
-      target === 'desktop'
+      target === 'desktop' && !nativeBackend
         ? [importMetaPlugin, nativeEntryPlugin]
         : [importMetaPlugin, mobileDecodersPlugin, nativeEntryPlugin],
     // One three, whatever the import graph looks like. The game resolves `three` beside itself
@@ -411,6 +403,7 @@ async function main() {
   let project = null;
   let target = null;
   let nativeBackend = false;
+  let decoders = [];
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--entry' && args[i + 1]) {
@@ -425,6 +418,10 @@ async function main() {
       target = args[++i];
     } else if (args[i] === '--native-backend') {
       nativeBackend = true;
+    } else if (args[i] === '--decoders' && args[i + 1] !== undefined) {
+      decoders = args[++i].split(',').filter((codec) => codec.length > 0);
+      const unknown = decoders.filter((codec) => !MOBILE_DECODER_STUBS.some((stub) => stub.codec === codec));
+      if (unknown.length > 0) throw new Error(`--decoders names unknown codec(s): ${unknown.join(', ')}`);
     }
   }
 
@@ -433,7 +430,7 @@ async function main() {
     if (!['android', 'desktop', 'ios'].includes(target)) {
       throw new Error('--project requires --target android|desktop|ios.');
     }
-    await bundleProject(project, entryPoint, outputDir, target, nativeBackend);
+    await bundleProject(project, entryPoint, outputDir, target, nativeBackend, decoders);
     return;
   }
 

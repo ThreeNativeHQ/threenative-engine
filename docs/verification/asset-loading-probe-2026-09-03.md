@@ -1,6 +1,6 @@
 # Asset loading probe — 2026-09-03
 
-What executed, what did not, and the numbers PRD-339 is built on. Owner question: *"on wildwood we
+What executed, what did not, and the numbers PRD-496 is built on. Owner question: *"on wildwood we
 had to parallelise asset loading because it was taking too long… maybe this should be on the engine
 side?"*
 
@@ -77,7 +77,7 @@ On the shipped template assets, measured through `compileAssets` with the bare d
 **1.1 KB of growth in total** — which is the entire measured basis on which both templates pinned
 `assets: { models: "none", textures: "none" }`, and therefore the entire basis on which every game
 scaffolded from them shipped its web build uncompressed. The real reason that pin was load-bearing
-is the Android target, not the file size: see PRD-339 §1.
+is the Android target, not the file size: see PRD-496 §1.
 
 *Note on a claimed comparison that is not one:* `texturePass({ codec })` has no effect —
 `ITexturePassOptions` exposes `maxSize`, `overrides` and `quality`, and a codec can only be forced
@@ -102,7 +102,7 @@ because both used the automatic choice. Only the automatic-choice number above i
 6. Build concurrency defaults to `min(4, cores − 1)` — 4 of 24 cores on this machine.
 7. Content-addressed outputs carry no `Cache-Control: immutable` anywhere.
 
-## What PRD-339 changed, and the red observed for each
+## What PRD-496 changed, and the red observed for each
 
 | change | negative control | observed |
 | --- | --- | --- |

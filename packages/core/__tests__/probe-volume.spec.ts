@@ -1,4 +1,4 @@
-import { Box3, Data3DTexture, Scene, Vector3, WebGPUCoordinateSystem } from "three";
+import { Box3, Data3DTexture, type Mesh, Scene, Vector3, WebGPUCoordinateSystem } from "three";
 import type { Node } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { FrameBudget } from "../src/frame-budget.js";
@@ -450,6 +450,31 @@ describe("ProbeVolume", () => {
     subject.detach();
   });
 
+  it("warms private bake shaders before charging bounded render slices", async () => {
+    let nowMs = 0;
+    const compiled = new Set<object>();
+    const subject = volume({ bakeBudgetMs: 3, now: () => nowMs, report: () => undefined });
+    const renderer = webgpuRenderer({
+      render: vi.fn((scene: Scene) => {
+        const material = (scene.children[0] as Mesh | undefined)?.material;
+        const cold = material !== undefined && !compiled.has(material);
+        if (material !== undefined) compiled.add(material);
+        nowMs += cold ? 12 : 0.05;
+      }),
+    });
+    subject.attachRenderer(renderer);
+    nowMs = 0;
+    const bake = subject.requestBake(new Scene());
+    void bake.catch(() => undefined);
+    for (let item = 0; item < subject.totalWork; item += 1) {
+      expect(() => subject.process(renderer)).not.toThrow();
+      expect(subject.observation.bakeCostMs).toBeLessThanOrEqual(3);
+    }
+    await bake;
+    expect(subject.observation.status).toBe("ready");
+    subject.detach();
+  });
+
   it("keeps a large bake incremental across process calls", () => {
     let nowMs = 0;
     const subject = volume({
@@ -573,7 +598,7 @@ describe("ProbeVolume", () => {
   it("fails closed when a later individual work item exceeds its render budget", async () => {
     const bakeBudgetMs = 3;
     let nowMs = 0;
-    const renderCosts = [0, 1, 4];
+    const renderCosts: number[] = [];
     const subject = volume({
       bakeBudgetMs,
       maxWorkItemsPerFrame: 1,
@@ -596,6 +621,7 @@ describe("ProbeVolume", () => {
     };
     const renderer = { kind: "webgpu" as const, raw } as unknown as IRendererLike;
     subject.attachRenderer(renderer);
+    renderCosts.push(1, 4);
     nowMs = 0;
     const bake = subject.requestBake(new Scene());
     subject.process(renderer);

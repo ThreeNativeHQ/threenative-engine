@@ -460,10 +460,115 @@ class Request {
 }
 globalThis.Request = Request;
 
+// Standard `data:` URL body decoding (RFC 2397 / WHATWG fetch). Native games use data URIs for
+// embedded assets — Three.js' SMAANode carries its two lookup tables as base64 PNGs — and the host
+// has no `atob`. Decoding is byte-exact: a malformed escape or base64 digit rejects instead of
+// yielding truncated bytes.
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const BASE64_VALUES = (() => {
+  const values = new Int16Array(128).fill(-1);
+  for (let i = 0; i < BASE64_ALPHABET.length; i += 1) values[BASE64_ALPHABET.charCodeAt(i)] = i;
+  return values;
+})();
+
+function decodeBase64Bytes(text) {
+  // WHATWG forgiving-base64 decode: strip whitespace, drop one or two trailing
+  // "=" only from a multiple-of-four length, reject a remainder of one, then
+  // accept the remaining unpadded alphabet. A remainder of two or three is
+  // valid unpadded input, not a truncated group.
+  const clean = text.replace(/[\t\n\f\r ]/g, "");
+  let data = clean;
+  if (data.length % 4 === 0 && data.endsWith("==")) data = data.slice(0, -2);
+  else if (data.length % 4 === 0 && data.endsWith("=")) data = data.slice(0, -1);
+  if (data.length % 4 === 1 || !/^[A-Za-z0-9+/]*$/.test(data))
+    throw new TypeError("fetch: invalid base64 in data: URL");
+  const tail = data.length % 4;
+  const bytes = new Uint8Array(((data.length - tail) / 4) * 3 + (tail === 2 ? 1 : tail === 3 ? 2 : 0));
+  let write = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const group = data.slice(i, i + 4);
+    let bits = 0;
+    for (let j = 0; j < group.length; j += 1) bits = bits * 64 + BASE64_VALUES[group.charCodeAt(j)];
+    bits *= 2 ** (6 * (4 - group.length)); // left-align the group to the full 24 bits
+    const carried = group.length - 1;
+    for (let j = 0; j < carried; j += 1) bytes[write + j] = (bits >> (16 - 8 * j)) & 0xff;
+    write += carried;
+  }
+  return bytes;
+}
+
+function decodePercentBytes(text) {
+  const bytes = [];
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === "%") {
+      const hex = text.slice(i + 1, i + 3);
+      if (!/^[0-9A-Fa-f]{2}$/.test(hex))
+        throw new TypeError("fetch: invalid percent-encoding in data: URL");
+      bytes.push(Number.parseInt(hex, 16));
+      i += 2;
+      continue;
+    }
+    const point = text.codePointAt(i);
+    if (point < 0x80) {
+      bytes.push(point);
+    } else {
+      // A literal non-ASCII character is UTF-8 encoded, as the URL parser does.
+      const encoded = new TextEncoder().encode(String.fromCodePoint(point));
+      for (let j = 0; j < encoded.length; j += 1) bytes.push(encoded[j]);
+      if (point > 0xffff) i += 1;
+    }
+  }
+  return new Uint8Array(bytes);
+}
+
+function normalizeMediaType(metadata) {
+  if (metadata.startsWith(";")) return `text/plain${metadata}`;
+  if (metadata.includes("/")) return metadata;
+  return "text/plain;charset=US-ASCII";
+}
+
+function decodeDataUrl(url) {
+  // The URL parser removes the fragment before the data: processor runs, so a
+  // raw "#" ends the body while a percent-encoded "%23" stays in it.
+  const hash = url.indexOf("#");
+  const source = hash === -1 ? url : url.slice(0, hash);
+  const comma = source.indexOf(",");
+  if (comma === -1) throw new TypeError("fetch: invalid data: URL (missing comma)");
+  const metadata = source.slice(5, comma);
+  let base64 = false;
+  let mimeType = metadata;
+  if (/;base64$/i.test(metadata)) {
+    base64 = true;
+    mimeType = metadata.slice(0, metadata.length - ";base64".length);
+  }
+  const payload = source.slice(comma + 1);
+  let bytes;
+  if (base64) {
+    // The body is percent-decoded before base64-decoding (WHATWG fetch). Only
+    // ASCII can survive into the base64 alphabet, so a byte above 0x7f rejects.
+    const decoded = decodePercentBytes(payload);
+    let ascii = "";
+    for (let i = 0; i < decoded.length; i += 1) {
+      if (decoded[i] > 0x7f) throw new TypeError("fetch: invalid base64 in data: URL");
+      ascii += String.fromCharCode(decoded[i]);
+    }
+    bytes = decodeBase64Bytes(ascii);
+  } else {
+    bytes = decodePercentBytes(payload);
+  }
+  return new Response(bytes.buffer, {
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    url: source,
+    headers: { "content-type": normalizeMediaType(mimeType) },
+  });
+}
+
 // Fetch function - supports file://, http://, and https://
 // HTTP requests are now async via libuv (non-blocking)
 // Accepts either a URL string or a Request object (Three.js passes a Request).
-async function fetch(input, options = {}) {
+async function fetchRequest(input, options = {}) {
   let url;
   if (input && typeof input === "object" && typeof input.url === "string") {
     // Unwrap a Request object: pull url + per-request fields unless overridden.
@@ -508,6 +613,12 @@ async function fetch(input, options = {}) {
       url,
       headers: { "content-type": blob.type || "" },
     });
+  }
+
+  // data: URLs - an embedded resource, decoded here because the host has no `atob`. Image loaders
+  // and asset code pass Three.js' base64 PNG lookup tables through this path.
+  if (/^data:/i.test(url)) {
+    return decodeDataUrl(url);
   }
 
   // Check URL type
@@ -575,6 +686,27 @@ async function fetch(input, options = {}) {
     });
   });
 }
+
+// Retain actual fetch failures from startup through the final playtest observation.
+const networkEntries = [];
+let networkRequests = 0;
+async function fetch(input, options = {}) {
+  const url = input && typeof input.url === "string" ? input.url : String(input);
+  const method = options.method || input?.method || "GET";
+  networkRequests++;
+  try {
+    const response = await fetchRequest(input, options);
+    if (!response.ok && networkEntries.length <= 256) networkEntries.push({ method, url });
+    return response;
+  } catch (error) {
+    if (networkEntries.length <= 256) networkEntries.push({ method, url });
+    throw error;
+  }
+}
+fetch.network = () => {
+  if (networkEntries.length > 256) throw new Error("TN_PLAYTEST_NETWORK_OVERFLOW: more than 256 failed requests.");
+  return { requests: networkRequests, entries: networkEntries.map((entry) => ({ ...entry })) };
+};
 
 // Also expose globally
 globalThis.fetch = fetch;

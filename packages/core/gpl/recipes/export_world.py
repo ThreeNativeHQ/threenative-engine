@@ -388,6 +388,8 @@ def skipped_collections(layer, under_hidden=False):
 
 def terrain_layer_texture(table_dir, textures, layer_id, kind):
     """The source file of one texture set's map, searched in the table's `textures.search` dirs."""
+    if kind not in textures:
+        fail("terrain layers: the table names no '%s' texture for a layer that asks for one" % kind)
     name = textures[kind].replace("{id}", layer_id)
     for relative in textures.get("search", ["."]):
         base = os.path.normpath(os.path.join(table_dir, relative))
@@ -422,7 +424,9 @@ def export_terrain_layers(out, table_path, root=None):
     The table (the game's; its DCC shader can read the same file) names its masks, texture sets and
     blend values. This writes `terrain/layers.json` (the table plus the splat layout),
     `terrain/splat.rgba8` (masks packed into RGBA8 planes, raw so no cook converts them) and
-    `terrain/tex/<id>_diff.jpg` / `<id>_nrm.jpg`, and returns the `terrain.layers` paths.
+    `terrain/tex/<id>_diff.jpg`, `<id>_nrm.jpg` and `<id>_orm.jpg`, and returns the
+    `terrain.layers` paths. A layer's `normal` and `orm` flags say which maps it ships, and its
+    `roughness`/`metalness` say how it answers light when it ships no ORM map.
     Relative paths in the table resolve against `root` when given, else the table's folder.
     """
     import numpy as np
@@ -475,6 +479,19 @@ def export_terrain_layers(out, table_path, root=None):
             shutil.copyfile(
                 terrain_layer_texture(table_dir, textures, layer["id"], "nrm"),
                 os.path.join(tex, "%s_nrm.jpg" % layer["id"]),
+            )
+        if layer.get("orm"):
+            # A material with a roughness input of its own ships that input as occlusion,
+            # roughness and metalness; the table's numbers stand in for one without it.
+            shutil.copyfile(
+                terrain_layer_texture(table_dir, textures, layer["id"], "orm"),
+                os.path.join(tex, "%s_orm.jpg" % layer["id"]),
+            )
+        if layer.get("height"):
+            # The layer's own height, which the game's `layerWeight` reads; fails closed like orm.
+            shutil.copyfile(
+                terrain_layer_texture(table_dir, textures, layer["id"], "h"),
+                os.path.join(tex, "%s_h.jpg" % layer["id"]),
             )
 
     shipped = {key: table[key] for key in ("base", "breakup", "macro", "layers")}

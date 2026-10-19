@@ -257,6 +257,26 @@ public final class Build {
   public static final class VERSION_CODES { public static final int R = 30; }
 }
 `,
+    // The packaged `assets/` tree, as AssetManager lists it: a directory lists its children, a
+    // file lists nothing and opens.
+    'android/content/res/AssetManager.java': `package android.content.res;
+
+public final class AssetManager {
+  public static final java.util.Map<String, String> files = new java.util.HashMap<>();
+  public String[] list(String path) {
+    java.util.TreeSet<String> children = new java.util.TreeSet<>();
+    for (String file : files.keySet()) {
+      if (file.startsWith(path + "/")) children.add(file.substring(path.length() + 1).split("/")[0]);
+    }
+    return children.toArray(new String[0]);
+  }
+  public java.io.InputStream open(String path) throws java.io.IOException {
+    String body = files.get(path);
+    if (body == null) throw new java.io.FileNotFoundException(path);
+    return new java.io.ByteArrayInputStream(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  }
+}
+`,
     'android/util/Log.java': `package android.util;
 
 public final class Log {
@@ -404,6 +424,8 @@ public class SDLActivity {
   }
   public int externalFilesDirCallCount() { return externalFilesDirCalls; }
   public File getFilesDir() { return new File(System.getProperty("java.io.tmpdir")); }
+  private final android.content.res.AssetManager assets = new android.content.res.AssetManager();
+  public android.content.res.AssetManager getAssets() { return assets; }
   public int requestedOrientation = Integer.MIN_VALUE;
   public void setRequestedOrientation(int orientation) { requestedOrientation = orientation; }
   public void setOrientationBis(int width, int height, boolean resizable, String hint) {
@@ -524,6 +546,25 @@ public final class MetadataProbe {
     typo.configureMetadata(metadata);
     typo.create();
     require(TnUiOverlay.attachCount == 1, "an unrecognised ui.renderer must not attach an overlay");
+    require("".equals(typo.arguments()[7]), "only native-css hands the runtime a CSS UI root");
+
+    // native-css: no WebView, and the packaged ui/ tree extracted to a real directory whose path
+    // reaches the runtime, replacing whatever a previous launch left there.
+    android.content.res.AssetManager.files.put("ui/index-abc.css", ".hud{color:red}");
+    android.content.res.AssetManager.files.put("ui/fonts/Noto.ttf", "font");
+    java.io.File stale = new java.io.File(System.getProperty("java.io.tmpdir"), "tn-ui-css/old.css");
+    stale.getParentFile().mkdirs();
+    try { new java.io.FileOutputStream(stale).close(); } catch (java.io.IOException e) { throw new AssertionError(e); }
+    metadata.putString("TN_UI_RENDERER", "native-css");
+    ProbeActivity css = new ProbeActivity();
+    css.configureMetadata(metadata);
+    css.create();
+    require(TnUiOverlay.attachCount == 1, "ui.renderer native-css must not attach a WebView overlay");
+    java.io.File root = new java.io.File(css.arguments()[7]);
+    require(root.getName().equals("tn-ui-css"), "the CSS UI root must be forwarded to native");
+    require(new java.io.File(root, "index-abc.css").length() == 15, "the stylesheet was not extracted");
+    require(new java.io.File(root, "fonts/Noto.ttf").isFile(), "a nested font was not extracted");
+    require(!stale.exists(), "a previous launch's stylesheet must not survive extraction");
   }
 }
 `,
@@ -1635,5 +1676,63 @@ test('the packager aligns the finished APK to 16 KB before censusing it, and fai
       artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
     }),
     /zipalign exited with code 1/u,
+  );
+});
+
+// A fresh machine has no ~/.android/debug.keystore: AGP 8 does not always leave one where the
+// re-sign step looks. The default debug key is created on demand, exactly as AGP would; a keystore
+// the consumer named is never invented.
+test('the packager creates the missing default debug keystore before re-signing, and never an explicit one', async () => {
+  const root = makeTempDirSync('threenative-android-keystore-');
+  roots.push(root);
+  const bundle = join(root, 'game.js');
+  writeFileSync(bundle, 'export default { start() {} };\n');
+  const runtime = createFakeAndroidRuntime();
+  const apkPath = join(runtime, 'android/app/build/outputs/apk/debug/app-debug.apk');
+  const build = {
+    runtimeRoot: runtime,
+    ensureGradleWrapper: async () => undefined,
+    prepareAndroidPrebuilts: async () => undefined,
+    spawnSync: () => {
+      mkdirSync(dirname(apkPath), { recursive: true });
+      writeArchive(apkPath, compliantEntries());
+      return { status: 0, stdout: '' };
+    },
+  };
+  const calls = [];
+  const spawnAlign = (command, args) => {
+    calls.push({ args, command });
+    if (String(command).endsWith('zipalign')) writeArchive(String(args[args.length - 1]), compliantEntries());
+    if (String(command).endsWith('keytool')) writeFileSync(String(args[args.indexOf('-keystore') + 1]), 'key');
+    return { status: 0, stdout: '' };
+  };
+  const home = join(root, 'home');
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    await packageAndroid(bundle, apkPath, undefined, undefined, undefined, {
+      ...build,
+      align: { spawnSync: spawnAlign, zipalign: '/fake/build-tools/zipalign' },
+      artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+    });
+  } finally {
+    process.env.HOME = previousHome;
+  }
+  const keystore = join(home, '.android', 'debug.keystore');
+  const keytool = calls.find(({ command }) => String(command).endsWith('keytool'));
+  assert.ok(keytool, 'keytool was not run for the missing default debug keystore');
+  assert.equal(keytool.args[keytool.args.indexOf('-keystore') + 1], keystore);
+  assert.equal(keytool.args[keytool.args.indexOf('-alias') + 1], 'androiddebugkey');
+  assert.ok(existsSync(keystore));
+  const signer = calls.find(({ command }) => String(command).endsWith('apksigner'));
+  assert.equal(signer.args[signer.args.indexOf('--ks') + 1], keystore);
+
+  await assert.rejects(
+    packageAndroid(bundle, join(root, 'named.apk'), undefined, undefined, undefined, {
+      ...build,
+      align: { keystore: join(root, 'absent.jks'), spawnSync: spawnAlign, zipalign: '/fake/build-tools/zipalign' },
+      artifact16Kb: { runObjdump: () => ALIGNED_LOAD, zipalign: false },
+    }),
+    /no keystore at .*absent\.jks/u,
   );
 });

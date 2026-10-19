@@ -23,7 +23,7 @@ git status --short
 provider stream ended with the exact text `Google Antigravity returned HTTP 429`; it made no source
 changes and left this worktree clean. This record is the only intended change from this recovery.
 
-Source PRD: [PRD-362](../PRDs/other/PRD-362-starter-quality-adapts-to-measured-load.md).
+Source PRD: PRD-362.
 Its parent remains [PRD-287](../PRDs/useful-defaults/PRD-287-the-default-look-holds-the-phones-budget.md).
 
 ## Current implementation anchors

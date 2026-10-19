@@ -8,6 +8,7 @@ import "./web.js";
  * @constraint add the area to the physics context before stepping the world
  * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Area3D itself is not deprecated.
  * @example const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });
+ * @requires npm i @threenative/physics
  */
 export { Area3D } from "./Area3D.js";
 /**
@@ -22,6 +23,7 @@ export { Area3D } from "./Area3D.js";
  * @constraint use moveAndSlide inside the physics update
  * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. CharacterBody3D itself is not deprecated.
  * @example const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });
+ * @requires npm i @threenative/physics
  */
 export { CharacterBody3D } from "./CharacterBody3D.js";
 /**
@@ -32,6 +34,7 @@ export { CharacterBody3D } from "./CharacterBody3D.js";
  * @alias arena walls pickups
  * @constraint create shapes through the owning physics context
  * @example const shape = CollisionShape3D.capsule(0.5, 0.35);
+ * @requires npm i @threenative/physics
  */
 export { CollisionShape3D } from "./CollisionShape3D.js";
 export type { ICollisionShapeHandle } from "./CollisionShape3D.js";
@@ -42,6 +45,7 @@ export type { ICollisionShapeHandle } from "./CollisionShape3D.js";
  * @constraint supply hull points, density, drag, and the height source
  * @override buoyancy disables force application while submergedFraction remains measured
  * @example new Buoyancy3D({ body, surface: field, hullPoints, density: 1_000, drag: 4 });
+ * @requires npm i @threenative/physics
  */
 export { Buoyancy3D } from "./Buoyancy3D.js";
 export type {
@@ -59,6 +63,7 @@ export type {
  * @constraint both bodies must belong to the same physics context
  * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Joint3D itself is not deprecated.
  * @example const hinge = Joint3D.hinge({ physics: ctx.physics, bodyA: beam, bodyB: bob, anchorA: { x: 0, y: 0, z: 0 }, anchorB: { x: 0, y: 2.4, z: 0 }, axis: { x: 1, y: 0, z: 0 } });
+ * @requires npm i @threenative/physics
  */
 export { Joint3D } from "./Joint3D.js";
 export type {
@@ -75,6 +80,7 @@ export type {
  * @alias hitscan camera
  * @constraint query results are bounded by the configured result limit
  * @example const space = new PhysicsDirectSpaceState3D(context);
+ * @requires npm i @threenative/physics
  */
 export { PhysicsDirectSpaceState3D } from "./PhysicsDirectSpaceState3D.js";
 /**
@@ -84,6 +90,7 @@ export { PhysicsDirectSpaceState3D } from "./PhysicsDirectSpaceState3D.js";
  * @constraint supply the game-owned predicate for decorative meshes; the helper throws when it selects nothing
  * @constraint generated bodies use trimesh geometry and world-space instance transforms
  * @example const colliders = buildStaticColliders(ctx, level, { predicate: (object) => object.name.startsWith("wall") });
+ * @requires npm i @threenative/physics
  */
 export { buildStaticColliders } from "./static-colliders.js";
 export type {
@@ -98,8 +105,16 @@ export type {
  * @constraint every body must use CollisionShape3D.box and retain its Three.js object transform
  * @constraint rotated boxes become conservative cloth-local axis-aligned bounds
  * @example const cloth = new SoftBody3D(mesh, { ...options, collision: softBodyCollision(wall) });
+ * @requires npm i @threenative/physics
  */
 export { softBodyCollision } from "./softbody-collision.js";
+// Capability metadata for the snow binding lives on its declarations in snow.ts.
+export { attachSnowPhysics, boxFootprint, capsuleFootprint } from "./snow.js";
+export type {
+  ISnowPhysicsBinding,
+  ISnowPhysicsObservation,
+  ISnowPhysicsOptions,
+} from "./snow.js";
 export type {
   IIntersectPointOptions,
   IIntersectRayOptions,
@@ -120,6 +135,7 @@ export type {
  * @situation make an enemy collide with the world but not pickups
  * @situation configure which physics layers interact
  * @example const groups = interactionGroups(1, 3);
+ * @requires npm i @threenative/physics
  */
 export { interactionGroups } from "./collision.js";
 /**
@@ -133,6 +149,7 @@ export { interactionGroups } from "./collision.js";
  * @override continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting
  * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. RigidBody3D itself is not deprecated.
  * @example const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });
+ * @requires npm i @threenative/physics
  */
 export { RigidBody3D } from "./RigidBody3D.js";
 export type { IRigidBody3DOptions, RigidBodyType } from "./RigidBody3D.js";
@@ -142,6 +159,7 @@ export type { IRigidBody3DOptions, RigidBodyType } from "./RigidBody3D.js";
  * @situation provide the context used by character and rigid bodies
  * @constraint place rapier() before recast() in the plugin list
  * @example const game = defineGame({ plugins: [rapier()] });
+ * @requires npm i @threenative/physics
  */
 export { rapier } from "./plugin.js";
 export type { PhysicsBody3D, IPhysicsContext } from "./plugin.js";
@@ -186,6 +204,7 @@ export type {
  * @override a wheel ray never hits the chassis it hangs from, and it honours the chassis collision mask
  * @override continuousCollision is on for the chassis, so a fast car cannot tunnel through a wall
  * @example const car = new VehicleBody3D({ object: chassis, physics: ctx.physics, shape: CollisionShape3D.box(1.6, 0.5, 3.6), mass: 900, wheels: [{ position: { x: 0.8, y: -0.15, z: -1.2 }, wheelRadius: 0.34, suspensionRestLength: 0.3, suspensionStiffness: 100, dampingCompression: 2.3, dampingRelaxation: 4.4, wheelFrictionSlip: 10.5, maxSuspensionTravel: 0.3, useAsSteering: true, useAsTraction: false }] });
+ * @requires npm i @threenative/physics
  */
 export { VehicleBody3D } from "./VehicleBody3D.js";
 export type {

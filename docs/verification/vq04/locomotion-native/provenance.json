@@ -1,0 +1,24 @@
+{
+  "scenario": "examples/abyss-framework/playtests/vq-locomotion-blend-spaces.playtest.json",
+  "target": "desktop",
+  "adapter": "NVIDIA GeForce RTX 2080 (Vulkan), private Xvfb",
+  "host": "packages/runtime-native/build/tn-linux/mystral, prebuilt 2026-09-26 (stale versus this source)",
+  "command": "sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js playtests/vq-locomotion-blend-spaces.playtest.json --target desktop --executable <mystral> --project examples/abyss-framework --host-arg run --host-arg dist/vq-locomotion-native.js",
+  "result": {
+    "pass": true,
+    "frames": 421,
+    "assertions": 23,
+    "diagnostics": 0
+  },
+  "sourceBase": "16e26c1403e94e60485b138b7b2dfc939d37d2d7",
+  "sourceNote": "camera tuning uncommitted at capture time; committed in the next commit",
+  "images": {
+    "after-reversals.jpg": "ac98aa1f269035410f949d9552923f012eb4c830666316746e8cbc385732c4cf",
+    "decelerating.jpg": "07c28035e6535695de72230ff3ae80333e7ca1248802b8b8db0f5f09f9861871",
+    "idle-before-reversals.jpg": "f1bd5196dca6136c1def2e7b256d10cdf86759755877c97c39f00b5f3f7cdeb5",
+    "jog.jpg": "b4c31ea28740bdd572f2194895a3ebf31bed0219f3c4a8b2fa9e49c1be8d9dad",
+    "sprint.jpg": "cb861c1d6c6f4c32ca447b2a81cce6db15a4bfdde9fdca0bb75941f70049d52d",
+    "walk.jpg": "c33c15c4ad2c4d19e8da44e7fa2a5bfadc09fd9f958058edfab367c09bf1e1bd"
+  },
+  "imageNote": "Evidence JPEGs are 640x360 q72 copies of the 1280x720 playtest PNGs, kept small for the docs/verification budget; the original PNG hashes were not retained."
+}

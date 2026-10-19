@@ -52,6 +52,39 @@ describe("visual gate", () => {
     }
   });
 
+  it("asks for soft shadow-map settings only from a light that casts a shadow", async () => {
+    const root = await makeTempDir("threenative-visual-shadow-");
+    const kit = path.join(root, "shadow-kit");
+    try {
+      await cp(path.resolve("packages/create-threenative/templates/platformer"), kit, {
+        recursive: true,
+      });
+      const manifest = JSON.parse(await readFile(path.join(kit, "kit.json"), "utf8")) as {
+        name: string;
+      };
+      await writeFile(
+        path.join(kit, "kit.json"),
+        `${JSON.stringify({ ...manifest, name: "shadow-kit" })}\n`,
+      );
+      const lightingPath = path.join(kit, "src/render/lighting.ts");
+      const lighting = await readFile(lightingPath, "utf8");
+      expect(lighting).toMatch(/castShadow\s*=\s*true/u);
+      const stripped = lighting.replaceAll("PCFSoftShadowMap", "PCFShadowMap");
+      await writeFile(lightingPath, stripped);
+      const casting = inspectAllTemplates(root).find(({ template }) => template === "shadow-kit");
+      expect(casting?.errors).toContain("shadow-kit: lighting.ts is missing PCFSoftShadowMap");
+
+      await writeFile(
+        lightingPath,
+        stripped.replaceAll(/castShadow\s*=\s*true/gu, "castShadow = false"),
+      );
+      const unlit = inspectAllTemplates(root).find(({ template }) => template === "shadow-kit");
+      expect(unlit?.errors).not.toContain("shadow-kit: lighting.ts is missing PCFSoftShadowMap");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("discovers an unregistered broken template and reports its missing render file", async () => {
     const root = await makeTempDir("threenative-visual-discovery-");
     const broken = path.join(root, "unregistered-broken");
@@ -89,6 +122,7 @@ describe("visual gate", () => {
             content: Buffer.from(`${template} visual-gate capture`),
             stats: {
               brightPixelRatio: 1,
+              contentRatio: 1,
               distinctColors: 8,
               height: 1,
               luminanceStdDev: 1,

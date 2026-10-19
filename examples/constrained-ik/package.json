@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "threenative": { "nativeEntry": "src/game.ts" },
+  "threenative": {
+    "nativeEntry": "src/game.ts"
+  },
   "scripts": {
     "setup": "npm --prefix ../integrations/ik install --ignore-scripts --no-audit --no-fund",
     "dev": "vite --host 127.0.0.1",
@@ -18,6 +20,7 @@
   "devDependencies": {
     "@types/three": "0.185.3",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "@typescript/native": "catalog:"
   }
 }

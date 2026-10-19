@@ -32,9 +32,32 @@ test("the conformance registry binds the composed render-chain scenario to deskt
   const scenarioPath = join(runtimeRoot, entry.scenario);
   assert.ok(existsSync(scenarioPath), `scenario must exist: ${entry.scenario}`);
   const scenario = readJson(scenarioPath);
-  assert.deepEqual(scenario.assert?.renderChain, {
-    stages: { includes: ["ambientOcclusion", "bloom", "vignette"] },
+  const fullChain = {
+    contributions: { graphOutputChanged: ["grade", "grain"] },
+    stages: {
+      includes: ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
+      order: ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
+    },
     tier: "high",
+  };
+  const lowChain = {
+    contributions: { graphOutputChanged: ["grade"] },
+    stages: {
+      includes: ["bloom", "vignette", "grade"],
+      excludes: ["ambientOcclusion", "grain"],
+      order: ["bloom", "vignette", "grade"],
+    },
+    tier: "low",
+  };
+  assert.deepEqual(scenario.assert?.renderChain, {
+    ...fullChain,
+    perAdapter: {
+      integrated: { ...fullChain, tier: "medium" },
+      "mobile-high": { ...fullChain, tier: "medium" },
+      "mobile-low": lowChain,
+      "mobile-mid": lowChain,
+      software: lowChain,
+    },
   });
   assert.deepEqual(scenario.artifacts, { screenshots: "after" });
   assert.equal(scenario.target, "desktop");

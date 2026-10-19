@@ -1,0 +1,601 @@
+{
+  "name": "scene-object-bounds-skinned",
+  "adaptedFrom": "three@0.185.1 Box3.expandByObject, InstancedMesh.computeBoundingBox and SkinnedMesh.applyBoneTransform: hierarchy updates, cached versus precise bounds and explicit recomputation",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "geometry",
+      "class": "BufferGeometry",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "position",
+      "class": "Float32BufferAttribute",
+      "args": [
+        {
+          "array": [-1, -1, 0, 1, -1, 0, 0, 1, 1],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "new",
+      "id": "skinIndex",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0],
+          "type": "Uint16Array"
+        },
+        4
+      ]
+    },
+    {
+      "op": "new",
+      "id": "skinWeight",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [0.25, 0.5, 0, 0, 1, 0, 0, 0, 0.75, 0.75, 0, 0],
+          "type": "Float32Array"
+        },
+        4
+      ]
+    },
+    {
+      "op": "call",
+      "id": "geometry",
+      "method": "setAttribute",
+      "args": [
+        "position",
+        {
+          "ref": "position"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "geometry",
+      "method": "setAttribute",
+      "args": [
+        "skinIndex",
+        {
+          "ref": "skinIndex"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "geometry",
+      "method": "setAttribute",
+      "args": [
+        "skinWeight",
+        {
+          "ref": "skinWeight"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "mesh",
+      "class": "SkinnedMesh",
+      "args": [
+        {
+          "ref": "geometry"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "bone0",
+      "class": "Bone",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "bone1",
+      "class": "Bone",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "bone0",
+      "path": "position.x",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "bone1",
+      "path": "position.y",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "bone0",
+      "method": "add",
+      "args": [
+        {
+          "ref": "bone1"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "add",
+      "args": [
+        {
+          "ref": "bone0"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "mesh"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "skeleton",
+      "class": "Skeleton",
+      "args": [
+        {
+          "refs": ["bone0", "bone1"]
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "binding",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "binding",
+      "method": "set",
+      "args": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.1, 0.2, 0, 1]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "bind",
+      "args": [
+        {
+          "ref": "skeleton"
+        },
+        {
+          "ref": "binding"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "bindMode",
+      "value": "detached"
+    },
+    {
+      "op": "set",
+      "id": "bone0",
+      "path": "rotation.z",
+      "value": 0.35
+    },
+    {
+      "op": "set",
+      "id": "bone1",
+      "path": "rotation.x",
+      "value": 0.2
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "conservative",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "conservative",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        false
+      ]
+    },
+    {
+      "op": "new",
+      "id": "precise",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "precise",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        true
+      ]
+    },
+    {
+      "op": "set",
+      "id": "bone1",
+      "path": "position.y",
+      "value": 10
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "stale",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "stale",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        false
+      ]
+    },
+    {
+      "op": "new",
+      "id": "freshPrecise",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "freshPrecise",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        true
+      ]
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "computeBoundingBox",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "recomputed",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "recomputed",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        false
+      ]
+    },
+    {
+      "op": "new",
+      "id": "lo",
+      "class": "Vector3",
+      "args": [100, 101, 102]
+    },
+    {
+      "op": "new",
+      "id": "hi",
+      "class": "Vector3",
+      "args": [110, 111, 112]
+    },
+    {
+      "op": "new",
+      "id": "authored",
+      "class": "Box3",
+      "args": [
+        {
+          "ref": "lo"
+        },
+        {
+          "ref": "hi"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "boundingBox",
+      "value": {
+        "ref": "authored"
+      }
+    },
+    {
+      "op": "new",
+      "id": "authoredWorld",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "authoredWorld",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        false
+      ]
+    },
+    {
+      "op": "new",
+      "id": "authoredPrecise",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "authoredPrecise",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        true
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "stale",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "freshPrecise",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "recomputed",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "authoredWorld",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "authoredPrecise",
+      "kind": "number",
+      "path": "max.z"
+    }
+  ]
+}

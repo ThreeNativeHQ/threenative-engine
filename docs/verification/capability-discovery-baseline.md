@@ -29,7 +29,10 @@ and results, are committed beside this report:
 
 - [baseline run 1](capability-discovery-baseline-run-1.jsonl)
 - [baseline run 2](capability-discovery-baseline-run-2.jsonl)
-- [baseline run 3](capability-discovery-baseline-run-3.jsonl)
+- [baseline run 3](capability-discovery-baseline-run-3.jsonl.gz)
+
+Run 3 is stored gzip-compressed; the bytes are unchanged. Restore it with
+`gzip -dc capability-discovery-baseline-run-3.jsonl.gz > capability-discovery-baseline-run-3.jsonl`.
 
 ## Measurements
 
@@ -66,10 +69,10 @@ and the engine capabilities remained undiscovered.
 
 ## Aborted attempts, not counted
 
-- [Opus attempt](capability-discovery-baseline-aborted-opus.jsonl): real fresh session, 69 turns,
+- [Opus attempt](https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/verification/capability-discovery-baseline-aborted-opus.jsonl): real fresh session, 69 turns,
   entered context compaction after the playtest, then was stopped; final record is
   `aborted_streaming`, cost `$7.747`.
-- [Sonnet attempt](capability-discovery-baseline-aborted-sonnet.jsonl): real fresh session,
+- [Sonnet attempt](https://github.com/ThreeNativeHQ/threenative/blob/4ce93bcd7e2568746b86564bcd4238111833d01e/docs/verification/capability-discovery-baseline-aborted-sonnet.jsonl): real fresh session,
   stopped after approximately five minutes of internal reasoning before it modified the scaffold.
 
 These attempts do not contribute to the 0/3 metrics. No feature code was changed in the engine

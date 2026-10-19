@@ -20,9 +20,10 @@ ThreeNative uses WebGPU when the host exposes it and falls back to WebGL2. `ctx.
 tells you which one is active (`"webgpu"` or `"webgl2"`). GPU compute features need WebGPU, so
 ship a simpler effect or tell players WebGPU is required.
 
-`resolutionScale: "auto"` scales the 3D drawing buffer to hold the `display.maxFps` budget. CSS,
-UI and camera framing never change. Set a number in `(0, 1]` to pin the scale, for example when
-you compare two versions of an effect.
+`resolutionScale` defaults to `"auto"`, which scales the 3D drawing buffer to hold the
+`display.maxFps` budget. On a desktop the scale stops at 0.61 rather than spending pixels that
+nothing reconstructs; phones keep the whole ladder. CSS, UI and camera framing never change. Set a
+number in `(0, 1]` to pin the scale, for example when you compare two versions of an effect.
 
 `alphaAntialiasing` smooths alpha-tested cutouts such as foliage, fences and hair. Set it to
 `false` for a hard-edged look.

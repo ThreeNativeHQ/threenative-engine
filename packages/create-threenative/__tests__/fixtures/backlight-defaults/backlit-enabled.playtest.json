@@ -1,0 +1,116 @@
+{
+  "name": "backlight-backlit-enabled",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "steps": [
+    {
+      "kind": "input",
+      "label": "start-fixed-pose",
+      "press": "KeyP",
+      "holdTicks": 1
+    },
+    {
+      "kind": "wait",
+      "label": "fixed-pose-mid",
+      "waitTicks": 43,
+      "screenshot": "pose-mid"
+    },
+    {
+      "kind": "wait",
+      "label": "fixed-pose-end",
+      "waitTicks": 45,
+      "screenshot": "pose-end"
+    },
+    {
+      "kind": "wait",
+      "label": "fixed-pose-rest",
+      "waitFrames": 60,
+      "screenshot": "pose-rest"
+    }
+  ],
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "assert": {
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    },
+    "components": [
+      {
+        "entity": "qualification",
+        "component": "arm",
+        "equals": "enabled",
+        "allowTrivial": "Matched comparison arm identity."
+      },
+      {
+        "entity": "qualification",
+        "component": "shot",
+        "equals": "backlit",
+        "allowTrivial": "Matched scene and light identity."
+      },
+      {
+        "entity": "qualification",
+        "component": "animationTicks",
+        "equals": 90,
+        "atSteps": [
+          {
+            "label": "fixed-pose-mid",
+            "equals": 45
+          },
+          {
+            "label": "fixed-pose-end",
+            "equals": 90
+          }
+        ]
+      },
+      {
+        "entity": "qualification",
+        "component": "animationSeconds",
+        "equals": 1.5,
+        "atSteps": [
+          {
+            "label": "fixed-pose-mid",
+            "equals": 0.75
+          },
+          {
+            "label": "fixed-pose-end",
+            "equals": 1.5
+          }
+        ]
+      },
+      {
+        "entity": "qualification",
+        "component": "bufferWidth",
+        "equals": 1280,
+        "allowTrivial": "Read from actual drawing canvas."
+      },
+      {
+        "entity": "qualification",
+        "component": "bufferHeight",
+        "equals": 720,
+        "allowTrivial": "Read from actual drawing canvas."
+      },
+      {
+        "entity": "qualification",
+        "component": "environmentState",
+        "equals": "unknown",
+        "allowTrivial": "Measured source category; JPEG remains unknown."
+      }
+    ],
+    "renderChain": {
+      "tier": "high",
+      "stages": {
+        "includes": ["ambientOcclusion", "bloom", "vignette"],
+        "excludes": ["ssgi"]
+      }
+    }
+  }
+}

@@ -62,51 +62,6 @@ function belliedSail(width: number, height: number, belly: number, taper = 1): B
 }
 
 /**
- * A swallow-tailed pennant, the tail cut back to the middle of the hoist instead of squared off.
- *
- * The notch is the whole difference: a rectangular flag reads as a card, and at the chase camera's
- * distance the shape is all there is. Cutting the last fifth of the fly into two points turns the
- * same four columns of canvas into the shape a player has seen on every ship ever drawn.
- */
-function swallowtail(width: number, height: number, belly: number): BufferGeometry {
-  const positions: number[] = [];
-  // The notch: past 0.8 of the length the fly narrows to a point, so the tail is two points.
-  const fly = (u: number, v: number): number => (u < 0.8 ? v : v * (1 - (u - 0.8) * 5));
-  const at = (u: number, v: number): [number, number, number] => [
-    u * width,
-    (v - 0.5) * height,
-    Math.sin(Math.PI * u) * Math.sin(Math.PI * v) * belly,
-  ];
-  for (let row = 0; row < 3; row += 1) {
-    for (let column = 0; column < 4; column += 1) {
-      const u0 = column / 4;
-      const u1 = (column + 1) / 4;
-      const v0 = row / 3;
-      const v1 = (row + 1) / 3;
-      const corners = [
-        at(u0, fly(u0, v0)),
-        at(u1, fly(u1, v0)),
-        at(u1, fly(u1, v1)),
-        at(u0, fly(u0, v1)),
-      ];
-      for (const triangle of [
-        [0, 1, 2],
-        [0, 2, 3],
-      ] as const) {
-        for (const index of triangle) {
-          const corner = corners[index] as [number, number, number];
-          positions.push(...corner);
-        }
-      }
-    }
-  }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
-/**
  * One sail, authored flat, ready for `SoftBody3D` to put the wind in it.
  *
  * `belliedSail` bakes the belly into the vertices, which is the right answer for a sail that will

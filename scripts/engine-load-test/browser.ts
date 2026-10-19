@@ -7,6 +7,8 @@ import { stat } from "node:fs/promises";
 import { type Server, createServer } from "node:http";
 import path from "node:path";
 import { chromium } from "@playwright/test";
+import { PNG } from "pngjs";
+import { downscaleFrame } from "../../examples/engine-load-test/src/frame-read.js";
 import {
   DEFAULT_AXES,
   canonicalPlacementBytes,
@@ -14,7 +16,11 @@ import {
   culledOffsetX,
   positionHash,
 } from "../../examples/engine-load-test/src/workload.js";
-import { softwareAdapterName } from "../../packages/playtest/src/runner/browser.js";
+import {
+  PERFORMANCE_BROWSER_ARGS,
+  WEBGPU_BROWSER_ARGS,
+  softwareAdapterName,
+} from "../../packages/playtest/src/runner/browser.js";
 import type { IRunReport } from "./report.js";
 
 // Vsync is disabled on both arms rather than pinned on both: under vsync a frame needing 17 ms of
@@ -31,10 +37,31 @@ export const BENCH_BROWSER_ARGS = [
   "--autoplay-policy=no-user-gesture-required",
 ] as const;
 
-export function browserLaunchArgs(waylandDisplay: string | undefined): string[] {
+/**
+ * `--browser-recipe webgpu` is the playtest runner's recipe (X11 ozone and Vulkan on, uncapped): the one that
+ * reaches a real Linux Vulkan driver on an X display (the Debian laptop's Xwayland), where the default args
+ * land on SwiftShader. Every web arm of a run takes the same args.
+ */
+export function browserLaunchArgs(
+  waylandDisplay: string | undefined,
+  recipe = recipeFlag(process.argv),
+): string[] {
+  if (recipe === "webgpu")
+    return [
+      ...WEBGPU_BROWSER_ARGS,
+      ...PERFORMANCE_BROWSER_ARGS,
+      "--autoplay-policy=no-user-gesture-required",
+    ];
+  if (recipe !== undefined)
+    throw new Error(`TN_BENCH_BAD_FLAG: unknown --browser-recipe ${recipe}`);
   return waylandDisplay
     ? [...BENCH_BROWSER_ARGS, "--ozone-platform=wayland"]
     : [...BENCH_BROWSER_ARGS];
+}
+
+function recipeFlag(argv: readonly string[]): string | undefined {
+  const index = argv.indexOf("--browser-recipe");
+  return index === -1 ? undefined : argv[index + 1];
 }
 
 const MIME: Record<string, string> = {
@@ -128,6 +155,18 @@ export async function driveBenchmarkPage(options: IDriveOptions): Promise<unknow
     const page = await browser.newPage({ viewport: { height: 900, width: 1440 } });
     page.on("console", (message) => options.onConsole?.(`${message.type()}: ${message.text()}`));
     page.on("pageerror", (error) => options.onConsole?.(`pageerror: ${error.message}`));
+    // A console 404 names no URL; the response does.
+    page.on("response", (response) => {
+      if (response.status() >= 400)
+        options.onConsole?.(`http ${response.status()}: ${response.url()}`);
+    });
+    // The driver awaits this only after closing a rung's timed window, before changing the scene.
+    await page.exposeFunction("__TN_BENCH_CAPTURE__", async () => {
+      const image = PNG.sync.read(await page.locator("canvas").first().screenshot({ type: "png" }));
+      const small = new PNG({ width: 160, height: 90 });
+      small.data = Buffer.from(downscaleFrame(image.data, image.width, image.height));
+      return PNG.sync.write(small).toString("base64");
+    });
     await page.goto(options.url, { timeout: 120_000, waitUntil: "load" });
     const deadline = Date.now() + options.timeoutMs;
     while (Date.now() < deadline) {

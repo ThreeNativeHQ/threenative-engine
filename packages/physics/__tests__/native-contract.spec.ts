@@ -7,7 +7,11 @@ import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { PhysicsDirectSpaceState3D } from "../src/PhysicsDirectSpaceState3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
 import * as webEntry from "../src/index.js";
-import { type INativeSimulation, createNativePhysicsSimulation } from "../src/native/host.js";
+import {
+  type INativeShapeDescriptor,
+  type INativeSimulation,
+  createNativePhysicsSimulation,
+} from "../src/native/host.js";
 import {
   Area3D as NativeArea3D,
   CharacterBody3D as NativeCharacterBody3D,
@@ -143,15 +147,105 @@ describe("native physics contract", () => {
         position: { x: 0, y: 0, z: 0 },
         rotation: { w: 1, x: 0, y: 0, z: 0 },
         sensor: false,
-        shape: CollisionShape3D.heightfield(2, 2, new Float32Array(4), {
-          x: 1,
-          y: 1,
-          z: 1,
-        }).descriptor,
+        shape: {
+          collisionLayer: 1,
+          collisionMask: 0xffff,
+          kind: "convexHull",
+          sensor: false,
+          vertices: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
+          x: 0,
+          y: 0,
+          z: 0,
+        },
         type: "fixed",
       }),
-    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED.*heightfield/);
+    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED.*convexHull/);
     expect(createBody).not.toHaveBeenCalled();
+  });
+
+  it("hands a heightfield to the native host as its own column-major samples", () => {
+    const createBody = vi.fn((_options: { shape: INativeShapeDescriptor }) => 3);
+    const native = createNativePhysicsSimulation(
+      { createBody } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    const heights = new Float32Array([0, 1, 2, 3, 4, 5]);
+    native.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: CollisionShape3D.heightfield(2, 3, heights, { x: 4, y: 2, z: 6 }).descriptor,
+      type: "fixed",
+    });
+    const shape = createBody.mock.calls[0]?.[0].shape;
+    // The same buffer, grid and extent the web backend passes Rapier, so both build one surface.
+    expect(shape).toMatchObject({ columns: 3, kind: "heightfield", rows: 2 });
+    expect(shape?.heights).toBe(heights);
+    expect(shape?.scale).toEqual({ x: 4, y: 2, z: 6 });
+    expect(() =>
+      native.createBody({
+        mass: 0,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+        sensor: false,
+        shape: {
+          ...CollisionShape3D.heightfield(2, 3, heights, { x: 4, y: 2, z: 6 }).descriptor,
+          heights: new Float32Array(5),
+        },
+        type: "fixed",
+      }),
+    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_INVALID/);
+  });
+
+  it("reads native contacts and refreshes a collider shape, failing closed on an old runtime", () => {
+    const readContacts = vi.fn(() => 2);
+    const setColliderShape = vi.fn();
+    const createBody = vi.fn(() => 0);
+    const native = createNativePhysicsSimulation(
+      { createBody, readContacts, setColliderShape } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    const surface = native.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: CollisionShape3D.heightfield(2, 2, new Float32Array(4), { x: 1, y: 1, z: 1 })
+        .descriptor,
+      type: "fixed",
+    });
+    const ids = new Uint32Array([4]);
+    const buffer = new Float32Array(16);
+    expect(native.readContacts?.(surface.collider, ids, buffer)).toBe(2);
+    expect(readContacts).toHaveBeenCalledWith(0, ids, buffer);
+    native.setColliderShape?.(
+      surface.collider,
+      CollisionShape3D.heightfield(2, 2, new Float32Array(4), { x: 1, y: 1, z: 1 }).descriptor,
+    );
+    expect(setColliderShape.mock.calls[0]?.[1]).toMatchObject({ kind: "heightfield" });
+    expect(() =>
+      native.setColliderShape?.(surface.collider, CollisionShape3D.sphere(1).descriptor),
+    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED/);
+    expect(() => native.readContacts?.({ id: 99, raw: undefined }, ids, buffer)).toThrow(
+      /not a live collider/,
+    );
+
+    const old = createNativePhysicsSimulation(
+      { createBody } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    const oldSurface = old.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: CollisionShape3D.sphere(1).descriptor,
+      type: "fixed",
+    });
+    expect(() => old.readContacts?.(oldSurface.collider, ids, buffer)).toThrow(
+      /TN_NATIVE_PHYSICS_CONTACTS_MISSING/,
+    );
   });
 
   it("hands a trimesh body's vertices and indices to the native host", () => {
@@ -911,5 +1005,111 @@ describe("native physics contract", () => {
     gone.createBody(bodyOptions());
     const goneId = gone.createVehicle?.(vehicleOptions) as number;
     expect(() => gone.readVehicleState?.(goneId)).toThrow(/TN_VEHICLE_UNKNOWN/);
+  });
+
+  it("returns decoded hit for native numeric ray query and rejects invalid codes", () => {
+    const rayOutputMock = (bodyId: number, status = 1, dist = 5) => {
+      return vi.fn((_query: unknown, out: Float32Array) => {
+        out[0] = bodyId;
+        out[1] = 1;
+        out[2] = 2;
+        out[3] = 3; // pos
+        out[4] = 0;
+        out[5] = 1;
+        out[6] = 0; // normal
+        out[7] = dist; // dist
+        return status;
+      });
+    };
+
+    // Status 1 with valid body id -> decoded hit returned
+    const rawSuccess = {
+      createBody: vi.fn().mockReturnValue(0),
+      intersectRay: rayOutputMock(0, 1, 4.5),
+    };
+    const nativeSuccess = createNativePhysicsSimulation(
+      rawSuccess as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    nativeSuccess.createBody({ ...bodyOptions(), entity: "target" });
+    const hit = nativeSuccess.intersectRay({
+      collisionMask: 1,
+      from: { x: 0, y: 0, z: 0 },
+      to: { x: 0, y: 10, z: 0 },
+    });
+    expect(hit).toBeDefined();
+    expect(hit?.distance).toBe(4.5);
+    expect(hit?.normal).toEqual({ x: 0, y: 1, z: 0 });
+    expect(hit?.position).toEqual({ x: 1, y: 2, z: 3 });
+    expect(hit?.body.entity).toBe("target");
+
+    // Status 0 -> miss (returns undefined)
+    const rawMiss = {
+      createBody: vi.fn().mockReturnValue(0),
+      intersectRay: vi.fn().mockReturnValue(0),
+    };
+    const nativeMiss = createNativePhysicsSimulation(
+      rawMiss as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    expect(
+      nativeMiss.intersectRay({
+        collisionMask: 1,
+        from: { x: 0, y: 0, z: 0 },
+        to: { x: 0, y: 10, z: 0 },
+      }),
+    ).toBeUndefined();
+
+    // Status 2 -> TN_NATIVE_PHYSICS_INVALID: ray query returned an invalid status
+    const rawInvalidStatus = {
+      createBody: vi.fn().mockReturnValue(0),
+      intersectRay: vi.fn().mockReturnValue(2),
+    };
+    const nativeInvalidStatus = createNativePhysicsSimulation(
+      rawInvalidStatus as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    expect(() =>
+      nativeInvalidStatus.intersectRay({
+        collisionMask: 1,
+        from: { x: 0, y: 0, z: 0 },
+        to: { x: 0, y: 10, z: 0 },
+      }),
+    ).toThrow(/TN_NATIVE_PHYSICS_INVALID: ray query returned an invalid status/);
+
+    // Invalid bodyId (< 0 or NaN) in output -> TN_NATIVE_PHYSICS_INVALID: ray output is malformed
+    const rawBadBody = {
+      createBody: vi.fn().mockReturnValue(0),
+      intersectRay: rayOutputMock(-1, 1),
+    };
+    const nativeBadBody = createNativePhysicsSimulation(
+      rawBadBody as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    expect(() =>
+      nativeBadBody.intersectRay({
+        collisionMask: 1,
+        from: { x: 0, y: 0, z: 0 },
+        to: { x: 0, y: 10, z: 0 },
+      }),
+    ).toThrow(/TN_NATIVE_PHYSICS_INVALID: ray output is malformed/);
+
+    // Negative distance in output -> TN_NATIVE_PHYSICS_INVALID: ray output distance is invalid
+    const rawBadDist = {
+      createBody: vi.fn().mockReturnValue(0),
+      intersectRay: rayOutputMock(0, 1, -1),
+    };
+    const nativeBadDist = createNativePhysicsSimulation(
+      rawBadDist as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    nativeBadDist.createBody(bodyOptions());
+    expect(() =>
+      nativeBadDist.intersectRay({
+        collisionMask: 1,
+        from: { x: 0, y: 0, z: 0 },
+        to: { x: 0, y: 10, z: 0 },
+      }),
+    ).toThrow(/TN_NATIVE_PHYSICS_INVALID: ray output distance is invalid/);
   });
 });

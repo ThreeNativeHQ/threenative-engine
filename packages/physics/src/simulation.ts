@@ -16,6 +16,16 @@ export const PHYSICS_COLLISION_EVENT_STRIDE = 4;
 
 /** One record is logical body id and a sleeping flag encoded as 0 or 1. */
 export const PHYSICS_SLEEP_STATE_STRIDE = 2;
+
+/**
+ * One solved contact manifold.
+ *
+ * `[collider id, world x, y, z, normal x, y, z, impulse]`. The point is the mean of the
+ * manifold's solver contacts and the normal points from the read target toward the touching
+ * collider. The impulse is the step's summed normal impulse in newton-seconds, not a measured
+ * force: divide it by the step to estimate load, and say so.
+ */
+export const PHYSICS_CONTACT_STRIDE = 8;
 /** Caps native query buffers while remaining exactly representable by the native ABI. */
 export const MAX_PHYSICS_QUERY_RESULTS = 1024;
 
@@ -300,6 +310,30 @@ export interface IPhysicsSimulation {
    * the same tick, or copy the fields out before the step advances.
    */
   areaIntersections?(id: number): ReadonlySet<number>;
+  /**
+   * Persistent solved contacts between one target collider and a set of candidate colliders.
+   *
+   * Collision start/stop events say a pair began touching; they carry no point, normal or load,
+   * so a contact that persists cannot be observed through them. This reads the narrow phase's
+   * solved manifolds directly, which is what a deformation or support consumer needs.
+   *
+   * One `PHYSICS_CONTACT_STRIDE` record per solved manifold, written from index 0. Returns the
+   * total record count; when that exceeds the buffer's capacity only the first records were
+   * written, and the caller must grow the buffer and read again before the next step. A sleeping
+   * body was not solved and reports nothing. Optional: a backend with no narrow-phase access
+   * omits it, and a caller that needs contacts must fail closed instead of assuming support.
+   */
+  readContacts?(
+    target: IPhysicsColliderHandle,
+    colliders: Uint32Array,
+    buffer: Float32Array,
+  ): number;
+  /**
+   * Replace a collider's shape in place, keeping its handle, owning body, filters and scene
+   * cleanup. Recreating a collider instead leaves every recorded identity stale. Bodies sleeping
+   * on the old shape must wake, since the new one may no longer support them.
+   */
+  setColliderShape?(collider: IPhysicsColliderHandle, shape: IPhysicsShapeDescriptor): void;
   /**
    * Attach ray-cast wheels to a dynamic chassis. A vehicle lives and dies with its body, so
    * `removeBody()` releases its controller; there is no separate vehicle removal call.
@@ -723,7 +757,11 @@ export function createWebPhysicsShape(
   else if (shape.kind === "trimesh") {
     if (shape.vertices === undefined || shape.indices === undefined)
       throw new Error("CollisionShape3D.trimesh is missing mesh data.");
-    descriptor = rapier.ColliderDesc.trimesh(shape.vertices, shape.indices);
+    descriptor = rapier.ColliderDesc.trimesh(
+      shape.vertices,
+      shape.indices,
+      rapier.TriMeshFlags.FIX_INTERNAL_EDGES,
+    );
   } else if (shape.kind === "convexHull") {
     if (shape.vertices === undefined)
       throw new Error("CollisionShape3D.convexHull is missing vertices.");
@@ -742,6 +780,7 @@ export function createWebPhysicsShape(
       shape.columns - 1,
       shape.heights,
       shape.scale,
+      rapier.HeightFieldFlags.FIX_INTERNAL_EDGES,
     );
   }
   descriptor.setCollisionGroups(interactionGroups(shape.collisionLayer, shape.collisionMask));
@@ -806,10 +845,17 @@ function characterState(
   let groundCollider: number | undefined;
   let groundBody: IPhysicsBodyHandle | undefined;
   let groundNormal: IPhysicsVector3 | undefined;
+  // Rapier flags a contact as ground at any positive up component, so a wall that leans back a
+  // degree reads as floor. When the only contacts are such walls, the character is not grounded;
+  // a snap-to-ground step records no contact, so no contacts leaves Rapier's answer alone.
+  let walkable = false;
+  let contacts = 0;
   for (let index = 0; index < controller.numComputedCollisions(); index += 1) {
     const collision = controller.computedCollision(index);
     if (collision?.collider === null || collision?.collider === undefined) continue;
+    contacts += 1;
     if ((collision.normal1.y ?? Number.NEGATIVE_INFINITY) >= 0.5) {
+      walkable = true;
       const contacted = byCollider.get(collision.collider.handle);
       if (contacted !== undefined) {
         groundCollider = contacted.id;
@@ -819,7 +865,7 @@ function characterState(
       }
     }
   }
-  const grounded = controller.computedGrounded();
+  const grounded = controller.computedGrounded() && (walkable || contacts === 0);
   if (groundCollider !== undefined) simulationBody.groundCollider = groundCollider;
   else if (!grounded) simulationBody.groundCollider = undefined;
   state.grounded = grounded;
@@ -882,6 +928,40 @@ function writeRapierTransformRecord(
   renderBuffer[offset + 5] = rotation.y;
   renderBuffer[offset + 6] = rotation.z;
   renderBuffer[offset + 7] = rotation.w;
+}
+
+/** One `PHYSICS_CONTACT_STRIDE` record summarising a solved manifold. */
+function writeContactRecord(
+  buffer: Float32Array,
+  record: number,
+  colliderId: number,
+  manifold: rapier.TempContactManifold,
+  flipped: boolean,
+): void {
+  const solved = manifold.numSolverContacts();
+  let impulse = 0;
+  for (let point = 0; point < manifold.numContacts(); point += 1)
+    impulse += manifold.contactImpulse(point);
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (let point = 0; point < solved; point += 1) {
+    const world = manifold.solverContactPoint(point);
+    x += world.x;
+    y += world.y;
+    z += world.z;
+  }
+  const normal = manifold.normal();
+  const sign = flipped ? -1 : 1;
+  const offset = record * PHYSICS_CONTACT_STRIDE;
+  buffer[offset] = colliderId;
+  buffer[offset + 1] = x / solved;
+  buffer[offset + 2] = y / solved;
+  buffer[offset + 3] = z / solved;
+  buffer[offset + 4] = normal.x * sign;
+  buffer[offset + 5] = normal.y * sign;
+  buffer[offset + 6] = normal.z * sign;
+  buffer[offset + 7] = impulse;
 }
 
 /** Web adapter. It is the only implementation that names Rapier's JS objects. */
@@ -1259,9 +1339,13 @@ export function createWebPhysicsSimulation(
         }
       }
       options.world.step(options.eventQueue);
-      // Rapier retains accumulated forces unless the caller clears them. The public seam is a
-      // fixed-step force, so clear it after every step to keep web and native actuation aligned.
-      for (const entry of bodies.values()) entry.body.resetForces(true);
+      // Rapier retains accumulated forces and torques unless the caller clears them. The public
+      // seam is a fixed-step force — an off-centre one adds a torque — so clear both after every
+      // step to keep web and native actuation aligned.
+      for (const entry of bodies.values()) {
+        entry.body.resetForces(true);
+        entry.body.resetTorques(true);
+      }
       dirtyBodies.clear();
     },
     readVisibleTransforms: (renderBuffer) => {
@@ -1436,6 +1520,45 @@ export function createWebPhysicsSimulation(
         areaIntersectionMask = 0;
       }
       return current;
+    },
+    readContacts: (target, colliders, buffer) => {
+      requireLive();
+      if (!(buffer instanceof Float32Array))
+        throw new Error("IPhysicsSimulation.readContacts requires a Float32Array buffer.");
+      if (!(colliders instanceof Uint32Array))
+        throw new Error("IPhysicsSimulation.readContacts requires a Uint32Array of collider ids.");
+      // Seam ids are logical body ids, not Rapier handles: resolve through the registry.
+      const targetCollider = bodies.get(target.id)?.collider;
+      if (targetCollider === undefined)
+        throw new Error(
+          `IPhysicsSimulation contact target ${String(target.id)} is not a live collider.`,
+        );
+      const capacity = Math.floor(buffer.length / PHYSICS_CONTACT_STRIDE);
+      let count = 0;
+      for (let index = 0; index < colliders.length; index += 1) {
+        const otherId = colliders[index] as number;
+        if (otherId === target.id) continue;
+        const entry = bodies.get(otherId);
+        // A sleeping body was not solved this step, so its stored impulses are not this step's.
+        if (entry === undefined || entry.body.isSleeping()) continue;
+        // A heightfield reports one candidate manifold per touched sub-shape and most carry no
+        // solver contact at all, so only manifolds the solver actually used are kept.
+        options.world.contactPair(targetCollider, entry.collider, (manifold, flipped) => {
+          if (manifold.numSolverContacts() === 0) return;
+          if (count < capacity) writeContactRecord(buffer, count, otherId, manifold, flipped);
+          count += 1;
+        });
+      }
+      return count;
+    },
+    setColliderShape: (collider, shape) => {
+      requireLive();
+      const entry = bodies.get(collider.id);
+      if (entry === undefined)
+        throw new Error(
+          `IPhysicsSimulation shape target ${String(collider.id)} is not a live collider.`,
+        );
+      entry.collider.setShape(createWebPhysicsShape(options.rapier, shape).shape);
     },
     createVehicle: (vehicleOptions) => {
       requireLive();

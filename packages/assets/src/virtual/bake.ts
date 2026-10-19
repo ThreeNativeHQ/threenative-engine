@@ -1,7 +1,12 @@
 // The pipeline's side of the DAG bake: which primitives get one, and what the report says about it.
 
 import type { Document, Primitive } from "@gltf-transform/core";
-import { type IClusterDagOptions, buildClusterDag } from "./dag.js";
+import {
+  type IClusterDag,
+  type IClusterDagOptions,
+  type IVirtualLevel,
+  buildClusterDag,
+} from "./dag.js";
 import { TNVirtualGeometry, attachVirtualGeometry, virtualGeometryBytes } from "./extension.js";
 
 /**
@@ -52,6 +57,11 @@ export interface IModelVirtualOptions {
 export interface IModelVirtualSummary {
   readonly bakeSeconds: number;
   readonly clusters: number;
+  /**
+   * Primitives the bake looked at and handed back because their DAG reduced nothing — left for the
+   * discrete ladder, which is named here because "no clusters" alone reads as a bug.
+   */
+  readonly declined: number;
   readonly levels: number;
   readonly payloadBytes: number;
   readonly primitives: number;
@@ -61,7 +71,37 @@ export interface IModelVirtualSummary {
 }
 
 /** Bumped when the bake's output changes for the same input. Part of the compile cache key. */
-export const VIRTUAL_BAKE_VERSION = 3;
+export const VIRTUAL_BAKE_VERSION = 4;
+
+/**
+ * The share of its own triangles a DAG has to shed before it keeps the primitive.
+ *
+ * Below that the payload is three to four times the primitive's compiled bytes (see
+ * {@link IModelVirtualOptions.minSourceTriangles}) for a cut that draws the same triangles, and the
+ * discrete ladder's terminal level reaches 5% of LOD0 on the same geometry.
+ */
+const DECLINE_KEEP_RATIO = 0.8;
+
+/**
+ * Whether the bake hands this primitive back instead of owning it (PRD-485).
+ *
+ * A `stalled` DAG whose coarsest level still holds most of the source has no coarse representation
+ * to offer. meshoptimizer will not collapse a body of disconnected alpha-cutout cards with every
+ * border locked — each card's whole rim is a border — so the first fold simplifies nothing
+ * (`virtual/dag.ts:461`), every level reports the source count, and every threshold draws LOD0: the
+ * Hornbeam's two foliage primitives, 745,328 triangles with no coarse step at all. Owning them
+ * anyway costs 3–4x their bytes and leaves them `virtual-owned` (`lod/eligibility.ts:182`), so the
+ * bake declines them and the discrete ladder — whose terminal pass exists for exactly this shape,
+ * `lod/generate.ts:851` — gets the primitive instead.
+ *
+ * Measured, not assumed: a DAG that stalls *after* real folds has shed its triangles and keeps the
+ * primitive, and so does every stop reason but `stalled`.
+ */
+function declines(dag: IClusterDag, sourceTriangles: number): boolean {
+  if (dag.stopReason !== "stalled") return false;
+  const coarsest = dag.levels[dag.levels.length - 1] as IVirtualLevel;
+  return coarsest.triangleCount > sourceTriangles * DECLINE_KEEP_RATIO;
+}
 
 /**
  * The density at which a cluster DAG starts paying for its own bytes. See
@@ -117,49 +157,59 @@ export async function bakeVirtualGeometry(
 
   let extension: TNVirtualGeometry | null = null;
   let clusters = 0;
+  let declined = 0;
   let levels = 0;
   let payloadBytes = 0;
   let primitives = 0;
   let skipped = 0;
   let stopReason = "root";
 
-  for (const mesh of document.getRoot().listMeshes()) {
-    for (const primitive of mesh.listPrimitives()) {
-      const indices = primitive.getIndices();
-      const positions = positionsOf(primitive);
-      // A skinned body ships whole: the loader's clustered mesh is a plain `Mesh`, so a baked
-      // primitive would lose its skin (and the rig would not clone).
-      if (
-        indices === null ||
-        positions === null ||
-        primitive.getMode() !== 4 ||
-        primitive.getAttribute("JOINTS_0") !== null
-      ) {
-        skipped += 1;
-        continue;
-      }
-      if (indices.getCount() / 3 < minSourceTriangles) {
-        skipped += 1;
-        continue;
-      }
-      const dag = await buildClusterDag(
-        Uint32Array.from(indices.getArray() as ArrayLike<number>),
-        positions,
-        dagOptions,
-      );
-      extension ??= document.createExtension(TNVirtualGeometry).setRequired(false);
-      const virtual = attachVirtualGeometry(document, extension, primitive, dag);
-      clusters += dag.clusters.length;
-      levels = Math.max(levels, dag.levels.length);
-      payloadBytes += virtualGeometryBytes(virtual);
-      primitives += 1;
-      stopReason = worse(stopReason, dag.stopReason);
+  for (const primitive of document
+    .getRoot()
+    .listMeshes()
+    .flatMap((mesh) => mesh.listPrimitives())) {
+    const indices = primitive.getIndices();
+    const positions = positionsOf(primitive);
+    // A skinned body ships whole: the loader's clustered mesh is a plain `Mesh`, so a baked
+    // primitive would lose its skin (and the rig would not clone).
+    if (
+      indices === null ||
+      positions === null ||
+      primitive.getMode() !== 4 ||
+      primitive.getAttribute("JOINTS_0") !== null
+    ) {
+      skipped += 1;
+      continue;
     }
+    const sourceTriangles = indices.getCount() / 3;
+    if (sourceTriangles < minSourceTriangles) {
+      skipped += 1;
+      continue;
+    }
+    const dag = await buildClusterDag(
+      Uint32Array.from(indices.getArray() as ArrayLike<number>),
+      positions,
+      dagOptions,
+    );
+    // No extension is created for a declined primitive, so a document whose every primitive is
+    // card soup never declares `TN_virtual_geometry` at all.
+    if (declines(dag, sourceTriangles)) {
+      declined += 1;
+      continue;
+    }
+    extension ??= document.createExtension(TNVirtualGeometry).setRequired(false);
+    const virtual = attachVirtualGeometry(document, extension, primitive, dag);
+    clusters += dag.clusters.length;
+    levels = Math.max(levels, dag.levels.length);
+    payloadBytes += virtualGeometryBytes(virtual);
+    primitives += 1;
+    stopReason = worse(stopReason, dag.stopReason);
   }
 
   return {
     bakeSeconds: (now() - started) / 1000,
     clusters,
+    declined,
     levels,
     payloadBytes,
     primitives,

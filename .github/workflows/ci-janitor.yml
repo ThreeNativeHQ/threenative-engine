@@ -1,0 +1,107 @@
+name: CI janitor
+
+# A merged or closed pull request's runs prove nothing: no verdict can change, no artifact gets
+# read, and the head ref keeps holding runners until each one finishes on its own clock. That
+# cost another 5.0k runner-minutes over 2026-09-18 to 10-02 (PRD-380). Cancelling the head ref's
+# in-flight runs — and the merge group's, which GitHub starts for a queued pull request and then
+# leaves running after it leaves the queue — is the only cleanup a repository can do for itself, and
+# `pull_request: closed` reaches it within a minute of the merge.
+on:
+  pull_request:
+    types: [closed]
+  # A failed CI run whose every failure is a known environmental flake reruns only its failed jobs,
+  # once. Runs from the default branch's copy of this file (a workflow_run rule).
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+# Cancelling a run is an Actions write, and this is the one workflow here that asks for one. A
+# token that cannot do it reports a green job while cancelling nothing, which is the exact
+# failure this workflow exists to prevent — so the grant is explicit rather than inherited.
+permissions:
+  actions: write
+
+jobs:
+  retry-flakes:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Rerun the failed jobs once when every failure is a known flake
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          # Environmental signatures seen on 2026-10-02/03: SwiftShader device loss, a bridge call
+          # outliving its budget, an unreadable WebGPU adapter, a dev server not up yet, a 5xx on a
+          # download, and a runner shut down under its job. Anything else is a real failure.
+          FLAKE: TN_PLAYTEST_SOFTWARE_DEVICE_LOST|Bridge operation '[a-z]+' exceeded|TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING|TN_GOLDEN_PATH_DEV_UNAVAILABLE|ERR_CONNECTION_REFUSED|HTTP 50[0-9]|runner has received a shutdown signal
+        run: |
+          set -euo pipefail
+          # Aggregates (ci-required, golden-path, run-summary) only echo another job's failure.
+          failed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" --paginate \
+            --jq '.jobs[] | select(.conclusion == "failure") | select(.name | test("^(ci-required|golden-path|run-summary)$") | not) | .id')"
+          [ -n "$failed" ] || { echo "No primary job failed; nothing to retry."; exit 0; }
+          for id in $failed; do
+            if ! gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$id/logs" 2>/dev/null | grep -qE "$FLAKE"; then
+              echo "Job $id failed for a reason that is not a known flake; leaving the run red."
+              exit 0
+            fi
+          done
+          gh run rerun "$RUN_ID" --failed --repo "$GITHUB_REPOSITORY"
+          echo "Reran the failed jobs of run $RUN_ID once: every failure matched a known flake." >> "$GITHUB_STEP_SUMMARY"
+
+  cancel:
+    # A fork's runs live in another repository, and its runs cannot be cancelled from here. Trying
+    # would put a red check on every fork PR close, so the guard is the whole job.
+    # A promotion PR's head is `develop`: its runs are develop's own CI, never a lane to sweep.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref != 'develop' && github.event.pull_request.head.ref != 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The head ref is branch text chosen by whoever opened the PR. Interpolated into `run:` it
+      # is a command injection into a job holding `actions: write`, so it arrives through `env:`
+      # and every other value below is quoted.
+      - name: Cancel the head ref's and the merge group's queued and in-progress runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SELF_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # A merge-group run reports its branch as `gh-readonly-queue/<base>/pr-<number>-<sha>`.
+          # GitHub drops the pull request from the queue on close but never cancels the run it has
+          # already started, so that run holds runners for a verdict nothing will read: on
+          # 2026-10-02 run 37093098790 kept nine self-hosted jobs busy for #404 after it merged.
+          # Built from the event's own base ref and number, so it reaches that group and no other.
+          group_prefix="gh-readonly-queue/${BASE_REF}/pr-${PR_NUMBER}-"
+          # Collected before the loop, so a failed lookup fails this step instead of quietly
+          # cancelling nothing under `set -e`.
+          runs="$(gh run list --repo "$GITHUB_REPOSITORY" --branch "$HEAD_REF" \
+            --json databaseId,status,headBranch \
+            --jq '.[] | select(.status == "queued" or .status == "in_progress") | [.databaseId, .headBranch] | @tsv'
+            gh run list --repo "$GITHUB_REPOSITORY" --json databaseId,status,headBranch --limit 100 \
+              | jq -r --arg prefix "$group_prefix" '.[] | select(.status == "queued" or .status == "in_progress") | select(.headBranch | startswith($prefix)) | [.databaseId, .headBranch] | @tsv'
+          )"
+          cancelled=0
+          while IFS=$'\t' read -r run_id branch; do
+            # A fork's branch may legitimately share this repository's ref name; never reach
+            # past the event's own repository for something to cancel.
+            [ -n "$run_id" ] || continue
+            [ "$run_id" != "$SELF_RUN_ID" ] || continue
+            # A run that completed between the list and the cancel is the normal race, not a
+            # failure: the point of the cancel is already satisfied.
+            # force-cancel, not `gh run cancel`: a plain cancel can hang on a job still queued for a
+            # self-hosted label and keep the run's concurrency slot (run 37098559814).
+            if gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/force-cancel" >/dev/null; then
+              cancelled=$((cancelled + 1))
+              printf 'Cancelled run %s on %s.\n' "$run_id" "$branch"
+            else
+              printf 'Run %s finished before the cancel; nothing to stop.\n' "$run_id"
+            fi
+          done <<< "$runs"
+          printf 'Janitor finished for %s: %s run(s) cancelled.\n' "$HEAD_REF" "$cancelled"

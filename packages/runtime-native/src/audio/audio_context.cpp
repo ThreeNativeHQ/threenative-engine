@@ -152,6 +152,13 @@ AudioNode::AudioNode(AudioContext* context)
 
 void AudioNode::connect(AudioNode* destination) {
     if (!destination) return;
+    // A post-mix node is a sum boundary wherever it is wired, not only when its destination is
+    // the context destination: `AudioBus` routes voices through the compressor into the listener's
+    // master gain, so the compressor's own downstream is that gain and never the destination. It
+    // registers with the destination either way so the mixer knows to run it once per block.
+    if (postMix() && context_ != nullptr) {
+        static_cast<AudioDestinationNode*>(context_->destination())->addPostMix(this);
+    }
     if (std::find(outputs_.begin(), outputs_.end(), destination) == outputs_.end()) {
         outputs_.push_back(destination);
     }
@@ -159,15 +166,49 @@ void AudioNode::connect(AudioNode* destination) {
 
 void AudioNode::disconnect() {
     outputs_.clear();
+    if (postMix() && context_ != nullptr) {
+        static_cast<AudioDestinationNode*>(context_->destination())->removePostMix(this);
+        std::fill(sum_.begin(), sum_.end(), 0.0f);
+    }
 }
 
 void AudioNode::disconnect(AudioNode* destination) {
     outputs_.erase(std::remove(outputs_.begin(), outputs_.end(), destination), outputs_.end());
+    // The sum registration outlives one erase while another output is still connected, otherwise
+    // this bus goes silent for every remaining downstream node, not just the one disconnected.
+    if (outputs_.empty() && postMix() && context_ != nullptr) {
+        static_cast<AudioDestinationNode*>(context_->destination())->removePostMix(this);
+        std::fill(sum_.begin(), sum_.end(), 0.0f);
+    }
+}
+
+void AudioNode::accumulate(const float* input, size_t count) {
+    if (sum_.size() < count) sum_.assign(count, 0.0f);
+    for (size_t i = 0; i < count; i++) sum_[i] += input[i];
+}
+
+void AudioNode::flushSum(float* output, size_t numFrames, int numChannels) {
+    const size_t count = numFrames * static_cast<size_t>(numChannels);
+    if (sum_.size() != count) sum_.assign(count, 0.0f);
+    // The block's contribution to the mix. It runs its own chain first — for a compressor that is
+    // the listener's master gain, so the volume the game set is applied after the reduction, which
+    // is the order `AudioBus` wires them in.
+    process(sum_.data(), numFrames, numChannels);
+    for (size_t i = 0; i < count; i++) output[i] += sum_[i];
+    std::fill(sum_.begin(), sum_.end(), 0.0f);
 }
 
 void AudioNode::process(float* output, size_t numFrames, int numChannels) {
     for (auto* destination : outputs_) {
-        if (destination) destination->process(output, numFrames, numChannels);
+        if (!destination) continue;
+        if (destination->postMix()) {
+            // A sum boundary: hand it the block and stop, so the same voice is not also mixed
+            // straight to the destination. What it produces comes back through `flushSum`.
+            destination->accumulate(output, numFrames * static_cast<size_t>(numChannels));
+            std::fill_n(output, numFrames * static_cast<size_t>(numChannels), 0.0f);
+            continue;
+        }
+        destination->process(output, numFrames, numChannels);
     }
 }
 
@@ -177,6 +218,23 @@ void AudioNode::process(float* output, size_t numFrames, int numChannels) {
 
 AudioDestinationNode::AudioDestinationNode(AudioContext* context)
     : AudioNode(context) {}
+
+void AudioDestinationNode::addPostMix(AudioNode* node) {
+    std::lock_guard<std::mutex> lock(context_->mixMutex());
+    if (std::find(postMix_.begin(), postMix_.end(), node) == postMix_.end()) {
+        postMix_.push_back(node);
+    }
+}
+
+void AudioDestinationNode::removePostMix(AudioNode* node) {
+    std::lock_guard<std::mutex> lock(context_->mixMutex());
+    postMix_.erase(std::remove(postMix_.begin(), postMix_.end(), node), postMix_.end());
+}
+
+size_t AudioDestinationNode::postMixCount() const {
+    std::lock_guard<std::mutex> lock(context_->mixMutex());
+    return postMix_.size();
+}
 
 // ============================================================================
 // GainNode
@@ -285,6 +343,128 @@ void PannerNode::process(float* output, size_t numFrames, int numChannels) {
         if (numChannels > 0) output[base] *= leftGain;
         if (numChannels > 1) output[base + 1] *= rightGain;
     }
+    AudioNode::process(output, numFrames, numChannels);
+}
+
+// ============================================================================
+// BiquadFilterNode
+// ============================================================================
+
+BiquadFilterNode::BiquadFilterNode(AudioContext* context)
+    : AudioNode(context) {}
+
+bool BiquadFilterNode::setType(const std::string& value) {
+    // `lowpass` is the only type `AudioBus` ever asks for. Accepting a name and then not
+    // filtering that way is the silent failure this whole node exists to remove, so the other
+    // five Web Audio types are refused and the caller finds out at the call.
+    return value == "lowpass";
+}
+
+void BiquadFilterNode::process(float* output, size_t numFrames, int numChannels) {
+    if (numChannels <= 0) return;
+    const double sampleRate = std::max(context_->sampleRate(), 1.0f);
+    const double startTime = context_->currentTime();
+
+    // RBJ low-pass, with the corner clamped below Nyquist: an unfiltered corner would divide by
+    // zero in the coefficient and emit a full-scale oscillation. Coefficients are computed once
+    // per block from the block's opening values — the same hoist `GainNode` does, for the same
+    // reason. A retune mid-block is picked up on the next one, which is under 23 ms at 44.1 kHz.
+    const float hz = frequency_.valueAtTime(startTime);
+    const float q = std::max(q_.valueAtTime(startTime), 0.0001f);
+    const double nyquist = sampleRate * 0.5;
+    const double f0 = std::clamp(static_cast<double>(hz), 1.0, std::max(nyquist - 1.0, 1.0));
+    const double w0 = 2.0 * 3.14159265358979323846 * f0 / sampleRate;
+    const double alpha = std::sin(w0) / (2.0 * static_cast<double>(q));
+    const double a0 = 1.0 + alpha;
+    const double b0 = ((1.0 - std::cos(w0)) / 2.0) / a0;
+    const double b1 = (1.0 - std::cos(w0)) / a0;
+    const double b2 = b0;  // A low-pass is symmetric: b0 == b2.
+    const double a1 = (-2.0 * std::cos(w0)) / a0;
+    const double a2 = (1.0 - alpha) / a0;
+
+    // The delay line is per channel and lives for the life of the node, so a voice that keeps its
+    // filter keeps its filter memory instead of restarting from silence on every cue.
+    if (state_.size() < static_cast<size_t>(numChannels)) state_.resize(numChannels);
+    for (size_t frame = 0; frame < numFrames; frame++) {
+        for (int channel = 0; channel < numChannels; channel++) {
+            std::array<float, 4>& s = state_[static_cast<size_t>(channel)];
+            const float x1 = s[0];
+            const float x2 = s[1];
+            const float y1 = s[2];
+            const float y2 = s[3];
+            const float x = output[frame * numChannels + channel];
+            const float y = static_cast<float>(b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2);
+            s[0] = x;
+            s[1] = x1;
+            s[2] = y;
+            s[3] = y1;
+            output[frame * numChannels + channel] = y;
+        }
+    }
+    AudioNode::process(output, numFrames, numChannels);
+}
+
+// ============================================================================
+// DynamicsCompressorNode
+// ============================================================================
+
+DynamicsCompressorNode::DynamicsCompressorNode(AudioContext* context)
+    : AudioNode(context) {}
+
+void DynamicsCompressorNode::process(float* output, size_t numFrames, int numChannels) {
+    if (numFrames == 0 || numChannels <= 0) return;
+    const double sampleRate = std::max(context_->sampleRate(), 1.0f);
+    const double startTime = context_->currentTime();
+
+    const float threshold = threshold_.valueAtTime(startTime);
+    const float knee = std::max(knee_.valueAtTime(startTime), 0.0f);
+    const float ratio = std::max(ratio_.valueAtTime(startTime), 1.0f);
+    const float attack = std::max(attack_.valueAtTime(startTime), 0.0f);
+    const float release = std::max(release_.valueAtTime(startTime), 0.0f);
+
+    // One-pole smoothing coefficients for the envelope, from the attack/release time constants.
+    // `1 - exp(-1/tc)` rather than `1/tc` so a very short constant still converges inside a block.
+    const auto smoothing = [sampleRate](float seconds) -> float {
+        if (seconds <= 0.0f) return 1.0f;
+        return static_cast<float>(1.0 - std::exp(-1.0 / (static_cast<double>(seconds) * sampleRate)));
+    };
+    const float attackCoefficient = smoothing(attack);
+    const float releaseCoefficient = smoothing(release);
+
+    float reductionDb = reduction_.load(std::memory_order_relaxed);
+    for (size_t frame = 0; frame < numFrames; frame++) {
+        // Detector over the loudest channel of the frame: peak, not RMS, so one thunder crack is
+        // what pulls the gain down rather than the average of a quiet bed and a loud transient.
+        float peak = 0.0f;
+        for (int channel = 0; channel < numChannels; channel++) {
+            peak = std::max(peak, std::abs(output[frame * numChannels + channel]));
+        }
+        const float peakDb = peak > 1e-6f ? 20.0f * std::log10(peak) : -100.0f;
+        const float overshoot = peakDb - threshold;
+        // Standard dB-domain soft knee, measured from the threshold: nothing below `-knee/2`, a
+        // quadratic ease across the knee, and the straight ratio line above `+knee/2`. A reduction
+        // is dB removed, so it is negative or zero everywhere — the previous form subtracted half
+        // the knee from the overshoot unconditionally and *added* gain for a signal just over the
+        // threshold, which is an amplifier wearing a compressor's parameters.
+        const float kneeSlope = 1.0f / ratio - 1.0f;
+        float targetDb = 0.0f;
+        if (overshoot > knee * 0.5f) {
+            targetDb = kneeSlope * overshoot;
+        } else if (knee > 0.0f && overshoot > -knee * 0.5f) {
+            const float x = overshoot + knee * 0.5f;
+            targetDb = kneeSlope * x * x / (2.0f * knee);
+        }
+        const float coefficient = targetDb < reductionDb ? attackCoefficient : releaseCoefficient;
+        reductionDb += (targetDb - reductionDb) * coefficient;
+        // One gain for the frame, taken from the smoothed dB rather than per sample: a bus
+        // compressor is a slow envelope, and a per-sample exponential here would be both slower to
+        // converge and a `pow` on the audio thread for a curve that is already settled.
+        const float gain = std::pow(10.0f, reductionDb / 20.0f);
+        for (int channel = 0; channel < numChannels; channel++) {
+            output[frame * numChannels + channel] *= gain;
+        }
+    }
+    reduction_.store(reductionDb, std::memory_order_relaxed);
     AudioNode::process(output, numFrames, numChannels);
 }
 
@@ -515,6 +695,14 @@ std::unique_ptr<PannerNode> AudioContext::createPanner() {
     return std::make_unique<PannerNode>(this);
 }
 
+std::unique_ptr<BiquadFilterNode> AudioContext::createBiquadFilter() {
+    return std::make_unique<BiquadFilterNode>(this);
+}
+
+std::unique_ptr<DynamicsCompressorNode> AudioContext::createDynamicsCompressor() {
+    return std::make_unique<DynamicsCompressorNode>(this);
+}
+
 void AudioContext::setListenerPosition(float x, float y, float z) {
     listenerX_.store(x, std::memory_order_relaxed);
     listenerY_.store(y, std::memory_order_relaxed);
@@ -645,11 +833,12 @@ void AudioContext::detachSources() {
     activeSources_.clear();
 }
 
-void AudioContext::audioCallback(float* output, int numFrames) {
+void AudioContext::renderBlock(float* output, int numFrames) {
     // Clear output buffer
     std::memset(output, 0, numFrames * 2 * sizeof(float));
 
-    // Mix all active sources
+    // Mix all active sources. A chain that reaches a sum boundary hands its block to that node and
+    // comes back zeroed, so this loop adds nothing for a voice the compressor owns.
     {
         std::lock_guard<std::mutex> lock(sourcesMutex_);
         const size_t sampleCount = static_cast<size_t>(numFrames) * 2;
@@ -667,12 +856,27 @@ void AudioContext::audioCallback(float* output, int numFrames) {
         );
     }
 
+    // Sum boundaries — the bus compressor — run once on everything their own voices contributed,
+    // and only then contribute to the mix, so an unrelated bus that never routed through them is
+    // untouched. Under the mix lock because `connect` is a JavaScript thread registering into the
+    // same vector.
+    {
+        std::lock_guard<std::mutex> lock(mixMutex_);
+        for (AudioNode* node : destination_->postMixNodes()) {
+            node->flushSum(output, static_cast<size_t>(numFrames), 2);
+        }
+    }
+
     // Clamp output to [-1, 1]
     for (int i = 0; i < numFrames * 2; i++) {
         output[i] = std::clamp(output[i], -1.0f, 1.0f);
     }
 
     sampleCount_.fetch_add(static_cast<uint64_t>(numFrames), std::memory_order_release);
+}
+
+void AudioContext::audioCallback(float* output, int numFrames) {
+    renderBlock(output, numFrames);
 }
 
 void AudioContext::sdlAudioCallback(void* userdata, SDL_AudioStream* stream, int additionalAmount, int totalAmount) {

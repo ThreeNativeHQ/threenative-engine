@@ -4,6 +4,7 @@
 portably by a game. **Complexity:** 3 (10+ files) + 2 (new observation) + 2 (multiple packages)
 = **7 → HIGH mode**. **Depends on:** the [batch source and execution contract](README.md).
 
+**Priority:** P1 — Prerequisite for P1 PRD-368 and PRD-369, which measure acceptance through it. Open: doctor text and JSON consume the town capture, Pixel 8 timing retained.
 ## Problem and outcome
 
 A slow town launch currently needs a bespoke instrumented APK to explain its 101 pipelines.

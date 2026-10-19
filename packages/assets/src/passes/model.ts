@@ -4,6 +4,7 @@ import {
   Accessor,
   type Document,
   type GLTF,
+  type Mesh as GltfMesh,
   type Node as GltfNode,
   type Primitive as GltfPrimitive,
   NodeIO,
@@ -18,7 +19,6 @@ import {
   listTextureSlots,
   prune,
   quantize,
-  reorder,
   simplify,
 } from "@gltf-transform/functions";
 import { MeshoptEncoder, MeshoptSimplifier } from "meshoptimizer";
@@ -29,8 +29,14 @@ import {
   classify,
 } from "../compile.js";
 import { type IMaterialMergeSummary, mergeIdenticalMaterials } from "../foliage.js";
-import { createGltfReader, readGltfDocument } from "../gltf-io.js";
+import { EXTTextureAstc, createGltfReader, readGltfDocument } from "../gltf-io.js";
+import {
+  IMAGE_QUALITY_IDENTITY,
+  type ITextureQuality,
+  resolveImageQualityFloor,
+} from "../image-quality.js";
 import { KTX2_ENCODER_VERSION } from "../ktx2-encoder.js";
+import { deformingMesh, skinnedMeshes } from "../lod/eligibility.js";
 import { TNDiscreteLod } from "../lod/extension.js";
 import {
   type IModelLodOptions,
@@ -68,9 +74,13 @@ import {
   type IRecalledTexture,
   assertNoTextureDrift,
   compressEmbeddedTextures,
+  resolveTextureMaxSize,
   textureBindings,
   textureKeys,
+  textureQualitySemantics,
 } from "./model-textures.js";
+import { quantizeStaticGeometry } from "./quantize-static.js";
+import { reorderStaticPrimitives } from "./reorder-static.js";
 import {
   type ISharedImage,
   type ISharedImageStore,
@@ -243,6 +253,19 @@ const MATERIAL_MERGE_VERSION = 1;
  * which the compile digest already hashes, so it invalidates model outputs and nothing else.
  */
 const MODEL_DEDUPE_VERSION = 1;
+/**
+ * Bumped when `reorder-static.ts` changes what it emits: every model cooked before this fix had its
+ * deforming geometry renumbered, and a warm cache entry keyed on the pass switches alone would keep
+ * serving those files. 1 = deforming primitives keep their authored vertex order and count.
+ */
+const MODEL_REORDER_VERSION = 1;
+/**
+ * Bumped when `quantize-static.ts` changes what it emits: every model cooked before this fix had its
+ * deforming positions snapped onto a quantization grid, and a warm cache entry keyed on the pass
+ * switches alone would keep serving those files. 1 = deforming POSITION and morph-target deltas
+ * stay float32 in the source metre space.
+ */
+const MODEL_QUANTIZE_VERSION = 1;
 
 /** Relative bounding-box tolerance of the self-verify check (PRD: 0.1%). */
 const BBOX_TOLERANCE = 0.001;
@@ -299,7 +322,7 @@ async function writeDocument(
   await MeshoptEncoder.ready;
   const io = new NodeIO()
     .setVertexLayout(vertexLayout === "separate" ? VertexLayout.SEPARATE : VertexLayout.INTERLEAVED)
-    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry, TNDiscreteLod])
+    .registerExtensions([...ALL_EXTENSIONS, EXTTextureAstc, TNVirtualGeometry, TNDiscreteLod])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   try {
     const buffer = Buffer.from(await io.writeBinary(document));
@@ -471,6 +494,28 @@ function multiplyMatrices(a: readonly number[], b: readonly number[]): number[] 
 const IDENTITY_MATRIX = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 /**
+ * The vertices a primitive draws: all of them when it has no index buffer, otherwise the distinct
+ * ones its indices name. A card LOD chain appends scaled copies of its cards that only the levels'
+ * indices reach (PRD-541); LOD0 never draws them, so they are not drift.
+ */
+function drawnVertices(primitive: GltfPrimitive, count: number): Uint32Array {
+  const indices = primitive.getIndices()?.getArray();
+  if (indices === null || indices === undefined)
+    return Uint32Array.from({ length: count }, (_, at) => at);
+  const seen = new Uint8Array(count);
+  let distinct = 0;
+  for (const index of indices)
+    if (index < count && seen[index] === 0) {
+      seen[index] = 1;
+      distinct += 1;
+    }
+  const out = new Uint32Array(distinct);
+  let at = 0;
+  for (let index = 0; index < count; index += 1) if (seen[index] === 1) out[at++] = index;
+  return out;
+}
+
+/**
  * Stats over scene-reachable content only; DCC leftovers dropped by prune are not drift.
  * The bounding box is taken over bind-pose vertex positions evaluated the way the GPU
  * evaluates them — node transforms for static meshes, weighted joint matrices for skinned
@@ -524,8 +569,9 @@ export function reachableStats(root: RootOf): IModelStats {
           triangles += primitiveTriangles(primitive);
           const position = primitive.getAttribute("POSITION");
           if (position === null) continue;
-          vertices += position.getCount();
-          for (let index = 0; index < position.getCount(); index += 1) {
+          const drawn = drawnVertices(primitive, position.getCount());
+          vertices += drawn.length;
+          for (const index of drawn) {
             const [wx, wy, wz] = evaluateVertex(
               position,
               index,
@@ -704,11 +750,14 @@ export function assertSimplifiedWithinBounds(
  * Snaps every scene-reachable POSITION accessor onto a uniform `2^bits` grid spanning its
  * own bounds — the destructive low-precision quantization the underlying library refuses
  * to express. Used only for configured depths below its 8-bit floor; the self-verify is
- * expected to reject the result.
+ * expected to reject the result. Deforming meshes are skipped for the same reason the
+ * quantization stage skips them: a grid that coarse moves vertices a sidecar already
+ * addresses, and holding them is the rule rather than the bit depth.
  */
-function snapPositions(root: RootOf, bits: number): void {
+function snapPositions(root: RootOf, bits: number, skinned: ReadonlySet<GltfMesh>): void {
   const levels = 2 ** bits - 1;
   for (const mesh of root.listMeshes()) {
+    if (deformingMesh(mesh, skinned)) continue;
     for (const primitive of mesh.listPrimitives()) {
       const position = primitive.getAttribute("POSITION");
       if (position === null || position.getNormalized()) continue;
@@ -803,6 +852,12 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // content-identical sources, so a bake published before this key existed named one output
       // per copy and must not be re-served as if it had deduped.
       dedupe: MODEL_DEDUPE_VERSION,
+      // Same reason: which primitives `reorder` declines to renumber is part of the output, and a
+      // warm entry from before it declined would hand a game geometry its sidecars cannot address.
+      reorderVersion: MODEL_REORDER_VERSION,
+      // Same reason again: which positions keep their source metres is part of the output, and a
+      // warm entry from before they did would hand a game geometry its sidecars cannot address.
+      quantizeVersion: MODEL_QUANTIZE_VERSION,
       // `"none"` and "absent" are different cache keys on purpose: absent bakes with defaults.
       virtual:
         options.virtual === "none"
@@ -816,10 +871,16 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         options.textures === "none"
           ? "none"
           : {
+              ...(options.textures?.astc === true ? { astc: "raw4x4-gltf-authored-basis-v2" } : {}),
               decoderFree: options.textures?.decoderFree ?? false,
               encoder: KTX2_ENCODER_VERSION,
+              instrument: IMAGE_QUALITY_IDENTITY,
+              floor: resolveImageQualityFloor(options.textures?.floor),
               maxSize: options.textures?.maxSize ?? null,
-              keepSmallerSource: true,
+              // Retention is now conditioned on the container, so it is spelled out rather than
+              // named by a boolean: a warm cache keyed on the old rule would keep shipping the
+              // WebP-requiring models this replaced.
+              keepSmallerSource: "universal-containers",
               overrides: options.textures?.overrides ?? [],
               quality: options.textures?.quality ?? null,
             },
@@ -829,7 +890,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
     // geometry rewrites and shared-image emission remain plain glTF and stay enabled there.
     needsRuntimeDecoder:
       (options.passes?.meshopt ?? true) ||
-      (options.textures !== "none" && options.textures?.decoderFree !== true),
+      (options.textures !== "none" &&
+        options.textures?.decoderFree !== true &&
+        options.textures?.astc !== true),
     apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
       if (classify(logicalPath) !== "model") return input;
       const passes = options.passes ?? {};
@@ -919,7 +982,10 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         })(document);
       }
       if (enabled.reorder || enabled.meshopt) await MeshoptEncoder.ready;
-      if (enabled.reorder) await reorder({ encoder: MeshoptEncoder })(document);
+      // The last stage that moves a vertex, and the only one that does so selectively: deforming
+      // geometry keeps its authored vertex order because a vertex index into it is an address
+      // something outside this file may already hold. `reorder-static.ts`.
+      if (enabled.reorder) reorderStaticPrimitives(document, MeshoptEncoder);
       // After `reorder`, which is the last stage that moves a vertex, and before `quantize`, which
       // changes what a position is but never which vertex it is.
       const virtual =
@@ -942,18 +1008,23 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         // Depths below the library's 8-bit floor are honoured by pre-rounding the floats
         // onto the coarser grid first; the self-verify then fails the build on the drift.
         const requestedBits = options.quantize?.positionBits ?? DEFAULT_POSITION_BITS;
-        if (requestedBits < 8) snapPositions(document.getRoot(), requestedBits);
+        if (requestedBits < 8)
+          snapPositions(document.getRoot(), requestedBits, skinnedMeshes(document));
         // Joint indices and weights are excluded outright: quantizing them below the
         // exporter's declaration is where skinned meshes visibly break, and the library's
         // own default narrows weights to 8 bits unless told otherwise.
-        await quantize({
-          quantizeColor: 8,
-          quantizeNormal: options.quantize?.normalBits ?? DEFAULT_NORMAL_BITS,
-          quantizePosition: Math.max(requestedBits, 8),
-          quantizeTexcoord: options.quantize?.uvBits ?? DEFAULT_UV_BITS,
-          pattern: /^(?!JOINTS|WEIGHTS)/u,
-          normalizeWeights: false,
-        })(document);
+        // Deforming geometry keeps float32 POSITION in the source metre space on top of
+        // that, so nothing a sidecar addresses moves: `quantize-static.ts`.
+        await quantizeStaticGeometry(document, () =>
+          quantize({
+            quantizeColor: 8,
+            quantizeNormal: options.quantize?.normalBits ?? DEFAULT_NORMAL_BITS,
+            quantizePosition: Math.max(requestedBits, 8),
+            quantizeTexcoord: options.quantize?.uvBits ?? DEFAULT_UV_BITS,
+            pattern: /^(?!JOINTS|WEIGHTS)/u,
+            normalizeWeights: false,
+          })(document),
+        );
       }
       // Taken after every geometry stage and before compression, so what it proves is that
       // *this* stage plus the writer preserved each binding — prune's documented drops of
@@ -967,7 +1038,13 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
           ? undefined
           : await compressEmbeddedTextures(document, logicalPath, textureOptions, shared?.recalled);
       if (store !== undefined && shared !== undefined)
-        await rememberSharedImages(document, store, shared, embeddedTextures?.formats);
+        await rememberSharedImages(
+          document,
+          store,
+          shared,
+          embeddedTextures?.formats,
+          embeddedTextures?.quality,
+        );
       if (enabled.meshopt) {
         document
           .createExtension(EXTMeshoptCompression)
@@ -1073,14 +1150,18 @@ function sharedSettings(
   return {
     colorSpace: getTextureColorSpace(texture),
     slots: [...listTextureSlots(texture)].sort(),
+    semantics: textureQualitySemantics(texture),
     textures:
       textureOptions === undefined
         ? "none"
         : {
+            ...(textureOptions.astc === true ? { astc: "raw4x4-gltf-authored-basis-v2" } : {}),
             decoderFree: textureOptions.decoderFree ?? false,
             encoder: KTX2_ENCODER_VERSION,
-            keepSmallerSource: true,
-            maxSize: textureOptions.maxSize ?? null,
+            instrument: IMAGE_QUALITY_IDENTITY,
+            floor: resolveImageQualityFloor(textureOptions.floor),
+            keepSmallerSource: "universal-containers",
+            maxSize: resolveTextureMaxSize(textureOptions.maxSize, listTextureSlots(texture)),
             overrides: textureOptions.overrides ?? [],
             quality: textureOptions.quality ?? null,
           },
@@ -1110,8 +1191,19 @@ async function recallSharedImages(
     keys.push(key);
     const stored = await store.get(key);
     if (stored === undefined) continue;
+    if (
+      textureOptions !== undefined &&
+      textureOptions.decoderFree !== true &&
+      textureOptions.measureQuality !== false &&
+      stored.quality === undefined
+    )
+      continue;
     texture.setImage(new Uint8Array(stored.buffer)).setMimeType(stored.mimeType);
-    recalled.set(index, { codec: stored.codec, sourceBytes: image.byteLength });
+    recalled.set(index, {
+      codec: stored.codec,
+      sourceBytes: image.byteLength,
+      quality: stored.quality,
+    });
   }
   return { keys, recalled };
 }
@@ -1131,6 +1223,7 @@ async function rememberSharedImages(
   store: ISharedImageStore,
   plan: ISharedImagePlan,
   formats?: Readonly<Record<string, string>>,
+  quality?: Readonly<Record<string, ITextureQuality>>,
 ): Promise<void> {
   const textures = document.getRoot().listTextures();
   const names = textureKeys(document.getRoot());
@@ -1143,6 +1236,9 @@ async function rememberSharedImages(
       buffer: Buffer.from(image.buffer, image.byteOffset, image.byteLength),
       codec: codecOf(texture.getMimeType(), formats, names[index] ?? ""),
       mimeType: texture.getMimeType(),
+      ...(quality?.[names[index] ?? ""] === undefined
+        ? {}
+        : { quality: quality?.[names[index] ?? ""] }),
     });
   }
 }
@@ -1158,7 +1254,11 @@ function declareSharedImage(
     buffer: candidate.image.buffer,
     extension: path.extname(outputPath),
     manifestField: "sharedImages",
-    metadata: { codec: candidate.image.codec, key: candidate.key },
+    metadata: {
+      codec: candidate.image.codec,
+      key: candidate.key,
+      ...(candidate.image.quality === undefined ? {} : { quality: candidate.image.quality }),
+    },
     outputPath,
     role: "image",
   });
@@ -1197,7 +1297,7 @@ async function writeAndVerifyShared(
   await MeshoptEncoder.ready;
   const io = new NodeIO()
     .setVertexLayout(vertexLayout === "separate" ? VertexLayout.SEPARATE : VertexLayout.INTERLEAVED)
-    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry, TNDiscreteLod])
+    .registerExtensions([...ALL_EXTENSIONS, EXTTextureAstc, TNVirtualGeometry, TNDiscreteLod])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   // Encoded bytes → every store key they were filed under. Equal encoded bytes can come from
   // distinct source keys, so each writer callback consumes one deterministic candidate rather

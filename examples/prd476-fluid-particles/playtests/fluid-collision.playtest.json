@@ -1,0 +1,32 @@
+{
+  "name": "fluid-collision",
+  "schemaVersion": 1,
+  "subject": "one GPU solver step respects the thin gate and vector speed limit",
+  "target": "web",
+  "viewport": { "width": 960, "height": 540 },
+  "warmupFrames": 0,
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [{ "kind": "wait", "label": "measured", "waitTicks": 1 }],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "FluidCollision", "path": "collisionPassed", "equals": 1 },
+      { "id": "FluidCollision", "path": "measuredSteps", "equals": 1 },
+      { "id": "FluidCollision", "path": "totalSteps", "equals": 2 },
+      { "id": "FluidCollision", "path": "freeMotionPassed", "equals": 1 },
+      { "id": "FluidCollision", "path": "diagonalDistance", "gte": 0.29999, "lte": 0.30001 },
+      { "id": "FluidCollision", "path": "diagonalDirectionPassed", "equals": 1 },
+      { "id": "FluidCollision", "path": "diagonalSpeed", "gte": 17.99, "lte": 18.0001 },
+      { "id": "FluidCollision", "path": "ejectionSpeed", "gte": 17.99, "lte": 18.0001 },
+      { "id": "FluidCollision", "path": "finite", "equals": 1 }
+    ],
+    "visual": [
+      { "region": { "x": 0, "y": 0, "width": 960, "height": 540, "minNonblankPixelRatio": 0.01 } }
+    ]
+  }
+}

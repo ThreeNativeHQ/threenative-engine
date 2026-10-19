@@ -1,0 +1,154 @@
+{
+  "name": "snow-physics",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "boot",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hands-off",
+      "press": "KeyP",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "standing",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "drop",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "falling",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "push",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "rolled",
+      "waitTicks": 200,
+      "release": true
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "ball",
+        "component": "airborne",
+        "atSteps": [
+          {
+            "label": "falling",
+            "equals": true
+          },
+          {
+            "label": "settled",
+            "equals": false
+          }
+        ],
+        "allowTrivial": "The drop must start in the air and end on the snow: a ball that never leaves the surface proves nothing about airborne contacts."
+      },
+      {
+        "entity": "ball",
+        "component": "settled",
+        "atSteps": [
+          {
+            "label": "settled",
+            "equals": true
+          }
+        ],
+        "allowTrivial": "Settled means the solved sphere's underside sits within 0.02 m of the surface it pressed, and that surface is at least 2 cm below fresh powder."
+      },
+      {
+        "entity": "ball",
+        "component": "airborneLoads",
+        "equals": 0,
+        "allowTrivial": "No load may reach the snow while the ball is more than 5 cm above it; a contact read off an airborne body is a phantom."
+      },
+      {
+        "entity": "ball",
+        "component": "reach",
+        "gte": 0.5,
+        "allowTrivial": "The push must carry the solved body half a metre or more through fresh powder; how far depends on the slope it was pushed up, so this is a floor, not a distance."
+      },
+      {
+        "entity": "ball",
+        "component": "rollRatio",
+        "gte": 0.6,
+        "lte": 1.6,
+        "allowTrivial": "Turn times radius over the ground covered: a rolling ball reads near 1 (a ball carving its own trench can over-spin as it slows), a sliding or copied transform reads near 0."
+      },
+      {
+        "entity": "ball",
+        "component": "trackGaps",
+        "equals": 0,
+        "allowTrivial": "Every recorded point of the ball's path must sit in pressed snow: the track is connected, not a row of holes."
+      },
+      {
+        "entity": "ball",
+        "component": "trackSamples",
+        "gte": 5,
+        "allowTrivial": "The connected-track check needs a path to check: five or more points ten centimetres apart."
+      },
+      {
+        "entity": "snow",
+        "component": "colliderError",
+        "lte": 0.001,
+        "allowTrivial": "The collider the next step uses is the canonical surface within a millimetre."
+      },
+      {
+        "entity": "snow",
+        "component": "renderError",
+        "lte": 0.001,
+        "allowTrivial": "The drawn snow is the canonical surface within a millimetre."
+      },
+      {
+        "entity": "snow",
+        "component": "loadProvenance",
+        "equals": "solver-impulse-per-step",
+        "allowTrivial": "Snow load is a solver estimate and must say so."
+      },
+      {
+        "entity": "snow",
+        "component": "version",
+        "gte": 2,
+        "changed": true,
+        "allowTrivial": "The surface must actually change during the run."
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    }
+  }
+}

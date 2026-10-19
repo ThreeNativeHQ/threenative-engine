@@ -502,4 +502,22 @@ describe("ClusteredBatch", () => {
       }).build({ parent: new Object3D() }),
     ).toThrow(/at least one placed copy/u);
   }, 180_000);
+
+  it("clones into a root that is still cut", () => {
+    // `new this.constructor()` left `batch` undefined, so a cloned root quietly stopped being cut
+    // and drew whatever its bands happened to hold. Detection is structural, so the engine could
+    // not even tell the copy apart from an ordinary object.
+    const parent = new Object3D();
+    const batch = spread();
+    const root = batch.build({ name: "boulders", parent });
+    camera.position.set(0, 0, 0);
+    const triangles = batch.update(camera, 1080);
+
+    const copy = root.clone() as unknown as { batch: ClusteredBatch };
+    expect(copy.batch).toBe(batch);
+    // Still found by the engine's walk, and still drawing: a copy whose `batch` was undefined
+    // returned nothing and was never cut again.
+    expect(updateClusteredMeshes(copy as unknown as Object3D, camera, 1080)).toBeGreaterThan(0);
+    expect(triangles).toBeGreaterThan(0);
+  }, 180_000);
 });

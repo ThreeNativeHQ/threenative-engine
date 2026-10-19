@@ -1,0 +1,143 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-ink: #0c1c28;
+  --color-panel: rgb(18 36 47 / 0.8);
+  --color-text: #eef5f7;
+  --color-muted: #a7bac4;
+  --color-line: rgb(210 230 240 / 0.18);
+  --color-aqua: #b6eadd;
+  --color-aqua-ink: #163a37;
+}
+
+:root,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  background: #aabfcf;
+}
+
+/* Every control shows where keyboard focus is. */
+:where(button, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-aqua);
+  outline-offset: 3px;
+}
+
+/* A slider whose filled part is the accent: `--fill` is set from the value. */
+.snow-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 24px;
+  background: transparent;
+  cursor: pointer;
+}
+.snow-range::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 99px;
+  background: linear-gradient(
+    to right,
+    var(--color-aqua) var(--fill, 50%),
+    rgb(177 205 218 / 0.18) var(--fill, 50%)
+  );
+}
+.snow-range::-moz-range-track {
+  height: 3px;
+  border-radius: 99px;
+  background: rgb(177 205 218 / 0.18);
+}
+.snow-range::-moz-range-progress {
+  height: 3px;
+  border-radius: 99px;
+  background: var(--color-aqua);
+}
+.snow-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  border-radius: 50%;
+  border: 2px solid #12303a;
+  background: var(--color-aqua);
+}
+.snow-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #12303a;
+  background: var(--color-aqua);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
+
+/* Boot failures are a page state, so the generated game owns their presentation. */
+[data-threenative-canvas-error="true"] {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: clamp(1.5rem, 8vw, 6rem);
+  overflow: auto;
+  background: #0c1c28;
+  color: #eef5f7;
+  font-family: inherit;
+  font-size: clamp(1rem, 2vw, 1.5rem);
+  line-height: 1.5;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The debug surface is framework plumbing; its default presentation is yours to change. */
+[data-threenative-debug-overlay="true"] {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 50;
+  max-width: 24rem;
+  padding: 0.75rem;
+  pointer-events: none;
+  background: rgb(2 6 23 / 90%);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 30%);
+  color: #cffafe;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+[data-threenative-debug-overlay="true"] table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+[data-threenative-debug-overlay="true"] th,
+[data-threenative-debug-overlay="true"] td {
+  padding-right: 1rem;
+  text-align: left;
+}
+
+[data-threenative-debug-overlay="true"] td:last-child {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}

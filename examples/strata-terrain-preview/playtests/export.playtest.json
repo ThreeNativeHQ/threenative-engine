@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-portable-world",
+  "subject": "An ordinary receiving game loads exported models, transforms and embedded PBR images without terrain authoring",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "portable-world",
+      "waitTicks": 30,
+      "release": true,
+      "screenshot": "portable-world-native"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "placements",
+        "equals": 100,
+        "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
+      },
+      {
+        "id": "GameState",
+        "path": "meshes",
+        "equals": 202,
+        "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
+      },
+      {
+        "id": "GameState",
+        "path": "pbrMaps",
+        "equals": 404,
+        "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
+      },
+      {
+        "id": "GameState",
+        "path": "cameras",
+        "equals": 0,
+        "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
+      },
+      {
+        "id": "GameState",
+        "path": "animations",
+        "equals": 0,
+        "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
+      },
+      {
+        "id": "GameState",
+        "path": "frames",
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "manualX",
+        "equals": 12,
+        "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
+      },
+      {
+        "id": "GameState",
+        "path": "manualY",
+        "equals": 100,
+        "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
+      },
+      {
+        "id": "GameState",
+        "path": "manualZ",
+        "equals": -4,
+        "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
+      },
+      {
+        "id": "GameState",
+        "path": "manualScaleX",
+        "equals": 2,
+        "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
+      },
+      {
+        "id": "GameState",
+        "path": "manualScaleY",
+        "equals": 0.5,
+        "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
+      },
+      {
+        "id": "GameState",
+        "path": "manualScaleZ",
+        "equals": 1.5,
+        "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
+      }
+    ]
+  }
+}

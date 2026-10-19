@@ -412,6 +412,16 @@
       },
       {
         "id": "GameState",
+        "path": "longTasksAvailable",
+        "atSteps": [
+          {
+            "label": "startup-stall",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "id": "GameState",
         "path": "startupReady",
         "atSteps": [
           {

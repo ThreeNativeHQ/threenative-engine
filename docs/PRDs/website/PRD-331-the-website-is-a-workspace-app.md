@@ -10,6 +10,7 @@ is code: **it has never been deployed**, so Lighthouse has never run, and the do
 zone and API token are still the owner's to supply. The day those exist, the remaining work is
 running the workflow that is already written.
 
+**Priority:** P2 — Open boxes: deploy main, fix two red tests, run Lighthouse, obtain domain.
 Evidence: [`docs/verification/prd-331-site-2026-09-03.md`](../../verification/prd-331-site-2026-09-03.md).
 
 **Complexity: 9 → HIGH mode.** New system from scratch (+2), 10+ files (+3), multi-workspace

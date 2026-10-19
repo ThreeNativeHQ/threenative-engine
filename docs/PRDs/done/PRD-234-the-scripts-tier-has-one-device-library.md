@@ -10,7 +10,7 @@ LOC acceptance criterion and the repository kill switch fired. The attempted sha
 lines. The restored baseline is 15,926. Evidence:
 [native-scripts-adb-kill-switch-2026-08-28](../../verification/native-scripts-adb-kill-switch-2026-08-28.md).
 
-Sixth PRD of [the runtime-native refactor batch](refactor-2026-08-28/README.md).
+Sixth PRD of the runtime-native refactor batch.
 
 **Goal: one implementation of "talk to an Android device", used by every script that does.**
 

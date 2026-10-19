@@ -173,8 +173,72 @@ struct TrimeshBuffers {
   uint32_t index_count = 0;
 };
 
+// A heightfield's samples (column-major, as the web backend hands Rapier), grid and extent.
+struct HeightfieldBuffers {
+  const float *heights = nullptr;
+  uint32_t count = 0;
+  uint32_t rows = 0;
+  uint32_t columns = 0;
+  float scale_x = 0.0f;
+  float scale_y = 0.0f;
+  float scale_z = 0.0f;
+};
+
+bool readGridCount(js::Engine *engine, js::JSValueHandle object, const char *name,
+                   uint32_t &output) {
+  float value = 0.0f;
+  if (!readFiniteNumber(engine, object, name, value) || value < 2.0f ||
+      value > 65536.0f || std::floor(value) != value)
+    return false;
+  output = static_cast<uint32_t>(value);
+  return true;
+}
+
+// The samples' data pointer stays valid for the synchronous call that parses it, like a trimesh's.
+bool parseHeightfield(js::Engine *engine, js::JSValueHandle shape,
+                      HeightfieldBuffers &heightfield) {
+  const auto heights = engine->getProperty(shape, "heights");
+  if (!isTypedArray(engine, heights, "Float32Array") ||
+      !readGridCount(engine, shape, "rows", heightfield.rows) ||
+      !readGridCount(engine, shape, "columns", heightfield.columns) ||
+      !readVector(engine, shape, "scale", heightfield.scale_x, heightfield.scale_y,
+                  heightfield.scale_z))
+    return false;
+  size_t bytes = 0;
+  void *data = engine->getArrayBufferData(heights, &bytes);
+  if (data == nullptr || bytes % sizeof(float) != 0)
+    return false;
+  heightfield.heights = static_cast<const float *>(data);
+  heightfield.count = static_cast<uint32_t>(bytes / sizeof(float));
+  return true;
+}
+
+// The mesh's data pointers stay valid for the synchronous call that parses them: the typed
+// arrays are reachable from the object the caller passed in, so nothing is collected mid-call.
+bool parseTrimeshBuffers(js::Engine *engine, js::JSValueHandle shape,
+                         TrimeshBuffers &trimesh) {
+  const auto vertices = engine->getProperty(shape, "vertices");
+  if (!isTypedArray(engine, vertices, "Float32Array"))
+    return false;
+  const auto indices = engine->getProperty(shape, "indices");
+  if (!isTypedArray(engine, indices, "Uint32Array"))
+    return false;
+  size_t vertexBytes = 0;
+  size_t indexBytes = 0;
+  void *vertexData = engine->getArrayBufferData(vertices, &vertexBytes);
+  void *indexData = engine->getArrayBufferData(indices, &indexBytes);
+  if (vertexData == nullptr || indexData == nullptr)
+    return false;
+  trimesh.vertices = static_cast<const float *>(vertexData);
+  trimesh.vertex_floats = static_cast<uint32_t>(vertexBytes / sizeof(float));
+  trimesh.indices = static_cast<const uint32_t *>(indexData);
+  trimesh.index_count = static_cast<uint32_t>(indexBytes / sizeof(uint32_t));
+  return true;
+}
+
 bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
-                      TnPhysicsBodyOptions &options, TrimeshBuffers &trimesh) {
+                      TnPhysicsBodyOptions &options, TrimeshBuffers &trimesh,
+                      HeightfieldBuffers &heightfield) {
   if (!engine->isObject(value))
     return false;
   options = {id, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
@@ -208,25 +272,14 @@ bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
   else if (shapeName == "capsule")
     options.shape_type = 2;
   else if (shapeName == "trimesh") {
-    // The mesh's data pointers stay valid for this synchronous call: the typed arrays are
-    // reachable from the options object the caller passed in, so nothing is collected mid-call.
     options.shape_type = 3;
-    const auto vertices = engine->getProperty(shape, "vertices");
-    if (!isTypedArray(engine, vertices, "Float32Array"))
+    if (!parseTrimeshBuffers(engine, shape, trimesh))
       return false;
-    const auto indices = engine->getProperty(shape, "indices");
-    if (!isTypedArray(engine, indices, "Uint32Array"))
+  } else if (shapeName == "heightfield") {
+    // Shape type 4 never crosses the C ABI: it selects tn_physics_add_heightfield_body.
+    options.shape_type = 4;
+    if (!parseHeightfield(engine, shape, heightfield))
       return false;
-    size_t vertexBytes = 0;
-    size_t indexBytes = 0;
-    void *vertexData = engine->getArrayBufferData(vertices, &vertexBytes);
-    void *indexData = engine->getArrayBufferData(indices, &indexBytes);
-    if (vertexData == nullptr || indexData == nullptr)
-      return false;
-    trimesh.vertices = static_cast<const float *>(vertexData);
-    trimesh.vertex_floats = static_cast<uint32_t>(vertexBytes / sizeof(float));
-    trimesh.indices = static_cast<const uint32_t *>(indexData);
-    trimesh.index_count = static_cast<uint32_t>(indexBytes / sizeof(uint32_t));
   } else
     return false;
 
@@ -579,7 +632,9 @@ js::JSValueHandle makeSimulationObject(
               return fail(engine, "createBody requires options and an available id");
             TnPhysicsBodyOptions options{};
             TrimeshBuffers trimesh{};
-            if (!parseBodyOptions(engine, args[0], owner->nextId, options, trimesh))
+            HeightfieldBuffers heightfield{};
+            if (!parseBodyOptions(engine, args[0], owner->nextId, options, trimesh,
+                                  heightfield))
               return fail(engine, "physics body options are invalid");
             const bool added =
                 options.shape_type == 3
@@ -587,6 +642,11 @@ js::JSValueHandle makeSimulationObject(
                           owner->simulation, &options, trimesh.vertices,
                           trimesh.vertex_floats, trimesh.indices,
                           trimesh.index_count)
+                : options.shape_type == 4
+                    ? tn_physics_add_heightfield_body(
+                          owner->simulation, &options, heightfield.heights,
+                          heightfield.count, heightfield.rows, heightfield.columns,
+                          heightfield.scale_x, heightfield.scale_y, heightfield.scale_z)
                     : tn_physics_add_body(owner->simulation, &options);
             if (!added)
               return fail(engine, "physics body options are invalid");
@@ -1004,6 +1064,62 @@ js::JSValueHandle makeSimulationObject(
             if (count < 0)
               return fail(engine, "sleep state buffer is too small");
             return engine->newNumber(count);
+          }));
+  engine->setProperty(
+      simulation, "readContacts",
+      engine->newFunction(
+          "readContacts",
+          [engine, owner](void *,
+                          const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t target = 0;
+            if (args.size() < 3 || !parseBodyIdArgument(engine, args, target) ||
+                !isTypedArray(engine, args[1], "Uint32Array") ||
+                !isTypedArray(engine, args[2], "Float32Array"))
+              return fail(engine,
+                          "readContacts requires a body id, a Uint32Array and a Float32Array");
+            size_t candidateBytes = 0;
+            size_t outputBytes = 0;
+            auto *candidates = static_cast<const uint32_t *>(
+                engine->getArrayBufferData(args[1], &candidateBytes));
+            auto *output = static_cast<float *>(
+                engine->getArrayBufferData(args[2], &outputBytes));
+            if (candidateBytes % sizeof(uint32_t) != 0 || outputBytes % sizeof(float) != 0)
+              return fail(engine, "contact buffer is malformed");
+            const int32_t count = tn_physics_read_contacts(
+                owner->simulation, target, candidates,
+                candidateBytes / sizeof(uint32_t), output,
+                outputBytes / sizeof(float));
+            if (count < 0)
+              return fail(engine, "readContacts target is not a live body");
+            return engine->newNumber(count);
+          }));
+  engine->setProperty(
+      simulation, "setColliderShape",
+      engine->newFunction(
+          "setColliderShape",
+          [engine, owner](void *,
+                          const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t id = 0;
+            if (args.size() < 2 || !parseBodyIdArgument(engine, args, id) ||
+                !engine->isObject(args[1]))
+              return fail(engine, "setColliderShape requires a body id and a shape");
+            const auto kind = engine->getProperty(args[1], "kind");
+            if (!engine->isString(kind))
+              return fail(engine, "setColliderShape requires a shape kind");
+            if (engine->toString(kind) != "heightfield")
+              return fail(engine, "setColliderShape supports heightfield shapes");
+            HeightfieldBuffers heightfield{};
+            if (!parseHeightfield(engine, args[1], heightfield) ||
+                !tn_physics_set_heightfield_shape(
+                    owner->simulation, id, heightfield.heights, heightfield.count,
+                    heightfield.rows, heightfield.columns, heightfield.scale_x,
+                    heightfield.scale_y, heightfield.scale_z))
+              return fail(engine, "setColliderShape shape was rejected");
+            return engine->newUndefined();
           }));
   engine->setProperty(
       simulation, "readAreaIntersections",

@@ -370,7 +370,6 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
   #packedGeometry: BufferGeometry | undefined;
   #positions = 0;
   #released = false;
-  #renderer: IRendererLike | undefined;
   #scene: Object3D;
   #triangleCount = 0;
 
@@ -414,9 +413,8 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
     return this.#positions;
   }
 
-  attachRenderer(renderer: IRendererLike): void {
+  attachRenderer(_renderer: IRendererLike): void {
     if (this.#released) throw new Error("GPUSceneBVH cannot be attached after release.");
-    this.#renderer = renderer;
   }
 
   process(_renderer: IRendererLike): void {
@@ -459,7 +457,6 @@ export class GPUSceneBVH extends Group implements IComputeDriven {
     this.#backings.normals = null;
     this.#packedGeometry?.dispose();
     this.#packedGeometry = undefined;
-    this.#renderer = undefined;
     this.#released = true;
   }
 

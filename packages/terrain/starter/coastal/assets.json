@@ -1,0 +1,10 @@
+{
+  "fir": {
+    "near": "fir_tree_01/fir-b-lod2.glb",
+    "maxDistance": 600,
+    "bounds": {
+      "min": [-2.869, 0, -3.619],
+      "max": [2.763, 14.078, 2.465]
+    }
+  }
+}

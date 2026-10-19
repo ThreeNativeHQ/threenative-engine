@@ -1,0 +1,237 @@
+{
+  "frozenNativeSource": "472925d7b42eae2b4c1de89604334a5d7552b693",
+  "originalAttempt": "attempt.vRlqpqSr",
+  "copiesByteIdentical": true,
+  "files": [
+    {
+      "path": "artifact-receipt.json.txt",
+      "bytes": 10465,
+      "sha256": "09dbca157531320e9b8c77062ce15853860bf43fee05d0645f7c71bda8a7fe46",
+      "originalPath": "artifact-receipt.json",
+      "formattedView": "artifact-receipt.json",
+      "formattedViewSha256": "09dbca157531320e9b8c77062ce15853860bf43fee05d0645f7c71bda8a7fe46",
+      "formattedViewBytes": 10465
+    },
+    {
+      "path": "attempt.json.txt",
+      "bytes": 7345,
+      "sha256": "7fac573bd22893863b9a1b547dfdca9182d7cb80ce64f193d1b1dbd83b0bf061",
+      "originalPath": "attempt.json",
+      "formattedView": "attempt.json",
+      "formattedViewSha256": "d6dee1a123d87d5bac70b3feb253f311d57b7b1bbe1fbbf6ee4b71e910b45df5",
+      "formattedViewBytes": 7341
+    },
+    {
+      "path": "cleanup.json.txt",
+      "bytes": 249,
+      "sha256": "cfbf2b5edb6b69eac2c9cbc9c9353516b7acb8503cc3ea5f82c1b3b89b895b11",
+      "originalPath": "cleanup.json",
+      "formattedView": "cleanup.json",
+      "formattedViewSha256": "cfbf2b5edb6b69eac2c9cbc9c9353516b7acb8503cc3ea5f82c1b3b89b895b11",
+      "formattedViewBytes": 249
+    },
+    {
+      "path": "native-animals/after.png",
+      "bytes": 697086,
+      "sha256": "9abbb29520b79140d5d25f51da9686acc73920384df1fe70a23f05abba00a732",
+      "originalPath": "native-animals/after.png"
+    },
+    {
+      "path": "native-animals/capture-holder-before-host.json.txt",
+      "bytes": 433,
+      "sha256": "ea0c5ca7b88b738fc5a7eba9d0f8ec7a9172943ce83ec1ee08a6678134891abe",
+      "originalPath": "native-animals/capture-holder-before-host.json",
+      "formattedView": "native-animals/capture-holder-before-host.json",
+      "formattedViewSha256": "67dad2f8dd415ce0a3b430ee76b619e5cf1a0fe3ed1628838492a13fe093ac35",
+      "formattedViewBytes": 446
+    },
+    {
+      "path": "native-animals/cleanup-end.utc",
+      "bytes": 31,
+      "sha256": "6ed63f5ceec7f14e1b56d8cb18f386b7e9e2767105ff1ecaa81f21bc1afd8595",
+      "originalPath": "native-animals/cleanup-end.utc"
+    },
+    {
+      "path": "native-animals/clock-observations.json.txt",
+      "bytes": 33850,
+      "sha256": "7a402cabb0f92c613fa614e31c0ba5928dfeb7ae8c0fcec0edd002260cf21aad",
+      "originalPath": "native-animals/clock-observations.json",
+      "formattedView": "native-animals/clock-observations.json",
+      "formattedViewSha256": "3ddc04a6e452cf56773c3317fc6b9ffbd45587fe77f460adfd17467dac5da81b",
+      "formattedViewBytes": 33842
+    },
+    {
+      "path": "native-animals/console-check.json.txt",
+      "bytes": 212,
+      "sha256": "9a7e8eebde2fd804fe72b5feed3b8372334e1cdf7bcdbf70c40ff2cc2fe78a64",
+      "originalPath": "native-animals/console-check.json",
+      "formattedView": "native-animals/console-check.json",
+      "formattedViewSha256": "81bde078806baacb1b5e9115b1362a9fbd8edfe6ec557ce4c2bb9a0c81f4ddb8",
+      "formattedViewBytes": 234
+    },
+    {
+      "path": "native-animals/end.utc",
+      "bytes": 31,
+      "sha256": "24a6feb3ca49db3d8bfbd562eb6becbb764d3fbf95079841df7028703a672e1a",
+      "originalPath": "native-animals/end.utc"
+    },
+    {
+      "path": "native-animals/exits.json.txt",
+      "bytes": 35,
+      "sha256": "ba77ce67872da5d5e950a45e72c4e47a2459d8547911563c4b422eebfffd32d8",
+      "originalPath": "native-animals/exits.json",
+      "formattedView": "native-animals/exits.json",
+      "formattedViewSha256": "3150cf89656d878cddaa6b1f1f57d5a1480f3b0d18c571c10df790a67ea954b9",
+      "formattedViewBytes": 40
+    },
+    {
+      "path": "native-animals/lease.stdout.jsonl",
+      "bytes": 163,
+      "sha256": "4a059f21fc0bad9e0aa69f25e6d340c9507d57b7871beaecc6e220eddb32b2ba",
+      "originalPath": "native-animals/lease.stdout.jsonl"
+    },
+    {
+      "path": "native-animals/outer-lease-exit.txt",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "originalPath": "native-animals/outer-lease-exit.txt"
+    },
+    {
+      "path": "native-animals/posture.png",
+      "bytes": 697216,
+      "sha256": "cf193a657ca54bb6d5559638e2823f9e93129a1f1559d786186aacae847a2a51",
+      "originalPath": "native-animals/posture.png"
+    },
+    {
+      "path": "native-animals/report.json.txt",
+      "bytes": 802910,
+      "sha256": "7e74a26e7dd8a4209aa5f8de29da58efc03ce81b6f50371a6ccc04728cf1a871",
+      "originalPath": "native-animals/report.json",
+      "formattedView": "native-animals/report.json",
+      "formattedViewSha256": "85526ba05da97a0eda9f844dfedd3e9624d7443ddf674ba0183334fb73a213e0",
+      "formattedViewBytes": 790586
+    },
+    {
+      "path": "native-animals/start.utc",
+      "bytes": 31,
+      "sha256": "afb2407f2604b893a3eb3bd0f17436d4b7c6132dc9de82e1821ca539fd20cc5f",
+      "originalPath": "native-animals/start.utc"
+    },
+    {
+      "path": "native-animals/stopped.png",
+      "bytes": 565166,
+      "sha256": "773d429a792fc5ed29f21bb8840efdbe2905cf7003f0243829d2e2c0d56155a3",
+      "originalPath": "native-animals/stopped.png"
+    },
+    {
+      "path": "native-animals/turn.png",
+      "bytes": 640026,
+      "sha256": "bbd56f3bbbd05760ddc91b8c01e1a1dfd0d885acaee25a77939760babb728858",
+      "originalPath": "native-animals/turn.png"
+    },
+    {
+      "path": "native-animals/wall.png",
+      "bytes": 573460,
+      "sha256": "e17d5951a6457f6dc1f992398c7fea115661f42b1559dfdb2ebf69f7b71a5814",
+      "originalPath": "native-animals/wall.png"
+    },
+    {
+      "path": "native-frustum/after.png",
+      "bytes": 472828,
+      "sha256": "bd216eb054642accc6fb68b2727bb551d24fe6b2e8076920df589fc942c7eb23",
+      "originalPath": "native-frustum/after.png"
+    },
+    {
+      "path": "native-frustum/capture-holder-before-host.json.txt",
+      "bytes": 433,
+      "sha256": "06dab83dc42e0779c2a8e988f781f5c8668cc5e2935cd08363d045f740ebc9bf",
+      "originalPath": "native-frustum/capture-holder-before-host.json",
+      "formattedView": "native-frustum/capture-holder-before-host.json",
+      "formattedViewSha256": "6c9ebbf9cb94cef7b1ce1e20d2dc61f33ee1044a06c7b58552317c7a81507d30",
+      "formattedViewBytes": 446
+    },
+    {
+      "path": "native-frustum/cleanup-end.utc",
+      "bytes": 31,
+      "sha256": "904b7ec0972e2efb1e4aaad29bea89e159c40930b8c202be32d31ddf93062db7",
+      "originalPath": "native-frustum/cleanup-end.utc"
+    },
+    {
+      "path": "native-frustum/clock-observations.json.txt",
+      "bytes": 34645,
+      "sha256": "059318be6557fbc2d1d37aacc5b93829bcb3aafb84e40ca3982277c532c4e715",
+      "originalPath": "native-frustum/clock-observations.json",
+      "formattedView": "native-frustum/clock-observations.json",
+      "formattedViewSha256": "4eb3e152ee6dbfe5251f428c5be3ad0422666578bf9a84eccbc78b88567bd519",
+      "formattedViewBytes": 34637
+    },
+    {
+      "path": "native-frustum/console-check.json.txt",
+      "bytes": 212,
+      "sha256": "8e4748e0562bf0c942f8c78d8f3f25cdc38882670e65ea9b07bc602820562ba0",
+      "originalPath": "native-frustum/console-check.json",
+      "formattedView": "native-frustum/console-check.json",
+      "formattedViewSha256": "76f0175d38ff9971e92e429af486e810be4c974cdd8012c0f89fe66c8dfc15e5",
+      "formattedViewBytes": 234
+    },
+    {
+      "path": "native-frustum/end.utc",
+      "bytes": 31,
+      "sha256": "637359301ebe1246c167abe16838179b495b44c70b18292114339be12b8e8163",
+      "originalPath": "native-frustum/end.utc"
+    },
+    {
+      "path": "native-frustum/exits.json.txt",
+      "bytes": 35,
+      "sha256": "ba77ce67872da5d5e950a45e72c4e47a2459d8547911563c4b422eebfffd32d8",
+      "originalPath": "native-frustum/exits.json",
+      "formattedView": "native-frustum/exits.json",
+      "formattedViewSha256": "3150cf89656d878cddaa6b1f1f57d5a1480f3b0d18c571c10df790a67ea954b9",
+      "formattedViewBytes": 40
+    },
+    {
+      "path": "native-frustum/lease.stdout.jsonl",
+      "bytes": 163,
+      "sha256": "36ecd7f44960539fa686a3ccb0339e687a559b1b84d6a882866242306dffcb63",
+      "originalPath": "native-frustum/lease.stdout.jsonl"
+    },
+    {
+      "path": "native-frustum/outer-lease-exit.txt",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "originalPath": "native-frustum/outer-lease-exit.txt"
+    },
+    {
+      "path": "native-frustum/outside.png",
+      "bytes": 472828,
+      "sha256": "bd216eb054642accc6fb68b2727bb551d24fe6b2e8076920df589fc942c7eb23",
+      "originalPath": "native-frustum/outside.png"
+    },
+    {
+      "path": "native-frustum/report.json.txt",
+      "bytes": 986085,
+      "sha256": "81c624ce2b7d45ab96d08c9dcc9ca77766be70b9551b513780d4c81452b17bb1",
+      "originalPath": "native-frustum/report.json",
+      "formattedView": "native-frustum/report.json",
+      "formattedViewSha256": "b66d9812ecf1ca8633eb73cf278ff5ce71d09152ca0e56e0247f6e1806262af2",
+      "formattedViewBytes": 973857
+    },
+    {
+      "path": "native-frustum/start.utc",
+      "bytes": 31,
+      "sha256": "e35b5e307316bda65e0c9b6844a33fa1d42ff747579aa9ca934524521b053127",
+      "originalPath": "native-frustum/start.utc"
+    },
+    {
+      "path": "native-independent-image-review.md",
+      "bytes": 628,
+      "sha256": "5b87c96dc92ba0eaf4e688f0513d3372275aa0b39a47113b85e0936be3c30ef3",
+      "originalPath": "native-independent-image-review.md"
+    }
+  ],
+  "all2055InputBytesRetainedOutsideThisPublication": true,
+  "originalFullArtifactReceiptScope": "artifact-receipt.json records the immutable original attempt; publication-receipt.json lists the exact subset published here.",
+  "publishedFiles": 31,
+  "originalFilesPublished": 31,
+  "formattedViews": "Biome-formatted JSON views are derivatives; exact original bytes and their hashes are recorded by each original file entry."
+}

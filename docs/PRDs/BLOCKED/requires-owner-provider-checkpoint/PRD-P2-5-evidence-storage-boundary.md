@@ -4,6 +4,7 @@ prd_contract: v1
 
 # P2-5 — Separate benchmark evidence retention from the source checkout
 
+**Priority:** P2 — Open: owner-approved provider and restore SLA, bulk-only upload; repo grows from snapshots.
 Complexity: 10 → HIGH mode
 
 ## Context

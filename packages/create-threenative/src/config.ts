@@ -36,6 +36,7 @@ export type {
 } from "@threenative/core";
 
 export interface IResolvedThreeNativeConfig {
+  readonly engine: "threejs" | "threenative";
   readonly app: {
     readonly id: string;
     readonly name: string;
@@ -97,6 +98,8 @@ export interface IResolvedThreeNativeConfig {
     /** Validated, not yet resolved: per-asset resolution happens where the asset is known. */
     readonly lod?: boolean | IThreeNativeLodConfig;
     readonly models?: "none" | IThreeNativeModelsConfig;
+    /** Also emit the native cooked package beside the existing outputs. */
+    readonly nativePackage?: boolean;
     readonly output?: string;
     readonly source?: string;
     readonly targets?: {
@@ -155,7 +158,7 @@ export interface IThreeNativeModelsConfig {
   readonly textures?:
     | "none"
     | {
-        readonly maxSize?: number;
+        readonly maxSize?: number | Readonly<Record<string, number>>;
         readonly quality?: number;
         readonly overrides?: readonly {
           readonly slot: string;
@@ -923,20 +926,31 @@ async function validateBootSplash(
   };
 }
 
+function validateEngine(raw: unknown): "threejs" | "threenative" {
+  if (raw === undefined) return "threenative";
+  if (raw === "threejs" || raw === "threenative") return raw;
+  if (raw === "native" || raw === "legacy")
+    return fail(
+      "TN_CONFIG_ENGINE_RENAMED",
+      `engine "${raw}" was renamed: use "${raw === "native" ? "threenative" : "threejs"}".`,
+    );
+  return fail("TN_CONFIG_ENGINE_INVALID", 'engine must be "threenative" or "threejs".');
+}
+
 /** Which renderer draws `src/ui/`. @see IThreeNativeConfig.ui */
-const UI_RENDERERS: readonly ThreeNativeUiRenderer[] = ["native", "web"];
+const UI_RENDERERS: readonly ThreeNativeUiRenderer[] = ["native", "native-css", "web"];
 
 /**
- * The public surface is exactly two words. Which web view a `"web"` game lands on — and whether
+ * The public surface is exactly three words. Which web view a `"web"` game lands on — and whether
  * a platform composites a sibling layer or renders to a texture — is the host's business, so a
- * typo here fails naming the two valid values rather than defaulting to one of them.
+ * typo here fails naming the valid values rather than defaulting to one of them.
  */
 function validateUi(raw: unknown): IResolvedThreeNativeConfig["ui"] {
   const ui = assertRecord(raw, "ui");
   assertKeys(ui, "ui", ["renderer"]);
   const renderer = ui.renderer === undefined ? "web" : ui.renderer;
   if (typeof renderer !== "string" || !UI_RENDERERS.includes(renderer as ThreeNativeUiRenderer)) {
-    fail("TN_CONFIG_UI_RENDERER_INVALID", "ui.renderer must be web or native.");
+    fail("TN_CONFIG_UI_RENDERER_INVALID", "ui.renderer must be web, native or native-css.");
   }
   return { renderer: renderer as ThreeNativeUiRenderer };
 }
@@ -1089,7 +1103,23 @@ function textureQuality(value: unknown, label: string): number {
   return value;
 }
 
-function textureMaxSize(value: unknown): number {
+function textureMaxSize(value: unknown): number | Readonly<Record<string, number>> {
+  if (isRecord(value))
+    return Object.fromEntries(
+      Object.entries(value).map(([slot, cap]) => {
+        if (
+          !/^[a-z][a-zA-Z]*Texture$/u.test(slot) ||
+          typeof cap !== "number" ||
+          !Number.isSafeInteger(cap) ||
+          cap < 4
+        )
+          fail(
+            "TN_CONFIG_ASSETS_INVALID",
+            `assets.textures.maxSize.${slot} must name a glTF texture slot with a positive integer cap of at least 4.`,
+          );
+        return [slot, cap];
+      }),
+    );
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 4) {
     fail(
       "TN_CONFIG_ASSETS_INVALID",
@@ -1156,9 +1186,41 @@ function validateTextures(
   };
 }
 
-const MODEL_PASS_KEYS: readonly string[] = ["dedup", "meshopt", "prune", "quantize", "reorder"];
-const MODEL_QUANTIZE_KEYS: readonly string[] = ["normalBits", "positionBits", "uvBits"];
-const MODEL_VIRTUAL_KEYS: readonly string[] = [
+/** Every `assets.*` key the loader accepts. The compile step must accept the same set. */
+export const ASSETS_CONFIG_KEYS = [
+  "audio",
+  "budget",
+  "exclude",
+  "concurrency",
+  "lod",
+  "models",
+  "nativePackage",
+  "source",
+  "output",
+  "targets",
+  "textures",
+] as const;
+/** Every `assets.models` key the loader accepts. The compile step must accept the same set. */
+export const MODELS_CONFIG_KEYS = [
+  "compact",
+  "lightmap",
+  "passes",
+  "quantize",
+  "sharedImages",
+  "simplify",
+  "textures",
+  "virtual",
+] as const;
+export const LIGHTMAP_CONFIG_KEYS = ["atlasSize", "padding"] as const;
+export const MODEL_PASS_KEYS: readonly string[] = [
+  "dedup",
+  "meshopt",
+  "prune",
+  "quantize",
+  "reorder",
+];
+export const MODEL_QUANTIZE_KEYS: readonly string[] = ["normalBits", "positionBits", "uvBits"];
+export const MODEL_VIRTUAL_KEYS: readonly string[] = [
   "groupSize",
   "maxTriangles",
   "minSourceTriangles",
@@ -1178,16 +1240,7 @@ function bitDepth(value: unknown, label: string): number {
 function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["assets"]>["models"] {
   if (raw === "none") return "none";
   const models = assertRecord(raw, "assets.models");
-  assertKeys(models, "assets.models", [
-    "compact",
-    "lightmap",
-    "passes",
-    "quantize",
-    "sharedImages",
-    "simplify",
-    "textures",
-    "virtual",
-  ]);
+  assertKeys(models, "assets.models", MODELS_CONFIG_KEYS);
   if (models.sharedImages !== undefined && typeof models.sharedImages !== "boolean") {
     fail("TN_CONFIG_ASSETS_INVALID", "assets.models.sharedImages must be true or false.");
   }
@@ -1195,17 +1248,21 @@ function validateModels(raw: unknown): NonNullable<IResolvedThreeNativeConfig["a
   let lightmap: IThreeNativeModelsConfig["lightmap"];
   if (models.lightmap !== undefined) {
     const rawLightmap = assertRecord(models.lightmap, "assets.models.lightmap");
-    assertKeys(rawLightmap, "assets.models.lightmap", ["atlasSize", "padding"]);
+    assertKeys(rawLightmap, "assets.models.lightmap", LIGHTMAP_CONFIG_KEYS);
     if (rawLightmap.atlasSize === undefined || rawLightmap.padding === undefined) {
       fail("TN_CONFIG_ASSETS_INVALID", "assets.models.lightmap requires atlasSize and padding.");
     }
+    const atlasSize = positiveInteger(
+      rawLightmap.atlasSize,
+      1,
+      "TN_CONFIG_ASSETS_INVALID",
+      "assets.models.lightmap.atlasSize",
+    );
+    if (atlasSize % 4 !== 0) {
+      fail("TN_CONFIG_ASSETS_INVALID", "assets.models.lightmap.atlasSize must be a multiple of 4.");
+    }
     lightmap = {
-      atlasSize: positiveInteger(
-        rawLightmap.atlasSize,
-        1,
-        "TN_CONFIG_ASSETS_INVALID",
-        "assets.models.lightmap.atlasSize",
-      ),
+      atlasSize,
       padding: positiveInteger(
         rawLightmap.padding,
         1,
@@ -1534,18 +1591,7 @@ function validateAudio(raw: unknown): "none" | IThreeNativeAudioConfig {
 
 function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
   const assets = assertRecord(raw, "assets");
-  assertKeys(assets, "assets", [
-    "audio",
-    "budget",
-    "exclude",
-    "concurrency",
-    "lod",
-    "models",
-    "source",
-    "output",
-    "targets",
-    "textures",
-  ]);
+  assertKeys(assets, "assets", ASSETS_CONFIG_KEYS);
   const targets = assets.targets === undefined ? undefined : validateAssetTargets(assets.targets);
   const lod = assets.lod === undefined ? undefined : validateLod(assets.lod);
   const models = assets.models === undefined ? undefined : validateModels(assets.models);
@@ -1556,6 +1602,9 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
       assets.exclude.some((glob) => typeof glob !== "string" || glob.trim() === ""))
   ) {
     fail("TN_CONFIG_ASSETS_INVALID", "assets.exclude must be an array of non-empty glob strings.");
+  }
+  if (assets.nativePackage !== undefined && typeof assets.nativePackage !== "boolean") {
+    fail("TN_CONFIG_ASSETS_INVALID", "assets.nativePackage must be true or false.");
   }
   return {
     ...(assets.audio === undefined ? {} : { audio: validateAudio(assets.audio) }),
@@ -1583,6 +1632,7 @@ function validateAssets(raw: unknown): IResolvedThreeNativeConfig["assets"] {
     ...(targets === undefined ? {} : { targets }),
     ...(lod === undefined ? {} : { lod }),
     ...(models === undefined ? {} : { models }),
+    ...(assets.nativePackage === undefined ? {} : { nativePackage: assets.nativePackage }),
     ...(textures === undefined ? {} : { textures }),
   };
 }
@@ -1594,6 +1644,7 @@ const PROFILE_ASSET_KEYS: readonly string[] = [
   "budget",
   "lod",
   "models",
+  "nativePackage",
   "targets",
   "textures",
 ];
@@ -1945,6 +1996,7 @@ async function loadConfigInternal(
       if (raw !== undefined) {
         assertKeys(raw, "config", [
           "app",
+          "engine",
           "display",
           "bootSplash",
           "window",
@@ -1975,6 +2027,7 @@ async function loadConfigInternal(
       }
       return {
         app,
+        engine: validateEngine(raw?.engine),
         display: validateDisplay(raw?.display),
         window: validateWindow(raw?.window, app.name),
         nativeEntry: validateNativeEntry(configuredEntry ?? packageEntry ?? "src/game.ts", root),

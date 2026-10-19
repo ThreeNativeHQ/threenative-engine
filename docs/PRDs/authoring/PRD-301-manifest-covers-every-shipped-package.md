@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** OPEN, filed 2026-08-31 against `77a68bec`. Planning only.
 
+**Priority:** P2 — Census gate unbuilt: derived package set, allowlist, per-package coverage with reasons.
 **Outcome:** an agent optimising textures, compiling models, or debugging a blank draw finds
 `@threenative/assets` through the same tool it finds everything else — and no future package can
 ship a public surface that the capability manifest silently omits.

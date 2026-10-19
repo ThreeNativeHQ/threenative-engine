@@ -240,7 +240,6 @@ const scratchBasisT2 = new Vector3();
 const scratchDir = new Vector3();
 const scratchAxisX = new Vector3();
 const scratchAxisZ = new Vector3();
-const scratchAxisY = new Vector3();
 const scratchMatrix = new Matrix4();
 const scratchColour = new Color();
 

@@ -9,8 +9,12 @@ on:
       - packages/runtime-native/**
       - packages/playtest/**
       - patches/wgpu-native@25.0.2.2.patch
+  # No `feat/prd-368-persistent-pipeline-cache`: the lane it was opened for landed on 2026-09-10 and
+  # the branch only kept a 31-minute android-arm64 ABI job alive on every push nobody was reading
+  # (2.4k runner-minutes over 41 runs, PRD-481). A per-branch trigger outlives its pull request by
+  # default; `scripts/__tests__/ci-structure.spec.ts` now fails closed on the next one.
   push:
-    branches: [main, feat/prd-368-persistent-pipeline-cache]
+    branches: [main]
     paths:
       - .github/workflows/pipeline-cache.yml
       - packages/runtime-native/**

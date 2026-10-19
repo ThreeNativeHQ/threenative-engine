@@ -1,11 +1,4 @@
-import {
-  BufferAttribute,
-  type BufferGeometry,
-  type Camera,
-  type Material,
-  Mesh,
-  Vector3,
-} from "three";
+import { BufferAttribute, BufferGeometry, type Camera, type Material, Mesh, Vector3 } from "three";
 
 /**
  * A mesh that draws only the clusters this camera can resolve.
@@ -163,15 +156,15 @@ function finestIndexCount(table: IClusterTable): number {
 }
 
 export class ClusteredMesh extends Mesh {
-  /** The baked payload. Read-only at run time; the bake is the only thing that writes it. */
-  readonly table: IClusterTable;
+  /** The baked payload. The bake is the only thing that writes it; a copy takes the source's. */
+  table!: IClusterTable;
   /** Screen-space error budget in pixels. Writable — it is the game's call. */
   errorPixels: number;
   /** Camera movement, in the mesh's own units, below which the previous cut is kept. */
   recutDistance: number;
 
-  readonly #cut: Uint32Array;
-  readonly #selection: Uint32Array;
+  #cut!: Uint32Array;
+  #selection!: Uint32Array;
   readonly #cameraLocal = new Vector3();
   readonly #lastCut = new Vector3();
   #drawnClusters = 0;
@@ -188,11 +181,21 @@ export class ClusteredMesh extends Mesh {
   ) {
     super(geometry, surface);
     assertTable(table);
-    this.table = table;
     this.errorPixels = options.errorPixels ?? DEFAULT_ERROR_PIXELS;
+    this.recutDistance = options.recutDistance ?? radiusOf(table) * RECUT_FRACTION;
+    this.#load(table, geometry);
+    // Full detail until something cuts it. Virtual geometry ships on by default, so the mesh a
+    // game never touches has to draw exactly what an ordinary `Mesh` would have drawn — a class
+    // that starts invisible and waits to be updated would turn the default into a blank screen.
+    // `update` only ever takes detail away from here.
+    this.#compact(this.#finestCut());
+  }
+
+  /** Points this mesh at `table`, and installs its cut on the geometry it is going to draw. */
+  #load(table: IClusterTable, geometry: BufferGeometry): void {
+    this.table = table;
     this.#cut = new Uint32Array(finestIndexCount(table));
     this.#selection = new Uint32Array(table.ranges.length / 2);
-    this.recutDistance = options.recutDistance ?? radiusOf(table) * RECUT_FRACTION;
     // The geometry draws out of the cut buffer from here on. Its vertex attributes are untouched:
     // every level of the DAG indexes the vertices the mesh already shipped.
     //
@@ -200,11 +203,44 @@ export class ClusteredMesh extends Mesh {
     // are given, so the cut this class writes every frame would never reach the GPU and the mesh
     // would draw a buffer of zeros — degenerate triangles, an empty screen, and no error anywhere.
     geometry.setIndex(new BufferAttribute(this.#cut, 1));
-    // Full detail until something cuts it. Virtual geometry ships on by default, so the mesh a
-    // game never touches has to draw exactly what an ordinary `Mesh` would have drawn — a class
-    // that starts invisible and waits to be updated would turn the default into a blank screen.
-    // `update` only ever takes detail away from here.
+  }
+
+  /**
+   * A second mesh over the same body, cut for its own place in the scene.
+   *
+   * three's `Object3D.clone` builds through `new this.constructor()`, and this class's constructor
+   * wants a table — so every game that stood a second copy of a cooked model where it wanted a
+   * statue died in `assertTable` before drawing anything. The arguments are the source's own,
+   * which is what a copy is.
+   */
+  override clone(recursive = true): this {
+    return new ClusteredMesh(withOwnCut(this.geometry), this.material, this.table, {
+      errorPixels: this.errorPixels,
+      recutDistance: this.recutDistance,
+    }).copy(this, recursive) as this;
+  }
+
+  /**
+   * Becomes a copy of `source`, sharing the bake and the vertices and keeping a cut of its own.
+   *
+   * `Mesh.copy` shares the geometry outright, which this class cannot let it do: the cut lives in
+   * the geometry's index buffer, so two meshes on one geometry would overwrite each other's index
+   * every frame and both would draw whichever spoke last. The copy takes the vertex attributes by
+   * reference instead — one copy of them on the GPU, because three keys its attributes on the
+   * attribute — and the shared table, which is frozen at bake time and cannot go stale.
+   */
+  override copy(source: this, recursive = true): this {
+    super.copy(source, recursive);
+    if (!(source instanceof ClusteredMesh)) return this;
+    const geometry = withOwnCut(source.geometry);
+    this.#load(source.table, geometry);
+    this.geometry = geometry;
+    this.errorPixels = source.errorPixels;
+    this.recutDistance = source.recutDistance;
+    // Nothing this copy has drawn yet, so the next update has to cut it for where it stands.
+    this.#hasCut = false;
     this.#compact(this.#finestCut());
+    return this;
   }
 
   /** Every cluster the bake produced from the source triangles — the mesh as authored. */
@@ -284,6 +320,23 @@ export class ClusteredMesh extends Mesh {
     // nobody, and is exactly the failure `projection-apply.ts` records for `InstancedMesh`.
     this.visible = cursor > 0;
   }
+}
+
+/**
+ * The same vertices under a second geometry, so a second mesh can hold a cut of its own.
+ *
+ * `BufferGeometry.clone()` would do this and would also copy every position, normal and uv — the
+ * memory a cooked model exists not to spend twice. Sharing the `BufferAttribute` objects shares
+ * their GPU buffers too, because three keys its attribute cache on the attribute, not the geometry.
+ */
+function withOwnCut(geometry: BufferGeometry): BufferGeometry {
+  const shell = new BufferGeometry();
+  for (const [name, attribute] of Object.entries(geometry.attributes))
+    shell.setAttribute(name, attribute);
+  shell.boundingSphere = geometry.boundingSphere;
+  shell.boundingBox = geometry.boundingBox;
+  shell.groups = [...geometry.groups];
+  return shell;
 }
 
 function radiusOf(table: IClusterTable): number {

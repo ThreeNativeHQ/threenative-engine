@@ -5,6 +5,7 @@ the renderer mechanism. **Complexity:** 2 (6–10 files) + 2 (multiple consumers
 **Depends on:** [367](PRD-367-doctor-explains-shader-compilation.md) and the
 [shared execution contract](README.md); reconcile PRD-360 source-lane changes first.
 
+**Priority:** P2 — Open: reports must separate candidates from real pipelines; absence cannot read as coverage.
 ## Problem and outcome
 
 The source records a warm-up report of 494 “pipelines” for 101 actual GPU creations. The inspected

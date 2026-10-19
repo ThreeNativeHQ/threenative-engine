@@ -1,9 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { ciJobGraph, declaredNeeds, jobSections } from "../ci-workflow.js";
+
+const { copyTemplateOwnership, integrationEvidence } = await import(
+  new URL("../../test-support/ci-integration-fixture.ts", import.meta.url).href
+);
 
 const repo = path.resolve(import.meta.dirname, "../..");
 const source = readFileSync(path.join(repo, ".github/workflows/ci.yml"), "utf8");
@@ -118,16 +122,24 @@ describe("CI efficiency without lost evidence", () => {
     },
   );
 
-  it.each(["benchmark", "budgets", "performance-contracts"])(
-    "%s starts after scope rather than waiting for artifacts it never downloads",
+  // These two used to sit at `needs: scope` and restore the workspace key, which meant they started
+  // beside the only job that saves it, missed every time and compiled the workspace themselves —
+  // 71-95s each. PRD-481 gives them the producer's upload instead, so the edge is real work.
+  it.each(["benchmark", "budgets"])(
+    "%s downloads this run's workspace rather than compiling its own",
     (name) => {
-      expect(declaredNeeds(job(name))).toEqual(["scope"]);
+      expect(declaredNeeds(job(name))).toEqual(["scope", "build-artifacts"]);
+      expect(job(name)).toContain("uses: ./.github/actions/workspace-dist");
+      expect(job(name)).toContain("shared-artifact: workspace-packages");
       expect(ancestors(name).has("native-platforms")).toBe(false);
-      if (name !== "performance-contracts") {
-        expect(job(name)).toContain("uses: ./.github/actions/workspace-dist");
-      }
     },
   );
+
+  it("performance-contracts starts after scope rather than waiting for artifacts it never downloads", () => {
+    expect(declaredNeeds(job("performance-contracts"))).toEqual(["scope"]);
+    expect(ancestors("performance-contracts").has("native-platforms")).toBe(false);
+    expect(job("performance-contracts")).not.toContain("uses: ./.github/actions/workspace-dist");
+  });
 
   it("reports the new producer as well as every pre-existing job", () => {
     const graph = ciJobGraph(source);
@@ -160,6 +172,208 @@ describe("CI efficiency without lost evidence", () => {
   );
 });
 
+describe("PRD-380 an ordinary pull request owes only the Linux native rows", () => {
+  /** This repository's own candidate, so a plan built without a diff still validates. */
+  const candidate = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: repo,
+    encoding: "utf8",
+  }).stdout.trim();
+
+  /** Classify without a merge-base diff: the plan still records the native tier each target owes. */
+  function classify(args: string[], format: "json" | "github" = "json"): string {
+    const result = spawnSync(
+      process.execPath,
+      [
+        path.join(repo, "scripts/ci-change-scope.mjs"),
+        ...args,
+        "--candidate-sha",
+        candidate,
+        "--format",
+        format,
+      ],
+      { cwd: repo, encoding: "utf8" },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    return result.stdout;
+  }
+
+  const nativeJobs = new Map(
+    jobSections(readFileSync(path.join(repo, ".github/workflows/native-platforms.yml"), "utf8")),
+  );
+  /** The executable half of a job: a comment explaining the tier is not a tier. */
+  const executable = new Map(
+    [...nativeJobs].map(([name, section]) => [
+      name,
+      section
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("#"))
+        .join("\n"),
+    ]),
+  );
+
+  it("keeps unresolved pull requests and qualification events on the full matrix", () => {
+    const ordinary = JSON.parse(
+      classify(["--event-name", "pull_request", "--target", "develop"]),
+    ) as Record<string, unknown>;
+    // The tier travels with the plan, so ci-required records it and a reuse can compare it.
+    expect(ordinary).toMatchObject({ selection: "full", native: true, nativeTier: "full" });
+    expect(
+      (ordinary.jobs as Record<string, { required: boolean }>)["native-platforms"]?.required,
+    ).toBe(true);
+    // An unresolved live pull request rejects before fanout rather than emit a plan it cannot prove.
+    const unresolved = spawnSync(
+      process.execPath,
+      [
+        path.join(repo, "scripts/ci-change-scope.mjs"),
+        ...["--event-name", "pull_request", "--target", "develop"],
+        ...["--candidate-sha", candidate, "--format", "github"],
+      ],
+      { cwd: repo, encoding: "utf8" },
+    );
+    expect(unresolved.status, unresolved.stderr).toBe(2);
+    expect(unresolved.stderr).toContain("CI_REQUIRED_PR_CANDIDATE_MISMATCH");
+    expect(unresolved.stdout).not.toContain("plan=");
+    // A queue entry whose base/head this classifier cannot resolve still owes every row: with no
+    // proven candidate identity it has no diff to narrow by. (A resolved develop queue run narrows
+    // exactly like a pull request — ci-qualification.spec.ts proves that case.)
+    expect(
+      JSON.parse(classify(["--event-name", "merge_group", "--target", "develop"])),
+    ).toMatchObject({ nativeTier: "full" });
+    // main pushes, the nightly, an explicit audit and a pull request into main keep every row.
+    const full: readonly (readonly [string, string])[] = [
+      ["push", ""],
+      ["schedule", ""],
+      ["workflow_dispatch", ""],
+      ["merge_group", "main"],
+      ["pull_request", "main"],
+    ];
+    for (const [event, target] of full) {
+      expect(
+        JSON.parse(classify(["--event-name", event, "--target", target])),
+        `${event} -> ${target}`,
+      ).toMatchObject({ nativeTier: "full" });
+    }
+    // A run that owes no native lane owes no rows at all — ci-needs.spec.ts proves that case
+    // against a real narrowed diff.
+  });
+
+  it("reads the tier from the planner instead of deciding it per job", () => {
+    const gated = [...executable]
+      .filter(([name, section]) => name !== "scope" && /^ {4}if: .*native_tier/mu.test(section))
+      .map(([name]) => name)
+      .sort();
+    // Platform legs and the opt-in cache producer skip reduced runs.
+    expect(gated).toEqual(["desktop", "ios-simulator", "linux-arm64-v8-source"]);
+    expect(executable.get("desktop")).toContain("needs.scope.outputs.native_tier == 'full'");
+    expect(executable.get("ios-simulator")).toContain("needs.scope.outputs.native_tier == 'full'");
+    // A job's `if` cannot read `matrix`, so the arm64 row drops through the matrix itself, shaped
+    // from the same tier: linux-x64 survives a reduced run and both rows survive anything else. The
+    // x64 row keeps the routing expression every movable Linux job uses (PRD-480).
+    const scope = executable.get("scope") ?? "";
+    expect(scope).toContain("native_tier: ${{ steps.classify.outputs.native_tier }}");
+    expect(scope).toContain("starter_rows: ${{ steps.rows.outputs.starter_rows }}");
+    expect(scope).toContain(
+      "{ platform: \"linux-x64\", runner: \"${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(steps.admission.outputs.runner_admission || '[]'), 'native:starter-linux:linux-x64')) && 'ubuntu-24.04' || vars.TN_RUNNER }}\"",
+    );
+    expect(scope).toContain('{ platform: "linux-arm64", runner: "ubuntu-24.04-arm" }');
+    expect(scope).toContain("rows.slice(0, 1)");
+    expect(executable.get("starter-linux")).toContain(
+      "matrix: ${{ fromJSON(needs.scope.outputs.starter_rows) }}",
+    );
+    expect(job("native-platforms")).toContain("selection_plan: ${{ needs.scope.outputs.plan }}");
+    // Every other job is Linux-hosted, so it runs on the reduced tier without asking.
+    for (const name of [
+      "web-reference",
+      "android-v8-source",
+      "android-emulator-parity",
+      "desktop-parity",
+      "starter-linux",
+    ]) {
+      expect(executable.get(name), name).not.toContain("native_tier");
+    }
+    // No lane exempts the full matrix by label: the tier is the planner's answer, and a label is
+    // not one of its inputs. `release-proof` is the one label exemption PRD-380 phase 1 removed.
+    const lanes = [...nativeJobs.values()]
+      .map((section) =>
+        section
+          .split("\n")
+          .filter((line) => !line.trim().startsWith("#"))
+          .join("\n"),
+      )
+      .join("\n");
+    expect(lanes).not.toContain("pull_request.labels");
+    expect(lanes).not.toContain("native-release-proof");
+  });
+
+  // Run 37100382876 (2026-10-03, `8d7c5741f`) shaped `starter_rows` as a bare array of row objects
+  // and `starter-linux` never started — no job, no error, and the reusable workflow's aggregate
+  // still concluded failure, which `ci-required` then reported as a red native lane with every leg
+  // green. The same two rows on develop's static `include:` produced both jobs, so the emitter has
+  // to write the shape GitHub expands: a keyed object, `{"include":[…]}`. Evaluating the step for
+  // each tier is what pins that, rather than asserting the source says so.
+  it("shapes starter rows GitHub can expand, for every tier the lane is called with", () => {
+    const scope = nativeJobs.get("scope") ?? "";
+    const script = scope.match(/node -e '([\s\S]*?)' >> "\$GITHUB_OUTPUT"/u)?.[1];
+    if (script === undefined) throw new Error("scope has no starter_rows step to evaluate");
+    const concrete = script.replace(/\$\{\{[\s\S]*?\}\}/gu, "tn-local");
+
+    const rows = (tier: string): Record<string, unknown>[] => {
+      const run = spawnSync(process.execPath, ["-e", concrete], {
+        cwd: repo,
+        encoding: "utf8",
+        env: { ...process.env, TN_NATIVE_TIER: tier },
+        timeout: 5_000,
+      });
+      expect(run.status, run.stderr).toBe(0);
+      const line = run.stdout.trim();
+      expect(line.startsWith("starter_rows="), line).toBe(true);
+      const matrix = JSON.parse(line.slice("starter_rows=".length)) as Record<string, unknown>;
+      // Never an empty matrix: GitHub expands `include` alone, and `[]` builds no job at all. A run
+      // that owes no native lane never reaches this job — ci.yml gates the whole call on
+      // `jobs['native-platforms'].required` — so every tier this job can see owes x64 at minimum.
+      const include = matrix.include as Record<string, unknown>[] | undefined;
+      expect(Array.isArray(include), JSON.stringify(matrix)).toBe(true);
+      expect(include?.length ?? 0).toBeGreaterThan(0);
+      for (const row of include ?? [])
+        expect(Object.keys(row).sort()).toEqual(["platform", "runner"]);
+      return include ?? [];
+    };
+
+    // The routing expression is the x64 runner's value; the substitution above is only so the step
+    // parses as JavaScript outside Actions.
+    expect(scope).toContain(
+      "{ platform: \"linux-x64\", runner: \"${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(steps.admission.outputs.runner_admission || '[]'), 'native:starter-linux:linux-x64')) && 'ubuntu-24.04' || vars.TN_RUNNER }}\"",
+    );
+    // Reduced: x64 alone, on the runner the expression resolves. Full: both rows, arm64 hosted.
+    expect(rows("reduced")).toEqual([{ platform: "linux-x64", runner: "tn-local" }]);
+    expect(rows("full")).toEqual([
+      { platform: "linux-x64", runner: "tn-local" },
+      { platform: "linux-arm64", runner: "ubuntu-24.04-arm" },
+    ]);
+    // An unreadable tier keeps every row rather than dropping the matrix.
+    expect(rows("")).toEqual(rows("full"));
+    // The job reads the shaped object, and the x64 leg lands where the expression points.
+    expect(executable.get("starter-linux")).toContain(
+      "matrix: ${{ fromJSON(needs.scope.outputs.starter_rows) }}",
+    );
+    expect(executable.get("starter-linux")).toContain("runs-on: ${{ matrix.runner }}");
+    // A leg the tier drops is skipped by `if:`, and a skipped leg is neither a failure nor a
+    // cascade: the two jobs that need `desktop` read `cancelled()`/`always()`, which is why the
+    // run above kept them green while `desktop` was skipped.
+    expect(executable.get("desktop")).toContain("needs.scope.outputs.native_tier == 'full'");
+    for (const [name, status] of [
+      ["performance-coverage", "cancelled()"],
+      ["networking-matrix", "always()"],
+    ] as const) {
+      const section = executable.get(name) ?? "";
+      expect(section, name).toContain(
+        "needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]",
+      );
+      expect(section, name).toContain(status);
+    }
+  });
+});
+
 describe("PRD-373 fail-closed required verdict", () => {
   function fullPlan(): Record<string, unknown> {
     const result = spawnSync(
@@ -176,7 +390,7 @@ describe("PRD-373 fail-closed required verdict", () => {
    * repository's candidate SHA, so the verdict reaches the selection gate instead of stopping at
    * the candidate assertion. The empty diff is deliberately classified `full`, so it cannot serve.
    */
-  function prosePlan(): Record<string, unknown> {
+  function prosePlan(file = "NOTES.md"): Record<string, unknown> {
     const root = makeTempDirSync("threenative-ci-required-prose-");
     const git = (...args: string[]) =>
       spawnSync("git", args, {
@@ -195,7 +409,8 @@ describe("PRD-373 fail-closed required verdict", () => {
     git("add", "-A");
     git("commit", "--quiet", "-m", "base");
     const base = git("rev-parse", "HEAD").stdout.trim();
-    writeFileSync(path.join(root, "NOTES.md"), "prose\n");
+    mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    writeFileSync(path.join(root, file), "prose\n");
     git("add", "-A");
     git("commit", "--quiet", "-m", "prose");
     const head = git("rev-parse", "HEAD").stdout.trim();
@@ -232,16 +447,45 @@ describe("PRD-373 fail-closed required verdict", () => {
       ),
       ...overrides,
     };
-    return spawnSync(process.execPath, ["scripts/ci-required.mjs"], {
-      cwd: repo,
-      encoding: "utf8",
-      env: { ...process.env, TN_CI_NEEDS: JSON.stringify(needs), ...environment },
-    });
+    const directory = makeTempDirSync("ci-verdict-evidence-");
+    try {
+      const evidence = jobs?.integration?.required
+        ? integrationEvidence(repo, directory, plan).env
+        : {};
+      return spawnSync(process.execPath, ["scripts/ci-required.mjs"], {
+        cwd: repo,
+        encoding: "utf8",
+        // Synthetic plans carry their own event identities; never inherit this
+        // enclosing Actions run's TN_CI_* context. Explicit adversarial inputs below win.
+        env: {
+          ...Object.fromEntries(
+            Object.entries(process.env).filter(([key]) => !key.startsWith("TN_CI_")),
+          ),
+          ...evidence,
+          TN_CI_NEEDS: JSON.stringify(needs),
+          ...environment,
+        },
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   }
 
   it("accepts only a validated classifier and all selected successful jobs", () => {
     const result = verify(fullPlan());
     expect(result.status, result.stdout + result.stderr).toBe(0);
+  });
+
+  it("isolates synthetic verdict fixtures from the enclosing hosted PR context", () => {
+    vi.stubEnv("TN_CI_EVENT", "pull_request");
+    vi.stubEnv("TN_CI_BASE_SHA", "a".repeat(40));
+    vi.stubEnv("TN_CI_HEAD_SHA", "b".repeat(40));
+    try {
+      const result = verify(fullPlan());
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it.each(["failure", "cancelled", "skipped", "neutral", "timed_out", ""])(
@@ -292,7 +536,18 @@ describe("PRD-373 fail-closed required verdict", () => {
     for (const headRef of ["develop", "feature/direct-main", `promotion/${"b".repeat(40)}`]) {
       const narrowed = verify(prosePlan(), {}, { ...environment, TN_CI_HEAD_REF: headRef });
       expect(narrowed.status, narrowed.stdout + narrowed.stderr).toBe(1);
-      expect(narrowed.stderr).toContain("CI_REQUIRED_MAIN_FULL");
+      expect(narrowed.stderr).toContain("CI_REQUIRED_QUALIFICATION_MINIMUM");
+    }
+  });
+
+  it("classifies the generated speed-loop record as prose, not a full board", () => {
+    // Only scripts/ci-speed-loop.mjs reads these files, and no CI job runs that script.
+    for (const file of [
+      "docs/ci-speed/ledger.json",
+      "docs/ci-speed/index.html",
+      "docs/ci-speed/runs/39070176677.jobs.json",
+    ]) {
+      expect(prosePlan(file).selection).toBe("prose");
     }
   });
 
@@ -367,7 +622,9 @@ describe("PRD-373 fail-closed required verdict", () => {
 describe("PRD-373 fixed full candidates and current package products", () => {
   it("pins every worker checkout to the captured candidate, including reusable native jobs", () => {
     expect(job("scope")).toContain("vars.TN_DEVELOP_CI_ENABLED == 'true' && 'develop'");
-    expect(source).toContain("github.event_name == 'pull_request' && 'latest' || github.run_id");
+    expect(source).toContain(
+      "github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.run_id",
+    );
     for (const relative of [".github/workflows/ci.yml", ".github/workflows/native-platforms.yml"]) {
       const workflow = readFileSync(path.join(repo, relative), "utf8");
       for (const [name, section] of jobSections(workflow)) {
@@ -399,6 +656,16 @@ describe("PRD-373 fixed full candidates and current package products", () => {
       git("init", "-q", "--initial-branch=main");
       git("config", "user.email", "ci@example.invalid");
       git("config", "user.name", "CI fixture");
+      mkdirSync(path.join(root, ".github/workflows"), { recursive: true });
+      writeFileSync(
+        path.join(root, ".github/workflows/integration.yml"),
+        readFileSync(path.join(repo, ".github/workflows/integration.yml")),
+      );
+      writeFileSync(
+        path.join(root, ".github/workflows/native-platforms.yml"),
+        readFileSync(path.join(repo, ".github/workflows/native-platforms.yml")),
+      );
+      copyTemplateOwnership(root, repo);
       writeFileSync(path.join(root, "seed"), "seed");
       git("add", ".");
       git("commit", "-qm", "seed");
@@ -429,12 +696,20 @@ describe("PRD-373 fixed full candidates and current package products", () => {
           ]),
         ),
       };
+      const evidence = integrationEvidence(
+        root,
+        path.join(root, "fixture-bin"),
+        plan,
+        true,
+        head,
+      ).env;
       const check = (baseSha: string) =>
         spawnSync(process.execPath, [path.join(repo, "scripts/ci-required.mjs")], {
           cwd: root,
           encoding: "utf8",
           env: {
             ...process.env,
+            ...evidence,
             TN_CI_NEEDS: JSON.stringify(needs),
             TN_CI_EVENT: "pull_request",
             TN_CI_CUTOVER: "true",
@@ -449,6 +724,67 @@ describe("PRD-373 fixed full candidates and current package products", () => {
       const stale = check("d".repeat(40));
       expect(stale.status).toBe(1);
       expect(stale.stderr).toContain("CI_REQUIRED_PR_CANDIDATE_MISMATCH");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // A stale recorded base must reject before a plan is emitted, exactly as the verdict's parent check does.
+  it("rejects a pull-request candidate whose recorded base is stale before emitting a plan", () => {
+    const root = makeTempDirSync("ci-stale-base-");
+    const git = (...args: string[]) => {
+      const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+      expect(result.status, result.stderr).toBe(0);
+      return result.stdout.trim();
+    };
+    try {
+      git("init", "-q", "--initial-branch=main");
+      git("config", "user.email", "ci@example.invalid");
+      git("config", "user.name", "CI fixture");
+      writeFileSync(path.join(root, "seed"), "seed");
+      git("add", ".");
+      git("commit", "-qm", "seed");
+      git("checkout", "-qb", "develop");
+      writeFileSync(path.join(root, "feature"), "feature");
+      git("add", ".");
+      git("commit", "-qm", "feature");
+      const head = git("rev-parse", "HEAD");
+      git("checkout", "-q", "main");
+      writeFileSync(path.join(root, "base"), "base");
+      git("add", ".");
+      git("commit", "-qm", "base");
+      const recordedBase = git("rev-parse", "HEAD");
+      writeFileSync(path.join(root, "newer"), "newer");
+      git("add", ".");
+      git("commit", "-qm", "moved base");
+      const currentBase = git("rev-parse", "HEAD");
+      git("merge", "--no-ff", "-qm", "candidate", "develop");
+      const live = ["--event-name", "pull_request", "--target", "develop", "--format", "github"];
+      const run = (...args: string[]) =>
+        spawnSync(process.execPath, [path.join(repo, "scripts/ci-change-scope.mjs"), ...args], {
+          cwd: root,
+          encoding: "utf8",
+          env: { ...process.env },
+        });
+      // The same merge fixture proves the guard accepts the candidate's own base and head.
+      const valid = run("--base", currentBase, "--head", head, ...live);
+      expect(valid.status, valid.stderr).toBe(0);
+      expect(valid.stdout).toContain("plan=");
+      // Every stale or incomplete base/head reaches the live guard, so each rejects before a plan.
+      const rejectedCases: readonly (readonly string[])[] = [
+        ["--base", recordedBase, "--head", head],
+        ["--base", recordedBase, "--head", head, "--target", "main"],
+        ["--base", recordedBase, "--head", head, "--full"],
+        ["--head", head],
+        ["--base", currentBase],
+      ];
+      for (const args of rejectedCases) {
+        // live first so a per-case --target (main) overrides the shared develop default.
+        const rejected = run(...live, ...args);
+        expect(rejected.status, rejected.stderr).toBe(2);
+        expect(rejected.stderr).toContain("CI_REQUIRED_PR_CANDIDATE_MISMATCH");
+        expect(rejected.stdout).not.toContain("plan=");
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -473,7 +809,39 @@ describe("PRD-373 fixed full candidates and current package products", () => {
     expect(cache).toContain("packages/runtime-native/scripts/**");
     expect(native).toContain("$ImageVersion");
     expect(native).toContain("c++ --version");
+    // CMakeCache.txt records its absolute source path, so a tree from another checkout path fails.
+    expect(native.split("\n").find((line) => line.includes('identity="$(')) ?? "").toContain(
+      "$GITHUB_WORKSPACE",
+    );
     expect(cache).not.toContain("restore-keys:");
+  });
+
+  it("publishes both base-branch caches from a develop push, ungated by the selection", () => {
+    // A pull request's cache is scoped to its own merge ref and no other pull request reads it, so
+    // the only thing that can warm the base branch is a run on the base branch — and only if these
+    // two jobs actually save when they run there.
+    const producer = job("build-artifacts");
+    expect(producer).toContain("uses: ./.github/actions/workspace-dist");
+    expect(producer).not.toContain('save-bundles: "false"');
+    // The shared action publishes on a cache miss, which is the same condition on develop as on any
+    // other branch. A gate naming the selection or the branch is what would stop the warm lane.
+    const action = readFileSync(
+      path.join(repo, ".github/actions/workspace-dist/action.yml"),
+      "utf8",
+    );
+    const save = action.slice(action.indexOf("- name: Save validated workspace bundles"));
+    expect(save).toContain("steps.dist.outputs.cache-hit != 'true'");
+    expect(save).not.toMatch(/selection|main|develop/u);
+  });
+
+  it("leaves the native cache saves to the cache action's own post step", () => {
+    const native = job("test-native");
+    for (const key of ["native-third-party-", "native-ccache-ci-test-native-", "native-build-"]) {
+      expect(native, `the warm lane no longer publishes ${key}`).toContain(`key: ${key}`);
+    }
+    // `actions/cache` saves in its post step on any successful run, so no step here may be gated on
+    // a full selection — that is the gate that would silently stop the develop push from warming.
+    expect(native).not.toMatch(/^ {6}if:.*selection == 'full'/mu);
   });
 
   it("repacks changed template bytes even when compiled bundles remain unchanged", () => {

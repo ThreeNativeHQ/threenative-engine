@@ -134,13 +134,14 @@ async function makeWorld(
   now?: () => number,
   rebuildsPerUpdate?: number,
   admissionBudgetMs = Number.POSITIVE_INFINITY,
+  position = cellCenter(1, 1),
 ): Promise<WorldCells> {
   stubRingFetch();
   return WorldCells.load({
     admissionBudgetMs,
     admissionNow: now,
     budgets,
-    follow: { position: cellCenter(1, 1) },
+    follow: { position },
     loadModel: async () => model(),
     prefetchSeconds: 0,
     rebuildsPerUpdate,
@@ -233,6 +234,88 @@ afterEach(() => {
 });
 
 describe("a streamed world's shadow invalidation", () => {
+  it("batches pure admissions with their own source bounds", async () => {
+    const regions: (IShadowRegion | undefined)[] = [];
+    let clock = 0;
+    const world = await makeWorld(
+      (region) => regions.push(region),
+      () => clock,
+    );
+    try {
+      for (let frame = 0; frame < 80; frame += 1) {
+        world.update();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      regions.length = 0;
+      clock = 1000;
+      world.update();
+      expect(regions).toHaveLength(1);
+      expect(regions[0]).toMatchObject({ admission: true });
+      const first = cellCenter(0, 0);
+      const last = cellCenter(2, 2);
+      expect(regions[0]).toMatchObject({
+        min: { x: first.x - 1, y: -2, z: first.z - 1 },
+        max: { x: last.x + 1, y: 2, z: last.z + 1 },
+      });
+      clock = 2000;
+      world.update();
+      expect(regions).toHaveLength(1);
+    } finally {
+      world.dispose();
+    }
+  });
+
+  it("keeps admissions and evictions in separate rate-limited regions", async () => {
+    const regions: (IShadowRegion | undefined)[] = [];
+    const position = cellCenter(0, 0);
+    let clock = 0;
+    const world = await makeWorld(
+      (region) => regions.push(region),
+      () => clock,
+      undefined,
+      Number.POSITIVE_INFINITY,
+      position,
+    );
+    try {
+      for (let frame = 0; frame < 80; frame += 1) {
+        world.update();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      clock = 1000;
+      world.update();
+      regions.length = 0;
+      Object.assign(position, cellCenter(1, 2));
+      for (let frame = 0; frame < 80; frame += 1) {
+        world.update();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      expect(regions).toHaveLength(0);
+      clock = 2000;
+      world.update();
+      expect(regions).toHaveLength(2);
+      const admission = regions.find((region) => region?.admission === true);
+      const eviction = regions.find((region) => region !== undefined && !region.admission);
+      expect(admission).toBeDefined();
+      expect(eviction).toBeDefined();
+      expect(eviction?.max.z).toBe(cellCenter(1, 0).z + 1);
+      expect(admission?.max.x).toBe(cellCenter(2, 2).x + 1);
+      // Hysteresis and refiltering choose the changed cells; every edge still comes from a source.
+      for (const region of [admission, eviction]) {
+        expect(region).toMatchObject({ min: { y: -2 }, max: { y: 2 } });
+        for (const axis of ["x", "z"] as const) {
+          const centers = [0, 1, 2].map((index) => cellCenter(index, index)[axis]);
+          expect(centers.map((center) => center - 1)).toContain(region?.min[axis]);
+          expect(centers.map((center) => center + 1)).toContain(region?.max[axis]);
+        }
+      }
+      clock = 3000;
+      world.update();
+      expect(regions).toHaveLength(2);
+    } finally {
+      world.dispose();
+    }
+  });
+
   it("hands the levels the changed records' own bounds, so a change far from the player leaves the fine level alone", async () => {
     const regions: (IShadowRegion | undefined)[] = [];
     // The world's own clock, which jumps a second per reading: the tell is at most one a second,
@@ -289,7 +372,7 @@ describe("a streamed world's shadow invalidation", () => {
     world.dispose();
   });
 
-  it("keeps a ground cover asset's wide caster off every wide level, and off no fine one", async () => {
+  it("keeps resolvable ground-cover shadows on coarse levels as well as the fine level", async () => {
     const scene = new Scene();
     const light = new DirectionalLight(0xffffff, 1);
     // Off vertical: a sun exactly overhead leaves the level camera's own placement degenerate,
@@ -351,16 +434,15 @@ describe("a streamed world's shadow invalidation", () => {
       "ground cover lost its caster clusters",
     ).toBe(true);
 
-    // Only the finest level renders the small-caster layer, so only it draws a fern: the tree's wide
-    // caster is a coarse level's draw and stays one.
+    // Both levels resolve this fixture's metre-wide parts; authored height cannot drop them.
     expect(
       ((draws.masks.get(0) ?? 0) & SMALL_MASK) !== 0,
       "the finest level did not render the small-caster layer",
     ).toBe(true);
     expect(
       (draws.masks.get(1) ?? 0) & SMALL_MASK,
-      "a wide level rendered the small-caster layer",
-    ).toBe(0);
+      "the coarse level lost resolved small casters",
+    ).toBe(SMALL_MASK);
     const fine = draws.submitted.get(0) ?? new Set<string>();
     const coarse = draws.submitted.get(1) ?? new Set<string>();
     expect(
@@ -369,8 +451,8 @@ describe("a streamed world's shadow invalidation", () => {
     ).toBe(true);
     expect(
       [...coarse].some((name) => name.startsWith(`${SMALL_ASSET}:`)),
-      "a wide level still drew a fern's caster",
-    ).toBe(false);
+      "the coarse level lost a resolved ground-cover caster",
+    ).toBe(true);
     expect(
       [...coarse].some((name) => name.startsWith(`${TALL_ASSET}:`)),
       "a wide level stopped drawing a tree's caster",

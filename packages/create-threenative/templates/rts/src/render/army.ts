@@ -68,7 +68,10 @@ const _work = new Color(0x77eddf);
 const _queue = new Color(0x77cddd);
 const _backing = new Color(palette.gridLine);
 
-export function createArmy(models: IUnitModels): IArmy {
+export function createArmy(
+  models: IUnitModels,
+  receivers: { added?: (mesh: Object3D) => void; removed?: (mesh: Object3D) => void } = {},
+): IArmy {
   const root = new Object3D();
   const batches = new Map<string, IBatch>();
   const markers: IMarker[] = [];
@@ -137,6 +140,7 @@ export function createArmy(models: IUnitModels): IArmy {
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;
       root.add(mesh);
+      receivers.added?.(mesh);
       return mesh;
     });
     const made: IBatch = { list: [], parts };
@@ -290,7 +294,11 @@ export function createArmy(models: IUnitModels): IArmy {
     dispose: () => {
       // The model geometries belong to `models`, which frees them; the materials are shared by
       // every model and by a later rebuild, so nothing here disposes one.
-      for (const entry of batches.values()) for (const part of entry.parts) root.remove(part);
+      for (const entry of batches.values())
+        for (const part of entry.parts) {
+          receivers.removed?.(part);
+          root.remove(part);
+        }
       batches.clear();
       for (const ring of rings) {
         ring.geometry.dispose();

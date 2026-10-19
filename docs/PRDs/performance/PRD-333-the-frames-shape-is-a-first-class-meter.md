@@ -7,6 +7,7 @@ prd_contract: v1
 **Status:** PROPOSED, filed 2026-09-02 against `8d680023`. Planning only. Nothing here is
 implemented.
 
+**Priority:** P2 — Proposed allocation-free pass counters with a same-session overhead gate.
 **Complexity:** +2 (6–10 files) + 2 (new module: a portable counter installed on a browser
 global) + 2 (multi-package: `core`, `playtest`, `runtime-native`) = **6 → MEDIUM mode**.
 Automated checkpoint after every phase; add a manual checkpoint after Phase 3 (device/desktop

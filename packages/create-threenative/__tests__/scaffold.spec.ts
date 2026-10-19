@@ -16,6 +16,7 @@ import {
 import path from "node:path";
 import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
+import { read as readKTX2 } from "ktx-parse";
 import { describe, expect, it } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -85,6 +86,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // capability reference derived from it, and every scaffold embeds both, so exporting one public
 // symbol moves every template's bytes. Six of the seven moved for that reason alone; platformer
 // also carries its chasers' route change.
+// Recomputed 2026-10-02 for create-threenative 0.2.8: every template pins the scaffolder version.
 // Recomputed 2026-08-31 from the values CI measured, not from a local run.
 //
 // These were updated three times in a row and were wrong all three times, because they were
@@ -163,7 +165,46 @@ const BUG_REPORT_SKILL_PATHS = [
 // all ten hashes to the values above, so nothing else in this lane reaches a scaffold. The docs
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
+// Recomputed 2026-10-03 for PRD-339's opt-in exposure integration at 8bf16f4c3.
+// All thirteen actual no-install baseline52/current trees were byte-compared: only the
+// generated worldEnvironment/autoExposure/quality wiring, two GPU/readback helper modules,
+// and token-identical instruction whitespace changed. Default cost remains off; actual
+// consumer GPU captures are byte-identical to the qualified public images. Measurement:
+// docs/verification/prd339-exposure-proof/completion-consumer-8bf16f4.json.
+// Current develop c18a42b integration: all13 actual generated trees were byte-compared
+// against reviewed 8bf trees; only the copied Three compute-only Storage3DTexture patch changed.
+// Recomputed in the isolated PR398 lane for linear coverage blending and coherent input moments;
+// actual no-install generation changes only starter. All thirteen generator hashes were measured.
+// Recomputed for the additional matched-surface depth guard; all other twelve stay unchanged.
+// Recomputed for bounded integer depth donors; actual no-install generation changes only starter.
+// Recomputed after existing temporal declarations moved; all thirteen trees measured, only starter moves.
+// Re-measured on current develop plus TS7: restoring only each compiler manifest and
+// rain's shader API import recovers all 13 develop fingerprints.
+// PR388 producer delivery: compared all 13 immutable eab0cdbfe/generated trees. Only
+// package.json patch declarations and copied Vite/Tailwind patch bytes differ; every other
+// generated file remains byte-identical. Fingerprints still cover the complete tree.
+// PR381 color/depth attachment caches: all thirteen actual createProject trees change only in the
+// copied Three patch. Restoring the previous patch bytes recovers every published fingerprint.
+// PR381 bounded compressed uploads: all thirteen actual trees change only in the copied
+// Three patch. Restoring the previous patch recovers every prior fingerprint.
+// Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
+// package patch embedded by every scaffold. No template, capability or appearance change.
+// Recomputed 2026-10-15 for the native engine default (PRD-573): every template AGENTS.md/CLAUDE.md pair gains
+// an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
+// Recomputed 2026-10-18 through all thirteen actual createProject trees after release-cohort preparation and Sailing motion repair.
+// Re-measured all 13 trees for the SMAA mip0 patch; restoring only copied patch bytes recovers every prior hash.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-10-17 for the engine rename ("native" -> "threenative", "legacy" -> "threejs"):
+  // every template's AGENTS/CLAUDE engine section and the pinned configs. Measured by this test.
+  // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
+  // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
+  // Measured by the actual thirteen-tree createProject equality test on the Oct 6
+  // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
+  // Measured through all thirteen actual createProject trees on the Oct 4 published-head
+  // merge with develop 15adf350; preserves Strata instructions and develop template changes.
+  // Recomputed 2026-10-01 on merging develop (#375, #376) into the PRD-466/467/468 branch: every
+  // template AGENTS/CLAUDE pair keeps the optional terrain reference sentence. Values are the
+  // observed no-install createProject trees of the merged tree.
   // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
   // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
   // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
@@ -180,17 +221,68 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
   // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
   // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
-  "action-rpg": "e477cb8fe35157325e234e07bcbb3e7b09a69bb43c94ff2f591f7ee02bc30c48",
-  minimal: "62875da8b839633c518a8f52eb66ebb74a421c271f21bf6a0cdce54b83642082",
-  platformer: "b09a698711561333be22eefa98e9d0b454124bda9a9dcb6a72fad3fd156e5ed5",
-  puzzle: "759634702a6da8c8f70203aeaa5ac6d7163fd275920a084fcbfc10477562edc3",
-  racing: "384c151639f267d1fa530fd3f0b71f7cd5a2249b5eb4817598d35050cedbe3c6",
-  rts: "d2c9eaa70d55b4f99943448444e43e107bbaadea1a4162474a35ffb494a94a62",
-  runner: "d52219261507b0949aeb96f0d865adf81f9dddae6a8ee99f050e21e3ec3c6977",
-  sailing: "718fd70cef653ec6ccdf99ea1dc8a0510479974e19d95acdca60ec1411c0fe10",
-  shooter: "0369a3a146585111d7d2355b887ae7a22b5278e17a84d0324949f3c8ad8c1933",
-  starter: "53d57f84f19160bec1e15147366e0f9bc8fd06d03f11bf050d23fda3a236e239",
-  "tower-defense": "b87e3a3626c0ef744cf24cf106b1e85a51c010856f2f6acc60f6bf7c65f27246",
+  // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
+  // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
+  // all thirteen trees, rain and snow included, were re-measured through createProject.
+  // Recomputed 2026-10-02 rebasing the FabCLI manual-login fallback onto develop: the shared
+  // threenative-assets skill ships in every scaffold, so all thirteen trees move.
+  // Recomputed 2026-10-02 on the merge of develop 114e268ef into the strata branch
+  // (PRD-466/467/468): the merged tree carries both sides' template bytes, so eleven trees were
+  // re-measured through createProject. Rain and snow carry none of this branch's template changes
+  // and kept develop's values.
+  // Measured through actual createProject trees after exposure/fog consolidation and restamping,
+  // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
+  // `patches/three@0.185.1.patch` is the only byte that moved on top of the exposure/fog tree, so
+  // all thirteen trees move again. Values below are the merged-tree measurement, not either side's.
+  // Recomputed on the PRD-478 merge into PR 473 (develop b12b257f1 + the runbook branch): the
+  // merged Three patch changes every kit; starter also carries the merged render source.
+  // Recomputed 2026-10-09 on the merge of develop (31 commits, PRD-494 sharded bundles) into the
+  // strata branch: measured through createProject on the merged tree.
+  // Recomputed 2026-10-10 after integrating develop 1a5314a1: measured through createProject on
+  // the merged tree, including its latest template changes.
+  // PRD-560 (2026-10-10): the eleven FogExp2 kits carry height fog (heightFog.ts, sky.ts, AGENTS.md);
+  // rain and tower-defense had no height-fog change in that merge. Seven kits at the 150 m scale then
+  // took density 0.0018 so ridges read clearer than low ground (AC-1b).
+  // Recomputed through all thirteen actual createProject trees after merging develop 2d2124792
+  // into PRD-571; these fingerprints cover both the exposure and landed base changes.
+  // Recomputed 2026-10-11 after merging develop b4e74627f into PRD-563: measured through
+  // createProject on the merged tree, including the GPU-class start tier in every kit.
+  // Recomputed 2026-10-11 for the PRD-563 render-chain tier fix: ten kits' medium presets now request
+  // the medium chain, the four flat-high scenarios gained family and software rows, and every
+  // render-chain scenario names the GPU families. Measured by the same actual-tree test; snow moves not.
+  // Recomputed 2026-10-11 for the PRD-563 grade table upload as half floats: only starter's grade.ts
+  // and postprocessing.ts changed, and the actual-tree test moved only starter.
+  // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
+  // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
+  // createProject on the merged tree.
+  // PRD-566/569/609 merge: measured all thirteen trees; action-rpg carries emitParticle bursts and onCull instructions.
+  // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
+  // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
+  // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
+  // Recomputed 2026-10-15: puzzle drops its legacy pin and its Engine paragraph (PRD-617); the other twelve are unchanged.
+  // Recomputed 2026-10-15 through createProject after recovery: all kits now share the decoder-aware asset watch.
+  // Recomputed 2026-10-18: a queue-fenced renderer prepares PMREMNode textures asynchronously; only the patch bytes move.
+  // Recomputed 2026-10-18: the Three patch groups async PMREM face fences by GPU cost; only the patch bytes move, so all thirteen trees change.
+  // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
+  // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
+  // boot-failure text both engines now show, so only puzzle's tree moves.
+  "action-rpg": "fe5a4a777f4e221094d111166521f482eecbbe88473721fd0e11209aa90289ef",
+  minimal: "3605632fe648cd2e8f144cdcf86ced58a3b3dbb6698d1014f52b818905ad26f7",
+  platformer: "6a47f1b8e2f293dbc112177307faaa22e63a8ab68b0a3b7fbb6edffe02ba199a",
+  puzzle: "51f8cb08471b9eb42017c8e66a1dfe1d09ae91b885e5cf3f33aea6cf7431613e",
+  racing: "e72b20d0ace2c958a7713e558887fac9f928a7164effd2a261b8049ad047ebac",
+  rain: "74c1d142ae51b6ec1ff30bcd013c47aa740816dac4e52572e0f4031851a0bd16",
+  rts: "088fd5eb481190d8c21b8d36c8ec1ab24b4a4c8e55f4c17c24567312e2b8183c",
+  runner: "09a62f1c2c82a8a012ef1d6cd7e978680399089139430370c4cb20df9e68421f",
+  // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
+  sailing: "3b591f15aa6000de8720166be330427b81a4dd17af46d66653ee1821a2bd52fb",
+  shooter: "99985dd51b67ae0a40a4930a76ccc9d1031b40f07cfb83112a2ed93052aad66c",
+  snow: "ea34babbdd0b128070c4b75529245cabe7bb865d476d1aadf07749f2c5f20461",
+  // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
+  // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
+  // to stay under the 200-line render-file cap; only starter's tree moves.
+  starter: "b73e9c2e115b9347ee8ea3dfcb768c622558eba0c171e115d4122ea14bca0704",
+  "tower-defense": "93eef51fb1b6238eba3674a98cafce9117a52ceac40e13e6b4de75618c1b0800",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -273,6 +365,8 @@ const STARTER_PATHS = [
   "kit.json",
   "package.json",
   "patches/three@0.185.1.patch",
+  "patches/vite@8.2.0.patch",
+  "patches/@tailwindcss__node@4.3.3.patch",
   "threenative.config.ts",
   "tools/look.mjs",
   "scripts/reference.mjs",
@@ -287,7 +381,25 @@ const STARTER_PATHS = [
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
+  "src/render/qualityPolicy.ts",
   "src/render/worldEnvironment.ts",
+  "src/render/temporalAA.ts",
+  "src/render/temporalAAInput.ts",
+  "src/render/temporalAAResolve.ts",
+  "src/render/temporalCurrentArea.ts",
+  "src/render/temporalCurrentFootprint.ts",
+  "src/render/temporalCurrentFootprintMath.ts",
+  "src/render/temporalCurrentProducer.ts",
+  "src/render/temporalCurrentReplay.ts",
+  "src/render/temporalCurrentSelection.ts",
+  "src/render/temporalCurrentVisibility.ts",
+  "src/render/temporalResolve.ts",
+  "src/render/exposure.ts",
+  "src/render/autoExposure.ts",
+  "src/render/volumetricFog.ts",
+  "src/render/volumetricFogOptions.ts",
+  "src/render/volumetricFogVolume.ts",
+  "src/render/volumetricFogTransport.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/arena.ts",
@@ -306,10 +418,12 @@ const STARTER_PATHS = [
   "src/ui/main.tsx",
   "src/ui/App.tsx",
   "src/state.ts",
-  // PRD-449: three, and only the three that prove a new game works. The other 21 are engine
-  // guards in `packages/create-threenative/template-playtests/starter/`, which `pnpm test:templates`
-  // copies into the scaffold; the "exactly three" assertion below is what keeps them out.
+  // Ship the starter smoke, outcome, readiness and movement scenarios. Engine guards stay in
+  // `packages/create-threenative/template-playtests/starter/`, copied by `pnpm test:templates`.
   "playtests/survives.playtest.json",
+  "playtests/movement.playtest.json",
+  "playtests/live/smooth-motion.playtest.json",
+  "native-playtests/smooth-motion.playtest.json",
   "playtests/play.playtest.json",
   "native-playtests/react-hud.playtest.json",
   "playtests/production-readiness.playtest.json",
@@ -358,6 +472,7 @@ const PLATFORMER_PATHS = [
   "src/render/postprocessing.ts",
   "src/render/props.ts",
   "src/render/sky.ts",
+  "src/render/skyEnvironment.ts",
   "src/render/scenery.ts",
   "src/render/walkers.ts",
   "src/render/waterfall.ts",
@@ -456,6 +571,9 @@ describe("create-threenative", () => {
         );
         expect(PRD_201_PARENT_SCAFFOLD_HASHES[template]).toBeDefined();
         actual[template] = await scaffoldTreeHash(target);
+        if (template === "platformer") {
+          await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
+        }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
     } finally {
@@ -743,46 +861,63 @@ describe("create-threenative", () => {
   );
 
   it("keeps the starter's shipped assets mobile-shippable", async () => {
-    // Mobile has no WebAssembly, so neither Basis-decoded textures nor Meshopt-decoded geometry
-    // can ship there — the red hit on 2026-08-27: `build:android` on a machine with the Basis
-    // encoder refused TN_NATIVE_KTX2_UNSUPPORTED on a starter scaffold that had built clean the
-    // week before, purely because the encoder got installed in between.
-    //
-    // The template used to pin `models`/`textures` to `"none"` to prevent it, which held for
-    // android and followed the same game onto web: one shipped 2,003 MB of manifest output with
-    // no compressed texture in it. The build names its `--target` and the compile step now drops
-    // the passes that target cannot decode, so this asserts what a mobile bake *produces* rather
-    // than what the config file says — and the web bake of the same config stays compressed.
+    // Decoder-free mobile cooking may emit raw ASTC, while Basis and Meshopt still need decoders.
+    // Check the produced KTX2 headers rather than treating every KTX2 as Basis.
     const root = await makeTempDir("threenative-scaffold-mobile-");
     try {
       await mkdir(path.join(root, "assets"), { recursive: true });
       await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
         recursive: true,
       });
-      const channel = (x: number, y: number, shift: number): number => {
+      // Gradients with ±3 levels of noise resist PNG compression without violating PRD-351's quality floor like pure noise.
+      const noise = (x: number, y: number, shift: number): number => {
         let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
         value ^= value >>> 16;
-        return value >>> shift;
+        return ((value >>> shift) % 7) - 3;
       };
       await writeFile(
         path.join(root, "assets", "web-codec-proof.png"),
         rgbaPng({
-          blue: (x, y) => channel(x, y, 16),
-          green: (x, y) => channel(x, y, 8),
+          blue: (x, y) => 48 + Math.floor((x + y) / 2) + noise(x, y, 16),
+          green: (x, y) => 48 + y + noise(x, y, 8),
           height: 128,
-          red: (x, y) => channel(x, y, 0),
+          red: (x, y) => 48 + x + noise(x, y, 0),
           width: 128,
         }),
       );
 
-      await compileAssets({ cwd: root, platform: "android" });
+      await compileAssets({
+        cwd: root,
+        platform: "android",
+        runtimeDecoders: { ktx2: false, meshopt: false },
+      });
       const android = JSON.parse(
         await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
-      ) as { entries: Record<string, { extensions?: string[]; output: string }> };
+      ) as { entries: Record<string, { extensions?: string[]; output: string; format?: string }> };
       const mobileOutputs = Object.values(android.entries);
       expect(mobileOutputs.length).toBeGreaterThan(0);
+      expect(
+        mobileOutputs.some((entry) => /\.ktx2$/u.test(entry.output) && entry.format === "astc4x4"),
+      ).toBe(true);
       for (const entry of mobileOutputs) {
-        expect(entry.output).not.toMatch(/\.ktx2$/u);
+        if (/\.ktx2$/u.test(entry.output)) {
+          const raw = readKTX2(await readFile(path.join(root, "public", entry.output)));
+          expect([157, 158]).toContain(raw.vkFormat);
+          expect(raw.supercompressionScheme).toBe(0);
+          expect(raw.globalData).toBeNull();
+          const levels = Math.floor(Math.log2(Math.max(raw.pixelWidth, raw.pixelHeight))) + 1;
+          expect(raw.levelCount).toBe(levels);
+          expect(raw.levels).toHaveLength(levels);
+          for (const [mip, level] of raw.levels.entries()) {
+            const bytes =
+              Math.ceil(Math.max(1, raw.pixelWidth >> mip) / 4) *
+              Math.ceil(Math.max(1, raw.pixelHeight >> mip) / 4) *
+              16;
+            expect(level.levelData.byteLength).toBe(bytes);
+            expect(level.uncompressedByteLength).toBe(bytes);
+          }
+          expect(entry.format).toBe("astc4x4");
+        }
         expect(entry.extensions ?? []).not.toContain("EXT_meshopt_compression");
       }
 
@@ -813,6 +948,8 @@ describe("create-threenative", () => {
       };
       expect(packageManifest.pnpm?.patchedDependencies).toEqual({
         "three@0.185.1": "patches/three@0.185.1.patch",
+        "vite@8.2.0": "patches/vite@8.2.0.patch",
+        "@tailwindcss/node@4.3.3": "patches/@tailwindcss__node@4.3.3.patch",
       });
       expect(STARTER_PATHS).toContain("playtests/survives.playtest.json");
       for (const relativePath of STARTER_PATHS) {
@@ -820,7 +957,7 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
-      // The whole point of the cut (PRD-449): a new game proves itself with three scenarios, and
+      // The whole point of the cut (PRD-449): a new game proves itself with four scenarios, and
       // the engine's own guards live outside the template. `readdir` rather than the STARTER_PATHS
       // membership, so a file nobody added to the list still fails here.
       expect(
@@ -828,6 +965,7 @@ describe("create-threenative", () => {
           name.endsWith(".playtest.json"),
         ),
       ).toEqual([
+        "movement.playtest.json",
         "play.playtest.json",
         "production-readiness.playtest.json",
         "survives.playtest.json",
@@ -965,6 +1103,15 @@ describe("create-threenative", () => {
         { install: false, target: "minimal-bundle", template: "minimal" },
         root,
       );
+      // This build checks core's bundle, not an engine: it names the legacy engine so it needs no Wasm module.
+      const configPath = path.join(result.target, "threenative.config.ts");
+      await writeFile(
+        configPath,
+        (await readFile(configPath, "utf8")).replace(
+          "const config: IThreeNativeConfig = {",
+          'const config: IThreeNativeConfig = {\n  engine: "threejs",',
+        ),
+      );
       const scope = path.join(result.target, "node_modules", "@threenative");
       await mkdir(scope, { recursive: true });
       await symlink(path.resolve("packages/core"), path.join(scope, "core"), "dir");
@@ -1031,7 +1178,7 @@ describe("create-threenative", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  }, 15_000);
+  });
 
   it("should parse the no-install and template flags", () => {
     expect(parseArgs(["my-game", "--template", "minimal", "--no-install"])).toEqual({

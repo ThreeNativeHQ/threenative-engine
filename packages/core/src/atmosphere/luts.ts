@@ -4,7 +4,7 @@ import {
   exp,
   float,
   instanceIndex,
-  textureLoad,
+  texture,
   textureStore,
   uniform,
   uvec2,
@@ -180,18 +180,8 @@ function bakeTransmittance(
   });
 }
 
-function sampleLut(
-  texture: StorageTexture,
-  resolution: IAtmosphereLutResolution,
-  uv: Node<"vec2">,
-): TextureNode {
-  return textureLoad(
-    texture,
-    uv
-      .clamp(0, 1)
-      .mul(vec2(resolution.width - 1, resolution.height - 1))
-      .toIVec2(),
-  );
+function sampleLut(target: StorageTexture, uv: Node<"vec2">): TextureNode {
+  return texture(target, uv.clamp(0, 1)).level(float(0));
 }
 
 function bakeMultiScattering(
@@ -199,12 +189,11 @@ function bakeMultiScattering(
   resolution: IAtmosphereLutResolution,
   parameterUniforms: IParameterUniforms,
   transmittance: StorageTexture,
-  transmittanceResolution: IAtmosphereLutResolution,
 ): ComputeNode {
   return bake2d(target, resolution, (uv) => {
     const altitudeWeight = float(1).sub(uv.y);
     const angularWeight = float(0.5).add(uv.x.mul(0.5));
-    const directTransmittance = sampleLut(transmittance, transmittanceResolution, uv).rgb;
+    const directTransmittance = sampleLut(transmittance, uv).rgb;
     const scattering = parameterUniforms.rayleigh
       .mul(altitudeWeight)
       .add(parameterUniforms.mie.mul(angularWeight))
@@ -218,15 +207,13 @@ function bakeSkyView(
   resolution: IAtmosphereLutResolution,
   parameterUniforms: IParameterUniforms,
   transmittance: StorageTexture,
-  transmittanceResolution: IAtmosphereLutResolution,
   multiScattering: StorageTexture,
-  multiScatteringResolution: IAtmosphereLutResolution,
 ): ComputeNode {
   return bake2d(target, resolution, (uv) => {
     const horizonWeight = float(1).sub(uv.y).max(0);
     const sunWeight = float(0.25).add(uv.x.mul(0.75));
-    const directTransmittance = sampleLut(transmittance, transmittanceResolution, uv).rgb;
-    const higherOrderScattering = sampleLut(multiScattering, multiScatteringResolution, uv).rgb;
+    const directTransmittance = sampleLut(transmittance, uv).rgb;
+    const higherOrderScattering = sampleLut(multiScattering, uv).rgb;
     const scattering = parameterUniforms.rayleigh
       .mul(horizonWeight.mul(1.5))
       .add(parameterUniforms.mie.mul(sunWeight))
@@ -266,16 +253,13 @@ export class AtmosphereLuts {
         this.resolutions.multiScattering,
         this.uniforms,
         this.transmittance,
-        this.resolutions.transmittance,
       ),
       bakeSkyView(
         this.skyView,
         this.resolutions.skyView,
         this.uniforms,
         this.transmittance,
-        this.resolutions.transmittance,
         this.multiScattering,
-        this.resolutions.multiScattering,
       ),
     ];
     this.#hash = hashParameters(resolved, this.resolutions);
@@ -296,11 +280,11 @@ export class AtmosphereLuts {
   }
 
   sampleTransmittance(uv: Node<"vec2">): TextureNode {
-    return sampleLut(this.transmittance, this.resolutions.transmittance, uv);
+    return sampleLut(this.transmittance, uv);
   }
 
   sampleSkyView(uv: Node<"vec2">): TextureNode {
-    return sampleLut(this.skyView, this.resolutions.skyView, uv);
+    return sampleLut(this.skyView, uv);
   }
 
   dispose(): void {

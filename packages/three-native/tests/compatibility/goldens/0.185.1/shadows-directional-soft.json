@@ -1,0 +1,51 @@
+{
+  "name": "shadows-directional-soft",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a directional light's PCF shadow map (bias, normalBias, a fitted orthographic shadow camera, 1024 map) on Standard, Lambert and Phong meshes; the box casts but does not receive, and a slab inside the sphere's shadow does neither — the same scene with a 48-texel map, so each filter's footprint spans many pixels, under PCFSoftShadowMap (PCFSoftShadowFilter's four gathers)",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "sun",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:c008000000000000,n:4014000000000000,n:c008000000000000,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, 5, -3, 1"
+    },
+    {
+      "index": 2,
+      "id": "sun",
+      "kind": "number",
+      "path": "shadow.bias",
+      "value": "n:bf40624dd2f1a9fc",
+      "decimal": "-0.0005"
+    },
+    {
+      "index": 3,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:2a64ede20ba8f4b7faaec75d685c2039abb0f3128c2a5ae79c77daec0656d74f",
+      "decimal": "2a64ede20ba8f4b7faaec75d685c2039abb0f3128c2a5ae79c77daec0656d74f"
+    }
+  ],
+  "render": {
+    "png": "shadows-directional-soft.png",
+    "pngSha256": "2a64ede20ba8f4b7faaec75d685c2039abb0f3128c2a5ae79c77daec0656d74f",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "rain-native-boot",
+  "schemaVersion": 1,
+  "target": "desktop",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "artifacts": { "screenshots": "after" },
+  "steps": [{ "kind": "wait", "waitTicks": 120, "release": true }],
+  "assert": {
+    "resources": [{ "id": "state", "path": "elapsed", "changed": true }],
+    "renderChain": {
+      "tier": "high",
+      "perAdapter": {
+        "integrated": { "stages": { "includes": ["stormPost"] }, "tier": "medium" },
+        "mobile-high": { "stages": { "includes": ["stormPost"] }, "tier": "medium" },
+        "mobile-low": { "stages": { "includes": ["stormPost"] }, "tier": "low" },
+        "mobile-mid": { "stages": { "includes": ["stormPost"] }, "tier": "low" },
+        "software": { "stages": { "includes": ["stormPost"] }, "tier": "low" }
+      },
+      "stages": { "includes": ["stormPost"] }
+    }
+  }
+}

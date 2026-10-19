@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-274 — every `realism-effects` export has a named, tested equivalent, and the mapping is a gate
 
 **Status:** PROPOSED — filed 2026-08-30, measured at `1eeecf1e`. Depends on
-[PRD-266](../../useful-defaults/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md),
+PRD-266,
 [PRD-273](./PRD-273-the-three-effects-with-no-upstream-node-ship-as-template-source.md). Batch:
 [docs/PRDs/realism-effects](./README.md).
 

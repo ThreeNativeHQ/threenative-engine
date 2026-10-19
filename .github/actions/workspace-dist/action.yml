@@ -22,6 +22,16 @@ inputs:
       workspace product.
     required: false
     default: "true"
+  shared-artifact:
+    description: >-
+      Name of this run's uploaded workspace to take the compiled bundles from, instead of restoring
+      them from the cache or building them again. Empty for the job that produces the workspace.
+      Consumers set it because they all `needs:` that producer: an unfiltered `needs: scope` starts
+      them in parallel with it, so every one of them looked for a key nobody had saved yet and
+      compiled the workspace itself (measured at 71-95s each, nine times a run, PRD-481). Such a
+      consumer must keep `save-bundles: "false"` — there is no key of its own to publish.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -32,6 +42,14 @@ runs:
       run: |
         echo "node=$(node --version)" >> "$GITHUB_OUTPUT"
         echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+    # The producer's own path is below: restore the key, or build it when the key misses. Every
+    # consumer takes the upload instead, which is this run's exact bytes for this commit rather than
+    # whichever earlier run last published this key.
+    - name: Take the compiled workspace from this run's producer
+      if: inputs.shared-artifact != ''
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.shared-artifact }}
     # The key names everything the bundles are built from and nothing else. `src/**`, the package
     # manifests, the tsup configs, the per-package generators that write files into the bundle, and
     # the script that decides which packages get built at all. Templates are deliberately absent:
@@ -43,6 +61,7 @@ runs:
     # rebuild nobody needed.
     - name: Restore the compiled workspace
       id: dist
+      if: inputs.shared-artifact == ''
       uses: actions/cache/restore@v4
       env:
         # Rebuilding these small bundles is cheaper than the default ten-minute segment wait.
@@ -62,13 +81,13 @@ runs:
         echo "workspace dist restored for these sources; skipping the build"
         node packages/core/scripts/bundle-engine-mcp.mjs
     - name: Build missing workspace bundles
-      if: steps.dist.outputs.cache-hit != 'true'
+      if: steps.dist.outputs.cache-hit != 'true' && inputs.shared-artifact == ''
       shell: bash
       run: |
         set -euo pipefail
         pnpm tsx scripts/workspace-packages.ts build
     - name: Pack current workspace files
-      if: inputs.pack-archives != 'false'
+      if: inputs.pack-archives != 'false' && inputs.shared-artifact == ''
       shell: bash
       run: |
         set -euo pipefail
@@ -159,9 +178,9 @@ runs:
       if: always()
       shell: bash
       env:
-        DIST_CACHE_HIT: ${{ steps.dist.outputs.cache-hit }}
+        DIST_SOURCE: ${{ inputs.shared-artifact != '' && format('artifact `{0}`', inputs.shared-artifact) || format('cache hit `{0}`', steps.dist.outputs.cache-hit || 'unavailable') }}
         DIST_SAVER: ${{ inputs.save-bundles == 'true' && 'yes' || 'no' }}
         DIST_STARTED: ${{ steps.toolchain.outputs.started }}
       run: |
-        printf 'Workspace bundle cache hit: `%s`; publish: `%s`; restore/build/repack/validation execution: `%ss`. This is product reuse, not a test verdict.\n' \
-          "${DIST_CACHE_HIT:-unavailable}" "${DIST_SAVER:-unavailable}" "$(( $(date +%s) - ${DIST_STARTED:-$(date +%s)} ))" >> "$GITHUB_STEP_SUMMARY"
+        printf 'Workspace bundles from: %s; publish: `%s`; restore/build/repack/validation execution: `%ss`. This is product reuse, not a test verdict.\n' \
+          "${DIST_SOURCE:-unavailable}" "${DIST_SAVER:-unavailable}" "$(( $(date +%s) - ${DIST_STARTED:-$(date +%s)} ))" >> "$GITHUB_STEP_SUMMARY"

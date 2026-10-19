@@ -7,6 +7,7 @@ import {
   Quaternion,
   Vector3,
 } from "three";
+import { type IInstancedLodOptions, attachInstancedLod } from "./instanced-batch-lod.js";
 import { pooledMesh } from "./render/mesh-pool.js";
 
 /** The axis a unit-height geometry is laid out along, and the axis {@link InstancedBatch.span} rotates from. */
@@ -24,7 +25,7 @@ export interface IInstancedPlacement {
   readonly scale?: readonly [number, number, number] | number;
 }
 
-export interface IInstancedBatchOptions {
+export interface IInstancedBatchOptions extends IInstancedLodOptions {
   /** The shape every instance draws, supplied by the game. */
   readonly geometry: BufferGeometry;
   /**
@@ -77,6 +78,7 @@ export class InstancedBatch {
   readonly #rotation = new Quaternion();
   #built = false;
   #mesh: InstancedMesh | undefined;
+  readonly #options: IInstancedBatchOptions;
 
   constructor(options: IInstancedBatchOptions) {
     if (options === undefined || options === null)
@@ -87,6 +89,7 @@ export class InstancedBatch {
       throw new Error("InstancedBatch.material is required; the batch never chooses one.");
     this.geometry = options.geometry;
     this.material = options.material;
+    this.#options = options;
   }
 
   /** How many instances have been placed so far. */
@@ -239,6 +242,7 @@ export class InstancedBatch {
     // spread-out batch pops out of view long before it leaves the frustum.
     mesh.computeBoundingSphere();
     this.#mesh = mesh;
+    attachInstancedLod(mesh, this.#options);
     options.parent?.add(mesh);
     return mesh;
   }

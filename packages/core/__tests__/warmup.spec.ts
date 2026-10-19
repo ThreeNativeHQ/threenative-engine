@@ -1,6 +1,7 @@
+import { PMREMNode } from "three/webgpu";
 import { describe, expect, test, vi } from "vitest";
 
-import { type IWarmUpProgress, warmUpScene } from "../src/warmup.js";
+import { type IWarmUpProgress, warmUpComputeNodes, warmUpScene } from "../src/warmup.js";
 
 /**
  * The launch this exists to fix: a Pixel 8 spent 24.5 seconds across 107 pipeline compiles inside
@@ -55,6 +56,282 @@ const run = (renderer: any, scene: any, options: any = {}) =>
   warmUpScene(renderer, scene, {} as never, { granularity: "object", ...options });
 
 describe("scene warm-up", () => {
+  test("should prepare the scene PMREM on the raw renderer before the covered world pass", async () => {
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    const environment = { isTexture: true } as never;
+    const raw = { backend: { isWebGPUBackend: true } };
+    const events: string[] = [];
+    let releasePreparation: (() => void) | undefined;
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", {
+      configurable: true,
+      value: vi.fn((renderer: unknown, texture: unknown) => {
+        expect(renderer).toBe(raw);
+        expect(texture).toBe(environment);
+        events.push("prepare");
+        return new Promise<boolean>((resolve) => {
+          releasePreparation = () => resolve(true);
+        });
+      }),
+    });
+    try {
+      const scene = { children: [], environment } as never;
+      const camera = {} as never;
+      const promise = warmUpScene(
+        {
+          raw,
+          compileAsync: vi.fn(async () => {
+            events.push("compile");
+          }),
+          warmUpWorldPass: vi.fn(() => {
+            events.push("covered-render");
+          }),
+        },
+        scene,
+        camera,
+        { granularity: "scene", yieldFrame: () => Promise.resolve() },
+      );
+
+      expect(events).toEqual(["prepare"]);
+      releasePreparation?.();
+      const report = await promise;
+      expect(events).toEqual(["prepare", "compile", "covered-render"]);
+      expect(report.passes).toEqual(["main"]);
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+    }
+  });
+
+  test("should start the compile budget once a slow environment bake settles", async () => {
+    // 3-CPU SwiftShader: the full-quality bake alone outlasts the 15 s compile budget, which left
+    // warm-up timed out with nothing compiled (PRD-624). The bake has its own budget now.
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", {
+      configurable: true,
+      value: () => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 80)),
+    });
+    try {
+      const compileAsync = vi.fn(async () => undefined);
+      const report = await warmUpScene(
+        { raw: { backend: { isWebGPUBackend: true } }, compileAsync },
+        { children: [], environment: { isTexture: true } } as never,
+        {} as never,
+        { granularity: "scene", budgetMs: 40, environmentBudgetMs: 1000 },
+      );
+      expect(compileAsync).toHaveBeenCalledTimes(1);
+      expect(report.attempted).toBe(1);
+      expect(report.timedOut).toBe(false);
+      expect(report.abandoned).toBe(0);
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+    }
+  });
+
+  test("should wait for the native engine's environment bake before the covered world pass", async () => {
+    // The native engine skips every frame until its PMREM is baked; a warm-up that does not wait
+    // lets the pose capture a skipped, empty frame (platformer on SwiftShader, PRD-624).
+    const environment = { isTexture: true } as never;
+    const scene = { children: [], environment } as never;
+    const camera = {} as never;
+    const events: string[] = [];
+    let releaseBake: (() => void) | undefined;
+    const raw = {
+      prepareEnvironmentAsync: vi.fn((target: unknown, view: unknown, deadlineMs: number) => {
+        expect(target).toBe(scene);
+        expect(view).toBe(camera);
+        // Bounded by the warm-up budget, so a bake that never finishes cannot hold startup.
+        expect(Number.isFinite(deadlineMs)).toBe(true);
+        events.push("bake");
+        return new Promise<boolean>((resolve) => {
+          releaseBake = () => resolve(true);
+        });
+      }),
+    };
+    const promise = warmUpScene(
+      {
+        raw,
+        compileAsync: vi.fn(async () => {
+          events.push("compile");
+        }),
+        warmUpWorldPass: vi.fn(() => {
+          events.push("covered-render");
+        }),
+      },
+      scene,
+      camera,
+      { granularity: "scene", yieldFrame: () => Promise.resolve() },
+    );
+
+    expect(events).toEqual(["bake"]);
+    releaseBake?.();
+    await promise;
+    expect(events).toEqual(["bake", "compile", "covered-render"]);
+    expect(raw.prepareEnvironmentAsync).toHaveBeenCalledTimes(1);
+  });
+
+  test("should prepare the target scene environment used by object compilation", async () => {
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    const environment = { isTexture: true } as never;
+    const raw = { backend: { isWebGPUBackend: true } };
+    const targetScene = { children: [], environment } as never;
+    const scene = { ...sceneOf(1), environment: undefined } as never;
+    const prepare = vi.fn((renderer: unknown, texture: unknown) => {
+      expect(renderer).toBe(raw);
+      expect(texture).toBe(environment);
+      return Promise.resolve(true);
+    });
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", { configurable: true, value: prepare });
+    try {
+      const report = await warmUpScene(
+        { raw, compileAsync: vi.fn(async () => undefined) },
+        scene,
+        {} as never,
+        { granularity: "object", targetScene, yieldFrame: () => Promise.resolve() },
+      );
+      expect(report.compiled).toBe(1);
+      expect(prepare).toHaveBeenCalledOnce();
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+    }
+  });
+
+  test("should prepare the raw renderer environment even when the pipeline cache hits", async () => {
+    const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          values.set(key, value);
+        },
+        removeItem: (key: string) => {
+          values.delete(key);
+        },
+      },
+    });
+    const raw = { backend: { isWebGPUBackend: true } };
+    const environment = { isTexture: true } as never;
+    const scene = { ...sceneOf(1), environment } as never;
+    const prepare = vi.fn(async () => true);
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", { configurable: true, value: prepare });
+    try {
+      const firstRenderer = fakeRenderer();
+      const cache = { key: "warmup-with-pmrem" };
+      await warmUpScene(firstRenderer, sceneOf(1) as never, {} as never, {
+        granularity: "object",
+        cache,
+        yieldFrame: () => Promise.resolve(),
+      });
+      const secondRenderer = { raw, compileAsync: vi.fn(async () => undefined) };
+      const report = await warmUpScene(secondRenderer, scene, {} as never, {
+        cache,
+        yieldFrame: () => Promise.resolve(),
+      });
+      expect(report.cache).toBe("hit");
+      expect(report.compiled).toBe(0);
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(prepare).toHaveBeenCalledWith(raw, environment);
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+      if (previousStorage) Object.defineProperty(globalThis, "localStorage", previousStorage);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  });
+
+  test("should mark a timed-out cache-hit environment preparation incomplete", async () => {
+    const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          values.set(key, value);
+        },
+        removeItem: (key: string) => {
+          values.delete(key);
+        },
+      },
+    });
+    const census = {
+      complete: true,
+      unsupported: false,
+      counts: {
+        creations: 0,
+        failures: 0,
+        pending: 0,
+        uniquePrograms: 0,
+        uniquePipelines: 0,
+      },
+    } as never;
+    const cache = { key: "cache-hit-pmrem-timeout" };
+    const firstRenderer = { ...fakeRenderer(), pipelineCensus: () => census };
+    const environment = { isTexture: true } as never;
+    const raw = { backend: { isWebGPUBackend: true } };
+    const prepare = vi.fn(
+      () => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 20)),
+    );
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", { configurable: true, value: prepare });
+    try {
+      await warmUpScene(firstRenderer, sceneOf(1) as never, {} as never, {
+        cache,
+        yieldFrame: () => Promise.resolve(),
+      });
+      const report = await warmUpScene(
+        { ...fakeRenderer(), raw, pipelineCensus: () => census },
+        { ...sceneOf(1), environment } as never,
+        {} as never,
+        { cache, environmentBudgetMs: 5, yieldFrame: () => Promise.resolve() },
+      );
+
+      expect(report.cache).toBe("hit");
+      expect(report.abandoned).toBe(1);
+      expect(report.observed.status).toBe("incomplete");
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+      if (previousStorage) Object.defineProperty(globalThis, "localStorage", previousStorage);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  });
+
+  test("should not start compile after environment preparation exceeds its own budget", async () => {
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    const environment = { isTexture: true } as never;
+    const raw = { backend: { isWebGPUBackend: true } };
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", {
+      configurable: true,
+      value: () => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 20)),
+    });
+    const compileAsync = vi.fn(async () => undefined);
+    try {
+      const report = await warmUpScene(
+        { raw, compileAsync },
+        { ...sceneOf(1), environment } as never,
+        {} as never,
+        {
+          granularity: "object",
+          compileTimeoutMs: 5,
+          budgetMs: 100,
+          environmentBudgetMs: 5,
+          yieldFrame: () => Promise.resolve(),
+        },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(report.abandoned).toBe(1);
+      expect(compileAsync).not.toHaveBeenCalled();
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+    }
+  });
+
   test("should compile every renderable and yield a frame between slices", async () => {
     const renderer = fakeRenderer();
     const yields = vi.fn(() => Promise.resolve());
@@ -243,6 +520,57 @@ describe("scene warm-up", () => {
         status: "incomplete",
       },
     });
+  });
+
+  test("should compile the scene asynchronously before the covered output pass", async () => {
+    // The covered pass still exists because stock compileAsync has no render-depth input, but it
+    // must not be the first thing that builds pipelines: on a cold driver cache every one it
+    // creates is a synchronous block on the main thread, which is the ui message loop too.
+    const ready = new Set<string>();
+    const asyncCreations: string[] = [];
+    const syncCreations: string[] = [];
+    const compileAsync = vi.fn(async () => {
+      for (const pipeline of ["main", "shadow", "post"]) {
+        asyncCreations.push(pipeline);
+        ready.add(pipeline);
+      }
+    });
+    const warmUpWorldPass = vi.fn(() => {
+      for (const pipeline of ["main", "shadow", "post"]) {
+        if (!ready.has(pipeline)) syncCreations.push(pipeline);
+      }
+    });
+    const report = await warmUpScene(
+      { compileAsync, warmUpWorldPass },
+      sceneOf(1) as never,
+      {} as never,
+      { yieldFrame: () => Promise.resolve() },
+    );
+
+    expect(syncCreations).toEqual([]);
+    expect(asyncCreations).toEqual(["main", "shadow", "post"]);
+    expect(compileAsync).toHaveBeenCalledOnce();
+    expect(compileAsync.mock.invocationCallOrder[0]).toBeLessThan(
+      warmUpWorldPass.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(warmUpWorldPass).toHaveBeenCalledOnce();
+    expect(report).toMatchObject({ attempted: 1, compiled: 1, passes: ["main"] });
+  });
+
+  test("should still use the covered output pass when the async compile fails", async () => {
+    const warmUpWorldPass = vi.fn();
+    const report = await warmUpScene(
+      {
+        compileAsync: vi.fn(async () => Promise.reject(new Error("compile failed"))),
+        warmUpWorldPass,
+      },
+      sceneOf(1) as never,
+      {} as never,
+      { yieldFrame: () => Promise.resolve() },
+    );
+
+    expect(warmUpWorldPass).toHaveBeenCalledOnce();
+    expect(report).toMatchObject({ attempted: 1, compiled: 1, passes: ["main"] });
   });
 
   test("should not call abandoned work complete when the census itself is complete", async () => {
@@ -497,6 +825,16 @@ describe("scene warm-up", () => {
   });
 
   test("should stop waiting for the GPU when the budget runs out", async () => {
+    const storage = new Map<string, string>();
+    const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
     const renderer = {
       compileAsync: () => Promise.resolve(),
       render: () => undefined,
@@ -511,11 +849,20 @@ describe("scene warm-up", () => {
       mesh("ground"),
       { children: [], isLight: true, castShadow: true, name: "sun" },
     ]);
-    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
-      budgetMs: 60,
-      yieldFrame: () => Promise.resolve(),
-    });
-    expect(report.passes).toEqual(["main", "shadow"]);
+    try {
+      const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+        budgetMs: 60,
+        cache: { key: "stalled-gpu" },
+        yieldFrame: () => Promise.resolve(),
+      });
+      expect(report.passes).toEqual(["main", "shadow"]);
+      expect(report).toMatchObject({ compiled: 1, abandoned: 0, timedOut: true });
+      expect(report.cache).not.toBe("stored");
+      expect(storage.size).toBe(0);
+    } finally {
+      if (previousStorage === undefined) Reflect.deleteProperty(globalThis, "localStorage");
+      else Object.defineProperty(globalThis, "localStorage", previousStorage);
+    }
   }, 10_000);
 
   test("should name a reflection pass when a material carries a reflector node", async () => {
@@ -555,6 +902,52 @@ describe("scene warm-up", () => {
     expect(report.passes).toEqual([]);
     expect(report.passPipelines).toBe(0);
   });
+
+  test("should keep the covered output world pass when renderPasses is false", async () => {
+    const warmUpWorldPass = vi.fn();
+    const renderer = {
+      compileAsync: vi.fn(async () => undefined),
+      warmUpWorldPass,
+    };
+    const report = await warmUpScene(renderer as never, sceneOf(1) as never, {} as never, {
+      renderPasses: false,
+      yieldFrame: () => Promise.resolve(),
+    });
+
+    expect(renderer.compileAsync).toHaveBeenCalledOnce();
+    expect(warmUpWorldPass).toHaveBeenCalledOnce();
+    expect(report.passes).toEqual(["main"]);
+  });
+
+  test.each(["throw", "overrun"] as const)(
+    "should not publish a covered world warm render as settled when it %s",
+    async (failure) => {
+      let clock = 0;
+      const clockSpy = vi.spyOn(globalThis.performance, "now").mockImplementation(() => clock);
+      const warmUpWorldPass = vi.fn(() => {
+        if (failure === "throw") throw new Error("covered warm render failed");
+        clock = 20;
+      });
+      try {
+        const report = await warmUpScene(
+          { compileAsync: vi.fn(async () => undefined), warmUpWorldPass },
+          sceneOf(1) as never,
+          {} as never,
+          { budgetMs: 10, yieldFrame: () => Promise.resolve() },
+        );
+
+        expect(warmUpWorldPass).toHaveBeenCalledOnce();
+        expect(report).toMatchObject({
+          compiled: 0,
+          abandoned: 1,
+          timedOut: failure === "overrun",
+        });
+        expect(report.cache).not.toBe("stored");
+      } finally {
+        clockSpy.mockRestore();
+      }
+    },
+  );
 
   test("should submit an off-screen caster by turning frustum culling off for the warm render", async () => {
     // Frustum culling is on by default, so a mesh outside the startup camera's view is never
@@ -689,4 +1082,98 @@ describe("scene warm-up", () => {
     expect(raw.shadowMap.needsUpdate).toBe(false);
     expect(scene.visible).toBe(false);
   });
+});
+
+describe("warm-up absolute budget", () => {
+  test.each(["scene", "object", "compute"] as const)(
+    "%s compilation counts a synchronous prefix against its existing budget",
+    async (kind) => {
+      let clock = 0;
+      const clockSpy = vi.spyOn(globalThis.performance, "now").mockImplementation(() => clock);
+      try {
+        const compile = () => {
+          clock += 20;
+          return Promise.resolve();
+        };
+        const report =
+          kind === "compute"
+            ? await warmUpComputeNodes({ computeAsync: compile }, [{}, {}, {}], { budgetMs: 10 })
+            : await warmUpScene({ compileAsync: compile }, sceneOf(3) as never, {} as never, {
+                budgetMs: 10,
+                granularity: kind,
+              });
+        expect(report.compiled).toBe(0);
+        expect(report.abandoned).toBe(kind === "scene" ? 1 : 3);
+        expect(report.timedOut).toBe(true);
+        if ("candidates" in report) {
+          expect(report).toMatchObject({ candidates: 3, attempted: 1 });
+        }
+      } finally {
+        clockSpy.mockRestore();
+      }
+    },
+  );
+
+  test.each(["scene", "object"] as const)(
+    "%s compilation does not grant a fresh wait after an expired synchronous prefix",
+    async (granularity) => {
+      let clock = 0;
+      let yields = 0;
+      const clockSpy = vi.spyOn(globalThis.performance, "now").mockImplementation(() => clock);
+      try {
+        const report = await warmUpScene(
+          {
+            compileAsync: () => {
+              clock += 20;
+              return new Promise<void>(() => undefined);
+            },
+          },
+          sceneOf(3) as never,
+          {} as never,
+          {
+            budgetMs: 10,
+            granularity,
+            yieldFrame: async () => {
+              yields += 1;
+              clock += 20;
+            },
+          },
+        );
+        expect(report.compiled).toBe(0);
+        expect(report.abandoned).toBe(granularity === "scene" ? 1 : 3);
+        expect(report.timedOut).toBe(true);
+        expect(yields).toBe(0);
+        expect(report.elapsedMs).toBe(20);
+      } finally {
+        clockSpy.mockRestore();
+      }
+    },
+  );
+});
+
+describe("compute warm-up dispatch", () => {
+  test.each([false, true])(
+    "WebGPU warm-up uses zero kernel invocations (raw wrapper: %s)",
+    async (wrapped) => {
+      const node = {};
+      const computeAsync = vi.fn(async () => undefined);
+      const receiver = { backend: { isWebGPUBackend: true }, computeAsync };
+      const report = await warmUpComputeNodes(wrapped ? { raw: receiver } : receiver, [node]);
+      expect(report.compiled).toBe(1);
+      expect(computeAsync).toHaveBeenCalledExactlyOnceWith(node, 0);
+      expect(computeAsync.mock.contexts[0]).toBe(receiver);
+    },
+  );
+
+  test.each([undefined, { isWebGLBackend: true }])(
+    "other compute seams retain their existing call (%j)",
+    async (backend) => {
+      const node = {};
+      const computeAsync = vi.fn(async () => undefined);
+      const receiver = { backend, computeAsync };
+      const report = await warmUpComputeNodes(receiver, [node]);
+      expect(report.compiled).toBe(1);
+      expect(computeAsync).toHaveBeenCalledExactlyOnceWith(node);
+    },
+  );
 });

@@ -9,6 +9,7 @@ missing `sailing`.** See the [recovery verification record](../../verification/P
 Part of the [useful-defaults batch](./README.md). Depends on nothing; the code it needs already
 ships.
 
+**Priority:** P2 — Open ACs add the applicability table, real call sites, the drift gate and a visual score.
 **Goal: a scaffolded game arrives with the framework's conventions already running in its own
 source, so the first thing a cold agent reads is a working call site rather than a promise.** Feet
 meet the floor, one metre is one metre, and a weapon stays in the hand that holds it — in the

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { cp, mkdir, readFile, readdir, rename, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
@@ -9,6 +9,7 @@ import { MCP_SERVERS, serverEntryPath } from "./mcp-servers.js";
 
 export { createEngineFreshnessPlugin, hashEngineDist } from "./engine-freshness.js";
 export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
+export { webRuntimeDecoders } from "./web-engine.js";
 
 export type ScaffoldTemplate = string;
 
@@ -122,7 +123,12 @@ export function stampLoadingSource(canonical: string, template: string): string 
  * hand let one fall a revision behind without anything failing. A file belongs here only when a
  * kit editing it would be a mistake rather than a choice.
  */
-export const SHARED_RENDER_SOURCES = [path.join("src", "render", "worldEnvironment.ts")] as const;
+export const SHARED_RENDER_SOURCES = [
+  path.join("src", "render", "worldEnvironment.ts"),
+  path.join("src", "render", "autoExposure.ts"),
+  path.join("src", "render", "exposureGraph.ts"),
+  path.join("src", "render", "exposureReadback.ts"),
+] as const;
 
 export function canonicalRenderSourcePath(relativePath: string, root = templateRoot()): string {
   const name = path.basename(relativePath);
@@ -400,6 +406,11 @@ const AUTHORING_GITIGNORE_RULES = [
   ".env",
   ".env.*",
   "!.env.example",
+  // The asset pipeline's compiled outputs: any project with an assets/ folder gets them in public/
+  // on its first dev run or build. Hand-owned public files (favicon, icons) stay committed.
+  "public/assets.manifest.json",
+  "public/bake.receipt.json",
+  "public/*.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].*",
 ] as const;
 /** Backticked paths and Markdown links share one prefix so both readers resolve identically. */
 const REFERENCE_TOKEN_PATTERN = new RegExp(
@@ -554,27 +565,43 @@ async function applyPackageSources(
 }
 
 const FRAMEWORK_PATCH_DIRECTORY = "patches";
-const THREE_PATCH_NAME = "three@0.185.1.patch";
+const FRAMEWORK_PATCH_SOURCES: Readonly<Record<string, string>> = {
+  "three@0.185.1.patch": "../core/patches/three@0.185.1.patch",
+  "vite@8.2.0.patch": "../../patches/vite@8.2.0.patch",
+  "@tailwindcss__node@4.3.3.patch": "../../patches/@tailwindcss__node@4.3.3.patch",
+};
 
 async function copyFrameworkPatches(target: string, templateRootDirectory: string): Promise<void> {
-  // The only tracked copy lives in @threenative/core; prepack copies it into template-assets for
-  // the tarball, and a workspace run reads core's directly.
+  // Copy exactly the dependency patches declared by this template. In particular, minimal
+  // installs no Tailwind, so pnpm must not receive an unused Tailwind patch.
+  const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+    pnpm?: { patchedDependencies?: Record<string, string> };
+  };
   const packageRoot = path.dirname(templateRoot());
-  const candidates = [...new Set([path.dirname(templateRootDirectory), packageRoot])].map((root) =>
-    path.join(root, "template-assets", FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME),
-  );
-  candidates.push(
-    path.join(packageRoot, "..", "core", FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME),
-  );
-  const source = candidates.find((candidate) => existsSync(candidate));
-  if (source === undefined) {
-    throw new Error(
-      `TN_FRAMEWORK_PATCH_MISSING: none of ${candidates.map((candidate) => `'${candidate}'`).join(", ")} exists; the generated project needs the Three.js velocity patch for batched temporal history.`,
+  for (const relative of Object.values(manifest.pnpm?.patchedDependencies ?? {})) {
+    const name = path.basename(relative);
+    const fallback = FRAMEWORK_PATCH_SOURCES[name];
+    if (fallback === undefined || relative !== `${FRAMEWORK_PATCH_DIRECTORY}/${name}`) {
+      throw new Error(`TN_FRAMEWORK_PATCH_MISSING: unsupported template patch '${relative}'.`);
+    }
+    const candidates = [...new Set([path.dirname(templateRootDirectory), packageRoot])].map(
+      (root) => path.join(root, "template-assets", FRAMEWORK_PATCH_DIRECTORY, name),
     );
+    const canonical = path.resolve(packageRoot, fallback);
+    // A source checkout can have an ignored prepack copy from an earlier build. Packaged CLIs
+    // omit src/, so they continue to use only the patch bytes delivered in their tarball.
+    if (existsSync(path.join(packageRoot, "src", "index.ts"))) candidates.unshift(canonical);
+    else candidates.push(canonical);
+    const source = candidates.find((candidate) => existsSync(candidate));
+    if (source === undefined) {
+      throw new Error(
+        `TN_FRAMEWORK_PATCH_MISSING: dependency patch '${name}' is absent from the CLI package.`,
+      );
+    }
+    const destination = path.join(target, relative);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(source, destination);
   }
-  const destination = path.join(target, FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME);
-  await mkdir(path.dirname(destination), { recursive: true });
-  await cp(source, destination);
 }
 
 const NODE_MODULES_PREFIX = "./node_modules/";
@@ -680,6 +707,18 @@ async function runInstall(target: string): Promise<void> {
   });
 }
 
+/** Removes what a failed scaffold wrote. A target the scaffold created goes whole. A target that
+ * existed was empty when the scaffold began, so every entry in it now is the scaffold's own. */
+async function discardScaffold(target: string, existedBefore: boolean): Promise<void> {
+  if (!existedBefore) {
+    await rm(target, { force: true, recursive: true });
+    return;
+  }
+  for (const entry of await readdir(target)) {
+    await rm(path.join(target, entry), { force: true, recursive: true });
+  }
+}
+
 export async function createProject(
   options: IScaffoldOptions,
   cwd = process.cwd(),
@@ -694,37 +733,44 @@ export async function createProject(
     throw new Error(`Target '${target}' already exists and is not empty.`);
   }
 
+  const existedBefore = existsSync(target);
   await mkdir(target, { recursive: true });
-  const source = path.join(root, template);
-  await cp(source, target, { recursive: true, errorOnExist: true });
-  await copyTemplateIcon(target, root);
-  await copySharedAssets(target, root);
-  // pnpm pack strips `.gitignore` from published tarballs, so the template carries the asset
-  // pipeline's ignore rules under a dotless name and the scaffold installs the real one.
-  if (existsSync(path.join(target, "gitignore"))) {
-    await rename(path.join(target, "gitignore"), path.join(target, ".gitignore"));
-  }
-  await installAuthoringGitignore(target);
-  const projectName = packageName(target);
-  const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
-  const projectId = /^[a-z]/u.test(compactProjectId) ? compactProjectId : `game${compactProjectId}`;
-  // Entries rather than an object literal: these are template tokens, not identifiers. Written as
-  // property names they read as names the naming rule must judge, and `__PROJECT_NAME__` is
-  // neither ours to rename nor expressible in camelCase.
-  const replacements = Object.fromEntries([
-    ["__PROJECT_NAME__", projectName],
-    ["__PROJECT_ID__", projectId],
-  ]) as Readonly<Record<string, string>>;
-  await stampTemplateLoading(target, source, root);
-  await copyAgentFiles(target, root);
-  await renderTemplate(target, replacements);
-  await copyFrameworkPatches(target, root);
-  await applyPackageSources(target, options.packageSources);
-  await assertMcpConfig(target);
-  await assertReferenceBundle(target, root);
-
   const installed = options.install ?? true;
-  if (installed) await runInstall(target);
+  try {
+    const source = path.join(root, template);
+    await cp(source, target, { recursive: true, errorOnExist: true });
+    await copyTemplateIcon(target, root);
+    await copySharedAssets(target, root);
+    // pnpm pack strips `.gitignore` from published tarballs, so the template carries the asset
+    // pipeline's ignore rules under a dotless name and the scaffold installs the real one.
+    if (existsSync(path.join(target, "gitignore"))) {
+      await rename(path.join(target, "gitignore"), path.join(target, ".gitignore"));
+    }
+    await installAuthoringGitignore(target);
+    const projectName = packageName(target);
+    const compactProjectId = projectName.toLowerCase().replace(/[^a-z0-9]+/gu, "") || "game";
+    const projectId = /^[a-z]/u.test(compactProjectId)
+      ? compactProjectId
+      : `game${compactProjectId}`;
+    // Entries rather than an object literal: these are template tokens, not identifiers. Written as
+    // property names they read as names the naming rule must judge, and `__PROJECT_NAME__` is
+    // neither ours to rename nor expressible in camelCase.
+    const replacements = Object.fromEntries([
+      ["__PROJECT_NAME__", projectName],
+      ["__PROJECT_ID__", projectId],
+    ]) as Readonly<Record<string, string>>;
+    await stampTemplateLoading(target, source, root);
+    await copyAgentFiles(target, root);
+    await renderTemplate(target, replacements);
+    await copyFrameworkPatches(target, root);
+    await applyPackageSources(target, options.packageSources);
+    await assertMcpConfig(target);
+    await assertReferenceBundle(target, root);
+    if (installed) await runInstall(target);
+  } catch (error) {
+    await discardScaffold(target, existedBefore);
+    throw error;
+  }
   return { installed, target, template };
 }
 

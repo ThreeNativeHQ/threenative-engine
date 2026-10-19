@@ -329,6 +329,6 @@ project created here is a repository nobody has opened yet — PRD-102 opens it.
 **Password reset and email verification are deferred by owner decision, 2026-08-13**, along with
 the transactional-email dependency they would require. Signup and login are the only auth
 surfaces in this series. What that costs is recorded in
-[PRD-105](../studio-hosting/PRD-105-production-lane.md) Phase 5, where it bears on the signup gate: recovery is
+[PRD-105](../BLOCKED/requires-release-credentials/PRD-105-production-lane.md) Phase 5, where it bears on the signup gate: recovery is
 operator-assisted, and unverified signup makes the quota and spend caps load-bearing rather than
 convenient. Account settings — change password, delete account — ship in PRD-105 Phase 4.

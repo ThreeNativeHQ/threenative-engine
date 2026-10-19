@@ -268,8 +268,8 @@ export function evaluateAudioAssertion(
   // The recent log is ordered across every bus, so the gap is measured against whatever sounded
   // last — not against the previous play of this same cue, which is not what cuts a line off.
   const recent = Array.isArray(audio?.recentCues) ? audio.recentCues : [];
-  const gap = smallestGapBefore(recent, assertion.cue);
-  const gapPass = assertion.minGapMs === undefined || gap === undefined || gap >= assertion.minGapMs;
+  const gap = smallestGapBefore(recent as readonly unknown[], assertion.cue);
+  const gapPass = assertion.minGapMs === undefined || (Array.isArray(audio?.recentCues) && gap !== undefined && gap >= assertion.minGapMs);
   const pass =
     cues !== undefined &&
     plays >= minimum &&
@@ -298,7 +298,9 @@ export function evaluateAudioAssertion(
               ? `No runtime audio ledger was published, so cue '${assertion.cue}' cannot be proved either way.`
               : gapPass
                 ? `Cue '${assertion.cue}' played ${plays} time(s); expected at least ${minimum}${assertion.maxPlays === undefined ? "" : ` and at most ${assertion.maxPlays}`}.`
-                : `Cue '${assertion.cue}' started ${gap ?? 0} ms after the line before it, which is under the ${String(assertion.minGapMs)} ms it needs; one of them was cut off.`,
+                : assertion.minGapMs !== undefined && !Array.isArray(audio?.recentCues)
+                  ? `Cue '${assertion.cue}' asserts a minimum gap, but no recentCues ledger was published, so the gap between plays was never measured.`
+                  : `Cue '${assertion.cue}' started ${gap ?? 0} ms after the line before it, which is under the ${String(assertion.minGapMs)} ms it needs; one of them was cut off.`,
           observedRuntimePath: "observations.json/runtimeObservations/gameplay/audio/cues",
           severity: "error",
           suggestion:

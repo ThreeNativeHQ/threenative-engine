@@ -17,7 +17,9 @@ so a change here is a change to the published docs.
 - [Input](input.md)
 - [Physics](physics.md)
 - [Assets](assets.md)
+- [Unreal assets](unreal-assets.md)
 - [Animation](animation.md)
+- [MetaHuman heads](metahuman.md)
 - [UI and state](ui-state.md)
 - [Audio](audio.md)
 - [World streaming](world-streaming.md)
@@ -26,6 +28,7 @@ so a change here is a change to the published docs.
 
 - [Playtesting](playtesting.md)
 - [Native runtime](native-runtime.md)
+- [native-css support](native-css-support.md)
 - [Configuration](configuration.md)
 - [Troubleshooting](troubleshooting.md)
 

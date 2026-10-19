@@ -111,10 +111,12 @@ const assertVirtualProof = (virtual, changedPixelRatio) => {
       frame.moverRenders === stats.levels,
       `virtual.history[${index}] mover levels are incomplete`,
     );
-    if (index === 0) {
+    // The node renders at most one level per frame, finest first, so the first `levels` frames
+    // populate one level each and every later frame is served whole from the cache.
+    if (index < stats.levels) {
       requireProof(
-        frame.rendered === stats.levels && frame.cached === 0,
-        "first virtual frame did not populate levels",
+        frame.rendered === 1 && frame.cached === stats.levels - 1,
+        `virtual.history[${index}] did not populate one level`,
       );
     } else {
       requireProof(
@@ -171,8 +173,90 @@ const assertVirtualProof = (virtual, changedPixelRatio) => {
     "virtual marker has no mover evidence",
   );
 };
+/** Pixels whose summed channel difference exceeds 60, as a share of the frame. */
+const changedRatio = (a, b) => {
+  let changed = 0;
+  for (let i = 0; i < a.data.length; i += 4) {
+    if (
+      Math.abs(a.data[i] - b.data[i]) +
+        Math.abs(a.data[i + 1] - b.data[i + 1]) +
+        Math.abs(a.data[i + 2] - b.data[i + 2]) >
+      60
+    )
+      changed += 1;
+  }
+  return changed / (a.width * a.height);
+};
+/**
+ * PRD-572 AC-1. A sphere moves for 12 frames under a still camera and nothing calls `trackCaster`.
+ * Every frame of the `auto` arm must stay within the bound of the stock shadow that moves with it;
+ * the `pinned` arm, which is the node before the change, must leave the bound on some frame, so the
+ * bound is shown to catch a stale shadow rather than to be loose. `manual` is the reference: what
+ * the node already did for a game that read the docs.
+ */
+const AUTO_TRACK_BOUND = 0.01;
+// These arms pass `near=1` (depthRange 30, lightDistance 12): the original arms track the ball and so
+// never read a cached level, and the node's default depth reach puts this 40 m scene's casters
+// outside its cached maps, which would hide the stale shadow this check exists to see.
+/** Still frames before the ball moves, long enough for every level to bake it in place. */
+const LEAD = 4;
+/** Quiet frames after the last move, enough for a `staticAfter=4` demotion and its redraws. */
+const SETTLE = 14;
+const assertAutoTrack = async (frames) => {
+  // Only the 12 frames in which the ball moves are compared; the lead-in is the cold start every
+  // arm shares.
+  const ratios = (arm) =>
+    frames[arm]
+      .slice(LEAD)
+      .map((shot, index) => changedRatio(frames.stockMove[LEAD + index], shot));
+  const auto = ratios("auto");
+  const manual = ratios("manual");
+  const pinned = ratios("pinned");
+  const round = (list) => list.map((value) => Number(value.toFixed(4)));
+  results.autoTrack = {
+    bound: AUTO_TRACK_BOUND,
+    auto: round(auto),
+    manual: round(manual),
+    pinned: round(pinned),
+  };
+  await writeFile(`${DIR}out/results.json`, JSON.stringify(results, null, 1));
+  console.log(JSON.stringify(results.autoTrack));
+  requireProof(auto.length === 12, "auto arm did not capture 12 frames");
+  auto.forEach((ratio, index) => {
+    const bound = AUTO_TRACK_BOUND;
+    requireProof(
+      ratio <= bound,
+      `auto frame ${index} differs from the stock shadow by ${ratio.toFixed(4)} (bound ${bound})`,
+    );
+  });
+  // Back at rest the caster is in the cached levels again, and the stock shadow is what they must
+  // show: a settled caster left at the mover map's density would read softer than the stock edge.
+  const settled = frames.autoSettle
+    .slice(LEAD + 12)
+    .map((shot, index) => changedRatio(frames.stockSettle[LEAD + 12 + index], shot));
+  results.autoTrack.settled = round(settled);
+  await writeFile(`${DIR}out/results.json`, JSON.stringify(results, null, 1));
+  console.log(JSON.stringify({ settled: results.autoTrack.settled }));
+  requireProof(settled.length === SETTLE, "autoSettle arm did not capture the settle frames");
+  requireProof(
+    Math.max(...settled.slice(-4)) <= AUTO_TRACK_BOUND,
+    `settled caster differs from the stock shadow by ${Math.max(...settled.slice(-4)).toFixed(4)} (bound ${AUTO_TRACK_BOUND})`,
+  );
+  // A still-pinned caster is stale on every frame it is away from where it was baked; the bound is
+  // only worth anything if it catches that on each of those frames.
+  pinned.forEach((ratio, index) => {
+    const bound = AUTO_TRACK_BOUND;
+    if (ratio > 0.001) {
+      requireProof(
+        ratio > bound,
+        `pinned frame ${index} is inside the bound (${ratio.toFixed(4)} <= ${bound}): the bound would not catch a stale shadow`,
+      );
+    }
+  });
+};
 const results = {};
 const shots = {};
+const frames = {};
 try {
   const browser = await chromium.launch({ headless: false, args: [...WEBGPU_BROWSER_ARGS] });
   for (const [mode, query] of [
@@ -180,12 +264,37 @@ try {
     ["virtual", "mode=virtual"],
     ["one", "mode=virtual&clip=60"],
     ["one", "mode=virtual&clip=60"],
+    ["stockMove", `mode=stock&move=1&step=1&lead=${LEAD}`],
+    ["manual", `mode=virtual&near=1&track=manual&step=1&lead=${LEAD}`],
+    ["auto", `mode=virtual&near=1&track=auto&step=1&lead=${LEAD}`],
+    // The ball stops at its baked spot and the loop runs on: `autoSettle` has demoted it by then
+    // (`staticAfter=4`), and its last frames are the cached levels again, not the mover maps.
+    ["stockSettle", `mode=stock&move=1&step=1&lead=${LEAD}&settle=${SETTLE}`],
+    [
+      "autoSettle",
+      `mode=virtual&near=1&track=auto&step=1&lead=${LEAD}&settle=${SETTLE}&staticAfter=4`,
+    ],
+    ["pinned", `mode=virtual&near=1&track=pinned&step=1&lead=${LEAD}`],
   ]) {
     const page = await browser.newPage({ viewport: { width: 512, height: 512 } });
     const logs = [];
     page.on("console", (m) => logs.push(m.text()));
     page.on("pageerror", (e) => logs.push(`PAGEERROR ${e.message}`));
     await page.goto(`http://127.0.0.1:${PORT}/index.html?${query}`);
+    if (query.includes("step=1")) {
+      // The page holds each frame until told to go, so every frame can be screenshot.
+      frames[mode] = [];
+      const total = LEAD + 12 + Number(new URLSearchParams(query).get("settle") ?? 0);
+      for (let frame = 0; frame < total; frame += 1) {
+        await page.waitForFunction((f) => window.__WAITING__ === f, frame, { timeout: 60_000 });
+        await page.evaluate(() => window.__GO__());
+        await page.waitForFunction((f) => window.__DONE__ === f + 1, frame, { timeout: 60_000 });
+        const frameShot = await page.screenshot({ type: "png" });
+        await mkdir(`${DIR}out/frames`, { recursive: true });
+        await writeFile(`${DIR}out/frames/${mode}-${frame}.png`, frameShot);
+        frames[mode].push(PNG.sync.read(frameShot));
+      }
+    }
     try {
       await page.waitForFunction(() => window.__PROOF__ !== undefined, undefined, {
         timeout: 60_000,
@@ -244,12 +353,23 @@ try {
   results.changedPixelRatio = Number((changed / (a.width * a.height)).toFixed(4));
   await writeFile(`${DIR}out/results.json`, JSON.stringify(results, null, 1));
   console.log(JSON.stringify(results, null, 1));
-  for (const mode of ["stock", "virtual", "one"]) {
+  for (const mode of [
+    "stock",
+    "virtual",
+    "one",
+    "stockMove",
+    "manual",
+    "auto",
+    "pinned",
+    "stockSettle",
+    "autoSettle",
+  ]) {
     const result = results[mode];
     requireProof(isRecord(result), `${mode} result missing`);
     assertRealAdapter(result.adapter, mode);
   }
   assertVirtualProof(results.virtual, results.changedPixelRatio);
+  await assertAutoTrack(frames);
 } finally {
   server.kill("SIGTERM");
 }

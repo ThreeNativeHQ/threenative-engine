@@ -19,14 +19,14 @@
       "kind": "input",
       "label": "leave-ledge",
       "press": "ArrowLeft",
-      "holdTicks": 91,
+      "holdTicks": 130,
       "release": true
     },
     {
       "kind": "input",
       "label": "off-ledge",
       "press": "ArrowLeft",
-      "holdTicks": 3,
+      "holdTicks": 4,
       "release": false
     },
     {

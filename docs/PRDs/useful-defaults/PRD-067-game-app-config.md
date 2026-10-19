@@ -10,6 +10,7 @@ a Pixel 8 (`shiba`, serial `37251FDJH0037Z`, arm64-v8a, Android 17, physical dis
 §1 and needs no device to confirm. Split out of PRD-066, which owns frame rate and explicitly
 does not own this.
 
+**Priority:** P2 — Open boxes let config declare identity, orientation and display on device.
 **Complexity: 7 → HIGH mode.** A config file that is shipped but never read, a loader that has
 to exist before anything else can use it, two packagers that currently emit hand-authored
 identity, an icon path, and a device proof.

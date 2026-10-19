@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Epic scoreboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<style>
+  :root {
+    --bg:#FAF9F5; --card:#F0EEE6; --ink:#141413; --mute:#5E5D59; --line:#E8E6DC; --track:#E8E6DC; --accent:#D97757;
+    --green:#15803d; --green-bg:#e8f6ee; --orange:#c2570c; --orange-bg:#fdf0e3;
+    --red:#c8261b; --red-bg:#fdeceb; --yellow:#a16207; --yellow-bg:#fdf6d8; --grey:#5E5D59; --grey-bg:#E8E6DC;
+    --p-game:#3b82f6; --p-animation:#8b5cf6; --p-matrixWorld:#14b8a6; --p-projection:#ec4899; --p-render:#0ea5e9; --p-other:#9aa1ad; --p-extra:#a3a3a3;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg:#1F1E1D; --card:#262624; --ink:#F0EEE6; --mute:#A8A59C; --line:#3A3936; --track:#3A3936; --accent:#D97757;
+    --green:#4ade80; --green-bg:#112a1b; --orange:#fb923c; --orange-bg:#2e1c0d;
+    --red:#ff7b70; --red-bg:#331512; --yellow:#facc15; --yellow-bg:#2d2808; --grey:#A8A59C; --grey-bg:#33322F;
+    --p-game:#60a5fa; --p-animation:#a78bfa; --p-matrixWorld:#2dd4bf; --p-projection:#f472b6; --p-render:#38bdf8; --p-other:#6b7280; --p-extra:#8b8b8b;
+  } }
+  :root[data-theme="dark"] {
+    --bg:#1F1E1D; --card:#262624; --ink:#F0EEE6; --mute:#A8A59C; --line:#3A3936; --track:#3A3936; --accent:#D97757;
+    --green:#4ade80; --green-bg:#112a1b; --orange:#fb923c; --orange-bg:#2e1c0d;
+    --red:#ff7b70; --red-bg:#331512; --yellow:#facc15; --yellow-bg:#2d2808; --grey:#A8A59C; --grey-bg:#33322F;
+    --p-game:#60a5fa; --p-animation:#a78bfa; --p-matrixWorld:#2dd4bf; --p-projection:#f472b6; --p-render:#38bdf8; --p-other:#6b7280; --p-extra:#8b8b8b;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:20px 16px 48px; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; font-variant-numeric:tabular-nums; }
+  h1, h2 { font-family:"Source Serif 4", Georgia, serif; }
+  main { max-width:860px; margin:0 auto; display:grid; gap:20px; } main > * { min-width:0; }
+  header { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:baseline; justify-content:space-between; }
+  h1 { font-size:17px; margin:0; font-weight:650; }
+  h2 { font-size:15px; margin:0 0 4px; font-weight:650; }
+  nav.tabs { display:flex; gap:6px; } nav.tabs a { padding:4px 12px; border-radius:999px; color:var(--mute); text-decoration:none; border:1px solid var(--line); }
+  nav.tabs a[aria-current] { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .mute { color:var(--mute); } .sm { font-size:12.5px; }
+  .pill { display:inline-block; border-radius:999px; padding:2px 10px; font-size:12px; background:var(--grey-bg); color:var(--mute); }
+  #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .s-green { --c:var(--green); --cbg:var(--green-bg); } .s-orange { --c:var(--orange); --cbg:var(--orange-bg); }
+  .s-red { --c:var(--red); --cbg:var(--red-bg); } .s-yellow { --c:var(--yellow); --cbg:var(--yellow-bg); }
+  .s-none { --c:var(--grey); --cbg:var(--grey-bg); }
+  .hero { border:2px solid var(--c); background:var(--cbg); padding:22px 20px; }
+  .hero .q { font-size:13px; color:var(--mute); margin:0 0 6px; }
+  .hero .num { font-size:clamp(60px,18vw,104px); line-height:1; font-weight:750; letter-spacing:-.03em; color:var(--c); font-variant-numeric:tabular-nums; }
+  .hero .sentence { font-size:clamp(16px,4.2vw,20px); font-weight:600; margin:8px 0 14px; }
+  .gauge { position:relative; height:14px; border-radius:7px; background:var(--track); margin:6px 0 24px; }
+  .gauge i { position:absolute; inset:0 auto 0 0; border-radius:7px; background:var(--c); }
+  .gauge b { position:absolute; top:-5px; bottom:-5px; width:2px; background:var(--ink); transform:translateX(-1px); }
+  .gauge u { position:absolute; top:20px; font-size:11.5px; text-decoration:none; color:var(--mute); transform:translateX(-50%); white-space:nowrap; }
+  .gauge u:first-of-type { transform:none; } .gauge u:last-of-type { transform:translateX(-100%); }
+  .meta { display:flex; flex-wrap:wrap; gap:4px 18px; font-size:14px; }
+  .delta.up { color:var(--green); font-weight:650; } .delta.down { color:var(--red); font-weight:650; } .delta.flat { color:var(--grey); }
+  .reason { margin:10px 0 0; padding:8px 12px; border-radius:8px; background:var(--card); border:1px solid var(--c); font-size:13.5px; }
+  .legend { margin:14px 0 0; font-size:12.5px; color:var(--mute); display:flex; flex-wrap:wrap; gap:4px 14px; }
+  .legend span::before { content:""; display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--c); margin-right:5px; }
+  .fine { margin:10px 0 0; font-size:12px; color:var(--mute); }
+  svg { width:100%; max-width:640px; height:auto; display:block; margin-top:8px; }
+  .lines { display:flex; flex-wrap:wrap; gap:4px 16px; font-size:12.5px; color:var(--mute); margin-top:6px; }
+  .lines span::before { content:""; display:inline-block; width:22px; margin-right:6px; vertical-align:middle; border-top:var(--w,2px) var(--st,solid) var(--lc,var(--mute)); }
+  .stack { display:flex; height:34px; border-radius:6px; overflow:hidden; background:var(--track); }
+  .stack div { display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:600; overflow:hidden; white-space:nowrap; }
+  .stackrow { margin:12px 0; } .stackrow .cap { display:flex; justify-content:space-between; gap:8px; font-size:13px; margin-bottom:4px; flex-wrap:wrap; }
+  .keys { display:flex; flex-wrap:wrap; gap:4px 14px; font-size:12.5px; color:var(--mute); }
+  .keys span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; background:var(--k); vertical-align:-1px; }
+  .gap { margin:10px 0 0; font-weight:600; }
+  .bar { height:10px; border-radius:5px; background:var(--track); margin:8px 0 4px; overflow:hidden; } .bar i { display:block; height:100%; background:var(--green); }
+  .big { font-size:30px; font-weight:700; font-variant-numeric:tabular-nums; }
+  ul.ph { list-style:none; margin:10px 0 0; padding:0; } ul.ph li { display:flex; gap:10px; align-items:baseline; padding:5px 0; border-top:1px solid var(--line); }
+  ul.ph .ic { font-size:17px; line-height:1; width:18px; text-align:center; flex:none; } ul.ph .t { flex:1; min-width:0; } ul.ph .n { flex:none; font-variant-numeric:tabular-nums; color:var(--mute); }
+  .ic.done { color:var(--green); } .ic.part { color:var(--orange); } .ic.todo { color:var(--grey); }
+  .gate { margin-top:12px; font-size:13.5px; } .gate div { padding:3px 0; } .gate .st { display:inline-block; min-width:48px; margin-right:6px; text-align:center; border-radius:999px; padding:0 8px; font-size:12px; }
+  .gate .st.ok { background:var(--green-bg); color:var(--green); } .gate .st.open { background:var(--grey-bg); color:var(--mute); }
+  details { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 16px; }
+  summary { cursor:pointer; font-weight:600; } details[open] summary { margin-bottom:10px; }
+  details h3 { font-size:14px; margin:18px 0 2px; }
+  .scroll { overflow-x:auto; } table { border-collapse:collapse; width:100%; font-size:12.5px; } th, td { text-align:right; padding:4px 8px; border-top:1px solid var(--line); white-space:nowrap; } th:first-child, td:first-child { text-align:left; } th { color:var(--mute); font-weight:500; }
+  .charts { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
+  .cmp-ratio { font-size:clamp(48px,14vw,72px); line-height:1; font-weight:700; letter-spacing:-.03em; color:var(--c); font-variant-numeric:tabular-nums; }
+  .cmp-title { font-size:18px; font-weight:600; margin:0; }
+  .cmp table th, .cmp table td { white-space:normal; }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:-1px; }
+  .clock-note { border-left:3px solid var(--accent); padding:4px 0 4px 10px; margin:0; font-size:12.5px; color:var(--mute); }
+  @media (max-width:520px) { body { padding:12px 12px 40px; } .card, details { padding:14px; } .hero { padding:18px 16px; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Epic scoreboard <span class="mute">· PRD-573 · native C++ engine vs legacy three.js</span></h1>
+  <nav class="tabs"><a href="/" aria-current="page">Epic scoreboard</a><a href="/midway">Midway</a></nav>
+  <span class="mute sm"><span id="dot"></span><span id="status">connecting…</span></span>
+</header>
+
+<section class="card hero s-none" id="hero"></section>
+<section class="card hero s-none" id="cheapHero"></section>
+<section class="card" id="compare"></section>
+
+<section class="card" id="trend"></section>
+<section class="card" id="frame" hidden></section>
+<section class="card" id="desktop"></section>
+<section class="card" id="web"></section>
+<section class="card" id="epic"></section>
+
+<details id="details">
+  <summary>Details: control rung, screen-present series, raw frame times, every point</summary>
+  <div id="detailsBody"></div>
+</details>
+</main>
+<script>
+const TARGET = 3;
+const WEB_TARGET = 2; // owner, 2026-10-13 (was 1.3, met at 1.41x): tn-web p50 ÷ tn-engine-web p50, main-thread wall time
+const STALE_HOURS = 6;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const $ = (id) => document.getElementById(id);
+const fx = (v) => (v === undefined ? "n/a" : `${v.toFixed(2)}×`);
+const fm = (v) => (v === undefined ? "n/a" : `${v.toFixed(1)} ms`);
+const colorOf = (v) => (v >= TARGET ? "green" : v >= 1 ? "orange" : "red"); // same rule as valueColor in perf-live.ts
+const tagOf = (label) => label.slice(label.lastIndexOf("/") + 1);
+const keyOf = (p) => `${p.mode}@${p.objects}`;
+function ago(ms) {
+  const s = Math.max(0, ms) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 48 * 3600) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} days ago`;
+}
+let hero = { status: "none" }, points = [], epic = [], rows = [], web = { pairs: [], cuts: [], census: [] }, desktop = { kpi: [], gpu: { status: "PENDING" }, godot: { status: "PENDING" } };
+
+let midway;
+
+// ---- 0. Native desktop and web, side by side -----------------------------------------------------------
+// Same phase order and colours in both columns. Each column scales its own two bars to the larger one.
+const CMP_PHASES = ["game", "animation", "matrixWorld", "projection", "render", "other"];
+const ffps = (v) => v === undefined ? '<span class="pill">PENDING</span>' : `${v.toFixed(1)} fps`;
+const cmpList = (list) => (list?.length ? list.map(esc).join(", ") : '<span class="pill">missing</span>');
+function compareColumn(c) {
+  const pending = '<span class="pill">PENDING</span>';
+  const ms = (v) => (v === undefined ? pending : fm(v));
+  const has = c.ratio !== undefined;
+  const fill = has ? Math.min(100, (c.ratio / c.target) * 100) : 0;
+  const tint = has ? `--c:var(--${colorOf(c.ratio)})` : "--c:var(--grey)";
+  const phaseSum = (side) => CMP_PHASES.reduce((a, k) => a + (c.phases?.[side]?.[k] ?? 0), 0);
+  const max = c.phases ? Math.max(phaseSum("legacy"), phaseSum("native")) || 1 : 1;
+  const stack = (side, title) => {
+    const v = c.phases?.[side];
+    return `<div class="stackrow"><div class="cap"><b>${title}</b><span class="mute">${v ? `${fm(phaseSum(side))} per frame` : pending}</span></div>
+      <div class="stack" style="width:${v ? (phaseSum(side) / max) * 100 : 0}%">${v ? CMP_PHASES.map((k) => (v[k] > 0 ? `<div style="flex:${v[k]} 0 0;background:var(--p-${k})" title="${esc(PHASE_NAME[k] ?? k)}: ${fm(v[k])}"></div>` : "")).join("") : ""}</div></div>`;
+  };
+  const phaseCell = (side, k) => (c.phases?.[side]?.[k] === undefined ? '<span class="mute">not recorded</span>' : fm(c.phases[side][k]));
+  return `<article class="card cmp min-w-0 flex flex-col gap-3 rounded-xl">
+    <div><h2 class="cmp-title">${esc(c.title)}</h2><p class="mute sm" style="margin:2px 0 0">${esc(c.sub)}</p></div>
+    <div style="${tint}"><div class="cmp-ratio">${has ? fx(c.ratio) : "PENDING"}</div>
+      <p style="margin:6px 0 0">${has ? `${esc(c.ratioNote)} Target ${c.target}×: ${c.ratio >= c.target ? "met" : "not met yet"}.` : esc(c.pendingText)}</p>
+      <div class="gauge" role="img" aria-label="${has ? `${fx(c.ratio)} of a ${c.target}× target` : "PENDING"}"><i style="width:${fill}%;background:var(--accent)"></i><b style="left:100%" title="target"></b><u style="left:100%">${c.target}× target</u></div></div>
+    <div class="scroll"><table><tr><th>Timing</th><th>${esc(c.legacyName)}</th><th>${esc(c.nativeName)}</th></tr>
+      ${c.rows.map(([label, l, n, unit]) => `<tr><th>${label}</th><td>${unit === "fps" ? ffps(l) : ms(l)}</td><td>${unit === "fps" ? ffps(n) : ms(n)}</td></tr>`).join("")}</table></div>
+    <div>${stack("legacy", esc(c.legacyName))}${stack("native", esc(c.nativeName))}
+      <p class="fine" style="margin:0">${esc(c.phaseNote)}</p></div>
+    <div class="scroll"><table><tr><th>Phase</th><th>${esc(c.legacyName)}</th><th>${esc(c.nativeName)}</th></tr>
+      ${CMP_PHASES.map((k) => `<tr><th><span class="sw" style="background:var(--p-${k})"></span>${esc(PHASE_NAME[k] ?? k)}</th><td>${phaseCell("legacy", k)}</td><td>${phaseCell("native", k)}</td></tr>`).join("")}</table></div>
+    <p class="sm mute" style="margin:0">Run ${cmpList(c.run ? [c.run] : [])} · commit ${cmpList(c.commits)} · adapter ${cmpList(c.adapters)}</p>
+    ${c.flags ? `<p class="fine" style="margin:0">${c.flags}</p>` : ""}
+    <p class="clock-note">${esc(c.clock)}</p>
+  </article>`;
+}
+function renderCompare() {
+  const kpi = desktop.kpi.find((r) => r.rung === "R5");
+  const d = kpi?.pair;
+  const latest = web.pairs.filter((p) => p.status === "measured" && p.ratioP50 !== undefined).at(-1);
+  const legend = CMP_PHASES.map((k) => `<span style="--k:var(--p-${k})">${esc(PHASE_NAME[k] ?? k)}</span>`).join("");
+  const flags = latest ? `${latest.invalid ? '<span class="pill" style="color:var(--red)">host loaded: ratios only</span> ' : ""}${latest.software ? '<span class="pill" style="color:var(--red)">software adapter: not real-GPU or visual evidence</span>' : ""}` : "";
+  $("compare").innerHTML = `<h2>Native vs web, side by side <span class="mute sm">R5 · the two targets</span></h2>
+    <div class="keys" style="margin:4px 0 4px">${legend}</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    ${compareColumn({
+      title: "Native desktop",
+      sub: "tn-desktop ÷ tn-engine-desktop, C++ host",
+      target: TARGET,
+      legacyName: "tn-desktop",
+      nativeName: "tn-engine-desktop",
+      ratio: d?.ratio.threadCpu,
+      ratioNote: "tn-desktop ÷ tn-engine-desktop thread CPU p50, above 1 the engine is cheaper.",
+      pendingText: "PENDING: no confirmed R5 set has both arms yet.",
+      rows: [
+        ["FPS, uncapped (vsync off)", d?.left.fps, d?.right.fps, "fps"],
+        ["1% low FPS", d?.left.fpsLow1, d?.right.fpsLow1, "fps"],
+        ["p50, thread CPU (KPI)", d?.left.threadCpuP50, d?.right.threadCpuP50],
+        ["p95, frame (not thread CPU)", d?.left.p95, d?.right.p95],
+        ["p99, frame (not thread CPU)", d?.left.p99, d?.right.p99],
+      ],
+      phases: hero.phases ? { legacy: hero.phases.legacy, native: hero.phases.native } : undefined,
+      phaseNote: hero.phases ? `Phases from ${hero.phases.label}, ${ago(hero.now - hero.phases.t)}.` : "Phases: PENDING, no R5 point has both arms' phases yet.",
+      run: kpi?.label,
+      commits: kpi?.commits,
+      adapters: kpi?.adapters,
+      clock: "Thread CPU time (CLOCK_THREAD_CPUTIME_ID). Screen present is left out.",
+    })}
+    ${compareColumn({
+      title: "Web",
+      sub: "tn-web ÷ tn-engine-web, browser WebGPU",
+      target: WEB_TARGET,
+      legacyName: "tn-web",
+      nativeName: "tn-engine-web",
+      ratio: latest?.ratioP50,
+      ratioNote: "tn-web ÷ tn-engine-web p50, above 1 the engine is cheaper.",
+      pendingText: "PENDING: no web pair has both arms yet.",
+      rows: [
+        ["FPS, page frames per second (performance.now)", latest?.legacy.fps, latest?.native.fps, "fps"],
+        ["1% low FPS", latest?.legacy.fpsLow1, latest?.native.fpsLow1, "fps"],
+        ["p50, main thread (wall)", latest?.legacy.p50, latest?.native.p50],
+        ["p95, main thread (wall)", latest?.legacy.p95, latest?.native.p95],
+        ["p99, main thread (wall)", latest?.legacy.p99, latest?.native.p99],
+      ],
+      phases: latest && (latest.legacy.phases || latest.native.phases) ? { legacy: latest.legacy.phases, native: latest.native.phases } : undefined,
+      phaseNote: latest ? `Phases from ${latest.label}.` : "Phases: PENDING, no web pair has both arms yet.",
+      run: latest?.label,
+      commits: latest?.commits,
+      adapters: latest?.adapters,
+      flags,
+      clock: "Main-thread wall time (performance.now()). A page has no thread CPU clock.",
+    })}
+    </div>`;
+}
+
+// ---- 1. Hero -------------------------------------------------------------------------------------------
+function renderHero() {
+  const gap = midway?.candidate?.gap, legacy = gap?.legacyMs;
+  $("hero").innerHTML = `<h2>Midway · final tier</h2><p class="q">Native engine vs three.js · experimental · unqualified</p><div class="meta">${["desktop", "wasm"].map((arm) => {
+    const side = gap?.[arm];
+    const ratio = Number.isFinite(legacy) && legacy > 0 && Number.isFinite(side?.ms) && side.ms > 0 ? legacy / side.ms : undefined;
+    return `<div><h2>${arm === "desktop" ? "Desktop native" : "Web Wasm"}</h2><div class="num">${ratio === undefined ? "PENDING" : ratio.toFixed(2) + "×"}</div><p class="sm">${ratio === undefined ? "No eligible arm/reference timing." : `${esc(side.build)} · median of ${side.runs} run(s)<br>three.js ${legacy.toFixed(2)} ms ÷ native ${side.ms.toFixed(2)} ms`}</p></div>`;
+  }).join("")}</div><p class="fine">Ratios are diagnostic, not matched-work speedups. Desktop uses native thread CPU against browser active wall time; these are different instruments. Web Wasm uses browser active wall time. Goal 2–3×; timing qualification remains pending. <a href="/midway">Midway measurements and qualification</a></p>`;
+}
+
+function renderCheapTier() {
+  const h = hero, el = $("cheapHero");
+  el.className = `card hero s-${h.status}`;
+  const q = '<h2>Cheap tier · R5 synthetic workload</h2><p class="q">Is the native C++ engine at least 2× cheaper in CPU per frame than the legacy three.js arm on rung R5, and is it getting closer?</p>';
+  if (h.ratio === undefined) { el.innerHTML = `${q}<div class="num">–</div><p class="sentence">${esc(h.sentence)}</p>`; return; }
+  const pos = Math.min(100, (h.ratio / TARGET) * 100);
+  const d = h.delta;
+  const delta = d
+    ? d.dir === "flat"
+      ? `<span class="delta flat">≈ flat (${d.pct >= 0 ? "+" : ""}${(d.pct * 100).toFixed(0)}%) vs ${esc(d.label)} at ${fx(d.from)}</span>`
+      : `<span class="delta ${d.dir}">${d.dir === "up" ? "▲ better" : "▼ worse"} ${d.pct >= 0 ? "+" : ""}${(d.pct * 100).toFixed(0)}% vs ${esc(d.label)} at ${fx(d.from)}</span>`
+    : '<span class="mute">No earlier R5 point to compare with.</span>';
+  el.innerHTML = `${q}
+    <div class="num">${h.ratio.toFixed(2)}×</div>
+    <p class="sentence">${esc(h.sentence)}</p>
+    <div class="gauge" role="img" aria-label="KPI ${h.ratio.toFixed(2)}× on a scale from 0 to ${TARGET}×"><i style="width:${pos}%"></i>
+      <b style="left:50%" title="parity"></b><b style="left:100%" title="target"></b>
+      <u style="left:0">0×</u><u style="left:50%">1× parity</u><u style="left:100%">2× target</u></div>
+    <div class="meta">${delta}<span class="mute">Last measured ${ago(h.now - h.t)} at ${esc(h.label)}${h.lane ? ` · ${esc(h.lane)}` : ""}</span></div>
+    ${h.reason ? `<p class="reason"><b>Stale.</b> ${esc(h.reason)}</p>` : ""}
+    <p class="legend"><span style="--c:var(--green)">green: 2× or more</span><span style="--c:var(--orange)">orange: 1× to 2×</span><span style="--c:var(--red)">red: below 1×</span><span style="--c:var(--yellow)">yellow: stale (over ${STALE_HOURS} h, or R2/R3 newer)</span></p>
+    <p class="fine">KPI = legacy ÷ native thread CPU per frame, screen present left out, at R5 with 4,096 objects. Higher is better.
+      The version that includes screen present cannot show progress under Xvfb: present costs about 75 ms per frame in both arms.
+      ${h.invalid ? '<span class="pill">Host was loaded: trust the ratios, not the ms</span>' : ""}</p>`;
+}
+
+// ---- 2. Trend ------------------------------------------------------------------------------------------
+const MARK = { green: "var(--green)", orange: "var(--orange)", red: "var(--red)" };
+/** pts: points in x order. lines: [{name, w, dash, stroke, r, get(p)}]. Dots take the value's status colour. */
+function trendSvg(pts, lines) {
+  const W = 460, H = 250, L = 38, R = 14, T = 12, B = 54;
+  const n = pts.length;
+  const x = (i) => L + (n === 1 ? (W - L - R) / 2 : (i / (n - 1)) * (W - L - R));
+  const top = Math.max(TARGET + 0.4, ...lines.flatMap((l) => pts.map((p) => l.get(p) ?? 0))) * 1.05;
+  const y = (v) => T + (1 - v / top) * (H - T - B);
+  let o = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="KPI per benchmark point, higher is better">`;
+  o += `<rect x="${L}" y="${y(top)}" width="${W - L - R}" height="${y(TARGET) - y(top)}" fill="var(--green)" opacity=".1"/>`;
+  for (let v = 0; v <= top; v += 0.5) o += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>`;
+  for (let v = 0; v <= top; v += 1) o += `<text x="${L - 6}" y="${y(v) + 4}" font-size="12" text-anchor="end" fill="var(--mute)">${v}×</text>`;
+  o += `<line x1="${L}" x2="${W - R}" y1="${y(1)}" y2="${y(1)}" stroke="var(--mute)" stroke-dasharray="4 4"/><text x="${L + 4}" y="${y(1) - 5}" font-size="12" fill="var(--mute)">1× parity</text>`;
+  o += `<line x1="${L}" x2="${W - R}" y1="${y(TARGET)}" y2="${y(TARGET)}" stroke="var(--green)" stroke-width="1.5"/><text x="${L + 4}" y="${y(TARGET) - 5}" font-size="12" fill="var(--green)">2× target</text>`;
+  pts.forEach((p, i) => { o += `<text x="${x(i)}" y="${H - B + 14}" transform="rotate(-30 ${x(i)} ${H - B + 14})" font-size="11.5" text-anchor="end" fill="var(--mute)">${esc(tagOf(p.label))}</text>`; });
+  for (const l of lines) {
+    const at = pts.flatMap((p, i) => (l.get(p) === undefined ? [] : [{ p, i, v: l.get(p) }]));
+    if (at.length > 1) o += `<polyline fill="none" stroke="${l.stroke}" stroke-width="${l.w}" ${l.dash ? `stroke-dasharray="${l.dash}"` : ""} points="${at.map(({ i, v }) => `${x(i)},${y(v)}`).join(" ")}"/>`;
+    for (const { p, i, v } of at) o += `<circle cx="${x(i)}" cy="${y(v)}" r="${l.r}" fill="${MARK[colorOf(v)]}" stroke="var(--card)" stroke-width="2"><title>${esc(l.name)} · ${esc(p.label)}\n${fx(v)} (${colorOf(v)})\nlegacy ${fm(p.legacyThread)} · native ${fm(p.nativeThread)} thread CPU per frame\n${new Date(p.t).toLocaleString()}${p.invalid ? "\nhost was loaded: ratio only" : ""}</title></circle>`;
+  }
+  return o + "</svg>";
+}
+const RUNG_LINE = {
+  R5: { w: 3.5, r: 7, stroke: "var(--ink)", note: "R5, 4,096 objects (the KPI)" },
+  R3: { w: 1.5, r: 4, stroke: "var(--mute)", note: "R3" },
+  R2: { w: 1.5, r: 4, stroke: "var(--mute)", dash: "5 4", note: "R2" },
+};
+function renderTrend() {
+  const shown = points.filter((p) => p.ratioNoPresent !== undefined && (p.objects === 4096 || p.mode === "R5"));
+  const skipped = points.filter((p) => p.ratioNoPresent === undefined).length;
+  const modes = [...new Set(shown.map((p) => p.mode))].sort((a, b) => (a === "R5" ? -1 : b === "R5" ? 1 : a.localeCompare(b)));
+  const lines = modes.map((m) => ({ name: m, ...(RUNG_LINE[m] ?? { w: 1.5, r: 4, stroke: "var(--mute)" }), get: (p) => (p.mode === m ? p.ratioNoPresent : undefined) }));
+  $("trend").innerHTML = `<h2>Is it getting closer?</h2>
+    <p class="mute sm" style="margin:0">KPI at each benchmark point, oldest left. Higher is better. Dot colour: green 2× or better, orange 1× to 2×, red below 1×.</p>
+    ${shown.length ? `<div class="lines">${lines.map((l) => `<span style="--w:${l.w}px;--st:${l.dash ? "dashed" : "solid"};--lc:${l.stroke}">${esc(RUNG_LINE[l.name]?.note ?? l.name)}</span>`).join("")}</div>${trendSvg(shown, lines)}` : '<p class="mute">No point has a KPI value yet.</p>'}
+    <p class="fine">${skipped} earlier point${skipped === 1 ? "" : "s"} without a KPI value (measured before thread CPU was recorded) ${skipped === 1 ? "is" : "are"} skipped. R2 with 256 objects is a control and lives in Details.</p>`;
+}
+
+// ---- 3. Where the frame goes ---------------------------------------------------------------------------
+const PHASE_ORDER = ["game", "animation", "matrixWorld", "projection", "render"];
+const PHASE_NAME = { game: "game logic", animation: "animation", matrixWorld: "matrix update", projection: "projection", render: "render submit", other: "other" };
+function renderFrame() {
+  const ph = hero.phases, el = $("frame");
+  if (!ph) { el.hidden = true; return; }
+  el.hidden = false;
+  const keys = [...new Set([...Object.keys(ph.legacy), ...Object.keys(ph.native)])].filter((k) => k !== "present" && k !== "other");
+  keys.sort((a, b) => (PHASE_ORDER.indexOf(a) + 1 || 99) - (PHASE_ORDER.indexOf(b) + 1 || 99));
+  keys.push("other");
+  const total = (side) => keys.reduce((a, k) => a + (ph[side][k] ?? 0), 0);
+  const max = Math.max(total("legacy"), total("native")) || 1;
+  const colorVar = (k) => `var(--p-${PHASE_ORDER.includes(k) || k === "other" ? k : "extra"})`;
+  const bar = (side, title) => `<div class="stackrow"><div class="cap"><b>${title}</b><span class="mute">${fm(total(side))} per frame, screen present left out</span></div>
+    <div class="stack" style="width:${(total(side) / max) * 100}%">${keys.map((k) => { const v = ph[side][k] ?? 0; return v > 0 ? `<div style="flex:${v} 0 0;background:${colorVar(k)}" title="${esc(PHASE_NAME[k] ?? k)}: ${fm(v)}">${v / max > 0.07 ? v.toFixed(1) : ""}</div>` : ""; }).join("")}</div></div>`;
+  const g = ph.gap;
+  el.innerHTML = `<h2>Where does the frame go? <span class="mute sm">R5, ${esc(ph.label)}, ${ago(hero.now - ph.t)}</span></h2>
+    <p class="mute sm" style="margin:0">CPU time per frame by phase. Same colours, same scale. A shorter bar is cheaper.</p>
+    ${bar("legacy", "Legacy (three.js)")}${bar("native", "Native (C++ engine)")}
+    <div class="keys">${keys.map((k) => `<span style="--k:${colorVar(k)}">${esc(PHASE_NAME[k] ?? k)}: native ${fm(ph.native[k])}, legacy ${fm(ph.legacy[k])}</span>`).join("")}</div>
+    <p class="gap">${g ? `Biggest gap: ${esc(PHASE_NAME[g.phase] ?? g.phase)}, native ${fm(g.native)} vs legacy ${fm(g.legacy)}.` : "Native is not slower than legacy in any phase."}</p>
+    ${ph.native.present !== undefined && ph.legacy.present !== undefined ? `<p class="fine">Screen present, not counted in the KPI: native ${fm(ph.native.present)}, legacy ${fm(ph.legacy.present)} per frame.</p>` : ""}`;
+}
+
+// ---- 3b. Web: tn-web vs tn-engine-web, never mixed into the desktop KPI ---------------------------------
+const miss = (list) => (list.length ? list.map(esc).join(", ") : '<span class="pill">missing</span>');
+const fb = (v) => (v === undefined ? '<span class="mute">missing</span>' : v >= 1048576 ? `${(v / 1048576).toFixed(1)} MB` : `${(v / 1024).toFixed(0)} KB`);
+const fmm = (v) => (v === undefined ? '<span class="mute">missing</span>' : `${v.toFixed(1)} ms`);
+const VERDICT = { win: ["green", "win"], regression: ["red", "regression"], inconclusive: ["grey", "inside the noise"], pending: ["grey", "pending"] };
+function renderDesktop() {
+  const pending = '<span class="pill">PENDING</span>';
+  const ms = (v) => v === undefined ? pending : fm(v);
+  const ratio = (v) => v === undefined ? pending : fx(v);
+  const problem = (r) => r.problem ? `<p class="fine">${esc(r.problem)}</p>` : "";
+  const gpu = desktop.gpu, godot = desktop.godot;
+  $("desktop").innerHTML = `<h2>Desktop KPI (v1)</h2>
+    <p class="mute sm">tn-desktop ÷ tn-engine-desktop · thread CPU without present · FPS uncapped (vsync off)</p>
+    <p class="fine">Draw-call parity waived for desktop batching (drawCalls); triangles and remaining parity checks apply.</p>
+    <div class="scroll"><table><tr><th>Rung / set</th><th>Legacy ms</th><th>Engine ms</th><th>Legacy FPS</th><th>1% low FPS</th><th>Engine FPS</th><th>1% low FPS</th><th>Pooled ratio</th><th>Per-round ratios</th><th>Triangles L / E</th><th>Commit</th></tr>
+    ${desktop.kpi.map((r) => `<tr><td>${esc(r.rung)} ${esc(r.label ?? "")} <span class="pill">${esc(r.lane ?? "")}</span></td><td>${ms(r.pair?.left.threadCpuP50)}</td><td>${ms(r.pair?.right.threadCpuP50)}</td><td>${ffps(r.pair?.left.fps)}</td><td>${ffps(r.pair?.left.fpsLow1)}</td><td>${ffps(r.pair?.right.fps)}</td><td>${ffps(r.pair?.right.fpsLow1)}</td><td>${ratio(r.pair?.ratio.threadCpu)}</td><td>${r.rounds?.map((p) => `r${p.round}: ${ratio(p.ratio)}`).join(" · ") || pending}</td><td>${r.pair ? `${r.pair.left.triangles} / ${r.pair.right.triangles}` : pending}</td><td>${r.commits?.map(esc).join(" · ") || pending}</td></tr>`).join("")}
+    </table></div>
+    ${desktop.kpi.map(problem).join("")}
+    <p class="sm"><b>real-GPU inclusive (R5)</b>: ${gpu.status === "PENDING" ? pending : `frame p50 ratio ${ratio(gpu.pair?.ratio.p50)} · ${gpu.adapters.map(esc).join(" · ")}`}</p>${problem(gpu)}
+    <p class="sm"><b>Godot (R5)</b>: ${godot.status === "PENDING" ? pending : `Godot / tn-engine-desktop frame p50 ${ms(godot.pair?.left.p50)} / ${ms(godot.pair?.right.p50)}, p95 ${ms(godot.pair?.left.p95)} / ${ms(godot.pair?.right.p95)}, p99 ${ms(godot.pair?.left.p99)} / ${ms(godot.pair?.right.p99)}`}</p>${problem(godot)}`;
+}
+
+function renderWeb() {
+  const el = $("web"), { pairs, cuts, census } = web;
+  const head = `<h2>Web: tn-web vs tn-engine-web <span class="mute sm">browser WebGPU · page frames per second (performance.now), separate from the desktop KPI</span></h2>`;
+  if (!pairs.length && !cuts.length) { el.innerHTML = `${head}<p><span class="pill">pending</span> No web run yet. Run <code>pnpm bench:engines --pair tn-web,tn-engine-web --production --browser-recipe webgpu</code>.</p>`; return; }
+  const measured = pairs.filter((p) => p.status === "measured" && p.ratioP50 !== undefined);
+  const latest = measured.at(-1);
+  const previous = latest ? measured.filter((p) => p !== latest && p.mode === latest.mode && p.objects === latest.objects).at(-1) : undefined;
+  const d = latest && previous ? (latest.ratioP50 - previous.ratioP50) / previous.ratioP50 : undefined;
+  const delta = d === undefined ? "" : Math.abs(d) <= 0.1 ? `<span class="delta flat">≈ flat vs ${esc(previous.label)}</span>` : `<span class="delta ${d > 0 ? "up" : "down"}">${d > 0 ? "▲ better" : "▼ worse: regression"} ${(d * 100).toFixed(0)}% vs ${esc(previous.label)} at ${fx(previous.ratioP50)}</span>`;
+  const flags = (p) => `${p.invalid ? '<span class="pill" style="color:var(--red)">host loaded: ratios only</span> ' : '<span class="pill">host idle</span> '}${p.software ? '<span class="pill" style="color:var(--red)">software adapter: not real-GPU or visual evidence</span>' : '<span class="pill">real GPU</span>'}`;
+  const hero = latest ? `<div class="s-${colorOf(latest.ratioP50)}"><div class="big" style="color:var(--c)">${fx(latest.ratioP50)}</div>
+    <p style="margin:2px 0 8px">${latest.ratioP50 >= 1 ? `The engine page is ${latest.ratioP50.toFixed(2)}× cheaper per frame than three.js on ${esc(latest.mode)}@${latest.objects}.` : `The engine page costs ${(1 / latest.ratioP50).toFixed(2)}× three.js per frame on ${esc(latest.mode)}@${latest.objects}.`} Target ${WEB_TARGET}× cheaper${latest.ratioP50 >= WEB_TARGET ? " (met)" : ` (${latest.ratioP50.toFixed(2)}× of ${WEB_TARGET}×)`}.</p></div>
+    <div class="meta">${delta}<span class="mute">${esc(latest.label)}, ${ago(Date.now() - latest.t)}</span></div>
+    <p class="sm" style="margin:8px 0 0">Platform web · arms tn-web, tn-engine-web · commit ${miss(latest.commits)} · hardware ${miss(latest.adapters)} · browser ${miss(latest.browsers)} · ${flags(latest)}</p>` : '<p><span class="pill">pending</span> No pair has both arms yet.</p>';
+  const arm = (a) => `<td>${fm(a.p50)}</td><td>${fm(a.p95)}</td><td>${fm(a.p99)}</td><td>${ffps(a.fps)}</td><td>${ffps(a.fpsLow1)}</td>`;
+  el.innerHTML = `${head}${hero}
+    <h3 class="sm" style="margin:14px 0 2px">Pairs (alternating rounds; ratio = tn-web ÷ tn-engine-web p50, above 1 the engine is cheaper)</h3>
+    <div class="scroll"><table><tr><th>Point</th><th>Rung</th><th>web p50</th><th>p95</th><th>p99</th><th>FPS</th><th>1% low FPS</th><th>engine p50</th><th>p95</th><th>p99</th><th>FPS</th><th>1% low FPS</th><th>Ratio p50</th><th>Ratio main thread</th><th>Runs</th><th>Host</th><th>Visual</th></tr>
+    ${[...pairs].reverse().map((p) => `<tr><td>${esc(p.label)}${p.status === "pending" ? ' <span class="pill">pending</span>' : ""}</td><td>${esc(p.mode)}@${p.objects}</td>${arm(p.legacy)}${arm(p.native)}<td>${fx(p.ratioP50)}</td><td>${fx(p.ratioThread)}</td><td>${p.legacy.runs}+${p.native.runs}</td><td>${p.invalid ? "loaded" : "idle"}</td><td>${p.software ? "software" : "real GPU"}</td></tr>`).join("")}</table></div>
+    ${latest ? `<h3 class="sm" style="margin:14px 0 2px">Startup, bytes and memory (${esc(latest.label)})</h3>
+    <div class="scroll"><table><tr><th>Arm</th><th>First frame</th><th>Wasm compile+instantiate</th><th>JS gzip</th><th>Wasm gzip</th><th>Wasm memory</th><th>JS heap</th></tr>
+    ${[["tn-web", latest.legacy], ["tn-engine-web", latest.native]].map(([n, a]) => `<tr><td>${n}</td><td>${fmm(a.web?.firstFrameMs)}</td><td>${n === "tn-web" && a.web?.wasmInstantiateMs === undefined ? '<span class="mute">none</span>' : fmm(a.web?.wasmInstantiateMs)}</td><td>${fb(a.web?.jsGzipBytes)}</td><td>${fb(a.web?.wasmGzipBytes)}</td><td>${n === "tn-web" && a.web?.wasmMemoryBytes === undefined ? '<span class="mute">none</span>' : fb(a.web?.wasmMemoryBytes)}</td><td>${fb(a.web?.jsHeapUsedBytes)}</td></tr>`).join("")}</table></div>` : ""}
+    <h3 class="sm" style="margin:14px 0 2px">Engine-web changes, alternating A/B (B is the change; B ÷ A below 1 is cheaper)</h3>
+    ${cuts.length ? `<div class="scroll"><table><tr><th>Change</th><th>Rung</th><th>A p50</th><th>B p50</th><th>B ÷ A</th><th>Runs A+B</th><th>Verdict</th><th>Host</th><th>Visual</th></tr>
+    ${[...cuts].reverse().map((c) => { const [col, word] = VERDICT[c.verdict]; return `<tr><td>${esc(c.label)}</td><td>${esc(c.mode)}@${c.objects}</td><td>${fm(c.aP50)}</td><td>${fm(c.bP50)}</td><td>${c.ratio === undefined ? "n/a" : c.ratio.toFixed(3)}</td><td>${c.aRuns}+${c.bRuns}</td><td><span class="pill" style="color:var(--${col})">${word}</span></td><td>${c.invalid ? "loaded" : "idle"}</td><td>${c.software ? "software" : "real GPU"}</td></tr>`; }).join("")}</table></div>` : '<p class="mute sm"><span class="pill">pending</span> No A/B yet.</p>'}
+    ${census.length ? `<h3 class="sm" style="margin:14px 0 2px">JS-to-Wasm crossings per frame (counted runs, not timed)</h3><div class="scroll"><table><tr><th>Run</th><th>Rung</th><th>Crossings p50</th></tr>${[...census].reverse().map((c) => `<tr><td>${esc(c.label)}</td><td>${esc(c.mode)}@${c.objects}</td><td>${c.crossings.toLocaleString()}</td></tr>`).join("")}</table></div>` : ""}
+    <p class="fine">Win: every B run below every A run. Regression: every B run above every A run. Main-thread ms on the web is page wall time (performance.now()); a page has no thread CPU clock. "missing" means the run did not record that field.</p>`;
+}
+
+// ---- 4. Epic progress ----------------------------------------------------------------------------------
+const sums = (c) => ({ d: c.phases.reduce((a, p) => a + p.done, 0), t: c.phases.reduce((a, p) => a + p.total, 0) });
+const pct = (c) => { const { d, t } = sums(c); return t ? Math.round((d / t) * 100) : 0; };
+function renderEpic() {
+  const c = epic.find((e) => e.id === "v1");
+  if (!c) { $("epic").innerHTML = '<h2>Epic progress</h2><p class="mute">No epic data (start the server with <code>--prd</code>).</p>'; return; }
+  const { d, t } = sums(c);
+  const gate = c.phases.find((p) => /KPI and gate/i.test(p.title));
+  const icon = (p) => (p.total && p.done === p.total ? ['done', "✓", "done"] : p.done > 0 ? ["part", "◐", "in progress"] : ["todo", "○", "not started"]);
+  const later = epic.filter((e) => e.id !== "v1").map((e) => `${esc(e.id)} ${pct(e)}%`).join(" · ");
+  $("epic").innerHTML = `<h2>Epic progress, cycle v1 <span class="mute sm">${esc(c.title)}</span></h2>
+    <div class="big">${pct(c)}%</div><div class="bar"><i style="width:${pct(c)}%"></i></div><div class="mute sm">${d} of ${t} checklist boxes ticked</div>
+    <ul class="ph">${c.phases.map((p) => { const [cls, ch, word] = icon(p); return `<li><span class="ic ${cls}" role="img" aria-label="${word}">${ch}</span><span class="t">${esc(p.id)} ${esc(p.title)}</span><span class="n">${p.done}/${p.total}</span></li>`; }).join("")}</ul>
+    ${gate ? `<div class="gate"><b>v1 gate</b>${gate.boxes.map((b) => `<div><span class="st ${b.done ? "ok" : "open"}">${b.done ? "done" : "open"}</span>${esc(b.text)}</div>`).join("")}</div>` : ""}
+    ${later ? `<p class="fine">Later cycles: ${later}</p>` : ""}`;
+}
+
+// ---- 5. Details ----------------------------------------------------------------------------------------
+function p50Chart(series) {
+  const W = 320, H = 130, L = 36, B = 14, T = 6, R = 6, PAL = ["#3b82f6", "#e8590c", "#8b5cf6", "#0891b2"];
+  const all = series.flatMap((s) => s.pts.map((p) => p.p50));
+  const max = Math.max(...all) * 1.1, min = Math.min(...all) * 0.9;
+  const n = Math.max(...series.map((s) => s.pts.length));
+  const x = (i) => L + (n === 1 ? (W - L - R) / 2 : (i / (n - 1)) * (W - L - R));
+  const y = (v) => T + (1 - (v - min) / (max - min || 1)) * (H - T - B);
+  let o = `<svg viewBox="0 0 ${W} ${H}" role="img">`;
+  for (const v of [min, (min + max) / 2, max]) o += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 4}" y="${y(v) + 3}" font-size="9" text-anchor="end" fill="var(--mute)">${v.toFixed(1)}</text>`;
+  series.forEach((s, si) => {
+    const c = PAL[si % PAL.length];
+    o += `<polyline fill="none" stroke="${c}" stroke-width="1.6" points="${s.pts.map((p, i) => `${x(i)},${y(p.p50)}`).join(" ")}"/>`;
+    s.pts.forEach((p, i) => { o += `<circle cx="${x(i)}" cy="${y(p.p50)}" r="2.6" fill="${c}"><title>${esc(s.key)} p50 ${p.p50.toFixed(2)} ms, p95 ${p.p95.toFixed(2)} ms, p99 ${p.p99.toFixed(2)} ms\n${esc(p.file)}</title></circle>`; });
+  });
+  return o + "</svg>";
+}
+function renderDetails() {
+  const sw = ["#3b82f6", "#e8590c", "#8b5cf6", "#0891b2", "#64748b"];
+  const control = points.filter((p) => p.mode === "R2" && p.objects === 256);
+  const incl = [...new Set(points.filter((p) => p.ratioCpu !== undefined).map(keyOf))];
+  const inclPts = points.filter((p) => p.ratioCpu !== undefined);
+  const wl = new Map();
+  for (const r of rows) { const k = `${r.mode} · ${r.objects.toLocaleString()} objects`; if (!wl.has(k)) wl.set(k, new Map()); const arms = wl.get(k); const sk = `${r.engine}/${r.arm}`; if (!arms.has(sk)) arms.set(sk, { key: sk, pts: [] }); arms.get(sk).pts.push(r); }
+  $("detailsBody").innerHTML = `
+    <h3>Control: R2 with 256 objects</h3>
+    <p class="mute sm" style="margin:0">A small scene where the engine should not win or lose much. It checks the harness, not the engine.</p>
+    ${control.length ? trendSvg(control, [{ name: "KPI", w: 2.5, r: 5, stroke: "var(--ink)", get: (p) => p.ratioNoPresent }, { name: "including present", w: 1.5, r: 3.5, stroke: "var(--mute)", dash: "5 4", get: (p) => p.ratioCpu }]) : '<p class="mute sm">No R2 256 point yet.</p>'}
+    <h3>Including screen present (Xvfb, inflated)</h3>
+    <p class="mute sm" style="margin:0">Whole-process CPU per frame with the present call. Present costs about 75 ms per frame in both arms under Xvfb, so this ratio hugs 1× and hides progress.</p>
+    ${inclPts.length ? trendSvg(inclPts, incl.map((k, i) => ({ name: k, w: 2, r: 4, stroke: sw[i % sw.length], get: (p) => (keyOf(p) === k ? p.ratioCpu : undefined) }))) : ""}
+    <div class="lines">${incl.map((k, i) => `<span style="--lc:${sw[i % sw.length]};--w:3px">${esc(k)}</span>`).join("")}</div>
+    <h3>Raw frame time (p50 ms per frame), per workload</h3>
+    <p class="mute sm" style="margin:0">Lower is better. Oldest left, newest right. Single runs swing about ±30%.</p>
+    <div class="charts">${[...wl].sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true })).map(([name, arms]) => { const ser = [...arms.values()]; return `<div><b class="sm">${esc(name)}</b><div class="lines">${ser.map((s, i) => `<span style="--lc:${sw[i % sw.length]}">${esc(s.key)} (${s.pts.length})</span>`).join("")}</div>${p50Chart(ser)}</div>`; }).join("") || '<p class="mute sm">No run reports yet.</p>'}</div>
+    <h3>Every benchmark point</h3>
+    <div class="scroll"><table><tr><th>Point</th><th>Rung</th><th>KPI</th><th>Incl. present</th><th>Legacy thread</th><th>Native thread</th><th>Runs (L+N)</th><th>Host</th></tr>
+    ${[...points].reverse().map((p) => `<tr><td>${esc(p.label)}</td><td>${esc(p.mode)}@${p.objects}</td><td>${fx(p.ratioNoPresent)}</td><td>${fx(p.ratioCpu)}</td><td>${fm(p.legacyThread)}</td><td>${fm(p.nativeThread)}</td><td>${p.legacyRuns}+${p.nativeRuns}</td><td>${p.invalid ? "loaded" : "idle"}</td></tr>`).join("")}</table></div>`;
+}
+
+function render() {
+  renderCompare(); renderHero(); renderCheapTier(); renderTrend(); renderFrame(); renderDesktop(); renderWeb(); renderEpic();
+  if ($("details").open) renderDetails();
+}
+$("details").addEventListener("toggle", () => $("details").open && renderDetails());
+
+async function tick() {
+  try {
+    const get = (u) => fetch(u, { cache: "no-store" }).then((x) => x.json());
+    const [h, p, e, r, w, d, m] = await Promise.all([get("/api/hero"), get("/api/points"), get("/api/epic"), get("/api/rows"), get("/api/web"), get("/api/desktop"), get("/api/midway")]);
+    hero = h; points = p; epic = e; rows = r.rows; web = w; desktop = d; midway = m;
+    render();
+    $("status").textContent = `live · ${points.length} points · updated ${new Date().toLocaleTimeString()}`;
+    $("dot").style.background = "var(--green)";
+  } catch {
+    $("status").textContent = "server not reachable";
+    $("dot").style.background = "var(--red)";
+  }
+}
+tick(); setInterval(tick, 2000);
+</script>
+</body>
+</html>

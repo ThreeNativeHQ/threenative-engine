@@ -238,6 +238,29 @@ describe("assert.parity evaluation", () => {
     expect(diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_PARITY_BELOW_FLOOR");
   });
 
+  it("uses the same fps as the minFps path for an even-length series", () => {
+    const samples = [10, 20, 10, 20].map((frameMs) => ({ frameMs, phases: { render: frameMs * 0.6 } }));
+    const scenario = validatePlaytestScenario(
+      {
+        assert: {
+          parity: { minFpsRatio: 0.99, referenceReport: "native.json", referenceSide: "browser", reference: { fps: 100, renderP95: 10, serial: "pixel-8", thermallyConfounded: false } },
+          performance: { minFps: 99 },
+        },
+        name: "parity",
+        schemaVersion: 1,
+        steps: [{ waitTicks: 4 }],
+        target: "web",
+      },
+      "s.playtest.json",
+      "/tmp/s.playtest.json",
+    );
+    const report = reportWith({ fps: 60, serial: "pixel-8" });
+    (report.observations as { performanceSeries?: unknown }).performanceSeries = samples;
+    const { assertions } = evaluateRichPlaytestAssertions({ report, scenario });
+    expect(assertions.find(({ id }) => id === "performance.minFps")?.pass).toBe(true);
+    expect(assertions.find(({ id }) => id === "parity.fpsRatio")?.pass).toBe(true);
+  });
+
   it("records a ratio above 1.0 rather than clamping it", () => {
     // This run is the native half at 30 fps; the browser reference managed 15. native ÷ web = 2.
     const scenario = hydratedScenario({ ...assertion, referenceSide: "browser", reference: { fps: 15, renderP95: 10, serial: "pixel-8", thermallyConfounded: false } });

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "name": "native-css-input",
+  "target": "desktop",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "steps": [
+    {
+      "label": "before-tab",
+      "waitTicks": 120,
+      "screenshot": "input-before-tab"
+    },
+    {
+      "press": "Tab",
+      "holdTicks": 10,
+      "release": true
+    },
+    {
+      "label": "after-tab",
+      "waitTicks": 30,
+      "screenshot": "input-after-tab"
+    },
+    {
+      "press": "Enter",
+      "holdTicks": 10,
+      "release": true
+    },
+    {
+      "label": "after-enter",
+      "waitTicks": 30,
+      "screenshot": "input-after-enter"
+    },
+    {
+      "press": "KeyJ",
+      "holdTicks": 10,
+      "release": true
+    },
+    {
+      "label": "after-game-key",
+      "waitTicks": 30
+    }
+  ],
+  "artifacts": {
+    "console": true,
+    "screenshots": true
+  },
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "closeClicks",
+        "atSteps": [
+          {
+            "label": "before-tab",
+            "equals": 0
+          },
+          {
+            "label": "after-tab",
+            "equals": 0
+          },
+          {
+            "label": "after-enter",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "gameKeys",
+        "atSteps": [
+          {
+            "label": "after-enter",
+            "equals": 0
+          },
+          {
+            "label": "after-game-key",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "frames",
+        "changed": true,
+        "gte": 100
+      }
+    ]
+  }
+}

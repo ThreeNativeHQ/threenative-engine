@@ -1,8 +1,8 @@
 import { UAssetError } from "./errors.js";
 
 /** FRawMesh serialization version; both known values differ only by one trailing array. */
-export const RAW_MESH_VER_INITIAL = 0;
-export const RAW_MESH_VER_REMOVE_ZERO_TRIANGLE_SECTIONS = 1;
+const RAW_MESH_VER_INITIAL = 0;
+const RAW_MESH_VER_REMOVE_ZERO_TRIANGLE_SECTIONS = 1;
 
 const MAX_MESH_TEXTURE_COORDS = 8;
 const MAX_ARRAY_ELEMENTS = 200_000_000;

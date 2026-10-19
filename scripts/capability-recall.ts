@@ -122,8 +122,10 @@ const TEMPLATE_NAMES = [
   "minimal",
   "platformer",
   "racing",
+  "rain",
   "sailing",
   "shooter",
+  "snow",
   "starter",
   "tower-defense",
 ] as const;

@@ -14,6 +14,8 @@ const PACKAGE_NAME_GLOBAL_PATTERN =
 const WORKFLOW_PACKAGE_COMMAND_PATTERN =
   /\bpnpm[ \t]+[^\n;&|]*?--filter[ \t]+["']?(@threenative\/[a-z0-9-]+|create-threenative|threenative-[a-z0-9-]+-mcp)["']?(?=[ \t\r\n]|$)/gu;
 const WORKFLOW_SHELL_CONTINUATION_PATTERN = /\\\r?\n[ \t]*/gu;
+// One `run:` step — scalar, literal block or folded block — is one command group.
+const WORKFLOW_RUN_HEADER_PATTERN = /^[^\S\n]*(?:-[^\S\n]+)?run:/gmu;
 const WORKFLOW_YAML_FOLDED_SCALAR_HEADER_PATTERN =
   /^([ \t]*)(?:-[ \t]+)?run:[ \t]*>(?:[1-9][+-]?|[+-][1-9]?)?(?:[ \t]+#.*)?[ \t]*$/u;
 const OTHER_WORKSPACE_NAMES = new Set([
@@ -327,15 +329,29 @@ function unfoldYamlFoldedScalars(source: string): string {
 }
 
 function hasWorkflowPackageEnumeration(source: string): boolean {
-  const names = new Set<string>();
   const continuedSource = unfoldYamlFoldedScalars(source).replaceAll(
     WORKFLOW_SHELL_CONTINUATION_PATTERN,
     " ",
   );
+  // The defect is a hand-listed package set: several packages named by one command or one run block,
+  // or a shell loop over them. Two targeted `--filter` steps in two unrelated jobs are two builds, not
+  // a list, and since the per-feature integration workflows folded into one file a single workflow
+  // legitimately holds one targeted build per lane.
+  const runBlocks = [...continuedSource.matchAll(WORKFLOW_RUN_HEADER_PATTERN)].map(
+    (match) => match.index,
+  );
+  const perRunBlock = new Map<number, Set<string>>();
   for (const match of continuedSource.matchAll(WORKFLOW_PACKAGE_COMMAND_PATTERN)) {
-    if (match[1] !== undefined) names.add(match[1]);
+    const name = match[1];
+    if (name === undefined) continue;
+    const block = runBlocks.filter((at) => at <= (match.index ?? 0)).pop() ?? -1;
+    const blockNames = perRunBlock.get(block) ?? new Set<string>();
+    blockNames.add(name);
+    perRunBlock.set(block, blockNames);
   }
-  if (names.size >= 2) return true;
+  for (const blockNames of perRunBlock.values()) {
+    if (blockNames.size >= 2) return true;
+  }
 
   for (const match of source.matchAll(/\bfor\s+\w+\s+in\s+([\s\S]*?)(?:;\s*do\b|\s+do\b)/gu)) {
     const loopNames = new Set(match[1]?.match(PACKAGE_NAME_GLOBAL_PATTERN) ?? []);

@@ -1,4 +1,4 @@
-import { type ICtx, Scene, type SceneFrame, isMobile } from "@threenative/core";
+import { type ICtx, Scene, type SceneFrame, getPlatform, isMobile } from "@threenative/core";
 import { Object3D, type OrthographicCamera, type Texture, type Vector2 } from "three";
 import { onSceneIntent } from "../orders.js";
 import { createArmy } from "../render/army.js";
@@ -13,11 +13,14 @@ import {
   panSpeed,
   zoomRts,
 } from "../render/camera.js";
+import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { type ISun, setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { createUnitModels } from "../render/models.js";
 import { type PickTarget, pickEntity, unitsInBox } from "../render/picking.js";
 import { setupPost } from "../render/postprocessing.js";
+import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { createResources } from "../render/resources.js";
 import { setupSky } from "../render/sky.js";
 import { createTerrain } from "../render/terrain.js";
@@ -99,6 +102,18 @@ class SelectionAnchor {
 }
 
 export class Play extends Scene<GameState, undefined> {
+  #environmentSample: IEnvironmentSample | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+  #post: ReturnType<typeof setupPost> | undefined;
+  #materialEnvironment(ctx: GameCtx) {
+    return {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
+  }
   static override readonly initialState: GameState = INITIAL_STATE;
 
   #sky: Texture | undefined;
@@ -128,6 +143,12 @@ export class Play extends Scene<GameState, undefined> {
 
   override async load(ctx: GameCtx): Promise<void> {
     this.#sky = await ctx.assets.texture("sky.jpg");
+    setupSky(ctx.scene, this.#sky);
+    this.#environmentSample = await sampleEnvironment(
+      ctx.renderer.raw,
+      ctx.scene,
+      this.#materialEnvironment(ctx),
+    );
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, undefined> {
@@ -150,15 +171,23 @@ export class Play extends Scene<GameState, undefined> {
     this.#sun = sun;
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code, exactly like createRandom.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+    this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
       godraysLight: sun.key,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
+      onTierChanged: (tier) =>
+        this.#materialLighting?.setEnabled(
+          materialLightingEnabled(tier, this.#materialEnvironment(ctx)),
+        ),
     });
     const loading = createLoadingScreen(ctx);
     this.#terrain = createTerrain();
     this.#models = createUnitModels();
-    this.#army = createArmy(this.#models);
+    this.#army = createArmy(this.#models, {
+      added: (mesh) => this.#materialLighting?.enroll(mesh),
+      removed: (mesh) => this.#materialLighting?.release(mesh),
+    });
     this.#resources = createResources();
     const world = new Object3D();
     world.add(this.#terrain.root, this.#resources.root, this.#army.root, this.#anchor.object);
@@ -169,6 +198,23 @@ export class Play extends Scene<GameState, undefined> {
     // starts with an empty selection teaches the click by making the player guess.
     this.#selectIds(sim.army().map((entity) => entity.id));
     onSceneIntent((intent, payload) => this.#intent(intent, payload));
+
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, sun.key, {
+        ...this.#materialEnvironment(ctx),
+        enabled: materialLightingEnabled(this.#post.tier, this.#materialEnvironment(ctx)),
+      }),
+    );
+    if (this.#environmentSample !== undefined) {
+      const { measurement, source, intensity } = this.#environmentSample;
+      this.#materialLighting.setEnvironmentMeasurement(
+        measurement,
+        source,
+        intensity,
+        this.#environmentSample,
+      );
+    }
 
     return (frameCtx, dt) => {
       loading.update();
@@ -194,6 +240,11 @@ export class Play extends Scene<GameState, undefined> {
   }
 
   override exit(ctx: GameCtx): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
+
     onSceneIntent(() => undefined);
     ctx.entities.remove("selection");
     this.#army?.dispose();

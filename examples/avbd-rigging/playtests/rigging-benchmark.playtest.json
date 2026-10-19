@@ -1,0 +1,2508 @@
+{
+  "name": "avbd-rigging-frozen-comparison",
+  "schemaVersion": 1,
+  "subject": "three frozen alternating candidate/spring pairs and separately costed candidate diagnostics on the existing live fixed-step pump",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 300,
+  "artifacts": {
+    "screenshots": "before-after",
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "start-frozen-comparison",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-60",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 60
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-120",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 120
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-180",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 180
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-240",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 240
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-300",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 300
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-360",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 360
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-420",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 420
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-480",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 480
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-540",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 540
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-600",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 600
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-660",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 660
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-720",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 720
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-780",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 780
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-840",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 840
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-900",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 900
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-960",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 960
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1020",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1020
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1080",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1080
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1140",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1140
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1200",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1200
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1260",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1260
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1320",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1320
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1380",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1380
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1440",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1440
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1500",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1500
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1560",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1560
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1620",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1620
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1680",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1680
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1740",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1740
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1800",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1800
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1860",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1860
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1920",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1920
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-1980",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 1980
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2040",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2040
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2100",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2100
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2160",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2160
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2220",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2220
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2280",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2280
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2340",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2340
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2400",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2400
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2460",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2460
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2520",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2520
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2580",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2580
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2640",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2640
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2700",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2700
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2760",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2760
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2820",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2820
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2880",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2880
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-2940",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 2940
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3000",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3000
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3060",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3060
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3120",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3120
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3180",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3180
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3240",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3240
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3300",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3300
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3360",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3360
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3420",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3420
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3480",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3480
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3540",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3540
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3600",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3600
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3660",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3660
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3720",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3720
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3780",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3780
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3840",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3840
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3900",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3900
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-3960",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 3960
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4020",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4020
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4080",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4080
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4140",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4140
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4200",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4200
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4260",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4260
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4320",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4320
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4380",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4380
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4440",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4440
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4500",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4500
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4560",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4560
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4620",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4620
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4680",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4680
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4740",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4740
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4800",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4800
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4860",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4860
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4920",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4920
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-4980",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 4980
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5040",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5040
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5100",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5100
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5160",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5160
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5220",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5220
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5280",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5280
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5340",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5340
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5400",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5400
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5460",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5460
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5520",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5520
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5580",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5580
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5640",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5640
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5700",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5700
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5760",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5760
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5820",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5820
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5880",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5880
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-5940",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 5940
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6000",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6000
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6060",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6060
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6120",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6120
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6180",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6180
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6240",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6240
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6300",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6300
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6360",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6360
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6420",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6420
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6480",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6480
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6540",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6540
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6600",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6600
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6660",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6660
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6720",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6720
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6780",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6780
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6840",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6840
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6900",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6900
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-6960",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 6960
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7020",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7020
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7080",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7080
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7140",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7140
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7200",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7200
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7260",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7260
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7320",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7320
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7380",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7380
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7440",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7440
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7500",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7500
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7560",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7560
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7620",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7620
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7680",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7680
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7740",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7740
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7800",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7800
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7860",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7860
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7920",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7920
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-7980",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 7980
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8040",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8040
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8100",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8100
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8160",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8160
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8220",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8220
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8280",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8280
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8340",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8340
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8400",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8400
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8460",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8460
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8520",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8520
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8580",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8580
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8640",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8640
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8700",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8700
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8760",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8760
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8820",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8820
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8880",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8880
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-8940",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 8940
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9000",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9000
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9060",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9060
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9120",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9120
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9180",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9180
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9240",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9240
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9300",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9300
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9360",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9360
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9420",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9420
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9480",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9480
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9540",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9540
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9600",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9600
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9660",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9660
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9720",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9720
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9780",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9780
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9840",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9840
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9900",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9900
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-9960",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 9960
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10020",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10020
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10080",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10080
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10140",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10140
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10200",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10200
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10260",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10260
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10320",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10320
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10380",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10380
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10440",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10440
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10500",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10500
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10560",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10560
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10620",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10620
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10680",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10680
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10740",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10740
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10800",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10800
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10860",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10860
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10920",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10920
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-10980",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 10980
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11040",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11040
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11100",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11100
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11160",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11160
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11220",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11220
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11280",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11280
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11340",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11340
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11400",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11400
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11460",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11460
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11520",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11520
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11580",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11580
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11640",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11640
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11700",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11700
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11760",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11760
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11820",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11820
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11880",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11880
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-11940",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 11940
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12000",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12000
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12060",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12060
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12120",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12120
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12180",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12180
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12240",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12240
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12300",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12300
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12360",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12360
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12420",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12420
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12480",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12480
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12540",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12540
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12600",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12600
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12660",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12660
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12720",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12720
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12780",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12780
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12840",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12840
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12900",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12900
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-12960",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 12960
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13020",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13020
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13080",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13080
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13140",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13140
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13200",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13200
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13260",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13260
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13320",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13320
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13380",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13380
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13440",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13440
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13500",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13500
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13560",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13560
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13620",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13620
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13680",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13680
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13740",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13740
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13800",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13800
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13860",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13860
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13920",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13920
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-13980",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 13980
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-14040",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 14040
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-14100",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 14100
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-14160",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 14160
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-14220",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 14220
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-14280",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 14280
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-14340",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 14340
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-14400",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 14400
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-14460",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 14460
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-14520",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 14520
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-14580",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 14580
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "frozen-comparison-progress-14640",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkProgress",
+        "gte": 14640
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "all-seven-complete-windows",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "benchmarkCompleted",
+        "equals": 7
+      },
+      "timeoutMs": 120000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "benchmarkFailures",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Zero benchmark failures is a held invariant from load; benchmarkCompleted must independently reach 7."
+      },
+      {
+        "id": "GameState",
+        "path": "benchmarkCompleted",
+        "equals": 7
+      },
+      {
+        "id": "GameState",
+        "path": "benchmarkRun",
+        "equals": "off",
+        "allowTrivial": "The run returns to off after the last window; benchmarkCompleted 7 proves the windows ran."
+      },
+      {
+        "id": "GameState",
+        "path": "pausedAdditionalSteps",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Zero extra paused steps is a held invariant checked at every staged wait."
+      }
+    ]
+  }
+}

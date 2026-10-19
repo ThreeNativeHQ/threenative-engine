@@ -1,49 +1,99 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
-// The sky is a photograph: `assets/sky.jpg`, Poly Haven's "Kloofendal 48d Partly Cloudy (Pure Sky)"
-// by Greg Zaal and Jarod Guest, CC0 (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky).
-// The same image is the background, the environment light every surface reflects and is filled by,
-// and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
-// equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
+// A vertical blue gradient supplies the background; a measured environment supplies the light.
+// The background's lower hemisphere matches skyFloor around the floating route.
 import {
   BackSide,
   Color,
+  DataTexture,
   EquirectangularReflectionMapping,
   Float32BufferAttribute,
   FogExp2,
+  LinearFilter,
   Mesh,
   MeshBasicMaterial,
+  RGBAFormat,
   SRGBColorSpace,
   type Scene,
   SphereGeometry,
   type Texture,
+  UnsignedByteType,
   Vector3,
 } from "three";
+import { HEIGHT_FOG, type HeightFogParams, heightFogDepth, heightFogNode } from "./heightFog.js";
 import { palette } from "./palette.js";
 
-/**
- * How the JPEG was made from the 4k HDR: linear radiance × 0.4, clipped, sRGB-encoded — so white
- * in the file is 2.5 in the sky. Multiplying back restores the HDR brightness of the clouds; the sun
- * disk itself is clipped, which is why the sun is a light (`lighting.ts`) and not a texel.
- */
-const SKY_RANGE = 2.5;
-
-/** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
+/** Unit vector toward the authored sun, 47.9° above the horizon. */
 export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
 
-export function setupSky(scene: Scene, sky: Texture): void {
+/** The look this fog replaced: FogExp2 at 0.003, measured at 150 m from 2 m up. */
+const EYE_LEVEL = { density: 0.003, distance: 150, cameraHeight: 2 };
+
+/**
+ * The distance term's density that, with the height term, keeps the old eye-level haze: at
+ * `EYE_LEVEL.distance` along the horizon from `EYE_LEVEL.cameraHeight` the two together transmit what
+ * FogExp2 at `EYE_LEVEL.density` did. The distance term is lowered, never removed, so the ground
+ * still ends in fog at a kilometre.
+ */
+function distanceDensity(p: HeightFogParams = HEIGHT_FOG): number {
+  const { distance, density, cameraHeight } = EYE_LEVEL;
+  const old = (density * distance) ** 2;
+  const height = heightFogDepth(p, cameraHeight, cameraHeight, distance) * Math.LN2;
+  return Math.sqrt(Math.max(0, old - height)) / distance;
+}
+
+export function gradientColor(row: number, height: number): Color {
+  const high = new Color(palette.skyHigh);
+  const mid = new Color(palette.skyLow);
+  const horizon = new Color(palette.horizon);
+  const deep = high.clone().lerp(horizon, 0.45);
+  // DataTexture rows start at v=0 (nadir); equirectangular v=0.5 is the horizon.
+  const elevation = Math.sin((row / (height - 1) - 0.5) * Math.PI);
+  return elevation < 0
+    ? horizon.clone().lerp(deep, Math.min(1, -elevation / 0.6))
+    : elevation < 0.5
+      ? horizon.clone().lerp(mid, elevation * 2)
+      : mid.clone().lerp(high, (elevation - 0.5) * 2);
+}
+
+/** sRGB equirectangular radiance, from the lower haze through the horizon to the zenith. */
+export function skyTexture(): DataTexture {
+  // three's PMREM sizes its cube from width / 4, needing at least 16: keep width >= 64.
+  const width = 256;
+  const height = 128;
+  const data = new Uint8Array(width * height * 4);
+  for (let row = 0; row < height; row += 1) {
+    const encoded = gradientColor(row, height).convertLinearToSRGB();
+    for (let column = 0; column < width; column += 1) {
+      data.set(
+        [...encoded.toArray().map((value) => Math.round(value * 255)), 255],
+        (row * width + column) * 4,
+      );
+    }
+  }
+  const sky = new DataTexture(data, width, height, RGBAFormat, UnsignedByteType);
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
+  sky.magFilter = LinearFilter;
+  sky.minFilter = LinearFilter;
+  sky.needsUpdate = true;
+  return sky;
+}
+
+export function setupSky(scene: Scene, sky: Texture, environment: Texture = sky): void {
+  sky.mapping = EquirectangularReflectionMapping;
   scene.background = sky;
-  scene.backgroundIntensity = SKY_RANGE;
+  scene.backgroundIntensity = 1;
   // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
-  // It is what makes a standard material read as a material: sky-blue fill on faces the sun
-  // misses, and a sky to reflect, sharper as roughness drops.
-  scene.environment = sky;
-  scene.environmentIntensity = SKY_RANGE;
+  // The measured fill lights faces the sun misses and supplies reflections as roughness drops.
+  scene.environment = environment;
+  scene.environmentIntensity = 1;
   // The route runs to x=97 with the backdrop cliffs another 60 m behind them, so this is thin on
   // purpose: at this density it is under 2% inside the playfield and only reads past the castle.
-  scene.fog = new FogExp2(palette.horizon, 0.003);
+  // `scene.fog` stays the distance term; `scene.fogNode` is what three applies and adds the height term.
+  const distanceFog = new FogExp2(palette.horizon, distanceDensity());
+  scene.fog = distanceFog;
+  scene.fogNode = heightFogNode(distanceFog, HEIGHT_FOG, SUN_DIRECTION);
 }
 
 /**
@@ -56,11 +106,10 @@ const FLOOR_RADIUS = 480;
 const RISE = 0.35;
 
 /**
- * What the world floats in. A photographed sky ends in a flat grey ground disc, and the route has no
- * ground: everything under the horizon was a white void the fog could not hide. This is the lower
+ * What the world floats in. The route has no ground; this is the lower
  * hemisphere, from the fog colour at the horizon to a deeper sky blue straight down, so distant
  * rock fades into it exactly as it fades into the fog. It climbs 20 degrees past the horizon and
- * fades out there, so the photograph melts into the haze instead of meeting it at a hard line.
+ * fades out there, so the gradient melts into the haze instead of meeting it at a hard line.
  * It is not fogged and never writes depth.
  */
 export function skyFloor(): Mesh {
@@ -102,8 +151,8 @@ export function skyFloor(): Mesh {
 /**
  * The cloud bank, as a list of lobes to instance.
  *
- * Eighteen clouds of five to nine squashed lobes is 130-odd separate spheres, and a photograph sky
- * is a static one — so the scene builds one `InstancedBatch` of a unit sphere from this and never
+ * Eighteen clouds of five to nine squashed lobes is 130-odd separate spheres, and the gradient sky
+ * is static — so the scene builds one `InstancedBatch` of a unit sphere from this and never
  * touches it again. The motion in the sky is the airship in `scenery.ts`, which crosses the frame
  * in twenty seconds, and the parallax of a fox covering ninety-seven metres.
  *

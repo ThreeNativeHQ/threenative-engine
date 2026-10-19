@@ -2,7 +2,7 @@ use rapier3d::control::{
     CharacterAutostep, CharacterLength, DynamicRayCastVehicleController, KinematicCharacterController,
     WheelTuning,
 };
-use rapier3d::na::{Point3, Quaternion, UnitQuaternion};
+use rapier3d::na::{DMatrix, Point3, Quaternion, UnitQuaternion};
 use rapier3d::prelude::*;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ptr;
@@ -12,6 +12,8 @@ const TRANSFORM_WIDTH: usize = 8;
 const SLEEP_STATE_WIDTH: usize = 2;
 const EVENT_WIDTH: usize = 4;
 const CHARACTER_STATE_WIDTH: usize = 6;
+/// `[collider id, world x, y, z, normal x, y, z, impulse]`, the shared `PHYSICS_CONTACT_STRIDE`.
+const CONTACT_WIDTH: usize = 8;
 /// One float of signed speed, then `PHYSICS_VEHICLE_WHEEL_STRIDE` floats per wheel: contact,
 /// suspension length, rotation.
 const VEHICLE_SPEED_FLOATS: usize = 1;
@@ -265,6 +267,69 @@ impl EventHandler for CollisionEventCollector {
     }
 }
 
+/// A heightfield over `rows` x `columns` samples in the column-major order the web backend hands
+/// Rapier (`DMatrix::from_vec`), spanning `scale` and centred on its body, with internal-edge
+/// correction so a resting body is not kicked by ghost edges. `None` for malformed input.
+fn heightfield_shape(
+    heights: *const f32,
+    count: u32,
+    rows: u32,
+    columns: u32,
+    scale: [f32; 3],
+) -> Option<SharedShape> {
+    if heights.is_null() || rows < 2 || columns < 2 || count as u64 != rows as u64 * columns as u64 {
+        return None;
+    }
+    if !scale.iter().all(|value| value.is_finite() && *value > 0.0) {
+        return None;
+    }
+    let samples = unsafe { std::slice::from_raw_parts(heights, count as usize) };
+    if !samples.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    Some(SharedShape::heightfield_with_flags(
+        DMatrix::from_vec(rows as usize, columns as usize, samples.to_vec()),
+        vector![scale[0], scale[1], scale[2]],
+        HeightFieldFlags::FIX_INTERNAL_EDGES,
+    ))
+}
+
+/// Validate and copy a flat xyz vertex buffer and a flat triangle-index buffer from C.
+fn copy_trimesh(
+    vertices: *const f32,
+    vertex_floats: u32,
+    indices: *const u32,
+    index_count: u32,
+) -> Option<(Vec<Point3<Real>>, Vec<[u32; 3]>)> {
+    if vertices.is_null() || indices.is_null() {
+        return None;
+    }
+    let vertex_count = vertex_floats as usize;
+    let triangle_vertices = index_count as usize;
+    if vertex_count == 0 || vertex_count % 3 != 0 || triangle_vertices == 0 || triangle_vertices % 3 != 0
+    {
+        return None;
+    }
+    let floats = unsafe { std::slice::from_raw_parts(vertices, vertex_count) };
+    if !floats.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    let raw_indices = unsafe { std::slice::from_raw_parts(indices, triangle_vertices) };
+    let point_count = vertex_count / 3;
+    if raw_indices.iter().any(|index| *index as usize >= point_count) {
+        return None;
+    }
+    let points = floats
+        .chunks_exact(3)
+        .map(|vertex| Point3::new(vertex[0], vertex[1], vertex[2]))
+        .collect();
+    let triangles = raw_indices
+        .chunks_exact(3)
+        .map(|triangle| [triangle[0], triangle[1], triangle[2]])
+        .collect();
+    Some((points, triangles))
+}
+
 pub struct Simulation {
     gravity: Vector<Real>,
     pipeline: PhysicsPipeline,
@@ -338,10 +403,76 @@ impl Simulation {
         vertices: Vec<Point3<Real>>,
         indices: Vec<[u32; 3]>,
     ) -> bool {
-        let Ok(collider) = ColliderBuilder::trimesh(vertices, indices) else {
+        let Ok(collider) = ColliderBuilder::trimesh_with_flags(
+            vertices,
+            indices,
+            TriMeshFlags::FIX_INTERNAL_EDGES,
+        ) else {
             return false;
         };
         self.insert_body(options, collider)
+    }
+
+    /// Replace one body's collider shape in place: same handle, parent, groups and events.
+    /// Bodies sleeping on it wake, since the new surface may no longer hold them up.
+    fn set_collider_shape(&mut self, id: u32, shape: SharedShape) -> bool {
+        let Some(entry) = self.entries.get_mut(&id) else {
+            return false;
+        };
+        let Some(collider) = self.colliders.get_mut(entry.collider) else {
+            return false;
+        };
+        // Rapier wakes the bodies touching a collider whose shape changed; the test holds it to that.
+        collider.set_shape(shape.clone());
+        entry.shape = shape;
+        self.query_dirty = true;
+        true
+    }
+
+    /// One record per solved manifold between `target` and each awake candidate. Returns the total
+    /// count; records past `output`'s capacity are counted but not written, so a caller can grow
+    /// its buffer and read again instead of losing a contact.
+    fn read_contacts(&self, target: u32, candidates: &[u32], output: &mut [f32]) -> Option<usize> {
+        let target_collider = self.entries.get(&target)?.collider;
+        let capacity = output.len() / CONTACT_WIDTH;
+        let mut count = 0;
+        for &id in candidates {
+            if id == target {
+                continue;
+            }
+            let Some(entry) = self.entries.get(&id) else {
+                continue;
+            };
+            // A sleeping body was not solved this step, so its stored impulses are not this step's.
+            if self.bodies.get(entry.body).is_none_or(|body| body.is_sleeping()) {
+                continue;
+            }
+            let Some(pair) = self.narrow_phase.contact_pair(target_collider, entry.collider) else {
+                continue;
+            };
+            let sign = if pair.collider1 == target_collider { 1.0 } else { -1.0 };
+            for manifold in &pair.manifolds {
+                let solved = manifold.data.solver_contacts.len();
+                if solved == 0 {
+                    continue;
+                }
+                if count < capacity {
+                    let impulse: Real = manifold.points.iter().map(|point| point.data.impulse).sum();
+                    let mut centre = Vector::zeros();
+                    for contact in &manifold.data.solver_contacts {
+                        centre += contact.point.coords;
+                    }
+                    centre /= solved as Real;
+                    let normal = manifold.data.normal * sign;
+                    output[count * CONTACT_WIDTH..(count + 1) * CONTACT_WIDTH].copy_from_slice(&[
+                        id as f32, centre.x, centre.y, centre.z, normal.x, normal.y, normal.z,
+                        impulse,
+                    ]);
+                }
+                count += 1;
+            }
+        }
+        Some(count)
     }
 
     fn insert_body(&mut self, options: TnPhysicsBodyOptions, collider: ColliderBuilder) -> bool {
@@ -965,6 +1096,11 @@ impl Simulation {
                     .collect();
                 let mut ground_collider = None;
                 let mut ground_normal = None;
+                // Rapier flags ground at any positive up component. Contacts that are all steeper
+                // than 60 degrees from up mean a wall, matching the web backend; a snap-to-ground
+                // step records no contact and keeps Rapier's answer.
+                let mut walkable = false;
+                let mut contacts = 0u32;
                 let mut collisions = Vec::new();
                 let movement = character.controller.move_shape(
                     delta_time,
@@ -973,7 +1109,9 @@ impl Simulation {
                     body.position(),
                     desired,
                     |collision| {
+                        contacts += 1;
                         if collision.hit.normal1.y >= 0.5 {
+                            walkable = true;
                             ground_collider = collider_ids.get(&collision.handle).copied();
                             ground_normal = Some([
                                 collision.hit.normal1.x,
@@ -1007,11 +1145,12 @@ impl Simulation {
                 body.set_next_kinematic_translation(current + movement.translation);
                 body.set_next_kinematic_rotation(rotation);
                 let state = self.characters.get_mut(&id).expect("character was checked");
-                state.grounded = movement.grounded;
+                let grounded = movement.grounded && (walkable || contacts == 0);
+                state.grounded = grounded;
                 state.ground_collider = ground_collider
-                    .or_else(|| movement.grounded.then_some(state.ground_collider).flatten());
+                    .or_else(|| grounded.then_some(state.ground_collider).flatten());
                 state.ground_normal = ground_normal.unwrap_or_else(|| {
-                    if movement.grounded {
+                    if grounded {
                         state.ground_normal
                     } else {
                         [0.0, 1.0, 0.0]
@@ -1052,10 +1191,12 @@ impl Simulation {
             &(),
             &self.collision_events,
         );
-        // Rapier retains accumulated forces unless the caller clears them. The JavaScript seam
-        // promises a force for one fixed step, so keep the native backend identical to web.
+        // Rapier retains accumulated forces and torques unless the caller clears them. The
+        // JavaScript seam promises a force for one fixed step (an off-centre one adds a torque),
+        // so keep the native backend identical to web.
         for entry in self.entries.values() {
             self.bodies[entry.body].reset_forces(true);
+            self.bodies[entry.body].reset_torques(true);
         }
         // Rapier delivered the started/stopped transitions while the step ran; translate
         // collider handles back to body ids exactly the way the web path does
@@ -1517,36 +1658,95 @@ pub extern "C" fn tn_physics_add_trimesh_body(
     let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
         return false;
     };
-    if vertices.is_null() || indices.is_null() {
+    let Some((points, triangles)) = copy_trimesh(vertices, vertex_floats, indices, index_count)
+    else {
         return false;
-    }
-    let vertex_count = vertex_floats as usize;
-    let triangle_vertices = index_count as usize;
-    if vertex_count == 0 || vertex_count % 3 != 0 || triangle_vertices == 0 || triangle_vertices % 3 != 0
-    {
-        return false;
-    }
-    let floats = unsafe { std::slice::from_raw_parts(vertices, vertex_count) };
-    if !floats.iter().all(|value| value.is_finite()) {
-        return false;
-    }
-    let raw_indices = unsafe { std::slice::from_raw_parts(indices, triangle_vertices) };
-    let point_count = vertex_count / 3;
-    if raw_indices
-        .iter()
-        .any(|index| *index as usize >= point_count)
-    {
-        return false;
-    }
-    let points = floats
-        .chunks_exact(3)
-        .map(|vertex| Point3::new(vertex[0], vertex[1], vertex[2]))
-        .collect();
-    let triangles = raw_indices
-        .chunks_exact(3)
-        .map(|triangle| [triangle[0], triangle[1], triangle[2]])
-        .collect();
+    };
     simulation.add_trimesh_body(unsafe { ptr::read(options) }, points, triangles)
+}
+
+/// Add a fixed body whose collider is a heightfield. `heights` holds `rows * columns` samples in
+/// column-major order; it is copied during the call.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_add_heightfield_body(
+    simulation: *mut Simulation,
+    options: *const TnPhysicsBodyOptions,
+    heights: *const f32,
+    count: u32,
+    rows: u32,
+    columns: u32,
+    scale_x: f32,
+    scale_y: f32,
+    scale_z: f32,
+) -> bool {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
+        return false;
+    };
+    let Some(shape) = heightfield_shape(heights, count, rows, columns, [scale_x, scale_y, scale_z])
+    else {
+        return false;
+    };
+    simulation.insert_body(unsafe { ptr::read(options) }, ColliderBuilder::new(shape))
+}
+
+/// Replace a body's collider with a new heightfield in place, keeping its id, parent body,
+/// collision groups and events. Rebuilding a heightfield copies its samples and nothing else, so
+/// a deforming surface can be refreshed every fixed step.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_set_heightfield_shape(
+    simulation: *mut Simulation,
+    id: u32,
+    heights: *const f32,
+    count: u32,
+    rows: u32,
+    columns: u32,
+    scale_x: f32,
+    scale_y: f32,
+    scale_z: f32,
+) -> bool {
+    let Some(simulation) = (unsafe { simulation.as_mut() }) else {
+        return false;
+    };
+    let Some(shape) = heightfield_shape(heights, count, rows, columns, [scale_x, scale_y, scale_z])
+    else {
+        return false;
+    };
+    simulation.set_collider_shape(id, shape)
+}
+
+/// Persistent solved contacts between one body's collider and a list of candidate bodies, one
+/// `CONTACT_WIDTH` record per solved manifold. Returns the total count, which may exceed what
+/// `output` holds (only that many are written), or -1 for an unknown target or a bad buffer.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_read_contacts(
+    simulation: *const Simulation,
+    target: u32,
+    candidates: *const u32,
+    candidate_count: usize,
+    output: *mut f32,
+    output_float_capacity: usize,
+) -> i32 {
+    let Some(simulation) = (unsafe { simulation.as_ref() }) else {
+        return -1;
+    };
+    if (candidate_count > 0 && candidates.is_null()) || (output_float_capacity > 0 && output.is_null())
+    {
+        return -1;
+    }
+    let candidates = if candidate_count == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(candidates, candidate_count) }
+    };
+    let output = if output_float_capacity == 0 {
+        &mut [][..]
+    } else {
+        unsafe { std::slice::from_raw_parts_mut(output, output_float_capacity) }
+    };
+    match simulation.read_contacts(target, candidates, output) {
+        Some(count) => i32::try_from(count).unwrap_or(-1),
+        None => -1,
+    }
 }
 
 #[unsafe(no_mangle)]

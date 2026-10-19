@@ -36,6 +36,18 @@
         "id": "GameState",
         "lte": 4096,
         "path": "triangles"
+      },
+      {
+        "id": "GameState",
+        "path": "cardCopies",
+        "gte": 1,
+        "allowTrivial": "The scene starts on the far route and holds it, so the far level is selected before the run; the matching near scenario drives cardCopies to 0 and cardTriangles to 2400 to prove the selection follows the camera."
+      },
+      {
+        "id": "GameState",
+        "path": "cardTriangles",
+        "lte": 1800,
+        "allowTrivial": "The scene starts on the far route and holds it, so the far level is selected before the run; the matching near scenario drives cardCopies to 0 and cardTriangles to 2400 to prove the selection follows the camera."
       }
     ],
     "sceneNodes": [

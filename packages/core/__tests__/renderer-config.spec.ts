@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolvePlatformResolutionFloor,
   resolveRendererAlphaAntialiasing,
   resolveRendererAntialias,
   resolveRendererScaleSetting,
@@ -75,9 +76,22 @@ describe("resolveRendererScaleSetting", () => {
     ).toEqual({ resolutionScale: 1, scaleSource: "auto" });
   });
 
-  it("defaults to a pinned full-resolution surface when nothing asked for one", () => {
+  it("reads an unset scale as auto, because the engine can measure the budget itself", () => {
+    // The owner rule, in plain words: if the engine can measure a value where it is used, it
+    // decides. Unset used to resolve to a pinned 1.0, so a game that asked for nothing got no
+    // scaler at all — and on a HiDPI desktop that meant a 4527x2207 drawing buffer at 4x MSAA
+    // until the GPU device was lost. Silence is now "auto"; a number is still the pin, and the
+    // `renderer.resolutionScale` fallback keeps pinning when it carries one.
     expect(resolveRendererScaleSetting(undefined, undefined, "linux")).toEqual({
       resolutionScale: 1,
+      scaleSource: "auto",
+    });
+    expect(resolveRendererScaleSetting({}, undefined, "android")).toEqual({
+      resolutionScale: 1,
+      scaleSource: "auto",
+    });
+    expect(resolveRendererScaleSetting(undefined, 0.6, "linux")).toEqual({
+      resolutionScale: 0.6,
       scaleSource: "pinned",
     });
   });
@@ -102,5 +116,17 @@ describe("resolveRendererScaleSetting", () => {
     expect(() =>
       resolveRendererScaleSetting({ android: { resolutionScale: 2 } }, undefined, "android"),
     ).toThrow(/renderer\.android\.resolutionScale/u);
+  });
+});
+
+describe("resolvePlatformResolutionFloor", () => {
+  it("holds a desktop above the mush and leaves the phone ladder whole", () => {
+    // A desktop without a temporal reconstruction stage has nothing to turn 0.23 of the pixels
+    // back into a picture, so its rungs stop at 0.61 and the frame reports it is out of room.
+    // The phones keep every rung: their rungs are what the device arm measured and accepted.
+    for (const os of ["linux", "macos", "windows", "unknown"] as const)
+      expect(resolvePlatformResolutionFloor(os), os).toBe(0.61);
+    expect(resolvePlatformResolutionFloor("android")).toBeUndefined();
+    expect(resolvePlatformResolutionFloor("ios")).toBeUndefined();
   });
 });

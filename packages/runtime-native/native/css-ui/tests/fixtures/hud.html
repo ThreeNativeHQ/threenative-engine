@@ -1,0 +1,29 @@
+<!--
+  The document `tests/hud.rs` builds through mutation batches, from the markup below. It is here
+  as the fixture's source of truth: `hud.css` is the real Tailwind v4.3.3 output for exactly the
+  classes used here (plus the hand-added `hover:bg-blue-500` and `md:grid-cols-3` rules), and the
+  test asserts the pixels this markup produces.
+
+  `<body>` is what the engine creates; its caller-chosen id is 0. Elements and text nodes both
+  need ids, which is what the 1xx ids are.
+-->
+<body id="0">
+  <section
+    id="1"
+    class="fixed bottom-6 left-6 w-80 rounded-2xl border border-zinc-700 bg-zinc-900/90 p-6 text-white shadow-xl"
+  >
+    <h2 id="2" class="text-2xl font-bold">
+      <span id="100">Inventory</span>
+    </h2>
+    <p id="3" class="mt-1 text-sm text-zinc-400">
+      <span id="101">12 items</span>
+    </p>
+    <div id="4" class="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3">
+      <div id="5" class="rounded-lg bg-zinc-800 p-3"><span id="102">Medkit</span></div>
+      <div id="6" class="rounded-lg bg-zinc-800 p-3"><span id="103">Battery</span></div>
+    </div>
+    <button id="7" class="mt-4 rounded-lg bg-blue-600 px-4 py-2 hover:bg-blue-500">
+      <span id="104">Close</span>
+    </button>
+  </section>
+</body>

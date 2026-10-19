@@ -24,7 +24,8 @@ need Unreal Editor export and cannot be recovered by retrying the converter.
 
 If FabCLI needs a session, proactively run `fabcli auth login`. Use Claude browser, or Codex's
 `chrome:control-chrome`, to complete the login with the user's active browser session, then retry
-the MCP call. Never read, copy, print, or persist browser cookies or tokens. The MCP checks
+the MCP call. If the WebView login fails (it crashes on Wayland), use the `--manual` pty flow in
+the reference below. Never read, copy, print, or persist browser cookies or tokens. The MCP checks
 entitlement and accepts only Fab Standard or CC-BY; it never claims or buys. Full arguments:
 `node_modules/create-threenative/agent-docs/references/finding-assets.md`.
 

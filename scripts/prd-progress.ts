@@ -36,7 +36,7 @@ const LABELS: ReadonlyMap<number, IPrdLabel> = new Map([
 
 /** "### Phase 2 — …" and the numbered "### 3. …" form used under an Implementation order heading. */
 const PHASE_HEADING = /^#{3,4}\s+(?:Phase\b|\d+\.\s)/iu;
-const ACCEPTANCE_HEADING = /^#{2,4}\s+Acceptance criteria\b/iu;
+const ACCEPTANCE_HEADING = /^#{2,4}\s+(?:\d+\.\s+)?Acceptance criteria\b/iu;
 const BLOCKED_HEADING = /^#{2,4}\s+Blocked on\b/iu;
 const ANY_HEADING = /^#{2,4}\s/u;
 const BOX = /^\s*[-*]\s+\[([ xX])\]/u;

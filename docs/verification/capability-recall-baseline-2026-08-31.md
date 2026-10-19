@@ -450,3 +450,142 @@ historical 19 to 16. The legacy corpus rows
 `brief.fps.3` (health) and `brief.fps.8` (damage by body height) remain explicit misses with their
 original expected symbols. They were not relabeled to make recall green; they document mechanics
 that still need game-owned implementation or a future measured `notOwned` entry.
+
+## Current gated run — 2026-10-08
+
+Recorded from the PRD-297 closing branch, cut from `origin/develop` at `f7dd08621`, after commit
+`cc5a8b432`. The corpus has grown to 87 rows since 2026-09-05: the 46 sealed-brief mechanic
+bullets, 33 template and plain-request rows, and 8 PRD-451 sandbox provenance rows.
+
+The `--harvest` helper yields 46 brief candidates, and every one has a corpus row with the same
+`source`. Brief bullets that state proof inputs ("the sealed proof supplies …") are not
+mechanics; the harvest skips them, as `scripts/capability-recall.ts` line 734 shows.
+
+### Brief text removed from the shipped manifest
+
+The PRD-297 shipping grep (`endless runner\|firing line\|Magazine 30`) hit one alias in both
+manifests: `firing line nearest target crosshair`. A scan for any run of four consecutive brief
+words in an alias or situation found three more aliases. Commit `cc5a8b432` rewords all four.
+Each keeps only words from its brief row, which `capability-manifest.spec.ts` requires.
+
+| Owner | Old alias | New alias |
+| --- | --- | --- |
+| `defineGame` | firing line nearest target crosshair | nearest target crosshair spawns |
+| `defineGame` | restart the run without a page reload | restart run without page reload |
+| `createAssetLoader` | different props in each area | different area props |
+| `Atmosphere` | bright sky saturated green platforms | green platforms bright saturated sky |
+
+One row moved. `brief.fps.6` (magazine reload) reached `defineGame` only through the word
+`reload` in the page-reload alias. A bisect that restored one old alias at a time showed that
+only the page-reload alias recalls it. An ammunition reload is not a page reload, so the hit was
+coincidental. The floor drops from 80/87 to 79/87 by hand, because `--update-budget` refuses a
+regression. `brief.fps.6` now joins `brief.fps.3` and `brief.fps.8` as an explicit miss.
+
+~~~text
+$ grep -rn "endless runner\|firing line\|Magazine 30" packages/create-threenative/capabilities.json packages/core/capabilities.json
+$ echo $?
+1
+four-word brief overlaps: packages/core/capabilities.json 0, packages/create-threenative/capabilities.json 0
+~~~
+
+### Gate output
+
+~~~text
+$ pnpm caps:recall
+zeroResultRate: 0.057471 (5/87)
+unresolvedResultRate: 0.000000 (0/87)
+actionable: 84/87 (79 distinct-symbol, 5 guided not-owned)
+recallAtK: 0.908046 (79/87)
+rejectHits: 16
+rowCount: 87
+
+Misses (8)
+- brief.fps.3: Health starts at 100 and never regenerates. There is no jump, no crouch and no stamina.
+- brief.fps.6: Magazine 30, reserve 90. Reload moves rounds from the reserve into the magazine; the sights drop for about 0.7 s while it happens.
+- brief.fps.8: 10 damage a round; 4× in the top 12% of a body's height, 0.7× below a third of it.
+- request.inventory-system: make an inventory system
+- request.save-progress: save the player progress
+- request.dialogue-npc: dialogue with an NPC
+- request.multiplayer-replication: authoritative replication
+- request.multiplayer-prediction: client prediction
+~~~
+
+Exit code 0.
+
+### Observed red controls, rerun on `cc5a8b432`
+
+Each control mutated one tracked file, ran the gate, and restored the file. `git status` was
+clean afterwards. Paths are shortened to `.` and `<scratch>`.
+
+~~~text
+== baseline (unmodified)
+rc=0
+zeroResultRate: 0.057471 (5/87)
+recallAtK: 0.908046 (79/87)
+rowCount: 87
+== 1. situation deletion (core index.ts:22) + manifest rebuild
+manifest rc=0
+rc=1
+zeroResultRate: 0.057471 (5/87)
+recallAtK: 0.896552 (78/87)
+rowCount: 87
+- guard.animation-feet: walking feet sliding spinning
+Regressions
+- recallAtK: recallAtK 0.896552 is below floor 0.908046
+- recalledRows: 1 previously recalled row no longer reaches an expected symbol
+== 2. rowCount: delete request.platformer-double-jump
+rc=1
+zeroResultRate: 0.058140 (5/86)
+recallAtK: 0.906977 (78/86)
+rowCount: 86
+Regressions
+- recallAtK: recallAtK 0.906977 is below floor 0.908046
+- rowCount: rowCount 86 is below floor 87
+- rowIds: corpus row ids changed; missing request.platformer-double-jump; added (none)
+- recalledRows: 1 previously recalled row no longer reaches an expected symbol
+== 3. source pointer: rename action-rpg 'Start every change' heading
+rc=1
+TN_CAPABILITY_RECALL: guard.animation-feet: source 'template:action-rpg#Start every change' no longer resolves
+== 4. empty corpus
+rc=1
+TN_CAPABILITY_RECALL: ./scripts/fixtures/capability-recall/corpus.json: corpus has no rows
+== 5. stale manifest: override with VehicleBody3D entry removed
+rc=1
+TN_CAPABILITY_RECALL: request.drive-a-racing-kart: symbol 'VehicleBody3D' is absent from manifest <scratch>/stale-manifest.json
+== 6. hand-lowered floor: rejectHits ceiling 16 -> 15
+rc=1
+zeroResultRate: 0.057471 (5/87)
+recallAtK: 0.908046 (79/87)
+rowCount: 87
+Regressions
+- rejectHits: rejectHits 16 exceeds floor 15
+== 7. revert check: gate script removed, pnpm budgets
+budgets rc=1
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module './scripts/capability-recall.ts' imported from ./
+  code: 'ERR_MODULE_NOT_FOUND',
+== restored tree
+rc=0
+zeroResultRate: 0.057471 (5/87)
+recallAtK: 0.908046 (79/87)
+rowCount: 87
+~~~
+
+The `zeroResultRate` floor is enforced as `unresolvedResultRate` since the 2026-09-05 migration:
+a zero-result row that the manifest answers with pinned `notOwned` guidance is an answer, not a
+miss. Every row that recalls a symbol is also pinned in `recalledRows`, so a recalled row that
+drops to zero results fails as a `recalledRows` regression.
+
+### Unit proof
+
+~~~text
+$ pnpm exec vitest run scripts/__tests__/capability-manifest.spec.ts scripts/__tests__/capability-recall.spec.ts packages/engine-mcp
+ Test Files  5 passed (5)
+      Tests  114 passed (114)
+~~~
+
+`scripts/__tests__/capability-recall.spec.ts` alone: 17 of 17 passed.
+
+### Chain proof
+
+`pnpm budgets` on `cc5a8b432` after `pnpm build`: exit code 0. The chain runs
+`pnpm caps:recall` between `check-capability-docs.ts --census` and `check-evidence-budget.ts`.

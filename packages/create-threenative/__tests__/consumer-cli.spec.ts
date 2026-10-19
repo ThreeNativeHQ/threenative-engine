@@ -24,7 +24,7 @@ async function desktopCallerFixture(): Promise<{ root: string; log: string }> {
   await writeFile(path.join(root, "package.json"), '{"name":"consumer-test","type":"module"}');
   await writeFile(
     path.join(root, "threenative.config.ts"),
-    'export default { ui: { renderer: "native" } };\n',
+    'export default { engine: "threejs", ui: { renderer: "native" } };\n',
   );
   await writeFile(path.join(root, "src/game.ts"), "export default {};\n");
   await writeFile(path.join(runtime, "package.json"), '{"name":"@threenative/runtime-native"}');
@@ -44,10 +44,14 @@ async function desktopCallerFixture(): Promise<{ root: string; log: string }> {
     `
     import { mkdirSync, writeFileSync } from 'node:fs';
     import { dirname } from 'node:path';
+    import { pathToFileURL } from 'node:url';
+    export async function resolveDesktopRuntime(explicit) { return explicit ?? import.meta.filename; }
+    if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
     const output = process.argv[process.argv.indexOf('--output') + 1];
     mkdirSync(dirname(output), { recursive: true });
     writeFileSync(output, 'packaged');
     writeFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)));
+    }
   `,
   );
   return { root, log };
@@ -57,7 +61,11 @@ test("desktop caller does not reinterpret a source checkout as an explicit runti
   const { root, log } = await desktopCallerFixture();
   process.env.THREENATIVE_RUNTIME_SOURCE = path.join(root, "checkout");
   await build({ cwd: root, target: "desktop" });
-  assert.ok(!JSON.parse(await readFile(log, "utf8")).includes("--runtime"));
+  const args: string[] = JSON.parse(await readFile(log, "utf8"));
+  assert.equal(
+    args[args.indexOf("--runtime") + 1],
+    path.join(root, "node_modules/@threenative/runtime-native/scripts/package-desktop.mjs"),
+  );
 });
 
 test("explicit desktop binary still wins when a source override is also set", async () => {

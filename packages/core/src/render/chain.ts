@@ -1,9 +1,16 @@
+import type { Texture } from "three";
 import type { MRTNode, Node } from "three/webgpu";
 
 import type { IFrameBudgetWindow } from "../frame-budget.js";
-import type { RendererKind } from "../renderer.js";
-import { velocityTexture, withVelocityContext } from "./velocity.js";
-import type { IVelocityRenderPass } from "./velocity.js";
+import type {
+  IRenderOutputInstallation,
+  IRenderOutputOptions,
+  RenderOutputSetter,
+  RendererKind,
+} from "../renderer.js";
+import type { IResolutionSubrect, IResolutionTextureView } from "./resolution-subrect.js";
+import { VELOCITY_OUTPUT_NAME, mrtVelocity } from "./velocity.js";
+import type { IVelocityProvision, IVelocityRenderPass } from "./velocity.js";
 
 /** The marker shared by render-chain logs, playtests, and native diagnostics. */
 export const RENDER_CHAIN_MARKER = "TN_RENDER_CHAIN";
@@ -53,11 +60,11 @@ export interface IRenderChainVelocityResult {
 export interface IRenderChainRenderer {
   readonly kind: RendererKind;
   readonly raw: unknown;
-  clearOutputNode?(): void;
+  clearOutputNode?(expectedNode?: unknown): void;
   /** Internal renderer seam used to turn on core-owned previous-frame bookkeeping for active temporal stages. */
   setRenderChainVelocityEnabled?(enabled: boolean): void;
   /** Install a graph and identify the authored world pass that follows the rendered scene root. */
-  setOutputNode(node: unknown, worldPass?: unknown): void;
+  setOutputNode: RenderOutputSetter;
 }
 
 const TIER_LEVEL: Record<RenderChainTier, number> = {
@@ -92,6 +99,12 @@ const VELOCITY_STAGES = new Set<RenderChainStageName>([
 export interface IRenderChainVelocityRequest {
   /** The scene pass that owns the shared velocity output. */
   pass?: IVelocityRenderPass;
+  /**
+   * Optional: how the chain builds the velocity output on `pass` and hands it through the composed
+   * graph. Defaults to core's own {@link mrtVelocity}, so a web game never names it; a host whose
+   * scene pass owns the output differently passes its own.
+   */
+  provision?: IVelocityProvision;
   /** Treat the renderer's MRT velocity output as provisioned. */
   mrt?: boolean;
   /** Treat objects carrying `userData.useVelocity === true` as provisioned. */
@@ -118,17 +131,33 @@ export interface IRenderChainRequest {
 export interface IRenderChainStageContext {
   readonly tier: RenderChainTier;
   readonly velocity: IRenderChainVelocityReport;
+  /** Mutable target fractions supplied to generated stages for sub-rectangle sampling. */
+  readonly resolutionSubrect?: IResolutionTextureView;
   /** TSL source handed to temporal stages when the request owns a scene pass. */
   readonly velocityNode?: Node;
   readonly quality: (typeof RENDER_CHAIN_TIERS)[RenderChainTier];
 }
 
 export interface IRenderChainStage {
+  readonly supportsResolutionSubrect?: boolean;
   readonly name: RenderChainStageId;
   /** Place an authored stage immediately before this built-in or supplied stage. */
   readonly before?: RenderChainStageId;
   /** Place an authored stage immediately after this built-in or supplied stage. */
   readonly after?: RenderChainStageId;
+  /**
+   * This stage reads display-referred colour, so the chain installs the graph with the renderer's
+   * automatic output transform switched off and the stage applies that transform itself.
+   *
+   * Mechanism, not look. Some effects are defined against the sRGB picture — a `.cube` table, a
+   * sharpening or edge filter — and bending scene-referred light into that domain costs precision
+   * instead of buying anything: measured on an 8-bit table, a bijective log shaper costs 2–4
+   * 8-bit steps per channel against under 1 for the transform this names (PRD-492).
+   *
+   * The stage therefore runs last, and may not declare an anchor: a stage placed after it would
+   * receive display-referred colour it was not written for.
+   */
+  readonly afterOutputTransform?: boolean;
   readonly build: (input: unknown, context: IRenderChainStageContext) => unknown;
   /** Stages below this tier are named as dropped instead of silently changing the graph. */
   readonly minimumTier?: RenderChainTier;
@@ -182,6 +211,7 @@ export interface IRenderChainBudgetWindow {
 }
 
 export interface IRenderChainOptions {
+  readonly resolutionSubrect?: IResolutionSubrect;
   readonly renderer: IRenderChainRenderer;
   readonly input?: unknown;
   /** Explicit scene pass for output retargeting; avoids traversing a composed graph to find it. */
@@ -255,6 +285,7 @@ export class RenderChain {
   readonly #renderer: IRenderChainRenderer;
   readonly #input: unknown;
   readonly #worldPass: unknown;
+  readonly #resolutionSubrect: IResolutionSubrect | undefined;
   readonly #report: (line: string) => void;
   readonly #stageDefinitions: ReadonlyMap<RenderChainStageId, IRenderChainStage>;
   readonly #requested: readonly RenderChainStageId[];
@@ -274,7 +305,10 @@ export class RenderChain {
     undefined;
   #ownedVelocityPass: IVelocityRenderPass | undefined = undefined;
   #ownedVelocityMrt: MRTNode | null | undefined = undefined;
+  #ownedVelocityTexture: Texture | undefined = undefined;
   #disposed = false;
+  #installedNode: unknown;
+  #installation: IRenderOutputInstallation | undefined;
   #applied: IRenderChainApplied;
 
   constructor(renderer: IRenderChainRenderer, options?: Omit<IRenderChainOptions, "renderer">);
@@ -289,6 +323,7 @@ export class RenderChain {
     this.#renderer = options.renderer;
     this.#input = options.input;
     this.#worldPass = options.worldPass;
+    this.#resolutionSubrect = options.resolutionSubrect;
     this.#report = options.report ?? ((line) => console.log(line));
     this.#stageDefinitions = createStageDefinitions(options.stages ?? []);
     this.#requested = normalizeRequestedStages(
@@ -340,6 +375,7 @@ export class RenderChain {
       requiredVelocity,
     );
     let velocityNode: Node | undefined;
+    let attachVelocity: IVelocityProvision["attach"] | undefined;
     const originalMrt = this.#requestVelocity.pass?.getMRT();
     this.#lastMeasurementFrame = undefined;
     this.#reportedMeasurement = false;
@@ -375,7 +411,12 @@ export class RenderChain {
         dropped.push({ name, reason: "velocity:missing" });
         continue;
       }
-      const context = stageContext(this.#tier, velocity, velocityNode);
+      const context = stageContext(
+        this.#tier,
+        velocity,
+        velocityNode,
+        this.#resolutionSubrect?.view,
+      );
       const availability = definition.available?.(context);
       if (availability === false) {
         dropped.push({ name, reason: `unavailable:${this.#renderer.kind}` });
@@ -392,11 +433,25 @@ export class RenderChain {
           velocity.source === "mrt" &&
           this.#requestVelocity.pass !== undefined
         ) {
-          velocityNode = velocityTexture(this.#requestVelocity.pass);
-          this.#ownedVelocityPass = this.#requestVelocity.pass;
+          const pass = this.#requestVelocity.pass;
+          const priorTextures = [...(pass.renderTarget?.textures ?? [])];
+          const provision = this.#requestVelocity.provision ?? mrtVelocity();
+          velocityNode = provision.texture(pass);
+          attachVelocity = provision.attach;
+          this.#ownedVelocityPass = pass;
           this.#ownedVelocityMrt = originalMrt;
+          if (originalMrt?.has(VELOCITY_OUTPUT_NAME) !== true)
+            this.#ownedVelocityTexture = pass.renderTarget?.textures.find(
+              (texture) =>
+                texture.name === VELOCITY_OUTPUT_NAME && !priorTextures.includes(texture),
+            );
         }
-        const buildContext = stageContext(this.#tier, velocity, velocityNode);
+        const buildContext = stageContext(
+          this.#tier,
+          velocity,
+          velocityNode,
+          this.#resolutionSubrect?.view,
+        );
         const next = definition.build(node, buildContext);
         if (next === undefined || next === null) throw new Error("stage returned no node");
         contributions.push({ graphOutputChanged: next !== node, name });
@@ -416,12 +471,53 @@ export class RenderChain {
     const hasActiveVelocityStage = stages.some((name) =>
       requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
-    if (velocityNode !== undefined && hasActiveVelocityStage)
-      node = withVelocityContext(node, velocityNode);
+    // Temporal nodes jitter the scene-side velocity node (TRAANode calls setProjectionMatrix on
+    // it); the pass texture is what a stage samples, so it stays on the build context only.
+    if (velocityNode !== undefined && attachVelocity !== undefined && hasActiveVelocityStage)
+      // TRAANode uses context.velocity to set the unjittered projection, not to sample MRT.
+      // The sampled texture already travels to the factory via context.velocityNode.
+      node = attachVelocity(node, velocityNode);
 
     if (stages.length > 0) {
       try {
-        this.#renderer.setOutputNode(node, this.#worldPass ?? this.#requestVelocity.pass);
+        // Only a stage that actually ran may take the transform away from the renderer; a
+        // dropped one would leave the frame untone-mapped with nothing to have applied it.
+        const outputOptions: IRenderOutputOptions[] = builtStageDefinitions.some(
+          (definition) => definition.afterOutputTransform === true,
+        )
+          ? [{ outputColorTransform: false }]
+          : [];
+        if (this.#resolutionSubrect !== undefined) {
+          const refused = builtStageDefinitions
+            .filter((stage) => stage.supportsResolutionSubrect !== true)
+            .map((stage) => stage.name);
+          this.#report(
+            `TN_RESOLUTION_SUBRECT ${JSON.stringify({ applied: refused.length === 0 ? stages : [], refused: refused.map((name) => ({ name, reason: "sampling support not declared" })) })}`,
+          );
+          if (refused.length === 0) {
+            if (outputOptions.length === 0)
+              outputOptions.push({ resolutionSubrect: this.#resolutionSubrect });
+            else
+              outputOptions[0] = {
+                ...outputOptions[0],
+                resolutionSubrect: this.#resolutionSubrect,
+              };
+          }
+        }
+        const installation = this.#renderer.setOutputNode(
+          node,
+          this.#worldPass ?? this.#requestVelocity.pass,
+          ...outputOptions,
+        );
+        // Historical void-style callbacks can return an ignored value (for example Array.push).
+        // Only an explicit receipt upgrades that adapter to installation ownership.
+        this.#installation =
+          installation &&
+          typeof installation.isCurrent === "function" &&
+          typeof installation.dispose === "function"
+            ? installation
+            : undefined;
+        this.#installedNode = node;
       } catch (error) {
         const reason = `install:${errorMessage(error)}`;
         dropped.push(...stages.map((name) => ({ name, reason })));
@@ -429,10 +525,13 @@ export class RenderChain {
         contributions.length = 0;
         for (const definition of builtStageDefinitions) definition.dispose?.();
         builtStageDefinitions.length = 0;
-        this.#renderer.clearOutputNode?.();
+        // A renderer may throw after partially installing this attempt. Clear that identity,
+        // then the prior owned graph, without touching an unrelated replacement.
+        this.#renderer.clearOutputNode?.(node);
+        this.#clearOwnedOutput();
       }
     } else {
-      this.#renderer.clearOutputNode?.();
+      this.#clearOwnedOutput();
     }
 
     const activeVelocity = stages.some((name) =>
@@ -467,6 +566,7 @@ export class RenderChain {
   /** Samples the active temporal stage's completed velocity result after rendering. */
   observeFrame(): IRenderChainApplied {
     if (this.#disposed) throw new Error("RenderChain.observeFrame called after dispose().");
+    if (this.#installation?.isCurrent() === false) return this.#applied;
     const requiresMeasurement = this.#applied.stages.some((name) =>
       requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
@@ -492,7 +592,7 @@ export class RenderChain {
   /** Feed the chain the same render-window evidence used by the frame budget. */
   observeFrameBudget(window: IRenderChainBudgetWindow): RenderChainTier {
     if (this.#disposed) throw new Error("RenderChain.observeFrameBudget called after dispose().");
-    if (!this.#automatic) return this.#tier;
+    if (!this.#automatic || this.#installation?.isCurrent() === false) return this.#tier;
     const renderP95 = window.phases.render?.p95;
     if (typeof renderP95 !== "number" || !Number.isFinite(renderP95) || renderP95 < 0) {
       throw new Error("RenderChain frame budget render.p95 must be a finite non-negative number.");
@@ -530,8 +630,17 @@ export class RenderChain {
     this.#disposeActiveStages();
     this.#restoreOwnedVelocityOutput();
     this.#renderer.setRenderChainVelocityEnabled?.(false);
-    this.#renderer.clearOutputNode?.();
+    this.#clearOwnedOutput();
     forgetReport(this.#renderer);
+  }
+
+  #clearOwnedOutput(): void {
+    if (this.#installation !== undefined) this.#installation.dispose();
+    // Compatibility only: a void-returning adapter cannot distinguish same-node reinstalls.
+    else if (this.#installedNode !== undefined)
+      this.#renderer.clearOutputNode?.(this.#installedNode);
+    this.#installation = undefined;
+    this.#installedNode = undefined;
   }
 
   #setMeasurement(measurement: IRenderChainVelocityMeasurement | undefined, emit: boolean): void {
@@ -563,9 +672,20 @@ export class RenderChain {
   #restoreOwnedVelocityOutput(): void {
     if (this.#ownedVelocityPass !== undefined && this.#ownedVelocityMrt !== undefined) {
       this.#ownedVelocityPass.setMRT(this.#ownedVelocityMrt);
+      const target = this.#ownedVelocityPass.renderTarget;
+      const texture = this.#ownedVelocityTexture;
+      if (target !== undefined && texture !== undefined) {
+        const index = target.textures.indexOf(texture);
+        if (index !== -1) {
+          // Three must destroy the old GPU attachment set before the cached texture is detached.
+          target.dispose();
+          target.textures.splice(index, 1);
+        }
+      }
     }
     this.#ownedVelocityPass = undefined;
     this.#ownedVelocityMrt = undefined;
+    this.#ownedVelocityTexture = undefined;
   }
 
   #disposeActiveStages(): void {
@@ -585,13 +705,18 @@ function createStageDefinitions(
       throw new Error(`render-chain stage '${name}' needs a build function`);
     const hasBefore = stage.before !== undefined;
     const hasAfter = stage.after !== undefined;
+    if (stage.afterOutputTransform === true && (hasBefore || hasAfter)) {
+      throw new Error(
+        `render-chain stage '${name}' declares afterOutputTransform and an anchor; a stage that reads display-referred colour is last by construction, so an anchor is either ignored or wrong`,
+      );
+    }
     if (isBuiltInStageId(name)) {
       if (hasBefore || hasAfter) {
         throw new Error(
           `built-in render-chain stage '${name}' cannot declare before or after; its canonical order is fixed`,
         );
       }
-    } else if (hasBefore === hasAfter) {
+    } else if (hasBefore === hasAfter && stage.afterOutputTransform !== true) {
       throw new Error(
         `authored render-chain stage '${name}' must declare exactly one of before or after`,
       );
@@ -650,6 +775,12 @@ function resolveStageOrder(
     const definition = definitions.get(id);
     if (definition === undefined) {
       throw new Error(`render-chain stage '${id}' has no supplied definition`);
+    }
+    // The output transform's own seat. No stage may follow it, so it outranks every anchor
+    // without needing one, and it needs no anchor to be ordered.
+    if (definition.afterOutputTransform === true) {
+      ranks.set(id, RENDER_CHAIN_STAGE_ORDER.length + 1);
+      return ranks.get(id) as number;
     }
     const anchor = definition.before ?? definition.after;
     if (anchor === undefined) {
@@ -747,12 +878,14 @@ function stageContext(
   tier: RenderChainTier,
   velocity: IRenderChainVelocityReport,
   velocityNode: Node | undefined,
+  resolutionSubrect: IResolutionTextureView | undefined,
 ): IRenderChainStageContext {
   return {
     quality: RENDER_CHAIN_TIERS[tier],
     tier,
     velocity,
     ...(velocityNode === undefined ? {} : { velocityNode }),
+    ...(resolutionSubrect === undefined ? {} : { resolutionSubrect }),
   };
 }
 

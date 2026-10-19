@@ -10,7 +10,8 @@ Locked repository `/home/joao/projects/threenative/threenative-engine`, remote
 `b37bf30fb51527ac086a484893ad813ee0a2df0b`. Binding charter:
 [`docs/architecture/CHARTER.md`](../../../architecture/CHARTER.md).
 
-Parent batch: [feature-mining](../../feature-mining/README.md).
+**Priority:** P2 — Open boxes acquire a real content subject and measure load-all residency cost.
+Parent batch: feature-mining.
 
 **Blocking evidence:** the real Niagara Bistro load-all consumer proved a large browser bound, but
 the mandatory native-desktop half did not execute. The pinned scene's 343 DDS textures were decoded
@@ -83,7 +84,7 @@ recorded in the borrow map (§9) as *unverified at proposal time*.
 each, and only then may any line-level or symbol-level claim be written into this PRD.** A phase
 that cites an upstream symbol without a pinned SHA in `docs/verification/` is incomplete. The
 repository has been burned by exactly this before; see the equivalent note in
-[PRD-251](../../feature-mining/HIGH/PRD-251-procedural-world-fields-and-terrain-residency.md).
+[PRD-251](../../open-world/PRD-251-procedural-world-fields-and-terrain-residency.md).
 
 ---
 
@@ -288,7 +289,7 @@ declares a budget. Both are named, both are measured against in §8.
 | [PRD-238](../../done/PRD-238-the-projection-culls-what-the-camera-cannot-see.md) | Complementary and **independent**. Residency decides what is in memory; 238 decides what is submitted. If 238 lands first, Phase 4's A/B must hold its setting constant across both arms and say so. | No — but the A/B is invalid if 238's setting differs between arms |
 | [PRD-242](../../done/PRD-242-gpu-simulation-has-one-lifetime.md) | Shares the "one lifetime" discipline for GPU resources; its dispose ordering must not fight the refcount. | Check at Phase 1 |
 | [PRD-250](../../done/PRD-250-native-workers-are-actually-workers.md) | If native workers become real, decode moves off the main thread and the native hitch numbers change. Phase 5 must record which state of 250 was live. | No — record only |
-| [PRD-251](../../feature-mining/HIGH/PRD-251-procedural-world-fields-and-terrain-residency.md) | **Consumes this.** 251 must not build a second residency system. | This PRD's Phase 6 blocks 251's residency half |
+| [PRD-251](../../open-world/PRD-251-procedural-world-fields-and-terrain-residency.md) | **Consumes this.** 251 must not build a second residency system. | This PRD's Phase 6 blocks 251's residency half |
 
 **Order:** 0 → 1 → 2 → 3 → 4 → 5 → 6 → (7 only if its stop gate opens).
 
@@ -1010,7 +1011,7 @@ incumbent; reverting it restores `#stream` from git and nothing else is entangle
   block, one diagnostics record, and it deletes a hand-written streaming loop.
 - **Linchpin contract validator: NOT RUN — recorded as unverified, not as passing.** The invocation
   is known from [PRD-250](../../done/PRD-250-native-workers-are-actually-workers.md) and
-  [PRD-251](../../feature-mining/HIGH/PRD-251-procedural-world-fields-and-terrain-residency.md):
+  [PRD-251](../../open-world/PRD-251-procedural-world-fields-and-terrain-residency.md):
 
   ```sh
   sh ${LINCHPIN_PLUGIN_ROOT}/scripts/linchpin.sh contract \

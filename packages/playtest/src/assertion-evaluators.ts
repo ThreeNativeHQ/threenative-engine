@@ -1,3 +1,4 @@
+import { emitTone } from "./evaluators/tone.js";
 // Facade for the evaluator family modules (PRD-182 Phase 2). Import paths are unchanged:
 // every existing consumer of @threenative/playtest keeps working through this entry.
 import type { IPlaytestAssertionResult, IPlaytestDiagnostic } from "./assertion-report.js";
@@ -16,6 +17,7 @@ import { emitCausedBy } from "./evaluators/caused-by.js";
 import { emitSceneNodes } from "./evaluators/scene-nodes.js";
 import { emitScene } from "./evaluators/scene.js";
 import { emitStartup } from "./evaluators/startup.js";
+import { emitPipelineCensus } from "./evaluators/pipeline-census.js";
 
 export { overlayNodeObservationKey } from "./evaluators/helpers.js";
 
@@ -27,6 +29,7 @@ export function evaluateRichPlaytestAssertions(input: {
   const diagnostics: IPlaytestDiagnostic[] = [];
   const scenarioAssertions = input.scenario.assert ?? {};
   const ctx: IEvaluationContext = { assertions, diagnostics, input, scenarioAssertions };
+  emitTone(ctx);
   emitDeviceMetrics(ctx);
   emitDisplayFamilies(ctx);
   emitEvidenceFamilies(ctx);
@@ -34,6 +37,7 @@ export function evaluateRichPlaytestAssertions(input: {
   emitPerfSignalsWorld(ctx);
   emitWorldGameplay(ctx);
   emitRenderChain(ctx);
+  emitPipelineCensus(ctx);
   emitScene(ctx);
   emitSceneNodes(ctx);
   // A geometry request carries no bounds of its own, so its one result says the capture actually

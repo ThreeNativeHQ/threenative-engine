@@ -1,9 +1,12 @@
-import { BatchedMesh, BoxGeometry, Mesh, MeshStandardMaterial, Scene } from "three";
-import { describe, expect, it } from "vitest";
+import { BatchedMesh, BoxGeometry, DataTexture, Mesh, MeshStandardMaterial, Scene } from "three";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  disposeBatchedMeshVelocity,
+  ensureBatchedMeshVelocity,
   isBatchedMeshVelocityPatched,
   readBatchedMeshPreviousMatrices,
+  setBatchedMeshPreviousMatrices,
 } from "../src/render/batched-velocity.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
@@ -156,5 +159,42 @@ describe("BatchedMesh velocity", () => {
     projection.reconcile();
     expect(readBatchedMeshPreviousMatrices(materialBatch(projection.root))).toBeUndefined();
     projection.dispose();
+  });
+
+  it("throws on a missing current matrix texture and on a malformed matrix image", () => {
+    const noCurrent = { _matricesTexture: null } as unknown as BatchedMesh;
+    expect(() => ensureBatchedMeshVelocity(noCurrent)).toThrow(
+      "BatchedMesh has no current matrix texture.",
+    );
+
+    const malformed = {
+      _matricesTexture: { image: { data: new Uint8Array(4), height: 1, width: 1 } },
+    } as unknown as BatchedMesh;
+    expect(() => ensureBatchedMeshVelocity(malformed)).toThrow(
+      "BatchedMesh matrix texture must contain a Float32Array image.",
+    );
+  });
+
+  it("rejects a previous-matrix write that does not match the texture size", () => {
+    const current = new DataTexture(new Float32Array(16), 4, 4);
+    const mesh = { _matricesTexture: current } as unknown as BatchedMesh;
+    expect(() => setBatchedMeshPreviousMatrices(mesh, new Float32Array(15))).toThrow(
+      /does not match/,
+    );
+  });
+
+  it("disposes the previous texture and forgets it", () => {
+    const current = new DataTexture(new Float32Array(16), 4, 4);
+    const mesh = { _matricesTexture: current } as unknown as BatchedMesh;
+    ensureBatchedMeshVelocity(mesh);
+    const previous = readBatchedMeshPreviousMatrices(mesh);
+    expect(previous).toBeDefined();
+    const previousDispose = vi.spyOn(previous as DataTexture, "dispose");
+    disposeBatchedMeshVelocity(mesh);
+    expect(previousDispose).toHaveBeenCalledOnce();
+    expect(readBatchedMeshPreviousMatrices(mesh)).toBeUndefined();
+    // Disposing twice must not touch the held texture again.
+    disposeBatchedMeshVelocity(mesh);
+    expect(previousDispose).toHaveBeenCalledOnce();
   });
 });

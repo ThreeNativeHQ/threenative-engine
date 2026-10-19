@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   NATIVE_AUDIO_CONTAINERS,
   detectAudioContainer,
@@ -7,6 +7,7 @@ import {
   // too, instead of leaving this suite green over a silent asset on every native target.
 } from "../../runtime-native/scripts/asset-preflight.mjs";
 import type { IAssetPassOutput } from "../src/compile.js";
+import type * as AudioPcm from "../src/passes/audio-pcm.js";
 import { audioPass } from "../src/passes/audio.js";
 import {
   bandLimitedNoise,
@@ -573,6 +574,60 @@ describe("the audio pass pass-through", () => {
     expect(compiled.outputBytes.equals(bed)).toBe(true);
   });
 
+  it("should ship a float WAV whose samples exceed 1.0 unchanged, because that is headroom", async () => {
+    // A Float32 WAV is allowed above 1.0 and a storm bed uses it: rain's own wind clip peaks at
+    // 1.053, and the headroom above full scale is deliberate mix, not a defect to normalise away.
+    // Clamping it into [-1, 1] here would make that unrepresentable in a test at all.
+    const above = wavClip({ float: true, frames: RATE, sample: () => 1.053 });
+
+    const compiled = await compileAudio("threenative-audio-float-headroom-", "wind.wav", above, {
+      audio: { overrides: [{ glob: "wind.wav", conditioning: "none" }] },
+    });
+
+    expect(compiled.outputBytes.equals(above)).toBe(true);
+    expect(compiled.entry.audio).toMatchObject({ container: "RIFF/WAVE", reencoded: false });
+    expect((compiled.entry.audio as Record<string, unknown>).peakBefore).toBeCloseTo(1.053, 6);
+    expect((compiled.entry.audio as Record<string, unknown>).peakAfter).toBeCloseTo(1.053, 6);
+  });
+
+  it("should show what the default pass does to that headroom, so the declaration is not free", async () => {
+    // A sine rather than a constant, because a constant is pure DC and the pass removes DC before
+    // it looks at the peak at all.
+    const above = wavClip({
+      float: true,
+      frames: RATE,
+      sample: (frame) => 1.053 * Math.sin((2 * Math.PI * 220 * frame) / RATE),
+    });
+
+    const cooked = await compileAudio("threenative-audio-float-drift-", "wind.wav", above);
+
+    const audio = cooked.entry.audio as Record<string, unknown>;
+    // The ceiling attenuates, and the Vorbis round trip lands a little above it, so the peak the
+    // player hears is neither the authored one nor its absence. That is the drift the declaration
+    // exists to prevent, and the tolerance here is the codec's overshoot, not a fudge.
+    expect(Number(audio.peakAfter)).toBeLessThan(1.053);
+    expect(Number(audio.peakAfter)).toBeCloseTo(10 ** (-1 / 20), 1);
+  });
+
+  it("should assert a declared float loop's seam on the bytes it ships", async () => {
+    const loop = wavClip({
+      float: true,
+      frames: RATE * 2,
+      sample: (frame) => 1.053 * Math.sin((2 * Math.PI * 80 * frame) / RATE),
+    });
+
+    const compiled = await compileAudio("threenative-audio-float-seam-", "bed.wav", loop, {
+      audio: {
+        overrides: [{ conditioning: "none", glob: "bed.wav", loop: { crossFadeMs: 0 } }],
+      },
+    });
+
+    expect(Number((compiled.entry.audio as Record<string, unknown>).seamRatio)).toBeLessThanOrEqual(
+      1.5,
+    );
+    expect(compiled.outputBytes.equals(loop)).toBe(true);
+  });
+
   it("should ship an already-conditioned Ogg source untouched instead of re-encoding it", async () => {
     // Sixteen of wildwood's nineteen clips are already mono, already under the ceiling and carry
     // no DC: re-encoding them cost about 4% more bytes and a generation of lossy Vorbis to
@@ -618,5 +673,45 @@ describe("the audio pass determinism", () => {
     // The Ogg serial number is random by default in every encoder; left alone it makes every
     // build's bytes differ and the determinism gate unwinnable.
     expect(first.outputBytes.equals(second.outputBytes)).toBe(true);
+  });
+});
+
+describe("the audio pass cross-fade and drift assertions", () => {
+  it("should refuse a declared cross-fade that would consume half of a short clip", async () => {
+    await expect(
+      compileAudio(
+        "threenative-audio-fade-",
+        "short.wav",
+        wavClip({ frames: RATE / 10, sample: sine(440) }),
+        {
+          audio: {
+            overrides: [{ glob: "short.wav", loop: { crossFadeMs: 250, spliceToleranceMs: 0 } }],
+          },
+        },
+      ),
+    ).rejects.toThrow(/TN_ASSETS_AUDIO_FADE_TOO_LONG/u);
+  });
+
+  it("should fail when the codec hands back a different sample rate than it encoded", async () => {
+    // Only the pass's own re-decode is faulted. The first decode reads the source faithfully.
+    vi.resetModules();
+    const actual = await vi.importActual<typeof AudioPcm>("../src/passes/audio-pcm.js");
+    let decodes = 0;
+    vi.doMock("../src/passes/audio-pcm.js", () => ({
+      ...actual,
+      decodeAudioBytes: async (bytes: Buffer, label: string) => {
+        const decoded = await actual.decodeAudioBytes(bytes, label);
+        decodes += 1;
+        return decodes === 1 ? decoded : { ...decoded, sampleRate: 22_050 };
+      },
+    }));
+    try {
+      const { audioPass: faultyCodecPass } = await import("../src/passes/audio.js");
+      await expect(
+        faultyCodecPass().apply(wavClip({ frames: RATE, sample: sine(440) }), "tone.wav"),
+      ).rejects.toThrow(/TN_ASSETS_AUDIO_DRIFT/u);
+    } finally {
+      vi.doUnmock("../src/passes/audio-pcm.js");
+    }
   });
 });

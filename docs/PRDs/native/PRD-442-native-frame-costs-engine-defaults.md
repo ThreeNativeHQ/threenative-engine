@@ -1,6 +1,7 @@
 # PRD-442 — Engine defaults that stop a native game paying for what it cannot see
 
 **Status:** NOT STARTED
+**Priority:** P1 — Open ACs ship core matrixWorld "all", delete warmHiddenPasses, prove on Midway.
 **Complexity:** 4 (MEDIUM)
 **Owner:** Joao Paulo Furtado (play sign-off); agent (implementation)
 **Depends on:** PRD-398 (the native UI cadence Phase 3 builds on; landing on `develop` through

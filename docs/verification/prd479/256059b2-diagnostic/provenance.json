@@ -1,0 +1,55 @@
+{
+  "sourceSha": "256059b23fcd27e374e1a2ec9a59a06adcd37f3f",
+  "workflowRun": "https://github.com/ThreeNativeHQ/threenative/actions/runs/37047774012",
+  "artifactId": 11245142008,
+  "artifactSha256": "d8d3f8b47eeea5caa512bebd09fc252dae605368f029510912d661e911770e89",
+  "status": "diagnostic-only; capture gate failed",
+  "qualification": "Browser SwiftShader numerical diagnostic, not completed rendering/native/hardware qualification",
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader"
+  },
+  "diagnostics": ["TN_PLAYTEST_ASSERTION_NOT_EVALUATED", "TN_CAPTURE_BLANK"],
+  "measurements": {
+    "before": {
+      "gateClosed": true,
+      "measuredSteps": 0,
+      "totalSteps": 1,
+      "initialX": -1.0499999523162842,
+      "collisionX": -1.0499999523162842,
+      "collisionPassed": 0,
+      "freeX": -1.0499999523162842,
+      "freeMotionPassed": 0,
+      "diagonalSpeed": 0,
+      "diagonalDistance": 0,
+      "diagonalDirectionPassed": 0,
+      "ejectionSpeed": 0,
+      "finite": 0
+    },
+    "after": {
+      "gateClosed": true,
+      "measuredSteps": 1,
+      "totalSteps": 2,
+      "initialX": -1.0499999523162842,
+      "collisionX": -1.0468000173568726,
+      "collisionPassed": 1,
+      "freeX": -0.75,
+      "freeMotionPassed": 1,
+      "diagonalSpeed": 18.00000091579126,
+      "diagonalDistance": 0.3000000290282922,
+      "diagonalDirectionPassed": 1,
+      "ejectionSpeed": 18,
+      "finite": 1
+    }
+  },
+  "images": [
+    {
+      "filename": "before.png",
+      "sha256": "92e5542fe86e7cdd4ff8b3ca667edf6565e54f3983a06d343004198090b5291f"
+    },
+    {
+      "filename": "after.png",
+      "sha256": "081bb323dc7c420e60c3f069624102c34e52c7b21480a16b26ea261c02bfd2ea"
+    }
+  ]
+}

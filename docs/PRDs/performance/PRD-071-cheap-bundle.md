@@ -11,6 +11,7 @@ deletes allocations that nothing needs. They are bundled because they are indivi
 to carry a PRD each and because three of the four are prerequisites for the measurements that
 PRD-069 and PRD-070 are blocked on.
 
+**Priority:** P2 — Planned plumbing: expose info/compileAsync, unit-test fakes, add a draw-count scenario.
 **This PRD claims no frame-time improvement anywhere.** If any item here is later described as
 having made a game faster, that description is wrong unless a device number says so.
 

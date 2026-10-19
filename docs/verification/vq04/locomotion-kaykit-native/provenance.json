@@ -1,0 +1,26 @@
+{
+  "scenario": "examples/abyss-framework/playtests/vq-locomotion-blend-spaces.playtest.json",
+  "target": "desktop",
+  "adapter": "NVIDIA GeForce RTX 2080 (Vulkan), private Xvfb",
+  "host": "packages/runtime-native/build/tn-linux/mystral, prebuilt 2026-09-26 (stale against this source, not rebuilt)",
+  "command": "sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js playtests/vq-locomotion-blend-spaces.playtest.json --target desktop --executable <mystral> --project examples/abyss-framework --host-arg run --host-arg dist/vq-locomotion-native.js",
+  "result": {
+    "pass": true,
+    "frames": 586,
+    "assertions": 46,
+    "diagnostics": 0
+  },
+  "sourceBase": "bfbbf18fa6a7d6961bda5c21ed40f58ed701eb97",
+  "sourceNote": "uncommitted gait-camera and KayKit consumer changes at capture time; committed in the next commit",
+  "clips": "CC0 KayKit Character Animations 1.1, unmodified, see kaykit-provenance.md",
+  "authoredClipFacts": "Running_Strafe_Left/Right carry root yaw +60/-60 degrees (and chest -17/+17); Walking_Backwards carries a 32 degree spine lean; Running_A/Walking_A carry none. The angled bodies in the frames are the authored animation.",
+  "images": {
+    "gait-after-reversals.jpg": "580d416dc1dd9f1745725f5ed439439b6419655660318a4d86a51a40e79700ce",
+    "gait-backward.jpg": "c91b90a39730c50985430842bfbcbf688cb40ba517c1a2141d999d7ebfc5e5bd",
+    "gait-diagonal.jpg": "e0f7090bc4f255a3cc993aeab15cbd38cc1c8260b28448cc5023cfeaa44eac0d",
+    "gait-forward.jpg": "fdfb80506717a46035a0e1a9c7eb1fba550155363b99f62e46e6768111e95aa5",
+    "gait-strafe-left.jpg": "448790fea66918c2877995c0d4a4c6f0a57404cfe0723b9c0e88dd6cdc70c3ad",
+    "gait-strafe-right.jpg": "fcdac84d4178ba5066476bca8610e6179bfa19d1ff22a0acf460e004c0e3bf7b"
+  },
+  "imageNote": "640x360 q72 JPEG copies of the 1280x720 playtest PNGs, small for the docs/verification budget."
+}

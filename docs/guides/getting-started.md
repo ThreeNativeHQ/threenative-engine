@@ -24,7 +24,7 @@ pnpm dev
 
 Open the local URL that Vite prints. The default template is `starter`, a game with a React HUD.
 This guide uses `minimal`, which draws its HUD in the scene. Other templates include
-`platformer`, `action-rpg`, `defense`, `racing`, `sailing` and `shooter`.
+`platformer`, `action-rpg`, `defense`, `racing`, `sailing`, `rain`, `shooter` and `snow`.
 
 If you use npm, pass template flags after `--`:
 

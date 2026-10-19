@@ -213,8 +213,13 @@ export function inspectTemplate(
     errors.push(`${template}: lighting.ts needs a key and rim DirectionalLight`);
   if (!imageLit && !/new (?:HemisphereLight|AmbientLight)/u.test(lighting))
     errors.push(`${template}: lighting.ts needs a fill or ambient light`);
-  for (const marker of ["PCFSoftShadowMap", "normalBias"]) {
-    if (!lighting.includes(marker)) errors.push(`${template}: lighting.ts is missing ${marker}`);
+  // The shadow-map markers belong to a light that casts one. A ray-marched kit computes its own
+  // occlusion and enables no shadow map, so demanding the soft-filter settings there would only
+  // demand dead configuration.
+  if (/castShadow\s*=\s*true/u.test(lighting)) {
+    for (const marker of ["PCFSoftShadowMap", "normalBias"]) {
+      if (!lighting.includes(marker)) errors.push(`${template}: lighting.ts is missing ${marker}`);
+    }
   }
   for (const marker of ["toneMapping", "toneMappingExposure", "createRenderChain", "bloom("]) {
     if (!postPipeline.includes(marker))

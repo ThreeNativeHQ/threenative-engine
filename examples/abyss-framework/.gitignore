@@ -7,3 +7,4 @@ public/bake.receipt.json
 public/basis/
 public/shared/
 public/world/
+public/*.glb

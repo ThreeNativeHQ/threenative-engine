@@ -23,7 +23,7 @@ The device never left `Thermal Status: 0` and never lost a percent of charge acr
 neither number is a throttled one.
 
 **One condition was not held: the phone was on USB throughout**, because USB is the adb transport.
-[PRD-127](../PRDs/mobile/PRD-127-device-measurement-preflight.md) proposes `requireDischarging`
+[PRD-127](../PRDs/native/PRD-127-device-measurement-preflight.md) proposes `requireDischarging`
 as a bar; this run does not meet a bar that does not exist yet, and it is recorded here rather than
 left to be inferred. Charging state is the one condition below that a future gate would still refuse.
 
@@ -76,7 +76,7 @@ arm is pinned to the display and would read the same however the device felt. **
 the one that carries information.** 20 ms is nowhere near a 8.33 ms frame interval, so that arm was
 free to move, and it moved by 0.05%.
 
-This is [PRD-127 §9's](../PRDs/mobile/PRD-127-device-measurement-preflight.md) first kill
+This is [PRD-127 §9's](../PRDs/native/PRD-127-device-measurement-preflight.md) first kill
 switch firing, on evidence rather than on prediction: *if the charged retake reproduces the result
 within run-to-run variance, the 50% bar cost the project a fortnight of provisional labelling for no
 measurable effect.* It did, on both arms, on a rung that was not display-bound.

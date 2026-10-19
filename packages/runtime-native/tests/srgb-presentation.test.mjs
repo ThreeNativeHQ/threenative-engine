@@ -104,3 +104,12 @@ test("presentation contract rejects removal of the inverse transfer", () => {
   );
   assert.throws(() => assertPresentationBridge(definitions));
 });
+
+test("the shared presentation bridge maps normalized canvas coordinates to the whole drawable", () => {
+  const pipeline = presentationDefinitions().pipeline;
+  assert.match(pipeline, /@location\(0\) uv: vec2f/u);
+  assert.match(pipeline, /textureDimensions\(sourceTexture\)/u);
+  assert.doesNotMatch(pipeline, /textureLoad\(sourceTexture, vec2i\(position\.xy\)/u);
+  assert.match(pipeline, /requiresSrgbPresentationBridge/u,
+    "size-only linear presentation must not apply the inverse sRGB transfer");
+});

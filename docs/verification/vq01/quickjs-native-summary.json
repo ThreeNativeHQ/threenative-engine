@@ -1,0 +1,69 @@
+{
+  "pass": true,
+  "sourceSha": "46a759ad885cede29e0fbb2c719ed75151c5baec",
+  "runId": "36998104447",
+  "qualification": "Packaged Linux QuickJS fallback correctness on a named hosted software adapter. No Android, iOS, native compressed-codec admission or hardware-performance claim.",
+  "observability": "Native host console, live readiness and resource observations; runtime.diagnostics is not exposed by this bridge.",
+  "runtime": {
+    "artifact": "/home/runner/work/threenative/threenative/packages/runtime-native/build/tn-linux/mystral",
+    "identity": "desktop:sha256:da16138cc37938a14ce6831476aa58972a0d469ba2172b6a06faf6d1d56c6042",
+    "engine": "quickjs",
+    "webAssembly": false,
+    "decoders": {
+      "ktx2": false,
+      "meshopt": false,
+      "draco": false
+    }
+  },
+  "packaged": {
+    "kind": "file",
+    "name": "vq-native-assets",
+    "sha256": "e20910ccaf495d5455bcba4fa74299fb6f7dd86718e0802488dbb6970cab883d"
+  },
+  "models": [
+    {
+      "name": "meshopt",
+      "sourceSha256": "d67a2eeb9b22ce62843ad224ed3eaeab09b28af9b05ba2175dc1c6b5511c7812",
+      "cookedSha256": "71c635f4ed93f2a8f124e0f7a2143b9f4b277b8706afb022ed2c9c8023fc8880",
+      "sourceEncodedBytes": 4096,
+      "cookedEncodedBytes": 3908,
+      "decodedGeometryBytes": 2076,
+      "decodedImageBytes": 4096,
+      "triangles": 48
+    },
+    {
+      "name": "draco",
+      "sourceSha256": "1f448f031080d8369c587bd2fb5bbd485419f3ad4b9d741ff5d7eda58567dda3",
+      "cookedSha256": "261cc389a2f626f7983fda36ba2b24a7622bf12aaa07955872a78269a5f9f230",
+      "sourceEncodedBytes": 4956,
+      "cookedEncodedBytes": 20240,
+      "decodedGeometryBytes": 18396,
+      "decodedImageBytes": 4096,
+      "triangles": 768
+    }
+  ],
+  "capture": {
+    "adapter": {
+      "architecture": "unknown",
+      "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+      "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+      "vendor": "llvmpipe"
+    },
+    "browserArgs": [],
+    "captureMethod": "device.screenshot",
+    "rendererKind": "webgpu",
+    "target": "desktop",
+    "viewport": {
+      "height": 640,
+      "width": 960
+    }
+  },
+  "pixels": {
+    "width": 960,
+    "height": 640,
+    "counts": [[10449, 10750], [7139, 6688], [9603, 9746]]
+  },
+  "screenshotSha256": "1ad43cda8e816431b0ab9993066b087c9283351f304ade2c1765eebf8e349c81",
+  "refusedCodec": "authored KTX2",
+  "previousPackagePreserved": true
+}

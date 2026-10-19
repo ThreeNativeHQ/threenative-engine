@@ -425,6 +425,14 @@ export function evaluateDiagnosticsPolicy(
       suggestion: "Inspect runtime diagnostics and bundle validation output before replaying the scenario.",
     });
   }
+  if (report.observations?.console.some(({ text }) => /^\s*\[Playtest\] TN_V8_FRAME_FAILED:/u.test(text))) {
+    diagnostics.push({
+      code: "TN_PLAYTEST_NATIVE_FRAME_FAILED",
+      message: "The native frame callback threw. A failed frame cannot pass a playtest.",
+      severity: "error",
+      suggestion: "Inspect console.json and fix the first TN_V8_FRAME_FAILED error.",
+    });
+  }
   const capturedConsoleErrors = consoleErrors(report.observations?.console ?? []);
   if (policy.noConsoleErrors && capturedConsoleErrors.length > 0) {
     diagnostics.push({
@@ -477,6 +485,20 @@ export function projectedOffscreenRatio(min: [number, number], max: [number, num
   return 1 - Math.max(0, visibleWidth * visibleHeight) / area;
 }
 
+/** Pixels from NDC bounds, clamped to the viewport: an off-screen box must not report pixels outside the screen. */
+export function projectedPixelsFromNdcBounds(
+  min: [number, number],
+  max: [number, number],
+  viewport: { height: number; width: number },
+): number {
+  const clamp = (value: number): number => Math.min(1, Math.max(-1, value));
+  const x0 = clamp(min[0]);
+  const x1 = clamp(max[0]);
+  const y0 = clamp(min[1]);
+  const y1 = clamp(max[1]);
+  return Math.max(0, ((x1 - x0) / 2) * viewport.width) * Math.max(0, ((y1 - y0) / 2) * viewport.height);
+}
+
 export function hasNativeReadinessSamples(runtimeDiagnosticsValue: unknown): boolean {
   return isRecord(runtimeDiagnosticsValue) && Array.isArray(runtimeDiagnosticsValue.readiness);
 }
@@ -502,7 +524,7 @@ export function evaluateVisibilityAssertion(
   const initialMax = Array.isArray(initialBounds?.max) ? initialBounds.max : undefined;
   const initialProjectedPixels = initialMin === undefined || initialMax === undefined
     ? undefined
-    : Math.max(0, ((Number(initialMax[0]) - Number(initialMin[0])) / 2) * viewport.width) * Math.max(0, ((Number(initialMax[1]) - Number(initialMin[1])) / 2) * viewport.height);
+    : projectedPixelsFromNdcBounds([Number(initialMin[0]), Number(initialMin[1])], [Number(initialMax[0]), Number(initialMax[1])], viewport);
   const initialOffscreenRatio = initialMin === undefined || initialMax === undefined
     ? undefined
     : projectedOffscreenRatio([Number(initialMin[0]), Number(initialMin[1])], [Number(initialMax[0]), Number(initialMax[1])]);
@@ -563,7 +585,7 @@ export function evaluateVisibilityAssertion(
   const max = Array.isArray(bounds?.max) ? bounds.max : undefined;
   const projectedPixels = min === undefined || max === undefined
     ? undefined
-    : Math.max(0, ((Number(max[0]) - Number(min[0])) / 2) * viewport.width) * Math.max(0, ((Number(max[1]) - Number(min[1])) / 2) * viewport.height);
+    : projectedPixelsFromNdcBounds([Number(min[0]), Number(min[1])], [Number(max[0]), Number(max[1])], viewport);
   const offscreenRatio = min === undefined || max === undefined ? undefined : projectedOffscreenRatio([Number(min[0]), Number(min[1])], [Number(max[0]), Number(max[1])]);
   const pass = rendered !== undefined
     && bounds !== undefined

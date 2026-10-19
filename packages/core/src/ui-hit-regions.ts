@@ -120,8 +120,6 @@ interface IObserverLike {
   disconnect: () => void;
 }
 
-type ObserverConstructor = new (callback: () => void) => IObserverLike;
-
 /** Five decimals of a normalized rect is a tenth of a pixel on a 10k display. */
 function quantize(value: number): number {
   return Math.round(value * 1e5) / 1e5;

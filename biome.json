@@ -1,5 +1,6 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "ignore": [
       "**/dist/**",
@@ -9,6 +10,8 @@
       "**/mcp/blender-server.mjs",
       "packages/metahuman/wasm/**",
       "artifacts/**",
+      "examples/strata-terrain-preview/src/world/*.json",
+      "examples/strata-terrain-preview/local-assets/**",
       "build/**",
       "release-native/**",
       ".linchpin/**",
@@ -16,6 +19,7 @@
       ".worktrees/**",
       ".claude/worktrees/**",
       ".opencode/**",
+      ".leanpi/**",
       ".linchpin/**",
       ".tnshots/**",
       ".mcp.json",
@@ -28,8 +32,13 @@
       "packages/runtime-native/build/**",
       "packages/runtime-native/**/build/**",
       "packages/runtime-native/third_party/**",
+      "packages/runtime-native/native/css-ui/vendor/**",
+      "examples/native-css-hud/corpus/out/**",
+      "examples/native-css-hud/corpus/out-interaction/**",
+      "packages/three-native/generated/**",
       "packages/assets/vendor/basis-encoder/basis_encoder.js",
       "packages/runtime-native/**/*.json",
+      "packages/terrain/starter/*/recipe.json",
       "test-results/**",
       "examples/abyss-vanilla/index.html",
       "examples/abyss-vanilla/src/main.js",
@@ -37,11 +46,15 @@
       "examples/abyss-vanilla/vite.config.js",
       "examples/auto-lod/public/**",
       "examples/abyss-framework/public/**",
+      "examples/prd493-terrain-splat/public/**",
+      "examples/abyss-framework/vq-assets/.generated/**",
       "examples/csg-doorway/public/**",
       "docs/benchmark/sweeps/**",
       "docs/benchmark/rounds/**",
+      "docs/benchmark/prd345/shooter-causes1/**",
       "docs/verification/prd-357-c4-duplicate-inventory.json",
       "docs/verification/prd-357-c4-duplicate-inventory-before.json",
+      "docs/verification/vq04/**",
       "docs/verification/visuals/**",
       "benchmark/engine-load-test/godot-lights-meshes/benchmark_box_1000.json"
     ]
@@ -113,7 +126,8 @@
         "packages/physics/src/**",
         "packages/ui/src/**",
         "packages/create-threenative/src/**",
-        "packages/playtest/src/**"
+        "packages/playtest/src/**",
+        "packages/three-native/src/**"
       ],
       "linter": {
         "rules": {
@@ -171,6 +185,56 @@
                 "conventions": [
                   { "selector": { "kind": "interface" }, "match": "I(.*)" },
                   { "match": ".*" }
+                ],
+                "strictCase": false,
+                "requireAscii": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "include": [
+        "docs/verification/prd339-exposure-proof/camera-cuts-2bc1d57f.json",
+        "docs/verification/prd339-exposure-proof/cold-boots-08b039c.json",
+        "docs/verification/prd339-exposure-proof/cold-boots-d1500603.json",
+        "docs/verification/prd339-exposure-proof/completion-388e8a.json",
+        "docs/verification/prd339-exposure-proof/completion-current-55b5313.json",
+        "docs/verification/prd339-exposure-proof/controlled-cuts-9a84ee0e.json",
+        "docs/verification/prd339-exposure-proof/dark-adapted-bb34aff.json",
+        "docs/verification/prd339-exposure-proof/live-clock-5c3b176.json",
+        "docs/verification/prd339-exposure-proof/qualified-cuts-2a33c9a0.json",
+        "docs/verification/prd339-exposure-proof/reverse-cuts-ad0498e6.json",
+        "docs/verification/prd339-exposure-proof/rgb-correction-c7091c7.json",
+        "docs/verification/prd339-exposure-proof/sunlight-failed-eaa583b.json"
+      ],
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
+      "include": ["examples/procedural-animals/src/render/donor/core/motion/quadruped.js"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useNamingConvention": {
+              "level": "error",
+              "options": {
+                "conventions": [
+                  {
+                    "selector": {
+                      "kind": "interface"
+                    },
+                    "match": "I(.*)"
+                  },
+                  {
+                    "selector": {
+                      "kind": "objectLiteralProperty"
+                    },
+                    "match": "(?:D|DL|T|F|H|W|U|Lf|(.+))",
+                    "formats": ["camelCase"]
+                  }
                 ],
                 "strictCase": false,
                 "requireAscii": false

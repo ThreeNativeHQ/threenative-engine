@@ -38,6 +38,33 @@ function driveGpu(
 }
 
 describe("frame-budget GPU series", () => {
+  it("keeps stale bucket samples out of a new window's resolved frame range", () => {
+    const windows: IFrameBudgetWindow[] = [];
+    const budget = gpuBudget({ reportEvery: 4, onWindow: (window) => windows.push(window) });
+    for (let i = 0; i < 8; i++) {
+      budget.beginFrame(i * 16.7, i * 16.7);
+      budget.addGpuMs(i === 7 ? 1 : 100, i === 7 ? 20 : 10);
+      budget.addGpuBucketMs({ main: i === 7 ? 1 : 100 });
+      budget.endFrame(i * 16.7 + 1);
+    }
+    expect(windows[1]?.gpuFrames).toEqual({ first: 20, last: 20 });
+    expect(windows[1]?.gpuMain).toBe(1);
+  });
+  it("identifies the resolved frames measured by the window", () => {
+    const budget = gpuBudget();
+    driveGpu(budget, [
+      [10, 10],
+      [20, 12],
+    ]);
+    expect(budget.window().gpuFrames).toEqual({ first: 10, last: 12 });
+  });
+
+  it("leaves frame attribution unavailable for unframed measurements", () => {
+    const budget = gpuBudget();
+    driveGpu(budget, [[10, 10], [20]]);
+    expect(budget.window().gpuFrames).toBeUndefined();
+  });
+
   it("reports the resolved frames' mean/p50/p95/max, not the last value", () => {
     const budget = gpuBudget();
     driveGpu(budget, [
@@ -184,12 +211,87 @@ describe("frame-budget GPU series", () => {
     expect(payload.gpuOther).toBe(1);
     expect(payload.gpuCompute).toBe(0.4);
     // Appended after every existing field, so a reader that parsed the older line keeps its keys.
-    expect(Object.keys(payload).slice(-4)).toEqual([
+    expect(Object.keys(payload).slice(-6)).toEqual([
       "gpuMain",
       "gpuShadow",
       "gpuOther",
       "gpuCompute",
+      "gpuShadowP95",
+      "gpuShadowSamples",
     ]);
+  });
+
+  it("reports the shadow tail over frames that rendered one, not the known-zero frames", () => {
+    // p50 of a sparse bucket is zero while the refreshed frames are expensive: the shadow incidence
+    // is a few percent, so Phase 2 compares the tail together with the count it was drawn from. A
+    // frame that drew no shadow contributes a known zero and must not be in that rendered tail, so
+    // the producer's own `shadowPasses` count — never a `shadow > 0` guess — selects the frames.
+    const budget = gpuBudget();
+    const clock = { now: 0, timestamp: 0 };
+    // shadow ms, and the shadow passes the producer recorded that frame.
+    const frames: ReadonlyArray<readonly [number, number]> = [
+      [0, 0],
+      [0, 0],
+      [0, 0],
+      [4, 1],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+      [21, 1],
+    ];
+    for (const [index, [ms, passes]] of frames.entries()) {
+      clock.now += 1;
+      clock.timestamp += 16.7;
+      budget.beginFrame(clock.timestamp, clock.now);
+      clock.now += 2;
+      budget.markSimulationEnd(clock.now, 1);
+      budget.addRender(9);
+      clock.now += 9;
+      budget.addGpuMs(10, index + 1);
+      budget.addGpuBucketMs({ main: 5, shadow: ms, shadowPasses: passes });
+      budget.endFrame(clock.now);
+    }
+    const window = budget.window();
+    // Every frame resolved a shadow reading, the six known zeros included: the all-frame p50 is 0.
+    expect(window.gpuShadowSamples).toBe(8);
+    expect(window.gpuShadowP95).toBe(21);
+    expect(window.gpuShadow).toBe(0);
+    // The rendered tail is the two frames that drew a shadow; the six known zeros are excluded.
+    expect(window.gpuShadowRendered?.samples).toBe(2);
+    expect(window.gpuShadowRendered?.p95).toBe(21);
+    expect(window.gpuShadowRendered?.max).toBe(21);
+  });
+
+  it("counts a shadow render that cost 0 ms, which a `shadow > 0` guess would drop", () => {
+    const budget = gpuBudget();
+    budget.beginFrame(0, 0);
+    budget.addGpuMs(5, 1);
+    budget.addGpuBucketMs({ main: 5, shadow: 0, shadowPasses: 1 });
+    budget.endFrame(1);
+    const window = budget.window();
+    // A genuine render that resolved to zero is observed: the summary is present at max 0, not absent.
+    expect(window.gpuShadowRendered?.samples).toBe(1);
+    expect(window.gpuShadowRendered?.max).toBe(0);
+  });
+
+  it("omits the rendered shadow summary rather than zeroing it when only known zeros resolved", () => {
+    const budget = gpuBudget();
+    const clock = { now: 0, timestamp: 0 };
+    for (let index = 0; index < 3; index += 1) {
+      clock.now += 1;
+      clock.timestamp += 16.7;
+      budget.beginFrame(clock.timestamp, clock.now);
+      clock.now += 2;
+      budget.markSimulationEnd(clock.now, 1);
+      budget.addRender(9);
+      clock.now += 9;
+      budget.addGpuMs(10, index + 1);
+      budget.addGpuBucketMs({ main: 5, shadow: 0, shadowPasses: 0 });
+      budget.endFrame(clock.now);
+    }
+    const window = budget.window();
+    expect(window.gpuShadowSamples).toBe(3);
+    expect(window.gpuShadowRendered).toBeUndefined();
   });
 
   it("reports a bucket absent rather than zero when no frame resolved it", () => {
@@ -202,5 +304,20 @@ describe("frame-budget GPU series", () => {
     const window = budget.window();
     expect(window.gpuMain).toBe(5);
     expect(window.gpuCompute).toBeUndefined();
+  });
+});
+
+describe("pyramid GPU span", () => {
+  it("reports fresh pyramid samples as a windowed p50/p95 and resets the next window", () => {
+    const lines: string[] = [];
+    const budget = new FrameBudget({ reportEvery: 3, report: (line) => lines.push(line) });
+    for (const [frame, ms] of [1, 2, 3].entries()) {
+      budget.beginFrame(frame * 16, frame * 16);
+      budget.addGpuPyramidMs(ms);
+      budget.endFrame(frame * 16 + 1);
+    }
+    const payload = JSON.parse(lines[0]?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}");
+    expect(payload.gpuPyramid).toMatchObject({ samples: 3, p50: 2, p95: 3 });
+    expect(budget.window().gpuPyramid).toBeUndefined();
   });
 });

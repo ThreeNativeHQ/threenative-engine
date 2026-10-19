@@ -5,6 +5,7 @@ import {
   Scene,
   type SceneFrame,
   afterPhysics,
+  getPlatform,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
@@ -13,9 +14,16 @@ import { type IRunnerModel, Runner } from "../entities/Runner.js";
 import type { RunnerPhysics } from "../physics.js";
 import { chaseRunner, setupCamera } from "../render/camera.js";
 import { createDustTrail } from "../render/dust.js";
+import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { setupPost } from "../render/postprocessing.js";
+import {
+  type QualityTier,
+  isWebGLFallbackRenderer,
+  materialLightingEnabled,
+} from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, INITIAL_STATE } from "../state.js";
@@ -34,11 +42,23 @@ export class Run extends Scene<GameState, RunnerPhysics> {
   #model: IRunnerModel | undefined;
   #sky: Texture | undefined;
 
+  #post: ReturnType<typeof setupPost> | undefined;
+  #environmentSample: IEnvironmentSample | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+
   override async load(ctx: GameCtx): Promise<void> {
     [this.#model, this.#sky] = await Promise.all([
       ctx.assets.model<IRunnerModel>("mannequin.glb"),
       ctx.assets.texture("sky.jpg"),
     ]);
+    setupSky(ctx.scene, this.#sky);
+    this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, RunnerPhysics> {
@@ -52,10 +72,23 @@ export class Run extends Scene<GameState, RunnerPhysics> {
     );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+    const materialEnvironment = {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
+    let materialTier: QualityTier = "low";
+    this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      onTierChanged: (tier) => {
+        materialTier = tier;
+        this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment));
+      },
       godraysLight: key,
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
+      gpuClass: ctx.renderer.gpuClass?.class,
     });
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
@@ -70,7 +103,11 @@ export class Run extends Scene<GameState, RunnerPhysics> {
     // `ctx.random` is the seeded source `defineGame({ seed })` installed, so the same seed builds
     // the same track — which is what makes a runner's scenario reproducible at all.
     const chunkContext = {
-      add: (object: Parameters<typeof ctx.add>[0]) => ctx.add(object),
+      add: (object: Parameters<typeof ctx.add>[0]) => {
+        const added = ctx.add(object);
+        this.#materialLighting?.enroll(object);
+        return added;
+      },
       physics: ctx.physics,
       random: () => ctx.random(),
     };
@@ -100,6 +137,25 @@ export class Run extends Scene<GameState, RunnerPhysics> {
       chaseRunner(camera, runner.mesh.position, dt, offset.position);
       dust.position.set(runner.mesh.position.x, 0.15, runner.mesh.position.z + 0.6);
     });
+
+    // Collect only after the loaded character and scene receivers are attached.
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, key, {
+        ...materialEnvironment,
+        enabled: materialLightingEnabled(materialTier, materialEnvironment),
+        overrides: { fillGain: 0 },
+      }),
+    );
+    if (this.#environmentSample !== undefined) {
+      const sample = this.#environmentSample;
+      this.#materialLighting.setEnvironmentMeasurement(
+        sample.measurement,
+        sample.source,
+        sample.intensity,
+        sample,
+      );
+    }
 
     return (frameCtx, dt) => {
       loading.update();
@@ -158,5 +214,14 @@ export class Run extends Scene<GameState, RunnerPhysics> {
       )
         frameCtx.state.set(next);
     };
+  }
+
+  override exit(ctx: GameCtx): void {
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    this.#post?.dispose();
+    this.#post = undefined;
+    this.#environmentSample = undefined;
+    super.exit(ctx);
   }
 }

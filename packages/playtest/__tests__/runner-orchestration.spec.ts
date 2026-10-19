@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { boundedTeardownStep, settledTeardownValue } from "../src/runner/server.js";
 import {
@@ -102,6 +102,7 @@ describe("runner orchestration (characterization)", () => {
         },
       ],
       diagnosticsPolicy: { noConsoleErrors: true, noNetworkErrors: true, noRuntimeDiagnostics: true },
+      clock: "fixed-step",
       distance: 0,
       entity: "",
       expectMoved: false,
@@ -182,5 +183,53 @@ describe("teardown reaches a browser that is still launching", () => {
   test("survives a launch that rejects", async () => {
     await expect(teardownBrowser(undefined, Promise.reject(new Error("launch failed")))).resolves
       .toBeUndefined();
+  });
+});
+
+
+describe("absolute scenario start tick", () => {
+  async function source(ticks: unknown[] = [3, 10], mode = "fixed-step", capabilities = ["runtime.fixedStep"]) {
+    const { alignScenarioStartTick } = await import("../src/runner/runner-support.js");
+    const sample = vi.fn(async () => ({ clock: { mode, tick: ticks.shift() } }));
+    const advance = vi.fn(async () => undefined);
+    const bridge = { description: { capabilities }, sample, advance };
+    return { align: (startTick?: number, liveClock = false) => alignScenarioStartTick(bridge as never, startTick, liveClock), sample, advance };
+  }
+  test("absent alignment leaves the bridge untouched", async () => {
+    const bridge = await source();
+    await bridge.align();
+    expect(bridge.sample).not.toHaveBeenCalled();
+    expect(bridge.advance).not.toHaveBeenCalled();
+  });
+  test("advances exactly the remaining ticks then verifies the authoritative clock", async () => {
+    const bridge = await source();
+    await bridge.align(10);
+    expect(bridge.advance).toHaveBeenCalledExactlyOnceWith(7);
+    expect(bridge.sample).toHaveBeenCalledTimes(2);
+  });
+  test.each([0, 10])("an already aligned clock %s is resampled without advancing", async (tick) => {
+    const bridge = await source([tick, tick]);
+    await bridge.align(tick);
+    expect(bridge.advance).not.toHaveBeenCalled();
+    expect(bridge.sample).toHaveBeenCalledTimes(2);
+  });
+  test.each([undefined, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])("rejects invalid observed tick %s", async (tick) => {
+    const bridge = await source([tick]);
+    await expect(bridge.align(10)).rejects.toThrow("startTick");
+    expect(bridge.advance).not.toHaveBeenCalled();
+  });
+  test("rejects overshoot and drift, including drift from an already aligned clock", async () => {
+    for (const ticks of [[11], [3, 11], [10, 11]]) {
+      const bridge = await source(ticks);
+      await expect(bridge.align(10)).rejects.toThrow("startTick");
+    }
+  });
+  test("rejects live, nonfixed, missing capability and missing bridge", async () => {
+    const live = await source();
+    await expect(live.align(10, true)).rejects.toThrow("startTick");
+    await expect((await source([3], "wall-clock")).align(10)).rejects.toThrow("startTick");
+    await expect((await source([3], "fixed-step", [])).align(10)).rejects.toThrow("startTick");
+    const { alignScenarioStartTick } = await import("../src/runner/runner-support.js");
+    await expect(alignScenarioStartTick(undefined, 10)).rejects.toThrow("startTick");
   });
 });

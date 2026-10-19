@@ -1,0 +1,49 @@
+{
+  "name": "prd476-fluid-particles-coupling",
+  "schemaVersion": 1,
+  "subject": "a dense sphere sinks, a light box floats on particle water, and the solver reads their transforms every step",
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "artifacts": { "screenshots": true },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "falling",
+      "waitTicks": 60,
+      "release": true,
+      "screenshot": "falling"
+    },
+    { "kind": "wait", "label": "splash", "waitTicks": 40, "release": true, "screenshot": "splash" },
+    { "kind": "wait", "label": "settling", "waitTicks": 300, "release": true },
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 300,
+      "release": true,
+      "screenshot": "settled"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "GameState", "path": "steps", "changed": true },
+      { "id": "GameState", "path": "count", "gte": 2000 },
+      { "id": "GameState", "path": "sphereY", "lte": 0.45 },
+      { "id": "GameState", "path": "sphereSpeed", "lte": 0.2 },
+      { "id": "GameState", "path": "boxSurfaceGap", "lte": 0.2 },
+      { "id": "GameState", "path": "surfaceDisturbance", "gte": 0.05 }
+    ],
+    "visual": [
+      {
+        "region": { "x": 0, "y": 0, "width": 1280, "height": 720, "minNonblankPixelRatio": 0.01 },
+        "frameDiff": { "minChangedPixelRatio": 0.002 }
+      }
+    ]
+  }
+}

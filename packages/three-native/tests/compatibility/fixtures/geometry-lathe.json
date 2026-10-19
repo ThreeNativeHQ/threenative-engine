@@ -1,0 +1,125 @@
+{
+  "name": "geometry-lathe",
+  "adaptedFrom": "three@0.185.1 src/geometries/LatheGeometry.js \u2014 a turned muzzle profile and a partial sweep whose phiLength clamps to 2\u03c0",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "p0",
+      "class": "Vector2",
+      "args": [0.055, 0]
+    },
+    {
+      "op": "new",
+      "id": "p1",
+      "class": "Vector2",
+      "args": [0.098, 0]
+    },
+    {
+      "op": "new",
+      "id": "p2",
+      "class": "Vector2",
+      "args": [0.103, 0.025]
+    },
+    {
+      "op": "new",
+      "id": "p3",
+      "class": "Vector2",
+      "args": [0.091, 0.18]
+    },
+    {
+      "op": "new",
+      "id": "p4",
+      "class": "Vector2",
+      "args": [0.055, 0.18]
+    },
+    {
+      "op": "new",
+      "id": "muzzle",
+      "class": "LatheGeometry",
+      "args": [
+        {
+          "refs": ["p0", "p1", "p2", "p3", "p4"]
+        },
+        24
+      ]
+    },
+    {
+      "op": "new",
+      "id": "partial",
+      "class": "LatheGeometry",
+      "args": [
+        {
+          "refs": ["p0", "p2", "p4"]
+        },
+        5,
+        0.5,
+        7
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "muzzle",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "muzzle",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "muzzle",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "muzzle",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "muzzle",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "muzzle",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "partial",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "partial",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "partial",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "partial",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "partial",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "partial",
+      "path": "parameters",
+      "kind": "json"
+    }
+  ]
+}

@@ -3,7 +3,7 @@ import { PLAYTEST_FRAME_PASS_KINDS, type PlaytestFramePassKind } from "../protoc
 import type { IPlaytestAnimationAssertion, IPlaytestComponentAssertion, IPlaytestContactAssertion, IPlaytestPathAssertion, IPlaytestResourceAnyOfAssertion, IPlaytestScenario, IPlaytestSignalAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestVisibilityAssertion, IPlaytestWorldAssertion, IPlaytestPerformanceAssertion } from "../scenario.js";
 import type { IPlaytestReport, IPlaytestDiagnosticsPolicy } from "../report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "../protocol.js";
-import { renderedEntity } from "./measures.js";
+import { renderedEntity, projectedPixelsFromNdcBounds } from "./measures.js";
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertion-schema.js";
 import {
@@ -42,7 +42,7 @@ export function projectedPixelsForEntity(snapshot: unknown, entity: string, view
   const max = Array.isArray(bounds?.max) ? bounds.max : undefined;
   return min === undefined || max === undefined
     ? undefined
-    : Math.max(0, ((Number(max[0]) - Number(min[0])) / 2) * viewport.width) * Math.max(0, ((Number(max[1]) - Number(min[1])) / 2) * viewport.height);
+    : projectedPixelsFromNdcBounds([Number(min[0]), Number(min[1])], [Number(max[0]), Number(max[1])], viewport);
 }
 
 export function countMatchingEntries(effectLog: unknown, tokens: readonly string[]): number {
@@ -67,7 +67,6 @@ export function evaluatePerformanceAssertion(
   const drawCalls = observed.flatMap(({ drawCalls: value }) => value === undefined ? [] : [value]);
   const triangles = observed.flatMap(({ triangles: value }) => value === undefined ? [] : [value]);
   const frameMsP95 = nearestRank(frameTimes, 0.95);
-  const frameMsP50 = nearestRank(frameTimes, 0.5);
   const maxObservedDrawCalls = drawCalls.length === 0 ? undefined : Math.max(...drawCalls);
   const maxObservedTriangles = triangles.length === 0 ? undefined : Math.max(...triangles);
   const results: IPlaytestAssertionResult[] = [];
@@ -132,8 +131,11 @@ export function evaluatePerformanceAssertion(
     // A floor, not a ceiling, so it gets its own arm rather than a negated addBound: reporting
     // "expected at most 30 fps" for a floor is the kind of message that makes an agent fix the
     // wrong thing.
-    const observed = frameMsP50 === undefined || frameMsP50 <= 0 ? undefined : Math.round((1_000 / frameMsP50) * 100) / 100;
-    const pass = samplesPass && observed !== undefined && observed >= assertion.minFps;
+    // The verdict uses the exact fps. The report floors it to two places, so it never shows more
+    // than was measured: 29.9967 reads 29.99, not 30.
+    const exact = fpsFromFrameTimes(frameTimes);
+    const observed = exact === undefined ? undefined : Math.floor(exact * 100) / 100;
+    const pass = samplesPass && exact !== undefined && exact >= assertion.minFps;
     results.push({
       details: { actual: observed ?? null, expected: assertion.minFps, sampleCount: samples.length, unit: "fps" },
       id: "performance.minFps",
@@ -275,6 +277,15 @@ export function nearestRank(values: readonly number[], percentile: number): numb
   if (values.length === 0) return undefined;
   const sorted = [...values].sort((left, right) => left - right);
   return sorted[Math.max(0, Math.ceil(values.length * percentile) - 1)];
+}
+
+/**
+ * The fps for both a floor and a parity ratio. It is the nearest-rank p50 frame time, unrounded.
+ * One definition keeps both paths on the same series.
+ */
+export function fpsFromFrameTimes(frameTimes: readonly number[]): number | undefined {
+  const frameMs = nearestRank(frameTimes, 0.5);
+  return frameMs === undefined || frameMs <= 0 ? undefined : 1_000 / frameMs;
 }
 
 export function mergeEffectLogs(effectLog: unknown, series: IPlaytestObservations["effectLogSeries"]): { entries: unknown[] } {

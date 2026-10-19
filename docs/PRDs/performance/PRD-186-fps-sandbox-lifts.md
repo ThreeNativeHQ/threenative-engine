@@ -1,6 +1,7 @@
 # PRD-186 — Lift proven mechanism out of the fps sandbox, and fix the two engine defects that forced it
 
 **Status:** PARTIAL — Phase 1 landed in `1f170dbc`; Phases 2–6 open
+**Priority:** P1 — Open boxes fix reconcile so post-batch instance writes reach the drawn mesh.
 **Complexity:** 3 (10+ files) + 2 (new modules) + 2 (multi-package) = **7 → HIGH mode**
 **Owner:** unassigned
 **Depends on:** PRD-187. Phases 3-5 below assume its Phase 4 has landed (one `index.ts` edit per

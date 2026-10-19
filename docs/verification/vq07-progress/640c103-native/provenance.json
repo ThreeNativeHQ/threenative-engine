@@ -1,0 +1,880 @@
+{
+  "source": "640c103017d56e56abb56745eb875885c32aec06",
+  "run": "https://github.com/ThreeNativeHQ/threenative/actions/runs/37046042533",
+  "artifact": 11244629357,
+  "artifactSha256": "003e4ee6e591d136d6c61abbad74b75605b6b11dc3e14afbf61831d1bc297710",
+  "target": "Linux ARM64 QuickJS / wgpu-native",
+  "adapter": "Mesa llvmpipe (LLVM 20.1.2, 128 bits), Mesa 25.2.8",
+  "captureMethod": "device.screenshot",
+  "runtimeAndBundle": {
+    "runtimeSha256": "5a164cc2ec42e30b8597fb40abb125540aa73b37119dc2158f34f40a8589665b",
+    "bundleSha256": "826fb0bc5dad56523e2768c4a24a12e7f78d9a3f303a573bca7be66bb61fa08d"
+  },
+  "qualification": "Software-rendered correctness only. No phone, hardware-performance or tier-admission claim. Thirty-frame host windows contain only 3-4 resolved GPU samples; remaining stale frames are explicit below.",
+  "diagnosticsEvidence": {
+    "required": "Nonempty actual host console with first-frame marker and no runtime/GPU errors, plus asserted startup and authored resource predicates.",
+    "applicationSnapshotDiagnostics": "Not provided by the standard core plugin; a clean application diagnostic channel is not claimed."
+  },
+  "nativeHostContracts": {
+    "surfaceStatus": "passed compiled ordinary-host status contract",
+    "destinationPixels": "passed actual GPU readback for larger/equal/smaller linear and sRGB destinations",
+    "noFogResizeControl": true
+  },
+  "frames": [
+    {
+      "case": "off",
+      "sha256": "340699e0cb4c8740fd083df7b0ed1484e3364efae2b6ce17f0e117f1e73e9d15",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 4,
+        "stableTextureFrames": 4
+      }
+    },
+    {
+      "case": "zero",
+      "sha256": "340699e0cb4c8740fd083df7b0ed1484e3364efae2b6ce17f0e117f1e73e9d15",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "fog",
+      "sha256": "95e2d1a14559df4a6778916e3192d15127d59e4e83b9a76f433e7c829add464a",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "inside",
+      "sha256": "1bec85d68b3bed2d79b8eeb7e3fd4f3aa4f64140f1e9e44165971c49b123c9bf",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "sunOff",
+      "sha256": "65050dc6819eb17bef27df1215351c485324c1e0c2fd49014b777292a0fa11c3",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "pointOff",
+      "sha256": "badc6fd442e064320d244cdc24b09487d487af31316215cfb532c2b71c29a6d4",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "overlap",
+      "sha256": "2ed15c18e59c9936c5d1df7b1816278450b81a2d28cc5b329ef6d4b59b7c1ff6",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "half",
+      "sha256": "05238af75c2a820556e6360bfa9b5dad467c145b6f8e0408c33cca4c4c3efbd3",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "wallOff",
+      "sha256": "85487cc1dd56d7baf5e18e4b8ef33befda91ca2c1004cf6877b067a10959531a",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "blackOff",
+      "sha256": "b3d4f1282739ab51813d412fc278fe6ec8555ab44baaf68e145e4007ca4bc0ea",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "scatter",
+      "sha256": "eca0f87d4e38a72c378753f62cdeaadbdc14901193b33716ebe64daef3e0be26",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "scatterSunOff",
+      "sha256": "d1412a75a5612ff4653692c1c9314102124e135335f17ef0d4daff9857e4be49",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "scatterPointOff",
+      "sha256": "5b272a565aa3eca8c45b4dea7671f3183d6f91c0f2cde2bf95ced43151b144dc",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "lifecycle",
+      "sha256": "95e2d1a14559df4a6778916e3192d15127d59e4e83b9a76f433e7c829add464a",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "lifecycleOff",
+      "sha256": "340699e0cb4c8740fd083df7b0ed1484e3364efae2b6ce17f0e117f1e73e9d15",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "resizeSmall",
+      "sha256": "4637e18bd82a08c8763cbd78f2589e5e429597612af661cb51100cbafe63bc61",
+      "pass": true,
+      "width": 320,
+      "height": 240,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "resizeRestore",
+      "sha256": "95e2d1a14559df4a6778916e3192d15127d59e4e83b9a76f433e7c829add464a",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "scatterOutside",
+      "sha256": "eca0f87d4e38a72c378753f62cdeaadbdc14901193b33716ebe64daef3e0be26",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "scatterOutsideSunOff",
+      "sha256": "d1412a75a5612ff4653692c1c9314102124e135335f17ef0d4daff9857e4be49",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "scatterOutsidePointOff",
+      "sha256": "5b272a565aa3eca8c45b4dea7671f3183d6f91c0f2cde2bf95ced43151b144dc",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "cameraCut",
+      "sha256": "1bec85d68b3bed2d79b8eeb7e3fd4f3aa4f64140f1e9e44165971c49b123c9bf",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "cameraRestore",
+      "sha256": "95e2d1a14559df4a6778916e3192d15127d59e4e83b9a76f433e7c829add464a",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "streamWallOut",
+      "sha256": "85487cc1dd56d7baf5e18e4b8ef33befda91ca2c1004cf6877b067a10959531a",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "streamWallIn",
+      "sha256": "95e2d1a14559df4a6778916e3192d15127d59e4e83b9a76f433e7c829add464a",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "sceneReentry",
+      "sha256": "340699e0cb4c8740fd083df7b0ed1484e3364efae2b6ce17f0e117f1e73e9d15",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "sceneRepeatedOff",
+      "sha256": "340699e0cb4c8740fd083df7b0ed1484e3364efae2b6ce17f0e117f1e73e9d15",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "costOff",
+      "sha256": "340699e0cb4c8740fd083df7b0ed1484e3364efae2b6ce17f0e117f1e73e9d15",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 90,
+        "stableTextureFrames": 90
+      }
+    },
+    {
+      "case": "costFull",
+      "sha256": "95e2d1a14559df4a6778916e3192d15127d59e4e83b9a76f433e7c829add464a",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 90,
+        "stableTextureFrames": 90
+      }
+    },
+    {
+      "case": "costHalf",
+      "sha256": "05238af75c2a820556e6360bfa9b5dad467c145b6f8e0408c33cca4c4c3efbd3",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 90,
+        "stableTextureFrames": 90
+      }
+    },
+    {
+      "case": "resizeOff",
+      "sha256": "f5a4c3cd3b08b6acd50f966317688a0017fd66ad6fd655aa6970135e16f1b6fe",
+      "pass": true,
+      "width": 320,
+      "height": 240,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    },
+    {
+      "case": "resizeOffRestore",
+      "sha256": "340699e0cb4c8740fd083df7b0ed1484e3364efae2b6ce17f0e117f1e73e9d15",
+      "pass": true,
+      "width": 640,
+      "height": 400,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      }
+    }
+  ],
+  "pixelAndResourceMetrics": [
+    {
+      "assertion": "off authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.67553515625,
+      "nonblankPixelRatio": 0.99937109375,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "zero authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.67553515625,
+      "nonblankPixelRatio": 0.99937109375,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "fog authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.62978515625,
+      "nonblankPixelRatio": 0.99998828125,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "inside authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.17884765625,
+      "nonblankPixelRatio": 1,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "sunOff authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.92972265625,
+      "nonblankPixelRatio": 0.999984375,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "pointOff authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.65212890625,
+      "nonblankPixelRatio": 0.99893359375,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "overlap authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.62975,
+      "nonblankPixelRatio": 0.99998828125,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "half authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.6297734375,
+      "nonblankPixelRatio": 0.9999921875,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "wallOff authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.62996484375,
+      "nonblankPixelRatio": 0.99998828125,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "blackOff authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.94375,
+      "nonblankPixelRatio": 0.05625,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "scatter authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.86383203125,
+      "nonblankPixelRatio": 0.23834375,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "scatterSunOff authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.88630078125,
+      "nonblankPixelRatio": 0.236296875,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "scatterPointOff authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.9053125,
+      "nonblankPixelRatio": 0.23907421875,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "lifecycle authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.62978515625,
+      "nonblankPixelRatio": 0.99998828125,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "lifecycleOff authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.67553515625,
+      "nonblankPixelRatio": 0.99937109375,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "resizeSmall authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.5757421875,
+      "nonblankPixelRatio": 0.9999869791666667,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "resizeRestore authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.62978515625,
+      "nonblankPixelRatio": 0.99998828125,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "scatterOutside authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.86383203125,
+      "nonblankPixelRatio": 0.23834375,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "scatterOutsideSunOff authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.88630078125,
+      "nonblankPixelRatio": 0.236296875,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "scatterOutsidePointOff authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.9053125,
+      "nonblankPixelRatio": 0.23907421875,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "cameraCut authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.17884765625,
+      "nonblankPixelRatio": 1,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "cameraRestore authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.62978515625,
+      "nonblankPixelRatio": 0.99998828125,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "streamWallOut authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.62996484375,
+      "nonblankPixelRatio": 0.99998828125,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "streamWallIn authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.62978515625,
+      "nonblankPixelRatio": 0.99998828125,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "sceneReentry authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.67553515625,
+      "nonblankPixelRatio": 0.99937109375,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "sceneRepeatedOff authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.67553515625,
+      "nonblankPixelRatio": 0.99937109375,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "costOff authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.67553515625,
+      "nonblankPixelRatio": 0.99937109375,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "costFull authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.62978515625,
+      "nonblankPixelRatio": 0.99998828125,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "costHalf authored whole-frame nonblank ratio",
+      "darkPixelRatio": 0.6297734375,
+      "nonblankPixelRatio": 0.9999921875,
+      "minimum": 0.05,
+      "pass": true
+    },
+    {
+      "assertion": "zero-density pixel identity",
+      "pass": true
+    },
+    {
+      "assertion": "repeated lifecycle restores baseline pixels",
+      "pass": true
+    },
+    {
+      "assertion": "renderer texture allocation baseline",
+      "baselineResources": {
+        "textures": 5,
+        "settledRenderFrames": 4,
+        "stableTextureFrames": 4
+      },
+      "restoredResources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "pass": true
+    },
+    {
+      "assertion": "target/depth resize restores exact pixels",
+      "pass": true
+    },
+    {
+      "assertion": "cameraCut matches fresh inside pixels",
+      "pass": true
+    },
+    {
+      "assertion": "cameraRestore matches fresh fog pixels",
+      "pass": true
+    },
+    {
+      "assertion": "streamWallOut matches fresh wallOff pixels",
+      "pass": true
+    },
+    {
+      "assertion": "streamWallIn matches fresh fog pixels",
+      "pass": true
+    },
+    {
+      "assertion": "sceneReentry matches fresh off pixels",
+      "pass": true
+    },
+    {
+      "assertion": "sceneRepeatedOff matches fresh off pixels",
+      "pass": true
+    },
+    {
+      "assertion": "isolated light-scattering pixels",
+      "baselineMaxRgb": 0,
+      "wallMaxRgb": 0,
+      "roi": {
+        "x": 260,
+        "y": 155,
+        "width": 150,
+        "height": 90
+      },
+      "wallRoi": {
+        "x": 184,
+        "y": 216,
+        "width": 18,
+        "height": 18
+      },
+      "evaluationRoi": {
+        "x": 0,
+        "y": 0,
+        "width": 500,
+        "height": 400
+      },
+      "calibrationRoi": {
+        "x": 515,
+        "y": 25,
+        "width": 110,
+        "height": 110
+      },
+      "calibrationMinimum": 146,
+      "calibrationMaxDifference": 0,
+      "sun": {
+        "meanRgbDelta": 15.957703703703704,
+        "changedPixelRatio": 0.9933333333333333
+      },
+      "point": {
+        "meanRgbDelta": 48.772123456790126,
+        "changedPixelRatio": 1
+      },
+      "thresholds": {
+        "minMeanRgbDelta": 1,
+        "minChangedPixelRatio": 0.1,
+        "maxBlackRgb": 0,
+        "minCalibrationRgb": 32,
+        "maxCalibrationDifference": 0
+      },
+      "pass": true
+    },
+    {
+      "assertion": "unshadowed light outside directional map",
+      "baselineMaxRgb": 0,
+      "wallMaxRgb": 0,
+      "roi": {
+        "x": 260,
+        "y": 155,
+        "width": 150,
+        "height": 90
+      },
+      "wallRoi": {
+        "x": 184,
+        "y": 216,
+        "width": 18,
+        "height": 18
+      },
+      "evaluationRoi": {
+        "x": 0,
+        "y": 0,
+        "width": 500,
+        "height": 400
+      },
+      "calibrationRoi": {
+        "x": 515,
+        "y": 25,
+        "width": 110,
+        "height": 110
+      },
+      "calibrationMinimum": 146,
+      "calibrationMaxDifference": 0,
+      "sun": {
+        "meanRgbDelta": 15.957703703703704,
+        "changedPixelRatio": 0.9933333333333333
+      },
+      "point": {
+        "meanRgbDelta": 48.772123456790126,
+        "changedPixelRatio": 1
+      },
+      "thresholds": {
+        "minMeanRgbDelta": 1,
+        "minChangedPixelRatio": 0.1,
+        "maxBlackRgb": 0,
+        "minCalibrationRgb": 32,
+        "maxCalibrationDifference": 0
+      },
+      "pass": true
+    }
+  ],
+  "cost": [
+    {
+      "case": "costOff",
+      "window": 19,
+      "hostFrames": 30,
+      "frameMs": {
+        "max": 14.75,
+        "mean": 4.56,
+        "p50": 3.09,
+        "p95": 14.47,
+        "p99": 14.75,
+        "samples": 30
+      },
+      "renderMs": {
+        "max": 3.1,
+        "mean": 2.96,
+        "p50": 2.97,
+        "p95": 3.08,
+        "p99": 3.1,
+        "samples": 30
+      },
+      "gpuQueryMs": {
+        "max": 10.93,
+        "mean": 10.61,
+        "p50": 10.31,
+        "p95": 10.93,
+        "p99": 10.93,
+        "samples": 4
+      },
+      "gpuStaleFrames": 26,
+      "transportPixels": 0,
+      "raySteps": 0,
+      "directionalLights": 1,
+      "unshadowedPointLights": 1,
+      "presentedMs": {
+        "max": 22.05,
+        "mean": 16.67,
+        "p50": 16.65,
+        "p95": 21.82,
+        "p99": 22.05,
+        "samples": 30
+      },
+      "nativePresents": 30,
+      "cadenceQualification": "Engine-measured frame interval on a virtual capture display; not a hardware display-rate or tier-admission result."
+    },
+    {
+      "case": "costFull",
+      "window": 6,
+      "hostFrames": 30,
+      "frameMs": {
+        "max": 65.04,
+        "mean": 11.84,
+        "p50": 3.88,
+        "p95": 63.37,
+        "p99": 65.04,
+        "samples": 30
+      },
+      "renderMs": {
+        "max": 3.93,
+        "mean": 3.77,
+        "p50": 3.77,
+        "p95": 3.91,
+        "p99": 3.93,
+        "samples": 30
+      },
+      "gpuQueryMs": {
+        "max": 60.45,
+        "mean": 59.12,
+        "p50": 58.76,
+        "p95": 60.45,
+        "p99": 60.45,
+        "samples": 4
+      },
+      "gpuStaleFrames": 26,
+      "transportPixels": 256000,
+      "raySteps": 48,
+      "directionalLights": 1,
+      "unshadowedPointLights": 1,
+      "presentedMs": {
+        "max": 72.98,
+        "mean": 67.16,
+        "p50": 64.75,
+        "p95": 72.81,
+        "p99": 72.98,
+        "samples": 30
+      },
+      "nativePresents": 30,
+      "cadenceQualification": "Engine-measured frame interval on a virtual capture display; not a hardware display-rate or tier-admission result."
+    },
+    {
+      "case": "costHalf",
+      "window": 9,
+      "hostFrames": 30,
+      "frameMs": {
+        "max": 37.46,
+        "mean": 7.17,
+        "p50": 3.86,
+        "p95": 36.88,
+        "p99": 37.46,
+        "samples": 30
+      },
+      "renderMs": {
+        "max": 3.93,
+        "mean": 3.76,
+        "p50": 3.76,
+        "p95": 3.91,
+        "p99": 3.93,
+        "samples": 30
+      },
+      "gpuQueryMs": {
+        "max": 32.93,
+        "mean": 32.52,
+        "p50": 32.5,
+        "p95": 32.93,
+        "p99": 32.93,
+        "samples": 3
+      },
+      "gpuStaleFrames": 27,
+      "transportPixels": 64000,
+      "raySteps": 48,
+      "directionalLights": 1,
+      "unshadowedPointLights": 1,
+      "presentedMs": {
+        "max": 47.11,
+        "mean": 39.87,
+        "p50": 37.46,
+        "p95": 46.99,
+        "p99": 47.11,
+        "samples": 30
+      },
+      "nativePresents": 30,
+      "cadenceQualification": "Engine-measured frame interval on a virtual capture display; not a hardware display-rate or tier-admission result."
+    }
+  ]
+}

@@ -1,0 +1,310 @@
+{
+  "base": {
+    "id": "layer-00",
+    "metalness": 0.35,
+    "normal": true,
+    "orm": true,
+    "roughness": 0.45,
+    "tile": 3.0,
+    "tint": [
+      0.75,
+      0.8,
+      0.85
+    ]
+  },
+  "breakup": {
+    "push": 0.12,
+    "scale": 0.08
+  },
+  "layers": [
+    {
+      "channel": "g",
+      "hi": 0.75,
+      "id": "layer-01",
+      "lo": 0.2,
+      "mask": "mask-0",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.5,
+      "tile": 3.5,
+      "tint": [
+        0.8,
+        0.8500000000000001,
+        0.85
+      ]
+    },
+    {
+      "channel": "b",
+      "hi": 0.55,
+      "id": "layer-02",
+      "lo": 0.2,
+      "mask": "mask-0",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.55,
+      "tile": 4.0,
+      "tint": [
+        0.85,
+        0.8,
+        0.85
+      ]
+    },
+    {
+      "channel": "r",
+      "hi": 0.65,
+      "id": "layer-03",
+      "lo": 0.2,
+      "mask": "mask-0",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.6000000000000001,
+      "tile": 4.5,
+      "tint": [
+        0.75,
+        0.8500000000000001,
+        0.85
+      ]
+    },
+    {
+      "channel": "g",
+      "hi": 0.75,
+      "id": "layer-04",
+      "lo": 0.2,
+      "mask": "mask-1",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.65,
+      "tile": 3.0,
+      "tint": [
+        0.8,
+        0.8,
+        0.85
+      ]
+    },
+    {
+      "channel": "b",
+      "hi": 0.55,
+      "id": "layer-05",
+      "lo": 0.2,
+      "mask": "mask-1",
+      "metalness": 0.35,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.7,
+      "tile": 3.5,
+      "tint": [
+        0.85,
+        0.8500000000000001,
+        0.85
+      ]
+    },
+    {
+      "channel": "r",
+      "hi": 0.65,
+      "id": "layer-06",
+      "lo": 0.2,
+      "mask": "mask-1",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.45,
+      "tile": 4.0,
+      "tint": [
+        0.75,
+        0.8,
+        0.85
+      ]
+    },
+    {
+      "channel": "g",
+      "hi": 0.75,
+      "id": "layer-07",
+      "lo": 0.2,
+      "mask": "mask-2",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.5,
+      "tile": 4.5,
+      "tint": [
+        0.8,
+        0.8500000000000001,
+        0.85
+      ]
+    },
+    {
+      "channel": "b",
+      "hi": 0.55,
+      "id": "layer-08",
+      "lo": 0.2,
+      "mask": "mask-2",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.55,
+      "tile": 3.0,
+      "tint": [
+        0.85,
+        0.8,
+        0.85
+      ]
+    },
+    {
+      "channel": "r",
+      "hi": 0.65,
+      "id": "layer-09",
+      "lo": 0.2,
+      "mask": "mask-2",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.6000000000000001,
+      "tile": 3.5,
+      "tint": [
+        0.75,
+        0.8500000000000001,
+        0.85
+      ]
+    },
+    {
+      "channel": "g",
+      "hi": 0.75,
+      "id": "layer-10",
+      "lo": 0.2,
+      "mask": "mask-3",
+      "metalness": 0.35,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.65,
+      "tile": 4.0,
+      "tint": [
+        0.8,
+        0.8,
+        0.85
+      ]
+    },
+    {
+      "channel": "b",
+      "hi": 0.55,
+      "id": "layer-11",
+      "lo": 0.2,
+      "mask": "mask-3",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.7,
+      "tile": 4.5,
+      "tint": [
+        0.85,
+        0.8500000000000001,
+        0.85
+      ]
+    },
+    {
+      "channel": "r",
+      "hi": 0.65,
+      "id": "layer-12",
+      "lo": 0.2,
+      "mask": "mask-3",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.45,
+      "tile": 3.0,
+      "tint": [
+        0.75,
+        0.8,
+        0.85
+      ]
+    },
+    {
+      "channel": "g",
+      "hi": 0.75,
+      "id": "layer-13",
+      "lo": 0.2,
+      "mask": "mask-4",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.5,
+      "tile": 3.5,
+      "tint": [
+        0.8,
+        0.8500000000000001,
+        0.85
+      ]
+    },
+    {
+      "channel": "b",
+      "height": true,
+      "hi": 0.55,
+      "id": "layer-14",
+      "lo": 0.2,
+      "mask": "mask-4",
+      "metalness": 0.0,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.55,
+      "tile": 4.0,
+      "tint": [
+        0.85,
+        0.8,
+        0.85
+      ]
+    },
+    {
+      "channel": "r",
+      "height": true,
+      "hi": 0.65,
+      "id": "layer-15",
+      "lo": 0.2,
+      "mask": "mask-4",
+      "metalness": 0.35,
+      "normal": true,
+      "orm": true,
+      "roughness": 0.6000000000000001,
+      "tile": 4.5,
+      "tint": [
+        0.75,
+        0.8500000000000001,
+        0.85
+      ]
+    }
+  ],
+  "macro": {
+    "max": 1.08,
+    "min": 0.92,
+    "scale": 0.02
+  },
+  "splat": {
+    "masks": {
+      "mask-0": [
+        0,
+        "rgb"
+      ],
+      "mask-1": [
+        1,
+        "rgb"
+      ],
+      "mask-2": [
+        2,
+        "rgb"
+      ],
+      "mask-3": [
+        3,
+        "rgb"
+      ],
+      "mask-4": [
+        4,
+        "rgb"
+      ]
+    },
+    "planes": 5,
+    "size": 128
+  },
+  "textures": "terrain/tex"
+}

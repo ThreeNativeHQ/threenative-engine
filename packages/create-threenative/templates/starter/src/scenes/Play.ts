@@ -25,13 +25,17 @@ import { type IPlayerModel, PLAYER_STAND_Y, Player } from "../entities/Player.js
 import { createArena, platform } from "../render/arena.js";
 import { createSpringArm } from "../render/camera.js";
 import { pickupRiseEase } from "../render/easing.js";
+import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
+import { createMaterialLighting } from "../render/materialLighting.js";
 import { createPennantMaterial, propMaterial } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
+import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { ball, block, spike, tube } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
+import { STARTER_MIST, createVolumetricFog } from "../render/volumetricFog.js";
 import type { GameState } from "../state.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
@@ -44,9 +48,11 @@ const FLOOR_BOUNDS = { maxX: 5, minX: -5, maxZ: 2, minZ: -2 } as const;
 const FLOOR_SIZE = { depth: 4.2, width: 10 } as const;
 
 export class Play extends Scene<GameState, IPhysicsContext> {
+  #observeMotion: (() => void) | undefined;
   #assetProof: Mesh | undefined;
   #playerModel: IPlayerModel | undefined;
   #sky: Texture | undefined;
+  #environmentSample: IEnvironmentSample | undefined;
 
   static override readonly initialState: GameState = {
     coyoteJumps: 0,
@@ -62,6 +68,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     paused: false,
     peakRise: 0,
     playerX: -2,
+    progress: 0,
     respawns: 0,
     score: 0,
     status: "playing",
@@ -77,6 +84,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ]);
     this.#playerModel = playerModel;
     this.#sky = sky;
+    setupSky(ctx.scene, sky, ctx.renderer.softwareAdapter !== undefined);
+    this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
     // A 16-pixel check filtered smoothly is a grey smear at flag size; nearest keeps the
     // squares square, which is the whole reason the finish flag is legible from the ledge.
     texture.magFilter = NearestFilter;
@@ -135,6 +150,45 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         z: 0,
       }),
     );
+    // Observation is armed by playtest's first sample; ordinary games retain no frame series.
+    let observeMotion = false;
+    let wasMovingRight = false;
+    const presented: Array<[number, number, number]> = [];
+    this.#observeMotion = () => {
+      if (!observeMotion) return;
+      const movingRight = ctx.input.vector("move").x > 0;
+      if (movingRight && !wasMovingRight) presented.length = 0;
+      wasMovingRight = movingRight;
+      if (!movingRight) return;
+      presented.push([ctx.frameTime, player.body.object.position.x, ctx.camera.position.x]);
+      if (presented.length > 31) presented.shift();
+    };
+    ctx.entities.add("smooth-motion", {
+      debug: () => {
+        observeMotion = true;
+        const speeds = (axis: 1 | 2): number[] =>
+          presented.slice(1).map((frame, index) => {
+            const previous = presented[index];
+            if (previous === undefined) throw new Error("Missing presented motion sample.");
+            return (frame[axis] - previous[axis]) / ((frame[0] - previous[0]) / 1000);
+          });
+        const cv = (values: number[]): number | null => {
+          if (values.length < 20) return null;
+          const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+          if (mean <= 0) return null;
+          return (
+            Math.sqrt(values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length) /
+            mean
+          );
+        };
+        return {
+          samples: presented.length,
+          playerCv: cv(speeds(1)),
+          cameraCv: cv(speeds(2)),
+          presented,
+        };
+      },
+    });
     const audio = ctx.entities.add("audio", new AudioBus({ camera: ctx.camera }));
     const pickupAudio = ctx.assets.audio("pickup.wav");
     void pickupAudio.catch(() => undefined);
@@ -146,16 +200,34 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
       isMobile(),
     );
+    const materialEnvironment = {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    };
     this.#post = ctx.entities.add(
       "quality",
       setupPost(ctx.renderer, ctx.scene, ctx.camera, {
         godraysLight: key,
+        onTierChanged: (tier) =>
+          this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment)),
         mobile: isMobile(),
         software: ctx.renderer.softwareAdapter !== undefined,
+        gpuClass: ctx.renderer.gpuClass?.class,
         // One rule for the frame budget, from the engine: the display refresh capped at 120,
         // 60 on mobile. A game that names `display.maxFps` overrides it here too.
         targetFps: resolveTargetFps(config, getPlatform()).targetFps,
         ready: () => ctx.startup.phase === "ready",
+        // Rebuilt per graph, so a tier change that replaces the chain cannot compose one medium
+        // twice. The look and the flag are `STARTER_MIST`'s, in `volumetricFog.ts`; only the
+        // backend is wired here, and with `enabled` false nothing is allocated at all.
+        fog: () =>
+          createVolumetricFog(ctx.scene, ctx.camera as PerspectiveCamera, {
+            ...STARTER_MIST,
+            renderer: ctx.renderer.kind,
+          }),
       }),
     );
     const loading = createLoadingScreen(ctx);
@@ -199,7 +271,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     ctx.add(fixed(floorMesh));
     ctx.add(fixed(floorBase));
-    new Crate(ctx, levelX, 4, -1.5, propMaterial);
+    ctx.entities.add("crate", new Crate(ctx, levelX, 4, -1.5, propMaterial));
     const pickupBase = block(0.42, 0.14, 0.42, propMaterial);
     const pickupStem = tube(0.08, 0.08, 0.3, propMaterial);
     const pickupOrb = ball(0.16, propMaterial);
@@ -220,6 +292,23 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // not a debug object parked over the level. The texture and the glTF still load in
     // `load()` above, which is what the native asset gate greps for.
     const goal = ctx.entities.add("goal", new Goal(ctx, this.#assetProof));
+    // All borrowed materials, including the cloned skinned mannequin and arena, now exist.
+    this.#materialLighting = ctx.entities.add(
+      "material-lighting",
+      createMaterialLighting(ctx.scene, ctx.camera, key, {
+        ...materialEnvironment,
+        enabled: materialLightingEnabled(this.#post.tier, materialEnvironment),
+      }),
+    );
+    if (this.#environmentSample !== undefined) {
+      const { measurement, source, intensity } = this.#environmentSample;
+      this.#materialLighting.setEnvironmentMeasurement(
+        measurement,
+        source,
+        intensity,
+        this.#environmentSample,
+      );
+    }
     const supportSurfaceY = (position: { readonly x: number; readonly z: number }):
       | number
       | undefined => {
@@ -309,6 +398,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         lives -= 1;
         player.respawn();
         springArm.snap(player.mesh.position);
+        frameCtx.resetInterpolation(frameCtx.camera);
         respawned = true;
       }
       springArm.dolly(frameCtx.input.axis("zoom"), dt);
@@ -331,6 +421,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       // 1.8 m figure would report its own height as a jump.
       frameState.peakRise = Math.max(previous.peakRise, player.mesh.position.y - PLAYER_STAND_Y);
       frameState.playerX = player.mesh.position.x;
+      frameState.progress = Math.max(
+        0,
+        Math.min(
+          100,
+          ((frameState.playerX - Play.initialState.playerX) /
+            (ISLAND.x - ISLAND.width / 2 - Play.initialState.playerX)) *
+            100,
+        ),
+      );
       frameState.respawns = previous.respawns + (respawned ? 1 : 0);
       const current = frameCtx.state.getState();
       const changed =
@@ -343,6 +442,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         frameState.odometer !== current.odometer ||
         frameState.peakRise !== current.peakRise ||
         frameState.playerX !== current.playerX ||
+        frameState.progress !== current.progress ||
         frameState.respawns !== current.respawns;
       if (changed) frameCtx.state.set(frameState);
       if (respawned) frameCtx.state.flush();
@@ -350,8 +450,17 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   }
 
   #post: ReturnType<typeof setupPost> | undefined;
+  #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
+
+  override render(): void {
+    this.#observeMotion?.();
+  }
 
   override exit(ctx: GameCtx): void {
+    this.#observeMotion = undefined;
+    this.#materialLighting?.dispose();
+    this.#materialLighting = undefined;
+    // Also releases the medium `setupPost` built, with the graph it composed into.
     this.#post?.dispose();
     this.#post = undefined;
     super.exit(ctx);

@@ -15,6 +15,7 @@ else. The rest is the loader/pump change this PRD hands over, with its cost meas
 **Owner:** unassigned
 **Depends on:** None
 
+**Priority:** P1 — Open ACs need ui-parity green with zero diagnostics and owner Wayland proof UI composites.
 ## Context
 
 On Linux the native desktop runtime draws the **entire** UI — loading screen, briefing, HUD —

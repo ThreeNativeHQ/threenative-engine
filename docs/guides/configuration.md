@@ -33,9 +33,9 @@ const config: IThreeNativeConfig = {
 export default config;
 ```
 
-`maxFps` defaults to 60. With `resolutionScale: "auto"`, the engine scales the 3D drawing buffer to
-hold that frame rate. A number in (0, 1] pins the scale instead. `ui.renderer` is `"native"` for an
-in-scene HUD or `"web"` for a web UI overlay.
+`maxFps` defaults to 60, and `resolutionScale` defaults to `"auto"`: the engine scales the 3D
+drawing buffer to hold that frame rate. A number in (0, 1] pins the scale instead. `ui.renderer`
+is `"native"` for an in-scene HUD or `"web"` for a web UI overlay.
 
 ## Branding
 

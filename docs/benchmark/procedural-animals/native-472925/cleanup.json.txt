@@ -1,0 +1,11 @@
+{
+  "hostUtc": "2026-10-06T15:22:37.674605+00:00",
+  "nativeHosts": [],
+  "canonicalCaptureHolder": null,
+  "foreignProcessesModified": false,
+  "ownedWrapperExitCodes": {
+    "animals": 0,
+    "frustum": 0
+  },
+  "gpu": "1075 MiB, 6718 MiB, 0 %"
+}

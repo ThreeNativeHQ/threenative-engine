@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { Group } from "three";
+import { Group, PerspectiveCamera } from "three";
 import { Fn } from "three/tsl";
 import { SpriteNodeMaterial } from "three/webgpu";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ComputeDrivenRegistry, type IComputeDriven } from "../src/compute-driven.js";
 import { defineGame } from "../src/game.js";
 import { GPUParticles3D } from "../src/particles.js";
@@ -58,6 +58,106 @@ class ComputeProbe extends Group implements IComputeDriven {
 }
 
 describe("ComputeDrivenRegistry", () => {
+  it("admits only startup streaming while an opaque hold is waiting", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    let complete: () => void = () => undefined;
+    const order: string[] = [];
+    const streaming = Object.assign(new ComputeProbe("stream", order), {
+      processCadence: "render" as const,
+      processDuringStartup: true,
+    });
+    const ordinary = Object.assign(new ComputeProbe("ordinary", order), {
+      processCadence: "render" as const,
+    });
+    let transitionDraws = 0;
+    let loadingDraws = 0;
+    class CoveredScene extends Scene {
+      static override readonly initialState = {};
+      override enter(ctx: ICtx): void {
+        ctx.canvasLayer.opaque = true;
+        ctx.canvasLayer.keepWorldRendering = true;
+        ctx.beforeRender(() => transitionDraws++);
+      }
+    }
+    class LoadingScene extends Scene {
+      static override readonly initialState = {};
+      override enter(ctx: ICtx): void {
+        ctx.canvasLayer.opaque = true;
+        ctx.canvasLayer.renderWorldDuringStartup = false;
+        ctx.beforeRender(() => loadingDraws++);
+        ctx.startup.hold(
+          "spawn",
+          new Promise<void>((resolve) => {
+            complete = resolve;
+          }),
+        );
+        ctx.add(streaming);
+        ctx.add(ordinary);
+      }
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "requestAnimationFrame");
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          compileAsync: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { loading: LoadingScene, covered: CoveredScene },
+      start: "loading",
+    });
+    try {
+      await game.start();
+      if (!frame || !game.ctx) throw new Error("Loop not started");
+      for (let i = 1; i <= 12; i++) {
+        frame(i * 16);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
+      expect(game.ctx.startup.phase).not.toBe("ready");
+      expect(streaming.processed).toBeGreaterThan(0);
+      expect(ordinary.processed).toBe(0);
+      expect(loadingDraws).toBe(0);
+      // Uploads have settled: allow real streamed first-use draws while the spawn hold remains.
+      game.ctx.canvasLayer.keepWorldRendering = true;
+      frame(200);
+      expect(game.ctx.startup.phase).not.toBe("ready");
+      expect(loadingDraws).toBeGreaterThan(0);
+      const prewarmDraws = loadingDraws;
+      game.ctx.canvasLayer.keepWorldRendering = false;
+      complete();
+      for (let i = 13; i <= 30; i++) {
+        frame(i * 16);
+        await Promise.resolve();
+      }
+      expect(game.ctx.startup.phase).toBe("ready");
+      frame(512);
+      expect(ordinary.processed).toBeGreaterThan(0);
+      expect(loadingDraws).toBe(prewarmDraws);
+      game.ctx.canvasLayer.opaque = false;
+      frame(520);
+      expect(loadingDraws).toBeGreaterThan(prewarmDraws);
+      await game.ctx.goto("covered");
+      frame(528);
+      expect(transitionDraws).toBeGreaterThan(0);
+    } finally {
+      complete();
+      game.stop();
+      if (descriptor) Object.defineProperty(globalThis, "requestAnimationFrame", descriptor);
+      else Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+    }
+  });
   it("documents fixed and render cadence", () => {
     const record = readFileSync(
       new URL("../../../docs/verification/PRD-242.md", import.meta.url),
@@ -440,4 +540,90 @@ describe("ComputeDrivenRegistry", () => {
     expect(remaining.released).toBe(true);
     expect(registry.size).toBe(0);
   });
+});
+
+it("forwards measured budgets only to live render-cadence candidates before dispatch", () => {
+  const registry = new ComputeDrivenRegistry();
+  const parent = new Group();
+  const order: string[] = [];
+  const render = Object.assign(new ComputeProbe("render", order), {
+    processCadence: "render" as const,
+    budget: { significance: () => 1, yield: vi.fn(() => order.push("yield")) },
+  });
+  const fixed = Object.assign(new ComputeProbe("fixed", order), {
+    budget: { significance: () => 0, yield: vi.fn() },
+  });
+  const released = Object.assign(new ComputeProbe("released", order), {
+    processCadence: "render" as const,
+    budget: { significance: () => 0, yield: vi.fn() },
+  });
+  const detached = Object.assign(new ComputeProbe("detached", order), {
+    processCadence: "render" as const,
+    budget: { significance: () => 0, yield: vi.fn() },
+  });
+  const plain = Object.assign(new ComputeProbe("plain", order), {
+    processCadence: "render" as const,
+  });
+  parent.add(render, fixed, released, detached, plain);
+  for (const entry of [render, fixed, released, detached, plain]) registry.add(entry, renderer);
+  released.detach();
+  parent.remove(detached);
+  registry.observeBudget({
+    frames: 60,
+    presented: { samples: 60, mean: 1000 / 60, p50: 0, p95: 0, p99: 0, max: 0 },
+    gpuMs: 20,
+    gpuCompute: 10,
+    targetFps: 100,
+  });
+  registry.processRender(renderer);
+  expect(render.budget.yield).not.toHaveBeenCalled();
+  order.length = 0;
+  registry.processRender(renderer, new PerspectiveCamera());
+  expect(order).toEqual(["yield", "render", "plain"]);
+  expect(render.budget.yield).toHaveBeenCalledExactlyOnceWith(true);
+  expect(fixed.budget.yield).not.toHaveBeenCalled();
+  expect(released.budget.yield).not.toHaveBeenCalled();
+  expect(detached.budget.yield).not.toHaveBeenCalled();
+});
+
+it("uses the loop clock for significance grace and forwards seconds without changing startup coverage", () => {
+  const registry = new ComputeDrivenRegistry();
+  const parent = new Group();
+  const probe = Object.assign(new ComputeProbe("render", []), {
+    processCadence: "render" as const,
+    processDuringStartup: true,
+    budget: { significance: () => 1, yield: vi.fn() },
+  });
+  parent.add(probe);
+  registry.add(probe, renderer);
+  const process = vi.spyOn(probe, "process");
+  const wall = vi.spyOn(performance, "now").mockImplementation(() => 0);
+  let tick = 240;
+  const simulation = { tick: () => tick, step: 1 / 60 };
+  const view = new PerspectiveCamera();
+  try {
+    const window = {
+      frames: 3,
+      presented: { samples: 3, mean: 16, p50: 0, p95: 0, p99: 0, max: 0 },
+      gpuMs: 20,
+      gpuCompute: 10,
+      targetFps: 100,
+      simulatedSeconds: 1,
+    };
+    registry.observeBudget(window);
+    registry.processRender(renderer, view, true, simulation);
+    expect(probe.budget.yield).toHaveBeenLastCalledWith(true);
+    expect(process).toHaveBeenLastCalledWith(renderer, view, true, undefined, 4);
+    registry.observeBudget({ ...window, gpuMs: 0, simulatedSeconds: 10 });
+    tick = 299;
+    registry.processRender(renderer, view, true, simulation);
+    expect(probe.budget.yield).toHaveBeenCalledTimes(1);
+    tick = 300;
+    registry.processRender(renderer, view, true, simulation);
+    expect(probe.budget.yield).toHaveBeenLastCalledWith(false);
+    expect(process).toHaveBeenLastCalledWith(renderer, view, true, undefined, 5);
+    expect(wall).not.toHaveBeenCalled();
+  } finally {
+    wall.mockRestore();
+  }
 });

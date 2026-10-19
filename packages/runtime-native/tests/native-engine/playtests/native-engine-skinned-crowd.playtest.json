@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "name": "native-engine-skinned-crowd",
+  "target": "desktop",
+  "subject": "walker-0",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 90,
+  "steps": [
+    {
+      "label": "settled",
+      "waitTicks": 30,
+      "release": true,
+      "screenshot": "crowd-settled"
+    },
+    {
+      "label": "swayed",
+      "waitTicks": 45,
+      "release": true,
+      "screenshot": "crowd-swayed"
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "render",
+        "path": "main.skinnedBatches",
+        "equals": 1,
+        "allowTrivial": "Draw counts are measured after submission; compatible rigs share one instanced draw per pass."
+      },
+      {
+        "id": "render",
+        "path": "main.skinnedDraws",
+        "equals": 5,
+        "allowTrivial": "Draw counts are measured after submission; compatible rigs share one instanced draw per pass."
+      },
+      {
+        "id": "render",
+        "path": "main.skinnedExactDraws",
+        "equals": 4,
+        "allowTrivial": "Draw counts are measured after submission; compatible rigs share one instanced draw per pass."
+      },
+      {
+        "id": "render",
+        "path": "main.skinnedInstances",
+        "equals": 64,
+        "allowTrivial": "Draw counts are measured after submission; compatible rigs share one instanced draw per pass."
+      },
+      {
+        "id": "render",
+        "path": "shadow.skinnedBatches",
+        "equals": 1,
+        "allowTrivial": "Draw counts are measured after submission; compatible rigs share one instanced draw per pass."
+      },
+      {
+        "id": "render",
+        "path": "shadow.skinnedDraws",
+        "equals": 5,
+        "allowTrivial": "Draw counts are measured after submission; compatible rigs share one instanced draw per pass."
+      },
+      {
+        "id": "render",
+        "path": "shadow.skinnedExactDraws",
+        "equals": 4,
+        "allowTrivial": "Draw counts are measured after submission; compatible rigs share one instanced draw per pass."
+      },
+      {
+        "id": "render",
+        "path": "shadow.skinnedInstances",
+        "equals": 64,
+        "allowTrivial": "Draw counts are measured after submission; compatible rigs share one instanced draw per pass."
+      }
+    ]
+  }
+}

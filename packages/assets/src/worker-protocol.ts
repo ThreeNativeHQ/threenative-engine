@@ -21,6 +21,7 @@ export type PassSpec =
   | { readonly kind: "blender-import"; readonly needsRuntimeDecoder: boolean }
   | {
       readonly kind: "lightmap";
+      readonly astc?: boolean;
       readonly needsRuntimeDecoder: boolean;
       readonly options: ILightmapPassOptions;
     }

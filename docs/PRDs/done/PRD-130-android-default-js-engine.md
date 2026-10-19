@@ -80,8 +80,8 @@ its own §6 that the flip is the owner's call; the physical Pixel 8 (`shiba`, ar
 PRD-066, PRD-070, PRD-117 and PRD-118; the x86_64 emulator lane recorded in
 `packages/runtime-native/docs/G3-mobile-bring-up.md`.
 
-**Related, not blocking:** [PRD-127](../mobile/PRD-127-device-measurement-preflight.md) — any timing this PRD
-takes should pass its condition gate. [PRD-128](../mobile/PRD-128-android-qualification-split.md) — the
+**Related, not blocking:** [PRD-127](../native/PRD-127-device-measurement-preflight.md) — any timing this PRD
+takes should pass its condition gate. [PRD-128](../native/PRD-128-android-qualification-split.md) — the
 release build type has no `signingConfig`; that is PRD-128's problem and this PRD inherits it rather
 than solving it.
 

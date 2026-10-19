@@ -1,0 +1,59 @@
+{
+  "name": "rain-cinematic-orbit-yields-to-the-player",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "warmupFrames": 30,
+  "steps": [
+    {
+      "kind": "click",
+      "at": {
+        "element": {
+          "id": "cinematic"
+        }
+      },
+      "label": "orbit",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyW",
+      "label": "taken-back",
+      "holdTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "cinematic",
+        "atSteps": [
+          {
+            "equals": true,
+            "label": "orbit"
+          },
+          {
+            "equals": false,
+            "label": "taken-back"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "position.x",
+        "changed": true
+      }
+    ]
+  }
+}

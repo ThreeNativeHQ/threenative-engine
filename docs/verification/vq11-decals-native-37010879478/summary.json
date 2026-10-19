@@ -1,0 +1,544 @@
+{
+  "sourceSha": "563ab23e9448a993013cb0d58c75ab6ab83917c9",
+  "pass": false,
+  "qualification": "Packaged Linux ARM QuickJS software-adapter correctness. No mobile or hardware-performance claim.",
+  "results": [
+    {
+      "name": "static",
+      "pass": true,
+      "negativeControl": false,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "state": {
+        "residencyGeneration": 0,
+        "generation": 1,
+        "active": 256,
+        "capacity": 256,
+        "created": 321,
+        "released": 65,
+        "geometryBytes": 275076,
+        "maxDrawCalls": 0,
+        "motionError": 0,
+        "receiverMotion": 0,
+        "lodHit": true,
+        "renderTriangles": 2,
+        "receiverRemoved": false,
+        "atlasFade": false,
+        "averageOpacity": 1,
+        "residency": [],
+        "residencySamples": 0,
+        "stableResidencyFrames": 0
+      },
+      "screenshotSha256": "ffb1bc6c5abaf5e4c55c258740c549731e81a8dc9c48c9b449ec7ddd27b95fa8",
+      "pixels": {
+        "assertions": [
+          {
+            "id": "visual.0.region",
+            "pass": true,
+            "details": {
+              "after": true,
+              "expected": {
+                "equals": true
+              },
+              "minimum": 0.15,
+              "observed": 0.9999691358024692
+            }
+          },
+          {
+            "id": "visual.1.region",
+            "pass": true,
+            "details": {
+              "after": true,
+              "expected": {
+                "equals": true
+              },
+              "minimum": 0.9,
+              "observed": 0.9995294117647059
+            }
+          },
+          {
+            "id": "visual.1.region.darkPixels",
+            "pass": true,
+            "details": {
+              "maximumLuminance": 0.35,
+              "minimumDarkPixelRatio": 0.01,
+              "observedDarkPixelRatio": 0.05331764705882353
+            }
+          },
+          {
+            "id": "visual.1.region.maxDarkPixels",
+            "pass": true,
+            "details": {
+              "maximumDarkPixelRatio": 0.2,
+              "observedDarkPixelRatio": 0.05331764705882353
+            }
+          },
+          {
+            "id": "visual.2.region",
+            "pass": true,
+            "details": {
+              "after": true,
+              "expected": {
+                "equals": true
+              },
+              "minimum": 0.9,
+              "observed": 0.9997660818713451
+            }
+          },
+          {
+            "id": "visual.2.region.darkPixels",
+            "pass": true,
+            "details": {
+              "maximumLuminance": 0.35,
+              "minimumDarkPixelRatio": 0.01,
+              "observedDarkPixelRatio": 0.05719298245614035
+            }
+          },
+          {
+            "id": "visual.2.region.maxDarkPixels",
+            "pass": true,
+            "details": {
+              "maximumDarkPixelRatio": 0.2,
+              "observedDarkPixelRatio": 0.05719298245614035
+            }
+          },
+          {
+            "details": {
+              "consoleErrors": 0,
+              "networkErrors": 0,
+              "policy": {
+                "noConsoleErrors": true,
+                "noNetworkErrors": true,
+                "noRuntimeDiagnostics": true
+              },
+              "runtimeDiagnostics": 0
+            },
+            "id": "diagnostics",
+            "pass": true
+          }
+        ],
+        "diagnostics": []
+      },
+      "diagnostics": []
+    },
+    {
+      "name": "motion",
+      "pass": true,
+      "negativeControl": false,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "state": {
+        "residencyGeneration": 0,
+        "generation": 1,
+        "active": 256,
+        "capacity": 256,
+        "created": 321,
+        "released": 65,
+        "geometryBytes": 275076,
+        "maxDrawCalls": 0,
+        "motionError": 0,
+        "receiverMotion": 0.7549778411745116,
+        "lodHit": true,
+        "renderTriangles": 2,
+        "receiverRemoved": false,
+        "atlasFade": false,
+        "averageOpacity": 1,
+        "residency": [],
+        "residencySamples": 0,
+        "stableResidencyFrames": 0
+      },
+      "screenshotSha256": "a80813b0c2ebdff2c817664a8780b59396bbec4844bacfba5ac25998fe001c99",
+      "pixels": {
+        "assertions": [
+          {
+            "id": "visual.0.region",
+            "pass": true,
+            "details": {
+              "after": true,
+              "expected": {
+                "equals": true
+              },
+              "minimum": 0.15,
+              "observed": 0.9999729938271605
+            }
+          },
+          {
+            "id": "visual.1.region",
+            "pass": true,
+            "details": {
+              "after": true,
+              "expected": {
+                "equals": true
+              },
+              "minimum": 0.9,
+              "observed": 0.9995294117647059
+            }
+          },
+          {
+            "id": "visual.1.region.darkPixels",
+            "pass": true,
+            "details": {
+              "maximumLuminance": 0.35,
+              "minimumDarkPixelRatio": 0.01,
+              "observedDarkPixelRatio": 0.05331764705882353
+            }
+          },
+          {
+            "id": "visual.1.region.maxDarkPixels",
+            "pass": true,
+            "details": {
+              "maximumDarkPixelRatio": 0.2,
+              "observedDarkPixelRatio": 0.05331764705882353
+            }
+          },
+          {
+            "id": "visual.2.region",
+            "pass": true,
+            "details": {
+              "after": true,
+              "expected": {
+                "equals": true
+              },
+              "minimum": 0.9,
+              "observed": 0.9996491228070176
+            }
+          },
+          {
+            "id": "visual.2.region.darkPixels",
+            "pass": true,
+            "details": {
+              "maximumLuminance": 0.35,
+              "minimumDarkPixelRatio": 0.01,
+              "observedDarkPixelRatio": 0.05309941520467836
+            }
+          },
+          {
+            "id": "visual.2.region.maxDarkPixels",
+            "pass": true,
+            "details": {
+              "maximumDarkPixelRatio": 0.2,
+              "observedDarkPixelRatio": 0.05309941520467836
+            }
+          },
+          {
+            "details": {
+              "consoleErrors": 0,
+              "networkErrors": 0,
+              "policy": {
+                "noConsoleErrors": true,
+                "noNetworkErrors": true,
+                "noRuntimeDiagnostics": true
+              },
+              "runtimeDiagnostics": 0
+            },
+            "id": "diagnostics",
+            "pass": true
+          }
+        ],
+        "diagnostics": []
+      },
+      "diagnostics": []
+    },
+    {
+      "name": "teardown",
+      "pass": true,
+      "negativeControl": false,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "state": {
+        "residencyGeneration": 0,
+        "generation": 1,
+        "active": 128,
+        "capacity": 256,
+        "created": 321,
+        "released": 193,
+        "geometryBytes": 136188,
+        "maxDrawCalls": 0,
+        "motionError": 0,
+        "receiverMotion": 0,
+        "lodHit": true,
+        "renderTriangles": 2,
+        "receiverRemoved": true,
+        "atlasFade": false,
+        "averageOpacity": 1,
+        "residency": [],
+        "residencySamples": 0,
+        "stableResidencyFrames": 0
+      },
+      "screenshotSha256": "2a85f1cb78de0bd06f79534704b44170397c6a299d9b5709dd76c560c08f6880",
+      "pixels": {
+        "assertions": [
+          {
+            "id": "visual.0.region",
+            "pass": true,
+            "details": {
+              "after": true,
+              "expected": {
+                "equals": true
+              },
+              "minimum": 0.15,
+              "observed": 0.9999807098765432
+            }
+          },
+          {
+            "id": "visual.1.region",
+            "pass": true,
+            "details": {
+              "after": true,
+              "expected": {
+                "equals": true
+              },
+              "minimum": 0.9,
+              "observed": 0.9995294117647059
+            }
+          },
+          {
+            "id": "visual.1.region.darkPixels",
+            "pass": true,
+            "details": {
+              "maximumLuminance": 0.35,
+              "minimumDarkPixelRatio": 0.01,
+              "observedDarkPixelRatio": 0.05331764705882353
+            }
+          },
+          {
+            "id": "visual.1.region.maxDarkPixels",
+            "pass": true,
+            "details": {
+              "maximumDarkPixelRatio": 0.2,
+              "observedDarkPixelRatio": 0.05331764705882353
+            }
+          },
+          {
+            "details": {
+              "consoleErrors": 0,
+              "networkErrors": 0,
+              "policy": {
+                "noConsoleErrors": true,
+                "noNetworkErrors": true,
+                "noRuntimeDiagnostics": true
+              },
+              "runtimeDiagnostics": 0
+            },
+            "id": "diagnostics",
+            "pass": true
+          }
+        ],
+        "diagnostics": []
+      },
+      "diagnostics": []
+    },
+    {
+      "name": "restart",
+      "pass": true,
+      "negativeControl": false,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 540,
+          "width": 960
+        }
+      },
+      "state": {
+        "residencyGeneration": 0,
+        "generation": 2,
+        "active": 256,
+        "capacity": 256,
+        "created": 321,
+        "released": 65,
+        "geometryBytes": 275076,
+        "maxDrawCalls": 0,
+        "motionError": 0,
+        "receiverMotion": 0,
+        "lodHit": true,
+        "renderTriangles": 2,
+        "receiverRemoved": false,
+        "atlasFade": false,
+        "averageOpacity": 1,
+        "residency": [],
+        "residencySamples": 0,
+        "stableResidencyFrames": 0
+      },
+      "screenshotSha256": "ffb1bc6c5abaf5e4c55c258740c549731e81a8dc9c48c9b449ec7ddd27b95fa8",
+      "pixels": {
+        "assertions": [
+          {
+            "id": "visual.0.region",
+            "pass": true,
+            "details": {
+              "after": true,
+              "expected": {
+                "equals": true
+              },
+              "minimum": 0.15,
+              "observed": 0.9999691358024692
+            }
+          },
+          {
+            "id": "visual.1.region",
+            "pass": true,
+            "details": {
+              "after": true,
+              "expected": {
+                "equals": true
+              },
+              "minimum": 0.9,
+              "observed": 0.9995294117647059
+            }
+          },
+          {
+            "id": "visual.1.region.darkPixels",
+            "pass": true,
+            "details": {
+              "maximumLuminance": 0.35,
+              "minimumDarkPixelRatio": 0.01,
+              "observedDarkPixelRatio": 0.05331764705882353
+            }
+          },
+          {
+            "id": "visual.1.region.maxDarkPixels",
+            "pass": true,
+            "details": {
+              "maximumDarkPixelRatio": 0.2,
+              "observedDarkPixelRatio": 0.05331764705882353
+            }
+          },
+          {
+            "id": "visual.2.region",
+            "pass": true,
+            "details": {
+              "after": true,
+              "expected": {
+                "equals": true
+              },
+              "minimum": 0.9,
+              "observed": 0.9997660818713451
+            }
+          },
+          {
+            "id": "visual.2.region.darkPixels",
+            "pass": true,
+            "details": {
+              "maximumLuminance": 0.35,
+              "minimumDarkPixelRatio": 0.01,
+              "observedDarkPixelRatio": 0.05719298245614035
+            }
+          },
+          {
+            "id": "visual.2.region.maxDarkPixels",
+            "pass": true,
+            "details": {
+              "maximumDarkPixelRatio": 0.2,
+              "observedDarkPixelRatio": 0.05719298245614035
+            }
+          },
+          {
+            "details": {
+              "consoleErrors": 0,
+              "networkErrors": 0,
+              "policy": {
+                "noConsoleErrors": true,
+                "noNetworkErrors": true,
+                "noRuntimeDiagnostics": true
+              },
+              "runtimeDiagnostics": 0
+            },
+            "id": "diagnostics",
+            "pass": true
+          }
+        ],
+        "diagnostics": []
+      },
+      "diagnostics": []
+    }
+  ],
+  "identity": {
+    "runtimeSha256": "da16138cc37938a14ce6831476aa58972a0d469ba2172b6a06faf6d1d56c6042",
+    "capabilities": {
+      "engine": "quickjs",
+      "version": "TN_COLD_START:{\"segment\":\"process\",\"atMs\":0.000}\nMystral Native Runtime v0.3.4\nNative WebGPU JS runtime - wgpu-native + quickjs build"
+    },
+    "assetHashes": {
+      "receiver.glb": "7ed6179e17f75f3f60576f72968140773c7f65cb1b8d760240576ac4092c05c3",
+      "assets.manifest.json": "3b833a9fc96c4f3ef939840f2154f3e40aa95d4beb6cda965833b54f43cde1dc"
+    },
+    "executables": {
+      "native.ts": {
+        "path": "/home/runner/work/threenative/threenative/artifacts/vq11-decals-native/variants/native/decals",
+        "sha256": "623b916c245470157308c7203472cffaa7a8860b88093697e16305577af95ca7",
+        "bundle": "/home/runner/work/threenative/threenative/artifacts/vq11-decals-native/variants/native.js",
+        "bundleSha256": "69b662ca548cd31bd6848acdfd086befd22a612bbb396caf9e8c9e5da27d33ee"
+      },
+      "native-atlas.ts": {
+        "path": "/home/runner/work/threenative/threenative/artifacts/vq11-decals-native/variants/native-atlas/decals",
+        "sha256": "681760e85faa4cc1e0d18b67f1f05bb0b6cf65d4910d8a79a9ec9d96630426aa",
+        "bundle": "/home/runner/work/threenative/threenative/artifacts/vq11-decals-native/variants/native-atlas.js",
+        "bundleSha256": "ebe516e667d7d9da27f08cd2964a4a8a520cc849b2251261f781f026de47a27b"
+      },
+      "native-hidden.ts": {
+        "path": "/home/runner/work/threenative/threenative/artifacts/vq11-decals-native/variants/native-hidden/decals",
+        "sha256": "165d1ce5cf07db055c92947644f840efaca58e4b75bf4e8e24fc4967f61eed28",
+        "bundle": "/home/runner/work/threenative/threenative/artifacts/vq11-decals-native/variants/native-hidden.js",
+        "bundleSha256": "43f5d19cf13531736384038fa9e372f90c45f7d2558335fa717070412acac08c"
+      },
+      "native-hidden-fading.ts": {
+        "path": "/home/runner/work/threenative/threenative/artifacts/vq11-decals-native/variants/native-hidden-fading/decals",
+        "sha256": "6bcf02f0fd25ccc8ef2cebfc2210db64ad88b7328f8107f6ea685bd36bd97527",
+        "bundle": "/home/runner/work/threenative/threenative/artifacts/vq11-decals-native/variants/native-hidden-fading.js",
+        "bundleSha256": "b451d8a9c4982b9e22c7f82c40d02d879037dc78f8dadecb459c60d82022f7c5"
+      }
+    }
+  },
+  "error": "AssertionError [ERR_ASSERTION]: [{\"code\":\"TN_PLAYTEST_OBSERVATION_UNAVAILABLE\",\"fix\":{\"instruction\":\"Increase timeoutMs only when the transition is expected to take longer; otherwise fix the producer or resource path.\"},\"message\":\"Resource wait for 'state.residencyGeneration' timed out after 30150 ms; predicate {\\\"gte\\\":1,\\\"id\\\":\\\"state\\\",\\\"path\\\":\\\"residencyGeneration\\\"}, last observation 0.\",\"path\":\"state\",\"severity\":\"error\",\"suggestion\":\"Increase timeoutMs only when the transition is expected to take longer; otherwise fix the producer or resource path.\"}]\n\nfalse !== true\n\n    at assertNativeDecalCapture (/home/runner/work/threenative/threenative/packages/create-threenative/__tests__/fixtures/bounded-decals/native-proof.ts:73:10)\n    at <anonymous> (/home/runner/work/threenative/threenative/packages/create-threenative/__tests__/fixtures/bounded-decals/verify-native.ts:167:7)"
+}

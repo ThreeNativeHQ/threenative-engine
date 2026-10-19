@@ -122,10 +122,6 @@ export function terrainNoise(x: number, z: number): number {
   return a * (1 - fz) + b * fz;
 }
 
-export function padAt(x: number, z: number): IStart | undefined {
-  return STARTS.find((s) => Math.abs(x - s.x) < 24 && Math.abs(z - s.z) < 23);
-}
-
 export function onBridge(x: number, z: number, margin = 0): boolean {
   return Math.abs(z + 20) <= 3.35 - margin && x >= -33.5 && x <= 9.5;
 }

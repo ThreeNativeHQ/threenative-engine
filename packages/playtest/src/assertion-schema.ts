@@ -1,3 +1,4 @@
+import { TONE_METRICS } from "./tone.js";
 import type { IPlaytestScenario, PlaytestTarget } from "./scenario.js";
 import type { PlaytestCapability } from "./capabilities.js";
 import { resolveDiagnosticsPolicy } from "./assertion-report.js";
@@ -24,6 +25,24 @@ export interface IPlaytestAssertionSchemaEntry {
 }
 
 export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry[] = [
+  {
+    description: "Bounds display-referred luminance from a captured PNG frame, using a shared 256-bin histogram.",
+    example: { tone: [{ atStep: "landed", mean: { min: 60, max: 140 }, p99: { min: 150 } }] },
+    fields: [
+      { description: "Capture after this named step; omit for the final frame.", name: "atStep", type: "non-empty string" },
+      { description: "Exact decoded PNG physical-pixel rectangle; non-negative safe-integer x/y, positive safe-integer width/height. No clipping or scaling.", name: "region", type: "{ x: number, y: number, width: number, height: number }" },
+      { description: "Same-capture primary minus reference region metric must reach minDelta; requires primary region.", name: "compare", type: "{ region: object, metric: string, minDelta: number }" },
+      ...TONE_METRICS.map((name) => ({ description: "Inclusive finite bounds; luminance is 0..255 and fractions are 0..1. At least one bound is required.", name, type: "{ min?: number, max?: number }" })),
+    ],
+    cardinality: "array",
+    kind: "tone",
+    observationPath: "tone",
+    requiredCapabilities: ["browser.screenshot"],
+    resultIdPrefix: "tone.",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+    trivialityRationale: "The host decodes actual captured pixels; a missing capture fails closed.",
+  },
   {
     description: "Reports the device's thermal, power and battery state around the run and judges whether the run is comparable with a cool one.",
     example: { deviceMetrics: { maxTemperatureRiseC: 5, notThermallyConfounded: true } },
@@ -327,7 +346,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     observationPath: "runtimeDiagnostics",
     requiredCapabilities: ["browser.console", "browser.network", "runtime.diagnostics"],
     resultIdPrefix: "diagnostics",
-    supportedOn: ["web"],
+    supportedOn: ["web", "desktop"],
     triviality: "not-applicable",
     trivialityRationale: "It evaluates captured error and readiness channels across the run; no initial scalar value can satisfy those diagnostics by itself.",
   },
@@ -593,6 +612,25 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "The timeline is stamped by the runtime as milestones happen; a missing milestone fails the ceiling rather than passing it.",
   },
   {
+    description: "Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; a named streamed scope must also prove its target-bound first visible world frame, and missing, incomplete, or malformed census evidence fails closed.",
+    example: { pipelineCensus: { maxNodeBuildsAfterWarmUpSettled: 0, maxRenderPipelineCreationsAfterWarmUpSettled: 0 } },
+    fields: [
+      { description: "Ceiling on distinct node-builder states first observed after warm-up settled.", name: "maxNodeBuildsAfterWarmUpSettled", type: "non-negative integer" },
+      { description: "Ceiling on render-pipeline creations observed after warm-up settled.", name: "maxRenderPipelineCreationsAfterWarmUpSettled", type: "non-negative integer" },
+      { description: "Label of a repeatable streamed warm-up scope.", name: "warmUpScope", type: "string" },
+      { description: "Ceiling on node-builder state builds after the named warm-up scope.", name: "maxNodeBuildsAfterWarmUpScope", type: "non-negative integer" },
+      { description: "Ceiling on render-pipeline creations after the named warm-up scope.", name: "maxRenderPipelineCreationsAfterWarmUpScope", type: "non-negative integer" },
+    ],
+    cardinality: "object",
+    kind: "pipelineCensus",
+    observationPath: "pipelineCensus",
+    requiredCapabilities: ["runtime.pipelineCensus"],
+    resultIdPrefix: "pipelineCensus.",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+    trivialityRationale: "The runtime stamps a separate warm-up boundary and counts later observations; an initial scene value cannot satisfy a post-boundary ceiling.",
+  },
+  {
     description: "Proves the render chain reports its quality tier, authored stage ids/order, graph-output changes for named stages, and, when asserted, a bounded temporal-history rejection fraction.",
     example: { renderChain: { tier: "high", stages: { includes: ["outline", "kuwahara", "watercolor"], order: ["outline", "kuwahara", "watercolor"] }, contributions: { graphOutputChanged: ["outline", "kuwahara", "watercolor"] } } },
     fields: [
@@ -600,7 +638,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Stage ids to include, exclude, or find as an ordered subsequence in the applied chain.", name: "stages", type: "object" },
       { description: "Applied stage ids whose build returned a different graph node than its input; this is graph evidence, not pixel attribution.", name: "contributions", type: "object" },
       { description: "Temporal history rejection ceiling as a fraction from 0 to 1.", name: "velocity", type: "object" },
-      { description: "What the chain must be on each adapter class the harness classified from its own adapter.info reading; an unclassifiable adapter fails rather than matching either branch.", name: "perAdapter", type: "object" },
+      { description: "What the chain must be on each adapter class (hardware, software) and each GPU family (discrete, integrated, mobile-high, mobile-mid, mobile-low) the harness classified from its own adapter.info reading; a family row overrides hardware only when the observed fields prove the family, and an unclassifiable adapter fails rather than matching any branch.", name: "perAdapter", type: "object" },
     ],
     cardinality: "object",
     kind: "renderChain",
@@ -652,6 +690,7 @@ export function requiredPlaytestCapabilities(
   target?: string,
 ): PlaytestCapability[] {
   const required = new Set<PlaytestCapability>();
+  if (scenario.startTick !== undefined) required.add("runtime.fixedStep");
   if (scenario.steps.some((step) => step.waitForResource !== undefined)) {
     required.add("runtime.resources");
   }
@@ -678,13 +717,14 @@ export function requiredPlaytestCapabilities(
         // native target; an explicit true remains required everywhere.
         const policy = resolveDiagnosticsPolicy(scenario.assert.diagnostics, target);
         if (policy.noConsoleErrors) required.add("browser.console");
-        if (policy.noNetworkErrors) required.add("browser.network");
+        if (policy.noNetworkErrors) required.add(target === "desktop" ? "runtime.network" : "browser.network");
         if (policy.noRuntimeDiagnostics) required.add("runtime.diagnostics");
       } else {
         entry.requiredCapabilities.forEach((capability) => required.add(capability));
       }
     }
   }
+  if (target === "desktop" && resolveDiagnosticsPolicy(scenario.assert?.diagnostics, target).noNetworkErrors) required.add("runtime.network");
   for (const entry of PLAYTEST_SETUP_REGISTRY) {
     if (scenario.setup?.[entry.kind] !== undefined) {
       entry.requiredCapabilities.forEach((capability) => required.add(capability));

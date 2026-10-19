@@ -38,7 +38,16 @@ export function decompressBody(
   let result: Uint8Array;
   try {
     if (format === "GZIP") {
-      result = gunzipSync(compressed);
+      // ponytail: the declared size caps the output buffer, and the spare byte tells an overlong body
+      // from an exact one. The cap reserves the declared size up front; a streaming inflate would
+      // bound the allocation by the bytes actually produced.
+      result = gunzipSync(compressed, { out: new Uint8Array(uncompressedSize + 1) });
+      if (result.length > uncompressedSize) {
+        throw new UEFormatError(
+          "SIZE_MISMATCH",
+          `Decoded body is larger than the ${uncompressedSize} byte(s) its header declares`,
+        );
+      }
       validateGzipTrailer(compressed, result);
     } else if (format === "ZSTD") {
       if (!zstdDecoder) {

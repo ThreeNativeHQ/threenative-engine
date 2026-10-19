@@ -12,7 +12,7 @@ only failing rows, and the generated table is byte-identical to the run. The lan
 had been filed `status: fail` for a run in which the property held, and from a worktree path that
 no longer exists; both controls were re-executed from the committed fixtures on `main` and the
 block now reads `pass` from a reproducible source. Depended on Lane A
-([PRD-229](refactor-2026-08-28/PRD-229-the-native-host-is-provable-before-it-is-moved.md) Phase 5,
+([PRD-229](PRD-229-the-native-host-is-provable-before-it-is-moved.md) Phase 5,
 files 1–2) only so that its own record could cite a green `pnpm test`.
 
 Second lane of the release batch (`docs/PRDs/alpha-readiness/`, since removed).

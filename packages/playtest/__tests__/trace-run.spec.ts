@@ -8,6 +8,7 @@ const originalGpuDevice = Object.getOwnPropertyDescriptor(globalThis, "GPUDevice
 afterEach(() => {
   vi.restoreAllMocks();
   Reflect.deleteProperty(globalThis, PIPELINE_DIAGNOSTICS);
+  Reflect.deleteProperty(globalThis, "__TN_TRACE_GPU_PIPELINES_INSTALLED__");
   if (originalGpuDevice === undefined) Reflect.deleteProperty(globalThis, "GPUDevice");
   else Object.defineProperty(globalThis, "GPUDevice", originalGpuDevice);
 });
@@ -54,7 +55,9 @@ describe("GPU pipeline diagnostics", () => {
     Object.defineProperty(globalThis, "GPUDevice", { configurable: true, value: FakeGpuDevice });
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 
+    const original = FakeGpuDevice.prototype.createRenderPipelineAsync;
     installGpuPipelineDiagnostics();
+    expect(FakeGpuDevice.prototype.createRenderPipelineAsync).not.toBe(original);
     await new FakeGpuDevice().createRenderPipelineAsync({ depthStencil: { format: "depth24plus" } });
 
     expect((globalThis as Record<string, unknown>)[PIPELINE_DIAGNOSTICS]).toEqual([]);

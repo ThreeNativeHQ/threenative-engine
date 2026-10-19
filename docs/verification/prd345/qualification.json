@@ -1,0 +1,463 @@
+{
+  "pass": true,
+  "rimMeasurements": [
+    {
+      "pose": "pose-end",
+      "measured": true,
+      "method": "paired actual decoded PNG p99 edge/body difference; fixed scene/camera/pose; only rimGain differs",
+      "availableEdgeP99Delta": 45,
+      "availableBodyP99Delta": 2,
+      "availableMarginDelta": 43,
+      "enabled": {
+        "edgeP99": 52,
+        "bodyP99": 2
+      },
+      "zeroOverride": {
+        "edgeP99": 7,
+        "bodyP99": 0
+      }
+    },
+    {
+      "pose": "pose-rest",
+      "measured": true,
+      "method": "paired actual decoded PNG p99 edge/body difference; fixed scene/camera/pose; only rimGain differs",
+      "availableEdgeP99Delta": 45,
+      "availableBodyP99Delta": 2,
+      "availableMarginDelta": 43,
+      "enabled": {
+        "edgeP99": 52,
+        "bodyP99": 2
+      },
+      "zeroOverride": {
+        "edgeP99": 7,
+        "bodyP99": 0
+      }
+    }
+  ],
+  "scope": "isolated actual starter character/material fixture; no shipped defaults or per-template/native admission",
+  "crops": {
+    "coordinateSpace": "decoded PNG physical pixels, top-left origin; no HUD mask/DPR/rescale",
+    "selection": "Exploratory end-pose image inspection identified interior calf edge and chest. Bounds and thresholds frozen before fresh assertion-bearing positive/negative captures. Mid pose remains separate visual witness; these end-pose crops are not claimed for every pose.",
+    "edge": {
+      "x": 624,
+      "y": 447,
+      "width": 7,
+      "height": 21
+    },
+    "body": {
+      "x": 618,
+      "y": 322,
+      "width": 28,
+      "height": 26
+    },
+    "edgeMargin": 30,
+    "fillP1Max": 5,
+    "fillP99Min": 30,
+    "negativeControls": ["rimGain-zero", "black-fill", "omitted-report"]
+  },
+  "cases": [
+    {
+      "name": "edge-enabled",
+      "pass": true,
+      "expectedFailures": [],
+      "marker": {
+        "status": "measured",
+        "meanRadiance": 0,
+        "meanRGB": [0, 0, 0],
+        "reason": "Solid-angle-weighted linear source radiance, with active environment intensity.",
+        "scope": "scene environment source availability; not material-specific reflected contribution",
+        "environmentState": "dark",
+        "ibl": "non-contributing",
+        "analyticFill": {
+          "requestedGain": 1,
+          "admitted": false,
+          "effectiveGain": 0,
+          "color": [0.13286832154414627, 0.19806931954941637, 0.3371636150376657],
+          "blackColorOverride": false,
+          "reason": "not admitted by this qualification"
+        },
+        "rimGain": 0.12,
+        "fillGain": 1,
+        "darkThreshold": 0.001
+      },
+      "rows": [
+        {
+          "pose": "pose-end",
+          "metrics": {
+            "mean": 7.945578231292517,
+            "p1": 0,
+            "p50": 0,
+            "p99": 52,
+            "clipFraction": 0,
+            "blackFraction": 0.564625850340136
+          },
+          "reference": {
+            "mean": 0.08928571428571429,
+            "p1": 0,
+            "p50": 0,
+            "p99": 2,
+            "clipFraction": 0,
+            "blackFraction": 0.9258241758241759
+          }
+        },
+        {
+          "pose": "pose-rest",
+          "metrics": {
+            "mean": 7.945578231292517,
+            "p1": 0,
+            "p50": 0,
+            "p99": 52,
+            "clipFraction": 0,
+            "blackFraction": 0.564625850340136
+          },
+          "reference": {
+            "mean": 0.08928571428571429,
+            "p1": 0,
+            "p50": 0,
+            "p99": 2,
+            "clipFraction": 0,
+            "blackFraction": 0.9258241758241759
+          }
+        }
+      ],
+      "provenance": {
+        "arm": {
+          "before": "enabled",
+          "after": "enabled"
+        },
+        "shot": {
+          "before": "backlit-black-ibl",
+          "after": "backlit-black-ibl"
+        },
+        "animationTicks": {
+          "before": 0,
+          "after": 90
+        },
+        "animationSeconds": {
+          "before": 0,
+          "after": 1.5
+        },
+        "convertedMaterials": {
+          "before": 5,
+          "after": 5
+        },
+        "excluded": {
+          "before": [],
+          "after": []
+        },
+        "environmentState": {
+          "before": "dark",
+          "after": "dark"
+        },
+        "bufferWidth": {
+          "before": 1280,
+          "after": 1280
+        },
+        "bufferHeight": {
+          "before": 720,
+          "after": 720
+        },
+        "cameraPosition": {
+          "before": [0, 1.35, 6],
+          "after": [0, 1.35, 6]
+        }
+      }
+    },
+    {
+      "name": "edge-rim-zero",
+      "pass": false,
+      "expectedFailures": ["tone.0.compare", "tone.1.compare"],
+      "marker": {
+        "status": "measured",
+        "meanRadiance": 0,
+        "meanRGB": [0, 0, 0],
+        "reason": "Solid-angle-weighted linear source radiance, with active environment intensity.",
+        "scope": "scene environment source availability; not material-specific reflected contribution",
+        "environmentState": "dark",
+        "ibl": "non-contributing",
+        "analyticFill": {
+          "requestedGain": 1,
+          "admitted": false,
+          "effectiveGain": 0,
+          "color": [0.13286832154414627, 0.19806931954941637, 0.3371636150376657],
+          "blackColorOverride": false,
+          "reason": "not admitted by this qualification"
+        },
+        "rimGain": 0,
+        "fillGain": 1,
+        "darkThreshold": 0.001
+      },
+      "rows": [
+        {
+          "pose": "pose-end",
+          "metrics": {
+            "mean": 0.22448979591836735,
+            "p1": 0,
+            "p50": 0,
+            "p99": 7,
+            "clipFraction": 0,
+            "blackFraction": 0.9863945578231292
+          },
+          "reference": {
+            "mean": 0,
+            "p1": 0,
+            "p50": 0,
+            "p99": 0,
+            "clipFraction": 0,
+            "blackFraction": 1
+          }
+        },
+        {
+          "pose": "pose-rest",
+          "metrics": {
+            "mean": 0.22448979591836735,
+            "p1": 0,
+            "p50": 0,
+            "p99": 7,
+            "clipFraction": 0,
+            "blackFraction": 0.9863945578231292
+          },
+          "reference": {
+            "mean": 0,
+            "p1": 0,
+            "p50": 0,
+            "p99": 0,
+            "clipFraction": 0,
+            "blackFraction": 1
+          }
+        }
+      ],
+      "provenance": {
+        "arm": {
+          "before": "rim-zero",
+          "after": "rim-zero"
+        },
+        "shot": {
+          "before": "backlit-black-ibl",
+          "after": "backlit-black-ibl"
+        },
+        "animationTicks": {
+          "before": 0,
+          "after": 90
+        },
+        "animationSeconds": {
+          "before": 0,
+          "after": 1.5
+        },
+        "convertedMaterials": {
+          "before": 5,
+          "after": 5
+        },
+        "excluded": {
+          "before": [],
+          "after": []
+        },
+        "environmentState": {
+          "before": "dark",
+          "after": "dark"
+        },
+        "bufferWidth": {
+          "before": 1280,
+          "after": 1280
+        },
+        "bufferHeight": {
+          "before": 720,
+          "after": 720
+        },
+        "cameraPosition": {
+          "before": [0, 1.35, 6],
+          "after": [0, 1.35, 6]
+        }
+      }
+    },
+    {
+      "name": "fill-enabled",
+      "pass": true,
+      "expectedFailures": [],
+      "marker": {
+        "status": "measured",
+        "meanRadiance": 0,
+        "meanRGB": [0, 0, 0],
+        "reason": "Solid-angle-weighted linear source radiance, with active environment intensity.",
+        "scope": "scene environment source availability; not material-specific reflected contribution",
+        "environmentState": "dark",
+        "ibl": "non-contributing",
+        "analyticFill": {
+          "requestedGain": 1,
+          "admitted": true,
+          "effectiveGain": 1,
+          "color": [0.13286832154414627, 0.19806931954941637, 0.3371636150376657],
+          "blackColorOverride": false,
+          "reason": "analytic fill enabled by caller; contribution still needs pixel qualification"
+        },
+        "rimGain": 0.12,
+        "fillGain": 1,
+        "darkThreshold": 0.001
+      },
+      "rows": [
+        {
+          "pose": "pose-end",
+          "metrics": {
+            "mean": 27.324175824175825,
+            "p1": 0,
+            "p50": 32,
+            "p99": 43,
+            "clipFraction": 0,
+            "blackFraction": 0.12087912087912088
+          }
+        },
+        {
+          "pose": "pose-rest",
+          "metrics": {
+            "mean": 27.324175824175825,
+            "p1": 0,
+            "p50": 32,
+            "p99": 43,
+            "clipFraction": 0,
+            "blackFraction": 0.12087912087912088
+          }
+        }
+      ],
+      "provenance": {
+        "arm": {
+          "before": "enabled",
+          "after": "enabled"
+        },
+        "shot": {
+          "before": "dark",
+          "after": "dark"
+        },
+        "animationTicks": {
+          "before": 0,
+          "after": 90
+        },
+        "animationSeconds": {
+          "before": 0,
+          "after": 1.5
+        },
+        "convertedMaterials": {
+          "before": 5,
+          "after": 5
+        },
+        "excluded": {
+          "before": [],
+          "after": []
+        },
+        "environmentState": {
+          "before": "dark",
+          "after": "dark"
+        },
+        "bufferWidth": {
+          "before": 1280,
+          "after": 1280
+        },
+        "bufferHeight": {
+          "before": 720,
+          "after": 720
+        },
+        "cameraPosition": {
+          "before": [0, 1.35, 6],
+          "after": [0, 1.35, 6]
+        }
+      }
+    },
+    {
+      "name": "fill-fill-black",
+      "pass": false,
+      "expectedFailures": ["tone.0.p99", "tone.1.p99"],
+      "marker": {
+        "status": "measured",
+        "meanRadiance": 0,
+        "meanRGB": [0, 0, 0],
+        "reason": "Solid-angle-weighted linear source radiance, with active environment intensity.",
+        "scope": "scene environment source availability; not material-specific reflected contribution",
+        "environmentState": "dark",
+        "ibl": "non-contributing",
+        "analyticFill": {
+          "requestedGain": 1,
+          "admitted": true,
+          "effectiveGain": 1,
+          "color": [0, 0, 0],
+          "blackColorOverride": true,
+          "reason": "disabled by black fillColor override"
+        },
+        "rimGain": 0.12,
+        "fillGain": 1,
+        "darkThreshold": 0.001
+      },
+      "rows": [
+        {
+          "pose": "pose-end",
+          "metrics": {
+            "mean": 0,
+            "p1": 0,
+            "p50": 0,
+            "p99": 0,
+            "clipFraction": 0,
+            "blackFraction": 1
+          }
+        },
+        {
+          "pose": "pose-rest",
+          "metrics": {
+            "mean": 0,
+            "p1": 0,
+            "p50": 0,
+            "p99": 0,
+            "clipFraction": 0,
+            "blackFraction": 1
+          }
+        }
+      ],
+      "provenance": {
+        "arm": {
+          "before": "fill-black",
+          "after": "fill-black"
+        },
+        "shot": {
+          "before": "dark",
+          "after": "dark"
+        },
+        "animationTicks": {
+          "before": 0,
+          "after": 90
+        },
+        "animationSeconds": {
+          "before": 0,
+          "after": 1.5
+        },
+        "convertedMaterials": {
+          "before": 5,
+          "after": 5
+        },
+        "excluded": {
+          "before": [],
+          "after": []
+        },
+        "environmentState": {
+          "before": "dark",
+          "after": "dark"
+        },
+        "bufferWidth": {
+          "before": 1280,
+          "after": 1280
+        },
+        "bufferHeight": {
+          "before": 720,
+          "after": 720
+        },
+        "cameraPosition": {
+          "before": [0, 1.35, 6],
+          "after": [0, 1.35, 6]
+        }
+      }
+    }
+  ],
+  "markerMutation": "TN_ENVIRONMENT_MARKER_MISSING_OR_DUPLICATE",
+  "limitations": [
+    "photographed environment remains unknown on current CPU measurement path",
+    "native regional capture unimplemented and fails closed",
+    "all-template/default integration and clean generated starter gates pending",
+    "timing uses sparse real engine timestamps; private-display FPS and compilation completion unqualified"
+  ]
+}

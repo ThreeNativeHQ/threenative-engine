@@ -1,0 +1,24 @@
+{
+  "name": "buffer-version-set-no-bump",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 BufferAttribute.setX/setXYZ — a component write does not bump version, only needsUpdate does",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "p",
+      "kind": "number",
+      "path": "version",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 1,
+      "id": "q",
+      "kind": "number",
+      "path": "version",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    }
+  ]
+}

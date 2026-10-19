@@ -63,11 +63,13 @@ function writeSample(
   bits: number,
   float: boolean,
 ): void {
-  const clamped = Math.max(-1, Math.min(1, value));
+  // Float32 WAV is not clamped: values above 1.0 are the headroom a Float32 source can hold, and a
+  // fixture that silently clipped them would make that unrepresentable in any test.
   if (float) {
-    buffer.writeFloatLE(clamped, at);
+    buffer.writeFloatLE(value, at);
     return;
   }
+  const clamped = Math.max(-1, Math.min(1, value));
   if (bits === 8) {
     buffer.writeUInt8(Math.round(clamped * 127) + 128, at);
     return;

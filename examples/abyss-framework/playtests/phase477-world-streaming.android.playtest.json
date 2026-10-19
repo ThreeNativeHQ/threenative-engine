@@ -1,0 +1,190 @@
+{
+  "name": "phase477-world-streaming-android",
+  "schemaVersion": 1,
+  "subject": "world",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "label": "cross-a",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 40
+    },
+    {
+      "label": "cross-b",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 40
+    },
+    {
+      "label": "cross-c",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 40
+    },
+    {
+      "label": "cross-d",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 40
+    },
+    {
+      "label": "cross-e",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 40
+    },
+    {
+      "label": "cross-f",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 40
+    },
+    {
+      "label": "cross-g",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 40
+    },
+    {
+      "label": "cross-h",
+      "press": "KeyF",
+      "release": true,
+      "waitTicks": 40
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "release": true,
+      "waitTicks": 120
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "component": "residentCells",
+        "entity": "world",
+        "gte": 1,
+        "changed": true,
+        "allowTrivial": "Residency is already nonzero after warm-up; the load-bearing half is that the count changed as the camera crossed cell boundaries.",
+        "lte": 25
+      },
+      {
+        "component": "maxResidentCells",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "The peak is reported from the first observation; the run proves it only stayed at least one.",
+        "lte": 25
+      },
+      {
+        "component": "residenceChanges",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "Residency changes during warm-up too, so the floor can hold at the baseline observation."
+      },
+      {
+        "component": "evictions",
+        "entity": "world",
+        "gte": 1
+      },
+      {
+        "component": "instances",
+        "entity": "world",
+        "gte": 1,
+        "allowTrivial": "A resident cell always carries placement instances from the first observation.",
+        "lte": 20000
+      },
+      {
+        "component": "failures",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "A cumulative failure counter is zero at the baseline by construction; the run is what keeps it there."
+      },
+      {
+        "component": "loadsInFlight",
+        "entity": "world",
+        "equals": 0,
+        "allowTrivial": "This is the settle guarantee at the end of the run, not a value that starts life wrong."
+      },
+      {
+        "entity": "world",
+        "component": "maxInstances",
+        "gte": 1,
+        "lte": 20000,
+        "allowTrivial": "The cumulative instance peak may already be nonzero at warmup; its ceiling must hold for the whole flythrough."
+      },
+      {
+        "entity": "world",
+        "component": "loadsQueued",
+        "equals": 0,
+        "allowTrivial": "The final settle must drain model loads even if the baseline was already idle."
+      },
+      {
+        "entity": "world",
+        "component": "admissionBacklog",
+        "equals": 0,
+        "allowTrivial": "The final settle must drain work queued by the flight; the baseline may already be settled."
+      },
+      {
+        "entity": "world",
+        "component": "admissionDeferred",
+        "equals": 0,
+        "allowTrivial": "No cell-asset build may still be deferred after the final settle."
+      },
+      {
+        "entity": "world",
+        "component": "maxAdmissionSpentMs",
+        "gte": 0,
+        "allowTrivial": "Measured admission time must be observable and nonnegative. The final unit can exceed the 2ms allowance, so this is a diagnostic, not a hard 2ms cap."
+      },
+      {
+        "entity": "world",
+        "component": "gpuSceneReason",
+        "changed": false
+      },
+      {
+        "entity": "world",
+        "component": "cameraPosition",
+        "equals": [180, 24, 0]
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "stats.residentCells",
+        "gte": 1,
+        "lte": 25,
+        "throughoutSteps": true,
+        "allowTrivial": "Warmup already streams resident cells; check the reported residency ceiling after every labeled step."
+      },
+      {
+        "id": "state",
+        "path": "stats.instances",
+        "gte": 1,
+        "lte": 20000,
+        "throughoutSteps": true,
+        "allowTrivial": "Resident placement counts may already be positive at warmup; every labeled step must stay inside the existing game override."
+      },
+      {
+        "id": "state",
+        "path": "stats.admission.spentMs",
+        "gte": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "Keep the actual admission measurement for every labeled step. It can exceed the allowance by the last work unit."
+      }
+    ]
+  }
+}

@@ -315,8 +315,8 @@ export function validateOptimizationProvenance(packagedSha256, candidates) {
   };
 }
 
-function inspectNativeOptimization(abi, packagedSha256) {
-  const buildRoot = join(runtimeRoot, "android/app/build");
+export function inspectNativeOptimization(abi, packagedSha256, root = runtimeRoot) {
+  const buildRoot = join(root, "android/app/build");
   const mergedLibrary = join(
     buildRoot,
     "intermediates/merged_native_libs/debug/out/lib",
@@ -333,7 +333,7 @@ function inspectNativeOptimization(abi, packagedSha256) {
         .filter((entry) => entry.isDirectory())
         .flatMap((entry) => {
           const nativeLibrary = join(cxxOutputs, entry.name, "obj", abi, "libmystral-runtime.so");
-          const buildNinja = join(runtimeRoot, "android/app/.cxx/Debug", entry.name, abi, "build.ninja");
+          const buildNinja = join(root, "android/app/.cxx/Debug", entry.name, abi, "build.ninja");
           if (!existsSync(nativeLibrary) || !existsSync(buildNinja)) return [];
           const ninja = readFileSync(buildNinja, "utf8");
           return [{

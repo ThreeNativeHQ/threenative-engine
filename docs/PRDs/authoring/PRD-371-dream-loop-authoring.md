@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status: PROPOSED — 2026-09-09. Implementation has not started.**
 
+**Priority:** P2 — Image-target authoring loop unbuilt: workflow discovery, real generation, stale-capture rejection.
 **Planning Mode: Principal Architect. Complexity: 8 → HIGH mode.** More than ten implementation
 files (+3), new authoring helpers (+2), resumable state and budget accounting (+2), external API
 (+1). Independent review follows every phase; real images and an actual playable game require
@@ -26,7 +27,7 @@ direction, prompts, materials, lighting and asset choices remain in the game's s
 runtime package, editor, scene format, `threenative` subcommand, or Studio dependency is needed.
 
 This plan takes over the image-generation implementation proposed by
-[PRD-106](../tooling/PRD-106-reference-image-generation.md). Its historical file locations,
+PRD-106. Its historical file locations,
 three-template copies, hand-written environment parser and assumed API transport must not become
 a parallel implementation. Its unfinished scaffold hygiene obligations are included in phase 6.
 

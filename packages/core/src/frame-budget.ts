@@ -26,6 +26,8 @@ import {
   FRAME_PASS_KINDS,
   type FramePassKind,
   type IRenderPassSample,
+  MAIN_DRAW_SOURCES,
+  type MainDrawSource,
 } from "./render-pass-budget.js";
 import type { ITargetFps, TargetFpsSource } from "./target-fps.js";
 
@@ -97,6 +99,7 @@ export interface IFramePhaseSample {
  * convention off does not turn its measurement off.
  */
 export interface IFrameSurfaceState {
+  readonly resolutionSubrect?: boolean;
   /** The applied drawing-buffer scale, in `(0, 1]`. */
   readonly resolutionScale: number;
   /**
@@ -134,12 +137,15 @@ function requireSurface(surface: IFrameSurfaceState): IFrameSurfaceState {
     compiling,
     drawingBufferHeight,
     drawingBufferWidth,
+    resolutionSubrect,
     resolutionScale,
     sampleCount,
     scaleSource,
   } = surface;
   if (compiling !== undefined && typeof compiling !== "boolean")
     throw new Error("Frame budget surface compiling must be a boolean when observed.");
+  if (resolutionSubrect !== undefined && typeof resolutionSubrect !== "boolean")
+    throw new Error("Frame budget surface resolutionSubrect must be a boolean when observed.");
   if (typeof atFloor !== "boolean")
     throw new Error(
       `Frame budget surface atFloor must say whether the scaler had room left, received ${String(atFloor)}.`,
@@ -170,6 +176,7 @@ function requireSurface(surface: IFrameSurfaceState): IFrameSurfaceState {
     ...(compiling === undefined ? {} : { compiling }),
     drawingBufferHeight,
     drawingBufferWidth,
+    ...(resolutionSubrect === undefined ? {} : { resolutionSubrect }),
     resolutionScale,
     sampleCount,
     scaleSource,
@@ -191,7 +198,14 @@ export const FRAME_GPU_BUCKETS = ["main", "shadow", "other", "compute"] as const
 export type FrameGpuBucket = (typeof FRAME_GPU_BUCKETS)[number];
 
 /** One frame's GPU milliseconds per bucket; a bucket the device did not resolve is absent. */
-export type IFrameGpuBucketSample = Partial<Record<FrameGpuBucket, number>>;
+export type IFrameGpuBucketSample = Partial<Record<FrameGpuBucket, number>> & {
+  /**
+   * Shadow passes the frame recorded, from the producer. `0` means the frame drew no shadow and its
+   * `shadow` bucket is a known zero; `> 0` means it rendered one. Absent when the source cannot say,
+   * and no frame is then counted as rendered.
+   */
+  readonly shadowPasses?: number;
+};
 
 /**
  * One render-pass kind's submissions across a window, so a change that trades triangles for CPU is
@@ -199,9 +213,31 @@ export type IFrameGpuBucketSample = Partial<Record<FrameGpuBucket, number>>;
  */
 export interface IFrameBudgetPassSummary {
   readonly draws: IFrameBudgetSummary;
+  /**
+   * The main pass's own draws per origin, summarised like every other series in this window.
+   *
+   * The per-frame counts sum to `draws` exactly, which is the invariant the split exists to answer;
+   * the percentiles below do not have to, because a source that draws on some frames and not others
+   * has a median over its own frames rather than over the window's. A source no frame drew is
+   * absent. Absent altogether — never a set of zeros — when the renderer named no object behind one
+   * of the pass's draws, which is the same rule the pass record itself follows. One exception to the
+   * sum: a world with bundles on counts its replays here, and three never traverses a replay, so the
+   * sources can exceed `draws`; the sum holds for the sources that went through the per-draw path.
+   */
+  readonly drawsBySource?: Readonly<Partial<Record<MainDrawSource, IFrameBudgetSummary>>>;
   /** Frames in the window that submitted a pass of this kind. */
   readonly frames: number;
+  /**
+   * Three's CPU figure: `instanceCount * count / 3` per draw, where an indirect batch's `count` is
+   * the merged geometry's capacity. An upper bound over what the GPU could select.
+   */
   readonly triangles: IFrameBudgetSummary;
+  /**
+   * What the GPU selected, main pass only: the streamed world's own indirect tally, beside the
+   * figure above so a reader of the pass record can tell which of the two it is holding. Absent
+   * rather than zero when the world reported no tally — see `mainGpuTriangles`.
+   */
+  readonly gpuTriangles?: number;
 }
 
 /**
@@ -219,10 +255,21 @@ export interface IFrameBudgetPassSummary {
  * it were a player's — `threenative-playtest perf` refuses to (`TN_PERF_VIRTUAL_DISPLAY`).
  */
 export interface IFrameBudgetWindow {
+  /** Browser Long Tasks, independent of vsync/GPU waits. Unavailable on hosts without this API. */
+  readonly longTasks:
+    | { readonly available: false }
+    | {
+        readonly available: true;
+        readonly count: number;
+        readonly longestMs: number;
+        readonly afterFirstFrameMs: number;
+      };
   /** 1 for the first reported window, incrementing thereafter. */
   readonly window: number;
   /** Loop frames counted in this window, hitches excluded — one per present on the web. */
   readonly frames: number;
+  /** Fixed simulation ticks in this window multiplied by the loop's step, when supplied. */
+  readonly simulatedSeconds?: number;
   /** Frames excluded from the window because their present gap exceeded `hitchMs`. */
   readonly hitches: number;
   /**
@@ -290,6 +337,14 @@ export interface IFrameBudgetWindow {
   readonly targetFps?: number;
   readonly targetSource?: TargetFpsSource;
   /**
+   * Frames in this window that ran past the target frame (`1000 / targetFps`, the target this
+   * window started with): `render` over every counted frame's render phase, `gpu` over the frames
+   * with a resolved GPU sample. A pooled p95 is under the target exactly when at most 5 % of the
+   * pooled frames are, which window quantiles can only bound (PRD-478). Absent until a target is
+   * known.
+   */
+  readonly overTarget?: { readonly frameMs: number; readonly gpu: number; readonly render: number };
+  /**
    * GPU milliseconds per resolved frame in this window, from `timestamp-query`, summarised like a
    * phase — mean/p50/p95/p99/max over the frames the device actually reported.
    *
@@ -307,12 +362,21 @@ export interface IFrameBudgetWindow {
    */
   readonly gpuStale: number;
   /**
+   * Frames in the window the renderer declined to draw (the Wasm web engine holds at most two drawn
+   * frames on the GPU). Their render phase is near zero, so `phases.render` over the window reads
+   * cheaper than the frames that were drawn; divide by `frames - renderSkips` for a drawn frame's cost.
+   * Absent, not zero, when the renderer drew every frame.
+   */
+  readonly renderSkips?: number;
+  /**
    * The window mean of `gpu`, when present. The scalar the resolution scaler reads.
    *
    * It is the same number as `gpu.mean`; a single field keeps the scaler and the perf report on
    * one series rather than a second instantaneous read.
    */
   readonly gpuMs?: number;
+  /** Resolved renderer-frame range behind this window; unavailable for unframed samples. */
+  readonly gpuFrames?: { readonly first: number; readonly last: number };
   /** Age of the most recent resolved GPU timestamp in Three.js frame IDs; absent means unobservable. */
   readonly gpuAgeFrames?: number;
   /**
@@ -329,28 +393,60 @@ export interface IFrameBudgetWindow {
   readonly gpuOther?: number;
   readonly gpuCompute?: number;
   /**
-   * The frame's boundary counts, when something counted them.
+   * The shadow bucket's p95 and coverage over **every** frame that resolved a shadow reading,
+   * known-zero frames included, so the p95 can sit at zero while the shadow renders are expensive.
+   * Kept for compatibility beside {@link gpuShadowRendered}, which is the same tail over the frames
+   * that actually rendered a shadow — the distribution the phase comparison should read.
+   */
+  readonly gpuShadowP95?: number;
+  readonly gpuShadowSamples?: number;
+  /**
+   * The shadow bucket's distribution over the frames that **actually rendered a shadow**, distinct
+   * from the known-zero frames the p50 and all-frame p95 above include.
    *
-   * Each series is absent when nothing measured it, and a series present with zero samples is not
-   * possible: an uncounted frame and a frame that crossed the boundary zero times are different
-   * facts, and a fabricated zero merges them. `hostCalls` and `gpuBytes` come from
+   * `samples` is how many frames rendered one, so observed renders are tellable from frames that
+   * drew none (`gpuShadowSamples - gpuShadowRendered.samples`). Absent, never a zeroed summary, when
+   * no rendered shadow resolved: a render that cost 0 ms is still a render, and only the producer's
+   * own `shadowPasses` record says one happened, so the count is not guessed from `shadow > 0`.
+   */
+  readonly gpuShadowRendered?: IFrameBudgetSummary;
+  /** Pyramid build GPU milliseconds per resolved build, including the depth copy/resolve. */
+  readonly gpuPyramid?: IFrameBudgetSummary;
+  /**
+   * The frame's boundary counts, when something counted them, plus the simulation tick the window
+   * closed on when the loop fed one.
+   *
+   * Each boundary series is absent when nothing measured it, and a series present with zero samples
+   * is not possible: an uncounted frame and a frame that crossed the boundary zero times are
+   * different facts, and a fabricated zero merges them. `hostCalls` and `gpuBytes` come from
    * `FrameCounters`; `jsAllocBytes` needs a platform that publishes `performance.memory`.
+   * `simulationTick` is not a platform reading — it is the loop's latest fixed-step count, so the
+   * object is present whenever `addCounters` carried a tick even with no boundary field measured.
    */
   readonly counters?: {
     readonly hostCalls?: IFrameBudgetSummary;
     readonly gpuBytes?: IFrameBudgetSummary;
     readonly jsAllocBytes?: IFrameBudgetSummary;
+    readonly simulationTick?: number;
   };
 }
 
+export interface IFrameBudgetSimulation {
+  readonly tick: () => number;
+  readonly step: number;
+}
+
 export interface IFrameBudgetOptions {
-  /** Presented frames per report window. Default 300. */
+  /** Simulation ticks per report window when a clock is supplied, otherwise presented frames. Default 300. */
   readonly reportEvery?: number;
+  /** Minimum measured rendered frames per report window. Default 1. */
+  readonly minFrames?: number;
+  readonly simulation?: IFrameBudgetSimulation;
   /** A present gap at or above this is a hitch, not a frame. Default 2000 ms. */
   readonly hitchMs?: number;
   /** Ring capacity per series. Default 1024. */
   readonly capacity?: number;
-  /** Where marker lines go. Default `console.log`. */
+  /** Where marker lines go. Default `console.log`. In defineGame, also receives all window telemetry; without a custom sink its existing info/warn severities remain. */
   readonly report?: (line: string) => void;
   /** Wall clock for hitch markers. Default `Date.now`. */
   readonly wallClock?: () => number;
@@ -488,6 +584,11 @@ function hostPresentCountReader(): (() => number | undefined) | undefined {
   };
 }
 
+/** Whether a per-source key names a source this window counts. */
+function isMainDrawSource(source: string): source is MainDrawSource {
+  return (MAIN_DRAW_SOURCES as readonly string[]).includes(source);
+}
+
 function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
@@ -502,11 +603,19 @@ function round1(value: number): number {
  *
  * The caller is the frame loop; the sequence per frame is
  * `beginFrame` → `markSimulationEnd` → (`addRender` / `addOverlay` / `addUi`) → `endFrame`.
- * Calling them out of order throws rather than producing a plausible-looking split.
+ * Calling them out of order throws rather than producing a plausible-looking split. The one
+ * exception is `addSimulation`, which reports simulation that ran outside any frame — see it.
  */
 export class FrameBudget {
+  #taskObserver: PerformanceObserver | undefined;
+  #taskCount = 0;
+  #longestTaskMs = 0;
+  #afterFirstFrameTaskMs = 0;
   readonly reportEvery: number;
+  readonly minFrames: number;
   readonly hitchMs: number;
+  readonly #simulation: IFrameBudgetSimulation | undefined;
+  #windowStartTick: number | undefined;
   #report: (line: string) => void;
   #wallClock: () => number;
   #onWindow: ((window: IFrameBudgetWindow) => void) | undefined;
@@ -522,9 +631,15 @@ export class FrameBudget {
   #substeps: Ring;
   #phaseRings: Record<FrameBudgetPhase, Ring>;
   #gpu: Ring;
+  #gpuPyramid: Ring;
   #gpuBucketRings: Record<FrameGpuBucket, Ring>;
   #gpuBucketThisFrame: IFrameGpuBucketSample = {};
+  /** Shadow milliseconds of this frame's frames that recorded a shadow pass, not its known zeros. */
+  #gpuShadowRendered: Ring;
+  /** The shadow pass count the producer reported for this frame; `undefined` when it reported none. */
+  #gpuShadowPassesThisFrame: number | undefined;
   #passDrawRings: Record<FramePassKind, Ring>;
+  #passDrawSourceRings: Record<MainDrawSource, Ring>;
   #passTriangleRings: Record<FramePassKind, Ring>;
   #passFrames: Record<FramePassKind, number> = { main: 0, nested: 0, reflection: 0, shadow: 0 };
   #passesThisFrame: IRenderPassSample[] = [];
@@ -532,14 +647,24 @@ export class FrameBudget {
   #gpuBytes: Ring;
   #jsAllocBytes: Ring;
   #countersThisFrame: IFrameCounters | undefined;
+  // The latest tick fed this window. It is not a boundary count and does not sum across frames: it
+  // is the loop's fixed-step count at the last frame that fed one, so consecutive window closes read
+  // a start tick and an end tick and the join is independent of how many frames rendered.
+  #simulationTick: number | undefined;
   #lastRenderMs: number | undefined;
   // The resolved frame the last sample belonged to, so a reading still in flight is not measured
   // twice. It survives a window boundary: the first frame of a new window can still be showing the
   // previous window's resolved frame.
   #lastGpuFrame: number | undefined;
   #gpuThisFrame: number | undefined;
+  #gpuFrameThisFrame: number | undefined;
+  #gpuFirstFrame = Number.POSITIVE_INFINITY;
+  #gpuLastFrame = Number.NEGATIVE_INFINITY;
+  #gpuUnframed = false;
   #gpuStaleThisFrame = false;
   #gpuStaleInWindow = 0;
+  #renderSkippedThisFrame = false;
+  #renderSkipsInWindow = 0;
   #open = false;
   #frameStart = 0;
   #simulationEnd: number | undefined;
@@ -553,19 +678,25 @@ export class FrameBudget {
   #lastFrameEnd: number | undefined;
   #framesInWindow = 0;
   #hitchesInWindow = 0;
+  /** The target frame this window counts against, and its two counts; see `overTarget`. */
+  #targetFrameMs: number | undefined;
+  #renderOverTarget = 0;
+  #gpuOverTarget = 0;
   #windowIndex = 0;
   #readPresentCount: (() => number | undefined) | undefined;
   #lastPresentCount: number | undefined;
   #presentsInWindow = 0;
-  #presentsUnreadable = false;
   #firstFrameStart: number | undefined;
+  #firstTaskFrameStart: number | undefined;
 
   constructor(options: IFrameBudgetOptions = {}) {
+    this.#simulation = options.simulation;
     this.reportEvery = requirePositiveInteger(
       options.reportEvery,
       DEFAULT_REPORT_EVERY,
       "reportEvery",
     );
+    this.minFrames = requirePositiveInteger(options.minFrames, 1, "minFrames");
     this.hitchMs = requirePositiveNumber(options.hitchMs, DEFAULT_HITCH_MS, "hitchMs");
     const capacity = requirePositiveInteger(options.capacity, DEFAULT_CAPACITY, "capacity");
     this.#report = options.report ?? ((line) => console.log(line));
@@ -576,11 +707,27 @@ export class FrameBudget {
     this.#readPresentCount = options.readPresentCount ?? hostPresentCountReader();
     this.#readGpuAgeFrames = options.readGpuAgeFrames;
     this.#readGpuTally = options.readGpuTally;
+    if (globalThis.PerformanceObserver?.supportedEntryTypes.includes("longtask")) {
+      this.#taskObserver = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          this.#taskCount++;
+          this.#longestTaskMs = Math.max(this.#longestTaskMs, entry.duration);
+          if (
+            this.#firstTaskFrameStart !== undefined &&
+            entry.startTime >= this.#firstTaskFrameStart
+          )
+            this.#afterFirstFrameTaskMs = Math.max(this.#afterFirstFrameTaskMs, entry.duration);
+        }
+      });
+      this.#taskObserver.observe({ type: "longtask", buffered: true });
+    }
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
     this.#frame = new Ring(capacity);
     this.#substeps = new Ring(capacity);
     this.#gpu = new Ring(capacity);
+    this.#gpuPyramid = new Ring(capacity);
+    this.#gpuShadowRendered = new Ring(capacity);
     this.#gpuBucketRings = {
       compute: new Ring(capacity),
       main: new Ring(capacity),
@@ -604,6 +751,16 @@ export class FrameBudget {
       reflection: new Ring(capacity),
       shadow: new Ring(capacity),
     };
+    this.#passDrawSourceRings = {
+      bundles: new Ring(capacity),
+      chunks: new Ring(capacity),
+      gpuScene: new Ring(capacity),
+      instanced: new Ring(capacity),
+      other: new Ring(capacity),
+      proxies: new Ring(capacity),
+      sky: new Ring(capacity),
+      terrain: new Ring(capacity),
+    };
     this.#passTriangleRings = {
       main: new Ring(capacity),
       nested: new Ring(capacity),
@@ -617,20 +774,30 @@ export class FrameBudget {
    *   clock, which is not the same as `nowMs` and is what the interval between frames comes from.
    * @param nowMs the monotonic clock at callback entry.
    */
+  dispose(): void {
+    this.#taskObserver?.disconnect();
+    this.#taskObserver = undefined;
+  }
+
   beginFrame(timestampMs: number, nowMs: number): void {
     if (this.#open)
       throw new Error("FrameBudget.beginFrame called before the previous frame ended.");
     this.#open = true;
+    this.#windowStartTick ??= this.#simulation?.tick();
     this.#frameStart = nowMs;
     if (this.#firstFrameStart === undefined) this.#firstFrameStart = nowMs;
+    this.#firstTaskFrameStart ??= nowMs;
     this.#simulationEnd = undefined;
     this.#renderMs = 0;
     this.#overlayMs = 0;
     this.#uiMs = 0;
     this.#substepCount = 0;
     this.#gpuThisFrame = undefined;
+    this.#gpuFrameThisFrame = undefined;
     this.#gpuStaleThisFrame = false;
+    this.#renderSkippedThisFrame = false;
     this.#gpuBucketThisFrame = {};
+    this.#gpuShadowPassesThisFrame = undefined;
     this.#hostGap = this.#lastFrameEnd === undefined ? 0 : Math.max(0, nowMs - this.#lastFrameEnd);
     this.#presentedDelta =
       this.#lastTimestamp === undefined ? 0 : Math.max(0, timestampMs - this.#lastTimestamp);
@@ -641,12 +808,54 @@ export class FrameBudget {
   markSimulationEnd(nowMs: number, substeps: number): void {
     if (!this.#open) throw new Error("FrameBudget.markSimulationEnd called outside a frame.");
     this.#simulationEnd = nowMs;
-    this.#substepCount = substeps;
+    // Accumulated, not assigned: `addSimulation` may already have charged a counted batch that ran
+    // inside this frame, and that batch's steps are this frame's.
+    this.#substepCount += substeps;
+  }
+
+  /**
+   * Charges one counted simulation batch — the loop's `advance(ticks)`, which is how a tick-counted
+   * playtest run simulates at all — to this window's `update` and `substeps`.
+   *
+   * A batch is not a frame. It presents nothing, so it must not count as one: no frame in the
+   * window, no present interval, no GPU sample, no hitch however long it blocked, and no window
+   * boundary. Opening a metered frame around it instead put half of a fixed-step run's windows into
+   * the frame and render percentiles as zero-millisecond frames that drew nothing, and closed a
+   * "300-frame" window on 300 metered frames rather than 300 presented ones — which is how a
+   * 300-frame window came to hold ~20 GPU timestamp samples instead of ~37.
+   *
+   * Inside a live frame — the frozen prime's settle, which is `advance()` called from inside the
+   * frame that armed it — the batch's milliseconds are already inside that frame's own measurement
+   * and are not charged a second time; only its steps are added, so the frame reports it exactly
+   * once. Its blocking cost reaches the window either way: through the enclosing frame's `update`,
+   * or here.
+   */
+  addSimulation(ms: number, ticks: number): void {
+    if (!Number.isFinite(ms) || ms < 0)
+      throw new Error(
+        `Frame budget simulation ms must be a non-negative number, received ${String(ms)}.`,
+      );
+    if (!Number.isInteger(ticks) || ticks < 0)
+      throw new Error(
+        `Frame budget simulation ticks must be a non-negative integer, received ${String(ticks)}.`,
+      );
+    if (this.#open) {
+      this.#substepCount += ticks;
+      return;
+    }
+    this.#phaseRings.update.push(ms);
+    this.#substeps.push(ticks);
   }
 
   addRender(ms: number): void {
     if (!this.#open) throw new Error("FrameBudget.addRender called outside a frame.");
     this.#renderMs += ms;
+  }
+
+  /** The renderer returned without drawing this frame; counted once per frame in the window's `renderSkips`. */
+  addRenderSkip(): void {
+    if (!this.#open) throw new Error("FrameBudget.addRenderSkip called outside a frame.");
+    this.#renderSkippedThisFrame = true;
   }
 
   addOverlay(ms: number): void {
@@ -693,6 +902,15 @@ export class FrameBudget {
       this.#lastGpuFrame = frame;
     }
     this.#gpuThisFrame = ms;
+    this.#gpuFrameThisFrame = frame;
+  }
+
+  /** Record one freshly resolved pyramid build, independently of the render pool's cadence. */
+  addGpuPyramidMs(ms: number | undefined): void {
+    if (!this.#open) throw new Error("FrameBudget.addGpuPyramidMs called outside a frame.");
+    if (ms === undefined) return;
+    if (ms < 0) throw new Error("Frame budget gpu pyramid must be non-negative.");
+    this.#gpuPyramid.push(ms);
   }
 
   /**
@@ -705,6 +923,14 @@ export class FrameBudget {
    */
   addGpuBucketMs(sample: IFrameGpuBucketSample): void {
     if (!this.#open) throw new Error("FrameBudget.addGpuBucketMs called outside a frame.");
+    const shadowPasses = sample.shadowPasses;
+    if (shadowPasses !== undefined) {
+      if (!Number.isInteger(shadowPasses) || shadowPasses < 0)
+        throw new Error(
+          `Frame budget gpu shadowPasses must be a non-negative integer, received ${String(shadowPasses)}.`,
+        );
+      this.#gpuShadowPassesThisFrame = shadowPasses;
+    }
     for (const bucket of FRAME_GPU_BUCKETS) {
       const ms = sample[bucket];
       if (ms === undefined) continue;
@@ -722,6 +948,10 @@ export class FrameBudget {
    * At most one call per frame; a second replaces the first rather than summing, because the
    * counter's own reader already returns the frame's totals and summing two reads of one frame
    * would double it. A field the platform cannot report is left out of the series entirely.
+   *
+   * `simulationTick`, when present, must be a finite non-negative integer and is stored as the
+   * window's latest tick — never summed, and never cleared by a later call that omits it, so a
+   * plain `TN_FRAME_BUDGET` log can join a window's start and end ticks.
    */
   addCounters(counters: IFrameCounters): void {
     if (!this.#open) throw new Error("FrameBudget.addCounters called outside a frame.");
@@ -735,6 +965,14 @@ export class FrameBudget {
         throw new Error(
           `Frame budget counter ${name} must be a non-negative number, received ${String(value)}.`,
         );
+    }
+    const tick = counters.simulationTick;
+    if (tick !== undefined) {
+      if (!Number.isInteger(tick) || tick < 0)
+        throw new Error(
+          `Frame budget counter simulationTick must be a non-negative integer, received ${String(tick)}.`,
+        );
+      this.#simulationTick = tick;
     }
     this.#countersThisFrame = counters;
   }
@@ -812,20 +1050,51 @@ export class FrameBudget {
     if (this.#hostGap > 0) this.#phaseRings.hostGap.push(this.#hostGap);
     this.#phaseRings.update.push(update);
     this.#phaseRings.render.push(this.#renderMs);
+    if (this.#targetFrameMs !== undefined && this.#renderMs > this.#targetFrameMs)
+      this.#renderOverTarget += 1;
     this.#lastRenderMs = this.#renderMs;
     this.#phaseRings.overlay.push(this.#overlayMs);
     this.#phaseRings.residual.push(residual);
     this.#phaseRings.ui.push(this.#uiMs);
-    if (this.#gpuThisFrame !== undefined) this.#gpu.push(this.#gpuThisFrame);
+    if (this.#gpuThisFrame !== undefined) {
+      this.#gpu.push(this.#gpuThisFrame);
+      if (this.#gpuFrameThisFrame === undefined) this.#gpuUnframed = true;
+      else {
+        this.#gpuFirstFrame = Math.min(this.#gpuFirstFrame, this.#gpuFrameThisFrame);
+        this.#gpuLastFrame = Math.max(this.#gpuLastFrame, this.#gpuFrameThisFrame);
+      }
+      if (this.#targetFrameMs !== undefined && this.#gpuThisFrame > this.#targetFrameMs)
+        this.#gpuOverTarget += 1;
+    }
     for (const bucket of FRAME_GPU_BUCKETS) {
       const ms = this.#gpuBucketThisFrame[bucket];
-      if (ms !== undefined) this.#gpuBucketRings[bucket].push(ms);
+      if (ms !== undefined && this.#gpuThisFrame !== undefined)
+        this.#gpuBucketRings[bucket].push(ms);
     }
+    // The shadow tail over frames that actually rendered a shadow, separate from the known-zero
+    // frames the ring above also holds: only the producer's count says a render happened, because a
+    // real render can resolve to 0 ms and a `shadow > 0` guess would drop it.
+    const renderedShadow = this.#gpuBucketThisFrame.shadow;
+    if ((this.#gpuShadowPassesThisFrame ?? 0) > 0 && renderedShadow !== undefined)
+      this.#gpuShadowRendered.push(renderedShadow);
+    this.#gpuShadowPassesThisFrame = undefined;
     this.#gpuBucketThisFrame = {};
     if (this.#gpuStaleThisFrame) this.#gpuStaleInWindow += 1;
+    if (this.#renderSkippedThisFrame) this.#renderSkipsInWindow += 1;
     for (const pass of this.#passesThisFrame) {
       this.#passDrawRings[pass.kind].push(pass.draws);
       this.#passTriangleRings[pass.kind].push(pass.triangles);
+      // The main pass's per-origin counts, one sample per source the frame drew. A source the
+      // frame did not draw contributes no sample, so its percentiles describe the frames that had
+      // it — the same rule every other series here follows.
+      if (pass.drawsBySource !== undefined)
+        for (const [source, count] of Object.entries(pass.drawsBySource)) {
+          if (!isMainDrawSource(source))
+            throw new Error(
+              `FrameBudget received an unknown main draw source: ${source}. Expected one of: ${MAIN_DRAW_SOURCES.join(", ")}.`,
+            );
+          this.#passDrawSourceRings[source].push(count);
+        }
       this.#passFrames[pass.kind] += 1;
     }
     this.#passesThisFrame.length = 0;
@@ -853,18 +1122,31 @@ export class FrameBudget {
     const share = (value: number): number =>
       presented.mean === 0 ? 0 : Math.round((value / presented.mean) * 1_000) / 1_000;
     const passes: Partial<Record<FramePassKind, IFrameBudgetPassSummary>> = {};
+    const gpuTally = this.#readGpuTally?.();
     for (const kind of FRAME_PASS_KINDS) {
       if (this.#passFrames[kind] === 0) continue;
+      // The split belongs to `main` alone, and it is the only kind the recorder attributes: the
+      // rings are per source rather than per kind and per source, so a summary that attached them
+      // to a shadow pass would report the main pass's origins under a nested pass's name.
+      const drawsBySource: Partial<Record<MainDrawSource, IFrameBudgetSummary>> = {};
+      if (kind === "main")
+        for (const source of MAIN_DRAW_SOURCES) {
+          const ring = this.#passDrawSourceRings[source];
+          if (ring.count > 0) drawsBySource[source] = ring.summarize(this.#scratch);
+        }
       passes[kind] = {
         draws: this.#passDrawRings[kind].summarize(this.#scratch),
+        ...(Object.keys(drawsBySource).length === 0 ? {} : { drawsBySource }),
         frames: this.#passFrames[kind],
         triangles: this.#passTriangleRings[kind].summarize(this.#scratch),
+        // Main pass only, and beside three's CPU figure rather than instead of it: the same window
+        // that says `triangles 338,000,000` has to say what the kernel actually selected.
+        ...(kind === "main" && gpuTally !== undefined ? { gpuTriangles: gpuTally.triangles } : {}),
       };
     }
     const surface =
       this.#readSurface === undefined ? undefined : requireSurface(this.#readSurface());
     const gpuAgeFrames = this.#readGpuAgeFrames?.();
-    const gpuTally = this.#readGpuTally?.();
     if (gpuAgeFrames !== undefined && (!Number.isInteger(gpuAgeFrames) || gpuAgeFrames < 0))
       throw new Error(
         `Frame budget gpuAgeFrames must be a non-negative integer, received ${String(gpuAgeFrames)}.`,
@@ -882,13 +1164,18 @@ export class FrameBudget {
       this.#gpuBytes.count === 0 ? undefined : this.#gpuBytes.summarize(this.#scratch);
     const jsAllocBytes =
       this.#jsAllocBytes.count === 0 ? undefined : this.#jsAllocBytes.summarize(this.#scratch);
+    const simulationTick = this.#simulationTick;
     const counters =
-      hostCalls === undefined && gpuBytes === undefined && jsAllocBytes === undefined
+      hostCalls === undefined &&
+      gpuBytes === undefined &&
+      jsAllocBytes === undefined &&
+      simulationTick === undefined
         ? undefined
         : {
             ...(gpuBytes === undefined ? {} : { gpuBytes }),
             ...(hostCalls === undefined ? {} : { hostCalls }),
             ...(jsAllocBytes === undefined ? {} : { jsAllocBytes }),
+            ...(simulationTick === undefined ? {} : { simulationTick }),
           };
     const gpuSummary = this.#gpu.summarize(this.#scratch);
     const gpu = gpuSummary.samples === 0 ? undefined : gpuSummary;
@@ -900,12 +1187,44 @@ export class FrameBudget {
     const gpuShadow = gpuBucket("shadow");
     const gpuOther = gpuBucket("other");
     const gpuCompute = gpuBucket("compute");
+    const shadowBucket = this.#gpuBucketRings.shadow.summarize(this.#scratch);
+    const shadowRendered = this.#gpuShadowRendered.summarize(this.#scratch);
+    const gpuPyramid = this.#gpuPyramid.summarize(this.#scratch);
     const target = this.#readTarget === undefined ? undefined : (this.#readTarget() ?? undefined);
     const resolvedTarget = target === undefined ? undefined : requireTarget(target);
+    const overTarget =
+      this.#targetFrameMs === undefined
+        ? undefined
+        : {
+            frameMs: round(this.#targetFrameMs),
+            gpu: this.#gpuOverTarget,
+            render: this.#renderOverTarget,
+          };
+    // The next window counts against the target this one reports.
+    this.#targetFrameMs =
+      resolvedTarget !== undefined && resolvedTarget.targetFps > 0
+        ? 1_000 / resolvedTarget.targetFps
+        : undefined;
     return {
+      longTasks:
+        this.#taskObserver === undefined
+          ? { available: false }
+          : {
+              available: true,
+              count: this.#taskCount,
+              longestMs: this.#longestTaskMs,
+              afterFirstFrameMs: this.#afterFirstFrameTaskMs,
+            },
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
       frames: this.#framesInWindow,
+      ...(this.#simulation === undefined
+        ? {}
+        : {
+            simulatedSeconds:
+              (this.#simulation.tick() - (this.#windowStartTick ?? this.#simulation.tick())) *
+              this.#simulation.step,
+          }),
       hitches: this.#hitchesInWindow,
       phases,
       presented,
@@ -932,11 +1251,16 @@ export class FrameBudget {
       // and the perf record, which want a single number.
       ...(gpu === undefined ? {} : { gpu }),
       gpuStale: this.#gpuStaleInWindow,
+      ...(this.#renderSkipsInWindow > 0 ? { renderSkips: this.#renderSkipsInWindow } : {}),
       ...(gpu === undefined ? {} : { gpuMs: gpu.mean }),
+      ...(gpu === undefined || this.#gpuUnframed
+        ? {}
+        : { gpuFrames: { first: this.#gpuFirstFrame, last: this.#gpuLastFrame } }),
       ...(gpuAgeFrames === undefined ? {} : { gpuAgeFrames }),
       ...(resolvedTarget === undefined
         ? {}
         : { targetFps: resolvedTarget.targetFps, targetSource: resolvedTarget.source }),
+      ...(overTarget === undefined ? {} : { overTarget }),
       ...(surface === undefined ? {} : { surface }),
       ...(counters === undefined ? {} : { counters }),
       window: this.#windowIndex + 1,
@@ -946,6 +1270,11 @@ export class FrameBudget {
       ...(gpuShadow === undefined ? {} : { gpuShadow }),
       ...(gpuOther === undefined ? {} : { gpuOther }),
       ...(gpuCompute === undefined ? {} : { gpuCompute }),
+      ...(shadowBucket.samples === 0
+        ? {}
+        : { gpuShadowP95: round1(shadowBucket.p95), gpuShadowSamples: shadowBucket.samples }),
+      ...(shadowRendered.samples === 0 ? {} : { gpuShadowRendered: shadowRendered }),
+      ...(gpuPyramid.samples === 0 ? {} : { gpuPyramid }),
     };
   }
 
@@ -983,11 +1312,9 @@ export class FrameBudget {
     if (count === undefined || !Number.isFinite(count)) {
       // One unreadable sample is not a broken counter: the reading resumes on the next frame, and
       // the window still says what it counted.
-      this.#presentsUnreadable = true;
       this.#lastPresentCount = undefined;
       return;
     }
-    this.#presentsUnreadable = false;
     const previous = this.#lastPresentCount;
     this.#lastPresentCount = count;
     if (previous === undefined || count < previous) return; // first sample, or a restarted counter
@@ -995,7 +1322,12 @@ export class FrameBudget {
   }
 
   #maybeReport(): void {
-    if (this.#framesInWindow < this.reportEvery) return;
+    // Callers without a loop clock retain presented-frame window boundaries.
+    const elapsed =
+      this.#simulation === undefined
+        ? this.#framesInWindow
+        : this.#simulation.tick() - (this.#windowStartTick ?? this.#simulation.tick());
+    if (elapsed < this.reportEvery || this.#framesInWindow < this.minFrames) return;
     const completed = this.window();
     this.#report(`${FRAME_BUDGET_MARKER}:${JSON.stringify(completed)}`);
     this.#windowIndex += 1;
@@ -1003,19 +1335,30 @@ export class FrameBudget {
     this.#frame.reset();
     this.#substeps.reset();
     this.#gpu.reset();
+    this.#gpuFirstFrame = Number.POSITIVE_INFINITY;
+    this.#gpuLastFrame = Number.NEGATIVE_INFINITY;
+    this.#gpuUnframed = false;
+    this.#gpuPyramid.reset();
     for (const bucket of FRAME_GPU_BUCKETS) this.#gpuBucketRings[bucket].reset();
+    this.#gpuShadowRendered.reset();
     this.#hostCalls.reset();
     this.#gpuBytes.reset();
     this.#jsAllocBytes.reset();
+    this.#simulationTick = undefined;
     this.#gpuStaleInWindow = 0;
+    this.#renderSkipsInWindow = 0;
     for (const phase of FRAME_BUDGET_PHASES) this.#phaseRings[phase].reset();
     for (const kind of FRAME_PASS_KINDS) {
       this.#passDrawRings[kind].reset();
       this.#passTriangleRings[kind].reset();
       this.#passFrames[kind] = 0;
     }
+    for (const source of MAIN_DRAW_SOURCES) this.#passDrawSourceRings[source].reset();
     this.#framesInWindow = 0;
+    this.#windowStartTick = this.#simulation?.tick();
     this.#hitchesInWindow = 0;
+    this.#renderOverTarget = 0;
+    this.#gpuOverTarget = 0;
     this.#presentsInWindow = 0;
     this.#firstFrameStart = undefined;
     // After the reset, so a consumer that changes the scene from this callback changes it for the

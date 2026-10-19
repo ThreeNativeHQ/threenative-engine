@@ -12,8 +12,8 @@ world it was standing in, and settle — without the game hard-coding a clip len
 mixer.
 
 **Depends on:** [PRD-143](./PRD-143-physics-joints.md) — unbuildable without
-joints. [PRD-142](./fps-friction-26-08-17/PRD-142-bone-sockets-and-attachment.md) — reuses its
-bone resolution rather than growing a second one. [PRD-141](./fps-friction-26-08-17/PRD-141-animation-one-shot-clips.md) is not a dependency but
+joints. [PRD-142](PRD-142-bone-sockets-and-attachment.md) — reuses its
+bone resolution rather than growing a second one. [PRD-141](PRD-141-animation-one-shot-clips.md) is not a dependency but
 overlaps: 141 makes the *fake* correct, this makes the fake unnecessary.
 
 **Blocks:** nothing.
@@ -124,7 +124,7 @@ most likely to grow a second job:
   character dies, does not apply death impulses, does not blend animation with simulation, does
   not respawn anything. Every one of those is gameplay and stays in `Enemy.ts`.
 - **DRY.** Bone names resolve through `skeletonBones`/`attachToBone` from
-  [PRD-142](./fps-friction-26-08-17/PRD-142-bone-sockets-and-attachment.md). Joints are `Joint3D` from
+  [PRD-142](PRD-142-bone-sockets-and-attachment.md). Joints are `Joint3D` from
   [PRD-143](./PRD-143-physics-joints.md), composed, not re-implemented. Transforms come back
   through `readVisibleTransforms`. **If this PRD adds a traversal, a joint type or a transform
   path that already exists, the layering is wrong and the review should reject it.**

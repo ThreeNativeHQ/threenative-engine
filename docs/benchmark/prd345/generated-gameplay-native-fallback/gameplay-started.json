@@ -1,0 +1,18 @@
+{
+  "templates": [
+    "action-rpg",
+    "minimal",
+    "platformer",
+    "puzzle",
+    "racing",
+    "rain",
+    "rts",
+    "runner",
+    "sailing",
+    "shooter",
+    "snow",
+    "starter",
+    "tower-defense"
+  ],
+  "started": "2026-10-03T12:04:47.825Z"
+}

@@ -9,6 +9,7 @@ consumer proof remains unmet: the committed replay record has only 1/6 positive 
 the paired round is explicitly void. Keep this PRD active until a fresh positive replay passes all
 six behavior dimensions and the negative archive reaches assertions and fails behavior rows.
 
+**Priority:** P1 — Sealed proof must observe real interaction; pass-through and terminal rows remain unproven.
 **The remaining work is now named, with fresh evidence:**
 `docs/verification/prd-113-sealed-proof-still-tests-naming-2026-08-15.md`. A round-8 arm that
 never saw the proof scored 0/2 on the replay scenario purely on unpublished tokens — the proof

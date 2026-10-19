@@ -1,0 +1,2388 @@
+{
+  "sourceSha": "085c977b86928a4fc4b0729188eb6e4a33664f7f",
+  "runId": 37024724225,
+  "artifactId": 11234397468,
+  "archiveSha256": "6828142e479f1ccc987c59afb5c81776d0ff266e358f2744c4a8ad5d2c69e6df",
+  "qualification": "actual WebGPU velocity MRT readback and screenshots; includes a known attached-skinned root-motion diagnostic failure; software pixels only, no native, ghosting or hardware-performance claim",
+  "variants": [
+    {
+      "variant": "without-history",
+      "pass": false,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": true,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "BatchedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": true,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "BatchedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 63.999999999999986,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 63.999999999999986,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 23.999999999999993,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 47.999999999999964,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 63.999999999999986,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 56.000000000000014,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 24.00000000000002,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 40.000000000000014,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 63.999999999999986,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'movingPixels'.",
+          "severity": "error"
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'oracleMaxErrorPixels'.",
+          "severity": "error"
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'footprintMaxErrorPixels'.",
+          "severity": "error"
+        }
+      ],
+      "image": {
+        "path": "docs/verification/prd269/without-history-37003076606.png",
+        "sha256": "ef304d46bba40419d55edc1af9aba20aa911ca291332626ba04a88af0a5a6c7d",
+        "bytes": 14318
+      }
+    },
+    {
+      "variant": "tracked",
+      "pass": true,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "BatchedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "BatchedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0.01562499999998579,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [],
+      "image": {
+        "path": "docs/verification/prd269/instanced-37003076606.png",
+        "sha256": "bc4bd72a652a9195d97d6896c9882e6f6d9ce05e9aec8ef35126ad41bebc52c1",
+        "bytes": 14725
+      }
+    },
+    {
+      "variant": "instanced",
+      "pass": true,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0.01562499999998579,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [],
+      "image": {
+        "path": "docs/verification/prd269/instanced-37003076606.png",
+        "sha256": "bc4bd72a652a9195d97d6896c9882e6f6d9ce05e9aec8ef35126ad41bebc52c1",
+        "bytes": 14725
+      }
+    },
+    {
+      "variant": "instanced-recompile",
+      "pass": true,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": true,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": true,
+          "recompiles": 1,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0.01562499999998579,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [],
+      "image": {
+        "path": "docs/verification/prd269/instanced-37003076606.png",
+        "sha256": "bc4bd72a652a9195d97d6896c9882e6f6d9ce05e9aec8ef35126ad41bebc52c1",
+        "bytes": 14725
+      }
+    },
+    {
+      "variant": "instanced-dynamic",
+      "pass": true,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": true,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": true,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0.01562499999998579,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [],
+      "image": {
+        "path": "docs/verification/prd269/instanced-37003076606.png",
+        "sha256": "bc4bd72a652a9195d97d6896c9882e6f6d9ce05e9aec8ef35126ad41bebc52c1",
+        "bytes": 14725
+      }
+    },
+    {
+      "variant": "aggregate-batch",
+      "pass": false,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "BatchedMesh",
+          "skinned": false,
+          "aggregateHistory": true,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 1.06640625,
+          "stationaryMax": 1.06640625,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "BatchedMesh",
+          "skinned": false,
+          "aggregateHistory": true,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0.01562499999998579,
+          "outsideFootprintMax": 1.06640625,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'staticMax'.",
+          "severity": "error"
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'stationaryMax'.",
+          "severity": "error"
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'outsideFootprintMax'.",
+          "severity": "error"
+        }
+      ],
+      "image": {
+        "path": "docs/verification/prd269/aggregate-batch-37006604512.png",
+        "sha256": "e9c1e5e022a8e6147d6f464bc9a180232f6b416946a0a250dd9366a27bd3e8cc",
+        "bytes": 15012
+      }
+    },
+    {
+      "variant": "aggregate-instance",
+      "pass": false,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": true,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 1.06640625,
+          "stationaryMax": 1.06640625,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": true,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0.01562499999998579,
+          "outsideFootprintMax": 1.06640625,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'staticMax'.",
+          "severity": "error"
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'stationaryMax'.",
+          "severity": "error"
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'outsideFootprintMax'.",
+          "severity": "error"
+        }
+      ],
+      "image": {
+        "path": "docs/verification/prd269/aggregate-batch-37006604512.png",
+        "sha256": "e9c1e5e022a8e6147d6f464bc9a180232f6b416946a0a250dd9366a27bd3e8cc",
+        "bytes": 15012
+      }
+    },
+    {
+      "variant": "skinned",
+      "pass": true,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "SkinnedMesh",
+          "skinned": true,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "SkinnedMesh",
+          "skinned": true,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0.01562499999998579,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [],
+      "image": {
+        "path": "docs/verification/prd269/skinned-37006604512.png",
+        "sha256": "58c3d914d9516351bd41825cca22fca7ca81cb6b6e251cbe5439a5ee7acadf5d",
+        "bytes": 14777
+      }
+    },
+    {
+      "variant": "skinned-world-diagnostic",
+      "pass": false,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "SkinnedMesh",
+          "skinned": true,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": true,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0.2666015625,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "SkinnedMesh",
+          "skinned": true,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": true,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 63.968750000000014,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 63.968750000000014,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 23.988281250000007,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.199951171875,
+              "actualY": 0,
+              "errorPixels": 47.976562500000036,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.2666015625,
+              "actualY": 0,
+              "errorPixels": 63.968750000000014,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.2332763671875,
+              "actualY": 0,
+              "errorPixels": 55.972656249999986,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 23.98828124999998,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.1666259765625,
+              "actualY": 0,
+              "errorPixels": 39.980468749999986,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.2666015625,
+              "actualY": 0,
+              "errorPixels": 63.968750000000014,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'oracleMaxErrorPixels'.",
+          "severity": "error"
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'footprintMaxErrorPixels'.",
+          "severity": "error"
+        }
+      ],
+      "image": {
+        "path": "docs/verification/prd269/skinned-37006604512.png",
+        "sha256": "58c3d914d9516351bd41825cca22fca7ca81cb6b6e251cbe5439a5ee7acadf5d",
+        "bytes": 14777
+      }
+    },
+    {
+      "variant": "skinned-world-current-history-diagnostic",
+      "pass": true,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "SkinnedMesh",
+          "skinned": true,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": true,
+          "currentWorldHistory": true,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "SkinnedMesh",
+          "skinned": true,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": true,
+          "currentWorldHistory": true,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0.01562499999998579,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [],
+      "image": {
+        "path": "docs/verification/prd269/skinned-37006604512.png",
+        "sha256": "58c3d914d9516351bd41825cca22fca7ca81cb6b6e251cbe5439a5ee7acadf5d",
+        "bytes": 14777
+      }
+    },
+    {
+      "variant": "skinned-current-history",
+      "pass": false,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "SkinnedMesh",
+          "skinned": true,
+          "aggregateHistory": false,
+          "currentAsPrevious": true,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": false,
+          "dynamic": false,
+          "geometryKind": "SkinnedMesh",
+          "skinned": true,
+          "aggregateHistory": false,
+          "currentAsPrevious": true,
+          "lateWrite": false,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 63.999999999999986,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 63.999999999999986,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 23.999999999999993,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 47.999999999999964,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 63.999999999999986,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 56.000000000000014,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 24.00000000000002,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 40.000000000000014,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 63.999999999999986,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'movingPixels'.",
+          "severity": "error"
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'oracleMaxErrorPixels'.",
+          "severity": "error"
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'footprintMaxErrorPixels'.",
+          "severity": "error"
+        }
+      ],
+      "image": {
+        "path": "docs/verification/prd269/skinned-current-history-37006604512.png",
+        "sha256": "ec7a2feef37adbe0d4986cd7797fd5e88d26bc9e2a77a00a4c99fb4672444eb3",
+        "bytes": 14323
+      }
+    },
+    {
+      "variant": "late-write",
+      "pass": true,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": true,
+          "prematureCommit": false,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0.13330078125,
+          "movingPixels": 25676,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": true,
+          "prematureCommit": false,
+          "lateWrites": 8,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0.01562499999998579,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 0.01562499999998579,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859374999994671,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0.0999755859375,
+              "actualY": 0,
+              "errorPixels": 0.011718749999962697,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0.11663818359375,
+              "actualY": 0,
+              "errorPixels": 0.01367187500001421,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": -0.04998779296875,
+              "actualY": 0,
+              "errorPixels": 0.005859375000021316,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0.08331298828125,
+              "actualY": 0,
+              "errorPixels": 0.009765625000017764,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": -0.13330078125,
+              "actualY": 0,
+              "errorPixels": 0.01562499999998579,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [],
+      "image": {
+        "path": "docs/verification/prd269/instanced-37003076606.png",
+        "sha256": "bc4bd72a652a9195d97d6896c9882e6f6d9ce05e9aec8ef35126ad41bebc52c1",
+        "bytes": 14725
+      }
+    },
+    {
+      "variant": "premature-commit",
+      "pass": false,
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "viewport": {
+        "height": 540,
+        "width": 960
+      },
+      "motion": {
+        "before": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 1,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": true,
+          "prematureCommit": true,
+          "lateWrites": 0,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 0,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 0,
+          "oracleMaxErrorPixels": 0,
+          "stoppedMax": -1,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            }
+          ]
+        },
+        "after": {
+          "staticMax": 0,
+          "stationaryMax": 0,
+          "movingMax": 0,
+          "movingPixels": 0,
+          "firstFrameMax": 0,
+          "frame": 9,
+          "withoutHistory": false,
+          "instanced": true,
+          "dynamic": false,
+          "geometryKind": "InstancedMesh",
+          "skinned": false,
+          "aggregateHistory": false,
+          "currentAsPrevious": false,
+          "lateWrite": true,
+          "prematureCommit": true,
+          "lateWrites": 8,
+          "recompile": false,
+          "recompiles": 0,
+          "worldMotion": false,
+          "currentWorldHistory": false,
+          "footprintPixels": 25676,
+          "footprintMaxErrorPixels": 63.999999999999986,
+          "outsideFootprintMax": 0,
+          "darkFootprintPixels": 926,
+          "colourMaxErrorPixels": 1.1368683772161603e-13,
+          "oracleMaxErrorPixels": 63.999999999999986,
+          "stoppedMax": 0,
+          "samples": [
+            {
+              "frame": 1,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 720,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 2,
+              "expectedX": -0.04999999999999999,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 23.999999999999993,
+              "colourCentroidX": 696,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 3,
+              "expectedX": 0.09999999999999992,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 47.999999999999964,
+              "colourCentroidX": 744,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 4,
+              "expectedX": -0.1333333333333333,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 63.999999999999986,
+              "colourCentroidX": 680,
+              "colourErrorPixels": 1.1368683772161603e-13
+            },
+            {
+              "frame": 5,
+              "expectedX": 0.1166666666666667,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 56.000000000000014,
+              "colourCentroidX": 736,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 6,
+              "expectedX": -0.050000000000000044,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 24.00000000000002,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 7,
+              "expectedX": 0,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 0,
+              "colourCentroidX": 712,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 8,
+              "expectedX": 0.08333333333333337,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 40.000000000000014,
+              "colourCentroidX": 752,
+              "colourErrorPixels": 0
+            },
+            {
+              "frame": 9,
+              "expectedX": -0.1333333333333333,
+              "actualX": 0,
+              "actualY": 0,
+              "errorPixels": 63.999999999999986,
+              "colourCentroidX": 688,
+              "colourErrorPixels": 0
+            }
+          ]
+        }
+      },
+      "diagnostics": [
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'movingPixels'.",
+          "severity": "error"
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'oracleMaxErrorPixels'.",
+          "severity": "error"
+        },
+        {
+          "code": "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+          "message": "Resource assertion failed for 'motion' path 'footprintMaxErrorPixels'.",
+          "severity": "error"
+        }
+      ],
+      "image": {
+        "path": "docs/verification/prd269/without-history-37003076606.png",
+        "sha256": "ef304d46bba40419d55edc1af9aba20aa911ca291332626ba04a88af0a5a6c7d",
+        "bytes": 14318
+      }
+    }
+  ]
+}

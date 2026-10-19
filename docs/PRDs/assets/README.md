@@ -51,7 +51,7 @@ work, or that an upgraded wgpu-native C API exposes persistent caches. Record ac
 identity; do not infer it from a device label. Warm-up relocates work; it does not remove that work.
 
 PRD-368 takes ownership of the persistent-cache slice also proposed in
-[the earlier compile-walk PRD](../performance/critical/PRD-339-the-compile-walk-leaves-the-main-thread.md).
+[the earlier compile-walk PRD](../performance/critical/PRD-540-the-compile-walk-leaves-the-main-thread.md).
 It does not depend on reopening rejected scheduling experiments. PRD-370 owns the remaining
 accounting defect; source-lane skip logging, first-use rendering and concurrency documentation
 must be reconciled and reused if landed. These plans do not close PRD-360 or earlier performance

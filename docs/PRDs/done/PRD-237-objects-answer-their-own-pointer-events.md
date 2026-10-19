@@ -15,7 +15,7 @@ cloned at depth 1 on 2026-08-28. Every claim in "What the source actually contai
 that clone and is cited by file and line. **No source is copied** — the licence would permit it, the
 design below deliberately does not.
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 
 **Complexity:** +1 new module, +2 complex state logic (per-pointer, per-object hover/press/drag
 across frames), +1 touches 4 files in core, +1 template edit = **5 → MEDIUM mode.**

@@ -1,0 +1,54 @@
+{
+  "name": "rain-fly-camera-moves-and-looks",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1440, "height": 900 },
+  "warmupFrames": 30,
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    {
+      "kind": "input",
+      "press": ["KeyW", "ShiftLeft"],
+      "holdTicks": 60,
+      "label": "sprint",
+      "release": true
+    },
+    { "kind": "input", "press": "KeyE", "holdTicks": 30, "label": "climb", "release": true },
+    {
+      "kind": "input",
+      "pointerPosition": { "x": 0.45, "y": 0.5, "buttons": 1 },
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "pointerPosition": { "x": 0.3, "y": 0.42, "buttons": 1 },
+      "waitTicks": 4,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "pointerPosition": { "x": 0.3, "y": 0.42, "buttons": 0 },
+      "label": "look",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "state", "path": "position.z", "lte": 0 },
+      { "id": "state", "path": "position.y", "gte": 4.5 },
+      { "id": "state", "path": "heading", "changed": true }
+    ],
+    "visual": [
+      { "frameDiff": { "minChangedPixelRatio": 0.3 } },
+      { "region": { "x": 0, "y": 0, "width": 1440, "height": 900, "minNonblankPixelRatio": 0.01 } }
+    ]
+  }
+}

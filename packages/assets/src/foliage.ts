@@ -15,9 +15,10 @@
  * out of the conversion without touching the rest of the project.
  */
 
-import type { Document, Material, Primitive } from "@gltf-transform/core";
+import type { Document, Material, Primitive, Texture } from "@gltf-transform/core";
 import { materialStateOf } from "./content/census.js";
 import { dedupeMaterials, materialSignature } from "./content/dedupe-materials.js";
+import { decodeImageBytes } from "./passes/decode-image.js";
 
 /** The alpha threshold a converted cutout samples at; `renderer.alphaAntialiasing` softens it. */
 export const CUTOUT_ALPHA_CUTOFF = 0.5;
@@ -34,17 +35,19 @@ export type CutoutSkipReason =
   | "no-texture-alpha"
   | "uniform-transparency"
   | "vertex-colour-alpha"
-  | "volume-or-transmission";
+  | "volume-or-transmission"
+  | "no-cutout-texels";
 
 const VOLUME_EXTENSIONS = ["transmission", "volume", "displacement"] as const;
 
 /** True when a `BLEND` material's only alpha is its base-colour texture — a cut-out, not a fade. */
-function cutoutSkipReason(
+async function cutoutSkipReason(
   material: Material,
   primitives: readonly Primitive[],
-): CutoutSkipReason | null {
+): Promise<CutoutSkipReason | null> {
   // No texture means no texture alpha: a uniform fade cannot be cut out.
-  if (material.getBaseColorTexture() === null) return "no-texture-alpha";
+  const baseTexture = material.getBaseColorTexture();
+  if (baseTexture === null) return "no-texture-alpha";
   if ((material.getBaseColorFactor()[3] ?? 1) < 1) return "uniform-transparency";
   for (const extension of material.listExtensions()) {
     const name = extension.extensionName.toLowerCase();
@@ -54,7 +57,35 @@ function cutoutSkipReason(
   // packs export every vertex colour as RGBA with alpha 255, and a cutoff reproduces alpha 1
   // exactly, so a constant alpha is not a reason to refuse — measuring the data is (PRD-458 §4).
   if (primitives.some(vertexAlphaVaries)) return "vertex-colour-alpha";
+
+  // A cutout must cut something: if no texel is below the cutoff threshold, keep BLEND (translucency, not cutout).
+  const hasCutout = await textureHasCutoutTexels(baseTexture);
+  if (hasCutout === false) return "no-cutout-texels";
+
   return null;
+}
+
+/**
+ * Returns false only when the texture successfully decodes and has NO texel with alpha below CUTOUT_ALPHA_CUTOFF.
+ * If decoding fails or format is unknown, returns true to preserve current behaviour.
+ */
+async function textureHasCutoutTexels(texture: Texture): Promise<boolean> {
+  const imageBytes = texture.getImage();
+  if (imageBytes === null || imageBytes.length === 0) return true;
+  try {
+    const decoded = await decodeImageBytes(
+      Buffer.from(imageBytes),
+      texture.getURI() || texture.getName() || "texture",
+    );
+    const { data } = decoded;
+    const cutoffByte = CUTOUT_ALPHA_CUTOFF * 255;
+    for (let i = 3; i < data.length; i += 4) {
+      if ((data[i] as number) < cutoffByte) return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 /** True when a `COLOR_0`'s alpha channel is a real per-vertex fade, not a constant opaque 1. */
@@ -80,7 +111,7 @@ function usesMaterial(primitives: readonly Primitive[], material: Material): Pri
  * material is `MASK`. A `MASK` material with no base-colour texture is left alone — it was already
  * cut out by the author, and there is nothing to convert.
  */
-export function convertFoliageCutout(document: Document): IFoliageCutoutSummary {
+export async function convertFoliageCutout(document: Document): Promise<IFoliageCutoutSummary> {
   const root = document.getRoot();
   const primitives = root.listMeshes().flatMap((mesh) => [...mesh.listPrimitives()]);
   const converted: string[] = [];
@@ -88,7 +119,7 @@ export function convertFoliageCutout(document: Document): IFoliageCutoutSummary 
   for (const material of root.listMaterials()) {
     if (material.getAlphaMode() !== "BLEND") continue;
     const name = material.getName();
-    const reason = cutoutSkipReason(material, usesMaterial(primitives, material));
+    const reason = await cutoutSkipReason(material, usesMaterial(primitives, material));
     if (reason !== null) {
       kept.push({ name, reason });
       continue;

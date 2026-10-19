@@ -1,0 +1,57 @@
+[package]
+name = "threenative-css-ui"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# The other half of the UI decision in `native/ui-overlay`: same promise to the game (one
+# `src/ui/` on web and native), no Chromium. Where that crate renders the UI in the platform's
+# own browser engine, this one renders it with a pure-Rust CSS layout engine (blitz-dom + Stylo)
+# onto an RGBA buffer the host already has a texture for. Same `staticlib` + `rlib` shape as
+# `native/physics` and `native/ui-overlay`, so the host links it the same way.
+[lib]
+name = "threenative_css_ui"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+# Pinned exactly: blitz 0.3.0-beta.2 is the release whose DOM mutation API, hit testing and
+# event driver this crate is written against, and Stylo's behaviour (including the
+# `position: fixed` containing-block bug worked around in `lib.rs`) can shift under a
+# different one.
+blitz-dom = "=0.3.0-beta.2"
+blitz-paint = "=0.3.0-beta.2"
+blitz-traits = "=0.3.0-beta.2"
+# `anyrender` is the paint-scene trait blitz-paint 0.3 emits into; `vello_cpu` is the one
+# backend that needs no GPU, no window and no system library, which is what makes this
+# runnable in a headless test.
+anyrender = "0.13.0"
+anyrender_vello_cpu = "0.17.0"
+# Blitz drives text through Parley.
+parley = "0.11.1"
+# The only hand-written parsing here: a mutation batch is one JSON string, and the host's own
+# reader already exists as a C ABI, so a serde derive tree would be one more thing to keep in
+# step for no gain.
+serde_json = "1"
+# Already in the closure through blitz; named here because the net provider decodes `data:` URIs.
+data-url = "0.3.2"
+
+[dev-dependencies]
+# The tests build their batches as JSON text, and the sheet fixture contains both quotes and
+# newlines, so it needs a real encoder rather than string concatenation.
+serde_json = "1"
+
+# Upstream layout, paint, text and lifetime gaps that cannot be closed from this crate alone: a
+# hoisted `z-index` box painted a frame late, an inline's box reported as its line box,
+# `outline-offset` ignored, line boxes without a strut, a record of every node ever created, a
+# `<button>`'s content top-aligned in its content box, `text-overflow: ellipsis` painting nothing,
+# percentage padding resolved against the containing block's height, a family name no installed
+# font carries (`Arial`) resolving to no font at all, and a `<span>`'s horizontal margin, border and
+# padding taking no space and painting no box.
+# `vendor/PATCHES.md` carries the hunk-by-hunk diff, why each exists, and the measurement that
+# proves it; each fix is one property, so dropping a patch is a one-line change here.
+[patch.crates-io]
+blitz-dom = { path = "vendor/blitz-dom-0.3.0-beta.2" }
+blitz-paint = { path = "vendor/blitz-paint-0.3.0-beta.2" }
+parley = { path = "vendor/parley-0.11.1" }
+taffy = { path = "vendor/taffy-0.14.0" }
+fontique = { path = "vendor/fontique-0.11.1" }

@@ -30,6 +30,13 @@
     },
     "renderChain": {
       "tier": "high",
+      "perAdapter": {
+        "integrated": { "stages": { "includes": ["bloom"] }, "tier": "medium" },
+        "mobile-high": { "stages": { "includes": ["bloom"] }, "tier": "medium" },
+        "mobile-low": { "stages": { "includes": ["bloom"] }, "tier": "low" },
+        "mobile-mid": { "stages": { "includes": ["bloom"] }, "tier": "low" },
+        "software": { "stages": { "includes": ["bloom"] }, "tier": "low" }
+      },
       "stages": {
         "includes": ["bloom"]
       }

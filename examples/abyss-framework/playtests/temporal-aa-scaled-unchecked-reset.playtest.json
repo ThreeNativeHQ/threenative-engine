@@ -1,0 +1,64 @@
+{
+  "name": "display-sized-temporal-reconstruction-unchecked-reset",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 0,
+  "steps": [{ "kind": "wait", "label": "settled", "waitTicks": 30 }],
+  "assert": {
+    "resources": [
+      { "id": "temporal", "path": "frame", "gte": 30, "changed": true },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.0.pixels",
+        "equals": 2764800,
+        "allowTrivial": "The opening cold frame compares every RGB channel of the 1280x720 display, so the count is fixed by the viewport and the positive arm is compared on the same samples."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.0.outside",
+        "gte": 1,
+        "allowTrivial": "With the reset gate removed the opening frame still blends whatever the history buffer holds, so the contaminated count is a one-time measurement the run cannot change."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.1.pixels",
+        "equals": 1843200,
+        "allowTrivial": "The resize cold frame compares every RGB channel of the 1280x480 display, so both arms are contrasted on identical sample sets."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.1.outside",
+        "gte": 1,
+        "allowTrivial": "The same control at the resize reset frame, whose freshly allocated history buffer is equally unwritten; both are single measurements taken before the assertion runs."
+      },
+      {
+        "id": "temporal",
+        "path": "resolveProbe.coldFrames.0.historyValid",
+        "equals": false,
+        "allowTrivial": "The frame is a reset frame by the provider's own report, which is what identifies it for the comparison; the removed gate is a shader concern and does not change that report."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.0.visited",
+        "equals": 921600,
+        "allowTrivial": "The same counter runs in this arm over the same 1280x720 display, so its GPU visited count must equal the positive row's. A smaller count here would mean the count itself depends on the removed gate."
+      },
+      {
+        "id": "temporal",
+        "path": "rejectionCold.1.visited",
+        "equals": 614400,
+        "allowTrivial": "The resize reset frame counts the same 1280x480 display as the positive row, on the same sample of the run."
+      },
+      {
+        "id": "temporal",
+        "path": "aa.rejection.fraction",
+        "gte": 0,
+        "lte": 1,
+        "changed": true,
+        "allowTrivial": "With the reset gate removed the counted share is whatever the depth test alone decides, so it stays a finite fraction of the display; the positive row owns the whole-raster claim and this row deliberately makes none."
+      }
+    ],
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true }
+  }
+}

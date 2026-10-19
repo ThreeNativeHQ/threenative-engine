@@ -18,8 +18,8 @@ Two defects the run exposed and this PRD fixed: the windowed device-creation bra
 required-feature arrays were bounded by literals that did not track their size, so a device
 advertising all three compression formats would have silently lost `core-features-and-limits`.
 
-**Unblocks [PRD-308](../architecture/PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md)** and
-through it [PRD-311](../architecture/PRD-311-per-pass-gpu-cost-without-owning-a-phone.md). Read
+**Unblocks [PRD-308](../performance/PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md)** and
+through it [PRD-311](../performance/PRD-311-per-pass-gpu-cost-without-owning-a-phone.md). Read
 `gpuMs 0.19` as *the meter works*, not as a game's GPU cost: the subject was a near-empty scene, and
 the phone was on the charger, so no fps figure from that run is comparable to the unplugged
 baselines.
@@ -32,10 +32,10 @@ silence that reads identically to "we never tried".
 **Depends on:** nothing. Every piece of plumbing already exists; none of it has been executed on a
 phone.
 
-**Unblocks:** [PRD-308](../architecture/PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md) (per-pass GPU
+**Unblocks:** [PRD-308](../performance/PRD-308-gpu-time-is-attributed-per-pass-on-the-phone.md) (per-pass GPU
 attribution on the phone) and through it
-[PRD-311](../architecture/PRD-311-per-pass-gpu-cost-without-owning-a-phone.md). Task 2 of Band 1; see
-[README](../architecture/README.md) for the tick-back rule.
+[PRD-311](../performance/PRD-311-per-pass-gpu-cost-without-owning-a-phone.md). Task 2 of Band 1; see
+README for the tick-back rule.
 
 **Complexity: 4 → MEDIUM mode.** +1 (1–5 files), +2 (multi-package: `core`, `playtest`, and a
 device lane), +1 (a physical-device measurement whose outcome may be "the device says no").

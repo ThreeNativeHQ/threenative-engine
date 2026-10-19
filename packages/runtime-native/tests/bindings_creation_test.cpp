@@ -26,6 +26,13 @@ constexpr const char* kScript = R"JS((() => {
   const adapter = navigator.gpu.requestAdapter();
   const device = adapter.requestDevice();
 
+  // device.lost must stay pending while the device lives. A settled promise tells every consumer
+  // (three's renderer, bounded texture preparation) that the device is already gone.
+  globalThis.__tnDeviceLostSettled = false;
+  device.lost.then(() => {
+    globalThis.__tnDeviceLostSettled = true;
+  });
+
   const wideLodSampler = device.createSampler({
     lodMinClamp: 0,
     lodMaxClamp: 32,
@@ -65,6 +72,14 @@ int main() {
         std::cerr << "native WebGPU creation bindings failed";
         if (runtime->getExitCode() != 0) std::cerr << " (exit " << runtime->getExitCode() << ")";
         std::cerr << '\n';
+        return 1;
+    }
+
+    // Microtasks have run since the first script: an already-settled device.lost has fired.
+    if (!runtime->evalScript(
+            "if (globalThis.__tnDeviceLostSettled) throw new Error('device.lost settled without a device loss');",
+            "bindings_device_lost_test.js")) {
+        std::cerr << "native device.lost settled with a live device\n";
         return 1;
     }
 

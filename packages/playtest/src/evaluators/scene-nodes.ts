@@ -120,7 +120,7 @@ function emitOne(
       observation,
       sampled,
       true,
-      (node) => (node.materials ?? []).every((material) => material.mapsUnloaded.length === 0),
+      (node) => (node.materials?.length ?? 0) > 0 && (node.materials ?? []).every((material) => material.mapsUnloaded.length === 0),
       {
         code: "TN_PLAYTEST_SCENE_NODE_TEXTURE_UNLOADED",
         failure: (names, nodes) => {

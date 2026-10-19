@@ -1,0 +1,119 @@
+{
+  "name": "snow-weather",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "hands-off",
+      "press": "KeyP",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "calm",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "blizzard",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "storm",
+      "waitTicks": 300,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "compaction",
+      "press": "KeyV",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reset",
+      "press": "KeyR",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fresh",
+      "waitTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "weather",
+        "component": "storm",
+        "gte": 0.6,
+        "allowTrivial": "Five seconds after B the blizzard has mostly built: the eased storm level passes 0.6."
+      },
+      {
+        "entity": "weather",
+        "component": "wind",
+        "gte": 4,
+        "allowTrivial": "A blizzard blows at several metres a second, gusts included."
+      },
+      {
+        "entity": "snow",
+        "component": "trailPressed",
+        "atSteps": [
+          {
+            "label": "calm",
+            "equals": true
+          },
+          {
+            "label": "fresh",
+            "equals": false
+          }
+        ],
+        "allowTrivial": "The arrival trail is in the snow at the start and gone after R clears every footprint."
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "blizzard",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "compaction",
+        "equals": true
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

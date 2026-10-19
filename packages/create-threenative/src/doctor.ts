@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 import { installCommandFor, resolveBlender } from "threenative-blender-mcp/bridge";
 
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
+import { resolveRuntimeAssetCapabilities } from "./build.js";
 import { loadConfig } from "./config.js";
 import {
   type IMcpPackage,
@@ -208,7 +209,7 @@ interface IMcpServerSpec {
  * resolves, so it must name core — and core's own version, which `doctor.spec.ts` holds equal to
  * `packages/core/package.json`. */
 const CORE_PACKAGE_NAME = "@threenative/core";
-const CORE_PACKAGE_VERSION = "0.3.4";
+const CORE_PACKAGE_VERSION = "0.3.5";
 const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set([
   "threenative-engine",
   "threenative-blender",
@@ -671,7 +672,7 @@ function probeMcpServer(projectRoot: string, spec: IMcpServerSpec): IMcpServerHe
     method: "initialize",
     params: {
       capabilities: {},
-      clientInfo: { name: "threenative-doctor", version: "0.3.4" },
+      clientInfo: { name: "threenative-doctor", version: "0.3.5" },
       protocolVersion: "2025-06-18",
     },
   });
@@ -865,21 +866,22 @@ function assetPipelineCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   const mobileTargets = configuredTargets(snapshot).filter(
     (target) => target === "android" || target === "ios",
   );
-  if (mobileTargets.length > 0) {
-    const textures = assets.textures;
-    if (textures !== "none") {
-      details.push(
-        `TN_NATIVE_KTX2_UNSUPPORTED: assets.textures compiles textures for ${mobileTargets.join("/")}; mobile native targets require assets.textures to be "none"`,
-      );
-      status = "warn";
-    }
-    const models = assets.models;
-    if (models !== "none") {
-      details.push(
-        `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: assets.models compiles model geometry for ${mobileTargets.join("/")}; mobile native targets require assets.models to be "none"`,
-      );
-      status = "warn";
-    }
+  // Android V8 admits KTX2 and Meshopt (the same resolution `threenative build` makes).
+  const lacking = (codec: "ktx2" | "meshopt") =>
+    mobileTargets.filter((target) => !resolveRuntimeAssetCapabilities(target).decoders[codec]);
+  const noKtx2 = lacking("ktx2");
+  if (noKtx2.length > 0 && assets.textures !== "none") {
+    details.push(
+      `TN_NATIVE_KTX2_UNSUPPORTED: assets.textures compiles textures for ${noKtx2.join("/")}; that runtime requires assets.textures to be "none"`,
+    );
+    status = "warn";
+  }
+  const noMeshopt = lacking("meshopt");
+  if (noMeshopt.length > 0 && assets.models !== "none") {
+    details.push(
+      `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED: assets.models compiles model geometry for ${noMeshopt.join("/")}; that runtime requires assets.models to be "none"`,
+    );
+    status = "warn";
   }
   return {
     detail: details.join("; "),
@@ -1252,6 +1254,9 @@ function dependencyChecks(snapshot: IProjectSnapshot): IDoctorCheck[] {
   const declared = declaredDependencies(snapshot.packageJson);
   const missing = declared.filter((name) => !snapshot.installedVersions.has(name));
   const installed = [...snapshot.installedVersions].sort(([a], [b]) => a.localeCompare(b));
+  // The cohort versions per package, so a patch may differ (assets 0.3.5 beside core 0.3.4); on
+  // 0.x the minor is the compatibility boundary, which is what the peer ranges name.
+  const series = new Set(installed.map(([, version]) => version.split(".").slice(0, 2).join(".")));
   const versions = new Set(installed.map(([, version]) => version));
   return [
     missing.length > 0
@@ -1269,7 +1274,7 @@ function dependencyChecks(snapshot: IProjectSnapshot): IDoctorCheck[] {
           name: "dependencies",
           status: "ok",
         },
-    versions.size > 1
+    series.size > 1
       ? {
           detail: `@threenative packages disagree on version: ${installed
             .map(([name, version]) => `${name}@${version}`)
@@ -1280,7 +1285,11 @@ function dependencyChecks(snapshot: IProjectSnapshot): IDoctorCheck[] {
         }
       : {
           detail:
-            versions.size === 0 ? "nothing installed to compare" : `all at ${[...versions][0]}`,
+            versions.size === 0
+              ? "nothing installed to compare"
+              : versions.size === 1
+                ? `all at ${[...versions][0]}`
+                : `all on the ${[...series][0]} series (${installed.map(([name, version]) => `${name}@${version}`).join(", ")})`,
           name: "versions",
           status: "ok",
         },

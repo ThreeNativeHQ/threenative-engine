@@ -41,7 +41,7 @@ function implementedRows() {
 
 const RUNTIME_SCRIPT_HASHES = {
   'storage-polyfill.js': '7e03f256b0e11b5370bf86ccb5ae286be221080a1baa8339efe2aa570dd3c25d',
-  'fetch-polyfill.js': '7b4cf3551605af8d13175239f1f270722af5e709067ad451fa07790a0d58ec1a',
+  'fetch-polyfill.js': '9dfb919c054b54618e19d090eb27534f10fda57886889c18fd5e99864df54461',
   'streams-polyfill.js': 'b57569ac2079bc5864eb7c8aefef6b03321acad8b6f6364b3de714e2bee64d83',
   'url-worker-polyfill.js': 'fb709b56f527c82cc7ba4d2c3430a6f17c81e0550f736d145819b25463811af3',
   'create-element-setup.js': '3891c716e3e7b8801f45306b50c5c8c5990042276524fbaac745b157389d1bee',
@@ -49,12 +49,13 @@ const RUNTIME_SCRIPT_HASHES = {
   'image-support-init.js': '1a674470d63a89e607d065c4b19794e28e87b955b292d63dbd2f974e94e1e6ee',
   'onload-trigger.js': '396a17433bcc18d6193b3167404ff51faecc1451b1b9dfaeb6a3473e86c6371a',
   'install-async-pipelines.js': 'd58fb3fb55d24743273ea79f9ec72303a79ec91b322969d705a9f4d11ce47024',
-  'image-bitmap-polyfill.js': '27cb7c4921a93dd953dc90807f26bdd4410c17445e44aba3488c133baec8de35',
+  'image-bitmap-polyfill.js': '504b53df4835acd12dc9f9c0527dabb24218e3f6d445f175939bb3d1285b04f1',
   'webtransport-polyfill.js': '7a25c702d467985f89f3b8a6d4a3c222307397c22b9b76ed5381defefd8e8d32',
   'webtransport-stub.js': '9b653430e429a8fad538151523a2c4346b0b9c52a201ec5e01314128b788081e',
   'audio-context-constructor.js': 'c3436f70b2597d2d953f780a3388c24b7e60fa3697796973d5002d0c378de227',
   'audio-source-properties.js': 'e631cdd093d660c0ada6f9cf23e0627a2bd1f16d22d8c003c52d7f86419d29ef',
   'audio-gain-param.js': 'd12e77670eaafe552e90d9fcc78a95d51f872922880bb95b8d51e1bad23b9723',
+  'audio-param.js': '375719b8424e57c24aec55ccf012d7e7048c39c72af4dfa25c5ee96bc722e683',
   'audio-panner-properties.js': '347b79924b271915fce4259f5cd1ca48ce334d59d76b18730014bd1670cf1cea',
   'canvas2d-properties.js': 'e9bd1ff7562fca7cb16ec1c57ffb05aee9dbead65e1d38cebb9d2d710af5bdf7',
 };
@@ -67,6 +68,7 @@ const RUNTIME_SCRIPT_LOADERS = {
   'audio-context-constructor.js': 'evalAudioScript',
   'audio-source-properties.js': 'evalAudioScript',
   'audio-gain-param.js': 'evalAudioScript',
+  'audio-param.js': 'evalAudioScript',
   'audio-panner-properties.js': 'evalAudioScript',
   'canvas2d-properties.js': 'evalCanvasScript',
 };
@@ -206,11 +208,25 @@ test('native host publishes explicit platform facts before the game bundle', () 
   assert.match(pointerHost, /pointerId\s*=\s*args\.size\(\) >= 5/u);
   assert.match(pointerHost, /pointerType\s*=\s*args\.size\(\) >= 6/u);
   assert.match(pointerHost, /isPrimary\s*=\s*args\.size\(\) >= 7/u);
+  // A touch pointer marks the UI's pointer kind, as a real finger does in `pollEvents`.
+  assert.match(pointerHost, /uiOverlaySetPointerKind\(event\.pointerType == "touch"\)/u);
+  const playtestInput = runtime.slice(runtime.indexOf('auto playtestHost = jsEngine_->newObject();'), pointerEnd);
+  // A held `Shift` reaches the UI's key route, so `["Shift","Tab"]` is Shift+Tab.
+  assert.match(playtestInput, /uiOverlayTrackModifier\(event\.key, event\.type == "keydown", held\)/u);
+  assert.match(playtestInput, /uiOverlayRouteKey\(event\.key\.c_str\(\), event\.type == "keydown", event\.shiftKey\)/u);
+  for (const [name, seam] of [['wheel', 'uiOverlayRouteWheel'], ['media', 'uiOverlaySetEnvironment'], ['advanceClock', 'uiOverlayAdvanceClock']]) {
+    const start = playtestInput.indexOf(`setProperty(playtestHost, "${name}"`);
+    assert.ok(start >= 0, `native playtest ${name} input is missing`);
+    assert.ok(playtestInput.indexOf(seam, start) > start, `native playtest ${name} must reach ${seam}`);
+  }
 
   const deviceBridge = read('../playtest/src/three/device.ts');
   assert.match(deviceBridge, /method === "input\.pointers"/u);
   assert.match(deviceBridge, /"pointerdown"[\s\S]*"pointerup"/u);
   assert.match(deviceBridge, /pointer\.id[\s\S]*"touch"/u);
+  assert.match(deviceBridge, /method === "input\.wheel"/u);
+  assert.match(deviceBridge, /method === "input\.media"/u);
+  assert.match(deviceBridge, /playtestInput\?\.advanceClock\?\.\(ticks\)/u);
 
   const smoke = read('../../examples/native-smoke/src/game.ts');
   for (const helper of ['getPlatform', 'isWeb', 'isNative', 'isMobile', 'isTouchscreenAvailable']) {
@@ -277,7 +293,8 @@ test('deprecated native GLTF and Draco paths fail closed before compilation', ()
   const runtime = read('src/runtime.cpp');
   assert.doesNotMatch(runtime, /setupGLTF|setupDraco|MYSTRAL_HAS_DRACO|__loadGLTF/u);
   const downloader = read('scripts/download-deps.mjs');
-  assert.doesNotMatch(downloader, /\bcgltf\b|\bdraco\b/u, 'deprecated native decoder dependencies must not be provisioned');
+  // cgltf is provisioned for the engine's own glTF loader (PRD-515), parsing only; the legacy host never links it.
+  assert.doesNotMatch(downloader, /\bdraco\b/u, 'deprecated native decoder dependencies must not be provisioned');
 });
 
 test('runtime JavaScript is byte-stable, embedded, and loaded by the bootstrap', () => {
@@ -774,7 +791,10 @@ test('CLI build tools are separate units behind an unchanged dispatch surface', 
   // deriving the pipeline-cache identity from the embedded bundle - which is runtime wiring, not a
   // tool body, so the cap moves with it rather than the split being loosened. PRD-400 adds runtime
   // web-UI readiness/deadline wiring here; the direct split assertions below remain the contract.
-  assert.ok(main.split('\n').length <= 1885, 'main.cpp still contains a build-time tool body');
+  // The native-css renderer adds 17 lines of the same kind: choosing which overlay backend attaches.
+  // PRD-614 adds 11 net lines: refusing the web UI when the environment asks SDL for Wayland, read from
+  // the same variables the desktop gate routes.
+  assert.ok(main.split('\n').length <= 1913, 'main.cpp still contains a build-time tool body');
   assert.doesNotMatch(main, /static int (compileBundle|bakeLightmaps)\(/u);
   assert.match(main, /dispatchBuildTool\(argc, argv\)/u);
   assert.match(dispatcher, /mystral::vfs::getExecutablePath\(\)[\s\S]*mystral-tools/u);

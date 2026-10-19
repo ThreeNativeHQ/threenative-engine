@@ -1,0 +1,254 @@
+{
+  "base": "c18a42bea98d76d14260a7b1b60c4a397ea9eef2",
+  "qualifiedConsumerSource": "8bf16f4c320748403dd091e4fd7da394da314bff",
+  "priorCheckpoint": "f97f609d812a550ca9cb39094c94471c928eb214",
+  "sourceScope": "Exposure graph, readback, clock, fixture, native production and playtest producer sources are byte-identical to qualified8bf. The full installed Three dependency changed; its new guard applies only to compute-only Storage3DTexture, whereas exposure uses 2D targets. Accepted actual GPU traces/images are reused with original provenance, not relabeled as captures from this merge.",
+  "threePatchSha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0",
+  "nativeCoverageDigest": "26e52aa0d7cade3c712d4e4054e9a014d7f07709558b3146196827780580d713",
+  "nativeCoverage": "Unchanged complete coverage source closure; original genuine43-target/47-profile78.85% measurement remains applicable; no receipt restamping or repeat measurement.",
+  "scaffolds": [
+    {
+      "template": "action-rpg",
+      "baselineHash": "ac45303b74f9daab0faebc8caa4c6cd4826419997b8baf1949feb30695e41da6",
+      "currentHash": "b65c7a7018b0b794daaf599f5cd4c1f8494315c8373b56db7f73c7e167560e21",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "minimal",
+      "baselineHash": "8b8127a3228e91e49dd54c9990ef3f1e9ed83d3c8a0383a310542469e3d17098",
+      "currentHash": "1796b47ecf2393cec713bb9504f7f798f3771cf1c15034390673b83cf9996130",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "platformer",
+      "baselineHash": "02adfd2b349ede31af2589488974ff7cc3fe5548b56284ec460738b1be2a3a07",
+      "currentHash": "59087ce62a3b63f733422c68a0ae08ca294953855fef72cb9a84670344b20848",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "puzzle",
+      "baselineHash": "1f0fd9280fb629766dd8508cbd842afe3e86aaa04f0a9d3b63a11b77acceca74",
+      "currentHash": "4f496ed9b446502b3f4be66b5a0017af9438c6237ae20ee34b96152904a4f455",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "racing",
+      "baselineHash": "7dfe8c0f8c1501490216d8cb8b59bc44ec8144df7b897077de5a781a9af9e6d7",
+      "currentHash": "424f8e17486d788a8ac81ec2494b1bad0294aa4ba99aacdf74c653a15d5569c0",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "rain",
+      "baselineHash": "717ab2324392a83f8a3b7d9e7640647af82ba8f0d1937668990c5300b96a824b",
+      "currentHash": "6fbe91ced6efcd39b20ccb6c359344909eebf06415b998174fcf61ed4e31ba40",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "rts",
+      "baselineHash": "611552b795122611fa8d515e1632aaf3b1c043f0538459ea1811ddb58e8064ad",
+      "currentHash": "358297ced78d5bfae393fe2f8fb8bb350e512e0dd5a70151bcbc84066051b93b",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "runner",
+      "baselineHash": "5e44aeb29248a63f93648716cbdfe861dd758eb8db65dbea0ad0f6002c09136a",
+      "currentHash": "2eacc8c33047613f470dc4093e04aad67ca1bc455ceca2b278693a4d1de9823c",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "sailing",
+      "baselineHash": "90df74708eedb1ccac4a8a6a260f2ce91ab7e45246ae373364c5bfd1b9e0d268",
+      "currentHash": "79e8ebf02059da6a4271c7c32ae8a3b571e4c1f8043169914624030913453c32",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "shooter",
+      "baselineHash": "96aaf05c134c9643867a9b9653deb534b8e34c8f77f20e2d6d472705ea1f3709",
+      "currentHash": "44e43c1993ecfefbedaecb52548c390a44ca65eb1c93b708c0c1ec28e7f97798",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "snow",
+      "baselineHash": "481eeb617fd4948e4473618b51247e9848c6b583285d795e5af87339f3dda9c6",
+      "currentHash": "10b8c2bbc3d1d64dc2c388a2040f8968c7ce3a238a5754a7cd245ada8f591f75",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "starter",
+      "baselineHash": "c434168b09b7e6baba24e2d95ed4abcf03ce41c3067aedbeeca7083ec4c992ca",
+      "currentHash": "7a0bbaa8772e646271c796ae7716211b7d53260a04d63a8c323fcab40e01c880",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    },
+    {
+      "template": "tower-defense",
+      "baselineHash": "02554a3279225373e6d39fcdd41f95edffa832804a49f816d593598dad2b64c5",
+      "currentHash": "7940af1bba17a9a3db47991ee4b1d8d1e3d46250d25571d3e6e943af09810c81",
+      "changes": [
+        {
+          "name": "patches/three@0.185.1.patch",
+          "before": {
+            "bytes": 93731,
+            "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+          },
+          "after": {
+            "bytes": 97982,
+            "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+          }
+        }
+      ]
+    }
+  ],
+  "preservation": "approved-lossless-preservation.json",
+  "checks": {
+    "frozenInstall": "PASS",
+    "typecheck": "PASS",
+    "sbom": "Normal generation and check PASS; vendor lock unchanged",
+    "focused": "82PASS",
+    "lint": "PASS,1048warnings; formatter-only override exactly12 approved compact historical JSON paths; parsing/lint/integrity retained",
+    "regressions": "281 exposure unit tests;198 actual host desktop/CI tests;82 scaffold/3Dguard tests PASS"
+  }
+}

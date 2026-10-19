@@ -1,0 +1,819 @@
+{
+  "qualification": "Matched full-resolution AA measurement only. Software WebGPU; no native, reconstruction or GPU performance claim. Rejection fraction remains unmeasured.",
+  "method": {
+    "width": 640,
+    "height": 360,
+    "referenceRasterScale": 4,
+    "colourSpace": "linear RGB decoded from opaque sRGB screenshots",
+    "frames": [21, 36],
+    "revealFrame": 29,
+    "edgeGradientThreshold": 0.08,
+    "ghostInteriorInset": 2,
+    "staleColourWeightThreshold": 0.1,
+    "minimumRelativeImprovement": 0.05,
+    "maximumStaleFractionAfterOneFrame": 0.01,
+    "zeroVelocityMinimumRelativeDegradation": 0.02,
+    "movingEdgeRegion": "reference RGB saturation above 0.25 excluding the red reveal marker"
+  },
+  "negativeControl": "unchecked-history renders a 95% unchecked history blend; it bypasses both depth rejection and neighbourhood clipping and does not isolate their individual effects",
+  "pass": false,
+  "checks": {
+    "edgeImprovement": false,
+    "stabilityImprovement": true,
+    "revealRecovery": false,
+    "uncheckedHistoryDetected": true,
+    "zeroVelocityDetected": false
+  },
+  "results": {
+    "reference": {
+      "edgeError": 0.05061148274630623,
+      "residualInstability": 0.04915204703272229,
+      "edgeSamples": 457542,
+      "movingEdgeError": 0.04465463273596755,
+      "movingEdgeSamples": 15693,
+      "revealedPixels": 3721,
+      "reveal": [
+        {
+          "afterReveal": 0,
+          "meanAbsoluteError": 0.025115973726344058,
+          "meanStaleWeight": 0.00044358497746986857,
+          "staleFraction": 0
+        },
+        {
+          "afterReveal": 1,
+          "meanAbsoluteError": 0.03633036134630353,
+          "meanStaleWeight": 0.001692851014612035,
+          "staleFraction": 0
+        },
+        {
+          "afterReveal": 2,
+          "meanAbsoluteError": 0.022229826447319603,
+          "meanStaleWeight": 5.2429127694620634e-5,
+          "staleFraction": 0
+        },
+        {
+          "afterReveal": 3,
+          "meanAbsoluteError": 0.032460190953224236,
+          "meanStaleWeight": 0.0013852567810119616,
+          "staleFraction": 0
+        },
+        {
+          "afterReveal": 4,
+          "meanAbsoluteError": 0.024380769695388018,
+          "meanStaleWeight": 0.00042921757976758504,
+          "staleFraction": 0
+        },
+        {
+          "afterReveal": 5,
+          "meanAbsoluteError": 0.02481986044085826,
+          "meanStaleWeight": 0.0008174365975201506,
+          "staleFraction": 0
+        },
+        {
+          "afterReveal": 6,
+          "meanAbsoluteError": 0.028478555521459496,
+          "meanStaleWeight": 0.0006266132203198719,
+          "staleFraction": 0
+        },
+        {
+          "afterReveal": 7,
+          "meanAbsoluteError": 0.025173203009939804,
+          "meanStaleWeight": 0.00044469350167043845,
+          "staleFraction": 0.0002687449610319806
+        }
+      ]
+    },
+    "temporal": {
+      "edgeError": 0.057429968434596856,
+      "residualInstability": 0.0441845646090226,
+      "edgeSamples": 457542,
+      "movingEdgeError": 0.05427666686049901,
+      "movingEdgeSamples": 15693,
+      "revealedPixels": 3721,
+      "reveal": [
+        {
+          "afterReveal": 0,
+          "meanAbsoluteError": 0.04316759103020319,
+          "meanStaleWeight": 0.05072329993645403,
+          "staleFraction": 0.2832571889277076
+        },
+        {
+          "afterReveal": 1,
+          "meanAbsoluteError": 0.03587467051410887,
+          "meanStaleWeight": 0.02993940829975692,
+          "staleFraction": 0.19188390217683418
+        },
+        {
+          "afterReveal": 2,
+          "meanAbsoluteError": 0.03814607306363807,
+          "meanStaleWeight": 0.02200586192989784,
+          "staleFraction": 0.09137328675087342
+        },
+        {
+          "afterReveal": 3,
+          "meanAbsoluteError": 0.031407050508379226,
+          "meanStaleWeight": 0.01267337448312801,
+          "staleFraction": 0.05052405267401236
+        },
+        {
+          "afterReveal": 4,
+          "meanAbsoluteError": 0.029621120793246407,
+          "meanStaleWeight": 0.013769211742446321,
+          "staleFraction": 0.030099435635581834
+        },
+        {
+          "afterReveal": 5,
+          "meanAbsoluteError": 0.029760787780997916,
+          "meanStaleWeight": 0.00977365038585694,
+          "staleFraction": 0.013705993012631014
+        },
+        {
+          "afterReveal": 6,
+          "meanAbsoluteError": 0.03364995085287157,
+          "meanStaleWeight": 0.006819164075516006,
+          "staleFraction": 0.013705993012631014
+        },
+        {
+          "afterReveal": 7,
+          "meanAbsoluteError": 0.029977479711417787,
+          "meanStaleWeight": 0.006780459552393675,
+          "staleFraction": 0.005643644181671593
+        }
+      ]
+    },
+    "zero-velocity": {
+      "edgeError": 0.08130956865472362,
+      "residualInstability": 0.0321448347511551,
+      "edgeSamples": 457542,
+      "movingEdgeError": 0.04169194830293258,
+      "movingEdgeSamples": 15693,
+      "revealedPixels": 3721,
+      "reveal": [
+        {
+          "afterReveal": 0,
+          "meanAbsoluteError": 0.04868818004794922,
+          "meanStaleWeight": 0.06120676951406444,
+          "staleFraction": 0.2832571889277076
+        },
+        {
+          "afterReveal": 1,
+          "meanAbsoluteError": 0.045750440943900184,
+          "meanStaleWeight": 0.04440674089873269,
+          "staleFraction": 0.22816447191615158
+        },
+        {
+          "afterReveal": 2,
+          "meanAbsoluteError": 0.0419560851184245,
+          "meanStaleWeight": 0.02721365271022098,
+          "staleFraction": 0.12012899758129535
+        },
+        {
+          "afterReveal": 3,
+          "meanAbsoluteError": 0.03841366413573925,
+          "meanStaleWeight": 0.021965472605369286,
+          "staleFraction": 0.11797903789303951
+        },
+        {
+          "afterReveal": 4,
+          "meanAbsoluteError": 0.03679289153979591,
+          "meanStaleWeight": 0.023631385736151145,
+          "staleFraction": 0.11744154797097554
+        },
+        {
+          "afterReveal": 5,
+          "meanAbsoluteError": 0.037327388507745085,
+          "meanStaleWeight": 0.01623395215938819,
+          "staleFraction": 0.08411717280300994
+        },
+        {
+          "afterReveal": 6,
+          "meanAbsoluteError": 0.03799825705400214,
+          "meanStaleWeight": 0.009580538587154618,
+          "staleFraction": 0.03493684493415748
+        },
+        {
+          "afterReveal": 7,
+          "meanAbsoluteError": 0.037243988403788,
+          "meanStaleWeight": 0.010021007523614796,
+          "staleFraction": 0.03278688524590164
+        }
+      ]
+    },
+    "unchecked-history": {
+      "edgeError": 0.09896889288693327,
+      "residualInstability": 0.030431881595528065,
+      "edgeSamples": 457542,
+      "movingEdgeError": 0.09767927220195328,
+      "movingEdgeSamples": 15693,
+      "revealedPixels": 3721,
+      "reveal": [
+        {
+          "afterReveal": 0,
+          "meanAbsoluteError": 0.3411697124305893,
+          "meanStaleWeight": 0.9260061317951345,
+          "staleFraction": 1
+        },
+        {
+          "afterReveal": 1,
+          "meanAbsoluteError": 0.32546324236428564,
+          "meanStaleWeight": 0.883002759365529,
+          "staleFraction": 1
+        },
+        {
+          "afterReveal": 2,
+          "meanAbsoluteError": 0.3081003440425268,
+          "meanStaleWeight": 0.836338754675079,
+          "staleFraction": 1
+        },
+        {
+          "afterReveal": 3,
+          "meanAbsoluteError": 0.29341966324151536,
+          "meanStaleWeight": 0.7960380410181919,
+          "staleFraction": 1
+        },
+        {
+          "afterReveal": 4,
+          "meanAbsoluteError": 0.2792195066566,
+          "meanStaleWeight": 0.7580199720426443,
+          "staleFraction": 1
+        },
+        {
+          "afterReveal": 5,
+          "meanAbsoluteError": 0.2656915763223444,
+          "meanStaleWeight": 0.7213515817437192,
+          "staleFraction": 1
+        },
+        {
+          "afterReveal": 6,
+          "meanAbsoluteError": 0.2533808516875747,
+          "meanStaleWeight": 0.684776028465936,
+          "staleFraction": 1
+        },
+        {
+          "afterReveal": 7,
+          "meanAbsoluteError": 0.24175168239986963,
+          "meanStaleWeight": 0.6520020117775333,
+          "staleFraction": 1
+        }
+      ]
+    }
+  },
+  "provenance": [
+    {
+      "variant": "supersampled",
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 1440,
+          "width": 2560
+        }
+      },
+      "hashes": [
+        {
+          "frame": 21,
+          "filename": "frame-21.png",
+          "sha256": "803846b4fe53dc87113ca554c57f4e082534c460bf5dc0c05b172c9e8398650f"
+        },
+        {
+          "frame": 22,
+          "filename": "frame-22.png",
+          "sha256": "3fa5d459cb867dfa67a2dd079e7c553088a6e567eb856494d742cb29b93dba35"
+        },
+        {
+          "frame": 23,
+          "filename": "frame-23.png",
+          "sha256": "07a2f07ccb4fc901e830bac98117391280412d71285b0cd0d7a712e1358a62cd"
+        },
+        {
+          "frame": 24,
+          "filename": "frame-24.png",
+          "sha256": "be7a29d2b0f89c8923755b39fa1ba7f18d4b926f0c169bf5469a49e53cc165c9"
+        },
+        {
+          "frame": 25,
+          "filename": "frame-25.png",
+          "sha256": "450e4dc2d43ba071feca39322a6ff9af4ffa5d5e1bfb549993613b74422ccb6a"
+        },
+        {
+          "frame": 26,
+          "filename": "frame-26.png",
+          "sha256": "502d29b852c8f73680f3631969c3f36220a75b2bccd40c359de859182278268a"
+        },
+        {
+          "frame": 27,
+          "filename": "frame-27.png",
+          "sha256": "57e2558ac0afce97fe2d11e716b2bcb16d21d8db469efbcfe4347377661547e9"
+        },
+        {
+          "frame": 28,
+          "filename": "frame-28.png",
+          "sha256": "524a00a358a6ab1e0aaeb64843a67e96dd8761442fe8c24c471351e2ef2c1122"
+        },
+        {
+          "frame": 29,
+          "filename": "frame-29.png",
+          "sha256": "80257163badc5ae30dd38653becb2d5ba60503ead742a545941943b591685cbf"
+        },
+        {
+          "frame": 30,
+          "filename": "frame-30.png",
+          "sha256": "f732400c44eee21385445cb3bd058fce1f7f5edc47761acf39daed058e99f7c0"
+        },
+        {
+          "frame": 31,
+          "filename": "frame-31.png",
+          "sha256": "dad7af2d2c6c4baa8f74fcd6aa49cb0bf6413283691ba0ff732b384793e8152e"
+        },
+        {
+          "frame": 32,
+          "filename": "frame-32.png",
+          "sha256": "b2c4b5073663bf333659acfda176d613f3884f58f8840f7f101fb593d0747188"
+        },
+        {
+          "frame": 33,
+          "filename": "frame-33.png",
+          "sha256": "66ca1dca5a2e4520ef04f7f2430540acf99facec392cc5d73eb1952a651aaa2f"
+        },
+        {
+          "frame": 34,
+          "filename": "frame-34.png",
+          "sha256": "69ac217210028256cb21fa69af32df838d228ce0ef5a7a2d0dd482c471da94dc"
+        },
+        {
+          "frame": 35,
+          "filename": "frame-35.png",
+          "sha256": "675a5fc15ba337f86cfb8284e07d99f50cb46ea2ad26de5930f026beadccc2b4"
+        },
+        {
+          "frame": 36,
+          "filename": "frame-36.png",
+          "sha256": "0deced93a93e78644670e22aa63a38302d678a989ebb7b859e87bf1cf32bb44d"
+        }
+      ]
+    },
+    {
+      "variant": "reference",
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 360,
+          "width": 640
+        }
+      },
+      "hashes": [
+        {
+          "frame": 21,
+          "filename": "frame-21.png",
+          "sha256": "019a55b00f840d4155b10308126ee6dc7cf5c754f11891e94df10e138cb57e8e"
+        },
+        {
+          "frame": 22,
+          "filename": "frame-22.png",
+          "sha256": "021084f6d318c3f2e32a6bdb6c874aee0af7ce75d368d35735c55fe3ef8a4ad1"
+        },
+        {
+          "frame": 23,
+          "filename": "frame-23.png",
+          "sha256": "b71c2b258e62afa9840e68f5fdf443a5ce59b0a1e373a1d30b141847ef5d809e"
+        },
+        {
+          "frame": 24,
+          "filename": "frame-24.png",
+          "sha256": "c36cd2efd86cb51858f89bf2a2f56e542c59f36db44423a703cda9e0b085b302"
+        },
+        {
+          "frame": 25,
+          "filename": "frame-25.png",
+          "sha256": "5e61df34710ab2da3589d0ff020f2b3a1d133e43964b5fa1a15acd9756ec0fb9"
+        },
+        {
+          "frame": 26,
+          "filename": "frame-26.png",
+          "sha256": "d3d27312b30b3323a1bd23090bf761ccf146c78dc1e6ac9f17f6f510826d4c6c"
+        },
+        {
+          "frame": 27,
+          "filename": "frame-27.png",
+          "sha256": "e818dbf771d51573bf4fe99d060d62e941140edca1f16fbaa02c96d162d3b854"
+        },
+        {
+          "frame": 28,
+          "filename": "frame-28.png",
+          "sha256": "33b2539e219c2c9bbc3c16d3c473e256ffdbc67bd9693f2c8ec4550805e0a4ae"
+        },
+        {
+          "frame": 29,
+          "filename": "frame-29.png",
+          "sha256": "dbf276f1f4bd322fe669af004b67e6d271460e64111bbb0455ea73f57047befb"
+        },
+        {
+          "frame": 30,
+          "filename": "frame-30.png",
+          "sha256": "da5c09716c351f5b77d0933000cda39ecbc9d2f90dfb017e476697c03d4e620b"
+        },
+        {
+          "frame": 31,
+          "filename": "frame-31.png",
+          "sha256": "c01dd33fae6e956984d6d135d8f44a701cd0240416abc50c7e40aa79722cb3bc"
+        },
+        {
+          "frame": 32,
+          "filename": "frame-32.png",
+          "sha256": "4e42595de3adf7f592ec43d17b03a6f8de2d80e31a5b1da959972385f4e1c4ea"
+        },
+        {
+          "frame": 33,
+          "filename": "frame-33.png",
+          "sha256": "17816648c03803fc17991123657ebc9bd1c4098fa26801d7e087b59a4a40817d"
+        },
+        {
+          "frame": 34,
+          "filename": "frame-34.png",
+          "sha256": "6460a1203f47522290d1d67ab810c4eac0634b0a7dd76a5583b90a667f9f46d3"
+        },
+        {
+          "frame": 35,
+          "filename": "frame-35.png",
+          "sha256": "0320848e0b11a07659ccceb96ddc9c82dab86e81bb28e57c732cb5bd7c9822de"
+        },
+        {
+          "frame": 36,
+          "filename": "frame-36.png",
+          "sha256": "5634c2af6b4d13a49cbe00c6655f68848623692afcebf97ed97f841d9a261f05"
+        }
+      ]
+    },
+    {
+      "variant": "temporal",
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 360,
+          "width": 640
+        }
+      },
+      "hashes": [
+        {
+          "frame": 21,
+          "filename": "frame-21.png",
+          "sha256": "45045d7754dde4148ada1b980a79ee1f316124804297bcf655e48e606997046b"
+        },
+        {
+          "frame": 22,
+          "filename": "frame-22.png",
+          "sha256": "a9942bdd08026f3485668ab91de6403a710bf90b811974360e36e1bb837f5ef1"
+        },
+        {
+          "frame": 23,
+          "filename": "frame-23.png",
+          "sha256": "ebb6d40bcc15a77475f2ad74869312ffe727cbabddb2015b398a649e4ce8c6bd"
+        },
+        {
+          "frame": 24,
+          "filename": "frame-24.png",
+          "sha256": "cf3df18857ac5916065a9ba12835efe36d0a77956b11f991af2333d51ba43942"
+        },
+        {
+          "frame": 25,
+          "filename": "frame-25.png",
+          "sha256": "1393dbcc2f77f0e0d51419d6a5283af0385b500f92e1dc0d0d15e463ed611834"
+        },
+        {
+          "frame": 26,
+          "filename": "frame-26.png",
+          "sha256": "e30b04f9f03684cceeea4ae3a8a564c30cd1bf7106b7dca754b98b310da781da"
+        },
+        {
+          "frame": 27,
+          "filename": "frame-27.png",
+          "sha256": "dd29907217e8aa4322dcb5069b6fa273c5769e2a552cf8e8e0c4ce6183c84036"
+        },
+        {
+          "frame": 28,
+          "filename": "frame-28.png",
+          "sha256": "b89f08c5542550d4e3c5c73e427e9fe1b29209c578b371607d999a6896651e95"
+        },
+        {
+          "frame": 29,
+          "filename": "frame-29.png",
+          "sha256": "fffb0318fc5cfdfd34b88f1a8e8d06c1222e74144cddcdb930d51b3992affbc5"
+        },
+        {
+          "frame": 30,
+          "filename": "frame-30.png",
+          "sha256": "187e053b025bbec24ebb0dfcfb21be4369a507036e3f48e93e09f25b71970e3d"
+        },
+        {
+          "frame": 31,
+          "filename": "frame-31.png",
+          "sha256": "beb44cd63a0e4059aa0c4293d3716e0b92560bb16865906dcff8bacc2ed0a809"
+        },
+        {
+          "frame": 32,
+          "filename": "frame-32.png",
+          "sha256": "a4a98068c8e9663d6f1e174844f1a7aafadd7bdaf8f8edaacdea2c852ed3978d"
+        },
+        {
+          "frame": 33,
+          "filename": "frame-33.png",
+          "sha256": "20537d72a8bf0c44e0cf1a2f654264b5d78c6785c3cebf4699975d45bb61af17"
+        },
+        {
+          "frame": 34,
+          "filename": "frame-34.png",
+          "sha256": "a7139c41c2650ce703356316aefbc69a6465d1f271070107676af9cfb59a27b4"
+        },
+        {
+          "frame": 35,
+          "filename": "frame-35.png",
+          "sha256": "bfaeb41c3edf779bae02140e6302f5da847e2ede1954755b4674c6bfe06cda88"
+        },
+        {
+          "frame": 36,
+          "filename": "frame-36.png",
+          "sha256": "c74e9f7b782c2280bda5e93d163b80419a13325861f0888efd41cb6eef7bbe73"
+        }
+      ]
+    },
+    {
+      "variant": "zero-velocity",
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 360,
+          "width": 640
+        }
+      },
+      "hashes": [
+        {
+          "frame": 21,
+          "filename": "frame-21.png",
+          "sha256": "519e97ed0e7dfc59c5e63c581edb38410eb701c89e371ed9d21aee0441db7877"
+        },
+        {
+          "frame": 22,
+          "filename": "frame-22.png",
+          "sha256": "a5ceabc5693e7ebf2166856dac4c4f3ab5dceec43f04e5c59d6d18bd0312b3f6"
+        },
+        {
+          "frame": 23,
+          "filename": "frame-23.png",
+          "sha256": "0af91425c46f45b17f9803bdf6b67339187a34679e896ec2020e9f0fbfa04485"
+        },
+        {
+          "frame": 24,
+          "filename": "frame-24.png",
+          "sha256": "8ff6e0672b4c74e77e57740b64ba226005aca63c48ae918cd9af6b9118dc05c0"
+        },
+        {
+          "frame": 25,
+          "filename": "frame-25.png",
+          "sha256": "7e94e2dc085f56aa7e8f631293c5cc76af7d6ff551dd274a33074c4d20f8a90f"
+        },
+        {
+          "frame": 26,
+          "filename": "frame-26.png",
+          "sha256": "db2d823c942154039ebc72de4bd1a832538d458fb747d08da3285cfcbe03d8b9"
+        },
+        {
+          "frame": 27,
+          "filename": "frame-27.png",
+          "sha256": "e63a78a34ead43a5aa122879c88d2d23c381687ff7b8e9b9d54ddeb62b467d6e"
+        },
+        {
+          "frame": 28,
+          "filename": "frame-28.png",
+          "sha256": "c9badaa39861a40fbe7b47ec5a80a498cae61a2f8fcfc3456908a5112ee0fb9a"
+        },
+        {
+          "frame": 29,
+          "filename": "frame-29.png",
+          "sha256": "9b90b79fa58195aff4fa5551fb56cd827faa49ea6807c13ad1e172a7b068fcf2"
+        },
+        {
+          "frame": 30,
+          "filename": "frame-30.png",
+          "sha256": "e78f2df39b04803a4f07bdb1d833688c9d4565ec0acf02239ae565a0093773a8"
+        },
+        {
+          "frame": 31,
+          "filename": "frame-31.png",
+          "sha256": "f159381a2d1e1f60594e1a2bf627ff0c501afd19041357afb3b818e5e5d0e5f0"
+        },
+        {
+          "frame": 32,
+          "filename": "frame-32.png",
+          "sha256": "dda6607deb2770eb3a6f4e4892338c70c6fbca6b463e611c46fb5528e360c209"
+        },
+        {
+          "frame": 33,
+          "filename": "frame-33.png",
+          "sha256": "77d2fc96f864d60ee6c2444e6dd62ccb07ab2128f0d7c0df256cb208465c33f1"
+        },
+        {
+          "frame": 34,
+          "filename": "frame-34.png",
+          "sha256": "1758c3b3b7df65a7c421e854d0a443550b65b56817ade091ecc6566bc601dfb7"
+        },
+        {
+          "frame": 35,
+          "filename": "frame-35.png",
+          "sha256": "0ba4207811a35a9f7bab3cc073df54bd34c9137a924d91deb19cea1e781ee56a"
+        },
+        {
+          "frame": 36,
+          "filename": "frame-36.png",
+          "sha256": "2e8a89dd80aa2faf22d3e43f7af279aefe55ba4f626d02a2344c584b52a07779"
+        }
+      ]
+    },
+    {
+      "variant": "unchecked-history",
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 360,
+          "width": 640
+        }
+      },
+      "hashes": [
+        {
+          "frame": 21,
+          "filename": "frame-21.png",
+          "sha256": "55e81169ee43e0d62771bc1b69df1c812566d04c9edbe924f0d17eefe06b99c1"
+        },
+        {
+          "frame": 22,
+          "filename": "frame-22.png",
+          "sha256": "274a3a806d6bd93efbb5aa782f05f878fc8fe7e0d9108e267e16e345ce543256"
+        },
+        {
+          "frame": 23,
+          "filename": "frame-23.png",
+          "sha256": "003ec2658ef14c48b76a3dcc6d4781c21dab9f8196beb611ad3da2b6fb47e48a"
+        },
+        {
+          "frame": 24,
+          "filename": "frame-24.png",
+          "sha256": "1b656a350282000d42b2468c9f3bcfd6d8143d526c6a515b9d152ec1403fd46d"
+        },
+        {
+          "frame": 25,
+          "filename": "frame-25.png",
+          "sha256": "e78471829cae24f748cc9e0f059d55b4f68cf8a0171dae728066c63a83616fb2"
+        },
+        {
+          "frame": 26,
+          "filename": "frame-26.png",
+          "sha256": "3d598f5138a57f75ced0cbaa1d0b9531b5a6502f783640cf0661a4e034f61d0f"
+        },
+        {
+          "frame": 27,
+          "filename": "frame-27.png",
+          "sha256": "18e94863ec9cee88e18d3921bc39be7550e112d8249e306ecc172260c8eb6aa8"
+        },
+        {
+          "frame": 28,
+          "filename": "frame-28.png",
+          "sha256": "1d78f40ea73d80f07a5e3b0202be8d3f61f10d55f4933c3fad5f63ff368dc410"
+        },
+        {
+          "frame": 29,
+          "filename": "frame-29.png",
+          "sha256": "a3f1ccb70ac519da3e9fc6454c9a9056dcc0be453ee3f67fb5bad2c5c569b342"
+        },
+        {
+          "frame": 30,
+          "filename": "frame-30.png",
+          "sha256": "c02df695682c0884b9006cce187269942b0cd00c378426f109790f36756978a3"
+        },
+        {
+          "frame": 31,
+          "filename": "frame-31.png",
+          "sha256": "c48b7af0be452136b0ae600a80e82616f8769ed5f3ff22f76a72f5327c6c9c01"
+        },
+        {
+          "frame": 32,
+          "filename": "frame-32.png",
+          "sha256": "5eb2a3321958b43a84d9076b7566a5bb6b1a1df5e1a82c9b914a03ae49979bbb"
+        },
+        {
+          "frame": 33,
+          "filename": "frame-33.png",
+          "sha256": "4478e7cbb9fc1bec72d0d68d34470974f106ffd79dc9cfd92ece8b49d85e36ee"
+        },
+        {
+          "frame": 34,
+          "filename": "frame-34.png",
+          "sha256": "a4297f867032770ec015e856d63c9fc002f7c920995bed1103affd5ea8982dd7"
+        },
+        {
+          "frame": 35,
+          "filename": "frame-35.png",
+          "sha256": "54445e2fb0f934ac9450adf821937935a2108da6b0b59c8250a92f1ca945ea18"
+        },
+        {
+          "frame": 36,
+          "filename": "frame-36.png",
+          "sha256": "dcdaf24b4f739be9fb7397c46b3182bac6b52b24d9ea73578ed74cf2e3c7fe6b"
+        }
+      ]
+    }
+  ],
+  "sourceSha": "1124d7036787488b9fa9adf4aecbd535a099654c",
+  "runId": 36994374046,
+  "artifactId": 11220689545,
+  "artifactSha256": "6ec4860f27e78f242904c07d2610ecd1865f4dfd3b50c6868fc9489ac0291b5b",
+  "selectedScreenshots": {
+    "motion-before.png": "temporal/frame-28.png",
+    "motion-reference.png": "reference/frame-30.png",
+    "motion-reveal.png": "temporal/frame-30.png",
+    "motion-recovery.png": "temporal/frame-36.png"
+  },
+  "inspection": "Matched frames inspected; visible red residue remains on revealed fence edges. This is failed experimental quality evidence."
+}

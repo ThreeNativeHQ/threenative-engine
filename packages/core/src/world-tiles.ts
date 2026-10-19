@@ -1,18 +1,40 @@
 import {
-  type Box3,
+  Box3,
   BufferAttribute,
   BufferGeometry,
+  type Camera,
   LOD,
-  type Matrix3,
   type Matrix4,
   Mesh,
   Object3D,
+  Sphere,
   Vector3,
 } from "three";
 import type { InterleavedBufferAttribute } from "three";
 import type { IAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
+import {
+  type ILodView,
+  type IModelLodPolicy,
+  conservativeViewDepth,
+  projectedLodError,
+  selectLodLevel,
+  worldSphere,
+} from "./model-lod.js";
+import { SPANS, type SpanId, addSpan, spanNow, spanRecorder } from "./profiling/Spans.js";
 import type { IRendererLike } from "./renderer.js";
+import {
+  type ITerrainBridgeAttributes,
+  type ITerrainEdgeFrame,
+  type ITerrainEdgeJob,
+  type ITerrainFineEdgeJob,
+  type ITerrainJobRunner,
+  type ITerrainMergeJob,
+  type ITerrainMergeResult,
+  type ITerrainSeamJob,
+  createTerrainJobRunner,
+  edgeWorldPoint,
+} from "./terrain-jobs.js";
 import { summarizeWorldTopology } from "./world-topology.js";
 import { terrainValidationRequested } from "./world-validate.js";
 import {
@@ -73,6 +95,11 @@ export interface IWorldTilesFollowPosition {
   readonly z: number;
 }
 
+/** Actual render view and the resolved model LOD policy; distance floors still apply. */
+export interface IWorldTilesLodView
+  extends Pick<ILodView, "camera" | "viewportHeight">,
+    IModelLodPolicy {}
+
 export interface IWorldTilesTopologyObservation {
   readonly columns: number;
   readonly depth: number;
@@ -111,7 +138,7 @@ export interface IWorldTilesOptions {
   readonly tileSize: number;
   /** Vertex decimation factors. Defaults to 1, 2, and 4 over the same field. */
   readonly lodFactors?: readonly number[];
-  /** Distances in world units at which the next LOD becomes active. */
+  /** Nearest world-unit distances at which the next LOD may become active; screen error may delay it. */
   readonly lodDistances?: readonly number[];
   /**
    * Re-derive the terrain every frame and assert it: a finiteness scan of every rendered vertex,
@@ -121,10 +148,14 @@ export interface IWorldTilesOptions {
    */
   readonly validate?: boolean;
   /**
-   * Merge settled same-LOD terrain tiles into super-tiles: one mesh per K×K block, rebuilt from the
-   * resident tiles through the admission budget. It changes how many draws the main pass submits,
-   * never how the ground looks — a merged vertex lands on the world position its tile's vertex did.
-   * Off by default; `mergeTiles: true`, `?tnTerrainMerge=1` or `TN_TERRAIN_MERGE=1` turns it on.
+   * Merge settled same-LOD terrain tiles into super-tiles: one mesh per K×K block, one block rebuilt
+   * per frame. It changes how many draws the main pass submits, never how the ground looks — a merged
+   * vertex lands on the world position its tile's vertex did, on the same game-owned `surface`.
+   *
+   * On by default, like `validate`'s measurements are off by default only because they cost a
+   * measurement a frame. `mergeTiles: false`, `?tnTerrainMerge=0` or `TN_TERRAIN_MERGE=0` turns it
+   * off for a run. A block's bytes are reported as `terrainTiles.blockBytes` and are never charged to
+   * `residentByteBudget`, so the merge changes draws and no tile the budget would admit without it.
    */
   readonly mergeTiles?: boolean;
   /** Explicit game-owned measurement region used by the topology evaluator. */
@@ -132,8 +163,9 @@ export interface IWorldTilesOptions {
 }
 
 interface ILevelGeometry {
+  surfaceError: number;
   readonly edgeSamples: IEdgeSamples;
-  readonly geometry: BufferGeometry;
+  geometry: BufferGeometry;
   readonly mesh: Mesh;
   readonly resolution: number;
   readonly skirtDepth: number;
@@ -153,6 +185,7 @@ interface IResidentTile extends Omit<IWorldTile, "lodLevel"> {
   readonly levels: readonly ILevelGeometry[];
   lodTransition?: ILodTransition;
   lodLevel: number;
+  sharedMorphEdges: number;
   /** Coarsest level whose height error against every finer level stays inside the pop bound. */
   readonly maxLodLevel: number;
   readonly origin: IHeightfieldOrigin;
@@ -187,7 +220,11 @@ interface IMergedBlock {
   readonly lod: number;
   readonly geometry: BufferGeometry;
   readonly mesh: Mesh;
-  /** The tile keys whose current level geometry this block holds. */
+  /** This block's own geometry bytes, reported through `terrainTiles.blockBytes`. */
+  bytes: number;
+  /** The tile keys whose current level geometry this block holds, kept equal to what its geometry
+   * actually holds: a record the geometry has moved past double-draws the tiles that left and hides
+   * the ones that joined. */
   members: Set<string>;
 }
 
@@ -206,32 +243,34 @@ interface ISeamObservation {
 const MAX_RAW_TOPOLOGY_SAMPLES = 10_000;
 const LOD_POP_THRESHOLD = 16;
 const LOD_TRANSITION_FRAMES = 3;
+/** Maximum sampled vertices or quads in one terrain-construction admission unit. */
+const CONSTRUCTION_CHUNK_SAMPLES = 256;
 /** Tiles per side in a merged super-tile block. Small, because a block is culled as one object. */
 const TERRAIN_MERGE_BLOCK = 4;
 const TERRAIN_MERGE_FLAG = "TN_TERRAIN_MERGE";
-const TERRAIN_MERGE_MARKER_MS = 5_000;
+const TERRAIN_TILE_MARKER_MS = 5_000;
 const BRIDGE_COORDINATE_EPSILON = 1e-4;
 
 /**
- * Whether `TN_TERRAIN_MERGE` asks for terrain tile merging on this launch.
+ * Whether this launch asked for terrain tile merging to be turned off.
  *
- * Off by default: the merge exists to cut the main pass's terrain draws on a wide streamed ring, and
- * a run that never asked for it must submit exactly the meshes it always did. Read the three ways
- * every other launch switch is: a native launch sets the environment variable, a browser asks with
- * the query string, and a test or harness sets the global. Only `1` and `true` count, so an old URL
- * that never mentioned the switch stays off.
+ * The merge is on by default, so this only has to hear the three ways every other launch switch is
+ * read: a native launch sets the environment variable, a browser asks with the query string, and a
+ * test or harness sets the global. Only `0` and `false` count, so a URL that never mentioned the
+ * switch — or one that still carries the `=1` that used to ask for the merge — stays on.
  */
-function terrainMergeRequested(): boolean {
+function terrainMergeOptedOut(): boolean {
   const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
     string,
     unknown
   >;
   const fromEnv = host.process?.env?.[TERRAIN_MERGE_FLAG];
-  if (fromEnv === "1" || fromEnv === "true") return true;
+  if (fromEnv === "0" || fromEnv === "false") return true;
   const query = globalThis.location?.search;
-  if (typeof query === "string" && /[?&]tnTerrainMerge=(?:1|true)(?:&|$)/u.test(query)) return true;
+  if (typeof query === "string" && /[?&]tnTerrainMerge=(?:0|false)(?:&|$)/u.test(query))
+    return true;
   return (
-    host.__tnTerrainMerge === true || host.__tnTerrainMerge === 1 || host.__tnTerrainMerge === "1"
+    host.__tnTerrainMerge === false || host.__tnTerrainMerge === 0 || host.__tnTerrainMerge === "0"
   );
 }
 
@@ -326,14 +365,24 @@ function resolutionFor(tileResolution: number, factor: number): number {
   return cells + 1;
 }
 
-function estimatedLevelBytes(resolution: number): number {
+function morphBytes(resolution: number, targets: number): number {
+  const vertices = resolution * resolution + resolution * 4;
+  // Stock Three packs both vec3 deltas into RGBA32F: retain its CPU texture and GPU copy too.
+  const texels = vertices * 2;
+  // Any row width pads to < 2 * texels; admission precedes renderer-limit discovery.
+  const packedTexels = texels * 2;
+  return targets * (vertices * 3 * 4 * 2 + packedTexels * 4 * 4 * 2);
+}
+
+function estimatedLevelBytes(resolution: number, targets = 0): number {
   const vertices = resolution * resolution + resolution * 4;
   const triangles = (resolution - 1) * (resolution - 1) + (resolution - 1) * 4;
   const edgeSampleBytes = resolution * 4 * Float32Array.BYTES_PER_ELEMENT;
   return (
     vertices * 3 * Float32Array.BYTES_PER_ELEMENT * 2 +
     triangles * 6 * Uint32Array.BYTES_PER_ELEMENT +
-    edgeSampleBytes
+    edgeSampleBytes +
+    morphBytes(resolution, targets)
   );
 }
 
@@ -352,9 +401,15 @@ function estimatedTileBytes(
   tileResolution: number,
   factors: readonly number[],
   worldPasses: IHeightfieldWorldPassOptions | undefined,
+  validate: boolean,
 ): number {
   return factors.reduce(
-    (total, factor) => total + estimatedLevelBytes(resolutionFor(tileResolution, factor)),
+    (total, factor) =>
+      total +
+      estimatedLevelBytes(
+        resolutionFor(tileResolution, factor),
+        validate ? 0 : factors.filter((candidate) => candidate >= factor).length - 1,
+      ),
     estimatedFieldBytes(tileResolution, worldPasses),
   );
 }
@@ -414,6 +469,41 @@ function edgeSamplesFor(values: readonly number[], resolution: number): IEdgeSam
   return { east, north, south, west };
 }
 
+/** One field's own rectangle and side, which is all a world point along an edge needs. */
+function tileEdgeFrame(field: Heightfield, side: keyof IEdgeSamples): ITerrainEdgeFrame {
+  return { depth: field.depth, origin: field.origin, side, width: field.width };
+}
+
+/**
+ * Apply a job's result, whenever it arrives. An inline host resolves inside the call, so the caller
+ * keeps the synchronous shape it always had; a worker host applies in its reply. A reply that throws
+ * rejects the promise instead of returning, so a budget overflow off this thread is a loud failure
+ * rather than a swallowed one.
+ */
+function settleJob<T>(result: T | Promise<T>, apply: (value: T) => void): void {
+  if (result instanceof Promise) result.then(apply);
+  else apply(result);
+}
+
+/**
+ * Runs one unit of main-thread terrain work and charges it to a frame span.
+ *
+ * Added, not bracketed: a worker host's block swap arrives in a job reply and an inline host's runs
+ * inside the same `follow`, so `begin`/`end` at both call sites would nest and count one unit twice.
+ * `addSpan` accumulates whatever runs on this thread with no nesting to get wrong, and costs one
+ * guarded return when spans are off — no clock read, no allocation. The frame-span table's
+ * `TN_FRAME_SPANS` report is where the number surfaces; nothing here decides anything.
+ */
+function timedSpan<T>(id: SpanId, run: () => T): T {
+  if (spanRecorder() === undefined) return run();
+  const start = spanNow();
+  try {
+    return run();
+  } finally {
+    addSpan(id, spanNow() - start);
+  }
+}
+
 function edgeVertexIndex(level: ILevelGeometry, side: keyof IEdgeSamples, index: number): number {
   const row = side === "north" ? 0 : side === "south" ? level.resolution - 1 : index;
   const column = side === "west" ? 0 : side === "east" ? level.resolution - 1 : index;
@@ -440,7 +530,7 @@ function appendQuad(
  * the field's own border. One grid serves every level of the tile, because a level's vertices are
  * every `lodFactor`-th of the field's.
  */
-function fieldHeightGrid(field: Heightfield): Float32Array {
+function* fieldHeightGrid(field: Heightfield, chunked: boolean): Generator<void, Float32Array> {
   const columns = field.columns + 2;
   const cellWidth = field.width / (field.columns - 1);
   const cellDepth = field.depth / (field.rows - 1);
@@ -452,6 +542,7 @@ function fieldHeightGrid(field: Heightfield): Float32Array {
     for (let column = 0; column < columns; column += 1) {
       const x = minimumX + Math.min(field.columns - 1, Math.max(0, column - 1)) * cellWidth;
       grid[row * columns + column] = field.heightAt(x, z);
+      if (chunked && (row * columns + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
     }
   }
   return grid;
@@ -468,13 +559,52 @@ function fieldStep(field: Heightfield, resolution: number): number {
   return step;
 }
 
-function buildLevel(
+/**
+ * Tags a mesh as terrain, so the frame budget counts its main-pass draw under `terrain` instead of
+ * under the `other` every mesh no world system claimed lands in. Every mesh this file creates goes
+ * through here — a tile level, a stitch bridge and a merged block — because a source that is tagged
+ * at three of the four places it exists is a split nobody can reconcile.
+ */
+function terrainMesh(mesh: Mesh): Mesh {
+  mesh.userData.tnDrawSource = "terrain";
+  // Visibility only swaps this mesh with a twin over the same ground (its merged block, or the
+  // neighbouring LOD level), so a cached shadow map need not redraw for it; see `casterFlag`.
+  mesh.userData.tnShadowSwap = true;
+  return mesh;
+}
+
+/** Three's box/sphere arithmetic, over the same float32 positions, in admission-sized scans. */
+function* levelBounds(
+  positions: Float32Array,
+  chunked: boolean,
+): Generator<void, { box: Box3; sphere: Sphere }> {
+  const box = new Box3();
+  const point = new Vector3();
+  for (let index = 0; index < positions.length; index += 3) {
+    point.fromArray(positions, index);
+    box.expandByPoint(point);
+    if (chunked && (index / 3 + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
+  }
+  const sphere = new Sphere();
+  box.getCenter(sphere.center);
+  let radiusSquared = 0;
+  for (let index = 0; index < positions.length; index += 3) {
+    point.fromArray(positions, index);
+    radiusSquared = Math.max(radiusSquared, sphere.center.distanceToSquared(point));
+    if (chunked && (index / 3 + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
+  }
+  sphere.radius = Math.sqrt(radiusSquared);
+  return { box, sphere };
+}
+
+function* buildLevel(
   field: Heightfield,
   resolution: number,
   skirtDepth: number,
   surface: MeshSurface,
   grid: Float32Array,
-): ILevelGeometry {
+  chunked: boolean,
+): Generator<void, ILevelGeometry> {
   const positions: number[] = [];
   const normals: number[] = [];
   const heights: number[] = [];
@@ -514,6 +644,7 @@ function buildLevel(
         ((row1 - row0) * fieldCellDepth);
       normal.set(-slopeX, 1, -slopeZ).normalize();
       normals.push(normal.x, normal.y, normal.z);
+      if (chunked && (row * resolution + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
     }
   }
   const indices: number[] = [];
@@ -521,6 +652,8 @@ function buildLevel(
     for (let column = 0; column < resolution - 1; column += 1) {
       const topLeft = row * resolution + column;
       appendQuad(indices, topLeft, topLeft + resolution, topLeft + 1, topLeft + resolution + 1);
+      if (chunked && (row * (resolution - 1) + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0)
+        yield;
     }
   }
 
@@ -548,17 +681,21 @@ function buildLevel(
     }
   }
 
+  const positionArray = Float32Array.from(positions);
+  const bounds = yield* levelBounds(positionArray, chunked);
   const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(Float32Array.from(positions), 3));
+  geometry.morphTargetsRelative = true;
+  geometry.setAttribute("position", new BufferAttribute(positionArray, 3));
   geometry.setAttribute("normal", new BufferAttribute(Float32Array.from(normals), 3));
   geometry.setIndex(new BufferAttribute(Uint32Array.from(indices), 1));
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
+  geometry.boundingBox = bounds.box;
+  geometry.boundingSphere = bounds.sphere;
   const skirt = inspectSkirtGeometry(geometry, resolution, edges);
   return {
+    surfaceError: 0,
     edgeSamples: edgeSamplesFor(heights, resolution),
     geometry,
-    mesh: new Mesh(geometry, surface),
+    mesh: terrainMesh(new Mesh(geometry, surface)),
     resolution,
     skirtDepth: skirt.depth,
     skirtVertexCount: skirt.vertexCount,
@@ -566,57 +703,40 @@ function buildLevel(
 }
 
 /**
- * Concatenate each settled tile level's `position`/`normal`/`index` into one geometry, every vertex
- * translated from its tile origin to the block origin. The vertices land on the world positions they
- * already occupied, so the same surface material samples the same heights and normals — the picture
- * cannot change. Skirts come along unchanged because they are part of the level geometry, and each
- * survivor keeps its tile's perimeter skirt: a block edge only ever exposes a tile that was already
- * on the block's perimeter, whose outward skirt is already there.
+ * A block's merged attributes, as the geometry the main thread swaps in. The concatenation itself
+ * is `mergeBlockAttributes`, which runs in a worker wherever a host has one; this is the part that
+ * cannot leave the main thread — a `BufferGeometry` and its bounds.
  */
-function mergeLevelGeometry(
-  parts: readonly { readonly geometry: BufferGeometry; readonly origin: IHeightfieldOrigin }[],
-  blockOrigin: IHeightfieldOrigin,
-): BufferGeometry {
-  let vertexCount = 0;
-  let indexCount = 0;
-  for (const { geometry } of parts) {
-    vertexCount += (geometry.getAttribute("position") as BufferAttribute).count;
-    indexCount += geometry.getIndex()?.count ?? 0;
-  }
-  const positions = new Float32Array(vertexCount * 3);
-  const normals = new Float32Array(vertexCount * 3);
-  const indices = new Uint32Array(indexCount);
-  let vertexOffset = 0;
-  let indexOffset = 0;
-  for (const { geometry, origin } of parts) {
-    const position = geometry.getAttribute("position") as BufferAttribute;
-    const normal = geometry.getAttribute("normal") as BufferAttribute;
-    const index = geometry.getIndex();
-    const dx = origin.x - blockOrigin.x;
-    const dz = origin.z - blockOrigin.z;
-    for (let vertex = 0; vertex < position.count; vertex += 1) {
-      const at = (vertexOffset + vertex) * 3;
-      positions[at] = position.getX(vertex) + dx;
-      positions[at + 1] = position.getY(vertex);
-      positions[at + 2] = position.getZ(vertex) + dz;
-      normals[at] = normal.getX(vertex);
-      normals[at + 1] = normal.getY(vertex);
-      normals[at + 2] = normal.getZ(vertex);
-    }
-    if (index !== null) {
-      for (let element = 0; element < index.count; element += 1)
-        indices[indexOffset + element] = index.getX(element) + vertexOffset;
-      indexOffset += index.count;
-    }
-    vertexOffset += position.count;
-  }
+function mergedBlockGeometry(result: ITerrainMergeResult): BufferGeometry {
   const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(positions, 3));
-  geometry.setAttribute("normal", new BufferAttribute(normals, 3));
-  geometry.setIndex(new BufferAttribute(indices, 1));
+  geometry.setAttribute("position", new BufferAttribute(result.positions, 3));
+  geometry.setAttribute("normal", new BufferAttribute(result.normals, 3));
+  geometry.setIndex(new BufferAttribute(result.indices, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;
+}
+
+/** One settled tile level's attributes, as the merge job reads them. */
+function mergeJob(
+  parts: readonly { readonly geometry: BufferGeometry; readonly origin: IHeightfieldOrigin }[],
+  blockOrigin: IHeightfieldOrigin,
+): ITerrainMergeJob {
+  return {
+    blockOrigin,
+    kind: "merge",
+    parts: parts.map(({ geometry, origin }) => {
+      const index = geometry.getIndex();
+      if (index === null)
+        throw new Error("TerrainTiles merged block geometry needs an index buffer.");
+      return {
+        indices: index.array as Uint32Array,
+        normals: (geometry.getAttribute("normal") as BufferAttribute).array as Float32Array,
+        origin,
+        positions: (geometry.getAttribute("position") as BufferAttribute).array as Float32Array,
+      };
+    }),
+  };
 }
 
 function inspectSkirtGeometry(
@@ -854,7 +974,11 @@ function bridgeEndpointHeight(
   expectedWorldPosition: Vector3,
 ): number {
   const sampleNormalized = sample / (bridge.resolution - 1);
-  const [expectedX, , expectedZ] = edgeWorldPoint(tile.field, side, sampleNormalized, 0);
+  const [expectedX, , expectedZ] = edgeWorldPoint(
+    tileEdgeFrame(tile.field, side),
+    sampleNormalized,
+    0,
+  );
   const expectedY = edgeWorldHeight(level, side, sampleNormalized, expectedWorldPosition);
   return bridgeEndpointWorldHeight(
     position,
@@ -890,47 +1014,12 @@ function bridgeEndpointPair(
   return aLevel.resolution > bLevel.resolution ? [aEndpoint, bEndpoint] : [bEndpoint, aEndpoint];
 }
 
-function interpolatedEdgeSample(samples: Float32Array, normalized: number, name: string): number {
-  const position = Math.max(0, Math.min(1, normalized)) * (samples.length - 1);
-  const lower = Math.floor(position);
-  const upper = Math.min(samples.length - 1, lower + 1);
-  const mix = position - lower;
-  const lowerValue = samples[lower] as number;
-  const upperValue = samples[upper] as number;
-  if (!Number.isFinite(lowerValue) || !Number.isFinite(upperValue))
-    throw new Error(`TerrainTiles retained ${name} edge sample must be finite.`);
-  return lowerValue * (1 - mix) + upperValue * mix;
-}
-
 function refreshEdgeSamples(level: ILevelGeometry): void {
   for (const side of ["east", "north", "south", "west"] as const) {
     const samples = level.edgeSamples[side];
     for (let index = 0; index < level.resolution; index += 1)
       samples[index] = edgeVertexHeight(level, side, index);
   }
-}
-
-function edgeWorldPoint(
-  field: Heightfield,
-  side: keyof IEdgeSamples,
-  normalized: number,
-  height: number,
-): [number, number, number] {
-  const minimumX = field.origin.x - field.width / 2;
-  const minimumZ = field.origin.z - field.depth / 2;
-  const x =
-    side === "west"
-      ? minimumX
-      : side === "east"
-        ? minimumX + field.width
-        : minimumX + normalized * field.width;
-  const z =
-    side === "north"
-      ? minimumZ
-      : side === "south"
-        ? minimumZ + field.depth
-        : minimumZ + normalized * field.depth;
-  return [x, height, z];
 }
 
 /**
@@ -949,10 +1038,11 @@ function restoreLevelEdge(
   const position = level.geometry.getAttribute("position");
   const normalAttribute = level.geometry.getAttribute("normal");
   const normal = new Vector3();
+  const frame = tileEdgeFrame(field, side);
   let changed = false;
   for (let index = 0; index < level.resolution; index += 1) {
     const normalized = index / (level.resolution - 1);
-    const [x, , z] = edgeWorldPoint(field, side, normalized, 0);
+    const [x, , z] = edgeWorldPoint(frame, normalized, 0);
     const vertex = edgeVertexIndex(level, side, index);
     // Compared at float32, the precision the attributes store: a float64 sample never equals its
     // stored copy, so an exact compare reported every edge changed on every call and recomputed
@@ -984,71 +1074,31 @@ function restoreLevelEdge(
   return true;
 }
 
-interface IStitchGeometryData {
-  readonly coverageDepth: number;
-  readonly indices: Uint32Array;
-  readonly normals: Float32Array;
-  readonly positions: Float32Array;
-}
-
-function stitchGeometryData(
-  finer: IResidentTile,
-  finerLevel: ILevelGeometry,
-  finerSide: keyof IEdgeSamples,
-  coarser: IResidentTile,
-  coarserLevel: ILevelGeometry,
-  coarserSide: keyof IEdgeSamples,
-): IStitchGeometryData {
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const indices: number[] = [];
-  let coverageDepth = 0;
-  for (let index = 0; index < finerLevel.resolution; index += 1) {
-    const normalized = index / (finerLevel.resolution - 1);
-    const fineHeight = interpolatedEdgeSample(
-      finerLevel.edgeSamples[finerSide],
-      normalized,
-      `${finerSide} of finer LOD`,
-    );
-    const coarseHeight = interpolatedEdgeSample(
-      coarserLevel.edgeSamples[coarserSide],
-      normalized,
-      `${coarserSide} of coarser LOD`,
-    );
-    coverageDepth = Math.max(coverageDepth, Math.abs(fineHeight - coarseHeight));
-    positions.push(...edgeWorldPoint(finer.field, finerSide, normalized, fineHeight));
-    positions.push(...edgeWorldPoint(coarser.field, coarserSide, normalized, coarseHeight));
-    normals.push(0, 1, 0, 0, 1, 0);
-  }
-  for (let index = 0; index < finerLevel.resolution - 1; index += 1) {
-    const fine = index * 2;
-    const coarse = fine + 1;
-    const nextFine = fine + 2;
-    const nextCoarse = coarse + 2;
-    indices.push(
-      fine,
-      coarse,
-      nextFine,
-      nextFine,
-      coarse,
-      nextCoarse,
-      nextFine,
-      coarse,
-      fine,
-      nextCoarse,
-      coarse,
-      nextFine,
-    );
-  }
+/** One level's edge as the bridge job reads it: the row's own heights, copied out of the level. */
+function edgeJob(
+  tile: IResidentTile,
+  level: ILevelGeometry,
+  side: keyof IEdgeSamples,
+): ITerrainEdgeJob {
   return {
-    coverageDepth,
-    indices: Uint32Array.from(indices),
-    normals: Float32Array.from(normals),
-    positions: Float32Array.from(positions),
+    depth: tile.field.depth,
+    origin: tile.field.origin,
+    samples: level.edgeSamples[side].slice(),
+    side,
+    width: tile.field.width,
   };
 }
 
-function stitchGeometry(data: IStitchGeometryData): BufferGeometry {
+/** The same edge with the resolution the fine side of a bridge needs. */
+function fineEdgeJob(
+  tile: IResidentTile,
+  level: ILevelGeometry,
+  side: keyof IEdgeSamples,
+): ITerrainFineEdgeJob {
+  return { ...edgeJob(tile, level, side), resolution: level.resolution };
+}
+
+function stitchGeometry(data: ITerrainBridgeAttributes): BufferGeometry {
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(data.positions, 3));
   geometry.setAttribute("normal", new BufferAttribute(data.normals, 3));
@@ -1126,7 +1176,7 @@ function validateBridgeTriangleTopology(
   return position;
 }
 
-function updateStitchBridge(bridge: IStitchBridge, data: IStitchGeometryData): void {
+function updateStitchBridge(bridge: IStitchBridge, data: ITerrainBridgeAttributes): void {
   const position = validateBridgeTriangleTopology(bridge.geometry, bridge.resolution * 2);
   if (bridge.resolution !== data.positions.length / 6) {
     const previous = bridge.geometry;
@@ -1251,6 +1301,85 @@ function interpolatedLevelNormal(
       ),
     )
     .normalize();
+}
+
+/** Immutable stock morph buffers; shared sides keep the canonical surface used by seam jobs. */
+function* buildLodMorphTargets(
+  finer: ILevelGeometry,
+  coarserLevels: readonly ILevelGeometry[],
+  sharedEdges: number,
+  chunked: boolean,
+): Generator<void> {
+  const position = finer.geometry.getAttribute("position");
+  const normal = finer.geometry.getAttribute("normal");
+  const positions: BufferAttribute[] = [];
+  const normals: BufferAttribute[] = [];
+  const coarseNormal = new Vector3();
+  const last = finer.resolution - 1;
+  for (const coarser of coarserLevels) {
+    const deltaPosition = new BufferAttribute(new Float32Array(position.count * 3), 3);
+    const deltaNormal = new BufferAttribute(new Float32Array(position.count * 3), 3);
+    const coarsePosition = coarser.geometry.getAttribute("position") as BufferAttribute;
+    const coarseNormals = coarser.geometry.getAttribute("normal") as BufferAttribute;
+    for (let row = 0; row <= last; row += 1) {
+      for (let column = 0; column <= last; column += 1) {
+        const index = row * finer.resolution + column;
+        const pinned =
+          (row === 0 && sharedEdges & 1) ||
+          (row === last && sharedEdges & 2) ||
+          (column === 0 && sharedEdges & 4) ||
+          (column === last && sharedEdges & 8);
+        if (!pinned) {
+          deltaPosition.setY(
+            index,
+            interpolatedLevelHeight(coarser, coarsePosition, column / last, row / last) -
+              position.getY(index),
+          );
+          interpolatedLevelNormal(coarser, coarseNormals, column / last, row / last, coarseNormal);
+          deltaNormal.setXYZ(
+            index,
+            coarseNormal.x - normal.getX(index),
+            coarseNormal.y - normal.getY(index),
+            coarseNormal.z - normal.getZ(index),
+          );
+        }
+        if (chunked && (index + 1) % (CONSTRUCTION_CHUNK_SAMPLES / 2) === 0) yield;
+      }
+    }
+    const edges = [
+      (index: number) => index,
+      (index: number) => last * finer.resolution + index,
+      (index: number) => index * finer.resolution,
+      (index: number) => index * finer.resolution + last,
+    ];
+    for (const [edgeIndex, edge] of edges.entries())
+      for (let index = 0; index <= last; index += 1)
+        deltaPosition.setY(
+          finer.resolution ** 2 + edgeIndex * finer.resolution + index,
+          deltaPosition.getY(edge(index)),
+        );
+    positions.push(deltaPosition);
+    normals.push(deltaNormal);
+  }
+  finer.geometry.morphAttributes.position = positions;
+  finer.geometry.morphAttributes.normal = normals;
+}
+
+function updateLodMorph(tile: IResidentTile, transition: ILodTransition, progress: number): void {
+  const from = tile.levels[transition.from];
+  const to = tile.levels[transition.to];
+  if (from === undefined || to === undefined)
+    throw new Error("TerrainTiles LOD transition references a missing level.");
+  const finer = from.resolution >= to.resolution ? from : to;
+  const coarser = finer === from ? to : from;
+  const target = tile.levels
+    .filter((level) => level !== finer && level.resolution <= finer.resolution)
+    .indexOf(coarser);
+  const influences = finer.mesh.morphTargetInfluences;
+  if (influences === undefined || influences[target] === undefined)
+    throw new Error("TerrainTiles LOD transition references a missing morph target.");
+  influences.fill(0);
+  influences[target] = finer === from ? progress : 1 - progress;
 }
 
 function updateLevelSkirts(level: ILevelGeometry): void {
@@ -1383,11 +1512,21 @@ function updateLodTransitionGeometry(
   normalAttribute.needsUpdate = true;
 }
 
-function surfaceHeights(level: ILevelGeometry): Float32Array {
+function* surfaceHeightChunks(
+  level: ILevelGeometry,
+  chunked: boolean,
+): Generator<void, Float32Array> {
   const position = level.geometry.getAttribute("position");
   const heights = new Float32Array(level.resolution * level.resolution);
-  for (let index = 0; index < heights.length; index += 1) heights[index] = position.getY(index);
+  for (let index = 0; index < heights.length; index += 1) {
+    heights[index] = position.getY(index);
+    if (chunked && (index + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
+  }
   return heights;
+}
+
+function surfaceHeights(level: ILevelGeometry): Float32Array {
+  return surfaceHeightChunks(level, false).next().value as Float32Array;
 }
 
 function interpolatedSamplesHeight(
@@ -1413,11 +1552,12 @@ function interpolatedSamplesHeight(
   return upper + (lower - upper) * rowMix;
 }
 
-function surfaceDeltaFromSamples(
+function* surfaceDeltaChunks(
   samples: Float32Array,
   resolution: number,
   level: ILevelGeometry,
-): number {
+  chunked: boolean,
+): Generator<void, number> {
   const sampleCount = Math.max(resolution, level.resolution);
   const position = level.geometry.getAttribute("position") as BufferAttribute;
   let maximum = 0;
@@ -1432,9 +1572,18 @@ function surfaceDeltaFromSamples(
             interpolatedLevelHeight(level, position, x, z),
         ),
       );
+      if (chunked && (row * sampleCount + column + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
     }
   }
   return maximum;
+}
+
+function surfaceDeltaFromSamples(
+  samples: Float32Array,
+  resolution: number,
+  level: ILevelGeometry,
+): number {
+  return surfaceDeltaChunks(samples, resolution, level, false).next().value as number;
 }
 
 /**
@@ -1445,7 +1594,10 @@ function surfaceDeltaFromSamples(
  * surface it replaced than the bound between any two selectable levels. A cliff therefore keeps
  * its tile at a finer level instead of throwing out of the frame.
  */
-function coarsestSelectableLevel(levels: readonly ILevelGeometry[]): number {
+function* coarsestSelectableLevel(
+  levels: readonly ILevelGeometry[],
+  chunked: boolean,
+): Generator<void, number> {
   let coarsest = 0;
   for (let index = 1; index < levels.length; index += 1) {
     const level = levels[index];
@@ -1456,9 +1608,15 @@ function coarsestSelectableLevel(levels: readonly ILevelGeometry[]): number {
       if (finer === undefined) break;
       error = Math.max(
         error,
-        surfaceDeltaFromSamples(surfaceHeights(finer), finer.resolution, level),
+        yield* surfaceDeltaChunks(
+          yield* surfaceHeightChunks(finer, chunked),
+          finer.resolution,
+          level,
+          chunked,
+        ),
       );
     }
+    level.surfaceError = error;
     if (error > LOD_POP_THRESHOLD) break;
     coarsest = index;
   }
@@ -1672,6 +1830,17 @@ function seamObservation(
 
 type NeighborPair = readonly [IResidentTile, IResidentTile];
 
+/**
+ * One pair's bridge, as the seam job carries it: the two edges it is made of, and what the bridge it
+ * produces is called and keyed by.
+ */
+interface IStitchRequest {
+  readonly coarse: ITerrainEdgeJob;
+  readonly fine: ITerrainFineEdgeJob;
+  readonly keys: [string, string];
+  readonly resolution: number;
+}
+
 function neighborPairKey(pair: NeighborPair): string {
   const [a, b] = pair;
   return a.key < b.key ? `${a.key}|${b.key}` : `${b.key}|${a.key}`;
@@ -1747,11 +1916,14 @@ function neighborLodCorrection(
   return { coarser, level: finer.lodLevel + 1 };
 }
 
-function reconcileNeighborPair(
-  pair: NeighborPair,
-  surface: MeshSurface,
-  existingBridge: IStitchBridge | undefined,
-): IStitchBridge | undefined {
+/**
+ * One neighbor pair's bridge request, or `undefined` when the pair needs no bridge.
+ *
+ * The two edges are restored here — that reads the game's field sampler, which cannot cross into a
+ * worker — and everything the bridge strip is made of is copied out as numbers. The strip itself is
+ * built wherever the jobs run, so the main thread only swaps the attributes it gets back.
+ */
+function neighborBridgeRequest(pair: NeighborPair): IStitchRequest | undefined {
   const [a, b] = pair;
   const [aSide, bSide] = opposingEdge(a, b);
   const aLevel = renderedLevel(a);
@@ -1761,28 +1933,39 @@ function reconcileNeighborPair(
   restoreLevelEdge(a, aLevel, aSide);
   restoreLevelEdge(b, bLevel, bSide);
   if (aLevel.resolution === bLevel.resolution) return undefined;
-  const finer = aLevel.resolution > bLevel.resolution ? a : b;
   const finerLevel = aLevel.resolution > bLevel.resolution ? aLevel : bLevel;
-  const finerSide = aLevel.resolution > bLevel.resolution ? aSide : bSide;
-  const coarser = finer === a ? b : a;
-  const coarserLevel = finer === a ? bLevel : aLevel;
-  const coarserSide = finer === a ? bSide : aSide;
-  const data = stitchGeometryData(finer, finerLevel, finerSide, coarser, coarserLevel, coarserSide);
-  if (existingBridge === undefined) {
-    const geometry = stitchGeometry(data);
-    const mesh = new Mesh(geometry, surface);
-    mesh.frustumCulled = true;
-    return {
-      bytes: geometryBytes(geometry),
-      coverageDepth: data.coverageDepth,
-      geometry,
-      keys: [a.key, b.key].sort() as [string, string],
-      mesh,
-      resolution: finerLevel.resolution,
-    };
-  }
-  updateStitchBridge(existingBridge, data);
-  return existingBridge;
+  return {
+    coarse: edgeJob(
+      finerLevel === aLevel ? b : a,
+      finerLevel === aLevel ? bLevel : aLevel,
+      finerLevel === aLevel ? bSide : aSide,
+    ),
+    fine: fineEdgeJob(
+      finerLevel === aLevel ? a : b,
+      finerLevel,
+      finerLevel === aLevel ? aSide : bSide,
+    ),
+    keys: [a.key, b.key].sort() as [string, string],
+    resolution: finerLevel.resolution,
+  };
+}
+
+function newStitchBridge(
+  request: IStitchRequest,
+  data: ITerrainBridgeAttributes,
+  surface: MeshSurface,
+): IStitchBridge {
+  const geometry = stitchGeometry(data);
+  const mesh = terrainMesh(new Mesh(geometry, surface));
+  mesh.frustumCulled = true;
+  return {
+    bytes: geometryBytes(geometry),
+    coverageDepth: data.coverageDepth,
+    geometry,
+    keys: request.keys,
+    mesh,
+    resolution: request.resolution,
+  };
 }
 
 function setManualLodLevel(lod: LOD, level: number): void {
@@ -1803,10 +1986,12 @@ function setManualLodLevel(lod: LOD, level: number): void {
  * @constraint sampleHeight and surface are required game choices; no landform or surface preset is installed
  * @constraint residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws
  * @constraint seam gap, LOD pop and the rendered-vertex finiteness scan are measurements that are off by default; TN_TERRAIN_VALIDATE=1, ?tnTerrainValidate=1 or validate: true runs them, and maxSeamGap, maxVisualSeamGap and maxLodPop report undefined while they are off
- * @override tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, validate, and budgets
+ * @override tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, mergeTiles, validate, and budgets
  * @example const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });
  */
 export class TerrainTiles extends Object3D implements IComputeDriven {
+  readonly #options: IWorldTilesOptions;
+  #snapshotChildren: Object3D[] = [];
   readonly residentTileBudget: number;
   readonly residentByteBudget: number;
   readonly skirtDepth: number;
@@ -1823,23 +2008,43 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #surface: MeshSurface;
   readonly #sampleHeight: IWorldTilesOptions["sampleHeight"];
   readonly #streamRadius: number;
-  /** Canonical topology samples retained only for the declared diagnostics region. */
-  readonly #topologyField: Heightfield | undefined;
-  readonly #topologyBytes: number;
+  /** Diagnostics outlive construction; their canonical field is never used by resident tiles. */
+  #topology:
+    | (Pick<Heightfield, "columns" | "depth" | "origin" | "rows" | "width"> & {
+        heights?: number[];
+        flow?: number[];
+        metrics?: ReturnType<typeof summarizeWorldTopology>;
+      })
+    | undefined;
+  #topologyBytes = 0;
   readonly #worldPasses: IHeightfieldWorldPassOptions | undefined;
   readonly #resident = new Map<string, IResidentTile>();
-  #topologyMetrics: ReturnType<typeof summarizeWorldTopology> | undefined;
+  #morphEdgesDirty = false;
+  #construction: { key: string; work: Generator<void, IResidentTile> } | undefined;
   #focus: IWorldTilesFollowPosition | undefined;
+  #lodView: IWorldTilesLodView | undefined;
+  readonly #lodErrors: number[] = [];
   #peakBytes = 0;
   #peakTiles = 0;
   #lodTransitions = 0;
+  readonly #blending = new Set<IResidentTile>();
   /** Merged super-tiles by block key, and the blocks a LOD or residency change left to rebuild. */
   readonly #blocks = new Map<string, IMergedBlock>();
   readonly #dirtyBlocks = new Set<string>();
+  /**
+   * Blocks whose merge job is out. A block re-dirtied while its own merge is in flight stays dirty
+   * and waits: dispatching it again would merge the same block twice, and the older reply would land
+   * first carrying the membership the block had when it was sent — a snapshot that no longer matches
+   * the resident set, so the record claims tiles its geometry does not hold and the second reply has
+   * to correct it. (PRD-478.)
+   */
+  readonly #mergingBlocks = new Set<string>();
   /** Tile key -> block key currently hiding it, so a settled member is not drawn twice. */
   readonly #mergedMembers = new Map<string, string>();
   #blockRebuilds = 0;
-  #mergeToldAt = Number.NEGATIVE_INFINITY;
+  /** Merged super-tile bytes, reported beside the tiles they duplicate and never charged to them. */
+  #blockBytes = 0;
+  #tilesToldAt = Number.NEGATIVE_INFINITY;
   readonly #mergeTiles: boolean;
   // The last `follow` ran out of admission budget before it wanted everything, so the next one
   // has to run even if the follow point has not moved. Cleared at the top of `follow`.
@@ -1876,6 +2081,16 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    */
   #ringEpoch = 0;
   #seamEpoch = -1;
+  /**
+   * A seam pass whose strips are still being built off this thread, so a frame that arrives before the
+   * reply does not start a second pass over the same pairs and write them twice.
+   */
+  #seamPending = false;
+  /**
+   * Where the block merges and the seam strips are built. A module worker where the host has one, this
+   * thread where it does not, from the same function either way.
+   */
+  readonly #jobs: ITerrainJobRunner;
   #released = false;
   #renderer: IRendererLike | undefined;
   /**
@@ -1887,6 +2102,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   constructor(options: IWorldTilesOptions) {
     super();
+    this.#options = { ...options };
+    this.#jobs = createTerrainJobRunner();
     this.tileSize = positive(options.tileSize, "tileSize");
     this.tileResolution = integerAtLeast(options.tileResolution, 3, "tileResolution");
     this.residentTileBudget = integerAtLeast(options.residentTileBudget, 1, "residentTileBudget");
@@ -1903,7 +2120,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (options.surface === undefined || options.surface === null)
       throw new Error("TerrainTiles surface is required and must be game-owned.");
     this.#validate = options.validate ?? terrainValidationRequested();
-    this.#mergeTiles = options.mergeTiles ?? terrainMergeRequested();
+    this.#mergeTiles = options.mergeTiles ?? !terrainMergeOptedOut();
     this.#sampleHeight = options.sampleHeight;
     if (typeof options.sampleHeight !== "function")
       throw new Error("TerrainTiles sampleHeight is required.");
@@ -1927,7 +2144,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#worldPasses = options.worldPasses;
     if (options.topologyObservation !== undefined)
       validateTopologyObservation(options.topologyObservation, this.tileSize, this.tileResolution);
-    this.#topologyField =
+    const topologyField =
       options.topologyObservation === undefined
         ? undefined
         : Heightfield.fromSampler({
@@ -1935,14 +2152,68 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
             sampleHeight: this.#sampleHeight,
             ...(this.#worldPasses === undefined ? {} : { worldPasses: this.#worldPasses }),
           });
-    this.#topologyBytes = this.#topologyField?.memoryBytes ?? 0;
-    if (this.#topologyBytes > this.residentByteBudget)
-      throw new TerrainTileBudgetError(
-        "TerrainTiles residentByteBudget cannot fit the topology observation.",
-      );
-    this.#recordPeaks();
+    if (topologyField !== undefined) {
+      try {
+        // Admission and the peak include the full field before its diagnostic samples are released.
+        this.#topologyBytes = topologyField.memoryBytes;
+        if (this.#topologyBytes > this.residentByteBudget)
+          throw new TerrainTileBudgetError(
+            "TerrainTiles residentByteBudget cannot fit the topology observation.",
+          );
+        this.#recordPeaks();
+        const heights = topologyField.heights;
+        const flow = topologyField.flow;
+        const description = {
+          columns: topologyField.columns,
+          depth: topologyField.depth,
+          origin: topologyField.origin,
+          rows: topologyField.rows,
+          width: topologyField.width,
+        };
+        if (heights.length <= MAX_RAW_TOPOLOGY_SAMPLES) {
+          this.#topology = {
+            ...description,
+            heights: Array.from(heights),
+            ...(flow === undefined ? {} : { flow: Array.from(flow) }),
+          };
+          // Retained JS number-array payloads use eight bytes per element, not Float32's four.
+          this.#topologyBytes = (heights.length + (flow?.length ?? 0)) * 8;
+        } else {
+          this.#topology = {
+            ...description,
+            ...(flow === undefined
+              ? {}
+              : { metrics: summarizeWorldTopology({ ...description, heights, flow }) }),
+          };
+          this.#topologyBytes = 0;
+        }
+      } catch (error) {
+        this.#jobs.dispose();
+        throw error;
+      } finally {
+        topologyField.detach();
+      }
+    }
     if (this.#validate) this.#recordSeamDiagnostics();
     this.frustumCulled = true;
+  }
+
+  /** Fresh residency and colliders; retain the visible tree until follow() regenerates it. */
+  override clone(recursive = true): this {
+    const copy = new TerrainTiles(this.#options).copy(this, false);
+    const streamed = new Set<Object3D>([
+      ...this.#snapshotChildren,
+      ...[...this.#resident.values()].map((tile) => tile.lod),
+      ...[...this.#stitches.values()].map((bridge) => bridge.mesh),
+      ...[...this.#blocks.values()].map((block) => block.mesh),
+    ]);
+    if (recursive)
+      for (const child of this.children) {
+        const clonedChild = child.clone();
+        copy.add(clonedChild);
+        if (streamed.has(child)) copy.#snapshotChildren.push(clonedChild);
+      }
+    return copy as this;
   }
 
   get released(): boolean {
@@ -1953,6 +2224,19 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return this.#resident.size;
   }
 
+  /**
+   * Every retained terrain byte, against `residentByteBudget`: the resident tiles with their levels
+   * and edge samples, the stitch bridges, and the retained topology.
+   *
+   * A merged super-tile is deliberately absent. A block duplicates the level vertices of the tiles it
+   * covers, and those tiles stay resident because a tile that leaves the block draws its own mesh
+   * again — so charging the copy made a derived artefact evict real terrain detail out of the same
+   * budget the tiles were admitted against, and a budget sized for unmerged terrain held fewer tiles
+   * with the merge on. The copy is reported as `terrainTiles.blockBytes` instead. (PRD-475.)
+   *
+   * ponytail: terrain geometry costs up to ~2x while merged; free the per-tile GPU buffers behind a
+   * block (keep the height field for queries) if that memory ever matters.
+   */
   get residentBytes(): number {
     // Read four times a frame by the residency admission and the peak record, so it accumulates
     // instead of materialising the resident set.
@@ -1992,11 +2276,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * What the main pass submits for terrain levels right now: `tiles` surfaces, held as `blocks`
    * merged super-tiles plus one mesh each for the tiles that are not merged (a lone block member or
    * a tile mid LOD morph). `draws` is `blocks` plus those individual meshes, so with the merge off
-   * it is exactly the number of visible level meshes — the census the merge exists to cut. `rebuilds`
-   * counts the block geometries built over this residency owner's life.
+   * it is exactly the number of visible level meshes — the census the merge exists to cut. `blending`
+   * counts the resident tiles mid LOD morph, which are always among the individual meshes. A block
+   * whose tile just left stops being drawn until its rebuild lands, and those tiles are counted as the
+   * individual meshes they went back to — see `#releaseStaleBlock`.
+   * `rebuilds` counts the block geometries built over this residency owner's life. `blockBytes` is
+   * what the held blocks cost, reported and not charged to `residentByteBudget` — see `residentBytes`.
    */
   get terrainTiles(): {
+    readonly blockBytes: number;
     readonly blocks: number;
+    readonly blending: number;
     readonly draws: number;
     readonly rebuilds: number;
     readonly tiles: number;
@@ -2008,7 +2298,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const block of this.#blocks.values()) merged += block.members.size;
     const blocks = this.#blocks.size;
     return {
+      blockBytes: this.#blockBytes,
       blocks,
+      blending: this.blendingTiles,
       draws: individual + blocks,
       rebuilds: this.#blockRebuilds,
       tiles: individual + merged,
@@ -2021,9 +2313,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * `process` while its follow point is standing still would freeze every blend on frame one.
    */
   get blendingTiles(): number {
-    let blending = 0;
-    for (const tile of this.#resident.values()) if (tile.lodTransition !== undefined) blending += 1;
-    return blending;
+    return this.#blending.size;
   }
 
   /**
@@ -2072,10 +2362,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   get warmupNodes(): readonly unknown[] {
-    return [
-      ...(this.#topologyField?.warmupNodes ?? []),
-      ...[...this.#resident.values()].flatMap((tile) => tile.field.warmupNodes),
-    ];
+    return [...[...this.#resident.values()].flatMap((tile) => tile.field.warmupNodes)];
   }
 
   getTile(key: string): IWorldTile | undefined {
@@ -2085,19 +2372,23 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /**
    * Move residency to the followed point: admit, evict and re-level every tile.
    *
-   * `budget` caps what one call may admit. A tile the budget refuses is not resident this pass and
-   * costs nothing to try again, because `follow` recomputes the wanted set on every call — which is
-   * what makes this safe to defer: the tile was not drawn before either, so a refused admission
-   * leaves a gap rather than a hole. Omitted, a call admits everything it wants, as it always did.
+   * `budget` caps construction chunks as well as completed admissions. An unfinished tile stays
+   * outside residency and resumes on a later call while it remains wanted. Moving it outside the
+   * selected ring cancels and releases that work. Omitted, a call drains synchronously as before.
+   * `view` shares the resolved model pixel policy; omitted, selection remains distance-only.
    */
   follow(
     position: IWorldTilesFollowPosition | Pick<Vector3, "x" | "z">,
     budget?: IAdmissionBudget,
+    view?: IWorldTilesLodView,
   ): void {
     if (this.#released) throw new Error("TerrainTiles cannot follow after release.");
+    for (const child of this.#snapshotChildren) this.remove(child);
+    this.#snapshotChildren.length = 0;
     // This pass starts owing nothing; a refusal below sets the flag that owes the next one, so
     // `deferredAdmissions` is exactly "the last pass did not get everything it wanted".
     this.#deferredAdmissions = 0;
+    this.#setLodView(view);
     const x = finite(position.x, "follow x");
     const z = finite(position.z, "follow z");
     const hadFocus = this.#focus !== undefined;
@@ -2127,34 +2418,46 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     wanted.sort((a, b) => a.distance - b.distance || a.tileZ - b.tileZ || a.tileX - b.tileX);
     const selected = wanted.slice(0, this.residentTileBudget);
     const selectedKeys = new Set(selected.map(({ tileX, tileZ }) => keyFor(tileX, tileZ)));
+    if (this.#construction !== undefined && !selectedKeys.has(this.#construction.key))
+      this.#cancelConstruction();
     for (const tile of [...this.#resident.values()]) {
       if (!selectedKeys.has(tile.key)) this.#evict(tile);
     }
     const targets = new Map<IResidentTile, number>();
-    // Tiles built by this pass, so the first one is forced past the budget. A budget that is
-    // already spent when `follow` runs admits nothing, and a ring that never converges is a hole
-    // that never closes; one tile per pass is the floor that closes it, and `selected` is sorted
-    // nearest first, so the forced one is the nearest tile still missing.
-    let built = 0;
+    const missing: typeof selected = [];
     for (const candidate of selected) {
+      const resident = this.#resident.get(keyFor(candidate.tileX, candidate.tileZ));
+      if (resident !== undefined)
+        targets.set(resident, this.#targetLod(resident, candidate.distance));
+      // A selected tile keeps its construction progress when sub-tile camera motion changes the
+      // distance order. Only leaving the wanted set cancels it; otherwise a jittering camera could
+      // restart two equally near tiles forever.
+      else if (keyFor(candidate.tileX, candidate.tileZ) === this.#construction?.key)
+        missing.unshift(candidate);
+      else missing.push(candidate);
+    }
+    // Even an already-spent allowance advances one chunk of pending work, starting nearest first.
+    // The progress floor closes the ring without forcing an entire tile through one frame.
+    let built = 0;
+    for (const candidate of missing) {
       const key = keyFor(candidate.tileX, candidate.tileZ);
-      const resident = this.#resident.get(key);
-      if (resident !== undefined) {
-        targets.set(resident, lodLevelForDistance(candidate.distance, this.#lodDistances));
-        continue;
-      }
-      const estimate = estimatedTileBytes(this.tileResolution, this.#factors, this.#worldPasses);
+      const estimate = estimatedTileBytes(
+        this.tileResolution,
+        this.#factors,
+        this.#worldPasses,
+        this.#validate,
+      );
       if (this.residentBytes + estimate > this.residentByteBudget) {
+        if (this.#construction?.key === key) this.#cancelConstruction();
         if (candidate.tileX === centerX && candidate.tileZ === centerZ)
           throw new TerrainTileBudgetError(
             "TerrainTiles residentByteBudget cannot fit the followed tile.",
           );
         continue;
       }
-      // One tile is one unit: every level is built and the collider made inside it. A refused tile
-      // is wanted again by the next `follow`, so it is deferred, never dropped.
+      // Keep incomplete work out of the scene; later calls resume it under the same allowance.
       const tile = this.#admitCandidate(candidate, centerX, centerZ, budget, built === 0);
-      if (tile === undefined) continue;
+      if (tile === undefined) break;
       built += 1;
       if (this.residentBytes + tile.bytes > this.residentByteBudget) {
         this.#disposeTile(tile);
@@ -2165,15 +2468,20 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         continue;
       }
       this.#resident.set(tile.key, tile);
+      this.#morphEdgesDirty = true;
       this.add(tile.lod);
+      this.#selectLod(tile, candidate.distance, false);
       this.#markTileDirty(tile);
       this.#ringEpoch += 1;
       this.#recordPeaks();
     }
     this.#recordPeaks();
     this.#updateColliders(centerX, centerZ, budget);
+    if (!this.#validate && this.#morphEdgesDirty)
+      timedSpan(SPANS.terrainSeam, () => this.#syncMorphEdges());
     this.#applyLodTargets(targets);
-    this.#coordinateNeighborLods(hadFocus);
+    // Retargeting already coordinates the resident ring; only newly admitted tiles can owe it.
+    if (built > 0) this.#coordinateNeighborLods(hadFocus);
     this.#seamPass();
     // After every LOD target is settled, so a block is built from the levels this pass left behind.
     this.#rebuildDirtyBlocks(budget);
@@ -2196,66 +2504,139 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   attachRenderer(renderer: IRendererLike): void {
     if (this.#released) throw new Error("TerrainTiles cannot attach after release.");
     this.#renderer = renderer;
-    this.#topologyField?.attachRenderer(renderer);
     for (const tile of this.#resident.values()) tile.field.attachRenderer(renderer);
   }
 
-  process(renderer = this.#renderer): void {
+  process(
+    renderer = this.#renderer,
+    _camera?: Camera,
+    _covered?: boolean,
+    view = this.#lodView,
+  ): void {
     if (this.#released) return;
+    this.#setLodView(view);
+    if (view !== undefined && this.#focus !== undefined) {
+      const targets = new Map<IResidentTile, number>();
+      for (const tile of this.#resident.values())
+        targets.set(
+          tile,
+          this.#targetLod(
+            tile,
+            Math.hypot(this.#focus.x - tile.origin.x, this.#focus.z - tile.origin.z),
+          ),
+        );
+      this.#applyLodTargets(targets);
+    }
     const lodFrame = this.#validate ? this.#captureLodFrame() : undefined;
     this.#advanceLodTransitions();
     if (renderer !== undefined) {
-      this.#topologyField?.process(renderer);
       for (const tile of this.#resident.values()) {
         tile.field.attachRenderer(renderer);
         tile.field.process(renderer);
       }
     }
     this.#seamPass();
+    // View-only retargets still owe the existing admission-budgeted block rebuild in follow.
+    if (view !== undefined && this.#dirtyBlocks.size > 0) this.#deferredAdmissions = 1;
     if (lodFrame !== undefined) this.#recordLodPopAfterReconciliation(lodFrame);
     this.#recordPeaks();
-    this.#reportMergeMarker();
+    this.#reportTileMarker();
+  }
+
+  /** Completed render tiles intersecting a square in world metres; pending builds do not count. */
+  readinessAt(
+    position: IWorldTilesFollowPosition,
+    radius = 0,
+  ): { required: number; loaded: number } {
+    if (
+      !Number.isFinite(position.x) ||
+      !Number.isFinite(position.z) ||
+      !Number.isFinite(radius) ||
+      radius < 0
+    )
+      throw new Error(
+        "TerrainTiles readiness requires finite coordinates and a nonnegative radius.",
+      );
+    const lowX = Math.floor((position.x - radius + this.tileSize / 2) / this.tileSize);
+    const highX = Math.floor((position.x + radius + this.tileSize / 2) / this.tileSize);
+    const lowZ = Math.floor((position.z - radius + this.tileSize / 2) / this.tileSize);
+    const highZ = Math.floor((position.z + radius + this.tileSize / 2) / this.tileSize);
+    let loaded = 0;
+    const required = (highX - lowX + 1) * (highZ - lowZ + 1);
+    if (!Number.isSafeInteger(required))
+      throw new Error("TerrainTiles readiness region is too large.");
+    for (const tile of this.#resident.values())
+      if (tile.tileX >= lowX && tile.tileX <= highX && tile.tileZ >= lowZ && tile.tileZ <= highZ)
+        loaded++;
+    return { required, loaded };
   }
 
   debug(): Record<string, unknown> {
-    const topologyField = this.#topologyField;
-    const topology =
-      topologyField === undefined
-        ? undefined
-        : (() => {
-            const heights = topologyField.heights;
-            const flow = topologyField.flow;
-            const description = {
-              columns: topologyField.columns,
-              depth: topologyField.depth,
-              origin: topologyField.origin,
-              rows: topologyField.rows,
-              width: topologyField.width,
-            };
-            if (heights.length <= MAX_RAW_TOPOLOGY_SAMPLES)
-              return {
-                ...description,
-                heights: Array.from(heights),
-                ...(flow === undefined ? {} : { flow: Array.from(flow) }),
-              };
-            if (flow === undefined) return description;
-            if (this.#topologyMetrics === undefined)
-              this.#topologyMetrics = summarizeWorldTopology({
-                columns: topologyField.columns,
-                depth: topologyField.depth,
-                flow,
-                heights,
-                rows: topologyField.rows,
-                width: topologyField.width,
-              });
-            return {
-              ...description,
-              metrics: this.#topologyMetrics,
-            };
-          })();
+    const topology = this.#topology;
+    const view = this.#lodView;
+    // Inspection only: retain per-frame selection and sampling costs unchanged.
+    const lodDecisions = [...this.#resident.values()].map((tile) => {
+      const distance =
+        this.#focus === undefined
+          ? 0
+          : Math.hypot(
+              this.#focus.x - tile.tileX * this.tileSize,
+              this.#focus.z - tile.tileZ * this.tileSize,
+            );
+      const next = tile.levels[tile.lodLevel + 1];
+      const finest = tile.levels[0];
+      const bounds = finest?.geometry.boundingSphere;
+      let projection: { errorPixels?: number; depth: number; degenerate: boolean } | undefined;
+      if (view !== undefined && next !== undefined && finest !== undefined && bounds != null) {
+        finest.mesh.updateWorldMatrix(true, false);
+        const sphere = worldSphere(bounds, finest.mesh);
+        const depth = conservativeViewDepth(
+          view.camera,
+          sphere.center,
+          sphere.radius,
+          (view.camera as Camera & { near?: number }).near ?? 0,
+        );
+        const errorPixels = projectedLodError(
+          next.surfaceError * finest.mesh.matrixWorld.getMaxScaleOnAxis(),
+          view.camera,
+          view.viewportHeight,
+          depth.depth,
+        );
+        projection = { ...depth, ...(Number.isFinite(errorPixels) ? { errorPixels } : {}) };
+      }
+      return {
+        key: tile.key,
+        lodLevel: tile.lodLevel,
+        distance,
+        distanceLod: lodLevelForDistance(distance, this.#lodDistances),
+        maxLodLevel: tile.maxLodLevel,
+        targetLod: this.#targetLod(tile, distance),
+        ...(next === undefined
+          ? {}
+          : {
+              nextCoarser: {
+                lodLevel: tile.lodLevel + 1,
+                surfaceError: next.surfaceError,
+                ...projection,
+              },
+            }),
+      };
+    });
     return {
-      maxSeamGap: this.maxSeamGap,
-      maxVisualSeamGap: this.maxVisualSeamGap,
+      lodDecisions,
+      lodPolicy: {
+        lodDistances: [...this.#lodDistances],
+        ...(view === undefined
+          ? {}
+          : {
+              viewportHeight: view.viewportHeight,
+              maxPixelError: view.maxPixelError,
+              hysteresis: view.hysteresis,
+              coarsenBelowPixels: (1 - view.hysteresis) * view.maxPixelError,
+            }),
+      },
+      ...(this.maxSeamGap === undefined ? {} : { maxSeamGap: this.maxSeamGap }),
+      ...(this.maxVisualSeamGap === undefined ? {} : { maxVisualSeamGap: this.maxVisualSeamGap }),
       maxLodTransitionFrames: this.#maxLodTransitionFrames,
       peakResidentBytes: this.#peakBytes,
       peakResidentTiles: this.#peakTiles,
@@ -2268,16 +2649,28 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       residentKeys: this.residentKeys,
       residentTiles: this.residentTileCount,
       residentTileBudget: this.residentTileBudget,
+      ...(this.#construction === undefined ? {} : { pendingConstruction: this.#construction.key }),
       topologyBytes: this.#topologyBytes,
       lodTransitions: this.#lodTransitions,
-      maxLodPop: this.maxLodPop,
+      terrainTiles: this.terrainTiles,
+      ...(this.maxLodPop === undefined ? {} : { maxLodPop: this.maxLodPop }),
       stitchedEdges: this.#stitchedEdges,
       skirtVertexCount: [...this.#resident.values()].reduce(
         (total, tile) => total + tile.skirtVertexCount,
         0,
       ),
       released: this.#released,
-      ...(topology === undefined ? {} : { topology }),
+      ...(topology === undefined
+        ? {}
+        : {
+            topology: {
+              ...topology,
+              origin: { ...topology.origin },
+              ...(topology.heights === undefined ? {} : { heights: topology.heights.slice() }),
+              ...(topology.flow === undefined ? {} : { flow: topology.flow.slice() }),
+              ...(topology.metrics === undefined ? {} : { metrics: { ...topology.metrics } }),
+            },
+          }),
     };
   }
 
@@ -2289,14 +2682,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (this.#released) return;
     this.#released = true;
     this.#renderer = undefined;
-    this.#topologyField?.detach();
+    this.#jobs.dispose();
+    this.#cancelConstruction();
+    this.#topology = undefined;
+    this.#topologyBytes = 0;
     for (const key of [...this.#blocks.keys()]) this.#dissolveBlock(key);
     for (const tile of [...this.#resident.values()]) this.#evict(tile);
     this.#resident.clear();
     this.removeFromParent();
   }
 
-  #createField(origin: IHeightfieldOrigin): Heightfield {
+  *#createField(origin: IHeightfieldOrigin, chunked: boolean): Generator<void, Heightfield> {
     const sampler: IHeightfieldSamplerOptions = {
       columns: this.tileResolution,
       depth: this.tileSize,
@@ -2306,15 +2702,33 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       width: this.tileSize,
       ...(this.#worldPasses === undefined ? {} : { worldPasses: this.#worldPasses }),
     };
-    return Heightfield.fromSampler(sampler);
+    if (!chunked) return Heightfield.fromSampler(sampler);
+    const heights = new Float32Array(this.tileResolution ** 2);
+    const minimumX = origin.x - this.tileSize / 2;
+    const minimumZ = origin.z - this.tileSize / 2;
+    const cellSize = this.tileSize / (this.tileResolution - 1);
+    for (let row = 0; row < this.tileResolution; row += 1) {
+      const z = minimumZ + row * cellSize;
+      for (let column = 0; column < this.tileResolution; column += 1) {
+        const index = row * this.tileResolution + column;
+        heights[index] = finite(
+          this.#sampleHeight(minimumX + column * cellSize, z),
+          "sampleHeight result",
+        );
+        if ((index + 1) % CONSTRUCTION_CHUNK_SAMPLES === 0) yield;
+      }
+    }
+    // The same canonical field as fromSampler; only the sampler loop changes cadence.
+    return new Heightfield({ ...sampler, heights });
   }
 
-  #createTile(
+  *#createTile(
     tileX: number,
     tileZ: number,
     distance: number,
     withCollider: boolean,
-  ): IResidentTile {
+    chunked: boolean,
+  ): Generator<void, IResidentTile> {
     const origin = { x: tileX * this.tileSize, z: tileZ * this.tileSize };
     const assetKey =
       this.#assetKey === undefined
@@ -2324,21 +2738,24 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
           : this.#assetKey;
     if (assetKey !== undefined && (typeof assetKey !== "string" || assetKey.trim().length === 0))
       throw new Error("TerrainTiles assetKey must resolve to a non-empty string.");
-    const field = this.#createField(origin);
+    let field: Heightfield | undefined;
     const levels: ILevelGeometry[] = [];
     let lod: LOD | undefined;
     let collider: IWorldTileCollider | undefined;
+    let completed = false;
     try {
+      field = yield* this.#createField(origin, chunked);
       // One grid of the field's own heights for the whole tile, read before any level is built.
-      const grid = fieldHeightGrid(field);
+      const grid = yield* fieldHeightGrid(field, chunked);
       for (const factor of this.#factors)
         levels.push(
-          buildLevel(
+          yield* buildLevel(
             field,
             resolutionFor(this.tileResolution, factor),
             this.skirtDepth,
             this.#surface,
             grid,
+            chunked,
           ),
         );
       lod = new LOD();
@@ -2350,6 +2767,16 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         mesh.frustumCulled = true;
         mesh.receiveShadow = this.#receiveShadow;
       });
+      const maxLodLevel = yield* coarsestSelectableLevel(levels, chunked);
+      if (!this.#validate)
+        for (const level of levels) {
+          const coarser = levels.filter(
+            (candidate) => candidate !== level && candidate.resolution <= level.resolution,
+          );
+          if (coarser.length === 0) continue;
+          yield* buildLodMorphTargets(level, coarser, 0, chunked);
+          level.mesh.updateMorphTargets();
+        }
       collider =
         this.#createCollider === undefined
           ? new EmptyCollider()
@@ -2357,8 +2784,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
             ? this.#createCollider({ field, key: keyFor(tileX, tileZ), object: lod, tileX, tileZ })
             : undefined;
       const bytes =
-        levels.reduce((total, level) => total + estimatedLevelBytes(level.resolution), 0) +
-        field.memoryBytes;
+        levels.reduce(
+          (total, level) =>
+            total +
+            estimatedLevelBytes(
+              level.resolution,
+              this.#validate
+                ? 0
+                : levels.filter((candidate) => candidate.resolution <= level.resolution).length - 1,
+            ),
+          0,
+        ) + field.memoryBytes;
       const tile: IResidentTile = {
         ...(assetKey === undefined ? {} : { assetKey }),
         bytes,
@@ -2367,8 +2803,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         key: keyFor(tileX, tileZ),
         lod,
         lodLevel: 0,
+        sharedMorphEdges: 0,
         levels,
-        maxLodLevel: coarsestSelectableLevel(levels),
+        maxLodLevel,
         object: lod,
         origin,
         skirtVertexCount: levels.reduce((total, level) => total + level.skirtVertexCount, 0),
@@ -2377,13 +2814,15 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         tileZ,
       };
       this.#selectLod(tile, distance, false);
+      completed = true;
       return tile;
-    } catch (error) {
-      collider?.dispose();
-      lod?.removeFromParent();
-      for (const level of levels) level.geometry.dispose();
-      field.detach();
-      throw error;
+    } finally {
+      if (!completed) {
+        collider?.dispose();
+        lod?.removeFromParent();
+        for (const level of levels) level.geometry.dispose();
+        field?.detach();
+      }
     }
   }
 
@@ -2395,12 +2834,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /**
    * Build one wanted tile, if this frame's admission budget has room for it.
    *
-   * The whole of a tile's cost is inside `#createTile` — every LOD level built, the `LOD` assembled
-   * and the game's `createCollider` called — so one tile is one unit of a frame's budget. A refused
-   * tile is `undefined`, and the next `follow` wants it again: it was not drawn before either, so
-   * deferring it leaves a gap rather than a hole.
+   * Large fields, levels, bounds and LOD safety scans yield in chunks. Only a completed tile is
+   * published; a refused chunk remains owned here until a later follow, a move or disposal.
+   * Small tiles fit one unit, and a follow without an allowance drains synchronously as before.
    *
-   * `forced` is the pass's first tile, which the budget may not refuse: see the call site.
+   * `forced` grants the first chunk progress even when another system spent the allowance.
    */
   #admitCandidate(
     candidate: { distance: number; tileX: number; tileZ: number },
@@ -2409,21 +2847,52 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     budget: IAdmissionBudget | undefined,
     forced = false,
   ): IResidentTile | undefined {
-    let tile: IResidentTile | undefined;
-    const created = (): void => {
-      tile = this.#createTile(
+    let progressOwed = forced;
+    const key = keyFor(candidate.tileX, candidate.tileZ);
+    if (this.#construction !== undefined && this.#construction.key !== key)
+      this.#cancelConstruction();
+    const construction = this.#construction ?? {
+      key,
+      work: this.#createTile(
         candidate.tileX,
         candidate.tileZ,
         candidate.distance,
         this.#wantsCollider(candidate.tileX, candidate.tileZ, centerX, centerZ),
-      );
+        budget !== undefined && this.tileResolution ** 2 > CONSTRUCTION_CHUNK_SAMPLES,
+      ),
     };
-    if (budget === undefined || forced) created();
-    else if (!budget.admit(created)) {
-      this.#deferredAdmissions = 1;
-      return undefined;
+    this.#construction = construction;
+    let tile: IResidentTile | undefined;
+    const advance = (): void => {
+      try {
+        const result = construction.work.next();
+        if (result.done) {
+          tile = result.value;
+          this.#construction = undefined;
+        }
+      } catch (error) {
+        this.#construction = undefined;
+        throw error;
+      }
+    };
+    while (tile === undefined) {
+      if (budget === undefined) advance();
+      else if (budget.admit(advance)) progressOwed = false;
+      else if (progressOwed) {
+        // Progress is one chunk, never an entire high-resolution tile outside the allowance.
+        advance();
+        progressOwed = false;
+      } else {
+        this.#deferredAdmissions = 1;
+        return undefined;
+      }
     }
     return tile;
+  }
+
+  #cancelConstruction(): void {
+    this.#construction?.work.return(undefined as never);
+    this.#construction = undefined;
   }
 
   /**
@@ -2499,7 +2968,86 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #selectLod(tile: IResidentTile, distance: number, countTransition = true): void {
-    this.#setLodLevel(tile, lodLevelForDistance(distance, this.#lodDistances), countTransition);
+    this.#setLodLevel(tile, this.#targetLod(tile, distance), countTransition);
+  }
+
+  #setLodView(view: IWorldTilesLodView | undefined): void {
+    if (
+      view !== undefined &&
+      (!Number.isFinite(view.viewportHeight) ||
+        view.viewportHeight <= 0 ||
+        !Number.isFinite(view.maxPixelError) ||
+        view.maxPixelError <= 0 ||
+        !Number.isFinite(view.hysteresis) ||
+        view.hysteresis < 0 ||
+        view.hysteresis >= 1)
+    )
+      throw new Error(
+        "TerrainTiles needs a positive raster height/pixel budget and hysteresis in [0, 1).",
+      );
+    this.#lodView = view;
+    view?.camera.updateWorldMatrix(true, false);
+  }
+
+  #targetLod(tile: IResidentTile, distance: number): number {
+    const floor = Math.min(lodLevelForDistance(distance, this.#lodDistances), tile.maxLodLevel);
+    const view = this.#lodView;
+    if (view === undefined) return floor;
+    const finest = tile.levels[0];
+    const bounds = finest?.geometry.boundingSphere;
+    if (finest === undefined || bounds == null) return 0;
+    finest.mesh.updateWorldMatrix(true, false);
+    const sphere = worldSphere(bounds, finest.mesh);
+    const depth = conservativeViewDepth(
+      view.camera,
+      sphere.center,
+      sphere.radius,
+      (view.camera as Camera & { near?: number }).near ?? 0,
+    );
+    const scale = finest.mesh.matrixWorld.getMaxScaleOnAxis();
+    // Selection is synchronous; overwrite and truncate before another tile or view reuses these.
+    for (let index = 0; index <= floor; index += 1)
+      this.#lodErrors[index] = (tile.levels[index] as ILevelGeometry).surfaceError * scale;
+    this.#lodErrors.length = floor + 1;
+    return selectLodLevel(this.#lodErrors, tile.lodLevel, view.maxPixelError, view.hysteresis, [
+      { ...view, ...depth },
+    ]);
+  }
+
+  #syncMorphEdges(): void {
+    for (const tile of this.#resident.values()) {
+      const shared =
+        (this.#resident.has(keyFor(tile.tileX, tile.tileZ - 1)) ? 1 : 0) |
+        (this.#resident.has(keyFor(tile.tileX, tile.tileZ + 1)) ? 2 : 0) |
+        (this.#resident.has(keyFor(tile.tileX - 1, tile.tileZ)) ? 4 : 0) |
+        (this.#resident.has(keyFor(tile.tileX + 1, tile.tileZ)) ? 8 : 0);
+      if (shared === tile.sharedMorphEdges) continue;
+      for (const level of tile.levels) {
+        const coarser = tile.levels.filter(
+          (candidate) => candidate !== level && candidate.resolution <= level.resolution,
+        );
+        if (coarser.length === 0) continue;
+        const previous = level.geometry;
+        const geometry = new BufferGeometry();
+        geometry.morphTargetsRelative = true;
+        geometry.setAttribute("position", previous.getAttribute("position"));
+        geometry.setAttribute("normal", previous.getAttribute("normal"));
+        geometry.setIndex(previous.getIndex());
+        geometry.boundingBox = previous.boundingBox?.clone() ?? null;
+        geometry.boundingSphere = previous.boundingSphere?.clone() ?? null;
+        const influences = level.mesh.morphTargetInfluences?.slice();
+        // Three caches morph textures by geometry, ignoring attribute versions; retire that cache.
+        for (const _ of buildLodMorphTargets({ ...level, geometry }, coarser, shared, false)) {
+        }
+        level.geometry = geometry;
+        level.mesh.geometry = geometry;
+        level.mesh.updateMorphTargets();
+        if (influences !== undefined) level.mesh.morphTargetInfluences = influences;
+        previous.dispose();
+      }
+      tile.sharedMorphEdges = shared;
+    }
+    this.#morphEdgesDirty = false;
   }
 
   #setLodLevel(tile: IResidentTile, level: number, countTransition = true): void {
@@ -2518,8 +3066,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const next = tile.levels[selectable];
     if (previous === undefined || next === undefined)
       throw new Error("TerrainTiles LOD transition references a missing level.");
-    // The tile leaves its old level's block and joins the new level's; both memberships changed.
-    this.#markBlockDirty(previousLevel, tile.tileX, tile.tileZ);
+    // The tile leaves its old level's block and joins the new level's: the old one is now holding
+    // ground this tile is no longer at, and the new one is waiting to be built.
+    this.#releaseStaleBlock(previousLevel, tile.tileX, tile.tileZ);
     tile.lodLevel = selectable;
     this.#markBlockDirty(selectable, tile.tileX, tile.tileZ);
     this.#ringEpoch += 1;
@@ -2530,6 +3079,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       return;
     }
     this.#lodTransitions += 1;
+    this.#blending.add(tile);
     tile.lodTransition = {
       elapsedFrames: 0,
       from: previousLevel,
@@ -2540,7 +3090,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const finer = previous.resolution >= next.resolution ? previous : next;
     setManualLodLevel(tile.lod, finerLevel);
     widenLevelBoundsForBlend(finer, finer === previous ? next : previous);
-    updateLodTransitionGeometry(tile, tile.lodTransition, 0);
+    if (this.#validate) updateLodTransitionGeometry(tile, tile.lodTransition, 0);
+    else updateLodMorph(tile, tile.lodTransition, 0);
     this.#setLodVisibility(tile, [finerLevel]);
     this.#recordLodPopAfterRetarget(interruptedFrame);
   }
@@ -2599,7 +3150,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #advanceLodTransitions(): void {
-    for (const tile of this.#resident.values()) {
+    for (const tile of this.#blending) {
       const transition = tile.lodTransition;
       if (transition === undefined) continue;
       const from = tile.levels[transition.from];
@@ -2607,13 +3158,13 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         throw new Error("TerrainTiles LOD transition references a missing level.");
       transition.elapsedFrames += 1;
       transition.remainingFrames -= 1;
-      updateLodTransitionGeometry(
+      (this.#validate ? updateLodTransitionGeometry : updateLodMorph)(
         tile,
         transition,
         Math.min(1, transition.elapsedFrames / LOD_TRANSITION_FRAMES),
       );
       if (transition.remainingFrames > 0) {
-        // A blend frame rewrote the finer level's vertices, which the ring state reads.
+        // The validating CPU blend moved; GPU morphs keep shared edges canonical.
         this.#ringEpoch += 1;
         continue;
       }
@@ -2624,6 +3175,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       );
       this.#restoreLodTransition(tile, transition);
       tile.lodTransition = undefined;
+      this.#blending.delete(tile);
       setManualLodLevel(tile.lod, transition.to);
       this.#setLodVisibility(tile);
       // The end of a blend is the one moment a tile rejoins its settled block.
@@ -2689,34 +3241,109 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return true;
   }
 
+  /**
+   * Reconcile every seam that moved, then close the pass.
+   *
+   * The strips are built wherever the jobs run — a worker where the host has one, this thread where
+   * it does not — so this loop only restores edges, collects what each bridge is made of, and swaps
+   * in the arrays that come back. An inline host resolves inside the call and the pass closes before
+   * `follow` returns, exactly as it did before the jobs moved; an off-thread host closes the pass in
+   * the reply. Frames keep validating CPU edges canonical while it is pending; a reply whose ring
+   * changed is discarded and reconciled anew, never recorded as settled.
+   */
   #reconcileNeighbors(): void {
     const pairs = collectNeighborPairs(this.#resident, this.#pairScratch);
     const active = new Set<string>();
     const reconciled = new Set<string>();
+    const requests: { key: string; previousBytes: number; request: IStitchRequest }[] = [];
     for (const pair of pairs) {
       const key = neighborPairKey(pair);
       active.add(key);
       if (this.#settled(key, pair)) continue;
       reconciled.add(key);
       const previousBytes = this.#stitches.get(key)?.bytes ?? 0;
-      const bridge = reconcileNeighborPair(pair, this.#surface, this.#stitches.get(key));
-      if (bridge === undefined) {
+      const request = neighborBridgeRequest(pair);
+      if (request === undefined) {
         this.#removeStitch(key);
         continue;
       }
-      if (this.#stitches.has(key)) {
-        this.#stitchBytes += bridge.bytes - previousBytes;
-      } else {
-        this.#stitches.set(key, bridge);
-        bridge.mesh.receiveShadow = this.#receiveShadow;
-        this.add(bridge.mesh);
-        this.#stitchBytes += bridge.bytes;
-      }
-      this.#stitchedEdges += 1;
+      requests.push({ key, previousBytes, request });
     }
     for (const key of this.#stitches.keys()) {
       if (!active.has(key)) this.#removeStitch(key);
     }
+    if (requests.length === 0) {
+      timedSpan(SPANS.terrainSeam, () => this.#settleSeamPass(pairs, reconciled, active));
+      return;
+    }
+    const job: ITerrainSeamJob = {
+      kind: "seam",
+      pairs: requests.map(({ request }) => ({ coarse: request.coarse, fine: request.fine })),
+    };
+    // The scratch array is reused by the next pass, so a reply that lands a frame later reads its
+    // own copy of the pairs and not whatever the next pass left there.
+    const snapshot = [...pairs];
+    const epoch = this.#ringEpoch;
+    const state: number[] = [];
+    this.#seamPending = true;
+    const result = timedSpan(SPANS.terrainSeam, () => this.#jobs.seam(job));
+    if (result instanceof Promise) this.#ringStateInto(state);
+    settleJob(result, (settled) => {
+      if (this.#released) return;
+      if (result instanceof Promise) {
+        const current: number[] = [];
+        this.#ringStateInto(current);
+        if (epoch !== this.#ringEpoch || !sameState(state, current)) {
+          // A non-finite current signature is corruption, not a legitimate superseded request.
+          if (this.#validate && current.some(Number.isNaN)) this.#recordSeamDiagnostics();
+          // Nothing from this reply describes the current ring; leave it unsettled and request it anew.
+          this.#seamPending = false;
+          this.#seamPass();
+          return;
+        }
+      }
+      timedSpan(SPANS.terrainSeam, () => {
+        if (settled.kind !== "seam" || settled.bridges.length !== requests.length)
+          throw new Error("TerrainTiles seam job returned an invalid bridge count.");
+        for (const [index, pending] of requests.entries()) {
+          const data = settled.bridges[index];
+          if (data === undefined)
+            throw new Error("TerrainTiles seam job returned an invalid bridge count.");
+          this.#applyStitch(pending.key, pending.previousBytes, pending.request, data);
+        }
+        this.#settleSeamPass(snapshot, reconciled, active);
+      });
+    });
+  }
+
+  #applyStitch(
+    key: string,
+    previousBytes: number,
+    request: IStitchRequest,
+    data: ITerrainBridgeAttributes,
+  ): void {
+    const existing = this.#stitches.get(key);
+    if (existing === undefined) {
+      const bridge = newStitchBridge(request, data, this.#surface);
+      this.#stitches.set(key, bridge);
+      bridge.mesh.receiveShadow = this.#receiveShadow;
+      this.add(bridge.mesh);
+      this.#stitchBytes += bridge.bytes;
+    } else {
+      updateStitchBridge(existing, data);
+      this.#stitchBytes += existing.bytes - previousBytes;
+    }
+    this.#stitchedEdges += 1;
+  }
+
+  /** Everything that closes a seam pass, once every bridge it asked for is in place. */
+  #settleSeamPass(
+    pairs: readonly NeighborPair[],
+    reconciled: ReadonlySet<string>,
+    active: ReadonlySet<string>,
+  ): void {
+    this.#seamPending = false;
+    if (this.#validate) this.#recordSeamDiagnostics();
     this.#recordPairSignatures(pairs, reconciled, active);
     // Every edge restore and bridge rewrite this pass did is a change the ring state describes; the
     // pass is the only writer of either, so one bump here covers all of it.
@@ -2725,6 +3352,16 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       throw new TerrainTileBudgetError(
         "TerrainTiles residentByteBudget cannot fit stitched neighbor geometry.",
       );
+    if (this.#validate) {
+      // The pass moved geometry, so the settled state is what it left behind, read into the buffer
+      // the compare just filled; the buffer it compared against becomes the next frame's scratch.
+      const scratch = this.#ringScratch;
+      this.#ringScratch = this.#settledRing ?? [];
+      this.#settledRing = scratch;
+      this.#ringStateInto(this.#settledRing);
+    }
+    // Read after the pass, which moved geometry and bumped the epoch itself.
+    this.#seamEpoch = this.#ringEpoch;
   }
 
   #finishLodTransition(tile: IResidentTile): void {
@@ -2733,6 +3370,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#maxLodTransitionFrames = Math.max(this.#maxLodTransitionFrames, transition.elapsedFrames);
     this.#restoreLodTransition(tile, transition);
     tile.lodTransition = undefined;
+    this.#blending.delete(tile);
     setManualLodLevel(tile.lod, transition.to);
     this.#setLodVisibility(tile);
   }
@@ -2741,7 +3379,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const from = tile.levels[transition.from];
     const to = tile.levels[transition.to];
     if (from === undefined || to === undefined) return;
-    restoreLevelSurface(tile.field, from.resolution >= to.resolution ? from : to);
+    const finer = from.resolution >= to.resolution ? from : to;
+    if (this.#validate) restoreLevelSurface(tile.field, finer);
+    else finer.mesh.morphTargetInfluences?.fill(0);
   }
 
   #recordLodPop(pop: number): void {
@@ -2788,6 +3428,21 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * it owns, and the validating frame still checks everything.
    */
   #seamPass(): void {
+    if (this.#seamPending) {
+      // CPU blends move every vertex; shared edges must remain canonical even before a reply arrives.
+      if (this.#validate)
+        for (const [a, b] of collectNeighborPairs(this.#resident, this.#pairScratch)) {
+          const [aSide, bSide] = opposingEdge(a, b);
+          const aLevel = renderedLevel(a);
+          const bLevel = renderedLevel(b);
+          if (aLevel === undefined || bLevel === undefined)
+            throw new Error("TerrainTiles cannot reconcile a neighbor with no rendered LOD level.");
+          restoreLevelEdge(a, aLevel, aSide);
+          restoreLevelEdge(b, bLevel, bSide);
+        }
+      this.#stitchedEdges += this.#stitches.size;
+      return;
+    }
     if (this.#validate) {
       this.#ringStateInto(this.#ringScratch);
       if (sameState(this.#ringScratch, this.#settledRing)) {
@@ -2800,17 +3455,6 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     }
     if (this.#validate) this.#recordSeamDiagnostics(false);
     this.#reconcileNeighbors();
-    if (this.#validate) this.#recordSeamDiagnostics();
-    if (this.#validate) {
-      // The pass moved geometry, so the settled state is what it left behind, read into the buffer
-      // the compare just filled; the buffer it compared against becomes the next frame's scratch.
-      const scratch = this.#ringScratch;
-      this.#ringScratch = this.#settledRing ?? [];
-      this.#settledRing = scratch;
-      this.#ringStateInto(this.#settledRing);
-    }
-    // Read after the pass, which moved geometry and bumped the epoch itself.
-    this.#seamEpoch = this.#ringEpoch;
   }
 
   /** Counted so a frame that built one is visible; see `#ringStateInto`. */
@@ -2901,34 +3545,53 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   /**
-   * Rebuild at most one dirty block, charging it to the frame's admission budget like any other
-   * streamed work. A rebuild concatenates a K×K block of settled tile levels, so it is bounded and
-   * never one long task; a refused rebuild stays dirty and the next `follow` runs it. With no budget
-   * every dirty block rebuilds, which is what a test or a one-shot harness wants.
+   * Let go of a block one of its tiles has left.
+   *
+   * A departure is the one ring change a rebuild cannot hide: the block's geometry still holds the
+   * tile that just left, so it would draw that ground a second time — at the level the tile has left
+   * — until this frame's one rebuild could replace it, and one rebuild a frame does not arrive before
+   * the next departure. So the block stops being drawn the frame the departure happens, every tile it
+   * still holds goes back to its own mesh, and the rebuild queue brings the block back whole. It is
+   * dirty either way: the block has to be rebuilt whatever this does to it. (PRD-475.)
+   */
+  #releaseStaleBlock(lod: number, tileX: number, tileZ: number): void {
+    if (!this.#mergeTiles) return;
+    const blockKey = blockKeyFor(lod, tileX, tileZ);
+    this.#markBlockDirty(lod, tileX, tileZ);
+    if (this.#blocks.has(blockKey)) this.#dissolveBlock(blockKey);
+  }
+
+  /**
+   * Rebuild one dirty block, charging it to the frame's admission budget like any other streamed
+   * work. One, per frame, whatever the budget still holds: a rebuild concatenates a K×K block of
+   * settled tile levels, and a follow that paid for every block its own streaming churn left dirty
+   * is the frame-time spike this cap exists to prevent — the plan's `TN_FRAME_SPANS` check watches
+   * for exactly that. A refused rebuild stays dirty and the next `follow` runs it, so N dirty blocks
+   * take N frames and a still follow point converges.
    */
   #rebuildDirtyBlocks(budget: IAdmissionBudget | undefined): void {
-    if (!this.#mergeTiles || this.#dirtyBlocks.size === 0) return;
-    while (this.#dirtyBlocks.size > 0) {
-      let key: string | undefined;
-      for (const candidate of this.#dirtyBlocks)
-        if (key === undefined || candidate < key) key = candidate;
-      if (key === undefined) return;
-      const dirty = key;
-      const run = (): void => {
-        this.#dirtyBlocks.delete(dirty);
-        this.#rebuildBlock(dirty);
-      };
-      // With no budget every dirty block rebuilds; with one, a refusal stops the loop and leaves the
-      // rest dirty for a later frame, so no single `follow` pays for more than the frame's allowance.
-      if (budget === undefined) {
-        run();
-        continue;
-      }
-      if (!budget.admit(run)) {
-        this.#deferredAdmissions = 1;
-        return;
-      }
+    if (!this.#mergeTiles) return;
+    const dirty = this.#nextDirtyBlock();
+    if (dirty === undefined) return;
+    const run = (): void => {
+      this.#dirtyBlocks.delete(dirty);
+      this.#rebuildBlock(dirty);
+    };
+    if (budget === undefined) {
+      run();
+      return;
     }
+    if (!budget.admit(run)) this.#deferredAdmissions = 1;
+  }
+
+  /** The lowest block key still waiting for a merge of its own, so the one a frame spends is the same. */
+  #nextDirtyBlock(): string | undefined {
+    let first: string | undefined;
+    for (const candidate of this.#dirtyBlocks) {
+      if (this.#mergingBlocks.has(candidate)) continue;
+      if (first === undefined || candidate < first) first = candidate;
+    }
+    return first;
   }
 
   /**
@@ -2939,13 +3602,15 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * this block's LOD tier. A block of fewer than two tiles is dissolved rather than drawn — a single
    * merged mesh for one tile is the same draw with a copied geometry — and every tile that just left
    * the block has its own mesh restored.
+   *
+   * The concatenation runs as a job, so this thread names the block and the tile levels it covers and
+   * then only swaps the attributes that come back.
    */
   #rebuildBlock(blockKey: string): void {
     const { lod, blockX, blockZ } = blockCoordinates(blockKey);
     const { members, parts } = this.#blockMembers(blockKey, lod);
-    const existing = this.#blocks.get(blockKey);
     if (parts.length < 2) {
-      if (existing !== undefined) this.#dissolveBlock(blockKey);
+      this.#dissolveBlock(blockKey);
       // The tiles that remain here (a lone member, or none) draw their own meshes again.
       for (const key of members) this.#showTile(key, blockKey);
       return;
@@ -2954,27 +3619,109 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       x: blockX * TERRAIN_MERGE_BLOCK * this.tileSize,
       z: blockZ * TERRAIN_MERGE_BLOCK * this.tileSize,
     };
-    const geometry = mergeLevelGeometry(parts, blockOrigin);
+    const captured = parts.map(({ geometry, origin }) => ({
+      geometry,
+      originX: origin.x,
+      originZ: origin.z,
+      attributes: [
+        geometry.getAttribute("position") as BufferAttribute,
+        geometry.getAttribute("normal") as BufferAttribute,
+        geometry.getIndex(),
+      ].map((attribute) => ({ attribute, version: attribute?.version })),
+    }));
+    this.#mergingBlocks.add(blockKey);
+    const job = timedSpan(SPANS.terrainBlock, () => this.#jobs.merge(mergeJob(parts, blockOrigin)));
+    const apply = (result: ITerrainMergeResult): void => {
+      this.#mergingBlocks.delete(blockKey);
+      if (this.#released) return;
+      // Completed merges cost work even when newer residency makes their result stale.
+      this.#blockRebuilds += 1;
+      if (job instanceof Promise) {
+        const current = this.#blockMembers(blockKey, lod);
+        const superseded =
+          this.#dirtyBlocks.has(blockKey) ||
+          current.members.size !== members.size ||
+          [...members].some((key) => !current.members.has(key)) ||
+          current.parts.length !== captured.length ||
+          current.parts.some(({ geometry, origin }, partIndex) => {
+            const previous = captured[partIndex];
+            const attributes = [
+              geometry.getAttribute("position") as BufferAttribute,
+              geometry.getAttribute("normal") as BufferAttribute,
+              geometry.getIndex(),
+            ];
+            return (
+              previous === undefined ||
+              previous.geometry !== geometry ||
+              previous.originX !== origin.x ||
+              previous.originZ !== origin.z ||
+              previous.attributes.some(
+                ({ attribute, version }, attributeIndex) =>
+                  attribute !== attributes[attributeIndex] ||
+                  version !== attributes[attributeIndex]?.version,
+              )
+            );
+          });
+        if (superseded) {
+          this.#dirtyBlocks.add(blockKey);
+          return;
+        }
+      }
+      timedSpan(SPANS.terrainBlock, () =>
+        this.#applyBlock({ blockKey, blockOrigin, lod, members }, result),
+      );
+    };
+    if (job instanceof Promise)
+      job.then(apply, (error: unknown) => {
+        // Free the block for its next mark, and still name the failure.
+        this.#mergingBlocks.delete(blockKey);
+        console.error(`TN_TERRAIN_MERGE_FAILURE block=${blockKey} message=${String(error)}`);
+      });
+    else apply(job);
+  }
+
+  #applyBlock(
+    plan: {
+      readonly blockKey: string;
+      readonly blockOrigin: IHeightfieldOrigin;
+      readonly lod: number;
+      readonly members: Set<string>;
+    },
+    result: ITerrainMergeResult,
+  ): void {
+    const { blockKey, blockOrigin, lod, members } = plan;
+    const existing = this.#blocks.get(blockKey);
+    const geometry = mergedBlockGeometry(result);
+    const bytes = geometryBytes(geometry);
+    this.#blockBytes += bytes - (existing?.bytes ?? 0);
     if (existing === undefined) {
-      const mesh = new Mesh(geometry, this.#surface);
+      const mesh = terrainMesh(new Mesh(geometry, this.#surface));
       mesh.frustumCulled = true;
       mesh.name = `tn-terrain-block:${blockKey}`;
+      // The merged geometry is written relative to the block origin, so the mesh carries it. Without
+      // this the block drew a whole `blockOrigin` away from the tiles it replaced: floating slabs and
+      // a hole where the ground is, at any block that is not at (0, 0). (PRD-475.)
+      mesh.position.set(blockOrigin.x, 0, blockOrigin.z);
       mesh.receiveShadow = this.#receiveShadow;
-      this.#blocks.set(blockKey, { geometry, key: blockKey, lod, members, mesh });
+      this.#blocks.set(blockKey, { bytes, geometry, key: blockKey, lod, members, mesh });
       this.add(mesh);
     } else {
+      const left = existing.members;
       existing.geometry.dispose();
+      existing.bytes = bytes;
       existing.mesh.geometry = geometry;
-      this.#blocks.set(blockKey, { geometry, key: blockKey, lod, members, mesh: existing.mesh });
+      // The record follows the geometry: the loop below restores the tiles this rebuild dropped, and
+      // `terrainTiles` counts what the blocks hold, so a stale record here is a tile drawn twice or
+      // not at all (PRD-475).
+      existing.members = members;
+      this.#blocks.set(blockKey, existing);
+      for (const key of left) if (!members.has(key)) this.#showTile(key, blockKey);
     }
-    if (existing !== undefined)
-      for (const key of existing.members) if (!members.has(key)) this.#showTile(key, blockKey);
     for (const key of members) {
       this.#mergedMembers.set(key, blockKey);
       const tile = this.#resident.get(key);
       if (tile !== undefined) this.#setLodVisibility(tile);
     }
-    this.#blockRebuilds += 1;
   }
 
   /** The resident settled tiles a block covers, and their level geometries to concatenate. */
@@ -3007,6 +3754,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (block === undefined) return;
     this.#blocks.delete(blockKey);
     this.remove(block.mesh);
+    this.#blockBytes -= block.bytes;
     block.geometry.dispose();
     for (const key of block.members) this.#showTile(key, blockKey);
   }
@@ -3016,25 +3764,36 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return typeof host.performance?.now === "function" ? host.performance.now() : Date.now();
   }
 
-  /** `TN_TERRAIN_MERGE`, every `TERRAIN_MERGE_MARKER_MS` while the merge is on. */
-  #reportMergeMarker(): void {
-    if (!this.#mergeTiles) return;
+  /**
+   * `TN_TERRAIN_TILES`, every `TERRAIN_TILE_MARKER_MS`, with the merge on or off: the same census
+   * before and after is the only way to read what the merge cut. A run that asked for validation also
+   * gets the seam and LOD-pop maxima it is paying to measure, so a browser console run prints them
+   * instead of only an in-process accessor ever reading them.
+   */
+  #reportTileMarker(): void {
     const now = this.#now();
-    if (now - this.#mergeToldAt < TERRAIN_MERGE_MARKER_MS) return;
-    this.#mergeToldAt = now;
+    if (now - this.#tilesToldAt < TERRAIN_TILE_MARKER_MS) return;
+    this.#tilesToldAt = now;
     const stats = this.terrainTiles;
+    const measurements = this.#validate
+      ? ` maxSeamGap=${String(this.maxSeamGap)} maxLodPop=${String(this.maxLodPop)} ` +
+        `maxVisualSeamGap=${String(this.maxVisualSeamGap)}`
+      : "";
     console.info(
-      `TN_TERRAIN_MERGE tiles=${String(stats.tiles)} blocks=${String(stats.blocks)} ` +
-        `draws=${String(stats.draws)} rebuilds=${String(stats.rebuilds)}`,
+      `TN_TERRAIN_TILES tiles=${String(stats.tiles)} blocks=${String(stats.blocks)} draws=${String(stats.draws)} blending=${String(stats.blending)} rebuilds=${String(stats.rebuilds)} blockBytes=${String(stats.blockBytes)}${measurements}`,
     );
   }
 
   #evict(tile: IResidentTile): void {
+    this.#blending.delete(tile);
     if (this.#mergeTiles) {
-      this.#markTileDirty(tile);
+      this.#releaseStaleBlock(tile.lodLevel, tile.tileX, tile.tileZ);
       this.#mergedMembers.delete(tile.key);
     }
-    if (this.#resident.get(tile.key) === tile) this.#resident.delete(tile.key);
+    if (this.#resident.get(tile.key) === tile) {
+      this.#resident.delete(tile.key);
+      this.#morphEdgesDirty = true;
+    }
     this.#ringEpoch += 1;
     this.#removeStitchesForTile(tile.key);
     this.remove(tile.lod);

@@ -493,3 +493,33 @@ jobs:
         run: |
           echo "required-check-promotion requires maintainer review after calibration evidence"
           echo "baseline-regeneration is a separate-reviewed-change and never runs in this gate"
+
+  velocity-cost:
+    name: Temporal-off velocity submission cost
+    # PRD-550 phase 1. This arm prices actual frame submission against split-control noise, so any
+    # other job on the machine reports its load as render cost. The merge path's integration lane
+    # therefore runs only `--variant=history`, and this measurement runs on the scheduled lane.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build this commit's public bridge and runner
+        run: pnpm --filter @threenative/playtest build
+      - name: Measure the temporal-off CPU submission cost
+        run: pnpm exec tsx scripts/verify-velocity-history.ts --variant=cost
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: velocity-cost-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/velocity-history/
+          retention-days: 30
+          if-no-files-found: warn

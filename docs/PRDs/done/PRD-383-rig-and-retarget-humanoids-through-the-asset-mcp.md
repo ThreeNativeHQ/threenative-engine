@@ -347,13 +347,13 @@ libraries. Inventory the old sample's reachable references without removing unre
   `src/server.ts`) with bounded local GLB/ZIP input, hashes, extension/attribute reporting, measured
   bounds, bone-role suggestions and leaf-joint attachment candidates. `npm run typecheck` pass;
   `tests/rig-inspect.integration.test.ts` + `tests/mcp-smoke.test.ts` 18 pass. Companion A PR:
-  jonit-dev/threenative-asset-mcp#2.
+  ThreeNativeHQ/threenative-asset-mcp#2.
 - [x] Release-asset preparation script and per-clip donors landed: `scripts/prepare-animation-assets.ts`
   builds 172 rig-bearing mesh-free donor GLBs (168 selectable motions + 4 `A_TPose` calibration) and a
   98,596-byte `src/rig/animation-catalog.json`; `src/rig/donor.ts` strips meshes/materials/textures and
   every accessor outside the selected clip plus inverse-bind matrices. Reload check per donor: 65 joints,
   IBM present, exactly one animation. Published as GitHub release `animation-assets-v0.8.0` on
-  jonit-dev/threenative-asset-mcp (174 assets); `NOTICE.md` carries the CC0 notice and source digests.
+  ThreeNativeHQ/threenative-asset-mcp (174 assets); `NOTICE.md` carries the CC0 notice and source digests.
 - [x] Installed stdio E1: a packed `npm pack` consumer's bin exposes 38 tools including `asset_inspect_rig`;
   `tools/call` with `{target:{sourceId:"aether-02"}}` returned a cache-hit acquisition (`alreadyCached:true`,
   `5,992,836` bytes), 18 joints, 11 clips and `hand.R`; the real UAL1 archive returned 86 clips all with
@@ -364,7 +364,7 @@ libraries. Inventory the old sample's reachable references without removing unre
   - UAL1 and UAL2 each report 43 distinct motions (42 + `A_TPose`) in `in_place` + `_RM` variants (86 clips / 2 entries; UAL2's third entry is unanimated); pinned AETHER (`sha256 ed91ecdd…`) reports 18 joints, 11 clips, 5 materials, 4 images, `TEXCOORD_0`/`TEXCOORD_1`/`TANGENT`, `KHR_materials_clearcoat` + `KHR_materials_emissive_strength`, ~14 m height, `hand.R`. Every catalog clip now carries a release URL and digest; local archives inspect with no network.
 - [x] AC-2 [local; actor: agent]: Malformed/unsupported inputs, path escape, resource limits, cancellation and conflicting writes fail through the handler while preserving the prior output — E1 done.
   - Earlier: non-GLB target, oversize input, digest mismatch, disallowed redirect and ZIP entry traversal return named errors, and the pinned download aborts on timeout without publishing.
-  - Closed by A `tests/rig-output-safety.integration.test.ts` and `tests/rig-cancellation.integration.test.ts` (PR jonit-dev/threenative-asset-mcp#3), all through the real handlers: failed validation after a prior output leaves it byte-identical with no `.part-` residue; a conflicting write returns `RIG_OUTPUT_CONFLICT` and preserves the prior bytes, while the matching `priorDigest` replaces them; an output outside `projectRoot` returns `RIG_UNSAFE_PATH` and writes nothing there; two simultaneous `publishOutput` calls leave exactly one winner and the file matches it. Cancellation kills the **built stdio server** mid-`asset_auto_rig` on a 1.5M-vertex target — the test asserts the call is still in flight, so a finished call fails rather than passes — and the prior GLB is byte-identical, still reloads with its 18 joints, and no extra `.glb` appears.
+  - Closed by A `tests/rig-output-safety.integration.test.ts` and `tests/rig-cancellation.integration.test.ts` (PR ThreeNativeHQ/threenative-asset-mcp#3), all through the real handlers: failed validation after a prior output leaves it byte-identical with no `.part-` residue; a conflicting write returns `RIG_OUTPUT_CONFLICT` and preserves the prior bytes, while the matching `priorDigest` replaces them; an output outside `projectRoot` returns `RIG_UNSAFE_PATH` and writes nothing there; two simultaneous `publishOutput` calls leave exactly one winner and the file matches it. Cancellation kills the **built stdio server** mid-`asset_auto_rig` on a 1.5M-vertex target — the test asserts the call is still in flight, so a finished call fails rather than passes — and the prior GLB is byte-identical, still reloads with its 18 joints, and no extra `.glb` appears.
   - Resource limits found a real defect while being proved: `fitBipedLandmarks` took its extremes with `Math.max(...samples.map(...))`, so a mesh past the engine's argument limit threw `RangeError: Maximum call stack size exceeded` and reached the caller as an opaque `RIG_INTERNAL` at ~270k vertices — inside the advertised 8M-vertex budget. A spread-free `extremum` helper replaces all four sites; the 300k-vertex regression now rigs 18 joints. Red control: reverting `src/rig/fit.ts` fails that test with `RIG_INTERNAL`. `npm run typecheck` clean, `npx vitest run` 38 files / **327 tests pass**. Tests only plus the fit fix, so the engine's `0.9.0` pin still resolves to a correct server.
 - [x] AC-3 [local; actor: agent]: Sample acquisition selects pinned AETHER; old mannequin/sailor names and binary digests are absent from new default paths, tool tarballs and sample outputs — E1 done.
   - `{sourceId:"aether-02"}` acquires, digest-verifies and caches outside project roots (`~/.cache/threenative-asset-mcp/animation-sources/samples/…`) and works offline on the next call. No `mannequin`/`sailor` reference exists in A; the packed tarball contains no UAL/AETHER/sample binary (only the unrelated `vendor/anycreature-1.3.1.zip` from PRD-372).
@@ -472,7 +472,7 @@ the core shim, and inspect tarball contents. Test the eventual registry artifact
 **Estimate:** 1–2 days plus release availability. **Checkpoint:** pending independent review.
 
 - [x] A package advanced to `0.9.0` (feature addition: the four rig tools) and published to npm;
-  A PR jonit-dev/threenative-asset-mcp#2 squash-merged to `main` (`cffb9b6`).
+  A PR ThreeNativeHQ/threenative-asset-mcp#2 squash-merged to `main` (`cffb9b6`).
 - [x] E pins advanced together: `packages/core/package.json` `0.9.0`, `packages/core/mcp/servers.mjs`
   fallback `0.9.0`, `pnpm-lock.yaml` resolved to `threenative-asset-mcp@0.9.0`.
 - [x] `packages/create-threenative/asset-mcp-tools.json` regenerated from the *published* 0.9.0 by a

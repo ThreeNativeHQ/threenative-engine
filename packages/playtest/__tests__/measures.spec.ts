@@ -27,6 +27,8 @@ import {
   physicsDebugSleepStates,
   platformTop,
   pathValuePass,
+  projectedOffscreenRatio,
+  projectedPixelsFromNdcBounds,
   rejectsTrivialAssertion,
   renderedEntitiesAreReported,
   renderedEntity,
@@ -258,5 +260,12 @@ describe("playtest evaluator measures", () => {
     const trivial = evaluateVisibilityAssertion({ allowTrivial: "fixture", minProjectedPixels: 10 } as never, "player", { height: 100, width: 100 }, visible, visible);
     expect(trivial.assertion.pass).toBe(true);
     expect(trivial.assertion.details).toMatchObject({ trivial: true, trivialityOptOut: true });
+  });
+
+  test("a box half off the right edge is half off-screen, and its pixels clamp to the viewport", () => {
+    // NDC x runs from 0 to 2, so half the box lies on screen.
+    // The clamped pixels cover half of a 200 by 100 viewport.
+    expect(projectedOffscreenRatio([0, -1], [2, 1])).toBeCloseTo(0.5);
+    expect(projectedPixelsFromNdcBounds([0, -1], [2, 1], { height: 100, width: 200 })).toBe(10_000);
   });
 });

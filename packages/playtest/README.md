@@ -43,7 +43,9 @@ npx @threenative/playtest playtests/device-smoke.playtest.json \
 
 The native host receives the mailbox root through `TN_PLAYTEST_MAILBOX_ROOT` and injects the
 shared `TN_PLAYTEST_MAILBOX` global before evaluating the game entry, so the game source is
-unchanged. On Linux without a display, prefix the command with `sh scripts/xvfb.sh`.
+unchanged. `--live-clock` on the desktop target also passes `TN_PLAYTEST_CLOCK=wall-clock`, which
+the host reads before that same entry. On Linux without a display, prefix the command with
+`sh scripts/xvfb.sh`.
 
 An iOS simulator run installs a built app, launches it with `simctl`, and
 uses the app data-container mailbox:
@@ -55,7 +57,7 @@ npx @threenative/playtest playtests/device-smoke.playtest.json \
 ```
 
 For a signed physical build, add `--ios-transport device --device <devicectl-id>`.
-Network, DOM, and visual-metric assertions are unsupported on device targets and fail
+Network, DOM, and `assert.visual` assertions are unsupported on device targets and fail
 `TN_PLAYTEST_UNSUPPORTED_ON_TARGET` with exit code 2. Default CI does not run Android or
 iOS device scenarios. `.github/workflows/native-platforms.yml` is an explicit opt-in
 platform lane; an absent run is not a pass.
@@ -68,3 +70,39 @@ entity, an absent resource, an empty effect log, or a scenario with no
 assertions at all is a failure, never a silent pass. Wrong-typed assertion
 values are rejected when the scenario loads rather than dropped, so a scenario
 cannot quietly run with fewer checks than its author wrote.
+
+
+## Tone gates and offline inspection
+
+`npx @threenative/playtest tone shot.png other.png` prints tab-separated rows for mean, p1, p50,
+p99, clip%, black%, plus an unweighted frame-average row. No browser is started. Empty input,
+unreadable PNGs and images without visible pixels exit 2 without a partial table.
+
+```json
+{ "assert": { "tone": [{ "atStep": "landed", "mean": { "min": 60, "max": 140 }, "p99": { "min": 150 }, "clipFraction": { "max": 0.005 } }] } }
+```
+
+`atStep` selects a named step; omission selects the final capture. Every metric takes inclusive
+min/max bounds. Empty arrays, empty bounds, non-finite/out-of-range numbers, unknown keys and
+reversed ranges fail at load. Missing capture evidence fails TN_PLAYTEST_TONE_UNOBSERVED.
+Failed bounds name the measured and required values.
+
+All six metrics use the capture guard's existing PNG decode without downsampling: rounded
+Rec.709 display luminance fills 256 bins; mean averages bin values and percentiles use nearest
+rank. Clip/black fractions count bins 255/0 and use 0..1 in assertions (percentages in the CLI).
+Fully transparent pixels are excluded; other pixels retain stored RGB without compositing.
+These numbers measure exposure, not aesthetic quality.
+
+
+Browser, Android, desktop and iOS scenario captures now record TN_TONE under observations.tone,
+even without tone assertions. Explicit tone requests force their captures despite disabled
+convenience screenshots. A named step's existing screenshot is reused. This host-side support
+is exercised with target-driver fixtures; it does not turn unit tests into native GPU proof.
+
+
+Repository runtime proof: `pnpm test:tone` builds the isolated calibration fixture and captures
+its real WebGPU output at exposure 0.25 and 1. The same assertions must fail then pass. PNGs,
+observations, reports and adapter provenance are retained under `artifacts/tone-exposure`; the
+summary names the exact source SHA. It also runs after `pnpm test:templates`. The maintained
+`integration-tone` workflow permits software WebGPU for pixel correctness only, not native
+execution, hardware performance or aesthetic qualification.

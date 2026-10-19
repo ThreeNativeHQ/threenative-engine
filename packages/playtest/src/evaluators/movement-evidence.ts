@@ -30,14 +30,19 @@ export function emitMovementEvidence(ctx: IEvaluationContext): void {
   }
   if (scenarioAssertions.movement?.minVelocity !== undefined) {
     const velocity = input.report.frames <= 0 ? 0 : input.report.distance / input.report.frames;
-    const pass = velocity >= scenarioAssertions.movement.minVelocity;
-    assertions.push({ details: { minVelocity: scenarioAssertions.movement.minVelocity, velocity }, id: "movement.velocity", pass });
+    const observed = input.report.before !== undefined && input.report.after !== undefined;
+    const pass = observed && velocity >= scenarioAssertions.movement.minVelocity;
+    assertions.push({ details: { minVelocity: scenarioAssertions.movement.minVelocity, observed, velocity }, id: "movement.velocity", pass });
     if (!pass) {
       diagnostics.push({
         code: "TN_PLAYTEST_VELOCITY_ASSERTION_FAILED",
-        message: `Entity '${input.report.entity}' velocity ${velocity.toFixed(6)} was below required ${scenarioAssertions.movement.minVelocity}.`,
+        message: observed
+          ? `Entity '${input.report.entity}' velocity ${velocity.toFixed(6)} was below required ${scenarioAssertions.movement.minVelocity}.`
+          : `Entity '${input.report.entity}' was not observed in both samples, so its velocity was never measured.`,
         severity: "error",
-        suggestion: "Check input force/speed tuning and whether the scenario holds input long enough.",
+        suggestion: observed
+          ? "Check input force/speed tuning and whether the scenario holds input long enough."
+          : "The entity is absent from the first or last sample; it cannot carry a velocity bound.",
       });
     }
   }
@@ -96,14 +101,19 @@ export function emitMovementEvidence(ctx: IEvaluationContext): void {
   }
   if (scenarioAssertions.movement?.pathLength !== undefined) {
     const pathLength = input.report.pathLength ?? input.report.distance;
-    const pass = pathLength >= scenarioAssertions.movement.pathLength;
-    assertions.push({ details: { minimum: scenarioAssertions.movement.pathLength, pathLength }, id: "movement.pathLength", pass });
+    const observed = input.report.before !== undefined && input.report.after !== undefined;
+    const pass = observed && pathLength >= scenarioAssertions.movement.pathLength;
+    assertions.push({ details: { minimum: scenarioAssertions.movement.pathLength, observed, pathLength }, id: "movement.pathLength", pass });
     if (!pass) {
       diagnostics.push({
         code: "TN_PLAYTEST_PATH_LENGTH_ASSERTION_FAILED",
-        message: `Entity '${input.report.entity}' accumulated path length ${pathLength.toFixed(6)}, below required ${scenarioAssertions.movement.pathLength}.`,
+        message: observed
+          ? `Entity '${input.report.entity}' accumulated path length ${pathLength.toFixed(6)}, below required ${scenarioAssertions.movement.pathLength}.`
+          : `Entity '${input.report.entity}' was never observed, so its path length could not be bounded.`,
         severity: "error",
-        suggestion: "Use pathLength with minDistance to distinguish actual traversal from a route that returns to its starting point.",
+        suggestion: observed
+          ? "Use pathLength with minDistance to distinguish actual traversal from a route that returns to its starting point."
+          : "Register the entity with the playtest bridge under the id the assertion names.",
       });
     }
   }

@@ -178,6 +178,20 @@ bool tn_physics_add_trimesh_body(TnPhysicsSimulation *simulation,
                                  const TnPhysicsBodyOptions *options,
                                  const float *vertices, uint32_t vertex_floats,
                                  const uint32_t *indices, uint32_t index_count);
+/*
+ * A fixed heightfield body, and the in-place refresh of one: `heights` holds `rows * columns`
+ * samples in column-major order spanning `scale`, centred on the body, copied during the call.
+ * The refresh keeps the id, parent body, collision groups and events.
+ */
+bool tn_physics_add_heightfield_body(TnPhysicsSimulation *simulation,
+                                     const TnPhysicsBodyOptions *options,
+                                     const float *heights, uint32_t count, uint32_t rows,
+                                     uint32_t columns, float scale_x, float scale_y,
+                                     float scale_z);
+bool tn_physics_set_heightfield_shape(TnPhysicsSimulation *simulation, uint32_t id,
+                                      const float *heights, uint32_t count, uint32_t rows,
+                                      uint32_t columns, float scale_x, float scale_y,
+                                      float scale_z);
 int32_t tn_physics_create_joint(TnPhysicsSimulation *simulation,
                                  const TnPhysicsJointOptions *options);
 bool tn_physics_remove_joint(TnPhysicsSimulation *simulation, uint32_t id);
@@ -226,6 +240,14 @@ int32_t tn_physics_read_visible_transforms(
 int32_t tn_physics_read_body_sleep_states(
     const TnPhysicsSimulation *simulation, float *output,
     size_t output_float_capacity);
+/* Writes eight floats per solved manifold between body `target` and each awake candidate body:
+   candidate id, world contact point x/y/z, world normal x/y/z (target toward candidate) and the
+   step's summed normal impulse. Returns the total count, which may exceed what `output` holds
+   (only that many are written), or -1 for an unknown target or a malformed buffer. */
+int32_t tn_physics_read_contacts(const TnPhysicsSimulation *simulation,
+                                 uint32_t target, const uint32_t *candidates,
+                                 size_t candidate_count, float *output,
+                                 size_t output_float_capacity);
 /* Writes six floats per character: id, grounded, ground body id (-1 when absent),
    and the world-space ground normal x/y/z. */
 int32_t tn_physics_read_character_states(

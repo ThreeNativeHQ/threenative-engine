@@ -171,6 +171,17 @@ describe("movement evidence", () => {
     expect(result.diagnostics.map(({ code }) => code)).toEqual(["TN_PLAYTEST_VELOCITY_ASSERTION_FAILED", "TN_PLAYTEST_MOVEMENT_ASSERTION_FAILED"]);
   });
 
+  test("minVelocity and pathLength cannot pass on an entity that was never observed", () => {
+    const result = evaluate(
+      { movement: { entity: "ghost", minVelocity: 1, pathLength: 1 } },
+      { distance: 5, frames: 5, pathLength: 5 },
+    );
+    expect(result.assertions.find(({ id }) => id === "movement.velocity")?.pass).toBe(false);
+    expect(result.assertions.find(({ id }) => id === "movement.velocity")?.details).toMatchObject({ observed: false });
+    expect(result.assertions.find(({ id }) => id === "movement.pathLength")?.pass).toBe(false);
+    expect(result.assertions.find(({ id }) => id === "movement.pathLength")?.details).toMatchObject({ observed: false });
+  });
+
   test("checks signed raw and resolved axis deltas, including invalid evidence", () => {
     const result = evaluate(
       { movement: { minAxisDelta: { axis: "+y", min: 2 }, minResolvedAxisDelta: { axis: "-z", min: 2 } } },

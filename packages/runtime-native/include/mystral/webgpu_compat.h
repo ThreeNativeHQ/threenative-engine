@@ -39,6 +39,10 @@ typedef WGPUSurfaceDescriptorFromWindowsHWND WGPUSurfaceDescriptorFromWindowsHWN
 typedef WGPUSurfaceDescriptorFromXlibWindow WGPUSurfaceDescriptorFromXlibWindow_Compat;
 #define WGPUSType_SurfaceDescriptorFromXlibWindow_Compat WGPUSType_SurfaceDescriptorFromXlibWindow
 
+// Surface descriptors - Linux Wayland
+typedef WGPUSurfaceDescriptorFromWaylandSurface WGPUSurfaceDescriptorFromWaylandSurface_Compat;
+#define WGPUSType_SurfaceDescriptorFromWaylandSurface_Compat WGPUSType_SurfaceDescriptorFromWaylandSurface
+
 // Surface descriptors - Android ANativeWindow
 typedef WGPUSurfaceDescriptorFromAndroidNativeWindow WGPUSurfaceDescriptorFromAndroidNativeWindow_Compat;
 #define WGPUSType_SurfaceDescriptorFromAndroidNativeWindow_Compat WGPUSType_SurfaceDescriptorFromAndroidNativeWindow
@@ -69,6 +73,7 @@ typedef WGPUBufferMapAsyncStatus WGPUBufferMapAsyncStatus_Compat;
 #define WGPU_SURFACE_TEXTURE_STATUS_TYPE WGPUSurfaceGetCurrentTextureStatus
 #define WGPUSurfaceGetCurrentTextureStatus_Success_Compat WGPUSurfaceGetCurrentTextureStatus_Success
 #define WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal_Compat WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal
+#define WGPUSurfaceGetCurrentTextureStatus_Outdated_Compat WGPUSurfaceGetCurrentTextureStatus_Outdated
 #define WGPUSurfaceGetCurrentTextureStatus_Error_Compat WGPUSurfaceGetCurrentTextureStatus_Error
 
 // Error types - wgpu-native has DeviceLost
@@ -120,6 +125,8 @@ inline void setupShaderModuleWGSL(WGPUShaderModuleDescriptor* desc,
 // Dawn uses newer WebGPU API naming
 // ============================================================================
 
+// Native window surfaces; the browser build (emdawnwebgpu) has a canvas and none of these.
+#if !defined(__EMSCRIPTEN__)
 // Surface descriptors - macOS Metal
 typedef WGPUSurfaceSourceMetalLayer WGPUSurfaceDescriptorFromMetalLayer_Compat;
 #define WGPUSType_SurfaceDescriptorFromMetalLayer_Compat WGPUSType_SurfaceSourceMetalLayer
@@ -132,9 +139,14 @@ typedef WGPUSurfaceSourceWindowsHWND WGPUSurfaceDescriptorFromWindowsHWND_Compat
 typedef WGPUSurfaceSourceXlibWindow WGPUSurfaceDescriptorFromXlibWindow_Compat;
 #define WGPUSType_SurfaceDescriptorFromXlibWindow_Compat WGPUSType_SurfaceSourceXlibWindow
 
+// Surface descriptors - Linux Wayland
+typedef WGPUSurfaceSourceWaylandSurface WGPUSurfaceDescriptorFromWaylandSurface_Compat;
+#define WGPUSType_SurfaceDescriptorFromWaylandSurface_Compat WGPUSType_SurfaceSourceWaylandSurface
+
 // Surface descriptors - Android ANativeWindow
 typedef WGPUSurfaceSourceAndroidNativeWindow WGPUSurfaceDescriptorFromAndroidNativeWindow_Compat;
 #define WGPUSType_SurfaceDescriptorFromAndroidNativeWindow_Compat WGPUSType_SurfaceSourceAndroidNativeWindow
+#endif  // !__EMSCRIPTEN__
 
 // Dawn proc initialization - Dawn requires setting up procs before use
 #define WGPU_NEEDS_PROC_INIT 1
@@ -173,6 +185,7 @@ typedef WGPUMapAsyncStatus WGPUBufferMapAsyncStatus_Compat;
 #define WGPU_SURFACE_TEXTURE_STATUS_TYPE WGPUSurfaceGetCurrentTextureStatus
 #define WGPUSurfaceGetCurrentTextureStatus_Success_Compat WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal
 #define WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal_Compat WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal
+#define WGPUSurfaceGetCurrentTextureStatus_Outdated_Compat WGPUSurfaceGetCurrentTextureStatus_Outdated
 #define WGPUSurfaceGetCurrentTextureStatus_Error_Compat WGPUSurfaceGetCurrentTextureStatus_Error
 
 // Error types - Dawn removed DeviceLost as an error type (maps to Unknown)
@@ -254,8 +267,26 @@ inline void setupShaderModuleWGSL(WGPUShaderModuleDescriptor* desc,
 // ============================================================================
 
 inline bool wgpuSurfaceTextureStatusIsSuccess(int status) {
+#if defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU_MODERN)
+    // Both modern backends return a usable acquired texture for either success status.
+    // Rejecting Suboptimal strands that image instead of presenting/releasing it.
+    return status == WGPUSurfaceGetCurrentTextureStatus_Success_Compat ||
+           status == WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal_Compat;
+#else
+    // Older headers report suboptimal separately from their single Success status.
     return status == WGPUSurfaceGetCurrentTextureStatus_Success_Compat;
-    // Note: Suboptimal is also considered success on wgpu, but Dawn maps both to Success
+#endif
+}
+
+/**
+ * The swapchain has to be rebuilt before another image can be acquired.
+ *
+ * Unlike the other failures, Outdated is not a dead end: the platform's presentation system has
+ * declared the swapchain stale, and a fresh `SurfaceConfigure` is the documented way back. Callers
+ * that can reconfigure treat it as recoverable; the ones that cannot still see it as a failure.
+ */
+inline bool wgpuSurfaceTextureStatusNeedsReconfigure(int status) {
+    return status == WGPUSurfaceGetCurrentTextureStatus_Outdated_Compat;
 }
 
 #endif // MYSTRAL_WEBGPU_COMPAT_H

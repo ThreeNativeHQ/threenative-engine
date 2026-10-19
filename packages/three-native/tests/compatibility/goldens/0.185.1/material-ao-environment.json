@@ -1,0 +1,27 @@
+{
+  "name": "material-ao-environment",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — the packed ORM plate of material-pbr-maps, smoother and more metallic, under scene.environment (pbr-grid-envmap's equirect): the aoMap also takes PhysicalLightingModel's specular occlusion off the environment's indirect specular",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:89024c537ea9e1bc84d5f824840a138f18645f22a5672f1b31817b4dc6506509",
+      "decimal": "89024c537ea9e1bc84d5f824840a138f18645f22a5672f1b31817b4dc6506509"
+    }
+  ],
+  "render": {
+    "png": "material-ao-environment.png",
+    "pngSha256": "89024c537ea9e1bc84d5f824840a138f18645f22a5672f1b31817b4dc6506509",
+    "width": 300,
+    "height": 200,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

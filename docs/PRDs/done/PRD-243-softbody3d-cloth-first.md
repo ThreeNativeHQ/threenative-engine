@@ -13,7 +13,7 @@ Sources read at depth 1 on 2026-08-28, both MIT:
 `src/SimpleCloth.ts`) and [`holtsetio/softbodies`](https://github.com/holtsetio/softbodies)
 (`src/FEMPhysics/`, 2 067 lines). **Neither is depended on; both are read.**
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 
 **Complexity:** +2 new subsystem, +2 complex state (a solver inside the fixed step), +2 spans `core`
 and `physics`, +1 new public node = **7 → HIGH mode. Mandatory checkpoint every phase.**

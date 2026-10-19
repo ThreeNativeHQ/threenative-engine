@@ -9,7 +9,6 @@ import {
 } from "./worktree-lifecycle.js";
 
 export const GATE_STATUS_SCHEMA_VERSION = 1;
-export const GATE_HEARTBEAT_INTERVAL_MS = 5_000;
 export const GATE_STALE_AFTER_MS = 30_000;
 export const GATE_CLOCK_SKEW_MS = 5_000;
 export const DEFAULT_GATE_STATUS_PATH = path.resolve(process.cwd(), "artifacts/gates/status.json");
@@ -490,11 +489,6 @@ export async function finishGatePhase(
   parseRecord(next);
   await writeAtomic(record.statusPath, next);
   return next;
-}
-
-export async function writeGateStatus(record: IGateStatusRecord): Promise<void> {
-  parseRecord(record);
-  await writeAtomic(record.statusPath, record);
 }
 
 function value(flags: readonly string[], name: string): string {

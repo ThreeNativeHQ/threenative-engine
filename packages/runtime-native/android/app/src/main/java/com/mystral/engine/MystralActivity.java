@@ -359,6 +359,13 @@ public class MystralActivity extends SDLActivity {
                 "TN_PLAYTEST_MAILBOX_UNAVAILABLE: cannot create " + mailboxRoot
             );
         }
+        String uiRenderer = metadata == null ? "native" : metadata.getString("TN_UI_RENDERER", "native");
+        String cssUiRoot = "native-css".equals(uiRenderer) ? extractCssUi() : "";
+        // The native-css UI's own test knobs, which the host reads from its environment. An Android
+        // app inherits none, so the runner hands them over as intent extras and they arrive as the
+        // last two arguments. Empty unless a playtest launch supplied them.
+        String fixedStepMs = getIntent().getStringExtra("TN_CSS_UI_FIXED_STEP_MS");
+        String stateTrace = getIntent().getStringExtra("TN_CSS_UI_STATE_TRACE");
         return new String[] {
             "asset://scripts/main.js",
             endpoint == null ? "" : endpoint,
@@ -366,7 +373,51 @@ public class MystralActivity extends SDLActivity {
             title,
             Boolean.toString(fullscreen),
             backgroundMode == null ? "pause" : backgroundMode,
-            Integer.toString(maxFps)
+            Integer.toString(maxFps),
+            cssUiRoot,
+            fixedStepMs == null ? "" : fixedStepMs,
+            stateTrace == null ? "" : stateTrace
         };
+    }
+
+    /**
+     * Copy the packaged `assets/ui/**` (stylesheets, fonts, images) to a real directory for the
+     * native CSS UI, which reads its `ui/` root from the filesystem and APK assets are not one.
+     * Replaced whole on every launch, so an updated APK never paints a previous install's sheets.
+     * Not caught: a game that asked for this HUD and cannot have it must fail with the reason named.
+     */
+    private String extractCssUi() {
+        java.io.File root = new java.io.File(getFilesDir(), "tn-ui-css");
+        deleteTree(root);
+        try {
+            copyAssetTree("ui", root);
+        } catch (java.io.IOException exception) {
+            throw new IllegalStateException("TN_UI_BUNDLE_MISSING: cannot extract assets/ui: " + exception, exception);
+        }
+        Log.i(LOG_TAG, "TN_CSS_UI_EXTRACTED:{\"root\":\"" + root.getAbsolutePath() + "\"}");
+        return root.getAbsolutePath();
+    }
+
+    private void copyAssetTree(String asset, java.io.File destination) throws java.io.IOException {
+        String[] children = getAssets().list(asset);
+        if (children != null && children.length > 0) {
+            if (!destination.isDirectory() && !destination.mkdirs()) {
+                throw new java.io.IOException("cannot create " + destination);
+            }
+            for (String child : children) copyAssetTree(asset + "/" + child, new java.io.File(destination, child));
+            return;
+        }
+        try (java.io.InputStream input = getAssets().open(asset);
+             java.io.OutputStream output = new java.io.FileOutputStream(destination)) {
+            byte[] buffer = new byte[65536];
+            int read;
+            while ((read = input.read(buffer)) > 0) output.write(buffer, 0, read);
+        }
+    }
+
+    private static void deleteTree(java.io.File file) {
+        java.io.File[] children = file.listFiles();
+        if (children != null) for (java.io.File child : children) deleteTree(child);
+        file.delete();
     }
 }

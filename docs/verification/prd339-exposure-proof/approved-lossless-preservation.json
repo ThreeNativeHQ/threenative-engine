@@ -1,0 +1,163 @@
+{
+  "anchor": "52b0563c0115b1f43597558559a93635bcdfc8d3",
+  "contract": "14 PNGs: identical all non-IDAT raw chunks and decompressed filtered scanlines; own JSON: only outside-string whitespace removed; paths and historical values unchanged",
+  "rows": [
+    {
+      "p": "docs/verification/findings-2026-09-07-bayview-fix/android-world.png",
+      "before": "3474ce40e6e65f16dcd0d4153741b708041fd7ac9eb606504a88185318abb079",
+      "after": "75dd455e74eeaddc466781df5221f669f72fff91a98dc46adbcc0a4696271326",
+      "saved": 175243
+    },
+    {
+      "p": "docs/verification/artifacts/prd-222-resume/emulator-phase1/fontscale-screen.png",
+      "before": "fc2c2daddb7c7547a984cb4f52f94f413f3b2a10afd2c890ff508e9153912349",
+      "after": "a27e91fb80520e115a0136a65c44ea4c555b2864dfcb7ab8cc464068d178d95d",
+      "saved": 116151
+    },
+    {
+      "p": "docs/verification/visuals/native-benchmarks-2026-08-11/godot-fox-pixel8.png",
+      "before": "84b682f7cf5385ca96d1e28a7855d93a919365b148be4611fdd3d00c276a3d64",
+      "after": "89f8b70ae2cb6157e2f3964a777ecc58733ee96df4bc1ecd5f0611a1c2994754",
+      "saved": 115598
+    },
+    {
+      "p": "docs/verification/visuals/runner-dusk-track-2026-09-02.png",
+      "before": "4382761d38183f13c8c2b98182174fc2c740b746f9d201d73df68b145d202e43",
+      "after": "acd9911fbd19b3a319a74a04ee92d7003e8048250ef43f0339f52e29f2bd0cc8",
+      "saved": 110729
+    },
+    {
+      "p": "docs/verification/visuals/puzzle-contraption-room-2026-09-02.png",
+      "before": "3bccf2e4f977e104a879bae256001f4244468d655956b2ef11507cee449b337d",
+      "after": "7b8ddd0635e44bdbf0689ad34817fd556c4de547441893a236e03c4177420a49",
+      "saved": 80097
+    },
+    {
+      "p": "docs/verification/visuals/rain/reference-desktop.png",
+      "before": "392dc7437591f534231b385ac83b7817deb0f1d0689cb374b71652f8d73bb13f",
+      "after": "842c9710325488345b0247825d6653fc92673a439360ca2548ce94f845c03b5b",
+      "saved": 61403
+    },
+    {
+      "p": "docs/verification/visuals/platformer.png",
+      "before": "3e101c930e1f8b952358e6c3c35b08c9e941395c1b841293dbf7efa37c12aed9",
+      "after": "886ce1133e3e66c98d2fdc0eedec246d21883b82d2ec22486dc96e90901912f4",
+      "saved": 50253
+    },
+    {
+      "p": "docs/verification/visuals/defense.png",
+      "before": "dcba1a296c6eb2b67ec6018b78176c8425df043af127e5c42a4e39a93de5f698",
+      "after": "e4d2d86529f25c04eb85503a629ad2eac46cc0bc3e1df3c683d18feea756f18a",
+      "saved": 49606
+    },
+    {
+      "p": "docs/verification/visuals/shooter.png",
+      "before": "7c1a0de9459155922e60d177a6706b9617772fd48b186732e38a06512e1d3975",
+      "after": "3f44d04513f1ee095d94930245a2e4820d49c84490783f2a7c018dc507e2ddc5",
+      "saved": 47210
+    },
+    {
+      "p": "docs/verification/visuals/racing.png",
+      "before": "ed9b7afd8e2982f2e96c73f368eeb10b7978dced2b730af71b1523f910e17451",
+      "after": "f88e2036544954f178b4f49e99a0a282770b98e558a1c1ba5d02d4ec51bd2874",
+      "saved": 47141
+    },
+    {
+      "p": "docs/verification/visuals/runner.png",
+      "before": "913e0348e70ba97004d26eec332ebe4ffbc184c1e736788c1784e60d34654d89",
+      "after": "8208a9ab7ff4e04f2a191ab8ef187e9979d113f321102f1938f5c5da629ef97c",
+      "saved": 44395
+    },
+    {
+      "p": "docs/verification/visuals/PRD-027-before.png",
+      "before": "b7c050d9b82ad7d8a1e7728c041f55494a3ba64066ad8324f96882cb3d9f03fe",
+      "after": "ca619448ba9f649734f668e0d11eedb8a17e78a67473904e4ecd2827320d82cf",
+      "saved": 39631
+    },
+    {
+      "p": "docs/verification/visuals/minimal-regression-2026-08-30.png",
+      "before": "e5f9fa802e4287a957c1ca513d62a5b576830e5e6cc83aec78dac197b7590604",
+      "after": "842c6f429a247c9d51b6336cd62f6d246a494be84b04d9dfb8319802aaf9041e",
+      "saved": 38550
+    },
+    {
+      "p": "docs/verification/visuals/ios-visionos-misselection-2026-08-10.png",
+      "before": "3c9a6e66bca759ddf5c4b955feba29d95648162f6a6a19c93a833cb061a4880b",
+      "after": "584d899ae065db856a02e97a19af68b39d23479ac531244041f8af744d283dbc",
+      "saved": 37941
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/camera-cuts-2bc1d57f.json",
+      "before": "6f70cd900749c9906533ade7e27669a4cb9aff6fd05a4aae565964d6d9bb606e",
+      "after": "ab79000d43af09462e85af6544b8be3b7dab80b021ee639cb6c9cef7728f708a",
+      "saved": 17274
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/cold-boots-08b039c.json",
+      "before": "b5187a8127af92b0ad43be28048093a113ca75ff0d63cf7364e9b79fd9fc269f",
+      "after": "bb1e25faef5f7f78f1f3d5416c0b01efa0fee5f290e359d5cd06d510a60c5b71",
+      "saved": 33695
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/cold-boots-d1500603.json",
+      "before": "95d3dc22a4446ec3d7149ec69a93ad9c22dcdb198771e10733aeaa2a6f9e1f86",
+      "after": "e97fd841f92414a8632324110608155fae55a7d5f6e72bf5103263ad7f3b0558",
+      "saved": 36403
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/completion-388e8a.json",
+      "before": "c721bc609f2506d6760381b2e3040fac91856799cfca48032dc5b23953992582",
+      "after": "455eafba0830b33b90275e34823b58f5467a7000647211fe28d366c2aa9ec42c",
+      "saved": 2667
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/completion-current-55b5313.json",
+      "before": "5bdd730c5201a6be11e9f8283a8766d1e092dd85d6e96ee0cc32b5a1e64652b4",
+      "after": "af79a8be5307a87580187de3d7109018e77df5800cf16fe5a9ff0a662b7edfd0",
+      "saved": 13052,
+      "anchor": "8bf16f4c320748403dd091e4fd7da394da314bff"
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/controlled-cuts-9a84ee0e.json",
+      "before": "1818c70944fccf1800cbafc2a67f26e7086c45cfe51c2d76b1f96c60df936549",
+      "after": "0151a3778995b85a0b00949a148988dd0b18caa254935a2649f37122ef399a15",
+      "saved": 1479
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/dark-adapted-bb34aff.json",
+      "before": "0fb4ca816e87efe5a12e6816b0cc3280d30923fd289cf73c0cf49a5f20e89190",
+      "after": "d9c1cbcfce546266f98458fb82b6442eb7234445117f47b108e39c3596843e9b",
+      "saved": 218
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/live-clock-5c3b176.json",
+      "before": "e2c69eb9d73ec672f8350abc58e4f534cc333b4e1a942a1e2d148f7f82194205",
+      "after": "97f3d0c023d65ccc48422c8ae801eeaf71ac464ce0e27cc0204a345771ebeb11",
+      "saved": 2045
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/qualified-cuts-2a33c9a0.json",
+      "before": "a800ea973a43820c6df12c32d9077c99ac3e281343e47e45558abad62a333fa0",
+      "after": "c3763d9342e93ead6546e146bbfc86cbd3b71a99278b2279f6826c42ab049629",
+      "saved": 7723
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/reverse-cuts-ad0498e6.json",
+      "before": "7f87dc1881fc6dc9551e7de3b174d81fcc57a8d568e014fab572af218f0dc53f",
+      "after": "2f42dedff8e9926b0df8f54ec0f3a47d960325ccf25de1d4c2059823d2108ff1",
+      "saved": 875
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/rgb-correction-c7091c7.json",
+      "before": "f44634243282cf8c90ee052a789cd1c71a872df5ec46821ea6af77b26ca284be",
+      "after": "4c0cbba043ac5f76968be855201a46116d58fe8727c584429d842a31e54f9bca",
+      "saved": 1187
+    },
+    {
+      "p": "docs/verification/prd339-exposure-proof/sunlight-failed-eaa583b.json",
+      "before": "f7dd3bb224acb0f144ff426e0c8765e90f8ac999a90275fd3f984af1ba995e5f",
+      "after": "f7e2c64e0be905aea4b702f4afeab63f2a74b94efc3f71a3a537b66d470373b0",
+      "saved": 274
+    }
+  ]
+}

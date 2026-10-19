@@ -1,4 +1,5 @@
 import type { IBudgetReport } from "./budget.js";
+import { IMAGE_QUALITY_VERSION, type ITextureQuality } from "./image-quality.js";
 import type { IModelCompactSummary } from "./passes/compact.js";
 import type { TextureSkipReason } from "./passes/texture.js";
 
@@ -27,6 +28,7 @@ export function formatBudget(report: IBudgetReport): readonly string[] {
  * so tests can pin the exact lines a build prints.
  */
 export interface ITextureSizeRow {
+  readonly quality?: ITextureQuality;
   readonly after: number;
   readonly before: number;
   /** Set when the bytes shipped as authored; printed so a flat row is never left unexplained. */
@@ -37,10 +39,10 @@ export interface ITextureSizeRow {
 
 export function formatTextureSizes(rows: readonly ITextureSizeRow[]): readonly string[] {
   if (rows.length === 0) return [];
-  const lines = rows.map(
-    (row) =>
-      `texture ${row.logicalPath}${row.format === undefined ? "" : ` (${row.format})`}: ${row.before} -> ${row.after} bytes ${deltaLabel(row.before, row.after)}${row.compressionSkipped === undefined ? "" : `; compression skipped: ${row.compressionSkipped}`}`,
-  );
+  const lines = rows.flatMap((row) => [
+    `texture ${row.logicalPath}${row.format === undefined ? "" : ` (${row.format})`}: ${row.before} -> ${row.after} bytes ${deltaLabel(row.before, row.after)}${row.compressionSkipped === undefined ? "" : `; compression skipped: ${row.compressionSkipped}`}`,
+    ...(row.quality === undefined ? [] : [qualityLine(row.logicalPath, row.quality)]),
+  ]);
   const before = rows.reduce((total, row) => total + row.before, 0);
   const after = rows.reduce((total, row) => total + row.after, 0);
   lines.push(`textures total: ${before} -> ${after} bytes ${deltaLabel(before, after)}`);
@@ -49,6 +51,7 @@ export function formatTextureSizes(rows: readonly ITextureSizeRow[]): readonly s
 
 /** What the model pass did to the images inside one `.glb`. */
 export interface IEmbeddedTextureRow {
+  readonly quality?: Readonly<Record<string, ITextureQuality>>;
   readonly skippedCompression?: Readonly<Record<string, TextureSkipReason>>;
   readonly bytesAfter: number;
   readonly bytesBefore: number;
@@ -64,6 +67,8 @@ export interface IEmbeddedTextureRow {
 export interface IVirtualRow {
   readonly bakeSeconds: number;
   readonly clusters: number;
+  /** Primitives handed back to the discrete ladder because their DAG reduced nothing. */
+  readonly declined: number;
   readonly levels: number;
   readonly payloadBytes: number;
   readonly primitives: number;
@@ -409,19 +414,22 @@ function simplifyLine(row: IModelSizeRow): readonly string[] {
  * Names what the DAG cost and where it stopped.
  *
  * A `cap` stop is called out because it means a DAG ran out of levels rather than finishing, and a
- * bake that clustered nothing says so rather than leaving the reader to infer it from a zero.
+ * bake that clustered nothing says so rather than leaving the reader to infer it from a zero. A
+ * declined primitive is named too: "no primitive was dense enough" is the wrong reason for a body
+ * whose foliage is dense enough and whose DAG reduced nothing.
  */
 function virtualLine(row: IModelSizeRow): readonly string[] {
   const virtual = row.virtual;
   if (virtual === undefined) return [];
+  const declined = virtual.declined > 0 ? `, ${virtual.declined} declined to the LOD ladder` : "";
   if (virtual.primitives === 0)
     return [
-      `virtual ${row.logicalPath}: no primitive was dense enough to cluster (${virtual.skipped} skipped)`,
+      `virtual ${row.logicalPath}: no primitive was dense enough to cluster (${virtual.skipped} skipped${declined})`,
     ];
   const warning =
     virtual.stopReason === "cap" ? " — a DAG hit the level cap and is unfinished" : "";
   return [
-    `virtual ${row.logicalPath}: ${virtual.clusters} cluster(s) over ${virtual.levels} level(s) on ${virtual.primitives} primitive(s), ${virtual.skipped} skipped, ${virtual.payloadBytes} payload bytes, bake ${virtual.bakeSeconds.toFixed(1)} s, stopped at ${virtual.stopReason}${warning}`,
+    `virtual ${row.logicalPath}: ${virtual.clusters} cluster(s) over ${virtual.levels} level(s) on ${virtual.primitives} primitive(s), ${virtual.skipped} skipped${declined}, ${virtual.payloadBytes} payload bytes, bake ${virtual.bakeSeconds.toFixed(1)} s, stopped at ${virtual.stopReason}${warning}`,
   ];
 }
 function compactLine(row: IModelSizeRow): readonly string[] {
@@ -501,6 +509,9 @@ export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly strin
               ([name, reason]) =>
                 `embedded texture ${row.logicalPath}#${name}: compression skipped: ${reason}`,
             ),
+            ...Object.entries(embedded.quality ?? {}).map(([name, score]) =>
+              qualityLine(`${row.logicalPath}#${name}`, score),
+            ),
           ];
     const reduced = [
       ...compactLine(row),
@@ -521,6 +532,36 @@ export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly strin
   const after = rows.reduce((total, row) => total + row.after, 0);
   lines.push(`models total: ${before} -> ${after} bytes ${deltaLabel(before, after)}`);
   return lines;
+}
+
+function qualityLine(name: string, score: ITextureQuality): string {
+  const coverage = score.alpha.coverage
+    .map((c) => `cutoff ${c.threshold}: ${c.source} -> ${c.decoded}, ${c.changedPixels} changed`)
+    .join("; ");
+  return `texture quality ${name} (${score.codec}, mip 0${score.rung === undefined ? "" : `; rung ${score.rung}`}): SSIM ${score.ssim.toFixed(4)}; mean ΔE00 ${score.meanDeltaE00 === null ? "n/a (data)" : score.meanDeltaE00.toFixed(3)}; alpha SSIM ${score.alpha.ssim.toFixed(4)}, MAE ${score.alpha.meanAbsoluteError.toFixed(6)}${coverage === "" ? "" : `; ${coverage}`}; ${score.status}; floor SSIM >= ${score.floor.ssim}, ΔE00 <= ${score.floor.meanDeltaE00}; source ${score.sourceWidth}x${score.sourceHeight} -> comparison ${score.width}x${score.height}; slots ${score.slots.join("+") || "unknown"}`;
+}
+
+/** Counts observations, including repeated shared-image consumers, without hiding data slots. */
+export function formatTextureQualityTotals(scores: readonly ITextureQuality[]): string {
+  const count = (status: ITextureQuality["status"]): number =>
+    scores.filter((score) => score.status === status).length;
+  const colour = scores.filter((score) => score.meanDeltaE00 !== null);
+  const minimumSsim = colour.reduce((minimum, score) => Math.min(minimum, score.ssim), 1);
+  const maximumDeltaE = colour.reduce(
+    (maximum, score) => Math.max(maximum, score.meanDeltaE00 ?? 0),
+    0,
+  );
+  const worst =
+    colour.length === 0
+      ? "colour n/a"
+      : `colour min SSIM ${minimumSsim.toFixed(4)}, max mean ΔE00 ${maximumDeltaE.toFixed(3)}`;
+  return `texture quality total: ${scores.length} measured; ${count("pass")} pass; ${count("below-floor")} below-floor; ${count("unvalidated-slots")} unvalidated-slots; ${worst}; ${IMAGE_QUALITY_VERSION}; floor enforced`;
+}
+
+/** Counts every image decision, including retained sources, on cold and warm builds. */
+export function formatTextureRungs(codecs: readonly string[]): string {
+  const count = (codec: string): number => codecs.filter((value) => value === codec).length;
+  return `${count("etc1s")} etc1s · ${count("uastc")} escalated to uastc · ${count("none")} uncompressed`;
 }
 
 function deltaLabel(before: number, after: number): string {
@@ -587,7 +628,7 @@ export function formatSkippedCompression(rows: readonly ISkippedReportRow[]): re
       const reason =
         row.reason === "config"
           ? `assets.${row.kind}s is "none"`
-          : `this target has no WebAssembly and cannot run its ${decoders} decoder`;
+          : `this target has no qualified ${decoders} decoder`;
       return `TN_ASSETS_COMPRESSION_SKIPPED ${row.kind}: ${String(row.files)} file(s), ${(row.bytes / 1e6).toFixed(1)} MB ${action} because ${reason}.`;
     });
 }

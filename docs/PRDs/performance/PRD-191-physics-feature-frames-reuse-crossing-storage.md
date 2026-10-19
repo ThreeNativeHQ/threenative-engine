@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P2 — Reuse per-step sets and maps in the physics web path; planned allocation cleanup.
 **Complexity:** +2 for 6–10 files, +2 for backend-sensitive state = **4 → MEDIUM mode**.
 
 ## Context

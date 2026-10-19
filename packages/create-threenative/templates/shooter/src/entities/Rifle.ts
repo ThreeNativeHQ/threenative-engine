@@ -9,8 +9,10 @@ import {
   AdditiveBlending,
   type AnimationClip,
   Box3,
+  CircleGeometry,
   ConeGeometry,
   Group,
+  type Material,
   MathUtils,
   Mesh,
   MeshBasicMaterial,
@@ -22,6 +24,7 @@ import {
   type Scene as ThreeScene,
   Vector3,
 } from "three";
+import { FIRST_PERSON } from "../render/camera.js";
 import { PooledBillboards } from "../render/pooled-billboards.js";
 import { scale } from "../render/scale.js";
 import type { GameState } from "../state.js";
@@ -45,6 +48,8 @@ const CYCLIC_SECONDS = 0.1;
  * the forearm as a sleeve filling the screen, whatever this pose says.
  */
 const HIP = { x: 0.22, y: -0.29, z: -0.15, pitch: -0.03, yaw: 0.12, roll: 0.04 };
+/** Measured on the shipped viewmodel's ADS capture: scope body spans 190..455 px, window center at ~265 px down from top. */
+const SIGHT_WINDOW_FROM_TOP = 0.28;
 const AIM_Z = -0.16;
 const ZERO_DISTANCE = 25;
 const MAX_CONVERGENCE_DEGREES = 8;
@@ -63,6 +68,7 @@ export class Rifle {
   onMagIn: (() => void) | undefined;
   readonly group = new Group();
   #flash: Mesh;
+  #reticle: Mesh;
   #flashLife = 0;
   #light: PointLight;
   #smokeMaterial: MeshBasicMaterial;
@@ -108,6 +114,15 @@ export class Rifle {
       // The viewmodel is drawn over the world, so nothing in the yard can clip it.
       const mesh = object as Mesh;
       if (mesh.isMesh === true) mesh.renderOrder = 20;
+      // The scope glass is 58% opaque dark navy. It makes the view center black while aiming.
+      // Alpha test keeps only the opaque frame, so the window stays clear.
+      const material = mesh.material as Material | undefined;
+      if (material?.name === "Scope") {
+        material.alphaTest = 0.9;
+        material.transparent = false;
+        material.depthWrite = true;
+        material.needsUpdate = true;
+      }
     });
     // The fixed half-turn is the authored asset correction; the barrel axis and tip below are
     // measured after this transform, so no caller has to guess where the suppressor ends.
@@ -149,6 +164,24 @@ export class Rifle {
     this.#light = new PointLight(0xffc46a, 0, 6, 2);
     this.#light.position.copy(this.#barrelTipLocal);
     this.group.add(this.#light);
+    // The dot radius is 1.75 px at 1280x720 with the aim FOV. At the optic distance d, the view
+    // is 2 d tan(FOV / 2) meters tall. It spans 720 px, so one pixel is that height divided by 720.
+    const opticDistance = -(AIM_Z + this.#opticLocal.z);
+    const halfFov = MathUtils.degToRad(FIRST_PERSON.aimFov) / 2;
+    const metresPerPixel = (2 * opticDistance * Math.tan(halfFov)) / 720;
+    this.#reticle = new Mesh(
+      new CircleGeometry(1.75 * metresPerPixel, 16),
+      new MeshBasicMaterial({
+        color: 0xff2a2a,
+        depthTest: false,
+        opacity: 0,
+        toneMapped: false,
+        transparent: true,
+      }),
+    );
+    this.#reticle.position.copy(this.#opticLocal);
+    this.#reticle.renderOrder = 31;
+    this.group.add(this.#reticle);
     // Smoke lives in world space, not on the camera, so it stays where it was made when you
     // turn — smoke welded to the viewmodel slides with the view and reads as a bug. The
     // shared billboard pool keeps every puff present at zero opacity from the first frame.
@@ -233,7 +266,9 @@ export class Rifle {
       }
     });
     if (bestScore < Number.POSITIVE_INFINITY) {
-      this.#opticLocal.copy(candidate.getCenter(new Vector3())).applyMatrix4(fit.matrix);
+      const center = candidate.getCenter(new Vector3());
+      center.y = candidate.max.y - (candidate.max.y - candidate.min.y) * SIGHT_WINDOW_FROM_TOP;
+      this.#opticLocal.copy(center).applyMatrix4(fit.matrix);
     } else {
       this.#opticLocal
         .set(
@@ -396,6 +431,8 @@ export class Rifle {
       HIP.yaw * (1 - t),
       HIP.roll * (1 - t) + this.#lowered * 0.18,
     );
+    // The red dot shows only at full aim. Opacity keeps it in the render list, as the flash does.
+    (this.#reticle.material as MeshBasicMaterial).opacity = this.#blend > 0.9 ? 1 : 0;
     if (!this.#hasAimRay) return;
 
     const target = this.#aimOrigin.clone().addScaledVector(this.#aimDirection, ZERO_DISTANCE);

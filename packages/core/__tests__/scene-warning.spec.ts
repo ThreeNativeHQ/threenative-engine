@@ -28,6 +28,7 @@ function midwayWindow(overrides: Partial<IFrameBudgetWindow> = {}): IFrameBudget
     gpu: summary(1.9),
     gpuStale: 0,
     hitches: 0,
+    longTasks: { available: false },
     passes: {
       main: { draws: summary(158), frames: 300, triangles: summary(287_000) },
       reflection: { draws: summary(51), frames: 300, triangles: summary(93_000) },

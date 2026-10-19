@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "name": "vq01-native-asset-lifecycle",
+  "target": "desktop",
+  "viewport": {
+    "width": 960,
+    "height": 640
+  },
+  "warmupFrames": 30,
+  "steps": [
+    {
+      "press": "KeyV",
+      "release": true,
+      "label": "arm the leave/re-enter cycle"
+    },
+    {
+      "waitTicks": 2
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "settled",
+        "equals": 2
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "settled",
+        "equals": 3
+      },
+      "timeoutMs": 120000
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "settled",
+        "equals": 4
+      },
+      "timeoutMs": 120000
+    }
+  ],
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "assert": {
+    "resources": [
+      {
+        "id": "state",
+        "path": "entries",
+        "equals": 4,
+        "allowTrivial": "The first load publishes entries 1; only three further enters of the same scene publish 4."
+      },
+      {
+        "id": "state",
+        "path": "loadedModels",
+        "equals": 2,
+        "allowTrivial": "Both real normalized GLBs reload and finish before every observation, including the fourth enter's."
+      },
+      {
+        "id": "state",
+        "path": "texturedMeshes",
+        "equals": 2,
+        "allowTrivial": "A texture image on each reloaded GLB is counted before the observation."
+      },
+      {
+        "id": "state",
+        "path": "ownedGeometries",
+        "gte": 1,
+        "allowTrivial": "The renderer's live geometry tally is only published once the settle window has measured a settled one; how many a backend initialises for this scene is its own business."
+      },
+      {
+        "id": "state",
+        "path": "geometryGrowth",
+        "equals": 0,
+        "allowTrivial": "The exit path's disposal is what makes a re-entry's settled tally return to the first enter's settled tally, and only a leak can move the difference between them."
+      },
+      {
+        "id": "state",
+        "path": "ownedTextures",
+        "gte": 1,
+        "allowTrivial": "The renderer's live texture tally is only published once the settle window has measured a settled one, which is after the KTX2 and panel textures have landed."
+      },
+      {
+        "id": "state",
+        "path": "textureGrowth",
+        "equals": 0,
+        "allowTrivial": "The exit path's disposal is what makes a re-entry's settled tally return to the first enter's settled tally, and only a leak can move the difference between them."
+      },
+      {
+        "id": "state",
+        "path": "frames",
+        "changed": true
+      }
+    ],
+    "startup": {
+      "maxEnteredMs": 120000,
+      "maxReadyMs": 120000
+    }
+  }
+}

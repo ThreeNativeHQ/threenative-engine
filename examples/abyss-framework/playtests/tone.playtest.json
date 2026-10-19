@@ -1,0 +1,22 @@
+{
+  "name": "tone-exposure",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 2,
+  "artifacts": { "screenshots": "after" },
+  "steps": [{ "kind": "wait", "label": "rendered", "waitTicks": 2 }],
+  "assert": {
+    "tone": [
+      {
+        "atStep": "rendered",
+        "mean": { "min": 140, "max": 210 },
+        "p99": { "min": 230 },
+        "clipFraction": { "max": 0.02 },
+        "blackFraction": { "max": 0.05 }
+      },
+      { "mean": { "min": 140, "max": 210 }, "p99": { "min": 230 } }
+    ],
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true }
+  }
+}

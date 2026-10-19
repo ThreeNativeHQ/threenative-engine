@@ -10,7 +10,7 @@
 // puts the crosshair somewhere the body is not. The rule this file exists to
 // state is the opposite one: compose the camera from the body's *solved* pose,
 // every frame, with no interpolation of its own.
-import { MathUtils, type PerspectiveCamera, type Vector3Like } from "three";
+import { MathUtils, type PerspectiveCamera } from "three";
 
 /** The numbers a first-person camera is built from, in one table. */
 export const FIRST_PERSON = {
@@ -79,15 +79,4 @@ export function firstPersonFov(current: number, aiming: boolean, dt: number): nu
     FIRST_PERSON.fovRate,
     dt,
   );
-}
-
-/** Where a shot leaves from: the camera basis, never the body transform. */
-export function aimBasis(camera: PerspectiveCamera): {
-  origin: Vector3Like;
-  direction: Vector3Like;
-} {
-  camera.updateMatrixWorld(true);
-  const origin = camera.position;
-  const direction = camera.getWorldDirection(camera.position.clone());
-  return { origin, direction: direction.normalize() };
 }

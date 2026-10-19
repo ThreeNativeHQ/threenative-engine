@@ -1,0 +1,75 @@
+{
+  "name": "terrain-splat-sixteen-layers",
+  "schemaVersion": 1,
+  "subject": "sixteen uncompressed terrain layers and a height set must reach the screen through five sampled textures",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 60,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "layers-resident",
+      "waitTicks": 180,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "allowTrivial": "Sixteen layers is the whole package: the table ships no more.",
+        "component": "layers",
+        "entity": "splat",
+        "equals": 16
+      },
+      {
+        "allowTrivial": "The splat planes plus one array per set: albedo, normal, ORM and height.",
+        "component": "samplers",
+        "entity": "splat",
+        "lte": 5
+      },
+      {
+        "allowTrivial": "One array texture per set, whatever the layer count.",
+        "component": "stacked",
+        "entity": "splat",
+        "equals": 4
+      },
+      {
+        "allowTrivial": "The scenario runs the game's own height blend; the identity seam is the ?heightBlend=off arm.",
+        "component": "heightBlend",
+        "entity": "splat",
+        "equals": 1
+      },
+      {
+        "changed": true,
+        "component": "orbitSeconds",
+        "entity": "splat"
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.05
+        },
+        "frameDiff": {
+          "minChangedPixelRatio": 0.0005
+        }
+      }
+    ]
+  }
+}

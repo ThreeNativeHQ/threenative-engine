@@ -1,0 +1,243 @@
+{
+  "sourceSha": "b149762dd22a7ce1efdcd5f479c347cdb8fec006",
+  "workflowRunId": 37054997796,
+  "artifactId": 11248761037,
+  "artifactSha256": "aa94e9d72567c8e67f1bacf0b9992b8a7b0adec0fbebe9be9270c4dd7f8ee024",
+  "qualification": "Rendered software-GPU correctness only; no native or hardware-performance claim.",
+  "sourceFiles": [
+    {
+      "filename": "packages/core/src/fluid-particles.ts",
+      "sha256": "cf55ed59ea63691cea08d08e31898858d85437f617027c92db1bcae41053f2f4"
+    },
+    {
+      "filename": "packages/core/src/gpu-readback.ts",
+      "sha256": "fece052efd783927fc92f05f9536c27d9ab22e4c15f47f3f693d2bf10013e64f"
+    },
+    {
+      "filename": "packages/core/patches/three@0.185.1.patch",
+      "sha256": "dcbc51317e57b2a422fa4335d86722cd7789d322f215e5a8b00cd96e66c0f05b"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/src/collision-proof.ts",
+      "sha256": "5512e4a0e60c59fe4ad6641f37fb3baa0b25e606d2616b02cd43a8b443f65fa7"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/playtests/fluid-collision.playtest.json",
+      "sha256": "c50f2e0cc15f0019d2b2f2f2f916d08a06534fa358de8cb0d587630562e0ccda"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/proof.html",
+      "sha256": "22a2d1a0cdd8822a276be9e7a2afaacedab1f30162474e3adb954d1f0f38d439"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/proof.vite.config.ts",
+      "sha256": "485b60dd4120a7ec567ca7e32f57f0f2832b034fc31969d1112b82b876bb30cd"
+    },
+    {
+      "filename": "scripts/fluid-collision-proof.ts",
+      "sha256": "86b64608626df54abac6ac7b278c3256cf8cdf2696f9371e6276a139f2a16d7c"
+    },
+    {
+      "filename": "scripts/verify-fluid-collision.ts",
+      "sha256": "168b476aa0aa439ec81ff76f429049a7b740f5a048ae60cde5518a896373347e"
+    }
+  ],
+  "variants": [
+    {
+      "variant": "gate",
+      "pass": true,
+      "adapter": {
+        "vendor": "google",
+        "architecture": "swiftshader"
+      },
+      "rendererKind": "webgpu",
+      "assertions": [
+        {
+          "id": "visual.0.region",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.collisionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.measuredSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.totalSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.freeMotionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDistance",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDirectionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.ejectionSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.finite",
+          "pass": true
+        },
+        {
+          "id": "diagnostics",
+          "pass": true
+        }
+      ],
+      "diagnostics": [],
+      "measurements": {
+        "before": {
+          "gateClosed": true,
+          "measuredSteps": 0,
+          "totalSteps": 1,
+          "initialX": -1.0499999523162842,
+          "collisionX": -1.0499999523162842,
+          "collisionPassed": 0,
+          "freeX": -1.0499999523162842,
+          "freeMotionPassed": 0,
+          "diagonalSpeed": 0,
+          "diagonalDistance": 0,
+          "diagonalDirectionPassed": 0,
+          "ejectionSpeed": 0,
+          "finite": 0
+        },
+        "after": {
+          "gateClosed": true,
+          "measuredSteps": 1,
+          "totalSteps": 2,
+          "initialX": -1.0499999523162842,
+          "collisionX": -1.0468000173568726,
+          "collisionPassed": 1,
+          "freeX": -0.75,
+          "freeMotionPassed": 1,
+          "diagonalSpeed": 18.00000091579126,
+          "diagonalDistance": 0.3000000290282922,
+          "diagonalDirectionPassed": 1,
+          "ejectionSpeed": 18,
+          "finite": 1
+        }
+      },
+      "images": [
+        {
+          "filename": "gate-before.png",
+          "sha256": "09348820a392a40f4bd55d97904678d6cfcbbd95860dbfd8856c3cfd88d86620"
+        },
+        {
+          "filename": "gate-after.png",
+          "sha256": "d16c036473f03145a2997fd86787d887d36ccd3e048b0b09eef7cef81cce73f9"
+        }
+      ]
+    },
+    {
+      "variant": "gate-disabled",
+      "pass": false,
+      "adapter": {
+        "vendor": "google",
+        "architecture": "swiftshader"
+      },
+      "rendererKind": "webgpu",
+      "assertions": [
+        {
+          "id": "visual.0.region",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.collisionPassed",
+          "pass": false
+        },
+        {
+          "id": "resource.FluidCollision.measuredSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.totalSteps",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.freeMotionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDistance",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalDirectionPassed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.diagonalSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.ejectionSpeed",
+          "pass": true
+        },
+        {
+          "id": "resource.FluidCollision.finite",
+          "pass": true
+        },
+        {
+          "id": "diagnostics",
+          "pass": true
+        }
+      ],
+      "diagnostics": ["TN_PLAYTEST_RESOURCE_ASSERTION_FAILED"],
+      "measurements": {
+        "before": {
+          "gateClosed": false,
+          "measuredSteps": 0,
+          "totalSteps": 1,
+          "initialX": -1.0499999523162842,
+          "collisionX": -1.0499999523162842,
+          "collisionPassed": 0,
+          "freeX": -1.0499999523162842,
+          "freeMotionPassed": 0,
+          "diagonalSpeed": 0,
+          "diagonalDistance": 0,
+          "diagonalDirectionPassed": 0,
+          "ejectionSpeed": 0,
+          "finite": 0
+        },
+        "after": {
+          "gateClosed": false,
+          "measuredSteps": 1,
+          "totalSteps": 2,
+          "initialX": -1.0499999523162842,
+          "collisionX": -0.75,
+          "collisionPassed": 0,
+          "freeX": -0.75,
+          "freeMotionPassed": 1,
+          "diagonalSpeed": 18.00000091579126,
+          "diagonalDistance": 0.3000000290282922,
+          "diagonalDirectionPassed": 1,
+          "ejectionSpeed": 18,
+          "finite": 1
+        }
+      },
+      "images": [
+        {
+          "filename": "gate-disabled-before.png",
+          "sha256": "74880f798e73620d51757e70f05bb597e25d2f9d688874a5ee5aad07c8cca6af"
+        },
+        {
+          "filename": "gate-disabled-after.png",
+          "sha256": "88646e06a50be111ae63044679384fab47d80c28520045a95a3d59587555bcb1"
+        }
+      ]
+    }
+  ]
+}

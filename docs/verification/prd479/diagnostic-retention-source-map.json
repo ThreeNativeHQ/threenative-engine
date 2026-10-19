@@ -1,0 +1,98 @@
+{
+  "baseSha": "704ca6d1dc9e056ea8951ee95f7e9e17713b4b02",
+  "qualifiedReplaySha": "e7f7baabc84bee7a4639f777c3bee5df5e169faf",
+  "qualification": "Diagnostic-only failure retention changes two collection-script hashes. Historical merged-harness proof is unchanged, and its remaining 18 source inputs match. No claim that the entire 20-source receipt or whole-repo CI tree remains identical. Success execution, solver, GPU producer, harness, scenarios, thresholds and budgets are unchanged; real device-loss cause remains unobserved in historical hosted artifact.",
+  "changedCollectionFiles": [
+    {
+      "filename": "scripts/fluid-collision-proof.ts",
+      "qualifiedSha256": "9889bbc4424d5919211a80aceec3043b1941ff1d4828904f6e803f0ecbb5a24e",
+      "diagnosticCollectionSha256": "56f6b65af1dfffc7f4cbcb15d7425f0fd729fc2f593b1f4220c158eb7cb7281d"
+    },
+    {
+      "filename": "scripts/verify-fluid-consumers.ts",
+      "qualifiedSha256": "a3ba12237a1afa74ccb65dd2dc90f4af9ae9856dd79434d846312e7505949022",
+      "diagnosticCollectionSha256": "e2ab44563ae180886dc21eb55e719776c0622de5a1129ec924d5a7d6bc386d24"
+    }
+  ],
+  "unchangedQualifiedInputs": [
+    {
+      "filename": "examples/prd476-fluid-particles/playtests/fluid-collision.playtest.json",
+      "sha256": "c50f2e0cc15f0019d2b2f2f2f916d08a06534fa358de8cb0d587630562e0ccda"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/proof.html",
+      "sha256": "22a2d1a0cdd8822a276be9e7a2afaacedab1f30162474e3adb954d1f0f38d439"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/proof.vite.config.ts",
+      "sha256": "485b60dd4120a7ec567ca7e32f57f0f2832b034fc31969d1112b82b876bb30cd"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/src/collision-proof.ts",
+      "sha256": "d7bb330b0a321675bec66fb66afa4bac40d8ffc0285acb32dbb03df868457c13"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/src/coupling.ts",
+      "sha256": "958946ca3b40d394182af9dd3242616676b09b90cf027108bc614d984e27a994"
+    },
+    {
+      "filename": "examples/prd476-fluid-particles/src/game.ts",
+      "sha256": "6f0f21eb822fc27a2455502f03794609d46fad6a42b0d55cf105819801dbf0a1"
+    },
+    {
+      "filename": "packages/core/patches/three@0.185.1.patch",
+      "sha256": "083710b3f650299016af6b9a0463e600517a5686f7f1713dead2b0f7ab9218d0"
+    },
+    {
+      "filename": "packages/core/src/fluid-particles.ts",
+      "sha256": "474930855500cf2754fe5149ff2283200f9576470a3e3cf6844680ba5fde3f9d"
+    },
+    {
+      "filename": "packages/core/src/gpu-readback.ts",
+      "sha256": "fece052efd783927fc92f05f9536c27d9ab22e4c15f47f3f693d2bf10013e64f"
+    },
+    {
+      "filename": "packages/playtest/src/runner/androidRunner.ts",
+      "sha256": "6162555392fef25bbf75bc18818db1789ae3ca56c0cd0118d729aae34710cdc9"
+    },
+    {
+      "filename": "packages/playtest/src/runner/bridgeClient.ts",
+      "sha256": "3a574ac3593e0e8e14d5ebbcdfd5001e700c046630edd86d31fc04f46d30b9a9"
+    },
+    {
+      "filename": "packages/playtest/src/runner/desktopRunner.ts",
+      "sha256": "fff776fb3e82839003afad6d97170f0f202a1b92ae3e2c3ea1a6af72ba4c641e"
+    },
+    {
+      "filename": "packages/playtest/src/runner/observationSampling.ts",
+      "sha256": "4856030a6d2d131152379ce70057aaf7f112dc7beb1c60369eec0717d086c6eb"
+    },
+    {
+      "filename": "packages/playtest/src/runner/runner-support.ts",
+      "sha256": "1e2963450e08a364b4ca7a7af390aa947a9a5a8f054fced54a7a446f8fabfa86"
+    },
+    {
+      "filename": "packages/playtest/src/runner/runner.ts",
+      "sha256": "4cf96a264e5b4eebc2095014d3450b1721e2cf6e8b8e8d257c050ce0422a97bd"
+    },
+    {
+      "filename": "packages/runtime-native/scripts/bundle.mjs",
+      "sha256": "238f9cc17f995746e2575836103d81ec3401e7cf1f07602c5af1f2efc30a4d10"
+    },
+    {
+      "filename": "scripts/verify-fluid-collision-native.ts",
+      "sha256": "5bbd8c07d613e13a7b4e8c2faf5b702f854843525656b60ed3e86f02216724a4"
+    },
+    {
+      "filename": "scripts/verify-fluid-collision.ts",
+      "sha256": "5d3457a52e53162a3a3e29db289391755a8f655d94542c2252124ad616223ab6"
+    }
+  ],
+  "historicalFailedJob": "https://github.com/ThreeNativeHQ/threenative/actions/runs/37107524153/job/111159202420",
+  "historicalFailureCodes": [
+    "TN_PLAYTEST_ASSERTION_NOT_EVALUATED",
+    "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+    "TN_PLAYTEST_SOFTWARE_DEVICE_LOST",
+    "TN_CAPTURE_BLANK"
+  ]
+}

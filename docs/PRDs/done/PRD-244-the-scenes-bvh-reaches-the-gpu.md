@@ -15,7 +15,7 @@ depth 1 on 2026-08-28 — specifically `src/sceneBvh.ts`, which shows how to pac
 buffers a TSL kernel can trace. **Its global-illumination system is deliberately not absorbed** — see
 "What is refused".
 
-Parent batch: [feature-mining](../feature-mining/README.md).
+Parent batch: feature-mining.
 
 **Complexity:** +2 new subsystem, +2 buffer lifetime tied to a mutable scene, +1 touches ≤5 files,
 +1 new public surface = **6 → MEDIUM mode.**

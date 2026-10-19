@@ -1,0 +1,26 @@
+{
+  "name": "rain-auto-lightning-strikes-under-cloud",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1440, "height": 900 },
+  "warmupFrames": 30,
+  "steps": [{ "kind": "wait", "label": "storm", "waitTicks": 720, "release": true }],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "autoLightning",
+        "equals": true,
+        "allowTrivial": "automatic lightning is on by default; this scenario proves it fires"
+      },
+      { "id": "state", "path": "strikes", "changed": true, "gte": 1 },
+      { "id": "state", "path": "lastStrike.at", "gte": 37 }
+    ]
+  }
+}

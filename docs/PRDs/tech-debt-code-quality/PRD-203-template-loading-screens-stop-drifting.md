@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P2 — Open boxes stamp one canonical loading screen into six templates by substitution.
 **Complexity:** +2 for 6–10 files, +2 for a scaffold-mechanism change, +1 for the design
 decision phase = **5 → MEDIUM mode**.
 

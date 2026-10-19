@@ -7,7 +7,7 @@ pnpm create threenative my-game
 ```
 
 The default template is `starter`. Choose `minimal`, `platformer`, `action-rpg`, `tower-defense`,
-`racing`, `sailing`, or `shooter` for a different starting point:
+`racing`, `sailing`, `rain`, `shooter`, or `snow` for a different starting point:
 
 ```sh
 pnpm create threenative my-game --template minimal
@@ -17,7 +17,9 @@ pnpm create threenative my-game --template action-rpg
 pnpm create threenative my-game --template tower-defense
 pnpm create threenative my-game --template racing
 pnpm create threenative my-game --template sailing
+pnpm create threenative my-game --template rain
 pnpm create threenative my-game --template shooter
+pnpm create threenative my-game --template snow
 ```
 
 Prerequisites are Node.js 20.19.0 or newer and pnpm 10 or newer. npm is also supported for the

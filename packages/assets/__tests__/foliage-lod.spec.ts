@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Document, Logger, NodeIO } from "@gltf-transform/core";
+import { type Accessor, Document, Logger, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
 import { describe, expect, it } from "vitest";
@@ -58,6 +58,31 @@ async function cookConifer(lod: IModelPassOptions["lod"] = true): Promise<ICooke
   const summary = result.entry?.lod as IModelLodSummary | undefined;
   if (summary === undefined) throw new Error("the pass produced no lod summary");
   return { buffer: result.buffer, document: await readWithLod(result.buffer), summary };
+}
+
+/** Summed triangle area the index list draws from `position`, in the accessor's own units. */
+function drawnArea(position: Accessor, indices: Uint32Array): number {
+  const a: number[] = [];
+  const b: number[] = [];
+  const c: number[] = [];
+  let area = 0;
+  for (let at = 0; at + 2 < indices.length; at += 3) {
+    position.getElement(indices[at] as number, a);
+    position.getElement(indices[at + 1] as number, b);
+    position.getElement(indices[at + 2] as number, c);
+    const [ux, uy, uz] = [
+      (b[0] as number) - (a[0] as number),
+      (b[1] as number) - (a[1] as number),
+      (b[2] as number) - (a[2] as number),
+    ];
+    const [vx, vy, vz] = [
+      (c[0] as number) - (a[0] as number),
+      (c[1] as number) - (a[1] as number),
+      (c[2] as number) - (a[2] as number),
+    ];
+    area += Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+  }
+  return area;
 }
 
 /**
@@ -221,30 +246,32 @@ describe("foliage cutout conversion and LOD (PRD-458 AC-4)", () => {
         expect(card.cards).toBeGreaterThan(0);
         expect(card.keep).toBeGreaterThan(0);
         // The crown: no occupied cell of LOD0's stratification grid is emptied at any level, which
-        // is the property that separates a grid from a random or index-order sample. Cell coverage
-        // is the ≥ 70% figure; card *area* coverage cannot be, because `TN_discrete_lod` is
-        // index-only and cannot carry the per-level scale step (`cards.ts` says so at the top) — it
-        // is the keep ratio up to the per-cell rounding, asserted here so the number cannot drift
-        // into a claim it never met.
+        // is the property that separates a grid from a random or index-order sample. And the kept
+        // cards are scaled up about their centroids, so the level covers LOD0's card area rather
+        // than the keep ratio of it, which read as bare trunks on Machinefall (PRD-541).
         expect(card.cellCoverage).toBeGreaterThanOrEqual(0.7);
-        expect(card.areaCoverage).toBeCloseTo(card.keep, 1);
+        expect(card.areaCoverage).toBeGreaterThanOrEqual(0.95);
       }
     }
 
-    // Read back out of the *shipped* bytes: the cards really are a subset of LOD0's own indices, so
-    // a stock loader draws the crown and a level, and the chain validated against the written file.
+    // Read back out of the *shipped* bytes: each level draws at least 95 % of LOD0's card area
+    // from the primitive's own vertex arrays, so a stock loader still draws LOD0 and the runtime's
+    // index swap draws a covered crown.
     const leaves = document
       .getRoot()
       .listMeshes()
       .find((mesh) => mesh.getName() === "leaves");
     const primitive = leaves?.listPrimitives()[0];
-    const lod0 = Uint32Array.from(primitive?.getIndices()?.getArray() as ArrayLike<number>);
-    const chain = primitive?.getExtension<DiscreteLod>(TN_DISCRETE_LOD);
+    const position = primitive?.getAttribute("POSITION");
+    if (primitive === undefined || position === null || position === undefined)
+      throw new Error("no needle primitive");
+    const lod0 = Uint32Array.from(primitive.getIndices()?.getArray() as ArrayLike<number>);
+    const chain = primitive.getExtension<DiscreteLod>(TN_DISCRETE_LOD);
     expect(chain?.getStrategy()).toBe("cards");
     for (const accessor of chain?.getIndices() ?? []) {
       const level = Uint32Array.from(accessor.getArray() as ArrayLike<number>);
       expect(level.length).toBeGreaterThan(0);
-      for (const index of level) expect(lod0).toContain(index);
+      expect(drawnArea(position, level) / drawnArea(position, lod0)).toBeGreaterThanOrEqual(0.95);
     }
   }, 300_000);
 
@@ -327,14 +354,14 @@ describe("foliage cutout conversion and LOD (PRD-458 AC-4)", () => {
       .listMeshes()
       .find((mesh) => mesh.getName() === "leaves")
       ?.listPrimitives()[0];
-    const lod0 = Uint32Array.from(primitive?.getIndices()?.getArray() as ArrayLike<number>);
+    const vertices = primitive?.getAttribute("POSITION")?.getCount() ?? 0;
     const chain = primitive?.getExtension<DiscreteLod>(TN_DISCRETE_LOD);
     const accessors = chain?.getIndices() ?? [];
     expect(accessors).toHaveLength(entry.levels.length);
     for (const accessor of accessors) {
       const level = Uint32Array.from(accessor.getArray() as ArrayLike<number>);
       expect(level.length).toBeGreaterThan(0);
-      for (const index of level) expect(lod0).toContain(index);
+      for (const index of level) expect(index).toBeLessThan(vertices);
     }
   }, 300_000);
 
@@ -350,13 +377,59 @@ describe("foliage cutout conversion and LOD (PRD-458 AC-4)", () => {
     ).toBe("BLEND");
   }, 300_000);
 
-  it("converts a VEC4 vertex colour that is opaque, refuses a real per-vertex fade", () => {
-    // Asset packs export vertex colours as RGBA with alpha 255; a cutoff reproduces alpha 1 exactly,
-    // so only an alpha that actually falls below 1 is a fade the cutoff cannot preserve (PRD-458 §4).
-    expect(convertFoliageCutout(vertexAlphaDocument(1)).converted).toEqual(["needles"]);
-    const faded = convertFoliageCutout(vertexAlphaDocument(0.5));
+  it("converts a VEC4 vertex colour that is opaque, refuses a real per-vertex fade", async () => {
+    expect((await convertFoliageCutout(vertexAlphaDocument(1))).converted).toEqual(["needles"]);
+    const faded = await convertFoliageCutout(vertexAlphaDocument(0.5));
     expect(faded.converted).toEqual([]);
     expect(faded.kept).toEqual([{ name: "needles", reason: "vertex-colour-alpha" }]);
+  });
+
+  it("keeps BLEND when texture has no cutout texels (alpha everywhere >= 130), converts when holes exist", async () => {
+    const makePngDoc = (alphaVal: number) => {
+      const { PNG } = require("pngjs");
+      const png = new PNG({ width: 2, height: 2 });
+      png.data.fill(255);
+      for (let i = 0; i < 4; i += 1) {
+        png.data[i * 4 + 3] = alphaVal;
+      }
+      const pngBuffer = PNG.sync.write(png);
+      const document = new Document();
+      const buffer = document.createBuffer();
+      const texture = document.createTexture("glass").setImage(pngBuffer).setMimeType("image/png");
+      const material = document
+        .createMaterial("Scope")
+        .setAlphaMode("BLEND")
+        .setBaseColorTexture(texture);
+      const primitive = document
+        .createPrimitive()
+        .setAttribute(
+          "POSITION",
+          document.createAccessor().setType("VEC3").setArray(new Float32Array(9)).setBuffer(buffer),
+        )
+        .setMaterial(material);
+      document
+        .createScene()
+        .addChild(
+          document
+            .createNode("scope")
+            .setMesh(document.createMesh("scope").addPrimitive(primitive)),
+        );
+      return document;
+    };
+
+    // Alpha >= 130 everywhere (cutoff is 0.5 * 255 = 127.5): no cutout texels, stays BLEND
+    const translucentDoc = makePngDoc(147);
+    const translucentResult = await convertFoliageCutout(translucentDoc);
+    expect(translucentResult.converted).toEqual([]);
+    expect(translucentResult.kept).toEqual([{ name: "Scope", reason: "no-cutout-texels" }]);
+    expect(translucentDoc.getRoot().listMaterials()[0]?.getAlphaMode()).toBe("BLEND");
+
+    // Alpha has cutout holes (e.g. 0): converts to MASK
+    const cutoutDoc = makePngDoc(0);
+    const cutoutResult = await convertFoliageCutout(cutoutDoc);
+    expect(cutoutResult.converted).toEqual(["Scope"]);
+    expect(cutoutResult.kept).toEqual([]);
+    expect(cutoutDoc.getRoot().listMaterials()[0]?.getAlphaMode()).toBe("MASK");
   });
 });
 

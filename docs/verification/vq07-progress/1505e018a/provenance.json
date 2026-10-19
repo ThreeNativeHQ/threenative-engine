@@ -1,0 +1,598 @@
+{
+  "sourceSha": "1505e018aa38630b91893ab8265c447833e99a51",
+  "runId": 37000862324,
+  "runUrl": "https://github.com/ThreeNativeHQ/threenative/actions/runs/37000862324",
+  "artifactId": 11224155982,
+  "artifactSha256": "a21b102966a09371896a4d796fd278525925a5c4b6ce70b2a81cb1eb79ac45d4",
+  "qualification": "Browser WebGPU software-rendered target/depth resize and texture-accounting proof. No operating-system window resize, native runtime or hardware-performance claim.",
+  "images": {
+    "resizeSmall": {
+      "file": "resizeSmall.png",
+      "sha256": "d7e3e7adbe608ea141c07cdf5cfc86b8869728e7e830f9dd1513ef47c2a154b2",
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "components": {
+        "mode": {
+          "before": "off",
+          "after": "fog"
+        },
+        "ready": {
+          "before": false,
+          "after": true
+        },
+        "builds": {
+          "before": 0,
+          "after": 1
+        },
+        "disposedGraphs": {
+          "before": 0,
+          "after": 0
+        },
+        "createdTargets": {
+          "before": 0,
+          "after": 1
+        },
+        "releasedTargets": {
+          "before": 0,
+          "after": 0
+        },
+        "releasedMaterials": {
+          "before": 0,
+          "after": 0
+        },
+        "liveTargets": {
+          "before": 0,
+          "after": 1
+        },
+        "scatteringOnly": {
+          "before": false,
+          "after": false
+        },
+        "textures": {
+          "before": 2,
+          "after": 10
+        },
+        "settledRenderFrames": {
+          "before": 1,
+          "after": 3
+        },
+        "stableTextureFrames": {
+          "before": 1,
+          "after": 3
+        },
+        "targetWidth": {
+          "before": 0,
+          "after": 320
+        },
+        "targetHeight": {
+          "before": 0,
+          "after": 240
+        },
+        "targets": {
+          "before": 0,
+          "after": 1
+        },
+        "pixels": {
+          "before": 0,
+          "after": 76800
+        },
+        "steps": {
+          "before": 0,
+          "after": 48
+        },
+        "inside": {
+          "before": false,
+          "after": false
+        },
+        "sun": {
+          "before": true,
+          "after": true
+        },
+        "point": {
+          "before": true,
+          "after": true
+        },
+        "overlaps": {
+          "before": false,
+          "after": false
+        }
+      }
+    },
+    "resizeRestore": {
+      "file": "resizeRestore.png",
+      "sha256": "0ac40bc66226495a430c379c039abdadff54a867d19c97e81895083b2c64a190",
+      "capture": {
+        "adapter": {
+          "architecture": "swiftshader",
+          "vendor": "google",
+          "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+          "limit.maxBindGroups": "4",
+          "limit.maxTextureDimension2D": "8192",
+          "limit.maxStorageBufferBindingSize": "1073741824"
+        },
+        "browserArgs": [
+          "--ozone-platform=x11",
+          "--enable-unsafe-webgpu",
+          "--disable-gpu-sandbox",
+          "--ignore-gpu-blocklist",
+          "--enable-features=Vulkan"
+        ],
+        "captureMethod": "page.screenshot",
+        "rendererKind": "webgpu",
+        "target": "web",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "components": {
+        "mode": {
+          "before": "off",
+          "after": "fog"
+        },
+        "ready": {
+          "before": false,
+          "after": true
+        },
+        "builds": {
+          "before": 0,
+          "after": 1
+        },
+        "disposedGraphs": {
+          "before": 0,
+          "after": 0
+        },
+        "createdTargets": {
+          "before": 0,
+          "after": 1
+        },
+        "releasedTargets": {
+          "before": 0,
+          "after": 0
+        },
+        "releasedMaterials": {
+          "before": 0,
+          "after": 0
+        },
+        "liveTargets": {
+          "before": 0,
+          "after": 1
+        },
+        "scatteringOnly": {
+          "before": false,
+          "after": false
+        },
+        "textures": {
+          "before": 2,
+          "after": 10
+        },
+        "settledRenderFrames": {
+          "before": 1,
+          "after": 3
+        },
+        "stableTextureFrames": {
+          "before": 1,
+          "after": 3
+        },
+        "targetWidth": {
+          "before": 0,
+          "after": 640
+        },
+        "targetHeight": {
+          "before": 0,
+          "after": 400
+        },
+        "targets": {
+          "before": 0,
+          "after": 1
+        },
+        "pixels": {
+          "before": 0,
+          "after": 256000
+        },
+        "steps": {
+          "before": 0,
+          "after": 48
+        },
+        "inside": {
+          "before": false,
+          "after": false
+        },
+        "sun": {
+          "before": true,
+          "after": true
+        },
+        "point": {
+          "before": true,
+          "after": true
+        },
+        "overlaps": {
+          "before": false,
+          "after": false
+        }
+      }
+    }
+  },
+  "results": [
+    {
+      "mode": "off",
+      "pass": true,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "zero",
+      "pass": true,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "fog",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "inside",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "sunOff",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "pointOff",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "overlap",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "half",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "wallOff",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "blackOff",
+      "pass": true,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "scatter",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "scatterSunOff",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "scatterPointOff",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "lifecycle",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "lifecycleOff",
+      "pass": true,
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "resizeSmall",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "mode": "resizeRestore",
+      "pass": true,
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": []
+    },
+    {
+      "assertion": "zero-density pixel identity",
+      "pass": true
+    },
+    {
+      "assertion": "repeated lifecycle restores baseline pixels",
+      "pass": true
+    },
+    {
+      "assertion": "renderer texture allocation baseline",
+      "baselineResources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "restoredResources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "pass": true
+    },
+    {
+      "assertion": "target/depth resize restores exact pixels",
+      "pass": true
+    },
+    {
+      "assertion": "isolated light-scattering pixels",
+      "baselineMaxRgb": 0,
+      "wallMaxRgb": 0,
+      "roi": {
+        "x": 260,
+        "y": 155,
+        "width": 150,
+        "height": 90
+      },
+      "wallRoi": {
+        "x": 184,
+        "y": 216,
+        "width": 18,
+        "height": 18
+      },
+      "evaluationRoi": {
+        "x": 0,
+        "y": 0,
+        "width": 500,
+        "height": 400
+      },
+      "calibrationRoi": {
+        "x": 515,
+        "y": 25,
+        "width": 110,
+        "height": 110
+      },
+      "calibrationMinimum": 146,
+      "calibrationMaxDifference": 0,
+      "sun": {
+        "meanRgbDelta": 15.958518518518519,
+        "changedPixelRatio": 0.9933333333333333
+      },
+      "point": {
+        "meanRgbDelta": 48.77553086419753,
+        "changedPixelRatio": 1
+      },
+      "thresholds": {
+        "minMeanRgbDelta": 1,
+        "minChangedPixelRatio": 0.1,
+        "maxBlackRgb": 0,
+        "minCalibrationRgb": 32,
+        "maxCalibrationDifference": 0
+      },
+      "pass": true
+    }
+  ],
+  "workloadAndCost": {
+    "sourceSha": "1505e018aa38630b91893ab8265c447833e99a51",
+    "runId": 37000862324,
+    "capture": {
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 400,
+        "width": 640
+      }
+    },
+    "scope": "Coarse host-side pipeline-creation service over each entire boot/capture window. Not per-frame fog time, GPU duration or a performance comparison. Timestamp tracking was disabled. No hardware tier admission.",
+    "cases": {
+      "off": {
+        "transportPixels": 0,
+        "raySteps": 0,
+        "rendererTextures": 5,
+        "bounds": 0,
+        "declaredDirectionalLights": 1,
+        "declaredUnshadowedPoints": 1,
+        "pipelineCounts": {
+          "lookups": 5,
+          "creations": 5,
+          "failures": 0,
+          "pending": 0,
+          "uniquePrograms": 4,
+          "uniquePipelines": 5,
+          "recordedEvents": 5,
+          "droppedEvents": 0,
+          "deviceCreations": 5,
+          "directCreations": 0
+        },
+        "pipelineCreationServiceMs": 1.3999999999359716
+      },
+      "fog": {
+        "transportPixels": 256000,
+        "raySteps": 48,
+        "rendererTextures": 10,
+        "bounds": 1,
+        "declaredDirectionalLights": 1,
+        "declaredUnshadowedPoints": 1,
+        "pipelineCounts": {
+          "lookups": 8,
+          "creations": 8,
+          "failures": 0,
+          "pending": 0,
+          "uniquePrograms": 7,
+          "uniquePipelines": 8,
+          "recordedEvents": 8,
+          "droppedEvents": 0,
+          "deviceCreations": 8,
+          "directCreations": 0
+        },
+        "pipelineCreationServiceMs": 2.500000000029104
+      },
+      "half": {
+        "transportPixels": 64000,
+        "raySteps": 48,
+        "rendererTextures": 10,
+        "bounds": 1,
+        "declaredDirectionalLights": 1,
+        "declaredUnshadowedPoints": 1,
+        "pipelineCounts": {
+          "lookups": 8,
+          "creations": 8,
+          "failures": 0,
+          "pending": 0,
+          "uniquePrograms": 7,
+          "uniquePipelines": 8,
+          "recordedEvents": 8,
+          "droppedEvents": 0,
+          "deviceCreations": 8,
+          "directCreations": 0
+        },
+        "pipelineCreationServiceMs": 1.900000000023283
+      },
+      "overlap": {
+        "transportPixels": 256000,
+        "raySteps": 48,
+        "rendererTextures": 10,
+        "bounds": 2,
+        "declaredDirectionalLights": 1,
+        "declaredUnshadowedPoints": 1,
+        "pipelineCounts": {
+          "lookups": 8,
+          "creations": 8,
+          "failures": 0,
+          "pending": 0,
+          "uniquePrograms": 7,
+          "uniquePipelines": 8,
+          "recordedEvents": 8,
+          "droppedEvents": 0,
+          "deviceCreations": 8,
+          "directCreations": 0
+        },
+        "pipelineCreationServiceMs": 2.1000000000058208
+      }
+    }
+  }
+}

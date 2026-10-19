@@ -1,6 +1,15 @@
-import { BoxGeometry, Camera, Mesh, Scene } from "three";
+import {
+  BoxGeometry,
+  type BufferGeometry,
+  Camera,
+  type Material,
+  Mesh,
+  MeshBasicMaterial,
+  Scene,
+} from "three";
 // @ts-expect-error Three's private renderer module has no public declaration; this test must exercise it directly.
 import RenderObjects from "three/src/renderers/common/RenderObjects.js";
+import { float } from "three/tsl";
 import {
   FrontSide,
   MeshStandardNodeMaterial,
@@ -36,7 +45,12 @@ interface IShadowRendererStub {
   readonly _cacheShadowNodes: WeakMap<object, unknown>;
   _currentSourceMaterial: unknown;
   readonly _getShadowNodes: unknown;
-  readonly _handleObjectFunction: (object: unknown, material: IDrawnMaterial) => void;
+  readonly _handleObjectFunction: (
+    object: unknown,
+    material: IDrawnMaterial,
+    scene: Scene,
+    camera: Camera,
+  ) => void;
   readonly shadowMap: { enabled: boolean; type: number };
 }
 
@@ -53,9 +67,12 @@ type RenderObjectCall = (
   passId: unknown,
 ) => void;
 
-function shadowPass(): {
+function shadowPass(
+  onDraw?: (mesh: Mesh, camera: Camera) => void,
+  sceneOverride?: Material,
+): {
   drawn: IDrawnMaterial[];
-  draw: (mesh: Mesh) => void;
+  draw: (mesh: Mesh, camera?: Camera) => void;
   override: NodeMaterial;
 } {
   const drawn: IDrawnMaterial[] = [];
@@ -67,8 +84,10 @@ function shadowPass(): {
     _cacheShadowNodes: new WeakMap<object, unknown>(),
     _currentSourceMaterial: null,
     _getShadowNodes: rendererPrototype._getShadowNodes,
-    _handleObjectFunction: (_object, material) =>
-      drawn.push({ alphaTest: material.alphaTest, side: material.side }),
+    _handleObjectFunction: (object, material, _scene, camera) => {
+      drawn.push({ alphaTest: material.alphaTest, side: material.side });
+      onDraw?.(object as Mesh, camera);
+    },
     shadowMap: { enabled: true, type: PCFShadowMap },
   };
 
@@ -76,16 +95,16 @@ function shadowPass(): {
   (override as NodeMaterial & { isShadowPassMaterial: boolean }).isShadowPassMaterial = true;
   override.name = "ShadowMaterial";
   const scene = new Scene();
-  scene.overrideMaterial = override;
+  scene.overrideMaterial = sceneOverride ?? override;
   const camera = new Camera();
 
   return {
-    draw: (mesh) =>
+    draw: (mesh, drawCamera = camera) =>
       rendererPrototype.renderObject.call(
         stub,
         mesh,
         scene,
-        camera,
+        drawCamera,
         mesh.geometry,
         mesh.material,
         null,
@@ -111,6 +130,7 @@ type InternalNodeMaterial = NodeMaterial & {
 };
 
 interface IRenderObjectProbe {
+  readonly geometry: BufferGeometry;
   readonly _sourceMaterial: NodeMaterial | null;
   readonly sourceVersion: number;
   readonly version: number;
@@ -140,7 +160,7 @@ interface IRendererProbe {
 }
 
 function renderObjectsProbe(): {
-  get: (object: Mesh, source: NodeMaterial) => IRenderObjectProbe;
+  get: (object: Mesh, source: NodeMaterial, camera?: Camera) => IRenderObjectProbe;
   makeSource: (alphaTest: number) => MeshStandardNodeMaterial;
   makeObject: (source: NodeMaterial) => Mesh;
   override: InternalNodeMaterial;
@@ -177,11 +197,11 @@ function renderObjectsProbe(): {
   const lightsNode = {};
 
   return {
-    get: (object, source) => {
+    get: (object, source, drawCamera = camera) => {
       renderer._currentSourceMaterial = source;
       // This is the backing-field write performed by the patched Renderer during a shadow pass.
       override._alphaTest = source.alphaTest;
-      return manager.get(object, override, scene, camera, lightsNode, renderContext, null);
+      return manager.get(object, override, scene, drawCamera, lightsNode, renderContext, null);
     },
     makeSource: (alphaTest) => {
       const source = new MeshStandardNodeMaterial();
@@ -197,6 +217,58 @@ function renderObjectsProbe(): {
 }
 
 describe("three shadow override material cache", () => {
+  it("uses the source alpha threshold node in the actual shadow draw and restores the override", () => {
+    const foliage = caster(0.5);
+    const source = foliage.material as MeshStandardNodeMaterial;
+    const cutoff = float(0.125);
+    source.alphaTestNode = cutoff;
+    const seen: (typeof cutoff | null)[] = [];
+    const { draw, override } = shadowPass(() => {
+      const shadowCutoff = override.alphaTestNode as typeof cutoff | null;
+      seen.push(shadowCutoff);
+      expect(shadowCutoff).toBe(cutoff);
+    });
+    draw(foliage);
+    expect(seen).toEqual([cutoff]);
+    expect(override.alphaTestNode).toBeNull();
+  });
+
+  it("keeps numeric shadow alphaTest when the next caster has no threshold node", () => {
+    const foliage = caster(0.5);
+    (foliage.material as NodeMaterial).alphaTestNode = float(0.125);
+    const seen: unknown[] = [];
+    const { draw, override } = shadowPass(() => {
+      seen.push(override.alphaTestNode ?? override.alphaTest);
+    });
+    draw(foliage);
+    draw(caster(0.5));
+    expect(seen).toEqual([(foliage.material as NodeMaterial).alphaTestNode, 0.5]);
+    expect(override.alphaTestNode).toBeNull();
+  });
+  it("fetches geometry swapped in onBeforeRender even when cameras share a render object", () => {
+    const probe = renderObjectsProbe();
+    const source = probe.makeSource(0);
+    const object = probe.makeObject(source);
+    const geometry = object.geometry;
+    const geometries = [geometry, geometry.clone(), geometry.clone()];
+    for (const held of geometries) held.setAttribute("position", geometry.getAttribute("position"));
+    const cameras = [new Camera(), new Camera(), new Camera()];
+    object.onBeforeRender = (_renderer, _scene, camera) => {
+      object.geometry = geometries[cameras.indexOf(camera)] as BufferGeometry;
+    };
+    const fetched: IRenderObjectProbe[] = [];
+    const { draw } = shadowPass((mesh, camera) => {
+      const renderObject = probe.get(mesh, source, camera);
+      expect(renderObject.geometry).toBe(geometries[cameras.indexOf(camera)]);
+      expect(renderObject.geometry.getIndex()).toBe(mesh.geometry.getIndex());
+      fetched.push(renderObject);
+    });
+    for (let frame = 0; frame < 3; frame += 1) for (const camera of cameras) draw(object, camera);
+    expect(fetched).toHaveLength(9);
+    expect(new Set(fetched).size).toBe(1);
+    for (const held of geometries) held.dispose();
+  });
+
   it("keeps the shared override material's version still across mixed alphaTest casters", () => {
     const { draw, override } = shadowPass();
     const foliage = caster(0.5);
@@ -236,6 +308,17 @@ describe("three shadow override material cache", () => {
     draw(caster(0.5));
 
     expect(override.alphaTest).toBe(baseline);
+  });
+
+  it("leaves a plain scene override material without an undefined alphaTestNode", () => {
+    // A plain override (the volumetric-fog black pass) is converted to a node material later; an
+    // own `alphaTestNode: undefined` then reaches TSL `float(undefined)` and the build throws.
+    const plain = new MeshBasicMaterial();
+    const { draw } = shadowPass(undefined, plain);
+
+    draw(caster(0.5));
+
+    expect(plain).not.toHaveProperty("alphaTestNode", undefined);
   });
 });
 

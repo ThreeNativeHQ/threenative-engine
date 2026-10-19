@@ -1,1 +1,7 @@
 packages/runtime-native/patches/*.patch -text
+# Unified-diff context prefixes precede the upstream bundle's tab indentation.
+patches/vite@8.2.0.patch whitespace=-space-before-tab
+packages/three-native/tests/compatibility/goldens/** linguist-generated
+packages/three-native/tests/compatibility/fixtures/** linguist-generated
+packages/three-native/api/*.json linguist-generated
+packages/three-native/generated/** linguist-generated

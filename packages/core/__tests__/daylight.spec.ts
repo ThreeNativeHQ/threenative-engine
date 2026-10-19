@@ -1,6 +1,15 @@
-import { AgXToneMapping, Color, FogExp2, Object3D, Scene, Vector3 } from "three";
+import {
+  ACESFilmicToneMapping,
+  AgXToneMapping,
+  Color,
+  FogExp2,
+  Object3D,
+  Scene,
+  Vector3,
+} from "three";
 import { describe, expect, it } from "vitest";
 import { Daylight, type IDaylightOptions } from "../src/render/daylight.js";
+import type { VirtualShadowNode } from "../src/render/virtual-shadow.js";
 
 function options(follow: Object3D, overrides: Partial<IDaylightOptions> = {}): IDaylightOptions {
   return {
@@ -47,6 +56,44 @@ describe("Daylight", () => {
     daylight.detach();
     expect(scene.fog).toBeNull();
     expect(daylight.released).toBe(true);
+  });
+
+  it("uses the game's tone curve when it names one", () => {
+    const daylight = new Daylight({
+      ...options(new Object3D()),
+      toneMapping: ACESFilmicToneMapping,
+    });
+    const raw = { shadowMap: { enabled: false }, toneMapping: 0, toneMappingExposure: 1 };
+    daylight.attachRenderer({ raw } as never);
+    expect(raw.toneMapping).toBe(ACESFilmicToneMapping);
+  });
+
+  it("keeps its own sky out of its own haze", () => {
+    // The dome sits half a sky size from the eye; at any useful haze density that distance is fully
+    // fogged, and a fogged dome is a flat haze-coloured sky instead of the physical one.
+    const daylight = new Daylight(options(new Object3D()));
+    expect((daylight.sky.material as { fog: boolean }).fog).toBe(false);
+  });
+
+  it("gives every shadow level the game's map size, and the light's own when it names none", () => {
+    const sized = new Daylight(
+      options(new Object3D(), { shadowExtents: [250], shadowMapSize: 4096 }),
+    );
+    expect((sized.sun.shadow.shadowNode as VirtualShadowNode).options.mapSize).toBe(4096);
+    const stock = new Daylight(options(new Object3D()));
+    expect((stock.sun.shadow.shadowNode as VirtualShadowNode).options.mapSize).toBe(
+      stock.sun.shadow.mapSize.width,
+    );
+  });
+
+  it("names the sky box as the sky in the frame budget's per-source split", () => {
+    // One draw, on the main camera's own layer, and no world system would otherwise claim it — which
+    // is why a rig like this one was a line item in the `other` bucket PRD-494 reads.
+    const daylight = new Daylight(options(new Object3D()));
+
+    expect(daylight.sky.layers.mask).toBe(1);
+    expect(daylight.sky.userData.tnDrawSource).toBe("sky");
+    daylight.detach();
   });
 
   it("refuses a missing exposure or sky size instead of inventing one", () => {

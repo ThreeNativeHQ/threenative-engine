@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "name": "native-css-hud",
+  "target": "desktop",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "steps": [
+    {
+      "label": "ui-ready",
+      "waitTicks": 120,
+      "screenshot": "hud-before"
+    },
+    {
+      "pointers": [
+        {
+          "id": 1,
+          "x": 0.0666,
+          "y": 0.9042
+        }
+      ],
+      "holdTicks": 10,
+      "release": true
+    },
+    {
+      "label": "hud-after-click",
+      "waitTicks": 30,
+      "screenshot": "hud-after-click"
+    }
+  ],
+  "artifacts": {
+    "console": true,
+    "screenshots": true
+  },
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "closeClicks",
+        "atSteps": [
+          {
+            "label": "ui-ready",
+            "equals": 0
+          },
+          {
+            "label": "hud-after-click",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "uiReady",
+        "atSteps": [
+          {
+            "label": "ui-ready",
+            "equals": false
+          },
+          {
+            "label": "hud-after-click",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "frames",
+        "changed": true,
+        "gte": 100
+      }
+    ]
+  }
+}

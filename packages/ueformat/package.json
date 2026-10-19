@@ -1,6 +1,6 @@
 {
   "name": "@threenative/ueformat",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "license": "MIT",
   "description": "UEFormat v10 .uemodel parser and Three.js loader for meshes exported from Unreal packages by CUE4Parse/FModel.",
   "keywords": ["threenative", "unreal", "ueformat", "uemodel", "three", "threejs", "loader"],
@@ -42,7 +42,8 @@
     "@types/three": "0.185.3",
     "publint": "0.3.22",
     "tsup": "8.5.1",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:"
   },
   "dependencies": {
     "fflate": "catalog:",

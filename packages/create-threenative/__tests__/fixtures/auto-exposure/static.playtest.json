@@ -1,0 +1,38 @@
+{
+  "name": "prd339-exposure-static",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 640,
+    "height": 360
+  },
+  "warmupFrames": 20,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitFrames": 180
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "runtimeReady": true,
+      "noConsoleErrors": true
+    },
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 360,
+          "minNonblankPixelRatio": 0.15
+        }
+      }
+    ]
+  }
+}

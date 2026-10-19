@@ -1,0 +1,20 @@
+{
+  "name": "rain-simulation-advances",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "steps": [{ "kind": "wait", "waitTicks": 120, "release": true }],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      { "id": "state", "path": "elapsed", "changed": true },
+      { "id": "state", "path": "frame", "changed": true }
+    ]
+  }
+}

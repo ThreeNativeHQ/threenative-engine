@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** NOT STARTED
 
+**Priority:** P2 — Open boxes give assertion fields machine-readable constraints and generate validators.
 **Complexity:** +2 for 5–10 files, +2 for codegen (new generation step), +1 for the
 three-way schema consolidation, +1 for fail-closed generator = **6 → MEDIUM mode**.
 Checkpoints after every phase regardless.

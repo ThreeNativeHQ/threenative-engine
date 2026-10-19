@@ -77,6 +77,9 @@ val frameLatency = providers.gradleProperty("threenativeFrameLatency").orElse("0
 val gpuDrainProfile = providers.gradleProperty("threenativeGpuDrainProfile").orElse("false")
 val nativeJsProfile = providers.gradleProperty("threenativeJsProfile").orElse("false")
 val nativeJsProfileBusyLoop = providers.gradleProperty("threenativeJsProfileBusyLoop").orElse("false")
+// `ui.renderer: "native-css"`: link the CPU CSS UI (`native/css-ui`) into the runtime. Off by
+// default, so every other game's APK carries none of it; `package-android.mjs` turns it on.
+val nativeCssUi = providers.gradleProperty("threenativeCssUi").orElse("false")
 // V8 is the Android default, decided by the product owner on 2026-08-16 (PRD-130) on PRD-118's
 // measurement: 115.64 ms of script per frame under QuickJS against 5.25 ms under V8. It needs
 // third_party/v8-android, which `scripts/download-deps.mjs --android` now provisions.
@@ -266,6 +269,24 @@ val buildNativePhysics by tasks.registering(Exec::class) {
     outputs.dir(layout.projectDirectory.dir("../../.runtime/physics-target"))
 }
 
+// One CSS UI staticlib per shipped ABI, in cargo's per-triple directory that CMake reads.
+val cssUiTargets = mapOf("arm64-v8a" to "aarch64-linux-android", "x86_64" to "x86_64-linux-android")
+val buildNativeCssUi by tasks.registering {
+    inputs.dir(layout.projectDirectory.dir("../../native/css-ui/src"))
+    inputs.file(layout.projectDirectory.file("../../native/css-ui/Cargo.toml"))
+    inputs.file(layout.projectDirectory.file("../../native/css-ui/Cargo.lock"))
+    inputs.property("abis", threeNativeAbis)
+    doLast {
+        for (abi in threeNativeAbis) {
+            project.exec {
+                workingDir = runtimeRoot.asFile
+                environment("ANDROID_HOME", android.sdkDirectory.absolutePath)
+                commandLine("node", "scripts/build-native-css-ui.mjs", "--target", cssUiTargets.getValue(abi))
+            }
+        }
+    }
+}
+
 // Verify the complete source payload on every build, even when snapshot copying is up-to-date.
 // Published, no-NDK builds must not resolve or execute this development-only source helper.
 if (!usePrebuiltRuntime && nativeJsEngineName == "v8") {
@@ -281,6 +302,7 @@ tasks.named("preBuild") {
     if (conformanceBundle.isPresent) dependsOn("buildAndroidConformanceBundle")
     else dependsOn("buildAndroidFirstProofBundle")
     if (!usePrebuiltRuntime) dependsOn("extractSdl3JniLibs", buildNativePhysics)
+    if (!usePrebuiltRuntime && nativeCssUi.asCmakeBoolean("PthreenativeCssUi") == "ON") dependsOn(buildNativeCssUi)
 }
 
 dependencies {
@@ -360,6 +382,7 @@ android {
                     "-DTN_ENABLE_WEBTRANSPORT=OFF",
                     "-DTN_ENABLE_DEBUG_SERVER=OFF",
                     "-DTN_ENABLE_NATIVE_PHYSICS=ON",
+                    "-DTN_ENABLE_CSS_UI=${nativeCssUi.asCmakeBoolean("PthreenativeCssUi")}",
                     "-DTN_ANDROID_VSYNC=${nativeVsync.asCmakeBoolean("PthreenativeVsync")}",
                     "-DTN_WEBGPU_UPLOAD_STAGING=${uploadStaging.asCmakeBoolean("PthreenativeUploadStaging")}",
                     "-DTN_WEBGPU_DESIRED_FRAME_LATENCY=${frameLatency.get()}",

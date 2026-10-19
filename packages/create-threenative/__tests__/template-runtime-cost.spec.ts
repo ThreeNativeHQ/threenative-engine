@@ -7,21 +7,25 @@ import {
   MeshBasicMaterial,
   OrthographicCamera,
   PerspectiveCamera,
+  PlaneGeometry,
   Scene,
   Texture,
   Vector2,
   Vector3,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { Registry } from "../../core/src/entities.js";
 import { createRandom } from "../../core/src/random.js";
 import { rapier } from "../../physics/src/index.js";
 import type { IPhysicsContext } from "../../physics/src/plugin.js";
+import type { Player } from "../templates/starter/src/entities/Player.js";
 import { templatedRig } from "./templated-rig.js";
 
 /** The clips the packaged `mannequin.glb` ships, by the name `Player.ts` plays them under. */
 const MANNEQUIN_CLIPS = [
   "Idle_Loop",
   "Jog_Fwd_Loop",
+  "Walk_Loop",
   "Jump_Start",
   "Jump_Loop",
   "Jump_Land",
@@ -237,7 +241,10 @@ function sceneContext(
       raw: { shadowMap: { enabled: false, type: 0 } },
       // The real chain returns what it installed; a template reads that report back to print
       // TN_WORLD_ENVIRONMENT, so the double has to honour the contract rather than return void.
-      createRenderChain: () => ({ applied: { dropped: [], stages: ["bloom"] } }),
+      createRenderChain: () => ({
+        applied: { dropped: [], stages: ["bloom"] },
+        dispose: () => undefined,
+      }),
       setOutputNode: () => undefined,
     },
     scene,
@@ -276,6 +283,65 @@ function runSceneFrames(frame: unknown, context: unknown, beforeMeasure?: () => 
 }
 
 describe("generated template ordinary-frame runtime cost", () => {
+  it("releases the shooter-owned decal texture after its borrowers on repeated scene teardown", async () => {
+    const { Play } = await import("../templates/shooter/src/scenes/Play.js");
+    const { ENEMY_CLIPS } = await import("../templates/shooter/src/entities/Enemy.js");
+    const maps = new Set<Texture>();
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const physics = await physicsFixture();
+      const entities = new Registry();
+      const context = { ...sceneContext(physics.physics, Play.initialState), entities };
+      const sky = new Texture();
+      const skyDisposed = vi.fn();
+      sky.addEventListener("dispose", skyDisposed);
+      const play = new Play();
+      try {
+        await play.load({
+          ...context,
+          assets: {
+            ...context.assets,
+            model: async <T>(): Promise<T> => templatedRig(ENEMY_CLIPS) as T,
+            texture: async () => sky,
+          },
+        } as never);
+        play.enter(context as never);
+        const slots = context.scene.children.filter(
+          (child): child is Mesh<PlaneGeometry, MeshBasicMaterial> =>
+            child instanceof Mesh &&
+            child.geometry instanceof PlaneGeometry &&
+            child.renderOrder === 23,
+        );
+        expect(slots).toHaveLength(224);
+        const map = slots[0]?.material.map;
+        if (map === undefined || map === null) throw new Error("Shooter decal texture missing.");
+        expect(new Set(slots.map((slot) => slot.material.map))).toEqual(new Set([map]));
+        expect(maps.has(map)).toBe(false);
+        maps.add(map);
+        let releasedMaterials = 0;
+        for (const slot of slots) {
+          slot.material.addEventListener("dispose", () => {
+            releasedMaterials += 1;
+          });
+        }
+        const mapDisposed = vi.fn(() => expect(releasedMaterials).toBe(slots.length));
+        map.addEventListener("dispose", mapDisposed);
+
+        play.exit();
+        entities.clear();
+        expect(mapDisposed).toHaveBeenCalledTimes(1);
+        play.exit();
+        entities.clear();
+        expect(mapDisposed).toHaveBeenCalledTimes(1);
+        expect(skyDisposed).not.toHaveBeenCalled();
+      } finally {
+        play.exit();
+        entities.clear();
+        physics.dispose();
+        sky.dispose();
+      }
+    }
+  });
+
   it("executes 600 steady frames per template without fresh vector work", async () => {
     const minimal = await import("../templates/minimal/src/render/camera.js");
     const starter = await import("../templates/starter/src/entities/Player.js");
@@ -534,6 +600,7 @@ describe("generated template ordinary-frame runtime cost", () => {
     vi.stubGlobal("Worker", IdleWorker);
     try {
       const context = sceneContext(starterPhysics.physics, starter.Play.initialState);
+      expect(context.state.getState().progress).toBe(0);
       const play = new starter.Play();
       await play.load(context as never);
       const update = play.enter(context as never) as (ctx: unknown, dt: number) => void;
@@ -553,6 +620,19 @@ describe("generated template ordinary-frame runtime cost", () => {
       expect(context.patchIdentities.size, "starter Play state-patch high-water sentinel").toBe(
         patchWarmHighWater,
       );
+      const player = context.entities.get("player") as Player;
+      for (const [x, progress] of [
+        [-4, 0],
+        [-2, 0],
+        [0, (100 * 2) / 8.4],
+        [2, (100 * 4) / 8.4],
+        [6.4, 100],
+        [8, 100],
+      ] as const) {
+        player.body.teleport({ x, y: 0.9, z: 0 });
+        update(context, DT);
+        expect(context.state.getState().progress, `progress at x=${x}`).toBeCloseTo(progress);
+      }
     } finally {
       vi.unstubAllGlobals();
       starterPhysics.dispose();
@@ -630,6 +710,55 @@ describe("generated template ordinary-frame runtime cost", () => {
       );
     } finally {
       defensePhysics.dispose();
+    }
+  });
+
+  it("forwards a cached-sky sample to the controller entered while sampling was pending", async () => {
+    const sampling = await import("../templates/racing/src/render/environmentSampling.js");
+    const { captureEnvironmentSnapshot } = await import(
+      "../templates/racing/src/render/environmentSnapshot.js"
+    );
+    const { Race } = await import("../templates/racing/src/scenes/Race.js");
+    const physics = await physicsFixture(RACING_GRAVITY);
+    const context = sceneContext(physics.physics, Race.initialState);
+    let complete: (() => void) | undefined;
+    const sampleSpy = vi
+      .spyOn(sampling, "sampleEnvironment")
+      .mockImplementation((_renderer, scene) => {
+        const snapshot = captureEnvironmentSnapshot(scene);
+        return new Promise((resolve) => {
+          complete = () =>
+            resolve({
+              ...snapshot,
+              measurement: {
+                status: "measured",
+                meanRadiance: 0.25,
+                meanRGB: [0.25, 0.25, 0.25],
+                reason: "CPU timing fixture",
+              },
+            });
+        });
+      });
+    const race = new Race();
+    try {
+      // A cached texture resolves before enter(), while the bounded sample is still pending.
+      expect(race.load(context as never)).toBeUndefined();
+      await Promise.resolve();
+      expect(sampleSpy).toHaveBeenCalledTimes(1);
+      expect(complete).toBeTypeOf("function");
+      race.enter(context as never);
+      const controller = context.entities.get("material-lighting") as {
+        debug(): { status: string; meanRadiance: number | null };
+      };
+      expect(controller.debug().status).toBe("unknown");
+      complete?.();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(controller.debug()).toMatchObject({ status: "measured", meanRadiance: 0.25 });
+    } finally {
+      race.exit(context as never);
+      sampleSpy.mockRestore();
+      physics.dispose();
     }
   });
 

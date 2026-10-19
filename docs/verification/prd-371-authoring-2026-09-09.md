@@ -1,7 +1,7 @@
 # PRD-371 authoring verification — 2026-09-09
 
 Scope: create [PRD-371](../PRDs/authoring/PRD-371-dream-loop-authoring.md) and mark overlapping
-[PRD-106](../PRDs/tooling/PRD-106-reference-image-generation.md) as superseded for execution.
+PRD-106 as superseded for execution.
 This is an inert Markdown change, not implementation of the proposed workflow.
 
 Inspected checkout: primary repository, branch `main`, initial HEAD `942402aa2`. No task worktree

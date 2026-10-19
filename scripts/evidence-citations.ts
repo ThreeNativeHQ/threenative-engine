@@ -27,11 +27,6 @@ export interface IArtifactClassification {
   readonly citedBy: readonly string[];
 }
 
-export interface ICitationScan {
-  readonly artifacts: readonly IArtifactClassification[];
-  readonly totals: Readonly<Record<CitationClass, number>>;
-}
-
 const ROUND_LEDGER_PATTERN = /round-\d+/u;
 
 /**

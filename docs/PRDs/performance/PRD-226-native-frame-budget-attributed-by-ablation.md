@@ -11,6 +11,7 @@ rules and the graveyard; PRD-227 owns the fix. Arm A4's job — an independent s
 backend term — was closed without building it: the A2 ablation says 1.95 ms and the `commandNs`
 instrument says 2.037 ms, **0.09 ms apart**.
 
+**Priority:** P1 — The native frame budget stays unattributed until the ablation ladder is built.
 **Phase 1's gate is met: the budget is measured and published**
 ([record](../../verification/runtime-perf-state.md)).
 

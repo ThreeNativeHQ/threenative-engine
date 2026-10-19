@@ -1,0 +1,386 @@
+{
+  "name": "avbd-rigging-correctness",
+  "schemaVersion": 1,
+  "subject": "the pinned secondary rope/sail solver survives the original 10000-tick diagnostic ladder",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 300,
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "reset-before-ladder",
+      "press": "KeyR",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "reset-retirement-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "completedCycles",
+        "gte": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "zero-wind",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "hanging-load",
+      "waitTicks": 1200,
+      "release": true
+    },
+    {
+      "label": "hanging-observation",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "measured",
+        "equals": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "step-wind",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "step-settled",
+      "waitTicks": 1800,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "gust-wind",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "gust-contact",
+      "waitTicks": 1800,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "translate-anchor",
+      "press": "KeyA",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "translated",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "label": "accepted-moving-anchor",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "acceptedAnchorVelocity",
+        "gte": 0.24
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "fast-stop",
+      "press": "KeyS",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fast-stop-settled",
+      "waitTicks": 1200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "pause",
+      "press": "KeyP",
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "pause-render-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "paused",
+        "equals": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "pause-render-observed-release-key",
+      "press": [],
+      "release": true
+    },
+    {
+      "label": "pause-render-observed-release-key-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "pauseKeyHeld",
+        "equals": 0
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "paused",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "resume",
+      "press": "KeyP",
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "resume-render-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "paused",
+        "equals": 0
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "resume-render-observed-release-key",
+      "press": [],
+      "release": true
+    },
+    {
+      "label": "resume-render-observed-release-key-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "pauseKeyHeld",
+        "equals": 0
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "return-to-steady-load",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "steady-load-after-ladder",
+      "waitTicks": 3500,
+      "release": true
+    },
+    {
+      "label": "ten-thousand-steps-observed",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "steps",
+        "gte": 10000
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "request-every-tick-finite-counters",
+      "press": "KeyC",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "finite-observation",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "finiteTicks",
+        "gte": 10000
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "recent-physical-observation",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "staleTicks",
+        "lte": 120
+      },
+      "timeoutMs": 120000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "mode",
+        "equals": "candidate",
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "measured",
+        "equals": 1
+      },
+      {
+        "id": "GameState",
+        "path": "steps",
+        "gte": 10000
+      },
+      {
+        "id": "GameState",
+        "path": "finiteTicks",
+        "gte": 10000
+      },
+      {
+        "id": "GameState",
+        "path": "nonfinitePositions",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "nonfiniteRotations",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "overflow",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "colorClashes",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "ropeExtension",
+        "lte": 0.03
+      },
+      {
+        "id": "GameState",
+        "path": "sailStretch",
+        "lte": 0.05
+      },
+      {
+        "id": "GameState",
+        "path": "penetrationMaximum",
+        "lte": 0.02
+      },
+      {
+        "id": "GameState",
+        "path": "staleTicks",
+        "lte": 120
+      },
+      {
+        "id": "GameState",
+        "path": "anchorX",
+        "gte": 0.49,
+        "lte": 0.55
+      },
+      {
+        "id": "GameState",
+        "path": "windSpeed",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "paused",
+        "equals": 0,
+        "atSteps": [
+          {
+            "label": "paused",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "pausedAdditionalSteps",
+        "equals": 0,
+        "atSteps": [
+          {
+            "label": "paused",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "readbackBytes",
+        "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "readbackFailures",
+        "equals": 0,
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "observationFailures",
+        "equals": 0,
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "cleanupFailed",
+        "equals": 0,
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "rendererControl.solverAllocations",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "acceptedAnchorVelocity",
+        "equals": 0
+      },
+      {
+        "id": "GameState",
+        "path": "contactsMaximum",
+        "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "fixedColorsValidated",
+        "equals": 1
+      }
+    ]
+  }
+}

@@ -122,8 +122,13 @@ scene.add(world);
 `terrain.streamRadius` is the terrain residency radius in tiles, and it defaults to `ring`, so a
 world streams ground and props over the same square. Raise it alone to put the ground out to the
 horizon while the props stay near: the default `lodDistances` are `tileSize` multiples, so the far
-tiles of the wider ring take the coarser levels on their own. `terrain.colliderRadius` is the
-separate Chebyshev radius that gets a `createCollider` body, and it also defaults to `ring`; a tile
+tiles of the wider ring can take coarser levels. Each distance is the nearest allowed switch;
+screen error can hold a finer level farther out. With a render camera and renderer, terrain shares
+props’ resolved `autoLod.maxPixelError` budget and `lodHysteresis`, using the current drawing-buffer
+height and camera projection. Resizing or moving the camera refreshes settled terrain without
+resampling heights. Without a render view, existing distance-only selection is preserved.
+
+`terrain.colliderRadius` is the separate Chebyshev radius that gets a `createCollider` body, and it also defaults to `ring`; a tile
 crossing it has its body created or disposed as it goes, so a wide render ring does not cost a
 physics body for every tile in it.
 
@@ -139,6 +144,53 @@ const world = await WorldCells.load({
   terrain: { streamRadius: 4, colliderRadius: 2 },
 });
 ```
+
+### A view-distance recipe, and fog that hides the stream edge
+
+Fog is a look, so the engine ships no fog and no view-distance constant. The recipe below is
+arithmetic over the cell size `c`, for terrain tiles of the default size (`tileSize` = `c`). Change
+`c` and every number follows. `pnpm exec vitest run packages/core/__tests__/world-streaming-recipe.spec.ts`
+reads the right-hand column of this table and fails when the ordering below breaks.
+
+| Setting | For cell size `c` | At `c` = 128 m (a 2 km map, 256 cells) |
+| --- | --- | --- |
+| `ring` | 2 | 2 |
+| `terrain.streamRadius` | `ring + 1` | 3 |
+| `terrain.colliderRadius` | 1 | 1 |
+| `terrain.lodDistances` | `2c, 4c` (the defaults) | 256, 512 |
+| fog `near` | `c` | 128 |
+| fog `far` | `ring · c` | 256 |
+| `budgets.residentCells` | `(2 · ring + 1)²` | 25 |
+
+The numbers come from where each edge can be, measured from the follow point:
+
+- **New props appear at `ring · c`.** A cell loads when the follow point crosses into the cell next
+  to it, so the near side of a newly loaded cell can be only `ring` cells away: 256 m, not the 452 m
+  corner of the resident square. Fog `far` must be at most `ring · c`, so a cell is fully fogged
+  when it arrives. A `far` set against the corner leaves the side of the ring in plain view.
+- **The ground ends at `streamRadius · c`.** That must be more than fog `far`, so the terrain edge
+  is always behind the fog: 384 m against 256 m. The props' edge is then the only edge.
+- **Bodies reach `colliderRadius · c`.** That is at most `ring`, because physics never needs ground
+  the props have not reached. 128 m is far above any fall in one frame; a fast vehicle may want 2.
+- **A terrain LOD switch is at least fog `near`**, so a switch pops inside the haze. The
+  distances must increase, which `TerrainTiles` checks itself. Screen-error selection may delay a
+  switch beyond these floors, so higher raster resolution cannot bring it in front of the haze.
+- **`budgets.residentCells` is at least `(2 · ring + 1)²`**, the wanted square. Cells kept by the
+  `ring + 1` hysteresis yield to wanted cells when the budget is full.
+
+Set the fog in the game's own render source, and give the background the fog colour so a fogged
+edge matches the sky:
+
+```ts
+import { Color, Fog } from "three";
+
+const cellSize = 128;
+const ring = 2;
+ctx.scene.background = new Color(0x9fb4c8);
+ctx.scene.fog = new Fog(0x9fb4c8, cellSize, ring * cellSize);
+```
+
+`stats().residentTiles` and `stats().residentColliders` report the two terrain radii at runtime.
 
 `WorldCells` implements the framework's compute-driven contract with `processCadence: "render"`, so
 registering it with `ctx.add(world)` is enough: the loop calls `update(renderer)` once per rendered
@@ -182,6 +234,8 @@ Read back what is happening with `stats()`:
 | Field | Meaning |
 | --- | --- |
 | `residentCells` / `residentKeys` | Cells resident right now. |
+| `residentTiles` | Terrain tiles drawn, out to `terrain.streamRadius`. |
+| `residentColliders` | Tiles holding a `createCollider` body, inside `terrain.colliderRadius`; 0 with no factory. |
 | `instances` | Placement instances the resident cells hold, before the `maxDistance` filter. |
 | `loadsInFlight` | Asset and chunk loads that have not settled. |
 | `evictions` | Cells released so far. |
@@ -191,13 +245,52 @@ Read back what is happening with `stats()`:
 
 Call `dispose()` to release every cell, batch, chunk model and the terrain.
 
+### Virtualized geometry, and what is not culled yet
+
+Clustered geometry ships: `ClusteredMesh` (a `Mesh` that culls and LOD-selects clusters on the GPU
+and draws them through an indirect record) and `ClusteredBatch` are exported from `@threenative/core`,
+and a `WorldCells` package gets the same treatment through `gpuScene`, which is **on by default**
+wherever the backend can run it. Nothing here needs to be enabled to get it, and a backend without
+compute or `drawIndexedIndirect` falls back to the CPU path and says so in `stats().gpuScene`.
+
+What does not ship is occlusion culling. Nothing in `packages/core/src` reads a previous frame's
+depth to skip geometry — no depth pyramid, no HZB — so a cell behind a hill is submitted and culled
+by frustum only. It was declined twice on measured headroom and is now a single go/no-go:
+
+[PRD-489](../PRDs/done/PRD-489-gpu-scene-occlusion-culling.md) — occlusion culling re-tested
+on the GPU scene. Read it before assuming a cell is free to stream wide; the answer today is that it
+is not.
+
+### Terrain layers that blend by their own height
+
+`loadTerrainSplat` mixes each table layer over the ones below it by that layer's mask weight, so a
+mask edge is only as detailed as the mask. A layer whose table row says `"height": true` also loads
+`<id>_h.jpg` as linear data, stacked into one more array texture (the marker then reports
+`samplers=5` for a sixteen-layer package). The package owns no curve. It hands each layer's
+weight and height sample to a function you pass as `layerWeight`:
+
+```ts
+import { loadTerrainSplat } from "@threenative/core/world";
+import { heightBlend } from "./render/heightBlend.js";
+
+const surface = await loadTerrainSplat({ assets, layerWeight: heightBlend, renderer, url });
+```
+
+`layerWeight(weight, { height, index, layer })` returns the weight the mix chain uses, and `height`
+is `undefined` for a layer with no height set. Leave it out and the weight is the mask, unchanged.
+[`heightBlend.ts`](../../examples/prd493-terrain-splat/src/render/heightBlend.ts) is the reference
+curve: a half-painted layer holds the crests of its relief first, a fully painted layer covers, and
+an unpainted one stays hidden. Edit or replace it to change the look. The package does not decide it.
+
 ## 4. Prove it
 
 The in-repo fixture
 [`world-flythrough.playtest.json`](../../examples/abyss-framework/playtests/world-flythrough.playtest.json)
 flies the camera across the `world-v1` package committed as the example's own
 [`assets/world/`](../../examples/abyss-framework/assets/world) source and asserts residency rises,
-cells are evicted, loads settle and no load fails, with a measured p95 frame budget. The scene
+cells are evicted, loads settle and no load fails, with a measured p95 frame budget. Under
+`?world&viewDistance` it runs the view-distance recipe above and also asserts 49 terrain tiles, 9
+collider bodies, and no body farther than 1.5 tiles from the camera. The scene
 behind it is
 [`WorldProbe.ts`](../../examples/abyss-framework/src/scenes/WorldProbe.ts), which uses only the
 public exports. Build first: the scenario runs against compiled, content-addressed output, not
@@ -207,7 +300,7 @@ against a dev server.
 pnpm --filter abyss-framework build
 CI=true node packages/playtest/dist/runner/cli.js \
   examples/abyss-framework/playtests/world-flythrough.playtest.json \
-  --url 'http://127.0.0.1:5181/?world' \
+  --url 'http://127.0.0.1:5181/?world&viewDistance' \
   --server-command 'pnpm --filter abyss-framework preview --host 127.0.0.1 --port 5181 --strictPort' \
   --browser-recipe webgpu --headed
 ```

@@ -964,6 +964,31 @@ export async function writeScaffoldScript(
   return script;
 }
 
+/**
+ * A packed package installs its own `@threenative/*` dependencies too (the engine player's runtime
+ * depends on three-native), and none of them is on the npm registry before a release. The scaffold
+ * overrides those from the same packed set.
+ */
+async function withPackedDependencies(
+  declared: ReadonlySet<string>,
+  sources: PackageSources,
+): Promise<ReadonlySet<string>> {
+  const manifests = new Map(
+    (await workspacePackages()).map(({ manifest }) => [manifest.name, manifest]),
+  );
+  const all = new Set(declared);
+  for (const name of all) {
+    const manifest = manifests.get(name);
+    const dependencies = [
+      ...Object.keys(manifest?.dependencies ?? {}),
+      ...Object.keys(manifest?.optionalDependencies ?? {}),
+    ];
+    for (const dependency of dependencies)
+      if (sources[dependency] !== undefined) all.add(dependency);
+  }
+  return all;
+}
+
 export async function scaffold(
   template: string,
   target: string,
@@ -972,7 +997,7 @@ export async function scaffold(
   options: { readonly ignoreInstallScripts?: boolean; readonly noInstall?: boolean } = {},
 ): Promise<void> {
   const templateManifest = await readManifest(path.join(templatesRoot, template, PACKAGE_FILE));
-  const declared = declaredDependencies(templateManifest);
+  const declared = await withPackedDependencies(declaredDependencies(templateManifest), sources);
   const packageArgs: string[] = [];
   for (const dependency of declared) {
     const source = sources[dependency];
@@ -1021,7 +1046,9 @@ async function waitForDevServer(
   const correctiveCommand = formatCorrectiveCommand(
     goldenPathCorrectiveCommands(project, port).dev,
   );
-  const deadline = Date.now() + 30_000;
+  // The dev server answers only after the cold asset cook. One ETC1S encode of a template's
+  // 4096x2048 sky is 21 s on an idle desktop and passed 30 s on a loaded merge-queue runner (PR 473).
+  const deadline = Date.now() + 90_000;
   let lastError = "no response";
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
@@ -1170,15 +1197,24 @@ export async function verifyPackedMutationControl(
   }
   const root = await mkdtemp(path.join(os.tmpdir(), "threenative-golden-path-mutated-"));
   try {
-    const mutatedPackage = path.join(root, "create-threenative");
+    const mutatedPackage = path.join(root, "packages", "create-threenative");
+    const generatedPatches = path.join(
+      REPO_ROOT,
+      "packages/create-threenative/template-assets/patches",
+    );
     await cp(path.join(REPO_ROOT, "packages/create-threenative"), mutatedPackage, {
-      filter: (source) => path.basename(source) !== "node_modules",
+      filter: (source) => path.basename(source) !== "node_modules" && source !== generatedPatches,
       recursive: true,
     });
-    // create-threenative's prepack copies core's Three.js patch from its sibling directory.
-    await cp(path.join(REPO_ROOT, "packages/core/patches"), path.join(root, "core", "patches"), {
-      recursive: true,
-    });
+    // Reproduce prepack's repository-relative inputs, including Vite and Tailwind's patches.
+    await cp(
+      path.join(REPO_ROOT, "packages/core/patches"),
+      path.join(root, "packages/core/patches"),
+      {
+        recursive: true,
+      },
+    );
+    await cp(path.join(REPO_ROOT, "patches"), path.join(root, "patches"), { recursive: true });
     await materializeTemporaryPackageVersions(mutatedPackage);
     const templateManifestPath = path.join(mutatedPackage, "templates", template, PACKAGE_FILE);
     const templateManifest = JSON.parse(await readFile(templateManifestPath, "utf8")) as Record<

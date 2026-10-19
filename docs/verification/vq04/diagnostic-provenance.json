@@ -1,0 +1,33 @@
+{
+  "sourceSha": "691e917ebb870445415417c5566025f47c81e6a1",
+  "run": "https://github.com/ThreeNativeHQ/threenative/actions/runs/36995945428",
+  "artifactId": 11222300460,
+  "artifactZipSha256": "e43590deff385057a5f3ed547e8f444ce2d6949fd9b71fdc3b4c7113504a8d17",
+  "screenshotSha256": "26de9efac6b525b43efbf5f525db11a8bb7e2693f77b3cbb7712c180d289fb79",
+  "capture": {
+    "adapter": {
+      "architecture": "swiftshader",
+      "vendor": "google",
+      "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "8192",
+      "limit.maxStorageBufferBindingSize": "1073741824"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 720,
+      "width": 960
+    }
+  },
+  "pass": false,
+  "status": "Diagnostic only: actual mannequin render at tick 24; rejected for one asset-manifest 404 console error. Not a qualified runtime pass."
+}

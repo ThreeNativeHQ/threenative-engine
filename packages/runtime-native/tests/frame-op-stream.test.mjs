@@ -140,6 +140,8 @@ describe("packed frame op stream", () => {
     [34, "auto e = encoder(r.u32());", "wgpuCommandEncoderResolveQuerySet", "resolve encoder"],
     [34, "auto q = querySetFor(r.u32());", "wgpuCommandEncoderResolveQuerySet", "resolve query set"],
     [34, "auto dst = buffer(r.u32());", "wgpuCommandEncoderResolveQuerySet", "resolve destination"],
+    [35, "auto p = computePass(r.u32());", "wgpuComputePassEncoderDispatchWorkgroupsIndirect", "indirect dispatch pass"],
+    [35, "auto b = buffer(r.u32());", "wgpuComputePassEncoderDispatchWorkgroupsIndirect", "indirect dispatch buffer"],
   ];
 
   function assertReplayLookupGuards(replaySource) {
@@ -242,6 +244,23 @@ describe("packed frame op stream", () => {
     expect(drain()).toBeNull();
   });
 
+  it("reports pending readback work behind an outer render encoder", () => {
+    const { device, queue, drain } = harness();
+    const outer = device.createCommandEncoder();
+    const pass = outer.beginRenderPass({ colorAttachments: [] });
+    const readback = device.createCommandEncoder();
+    readback.copyBufferToBuffer({ _bufferId: 1 }, 0, { _bufferId: 2 }, 0, 4);
+    queue.submit([readback.finish()]);
+    expect(drain(1)).toBeNull();
+    expect(drain.pendingOps).toBe(true);
+    pass.end();
+    queue.submit([outer.finish()]);
+    expect(records(drain()).result.map(({ opcode }) => opcode)).toEqual([
+      2, 3, 2, 23, 28, 29, 17, 28, 29,
+    ]);
+    expect(drain.pendingOps).toBe(false);
+  });
+
   // The cut has to land before a half-recorded encoder: replaying a stream whose encoder is never
   // finished fails closed on the native side with "frame ended with unfinished GPU objects".
   it("leaves a half-recorded encoder behind and drains it whole at the frame boundary", () => {
@@ -297,6 +316,7 @@ describe("packed frame op stream", () => {
       ["setPipeline", 19, [computePipeline]],
       ["setBindGroup", 20, [0, group]],
       ["dispatchWorkgroups", 21, [1]],
+      ["dispatchWorkgroupsIndirect", 35, [buffer, 0]],
       ["end", 22, []],
     ];
 
@@ -430,6 +450,7 @@ describe("packed frame op stream", () => {
     compute.setPipeline(pipeline);
     compute.setBindGroup(0, group);
     compute.dispatchWorkgroups(1);
+    compute.dispatchWorkgroupsIndirect(buffer, 0);
     compute.end();
     encoder.copyBufferToBuffer(buffer, 0, buffer, 0, 4);
     encoder.copyBufferToTexture({ buffer }, { texture }, [1, 1, 1]);

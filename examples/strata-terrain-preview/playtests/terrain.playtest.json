@@ -1,0 +1,1100 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain",
+  "subject": "Baked terrain triangles and physics match during a playable 50 metre walk",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "forest-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "grounded",
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "forest-start"
+    },
+    {
+      "kind": "input",
+      "label": "meadow-close-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "meadow-close",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "meadow-close"
+    },
+    {
+      "kind": "input",
+      "label": "overview-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "overview",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "overview"
+    },
+    {
+      "kind": "input",
+      "label": "river-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "river",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "river"
+    },
+    {
+      "kind": "input",
+      "label": "player-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "back-to-player",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "KeyD",
+      "holdTicks": 420,
+      "release": true,
+      "screenshot": "forest-walk"
+    },
+    {
+      "label": "walk-distance",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 50
+      },
+      "timeoutMs": 5000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "coastal",
+      "press": "Digit2",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "coastal-loaded",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "coastal"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "coastal-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ocean-early",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "coastal-ocean-early"
+    },
+    {
+      "kind": "wait",
+      "label": "ocean",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "coastal-ocean"
+    },
+    {
+      "kind": "input",
+      "label": "horizon-sea-view-1",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "horizon-sea-view-2",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "horizon-sea-view-3",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "horizon-sea",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "coastal-horizon-sea"
+    },
+    {
+      "kind": "input",
+      "label": "coastal-player-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "coastal-player",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "sun-change",
+      "press": "KeyL",
+      "holdTicks": 2,
+      "release": true,
+      "screenshot": "coastal-sun-alt"
+    },
+    {
+      "kind": "input",
+      "label": "alpine-select",
+      "press": "Digit3",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "alpine-loaded",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "alpine"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "alpine-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "label": "alpine-ground-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "groundBiome",
+        "equals": "alpine"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "alpine-settle",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "alpine-player"
+    },
+    {
+      "kind": "input",
+      "label": "alpine-walk",
+      "press": "KeyD",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "label": "alpine-walk-distance",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 5
+      },
+      "timeoutMs": 5000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "alpine-ridge-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "alpine-ridge",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "alpine-ridge"
+    },
+    {
+      "kind": "input",
+      "label": "alpine-overview-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "alpine-overview",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "alpine-overview"
+    },
+    {
+      "kind": "input",
+      "label": "desert-select",
+      "press": "Digit4",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "desert-loaded",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "desert"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "desert-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "label": "desert-ground-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "groundBiome",
+        "equals": "desert"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "desert-settle",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "desert-player"
+    },
+    {
+      "kind": "input",
+      "label": "desert-walk",
+      "press": "KeyD",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "label": "desert-walk-distance",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 5
+      },
+      "timeoutMs": 5000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "desert-mesa-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "desert-mesa",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "desert-mesa"
+    },
+    {
+      "kind": "input",
+      "label": "desert-overview-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "desert-overview",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "desert-overview"
+    },
+    {
+      "kind": "input",
+      "label": "tundra-select",
+      "press": "Digit5",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "tundra-loaded",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "tundra"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "tundra-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "label": "tundra-ground-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "groundBiome",
+        "equals": "tundra"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tundra-settle",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "tundra-player"
+    },
+    {
+      "kind": "input",
+      "label": "tundra-walk",
+      "press": "KeyD",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "label": "tundra-walk-distance",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 5
+      },
+      "timeoutMs": 5000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tundra-plain-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "tundra-braid-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "riverSurfaceCount",
+        "equals": 2
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "tundra-water-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "lakeTriangles",
+        "gte": 100
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "tundra-pond-footprint",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "lakeFootprintError",
+        "lte": 0.02
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tundra-plain",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "tundra-plain"
+    },
+    {
+      "kind": "input",
+      "label": "tundra-overview-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tundra-overview",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "tundra-overview"
+    },
+    {
+      "kind": "input",
+      "label": "coastal-return",
+      "press": "Digit2",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "coastal-return-loaded",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "coastal"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "coastal-return-assets-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "worldReady",
+        "equals": true
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "coastal-return-settle",
+      "waitTicks": 360,
+      "release": true
+    },
+    {
+      "label": "coastal-return-waves",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "oceanSteps",
+        "gte": 300
+      },
+      "timeoutMs": 10000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "coastal-return-sun",
+      "press": "KeyL",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "coastal-meadow-final-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "coastal-meadow-final",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "coastal-meadow-close"
+    },
+    {
+      "kind": "input",
+      "label": "coastal-overview-final-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "coastal-overview-final",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "coastal-overview"
+    },
+    {
+      "kind": "input",
+      "label": "coastal-horizon-final-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "coastal-player-final-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "coastal-player-final",
+      "waitTicks": 60,
+      "release": true,
+      "screenshot": "coastal-player"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "lakePlacementError",
+        "lte": 0.02,
+        "allowTrivial": "The drawn lake centre must match the baked [x,z] basin. The value stays at 1 when no lake is drawn, so an absent lake fails too."
+      },
+      {
+        "id": "GameState",
+        "path": "grounded",
+        "equals": true,
+        "allowTrivial": "The character settles during warmup; grounded must still hold after the walk and scene transition."
+      },
+      {
+        "id": "GameState",
+        "path": "maxContactError",
+        "lte": 0.02,
+        "allowTrivial": "Maximum measured error is a held upper bound; contactSamples separately requires fresh observations during the scenario."
+      },
+      {
+        "id": "GameState",
+        "path": "contactSamples",
+        "gte": 300
+      },
+      {
+        "id": "GameState",
+        "path": "bilinearDifference",
+        "gte": 0.1,
+        "allowTrivial": "The asymmetric triangle fixture runs once after physics startup; its observed difference qualifies the sampling method."
+      },
+      {
+        "id": "GameState",
+        "path": "world",
+        "equals": "coastal",
+        "atSteps": [
+          {
+            "label": "alpine-ridge",
+            "equals": "alpine"
+          },
+          {
+            "label": "desert-mesa",
+            "equals": "desert"
+          },
+          {
+            "label": "tundra-plain",
+            "equals": "tundra"
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "oceanSteps",
+        "gte": 300
+      },
+      {
+        "id": "GameState",
+        "path": "waveSamples",
+        "gte": 2
+      },
+      {
+        "id": "GameState",
+        "path": "waveRange",
+        "gte": 0.0001
+      },
+      {
+        "id": "GameState",
+        "path": "sampleSlopeRange",
+        "gte": 0.0001
+      },
+      {
+        "id": "GameState",
+        "path": "sunX",
+        "equals": 180,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "propInstances",
+        "gte": 1000,
+        "allowTrivial": "A steady-state bound on what is drawn, not a transition: the props are placed on the first physics step, which the warmup frames already cover, so the count holds before and after by construction."
+      },
+      {
+        "id": "GameState",
+        "path": "propDraws",
+        "allowTrivial": "A ceiling on the prop draws, which holds for every frame rather than changing at one: its value is the price of the instancing, and a run that only ever saw it once would prove nothing. 64 since the layered understorey (bush, fern, litter species at one draw each); every view CPU p50 stayed within 4 ms at 63 draws (v11 licensed). Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02).",
+        "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "propTriangles",
+        "gte": 100000,
+        "allowTrivial": "A floor on the geometry actually submitted, which holds for every frame for the same reason as the instance count."
+      },
+      {
+        "id": "GameState",
+        "path": "windowDrawCalls",
+        "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "preparedLodBaseSpread",
+        "lte": 0.05,
+        "allowTrivial": "The widest gap between two detail levels' own base Y in one prepared variant, measured on the geometry that is actually drawn. A level authored off the ground draws a crown floating above a neighbour that stands correctly, and grounding cannot fix it because grounding measures the trunk the levels share. Zero on a machine with no prepared art, which is why this is a ceiling and not a floor."
+      },
+      {
+        "id": "GameState",
+        "path": "preparedLevelsWithoutSolid",
+        "lte": 0,
+        "allowTrivial": "Detail levels carrying no bark or stone part at all. A cutout-only level is a crown with nothing holding it up, which is the same defect seen from the other side; the far cross-card is exempt because its trunk is baked into its own pixels. Fails closed on a prep that drops a trunk, which no diff shows and every capture does."
+      },
+      {
+        "id": "GameState",
+        "path": "meadowFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Frame cost at the meadow framing, the nearest look at the trees. A real measurement needs at least one closed budget window at that view; zero means the window never closed while it was on screen. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "overviewFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Frame cost at the overview framing, where the far impostor band carries most of the forest. Zero means no window closed at that view. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "meadowTriangles",
+        "gte": 1000,
+        "allowTrivial": "Triangles submitted at the meadow framing. A floor on real geometry, so a run that reported zero could not be the picture the trees are judged in."
+      },
+      {
+        "id": "GameState",
+        "path": "overviewTriangles",
+        "gte": 1000,
+        "allowTrivial": "Triangles submitted at the overview framing, where the LOD bands are supposed to have replaced most of the near geometry."
+      },
+      {
+        "id": "GameState",
+        "path": "alpineRenderedFrames",
+        "gte": 120,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "alpineFrameP50",
+        "gte": 0.01,
+        "changed": true,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "desertRenderedFrames",
+        "gte": 120,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "desertFrameP50",
+        "gte": 0.01,
+        "changed": true,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "tundraRenderedFrames",
+        "gte": 120,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "tundraFrameP50",
+        "gte": 0.01,
+        "changed": true,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "groundBiome",
+        "equals": "coastal",
+        "atSteps": [
+          {
+            "label": "alpine-ridge",
+            "equals": "alpine"
+          },
+          {
+            "label": "desert-mesa",
+            "equals": "desert"
+          },
+          {
+            "label": "tundra-plain",
+            "equals": "tundra"
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "view",
+        "equals": "player",
+        "allowTrivial": "The final coastal return resets to player, the initial view. The defining and overview camera transitions are separately observed atSteps.",
+        "atSteps": [
+          {
+            "label": "alpine-loaded",
+            "equals": "player"
+          },
+          {
+            "label": "desert-loaded",
+            "equals": "player"
+          },
+          {
+            "label": "tundra-loaded",
+            "equals": "player"
+          },
+          {
+            "label": "alpine-ridge",
+            "equals": "ridge"
+          },
+          {
+            "label": "desert-mesa",
+            "equals": "mesa"
+          },
+          {
+            "label": "tundra-plain",
+            "equals": "plain"
+          },
+          {
+            "label": "alpine-overview",
+            "equals": "overview"
+          },
+          {
+            "label": "desert-overview",
+            "equals": "overview"
+          },
+          {
+            "label": "tundra-overview",
+            "equals": "overview"
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "lakeSurfaceCount",
+        "atSteps": [
+          {
+            "label": "tundra-plain",
+            "equals": 2
+          }
+        ],
+        "allowTrivial": "Both baked kettle ponds must produce distinct material groups in the drawn lake mesh."
+      },
+      {
+        "id": "GameState",
+        "path": "alpineOverviewFrameP50",
+        "gte": 0.01,
+        "changed": true,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "desertOverviewFrameP50",
+        "gte": 0.01,
+        "changed": true,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "tundraOverviewFrameP50",
+        "gte": 0.01,
+        "changed": true,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "riverFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "playerFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "maxViewFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Maximum measured CPU p50 across every visited camera; measuredViewCount separately requires all 17 poses to close budget windows. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02)."
+      },
+      {
+        "id": "GameState",
+        "path": "maxViewPresentedP95",
+        "gte": 0.01,
+        "allowTrivial": "Presented-interval p95 of the slowest view, measured and reported but not capped: the runner's private Xvfb is not a real display, so a frame rate from it is wrong, not missing (packages/playtest/AGENTS.md). The 60 fps verdict comes from `playtest perf` on a real display."
+      },
+      {
+        "id": "GameState",
+        "path": "measuredViewCount",
+        "gte": 17,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "windowFrameMs",
+        "gte": 0.01,
+        "allowTrivial": "A closed CPU budget window at every captured view must be observed and remain within 4 ms; missing or zero observations fail. Measured and reported, never capped: the owner removed the CPU/draw budgets so the starter worlds can carry Gaia-level density (2026-10-02).",
+        "throughoutSteps": true
+      },
+      {
+        "id": "GameState",
+        "path": "terrainTransportBound",
+        "equals": true,
+        "atSteps": [
+          {
+            "label": "meadow-close",
+            "equals": true
+          },
+          {
+            "label": "ocean",
+            "equals": true
+          },
+          {
+            "label": "alpine-ridge",
+            "equals": true
+          },
+          {
+            "label": "desert-mesa",
+            "equals": true
+          },
+          {
+            "label": "tundra-plain",
+            "equals": true
+          }
+        ],
+        "allowTrivial": "The drawn PBR material must bind measured erosion transport in every world."
+      },
+      {
+        "id": "GameState",
+        "path": "erosionFlowSamples",
+        "gte": 1000,
+        "allowTrivial": "Counts the actual baked nonzero transport observations; absent or empty maps fail."
+      },
+      {
+        "id": "GameState",
+        "path": "erosionDepositSamples",
+        "gte": 100,
+        "allowTrivial": "Counts actual hydraulic deposition samples from each played heightfield."
+      },
+      {
+        "id": "GameState",
+        "path": "tasksAvailable",
+        "equals": true,
+        "allowTrivial": "Long Tasks must actually be observed; unavailable is not zero."
+      },
+      {
+        "id": "GameState",
+        "path": "afterFirstFrameTaskMs",
+        "gte": 0,
+        "lte": 250,
+        "allowTrivial": "Longest actual main-thread task after the first frame, across loading and play; presentation waits are excluded."
+      },
+      {
+        "id": "GameState",
+        "path": "timeToReadyMs",
+        "gte": 1,
+        "lte": 15000,
+        "allowTrivial": "Warm launch to the complete prop tier, not framework readiness before assets land."
+      },
+      {
+        "id": "GameState",
+        "path": "measuredGpuViewCount",
+        "gte": 17,
+        "allowTrivial": "Every fixed view needs a resolved timestamp window; absent GPU timings fail."
+      },
+      {
+        "id": "GameState",
+        "path": "maxViewGpuMs",
+        "gte": 0.01,
+        "lte": 12,
+        "allowTrivial": "Worst per-view median timestamp-query GPU cost, valid under Xvfb; this is not a displayed-fps claim."
+      }
+    ],
+    "renderChain": {
+      "stages": {
+        "includes": ["ambientOcclusion", "grade"]
+      },
+      "contributions": {
+        "graphOutputChanged": ["ambientOcclusion", "grade"]
+      }
+    },
+    "components": [
+      {
+        "entity": "props",
+        "component": "crags",
+        "path": "drawn",
+        "atSteps": [
+          {
+            "label": "overview",
+            "equals": true
+          },
+          {
+            "label": "ocean",
+            "equals": true
+          },
+          {
+            "label": "alpine-ridge",
+            "equals": true
+          },
+          {
+            "label": "desert-mesa",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "entity": "props",
+        "component": "crags",
+        "path": "baseRingBuried",
+        "atSteps": [
+          {
+            "label": "alpine-ridge",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "entity": "props",
+        "component": "crags",
+        "path": "baseRingMeasured",
+        "atSteps": [
+          {
+            "label": "alpine-ridge",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "horizon",
+        "lte": 0.0001,
+        "allowTrivial": "Measured gap between all 1024 continuation seam vertices and their playable baked samples.",
+        "atSteps": [
+          {
+            "label": "alpine-ridge",
+            "equals": 0
+          },
+          {
+            "label": "desert-mesa",
+            "equals": 0
+          },
+          {
+            "label": "tundra-plain",
+            "equals": 0
+          }
+        ],
+        "path": "seamGap"
+      },
+      {
+        "entity": "player",
+        "component": "horizon",
+        "gte": 1024,
+        "allowTrivial": "Every perimeter vertex must be observed, including all four corners.",
+        "path": "samples"
+      },
+      {
+        "entity": "player",
+        "component": "visible",
+        "atSteps": [
+          {
+            "label": "grounded",
+            "equals": false
+          },
+          {
+            "label": "walk",
+            "equals": false
+          },
+          {
+            "label": "meadow-close",
+            "equals": false
+          },
+          {
+            "label": "overview",
+            "equals": false
+          },
+          {
+            "label": "river",
+            "equals": false
+          },
+          {
+            "label": "alpine-ridge",
+            "equals": false
+          },
+          {
+            "label": "desert-mesa",
+            "equals": false
+          },
+          {
+            "label": "tundra-plain",
+            "equals": false
+          }
+        ],
+        "allowTrivial": "Scripted cameras hide only the rendering mesh; ground contacts and travel still exercise its physics body."
+      }
+    ]
+  }
+}

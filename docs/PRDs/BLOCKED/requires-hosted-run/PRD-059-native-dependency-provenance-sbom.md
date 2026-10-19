@@ -5,6 +5,7 @@ prd_contract: v1
 # PRD-059 — Native dependency provenance and SBOM
 
 **Status:** BLOCKED — IMPLEMENTATION COMMITTED IN ISOLATED LANE; NOT SQUASHED
+**Priority:** P1 — Open boxes demand immutable refs, pre-flight URL validation and hash-before-extract.
 **Lane commit:** `fb222c8ae47952179b24163d2149265f52a79dd2`
 
 **Manager gate:** 10 declared controls reran with exact observed-red evidence; local

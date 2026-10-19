@@ -331,6 +331,142 @@ test("fallback TextDecoder: fatal throws, nonfatal replaces, splits and offsets 
   });
 });
 
+// Three.js' SMAANode carries its two lookup tables as embedded base64 PNG data URIs; a native
+// host has no `atob`, so the fetch shim must decode the standard `data:` form byte-exactly.
+const SMAA_SEARCH_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAEIAAAAhCAAAAABIXyLAAAAAOElEQVRIx2NgGAWjYBSMglEwEICREYRgFBZBqDCSLA2MGPUIVQETE9iNUAqLR5gIeoQKRgwXjwAAGn4AtaFeYLEAAAAASUVORK5CYII=";
+const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
+
+test("data: URL fetch decodes base64 bytes exactly and keeps the media type", async () => {
+  const { context } = setupFetchContext();
+  context.__png = SMAA_SEARCH_PNG;
+  const result = await vm.runInContext(
+    `(async () => {
+      const response = await fetch("data:image/png;base64," + __png);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      return {
+        ok: response.ok,
+        status: response.status,
+        contentType: response.headers.get("content-type"),
+        signature: Array.from(bytes.slice(0, 8)),
+        length: bytes.length,
+      };
+    })()`,
+    context,
+  );
+  assert.deepEqual(guest(result), {
+    ok: true,
+    status: 200,
+    contentType: "image/png",
+    signature: PNG_SIGNATURE,
+    length: Buffer.from(SMAA_SEARCH_PNG, "base64").length,
+  });
+});
+
+test("data: URL fetch percent-decodes text and bytes and applies the default media type", async () => {
+  const { context } = setupFetchContext();
+  const result = await vm.runInContext(
+    `(async () => {
+      const text = await fetch("data:text/plain,hello%20world%21");
+      const binary = await fetch("data:application/octet-stream,%00%01%FE");
+      const defaulted = await fetch("data:,plain");
+      return {
+        text: await text.text(),
+        textType: text.headers.get("content-type"),
+        binary: Array.from(new Uint8Array(await binary.arrayBuffer())),
+        defaulted: await defaulted.text(),
+        defaultedType: defaulted.headers.get("content-type"),
+      };
+    })()`,
+    context,
+  );
+  assert.deepEqual(guest(result), {
+    text: "hello world!",
+    textType: "text/plain",
+    binary: [0, 1, 254],
+    defaulted: "plain",
+    defaultedType: "text/plain;charset=US-ASCII",
+  });
+});
+
+test("data: URL fetch accepts empty payloads and rejects malformed input", async () => {
+  const { context } = setupFetchContext();
+  const result = await vm.runInContext(
+    `(async () => {
+      const emptyBase64 = await fetch("data:image/png;base64,");
+      const emptyPlain = await fetch("data:text/plain,");
+      return {
+        emptyBase64: (await emptyBase64.arrayBuffer()).byteLength,
+        emptyPlain: (await emptyPlain.arrayBuffer()).byteLength,
+      };
+    })()`,
+    context,
+  );
+  assert.deepEqual(guest(result), { emptyBase64: 0, emptyPlain: 0 });
+
+  for (const url of [
+    "data:image/png;base64,@@@@",
+    "data:image/png;base64,AAAA====",
+    "data:image/png;base64,=AAA",
+    "data:image/png;base64,A",
+    "data:text/plain,%ZZ",
+    "data:text/plain,%A",
+  ])
+    await assert.rejects(vm.runInContext(`fetch(${JSON.stringify(url)})`, context));
+
+  // A malformed data URL is a real failure, not a 200 with truncated bytes.
+  const observation = await vm.runInContext("fetch.network()", context);
+  assert.equal(observation.entries.length, 6);
+});
+
+// The standalone forgiving-base64 algorithm (WHATWG infra) plus the data: URL
+// processor (WHATWG fetch) define what the platform returns for these bounded
+// fixtures: base64 with remainder 2 or 3 is valid unpadded, the body is
+// percent-decoded before it is base64-decoded, and a raw URL fragment is not
+// part of the body. Node's own fetch is the independent oracle, so the shim
+// cannot grade its own output.
+const FORGIVING_DATA_URLS = [
+  "data:;base64,TWE",
+  "data:;base64,AAA",
+  "data:;base64,AA",
+  "data:;base64,AAAA",
+  "data:;base64,T%57E=",
+  "data:;base64,AAA%3D",
+  "data:;base64,",
+  "data:image/png;base64,iVBORw0KGgo=",
+  "data:,body#fragment",
+  "data:text/plain,%23hash",
+  "data:;charset=UTF-8,hi",
+];
+
+test("data: URL fetch matches the platform for forgiving base64, percent-decoded bodies and fragments", async () => {
+  const { context } = setupFetchContext();
+  context.__urls = FORGIVING_DATA_URLS;
+  const shim = await vm.runInContext(
+    `(async () => {
+      const out = [];
+      for (const url of __urls) {
+        const response = await fetch(url);
+        out.push({
+          contentType: response.headers.get("content-type"),
+          bytes: Array.from(new Uint8Array(await response.arrayBuffer())),
+        });
+      }
+      return out;
+    })()`,
+    context,
+  );
+  const oracle = [];
+  for (const url of FORGIVING_DATA_URLS) {
+    const response = await fetch(url);
+    oracle.push({
+      contentType: response.headers.get("content-type"),
+      bytes: Array.from(new Uint8Array(await response.arrayBuffer())),
+    });
+  }
+  assert.deepEqual(guest(shim), oracle);
+});
+
 test("unsupported URL schemes reject instead of falling through to file reads", async () => {
   const { context } = setupFetchContext({
     __readFileAsync: () => { throw new Error("must not be reached"); },
@@ -339,4 +475,42 @@ test("unsupported URL schemes reject instead of falling through to file reads", 
     vm.runInContext(`fetch("ftp://cdn.example/ship.glb")`, context),
     /Unsupported URL scheme: ftp/u,
   );
+});
+
+test("native fetch network observation records real HTTP and asset failures", async () => {
+  const { context } = setupFetchContext({
+    __httpRequestAsync: (url, _options, callback) => callback(
+      url.endsWith("/reject") ? { error: "connection refused" }
+        : { ok: !url.endsWith("/404"), status: url.endsWith("/404") ? 404 : 200, url },
+    ),
+    __readFileAsync: (_path, callback) => callback(null, "missing asset"),
+  });
+  const observation = await vm.runInContext(`(async () => {
+    await fetch("https://host/ok");
+    await fetch(new Request("https://host/404", { method: "POST" }));
+    await fetch("https://host/reject").catch(() => {});
+    await fetch("missing.bin").catch(() => {});
+    return fetch.network();
+  })()`, context);
+  assert.deepEqual(guest(observation), { requests: 4, entries: [
+    { method: "POST", url: "https://host/404" },
+    { method: "GET", url: "https://host/reject" },
+    { method: "GET", url: "missing.bin" },
+  ] });
+  assert.match(readRuntimeCpp(), /setProperty\(playtestMailbox, "network"/u);
+});
+
+test("native fetch network observation fails closed on overflow and protects its retained entries", async () => {
+  const { context } = setupFetchContext({
+    __httpRequestAsync: (_url, _options, callback) => callback({ ok: false, status: 500 }),
+  });
+  await vm.runInContext(`(async () => {
+    await fetch("https://host/error");
+    fetch.network().entries.length = 0;
+  })()`, context);
+  assert.equal(vm.runInContext("fetch.network().entries.length", context), 1);
+  await vm.runInContext(`(async () => {
+    for (let i = 0; i < 256; i++) await fetch("https://host/error");
+  })()`, context);
+  assert.throws(() => vm.runInContext("fetch.network()", context), /NETWORK.*OVERFLOW/u);
 });

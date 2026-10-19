@@ -1,6 +1,6 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from "node:assert/strict";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ import {
   reportExitCode,
   validateProvenance,
   validateReport,
+  verifyApkBundle,
 } from "../conformance/run-conformance.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -181,6 +182,32 @@ test("the reference capture set is hashed as a set, and an empty or missing set 
     assert.match(first, /^[0-9a-f]{64}$/u);
     writeFileSync(join(directory, "02-buffer-geometry.png"), "two, but redrawn");
     assert.notEqual(captureSetSha256(directory), first, "a changed capture must change the digest");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test("APK verification records the library digests read from the checksum-locked installed APK", () => {
+  const directory = makeTempDirSync("conformance-apk-runtime-");
+  const bundle = join(directory, "main.js");
+  writeFileSync(bundle, "fixture bundle");
+  try {
+    const libraries = verifyApkBundle("fixture.apk", bundle, "fixture-java", (command, args, options) => {
+      assert.ok(args.includes("lib"));
+      mkdirSync(join(options.cwd, "assets/scripts"), { recursive: true });
+      writeFileSync(join(options.cwd, "assets/scripts/main.js"), "fixture bundle");
+      for (const abi of ["x86_64", "arm64-v8a"]) {
+        mkdirSync(join(options.cwd, "lib", abi), { recursive: true });
+        writeFileSync(join(options.cwd, "lib", abi, "libmystral-runtime.so"), abi);
+      }
+      return { status: 0 };
+    });
+    assert.match(libraries.x86_64, /^[0-9a-f]{64}$/u);
+    assert.match(libraries["arm64-v8a"], /^[0-9a-f]{64}$/u);
+    assert.notEqual(libraries.x86_64, libraries["arm64-v8a"]);
+    const source = readFileSync(join(root, "conformance/run-conformance.mjs"), "utf8");
+    assert.equal((source.match(/apkBundleVerified: true,\n {8}runtimeLibraries,/gu) ?? []).length, 2);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

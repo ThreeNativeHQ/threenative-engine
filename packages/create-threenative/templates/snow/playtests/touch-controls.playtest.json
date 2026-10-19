@@ -1,0 +1,71 @@
+{
+  "name": "snow-touch-controls",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "movement-anchor",
+      "pointers": [
+        {
+          "id": 7,
+          "x": 0.25,
+          "y": 0.82
+        }
+      ],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "walk-forward",
+      "pointers": [
+        {
+          "id": 7,
+          "x": 0.25,
+          "y": 0.72
+        }
+      ],
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.5
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "autoExplore",
+        "equals": false
+      }
+    ],
+    "visibility": [
+      {
+        "entity": "touch-controls",
+        "present": true,
+        "allowTrivial": "Touch-primary lanes keep the movement stick visible while the walk proves it is live."
+      }
+    ]
+  }
+}

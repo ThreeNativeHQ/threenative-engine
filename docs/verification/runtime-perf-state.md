@@ -10,6 +10,35 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## The native C++ engine beats legacy on the R ladder, desktop and web — 2026-10-12
+
+PRD-573 (PR #493). Full tables and setup: [RESULTS-2026-10-12](../benchmark/prd573/RESULTS-2026-10-12.md).
+
+- **Desktop, real GPU** (RTX 2080, real display, both arms the same size, equal triangles): frame p50 ratio, legacy over engine, is R5 2.80x, R3 3.20x and R2 2.35x. Uncapped FPS at R5 was 80 vs 198. p99 is lower on the engine at every rung.
+- **Desktop, Xvfb:** thread CPU without present at R5 is 2.10x. Xvfb present costs about 75 ms per frame in both arms, so Xvfb frame time and FPS cannot show engine gains. Read Xvfb A/Bs on thread CPU only.
+- **Web** (tn-engine-web vs tn-web, main-thread wall time): 0.15x at the first port, then 1.41x after the bridge, collect and member cuts. WebGPU glue is about 1% of samples, and the remaining cost is JS around the calls.
+- **What made the native win:** host projection (crossings 17,669 to 62 per R5 frame), JS math value types over TransformPage views, and render-record caching. What remains on native is the driver, parity math and JS that legacy also runs.
+
+## Machinefall open world on develop: the CPU render phase is the frame — 2026-10-01
+
+PRD-475 Phase 1 baseline (`docs/PRDs/unreal-like-features/PRD-475-open-world-120-fps-without-visual-loss.md`). Machinefall `?scene=map-walk` on develop `a602467db` (core 0.3.4, assets 0.3.5, world re-cooked), browser WebGPU on the RTX 2080 (nvidia/turing), private Xvfb, 3 runs started at load 3.4–3.8. Steady `TN_FRAME_BUDGET` windows; medians across runs.
+
+| Meter | p50 | p95 |
+| --- | --- | --- |
+| frame | 12.3 ms | 26.3 ms |
+| render phase (CPU) | 12.1 ms | 26.1 ms |
+| hostGap | 0.6 ms | 61.9 ms |
+| GPU (timestamp-query) | 7.4 ms | 11.3 ms |
+| gpuMain / gpuShadow | 5.6 / 1.1 ms | — |
+| draws main / shadow | 318 / 200 | 414 / 270 |
+
+- The CPU render phase is the frame: render p50 is 1.6× the GPU p50, and update, overlay and ui read 0. The 120 fps budget (8.3 ms p95) is missed by 3.1× on CPU and 1.4× on GPU.
+- Window fps median 45 (51, 42, 45). One window per run is the post-walk idle at 83–119 fps, which is why a whole-run average reads near 120.
+- The triangle census reads 264 M main and 23 M shadow triangles for about 318 draws, against 9.8 M `mainGpuTriangles`. It is not trusted until it is checked. `gpuShadow` read 0 in one run.
+- One earlier run of five counted 1 failed world load (`WorldCells` `failures`), not reproduced in four reruns. The count records no cell and no error.
+- **After PRD-475 cuts 1+2** (terrain super-tiles, shadow caster table; `890578e81`), clean machine (load < 3, GPU < 10%), 4+4 interleaved runs against develop: frame p50 9.55 → 7.20 ms, frame p95 20.55 → 17.22 ms, GPU p50 6.95 → 7.12, GPU p95 10.93 → 10.20, main draws 335.5 → 246.5. The develop arm's own spread (frame p50 6.4–12.0 ms) overlaps, so the ratio is directional; the branch's distribution is tighter. Still 2.1× over the 8.3 ms p95 on CPU and 1.2× on GPU.
+- **PRD-475 as merged** (2026-10-02, cut12k–n, walk/idle split of `TN_FRAME_BUDGET` windows, quiet gate, 3–4 interleaved pairs against develop `a602467db`): idle frame p50 2.6–4.8 vs 5–7 ms; walking render p50 7.0–8.4 vs 8.3–10.4; walking render p95 19–26 vs 18–25 (unchanged, the 8.3 ms target is not met); main draws 208–297 vs 297–327. A long walking frame (unminified trace, 390 of 1491 rAFs over 12 ms, mean 20 ms) spends ~7.5 ms in three's per-object refresh, ~5.5 ms in WorldCells streaming and ~3 ms in a shadow-level re-render; that tail is PRD-478's. A shared measured frame budget (streaming deferred in shadow frames) made walking p95 worse (26–35 ms) and was reverted.
+
 ## ThreeNative vs Godot 4.7.1 scoreboard, and three projection fixes — 2026-09-28
 
 PRD-449 (`docs/PRDs/done/PRD-449-cross-engine-benchmarks-and-html-report.md`). One cube scene, native desktop, RTX 2080, 1280×720 uncapped, 40 warm-up + 120 measured frames, and 3 alternating runs per engine (`pnpm bench:scoreboard`). A row is a win only when the median gap beats the run-to-run spread. The dashboard is `pnpm bench:engines:monitor` (`artifacts/engine-load-test/prd-449/progress.html`).
@@ -5286,7 +5315,7 @@ changed for it.
 
 ## Bayview startup after dependency repairs — 2026-09-07
 
-The [working-build handoff](../PRDs/batch-2026-09-05/PRD-360-FOLLOWUP-startup-performance.md)
+The [working-build handoff](../PRDs/performance/PRD-360-FOLLOWUP-startup-performance.md)
 records one physical Pixel 8 run: first frame 16,020.007 ms, pipeline compilation
 8,404.781 ms across 93 calls, and frame-stall residual 4,917.275 ms. The retained
 `artifacts/findings-fix/green-host-uninterrupted.log` also reports pump `maxGapMs:15708.693`.
@@ -5358,7 +5387,7 @@ no errors), `pnpm build`, `pnpm budgets`, and `pnpm test` (`406 passed, 2 skippe
 `TN_DEVICE_PREFLIGHT_NO_DEVICE`; no physical launch occurred. Phase 1 therefore remains open.
 The next actionable step is to choose or rebuild a clean observer-carrying Bayview subject, then
 rerun the prescribed three cold phone launches when a qualified device is reachable. See the
-[PRD-360 protocol](../PRDs/batch-2026-09-05/PRD-360-android-launch-is-playable-within-eight-seconds.md)
+[PRD-360 protocol](../PRDs/performance/PRD-360-android-launch-is-playable-within-eight-seconds.md)
 and the [tracked evaluator source](prd-360-startup-2026-09-05/validate-evaluator.mjs.txt).
 
 ## Performance loop — PRD-400

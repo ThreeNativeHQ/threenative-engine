@@ -1,0 +1,491 @@
+{
+  "source": "640c103017d56e56abb56745eb875885c32aec06",
+  "run": "https://github.com/ThreeNativeHQ/threenative/actions/runs/37046042533",
+  "artifact": 11244876573,
+  "artifactSha256": "fc56bf38d6f3dfababbf424471887abd3992ba1ee0614596f046a20a2d2780b4",
+  "target": "browser WebGPU",
+  "adapter": "Google SwiftShader",
+  "qualification": "Software-rendered correctness only. Host frame distributions cover 30 frames; GPU-query distributions contain only 4 resolved samples and 26 stale frames. No hardware performance or tier admission.",
+  "frames": [
+    {
+      "case": "off",
+      "sha256": "fa3486dd2033281d2ec1db552cf46fba7971f4fbe0ab1cea731a5092e55a5935",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "zero",
+      "sha256": "fa3486dd2033281d2ec1db552cf46fba7971f4fbe0ab1cea731a5092e55a5935",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "fog",
+      "sha256": "0ac40bc66226495a430c379c039abdadff54a867d19c97e81895083b2c64a190",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "inside",
+      "sha256": "433893ec04051f081f42b98911aa744d8e3dd01313bb668bc44294c4dc8cb88f",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "sunOff",
+      "sha256": "89cc1d8c5a80146b387b62ac4a12a727cc85b6b4383f5ebe7ad31b7d8f222ee2",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "pointOff",
+      "sha256": "b9773b188bae64544605bf0ce3a7f669abd244045d16b6ef4a0b31c3065710d0",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "overlap",
+      "sha256": "96c723eb30bce2932eda3632b07a02df390759f71b57da1cfe1292ca468e8cd7",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "half",
+      "sha256": "c37f6762da0bf849312b17a755da754473a478712fa27f67b945fdef47678123",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "wallOff",
+      "sha256": "764c5c6cf0f217f7e81538b1929a6e9cae55ce2d3ba10656b4f1f6bb3c4151c4",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "blackOff",
+      "sha256": "8949e59556dd3e14b91756277782d8a98c2fd4af47bc27b232266540c2e1d3c0",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "scatter",
+      "sha256": "89df2275163ca948f5ef8b5e18b3f94e57b9e01e5a6f5137dcf2fbe32aece809",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "scatterSunOff",
+      "sha256": "b10e9a6bea07b1f01b9b2b239882653d1538c115bc6911c20de95c0d517fe429",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "scatterPointOff",
+      "sha256": "d05cd825f2b4779e2abadd111517195bfb2b0fdca593b371992a23b534cd761f",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "lifecycle",
+      "sha256": "0ac40bc66226495a430c379c039abdadff54a867d19c97e81895083b2c64a190",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "lifecycleOff",
+      "sha256": "fa3486dd2033281d2ec1db552cf46fba7971f4fbe0ab1cea731a5092e55a5935",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "resizeSmall",
+      "sha256": "d7e3e7adbe608ea141c07cdf5cfc86b8869728e7e830f9dd1513ef47c2a154b2",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "resizeRestore",
+      "sha256": "0ac40bc66226495a430c379c039abdadff54a867d19c97e81895083b2c64a190",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "scatterOutside",
+      "sha256": "89df2275163ca948f5ef8b5e18b3f94e57b9e01e5a6f5137dcf2fbe32aece809",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "scatterOutsideSunOff",
+      "sha256": "b10e9a6bea07b1f01b9b2b239882653d1538c115bc6911c20de95c0d517fe429",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "scatterOutsidePointOff",
+      "sha256": "d05cd825f2b4779e2abadd111517195bfb2b0fdca593b371992a23b534cd761f",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "cameraCut",
+      "sha256": "433893ec04051f081f42b98911aa744d8e3dd01313bb668bc44294c4dc8cb88f",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "cameraRestore",
+      "sha256": "0ac40bc66226495a430c379c039abdadff54a867d19c97e81895083b2c64a190",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "streamWallOut",
+      "sha256": "764c5c6cf0f217f7e81538b1929a6e9cae55ce2d3ba10656b4f1f6bb3c4151c4",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "streamWallIn",
+      "sha256": "0ac40bc66226495a430c379c039abdadff54a867d19c97e81895083b2c64a190",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "sceneReentry",
+      "sha256": "fa3486dd2033281d2ec1db552cf46fba7971f4fbe0ab1cea731a5092e55a5935",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "sceneRepeatedOff",
+      "sha256": "fa3486dd2033281d2ec1db552cf46fba7971f4fbe0ab1cea731a5092e55a5935",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "costOff",
+      "sha256": "fa3486dd2033281d2ec1db552cf46fba7971f4fbe0ab1cea731a5092e55a5935",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "costFull",
+      "sha256": "0ac40bc66226495a430c379c039abdadff54a867d19c97e81895083b2c64a190",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    },
+    {
+      "case": "costHalf",
+      "sha256": "c37f6762da0bf849312b17a755da754473a478712fa27f67b945fdef47678123",
+      "pass": true,
+      "width": 640,
+      "height": 400
+    }
+  ],
+  "pixelAndResourceMetrics": [
+    {
+      "assertion": "zero-density pixel identity",
+      "pass": true
+    },
+    {
+      "assertion": "repeated lifecycle restores baseline pixels",
+      "pass": true
+    },
+    {
+      "assertion": "renderer texture allocation baseline",
+      "baselineResources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "restoredResources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "pass": true
+    },
+    {
+      "assertion": "target/depth resize restores exact pixels",
+      "pass": true
+    },
+    {
+      "assertion": "cameraCut matches fresh inside pixels",
+      "pass": true
+    },
+    {
+      "assertion": "cameraRestore matches fresh fog pixels",
+      "pass": true
+    },
+    {
+      "assertion": "streamWallOut matches fresh wallOff pixels",
+      "pass": true
+    },
+    {
+      "assertion": "streamWallIn matches fresh fog pixels",
+      "pass": true
+    },
+    {
+      "assertion": "sceneReentry matches fresh off pixels",
+      "pass": true
+    },
+    {
+      "assertion": "sceneRepeatedOff matches fresh off pixels",
+      "pass": true
+    },
+    {
+      "assertion": "isolated light-scattering pixels",
+      "baselineMaxRgb": 0,
+      "wallMaxRgb": 0,
+      "roi": {
+        "x": 260,
+        "y": 155,
+        "width": 150,
+        "height": 90
+      },
+      "wallRoi": {
+        "x": 184,
+        "y": 216,
+        "width": 18,
+        "height": 18
+      },
+      "evaluationRoi": {
+        "x": 0,
+        "y": 0,
+        "width": 500,
+        "height": 400
+      },
+      "calibrationRoi": {
+        "x": 515,
+        "y": 25,
+        "width": 110,
+        "height": 110
+      },
+      "calibrationMinimum": 146,
+      "calibrationMaxDifference": 0,
+      "sun": {
+        "meanRgbDelta": 15.958518518518519,
+        "changedPixelRatio": 0.9933333333333333
+      },
+      "point": {
+        "meanRgbDelta": 48.77553086419753,
+        "changedPixelRatio": 1
+      },
+      "thresholds": {
+        "minMeanRgbDelta": 1,
+        "minChangedPixelRatio": 0.1,
+        "maxBlackRgb": 0,
+        "minCalibrationRgb": 32,
+        "maxCalibrationDifference": 0
+      },
+      "pass": true
+    },
+    {
+      "assertion": "unshadowed light outside directional map",
+      "baselineMaxRgb": 0,
+      "wallMaxRgb": 0,
+      "roi": {
+        "x": 260,
+        "y": 155,
+        "width": 150,
+        "height": 90
+      },
+      "wallRoi": {
+        "x": 184,
+        "y": 216,
+        "width": 18,
+        "height": 18
+      },
+      "evaluationRoi": {
+        "x": 0,
+        "y": 0,
+        "width": 500,
+        "height": 400
+      },
+      "calibrationRoi": {
+        "x": 515,
+        "y": 25,
+        "width": 110,
+        "height": 110
+      },
+      "calibrationMinimum": 146,
+      "calibrationMaxDifference": 0,
+      "sun": {
+        "meanRgbDelta": 15.958518518518519,
+        "changedPixelRatio": 0.9933333333333333
+      },
+      "point": {
+        "meanRgbDelta": 48.77553086419753,
+        "changedPixelRatio": 1
+      },
+      "thresholds": {
+        "minMeanRgbDelta": 1,
+        "minChangedPixelRatio": 0.1,
+        "maxBlackRgb": 0,
+        "minCalibrationRgb": 32,
+        "maxCalibrationDifference": 0
+      },
+      "pass": true
+    }
+  ],
+  "cost": [
+    {
+      "case": "costOff",
+      "window": 5,
+      "hostFrames": 30,
+      "frameMs": {
+        "max": 2.1,
+        "mean": 0.99,
+        "p50": 0.9,
+        "p95": 1.8,
+        "p99": 2.1,
+        "samples": 30
+      },
+      "renderMs": {
+        "max": 2,
+        "mean": 0.94,
+        "p50": 0.9,
+        "p95": 1.8,
+        "p99": 2,
+        "samples": 30
+      },
+      "gpuQueryMs": {
+        "max": 64.92,
+        "mean": 64.49,
+        "p50": 64.83,
+        "p95": 64.92,
+        "p99": 64.92,
+        "samples": 4
+      },
+      "gpuStaleFrames": 26,
+      "transportPixels": 0,
+      "raySteps": 0,
+      "directionalLights": 1,
+      "unshadowedPointLights": 1,
+      "presentedMs": {
+        "max": 83.4,
+        "mean": 67.78,
+        "p50": 66.7,
+        "p95": 83.3,
+        "p99": 83.4,
+        "samples": 30
+      },
+      "cadenceQualification": "Engine-measured frame interval on a virtual capture display; not a hardware display-rate or tier-admission result."
+    },
+    {
+      "case": "costFull",
+      "window": 5,
+      "hostFrames": 30,
+      "frameMs": {
+        "max": 2.6,
+        "mean": 1.49,
+        "p50": 1.3,
+        "p95": 2.6,
+        "p99": 2.6,
+        "samples": 30
+      },
+      "renderMs": {
+        "max": 2.6,
+        "mean": 1.42,
+        "p50": 1.3,
+        "p95": 2.5,
+        "p99": 2.6,
+        "samples": 30
+      },
+      "gpuQueryMs": {
+        "max": 355.65,
+        "mean": 347.17,
+        "p50": 342.59,
+        "p95": 355.65,
+        "p99": 355.65,
+        "samples": 4
+      },
+      "gpuStaleFrames": 26,
+      "transportPixels": 256000,
+      "raySteps": 48,
+      "directionalLights": 1,
+      "unshadowedPointLights": 1,
+      "presentedMs": {
+        "max": 366.7,
+        "mean": 349.98,
+        "p50": 350,
+        "p95": 366.7,
+        "p99": 366.7,
+        "samples": 30
+      },
+      "cadenceQualification": "Engine-measured frame interval on a virtual capture display; not a hardware display-rate or tier-admission result."
+    },
+    {
+      "case": "costHalf",
+      "window": 5,
+      "hostFrames": 30,
+      "frameMs": {
+        "max": 3.6,
+        "mean": 1.55,
+        "p50": 1.4,
+        "p95": 2.5,
+        "p99": 3.6,
+        "samples": 30
+      },
+      "renderMs": {
+        "max": 3.6,
+        "mean": 1.47,
+        "p50": 1.3,
+        "p95": 2.5,
+        "p99": 3.6,
+        "samples": 30
+      },
+      "gpuQueryMs": {
+        "max": 211.8,
+        "mean": 208.02,
+        "p50": 205.92,
+        "p95": 211.8,
+        "p99": 211.8,
+        "samples": 4
+      },
+      "gpuStaleFrames": 26,
+      "transportPixels": 64000,
+      "raySteps": 48,
+      "directionalLights": 1,
+      "unshadowedPointLights": 1,
+      "presentedMs": {
+        "max": 233.4,
+        "mean": 213.33,
+        "p50": 216.6,
+        "p95": 233.4,
+        "p99": 233.4,
+        "samples": 30
+      },
+      "cadenceQualification": "Engine-measured frame interval on a virtual capture display; not a hardware display-rate or tier-admission result."
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { type IWorldPackage, validateWorldPackage } from "../../core/src/world-package.js";
 import { resolveBlender } from "../src/detect.js";
@@ -28,6 +29,7 @@ if (!blender.available) {
 const withBlender = blender.available ? describe : describe.skip;
 
 const fixtureScript = path.resolve("packages/blender-mcp/gpl/fixtures/make_world_fixture.py");
+const recipeScript = path.resolve("packages/blender-mcp/gpl/recipes/export_world.py");
 
 const COUNT_SNIPPET = `import bpy, json
 bpy.ops.wm.open_mainfile(filepath=__BLEND__)
@@ -376,5 +378,171 @@ bpy.ops.wm.save_as_mainfile(filepath=__OUT__)
     expect(result.ok, result.detail ?? "export refused").toBe(false);
     expect(result.detail ?? "").toMatch(/outside the output directory/iu);
     expect(readdirSync(outside)).toEqual([]);
+  }, 300_000);
+});
+
+withBlender("export_terrain_layers against a real Blender", () => {
+  /**
+   * The layer table a game hands the recipe, with the DCC's own map files beside it. The recipe
+   * copies map bytes verbatim, so only the mask has to be an image Blender can read.
+   */
+  async function terrainTable(root: string): Promise<string> {
+    const dcc = path.join(root, "dcc");
+    mkdirSync(dcc, { recursive: true });
+    await writeFile(
+      path.join(dcc, "moss-mask.png"),
+      rgbaPng({
+        blue: () => 255,
+        green: () => 255,
+        height: 8,
+        red: (x, y) => (x * 32 + y * 16) % 256,
+        width: 8,
+      }),
+    );
+    for (const name of [
+      "moss_diff.jpg",
+      "moss_nrm.jpg",
+      "moss_orm.jpg",
+      "rock_diff.jpg",
+      "rock_h.jpg",
+    ])
+      await writeFile(path.join(dcc, name), `TN_DCC_TEXTURE ${name}`);
+    const table = path.join(dcc, "layers.json");
+    await writeFile(
+      table,
+      JSON.stringify({
+        base: {
+          id: "moss",
+          metalness: 0,
+          normal: true,
+          orm: true,
+          roughness: 0.9,
+          tile: 3,
+          tint: [0.36, 0.47, 0.27],
+        },
+        breakup: { push: 0.2, scale: 0.3 },
+        layers: [
+          {
+            channel: "r",
+            hi: 0.8,
+            height: true,
+            id: "rock",
+            lo: 0.2,
+            mask: "moss-mask",
+            metalness: 0.1,
+            roughness: 0.7,
+            tile: 6,
+            tint: [1, 1, 1],
+          },
+        ],
+        macro: { max: 1.1, min: 0.9, scale: 0.05 },
+        masks: { "moss-mask": { image: "moss-mask.png" } },
+        splatSize: 8,
+        textures: {
+          diff: "{id}_diff.jpg",
+          h: "{id}_h.jpg",
+          nrm: "{id}_nrm.jpg",
+          orm: "{id}_orm.jpg",
+        },
+      }),
+    );
+    return table;
+  }
+
+  it("writes the ORM map of a layer whose material has a roughness input, beside its other maps", async () => {
+    const root = await makeTempDir("tn-export-terrain-layers-");
+    const blend = await makeFixtureBlend(root);
+    const out = path.join(root, "package");
+    await blenderRun(root, [
+      "-b",
+      blend,
+      "--python",
+      recipeScript,
+      "--",
+      "--out",
+      out,
+      "--cell",
+      "64",
+      "--terrain-layers",
+      await terrainTable(root),
+    ]);
+    const tex = path.join(out, "terrain/tex");
+    expect(jsonFiles(tex)).toEqual([
+      "moss_diff.jpg",
+      "moss_nrm.jpg",
+      "moss_orm.jpg",
+      "rock_diff.jpg",
+      "rock_h.jpg",
+    ]);
+    expect(readFileSync(path.join(tex, "rock_h.jpg"), "utf8")).toBe("TN_DCC_TEXTURE rock_h.jpg");
+    expect(readFileSync(path.join(tex, "moss_orm.jpg"), "utf8")).toBe(
+      "TN_DCC_TEXTURE moss_orm.jpg",
+    );
+    // The shipped table carries each layer's light response: the ORM flag, or its two numbers.
+    const shipped = JSON.parse(readFileSync(path.join(out, "terrain/layers.json"), "utf8")) as {
+      base: { orm?: boolean };
+      layers: { roughness: number }[];
+    };
+    expect(shipped.base.orm).toBe(true);
+    expect(shipped.layers[0]?.roughness).toBe(0.7);
+    expect(
+      JSON.parse(readFileSync(path.join(out, "world.json"), "utf8")).terrain.layers.table,
+    ).toBe("terrain/layers.json");
+  }, 300_000);
+
+  it("refuses a table whose ORM layer names no orm source texture", async () => {
+    const root = await makeTempDir("tn-export-terrain-layers-noorm-");
+    const blend = await makeFixtureBlend(root);
+    const out = path.join(root, "package");
+    const table = await terrainTable(root);
+    const authored = JSON.parse(readFileSync(table, "utf8")) as {
+      textures: Record<string, string>;
+    };
+    authored.textures = { diff: "{id}_diff.jpg", h: "{id}_h.jpg", nrm: "{id}_nrm.jpg" };
+    await writeFile(table, JSON.stringify(authored));
+    await expect(
+      blenderRun(root, [
+        "-b",
+        blend,
+        "--python",
+        recipeScript,
+        "--",
+        "--out",
+        out,
+        "--cell",
+        "64",
+        "--terrain-layers",
+        table,
+      ]),
+    ).rejects.toThrow();
+    expect(existsSync(path.join(out, "terrain/tex/moss_orm.jpg"))).toBe(false);
+  }, 300_000);
+
+  it("refuses a table whose height layer names no h source texture", async () => {
+    const root = await makeTempDir("tn-export-terrain-layers-noheight-");
+    const blend = await makeFixtureBlend(root);
+    const out = path.join(root, "package");
+    const table = await terrainTable(root);
+    const authored = JSON.parse(readFileSync(table, "utf8")) as {
+      textures: Record<string, string>;
+    };
+    authored.textures = { diff: "{id}_diff.jpg", nrm: "{id}_nrm.jpg", orm: "{id}_orm.jpg" };
+    await writeFile(table, JSON.stringify(authored));
+    await expect(
+      blenderRun(root, [
+        "-b",
+        blend,
+        "--python",
+        recipeScript,
+        "--",
+        "--out",
+        out,
+        "--cell",
+        "64",
+        "--terrain-layers",
+        table,
+      ]),
+    ).rejects.toThrow();
+    expect(existsSync(path.join(out, "terrain/tex/rock_h.jpg"))).toBe(false);
   }, 300_000);
 });

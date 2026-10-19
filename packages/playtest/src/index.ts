@@ -1,3 +1,4 @@
+export type { IToneMetrics, IPlaytestToneObservation } from "./tone.js";
 /**
  * Validate and inspect playtest capability declarations.
  * @situation check whether a scenario's required capabilities are installed
@@ -200,10 +201,12 @@ export type {
   IPlaytestSignalAssertion,
   IPlaytestStep,
   IPlaytestVisualAssertion,
+  IPlaytestToneAssertion,
   IPlaytestVisualElementRegion,
   IPlaytestVisualRegion,
   IPlaytestVisualRegionBounds,
   IPlaytestVisualRegionTarget,
+  IPlaytestMedia,
   IPlaytestWheel,
   IPlaytestWorldRuntimeAssertion,
 } from "./scenario.js";

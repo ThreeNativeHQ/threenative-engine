@@ -1,6 +1,21 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import {
+  Color,
+  DataUtils,
+  EquirectangularReflectionMapping,
+  HalfFloatType,
+  LinearFilter,
+  LinearSRGBColorSpace,
+  SRGBColorSpace,
+  Scene,
+  UnsignedByteType,
+} from "three";
 import { describe, expect, it } from "vitest";
+import { flat } from "../templates/platformer/src/render/materials.js";
+import { palette } from "../templates/platformer/src/render/palette.js";
+import { setupSky, skyTexture } from "../templates/platformer/src/render/sky.js";
+import { skyEnvironment } from "../templates/platformer/src/render/skyEnvironment.js";
 import { qualityPreset } from "../templates/starter/src/render/quality.js";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");
@@ -168,7 +183,14 @@ describe("starter visual floor", () => {
         // WorldEnvironment is the starter's complete, Godot-named visual recipe. It intentionally
         // carries the stage contracts and their reasons in one editable file; the ownership check
         // above still prevents it from becoming a hidden framework import.
-        if (!name.endsWith("loading.ts") && !name.endsWith("worldEnvironment.ts"))
+        // AutoExposureNode sequences five GPU passes (meter, reduce, histogram tiles, histogram
+        // bins, adapt) with their disposal. It stays plain Three.js the game can rewrite, so the
+        // ownership check above is the rule that matters for it.
+        if (
+          !name.endsWith("loading.ts") &&
+          !name.endsWith("worldEnvironment.ts") &&
+          !name.endsWith("autoExposure.ts")
+        )
           expect(source.trimEnd().split("\n").length, name).toBeLessThan(200);
       }
     }
@@ -255,18 +277,21 @@ describe("starter visual floor", () => {
     ]);
     expect(scenario.warmupFrames).toBe(1);
     expect(scenario.steps[1]).toMatchObject({
-      holdTicks: 140,
+      holdTicks: 196,
       kind: "input",
       press: "ArrowRight",
     });
     expect(scenario.assert?.camera).toMatchObject({ entity: "camera.main", follows: "player" });
     expect(scenario.assert?.movement).toMatchObject({ entity: "player", minDistance: 4 });
-    // AO, bloom and vignette are the whole shipped chain, and each one is proved to have changed
-    // the graph output rather than being reported as applied.
+    // AO, bloom and vignette are the chain this kit ships, `grade` and `grain` are the two stages
+    // its own `src/render/grade.ts` adds, and each one is proved to have changed the graph output
+    // rather than being reported as applied.
     expect(scenario.assert?.renderChain?.stages?.includes).toEqual([
       "ambientOcclusion",
       "bloom",
       "vignette",
+      "grade",
+      "grain",
     ]);
     expect(Object.keys(scenario.assert?.renderChain?.contributions ?? {})).toEqual([
       "graphOutputChanged",
@@ -449,3 +474,75 @@ function cssDeclaration(rule: string | undefined, property: string): string | un
     .exec(rule)?.[1]
     ?.trim();
 }
+
+describe("platformer translucent surfaces and gradient sky", () => {
+  it("enables transparency only below full opacity and preserves material caching", () => {
+    expect(flat(0xffffff, { opacity: 0.55 }).transparent).toBe(true);
+    expect(flat(0xffffff, { opacity: 1 }).transparent).toBe(false);
+    expect(flat(0xffffff).transparent).toBe(false);
+    expect(flat(0xffffff, { opacity: 0.55 })).toBe(flat(0xffffff, { opacity: 0.55 }));
+  });
+
+  it("uses a filterable gradient background and a separately measured linear sky environment", () => {
+    const sky = skyTexture();
+    const { data, width, height } = sky.image;
+    if (!(data instanceof Uint8Array)) throw new Error("Sky texture must contain byte data.");
+    const colorAt = (row: number) => Array.from(data.slice(row * width * 4, row * width * 4 + 3));
+    const closeTo = (actual: number[], color: Color) => {
+      for (const [index, value] of color.clone().convertLinearToSRGB().toArray().entries()) {
+        expect(Math.abs((actual[index] ?? 0) - Math.round(value * 255))).toBeLessThanOrEqual(1);
+      }
+    };
+    expect(sky.mapping).toBe(EquirectangularReflectionMapping);
+    expect(sky.colorSpace).toBe(SRGBColorSpace);
+    expect(sky.type).toBe(UnsignedByteType);
+    expect(width).toBeGreaterThanOrEqual(64);
+    expect(width / 4).toBeGreaterThanOrEqual(16);
+    closeTo(colorAt(height - 1), new Color(palette.skyHigh));
+    closeTo(colorAt(Math.floor((height - 1) / 2)), new Color(palette.horizon));
+    closeTo(colorAt(0), new Color(palette.skyHigh).lerp(new Color(palette.horizon), 0.45));
+    expect(Array.from(data).every((value) => Number.isFinite(value) && value > 0)).toBe(true);
+    const environment = skyEnvironment();
+    expect(environment.type).toBe(HalfFloatType);
+    expect(environment.colorSpace).toBe(LinearSRGBColorSpace);
+    expect(environment.mapping).toBe(EquirectangularReflectionMapping);
+    expect(environment.minFilter).toBe(LinearFilter);
+    expect(environment.magFilter).toBe(LinearFilter);
+    const image = environment.image;
+    expect(image.width).toBeGreaterThanOrEqual(64);
+    if (!(image.data instanceof Uint16Array))
+      throw new Error("Environment must contain half floats.");
+    for (const [upper, fill] of [
+      [true, [0.355, 0.423, 0.627]],
+      [false, [0.68, 0.67, 0.633]],
+    ] as const) {
+      const sums = [0, 0, 0];
+      let weights = 0;
+      for (let row = 0; row < image.height; row += 1) {
+        const elevation = (row / (image.height - 1) - 0.5) * Math.PI;
+        if (elevation >= 0 !== upper) continue;
+        const weight = Math.abs(Math.cos(elevation));
+        for (let column = 0; column < image.width; column += 1) {
+          weights += weight;
+          for (let channel = 0; channel < 3; channel += 1) {
+            const half = image.data[(row * image.width + column) * 4 + channel];
+            if (half === undefined) throw new Error("Missing environment sample.");
+            sums[channel] = (sums[channel] ?? 0) + DataUtils.fromHalfFloat(half) * weight;
+          }
+        }
+      }
+      for (const [channel, expected] of fill.entries()) {
+        expect(Math.abs((sums[channel] ?? 0) / weights - expected) / expected).toBeLessThan(0.02);
+      }
+    }
+    const scene = new Scene();
+    setupSky(scene, sky, environment);
+    expect(scene.background).toBe(sky);
+    expect(scene.environment).toBe(environment);
+    expect(scene.backgroundIntensity).toBe(1);
+    expect(scene.environmentIntensity).toBe(1);
+    expect(sky.colorSpace).toBe(SRGBColorSpace);
+    sky.dispose();
+    environment.dispose();
+  });
+});

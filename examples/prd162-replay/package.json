@@ -19,7 +19,8 @@
     "@types/three": "0.185.3",
     "create-threenative": "0.2.2",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "@typescript/native": "catalog:"
   },
   "optionalDependencies": {
     "@threenative/runtime-native": "0.2.0"

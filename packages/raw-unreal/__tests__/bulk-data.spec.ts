@@ -28,6 +28,16 @@ const zlib = (compressed: Uint8Array, rawSize: number): Uint8Array => {
 };
 const deflate = (block: Uint8Array): Uint8Array => new Uint8Array(deflateSync(block));
 
+/** The `UAssetError` code a call throws; any other thrown value is named, so it fails a code check. */
+function errorCodeOf(read: () => unknown): string | undefined {
+  try {
+    read();
+    return undefined;
+  } catch (error) {
+    return error instanceof UAssetError ? error.code : `not a UAssetError: ${String(error)}`;
+  }
+}
+
 /** A small square as an FRawMesh: two triangles, one material, per-wedge normals and UVs. */
 const squareRawMesh = rawMeshBlob({
   vertices: [
@@ -90,6 +100,38 @@ describe("readPackageLayout", () => {
     view.setInt32(nameOffsetField, layout.nameOffset + 8, true);
 
     expect(readPackageLayout(damaged)).toBeUndefined();
+  });
+
+  it("lands on the name table for every gated FileVersionUE4 from 504 to 522", () => {
+    const objectPath = "/Game/Gate/SM_gate";
+    for (let version = 504; version <= 522; version += 1) {
+      const bytes = editorPackage({
+        exportData: new Uint8Array(32),
+        fileVersionUE4: version,
+        objectPath,
+      });
+      const layout = readPackageLayout(bytes);
+      expect(layout, `FileVersionUE4 ${version}`).toBeDefined();
+      if (!layout) continue;
+      // The name table opens with its first FString, so the walk stopped on that byte.
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      expect(view.getInt32(layout.nameOffset, true), `FileVersionUE4 ${version}`).toBe(
+        objectPath.length + 1,
+      );
+      expect(layout.bulkDataStartOffset, `FileVersionUE4 ${version}`).toBe(bytes.byteLength - 4);
+    }
+  });
+
+  it("declines, and never throws, for every cut inside the summary", () => {
+    const bytes = editorPackage({ exportData: new Uint8Array(32) });
+    const summaryEnd = readPackageLayout(bytes)?.nameOffset ?? 0;
+    expect(summaryEnd).toBeGreaterThan(0);
+    for (let length = 0; length <= summaryEnd; length += 1) {
+      expect(
+        errorCodeOf(() => readPackageLayout(bytes.subarray(0, length))),
+        `cut at ${length} bytes`,
+      ).toBeUndefined();
+    }
   });
 });
 
@@ -187,6 +229,12 @@ describe("decompressBulkData", () => {
     const container = compressedChunks(Uint8Array.from([1, 2, 3, 4]), deflate);
     new DataView(container.buffer).setBigInt64(24, 9_999n, true); // total raw size
     expect(() => decompressBulkData(container, { zlib })).toThrowError(UAssetError);
+  });
+
+  it("reports a container that does not begin with the package tag as INVALID_BULK_DATA", () => {
+    expect(errorCodeOf(() => decompressBulkData(new Uint8Array(40), { zlib }))).toBe(
+      "INVALID_BULK_DATA",
+    );
   });
 });
 

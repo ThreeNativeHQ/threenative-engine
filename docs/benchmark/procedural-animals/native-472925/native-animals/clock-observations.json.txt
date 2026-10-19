@@ -1,0 +1,1729 @@
+{
+  "producerClockObservations": [
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 20
+      },
+      "order": 4,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 35
+      },
+      "order": 6,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 50
+      },
+      "order": 8,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 65
+      },
+      "order": 10,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 79
+      },
+      "order": 12,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 94
+      },
+      "order": 14,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 106
+      },
+      "order": 16,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 120
+      },
+      "order": 18,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 150
+      },
+      "order": 20,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 155,
+        "timeMs": 4653.767608
+      },
+      "order": 21,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 170
+      },
+      "order": 23,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 175,
+        "timeMs": 5074.196364
+      },
+      "order": 24,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 190
+      },
+      "order": 26,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 195,
+        "timeMs": 5444.088248
+      },
+      "order": 27,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 205
+      },
+      "order": 28,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 210,
+        "timeMs": 5719.455861
+      },
+      "order": 29,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 220
+      },
+      "order": 30,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 225,
+        "timeMs": 5986.853941
+      },
+      "order": 31,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 240
+      },
+      "order": 32,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 243,
+        "timeMs": 6268.225968
+      },
+      "order": 33,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 245,
+        "timeMs": 6314.610694
+      },
+      "order": 34,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 271
+      },
+      "order": 36,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 276,
+        "timeMs": 6906.902934
+      },
+      "order": 37,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 291
+      },
+      "order": 39,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 291,
+        "timeMs": 7181.323122
+      },
+      "order": 40,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 306
+      },
+      "order": 41,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 310,
+        "timeMs": 7508.407389
+      },
+      "order": 42,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 320
+      },
+      "order": 43,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 325,
+        "timeMs": 7774.266478
+      },
+      "order": 44,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 340
+      },
+      "order": 45,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 345,
+        "timeMs": 8116.692944
+      },
+      "order": 46,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 355
+      },
+      "order": 47,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 360,
+        "timeMs": 8376.993326
+      },
+      "order": 48,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 370
+      },
+      "order": 49,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 375,
+        "timeMs": 8632.617836
+      },
+      "order": 50,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 385
+      },
+      "order": 51,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 390,
+        "timeMs": 8881.131547
+      },
+      "order": 52,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 405
+      },
+      "order": 53,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 409,
+        "timeMs": 9202.291579
+      },
+      "order": 54,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 419
+      },
+      "order": 55,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 422,
+        "timeMs": 9373.605016
+      },
+      "order": 56,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 424,
+        "timeMs": 9420.792448
+      },
+      "order": 57,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 446
+      },
+      "order": 59,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 450,
+        "timeMs": 9922.674582
+      },
+      "order": 60,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 465
+      },
+      "order": 62,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 469,
+        "timeMs": 10240.412374
+      },
+      "order": 63,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 484
+      },
+      "order": 64,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 489,
+        "timeMs": 10578.695355
+      },
+      "order": 65,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 499
+      },
+      "order": 66,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 504,
+        "timeMs": 10822.543604
+      },
+      "order": 67,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 518
+      },
+      "order": 68,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 523,
+        "timeMs": 11146.616249
+      },
+      "order": 69,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 538
+      },
+      "order": 70,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 543,
+        "timeMs": 11478.791966
+      },
+      "order": 71,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 553
+      },
+      "order": 72,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 557,
+        "timeMs": 11733.059103
+      },
+      "order": 73,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 567
+      },
+      "order": 74,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 571,
+        "timeMs": 11978.493023
+      },
+      "order": 75,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 585
+      },
+      "order": 76,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 590,
+        "timeMs": 12292.307028
+      },
+      "order": 77,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 605
+      },
+      "order": 78,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 610,
+        "timeMs": 12630.48283
+      },
+      "order": 79,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 625
+      },
+      "order": 80,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 630,
+        "timeMs": 12957.924655
+      },
+      "order": 81,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 639
+      },
+      "order": 82,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 644,
+        "timeMs": 13207.46126
+      },
+      "order": 83,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 654
+      },
+      "order": 84,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 659,
+        "timeMs": 13467.382854
+      },
+      "order": 85,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 669
+      },
+      "order": 86,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 674,
+        "timeMs": 13725.086471
+      },
+      "order": 87,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 688
+      },
+      "order": 88,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 688,
+        "timeMs": 13986.493436
+      },
+      "order": 89,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 703
+      },
+      "order": 90,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 708,
+        "timeMs": 14335.948961
+      },
+      "order": 91,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 718
+      },
+      "order": 92,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 723,
+        "timeMs": 14598.37025
+      },
+      "order": 93,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 738
+      },
+      "order": 94,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 743,
+        "timeMs": 14937.823134
+      },
+      "order": 95,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 758
+      },
+      "order": 96,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 763,
+        "timeMs": 15269.401495
+      },
+      "order": 97,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 778
+      },
+      "order": 98,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 783,
+        "timeMs": 15617.681467
+      },
+      "order": 99,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 797
+      },
+      "order": 100,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 802,
+        "timeMs": 15931.766551
+      },
+      "order": 101,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 816
+      },
+      "order": 102,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 820,
+        "timeMs": 16233.329219
+      },
+      "order": 103,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 830
+      },
+      "order": 104,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 835,
+        "timeMs": 16450.990942
+      },
+      "order": 105,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 838,
+        "timeMs": 16496.702542
+      },
+      "order": 106,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 859
+      },
+      "order": 108,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 863,
+        "timeMs": 16989.061653
+      },
+      "order": 109,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 881
+      },
+      "order": 111,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 886,
+        "timeMs": 17369.678093
+      },
+      "order": 112,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 900
+      },
+      "order": 113,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 905,
+        "timeMs": 17695.900806
+      },
+      "order": 114,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 920
+      },
+      "order": 115,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 925,
+        "timeMs": 18065.223993
+      },
+      "order": 116,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 940
+      },
+      "order": 117,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 940,
+        "timeMs": 18349.499263
+      },
+      "order": 118,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 955
+      },
+      "order": 119,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 960,
+        "timeMs": 18713.312903
+      },
+      "order": 120,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 974
+      },
+      "order": 121,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 979,
+        "timeMs": 19061.584795
+      },
+      "order": 122,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 989
+      },
+      "order": 123,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 993,
+        "timeMs": 19314.264271
+      },
+      "order": 124,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1003
+      },
+      "order": 125,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1008,
+        "timeMs": 19565.851045
+      },
+      "order": 126,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1023
+      },
+      "order": 127,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1028,
+        "timeMs": 19892.396595
+      },
+      "order": 128,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1038
+      },
+      "order": 129,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1043,
+        "timeMs": 20147.913885
+      },
+      "order": 130,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1053
+      },
+      "order": 131,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1058,
+        "timeMs": 20394.198249
+      },
+      "order": 132,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1073
+      },
+      "order": 133,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1078,
+        "timeMs": 20722.33063
+      },
+      "order": 134,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1088
+      },
+      "order": 135,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1093,
+        "timeMs": 20979.352081
+      },
+      "order": 136,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1103
+      },
+      "order": 137,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1108,
+        "timeMs": 21228.741887
+      },
+      "order": 138,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1123
+      },
+      "order": 139,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1128,
+        "timeMs": 21559.614132
+      },
+      "order": 140,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1143
+      },
+      "order": 141,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1148,
+        "timeMs": 21887.019207
+      },
+      "order": 142,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1162
+      },
+      "order": 143,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1167,
+        "timeMs": 22237.913434
+      },
+      "order": 144,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1182
+      },
+      "order": 145,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1187,
+        "timeMs": 22629.737488
+      },
+      "order": 146,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1202
+      },
+      "order": 147,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1207,
+        "timeMs": 23009.955931
+      },
+      "order": 148,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1222
+      },
+      "order": 149,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1227,
+        "timeMs": 23378.722392
+      },
+      "order": 150,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1237
+      },
+      "order": 151,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1242,
+        "timeMs": 23649.676611
+      },
+      "order": 152,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1257
+      },
+      "order": 153,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1262,
+        "timeMs": 24016.680402
+      },
+      "order": 154,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1277
+      },
+      "order": 155,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1282,
+        "timeMs": 24370.463971
+      },
+      "order": 156,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1297
+      },
+      "order": 157,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1301,
+        "timeMs": 24692.383559
+      },
+      "order": 158,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1316
+      },
+      "order": 159,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1321,
+        "timeMs": 25027.640197
+      },
+      "order": 160,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1336
+      },
+      "order": 161,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1341,
+        "timeMs": 25383.890512
+      },
+      "order": 162,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1356
+      },
+      "order": 163,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1361,
+        "timeMs": 25737.714231
+      },
+      "order": 164,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1371
+      },
+      "order": 165,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1376,
+        "timeMs": 26020.162422
+      },
+      "order": 166,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1391
+      },
+      "order": 167,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1396,
+        "timeMs": 26419.244484
+      },
+      "order": 168,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1406
+      },
+      "order": 169,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1411,
+        "timeMs": 26721.359098
+      },
+      "order": 170,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1421
+      },
+      "order": 171,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1426,
+        "timeMs": 27005.752217
+      },
+      "order": 172,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1441
+      },
+      "order": 173,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1446,
+        "timeMs": 27390.078826
+      },
+      "order": 174,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1461
+      },
+      "order": 175,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1466,
+        "timeMs": 27772.447136
+      },
+      "order": 176,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1476
+      },
+      "order": 177,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1481,
+        "timeMs": 28038.193176
+      },
+      "order": 178,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1496
+      },
+      "order": 179,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1501,
+        "timeMs": 28400.975292
+      },
+      "order": 180,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1516
+      },
+      "order": 181,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1521,
+        "timeMs": 28767.103389
+      },
+      "order": 182,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1536
+      },
+      "order": 183,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1541,
+        "timeMs": 29126.544434
+      },
+      "order": 184,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1551
+      },
+      "order": 185,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1556,
+        "timeMs": 29408.795856
+      },
+      "order": 186,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1571
+      },
+      "order": 187,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1576,
+        "timeMs": 29770.018612
+      },
+      "order": 188,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1591
+      },
+      "order": 189,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1596,
+        "timeMs": 30127.775497
+      },
+      "order": 190,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1611
+      },
+      "order": 191,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1616,
+        "timeMs": 30485.276585
+      },
+      "order": 192,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1626
+      },
+      "order": 193,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1631,
+        "timeMs": 30751.65929
+      },
+      "order": 194,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1646
+      },
+      "order": 195,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1646,
+        "timeMs": 31035.700352
+      },
+      "order": 196,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1661
+      },
+      "order": 197,
+      "method": "advance"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1665,
+        "timeMs": 31366.627426
+      },
+      "order": 198,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1672,
+        "timeMs": 31457.759227
+      },
+      "order": 199,
+      "method": "sample"
+    },
+    {
+      "path": "body.result.clock",
+      "value": {
+        "mode": "wall-clock",
+        "tick": 1693,
+        "timeMs": 31873.436931
+      },
+      "order": 200,
+      "method": "sample"
+    }
+  ],
+  "rawRunnerReportClock": "fixed-step",
+  "rawRunnerLabelSource": "packages/playtest/src/runner/runner-support.ts:414 derives config.liveClock, not the native producer clock response; raw report preserved",
+  "producerWallClockVerified": true,
+  "producerModes": [
+    "wall-clock"
+  ],
+  "actualObservationCount": 181
+}

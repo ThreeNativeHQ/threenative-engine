@@ -45,13 +45,16 @@ function allowed(
   refType: string,
   results: Record<string, string> = {},
   triggerEvent = "push",
+  pullRequest: { base?: string; labels?: readonly string[] } = {},
 ): boolean {
   const body = job(name).split("\n    steps:")[0] ?? "";
   const expression = body.match(/\n\x20{4}if: (?:>-\n)?([\s\S]*?)(?=\n\x20{4}[a-z]|$)/u)?.[1];
   assert.ok(expression, `missing explicit job condition for ${name}`);
   const condition = expression
     .replace(/\$\{\{|\}\}/gu, "")
-    .replace(/needs\.([\w-]+)/gu, 'needs["$1"]');
+    .replace(/needs\.([\w-]+)/gu, 'needs["$1"]')
+    // `labels.*.name` is GitHub's array filter; the fake event carries the names directly.
+    .replace(/labels\.\*\.name/gu, "labelNames");
   const needs = Object.fromEntries(
     [
       "validate-tag",
@@ -73,12 +76,19 @@ function allowed(
     "cancelled",
     "always",
     "startsWith",
+    "contains",
     `return Boolean(${condition});`,
   );
   return evaluate(
     {
       event_name: event,
-      event: { workflow_run: { event: triggerEvent } },
+      event: {
+        workflow_run: { event: triggerEvent },
+        pull_request: {
+          base: { ref: pullRequest.base ?? "develop" },
+          labelNames: pullRequest.labels ?? [],
+        },
+      },
       ref_type: refType,
       ref: refType === "tag" ? "refs/tags/runtime-native-v0.3.1" : "refs/heads/main",
       sha,
@@ -87,6 +97,7 @@ function allowed(
     () => false,
     () => true,
     (text: string, prefix: string) => text.startsWith(prefix),
+    (values: unknown, needle: unknown) => Array.isArray(values) && values.includes(needle),
   );
 }
 
@@ -185,8 +196,19 @@ for (const name of [
   "clean-consumer-windows",
 ]) {
   test(`${name} runs proof despite intentionally skipped publishing dependencies`, () => {
+    // A promotion PR: PRD-373 retired the `promotion/<sha>` ref, so develop -> main is the
+    // only promotion shape the repository creates.
     assert.equal(
-      allowed(name, "pull_request", "branch", { "validate-tag": "skipped", publish: "skipped" }),
+      allowed(
+        name,
+        "pull_request",
+        "branch",
+        { "validate-tag": "skipped", publish: "skipped" },
+        "push",
+        {
+          base: "main",
+        },
+      ),
       true,
     );
     assert.equal(
@@ -198,6 +220,76 @@ for (const name of [
     );
   });
 }
+
+// The runner pool holds about three runs. `native-release.yml` measured 7.0k runner-minutes
+// across 2026-09-18 to 10-02, and almost all of it was proof a pull request push did not need:
+// every PR touching one of four paths started a macOS/Windows/Linux/Android board. An ordinary
+// push must now start nothing at all, while the four routes that do need the proof keep it.
+test("the release proof runs only for a promotion PR, the release-proof label, dispatch or a release tag", () => {
+  const proof = { "validate-tag": "skipped", publish: "skipped" } as const;
+  const downstream = { "validate-tag": "skipped", gates: "skipped" } as const;
+  for (const name of [
+    "gates",
+    "build",
+    "build-android",
+    "clean-consumer",
+    "clean-consumer-windows",
+  ]) {
+    assert.equal(
+      allowed(name, "pull_request", "branch", downstream, "push", { base: "develop" }),
+      false,
+      `${name} still runs on an ordinary PR push to develop`,
+    );
+  }
+  // develop -> main, the promotion PRD-373 defines.
+  assert.equal(allowed("gates", "pull_request", "branch", proof, "push", { base: "main" }), true);
+  // The label is the owner's manual route for any other PR.
+  assert.equal(
+    allowed("gates", "pull_request", "branch", proof, "push", {
+      base: "develop",
+      labels: ["release-proof"],
+    }),
+    true,
+  );
+  assert.equal(
+    allowed("gates", "pull_request", "branch", proof, "push", { base: "develop", labels: ["bug"] }),
+    false,
+    "an unrelated label must not buy a release proof",
+  );
+  // Manual dispatch, the main CI completion and a `runtime-native-v*` tag keep their proof. The
+  // tag route carries its own `validate-tag` gate, so it is asserted with that gate green.
+  assert.equal(allowed("gates", "workflow_dispatch", "branch", proof), true);
+  assert.equal(allowed("gates", "workflow_run", "branch", proof), true);
+  assert.equal(allowed("gates", "push", "tag", { publish: "skipped" }), true);
+  assert.equal(allowed("gates", "push", "tag", proof), false);
+});
+
+test("a pull request reaches the proof through an event that can carry its label", () => {
+  const triggers = workflow.split("\npermissions:")[0] ?? "";
+  const pullRequest =
+    triggers.split("\n  pull_request:")[1]?.split("\n  workflow_dispatch:")[0] ?? "";
+  assert.ok(pullRequest.length > 0, "the workflow declares no pull_request trigger");
+  // `labeled` is what makes the label route reachable at all, and the open/reopen events are
+  // what make a promotion PR reach it. `paths` is gone: a path filter would contradict both.
+  assert.match(pullRequest, /types: \[[^\]]*labeled/u);
+  for (const event of ["opened", "synchronize", "reopened"]) {
+    assert.match(pullRequest, new RegExp(event, "u"));
+  }
+  assert.doesNotMatch(
+    pullRequest,
+    /\n\x20{4}paths:/u,
+    "a paths filter re-runs the proof on ordinary pushes to the files it names",
+  );
+});
+
+test("the npm v* release lane still runs its proof", () => {
+  // npm-release.yml does not call the native proof; it is the other half of "a release still
+  // spends runners on itself", so narrowing the native trigger must not narrow this one.
+  const npm = readFileSync(join(root, ".github/workflows/npm-release.yml"), "utf8");
+  const triggers = npm.split("\nconcurrency:")[0] ?? "";
+  assert.match(triggers, /push:\n\x20{4}tags:\n\x20{6}- "v\*"/u);
+  assert.match(triggers, /\n\x20{2}workflow_dispatch:/u);
+});
 
 test("native builds and consumers refuse failed dependencies rather than treating always as success", () => {
   for (const name of ["build", "build-android"]) {
@@ -633,27 +725,24 @@ test("the packed consumer job outlasts its measured comparable", () => {
   );
 });
 
-test("a proof run is not cancelled by the next push to its own branch", () => {
+test("at most one release proof holds runners at a time, across branches", () => {
   const concurrency = workflow.split("\nconcurrency:\n")[1]?.split("\njobs:")[0] ?? "";
   assert.ok(concurrency.length > 0, "the workflow declares no concurrency block");
-  // Measured over this workflow's entire history: 18 runs, 13 cancelled, 4 failed, zero successes.
-  // Every cancellation was a pull_request run killed by the next push to the branch. A consumer job
-  // sitting behind a ~20 minute build matrix cannot survive to completion on an actively-pushed
-  // branch no matter what its own timeout is, and its evidence is candidate-keyed, so a superseded
-  // run's output is still valid for the SHA it was produced from.
-  assert.doesNotMatch(
-    concurrency,
-    /cancel-in-progress:\s*\$\{\{[^}]*ref_type[^}]*\}\}/u,
-    "cancelling every non-tag run is what produced 13 cancellations in 18 runs",
+  // Comments are prose about the setting, not the setting: reading them back as configuration
+  // is how a `github.ref` mentioned in an explanation would fail this for the wrong reason.
+  const settings = concurrency
+    .split("\n")
+    .filter((line) => !/^\x20*#/u.test(line))
+    .join("\n");
+  // The group used to carry the event name, the triggering CI head SHA and the ref, so a
+  // promotion PR, a manual dispatch, a tag and every main CI completion each held a runner at
+  // the same time - and a two-minute join waited behind an hour of proof (PRD-380). One group,
+  // no cancel: a superseded run still lets its queued consumer finish.
+  assert.match(
+    settings,
+    /^\x20{2}group: \$\{\{ \(.*\) && 'native-release-proof' \|\| format\('native-release-skip-\{0\}', github\.run_id\) \}\}$/mu,
   );
-  assert.match(concurrency, /cancel-in-progress:\s*false/u);
-  // A manual proof on main and an automatic one must not evict each other.
-  assert.match(concurrency, /group:[^\n]*github\.event_name/u);
-  // Every `workflow_run` run shares `github.ref` (the default branch), so without the
-  // triggering CI head SHA in the group they all serialize behind each other while the
-  // Actions queue drains. A new completion for a newer main SHA gets its own group.
-  assert.match(concurrency, /group:[^\n]*github\.event\.workflow_run\.head_sha/u);
-  assert.match(concurrency, /group:[^\n]*github\.ref/u);
+  assert.match(settings, /^\x20{2}cancel-in-progress: false$/mu);
 });
 
 test.each(["schedule", "workflow_dispatch", "pull_request"])(

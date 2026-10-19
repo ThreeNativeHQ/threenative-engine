@@ -9,6 +9,7 @@ output is also unverified. The isolated lane is committed at `f9e9e95` with mana
 five new defects require a specification reopen before another repair. See the lane review
 packet and verification evidence in the execution worktree.
 
+**Priority:** P1 — Sixty-seven open boxes on the format matrix and channel/rate rejection need audible proof.
 **Owner:** Native audio lane.
 
 **Depends on:** PRD-054 for the fail-closed same-source parity report and PRD-056 for

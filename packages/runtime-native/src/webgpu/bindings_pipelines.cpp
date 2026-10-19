@@ -10,6 +10,7 @@
 #include "mystral/webgpu/wrapper_factories.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <deque>
 #include <functional>
@@ -390,6 +391,12 @@ const char* pipelineBackendName(WGPUBackendType backend) {
     }
 }
 
+static void writePipelineLine(const std::string& line) {
+    const size_t written = std::fwrite(line.data(), 1, line.size(), stdout);
+    const int flushed = std::fflush(stdout);
+    if (written != line.size() || flushed != 0) std::abort();
+}
+
 void reportPipelineCaptureMetadata(WGPUAdapter adapter) {
     std::string device;
     std::string vendor;
@@ -411,25 +418,31 @@ void reportPipelineCaptureMetadata(WGPUAdapter adapter) {
     for (const std::string& part : {vendor, device, architecture, description}) {
         if (!part.empty()) identity += "/" + part;
     }
-    std::cout << "TN_PIPELINE_CAPTURE:{\"version\":1,\"build\":{\"identity\":"
+    std::ostringstream line;
+    line << "TN_PIPELINE_CAPTURE:{\"version\":1,\"build\":{\"identity\":"
               << pipelineJsonString(std::string("mystral-native@") + mystral::getVersion())
               << "},\"adapter\":{\"identity\":" << pipelineJsonString(identity)
               << ",\"thermal\":\"unavailable\"},\"clock\":{\"source\":\"steady\",\"originMs\":0}}"
-              << std::endl;
+              << '\n';
+    writePipelineLine(line.str());
 }
 
 void reportPipelineFirstPresent() {
-    std::cout << std::setprecision(17)
+    std::ostringstream line;
+    line << std::setprecision(17)
               << "TN_PIPELINE_FIRST_PRESENT:{\"version\":1,\"boundaryMs\":"
-              << pipelineClockMs() << "}" << std::endl;
+              << pipelineClockMs() << "}" << '\n';
+    writePipelineLine(line.str());
 }
 
 void reportPipelineCaptureComplete(uint64_t eventCount) {
-    std::cout << "TN_PIPELINE_COMPLETE:{\"version\":1,\"eventCount\":"
-              << eventCount << "}" << std::endl;
+    std::ostringstream line;
+    line << "TN_PIPELINE_COMPLETE:{\"version\":1,\"eventCount\":"
+              << eventCount << "}" << '\n';
+    writePipelineLine(line.str());
 }
 
-/** One writer at a time, so no marker line is ever spliced into the middle of another. */
+/** Serialize pipeline event writes with their counters and checkpoint snapshots. */
 std::mutex& pipelineOutputMutex() {
     static std::mutex mutex;
     return mutex;
@@ -455,7 +468,8 @@ static void emitPipelineEvent(BindingsState* state,
     const double queueMs = std::max(0.0, completion.startedMs - completion.enqueuedMs);
     const double serviceMs = std::max(0.0, completion.finishedMs - completion.startedMs);
     const double wallMs = std::max(0.0, completion.finishedMs - completion.enqueuedMs);
-    std::cout << std::setprecision(17)
+    std::ostringstream line;
+    line << std::setprecision(17)
               << "TN_PIPELINE_EVENT:{\"version\":1,\"eventId\":" << completion.requestId
               << ",\"pipelineIdentity\":\"native-" << kind << '-' << identity
               << "\",\"programIdentity\":" << pipelineJsonString(program)
@@ -468,22 +482,23 @@ static void emitPipelineEvent(BindingsState* state,
               << ",\"queueMs\":" << queueMs << ",\"serviceMs\":" << serviceMs
               << ",\"wallMs\":" << wallMs << ",\"provenance\":{\"unknown\":true}";
     if (!completion.vertexHash.empty()) {
-        std::cout << (completion.render ? ",\"vertex\":{\"hash\":" : ",\"compute\":{\"hash\":")
+        line << (completion.render ? ",\"vertex\":{\"hash\":" : ",\"compute\":{\"hash\":")
                   << pipelineJsonString(completion.vertexHash)
                   << ",\"bytes\":" << completion.vertexBytes << '}';
     }
     if (!completion.fragmentHash.empty()) {
-        std::cout << ",\"fragment\":{\"hash\":"
+        line << ",\"fragment\":{\"hash\":"
                   << pipelineJsonString(completion.fragmentHash)
                   << ",\"bytes\":" << completion.fragmentBytes << '}';
     }
     // PRD-368. What the host did, never what the backend found: the cache API reports no
     // per-pipeline hit or miss, so this says a cache of this mode was in force for the creation.
-    std::cout << ",\"cache\":" << pipelineJsonString(state->pipelineCache.mode);
+    line << ",\"cache\":" << pipelineJsonString(state->pipelineCache.mode);
     if (!completion.label.empty())
-        std::cout << ",\"label\":" << pipelineJsonString(completion.label);
-    if (!success) std::cout << ",\"error\":" << pipelineJsonString(error);
-    std::cout << "}\n";
+        line << ",\"label\":" << pipelineJsonString(completion.label);
+    if (!success) line << ",\"error\":" << pipelineJsonString(error);
+    line << "}\n";
+    writePipelineLine(line.str());
     state->asyncPipelines.emitted += 1;
 }
 
@@ -521,9 +536,11 @@ void reportPipelineCheckpoint(BindingsState* state, uint64_t presentCount) {
     pool.checkpointRequested = requested;
     pool.checkpointEmitted = emitted;
     pool.checkpointOutstanding = outstanding;
-    std::cout << "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":" << presentCount
+    std::ostringstream line;
+    line << "TN_PIPELINE_CHECKPOINT:{\"version\":1,\"present\":" << presentCount
               << ",\"requested\":" << requested << ",\"emitted\":" << emitted
-              << ",\"outstanding\":" << outstanding << "}" << std::endl;
+              << ",\"outstanding\":" << outstanding << "}" << '\n';
+    writePipelineLine(line.str());
 }
 
 // PRD-368. Persistence and lifecycle live in bindings_pipeline_cache.cpp. Attachment stays beside
@@ -784,6 +801,12 @@ js::JSValueHandle handleGpuDeviceCreateBindGroupLayout(BindingsState* state, Bin
                                         // Default to uniform for unknown types
                                         layoutEntry.buffer.type = WGPUBufferBindingType_Uniform;
                                     }
+                                    // Dropping these makes every setBindGroup that passes dynamic offsets invalid.
+                                    auto dynamicProp = state->engine->getProperty(buffer, "hasDynamicOffset");
+                                    layoutEntry.buffer.hasDynamicOffset = !state->engine->isUndefined(dynamicProp) && state->engine->toBoolean(dynamicProp);
+                                    auto minSizeProp = state->engine->getProperty(buffer, "minBindingSize");
+                                    if (!state->engine->isUndefined(minSizeProp))
+                                        layoutEntry.buffer.minBindingSize = (uint64_t)state->engine->toNumber(minSizeProp);
                                 }
                                 // Check for sampler binding
                                 auto sampler = state->engine->getProperty(entry, "sampler");
@@ -1635,12 +1658,12 @@ js::JSValueHandle handleGpuDeviceCreateShaderModule(BindingsState* state, Bindin
                                 return state->engine->newUndefined();
                             auto jsShader = createNativeWrapper(
                                 state, "GPUShaderModule", shaderModule);
-                            state->registries.shaderModuleMetadata->entries[shaderModule] = {
-                                singleWgslEntryPoint(code, "vertex"),
-                                singleWgslEntryPoint(code, "fragment"),
-                                pipelineSourceHash(code),
-                                code.size(),
-                            };
+                            state->registries.shaderModuleMetadata->acquire(
+                                shaderModule,
+                                {singleWgslEntryPoint(code, "vertex"),
+                                 singleWgslEntryPoint(code, "fragment"),
+                                 pipelineSourceHash(code),
+                                 code.size()});
                             state->engine->registerRelease(
                                 jsShader, [metadata = std::weak_ptr<ShaderModuleMetadataStore>(
                                                state->registries.shaderModuleMetadata),

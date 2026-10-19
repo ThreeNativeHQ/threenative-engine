@@ -9,7 +9,9 @@
   <body>
     <div id="root"></div>
     <script type="module">
-      if (new URLSearchParams(globalThis.location.search).has("loading-leak")) {
+      if (new URLSearchParams(globalThis.location.search).has("animation-reversal")) {
+        void import("/src/animation-reversal-main.ts");
+      } else if (new URLSearchParams(globalThis.location.search).has("loading-leak")) {
         void import("/src/loading-leak-main.ts");
       } else if (new URLSearchParams(globalThis.location.search).has("navigation")) {
         void import("/src/navigation-main.tsx");
@@ -19,6 +21,8 @@
         void import("/src/streaming-main.ts");
       } else if (new URLSearchParams(globalThis.location.search).has("terrain")) {
         void import("/src/terrain-main.tsx");
+      } else if (new URLSearchParams(globalThis.location.search).has("vq-locomotion")) {
+        void import("/src/vq-locomotion-main.ts");
       } else if (new URLSearchParams(globalThis.location.search).has("world")) {
         void import("/src/world-main.ts");
       } else {
