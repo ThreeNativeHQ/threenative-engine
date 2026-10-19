@@ -94,7 +94,7 @@ describe("scene warm-up", () => {
       expect(events).toEqual(["prepare"]);
       releasePreparation?.();
       const report = await promise;
-      expect(events).toEqual(["prepare", "covered-render"]);
+      expect(events).toEqual(["prepare", "compile", "covered-render"]);
       expect(report.passes).toEqual(["main"]);
     } finally {
       if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
@@ -166,7 +166,7 @@ describe("scene warm-up", () => {
     expect(events).toEqual(["bake"]);
     releaseBake?.();
     await promise;
-    expect(events).toEqual(["bake", "covered-render"]);
+    expect(events).toEqual(["bake", "compile", "covered-render"]);
     expect(raw.prepareEnvironmentAsync).toHaveBeenCalledTimes(1);
   });
 
@@ -522,9 +522,24 @@ describe("scene warm-up", () => {
     });
   });
 
-  test("should use the covered output pass when stock compile cannot match its render depth", async () => {
-    const compileAsync = vi.fn(async () => undefined);
-    const warmUpWorldPass = vi.fn();
+  test("should compile the scene asynchronously before the covered output pass", async () => {
+    // The covered pass still exists because stock compileAsync has no render-depth input, but it
+    // must not be the first thing that builds pipelines: on a cold driver cache every one it
+    // creates is a synchronous block on the main thread, which is the ui message loop too.
+    const ready = new Set<string>();
+    const asyncCreations: string[] = [];
+    const syncCreations: string[] = [];
+    const compileAsync = vi.fn(async () => {
+      for (const pipeline of ["main", "shadow", "post"]) {
+        asyncCreations.push(pipeline);
+        ready.add(pipeline);
+      }
+    });
+    const warmUpWorldPass = vi.fn(() => {
+      for (const pipeline of ["main", "shadow", "post"]) {
+        if (!ready.has(pipeline)) syncCreations.push(pipeline);
+      }
+    });
     const report = await warmUpScene(
       { compileAsync, warmUpWorldPass },
       sceneOf(1) as never,
@@ -532,9 +547,30 @@ describe("scene warm-up", () => {
       { yieldFrame: () => Promise.resolve() },
     );
 
-    expect(compileAsync).not.toHaveBeenCalled();
+    expect(syncCreations).toEqual([]);
+    expect(asyncCreations).toEqual(["main", "shadow", "post"]);
+    expect(compileAsync).toHaveBeenCalledOnce();
+    expect(compileAsync.mock.invocationCallOrder[0]).toBeLessThan(
+      warmUpWorldPass.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
     expect(warmUpWorldPass).toHaveBeenCalledOnce();
-    expect(report).toMatchObject({ attempted: 0, compiled: 1, passes: ["main"] });
+    expect(report).toMatchObject({ attempted: 1, compiled: 1, passes: ["main"] });
+  });
+
+  test("should still use the covered output pass when the async compile fails", async () => {
+    const warmUpWorldPass = vi.fn();
+    const report = await warmUpScene(
+      {
+        compileAsync: vi.fn(async () => Promise.reject(new Error("compile failed"))),
+        warmUpWorldPass,
+      },
+      sceneOf(1) as never,
+      {} as never,
+      { yieldFrame: () => Promise.resolve() },
+    );
+
+    expect(warmUpWorldPass).toHaveBeenCalledOnce();
+    expect(report).toMatchObject({ attempted: 1, compiled: 1, passes: ["main"] });
   });
 
   test("should not call abandoned work complete when the census itself is complete", async () => {
@@ -878,7 +914,7 @@ describe("scene warm-up", () => {
       yieldFrame: () => Promise.resolve(),
     });
 
-    expect(renderer.compileAsync).not.toHaveBeenCalled();
+    expect(renderer.compileAsync).toHaveBeenCalledOnce();
     expect(warmUpWorldPass).toHaveBeenCalledOnce();
     expect(report.passes).toEqual(["main"]);
   });

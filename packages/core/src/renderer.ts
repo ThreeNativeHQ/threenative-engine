@@ -554,6 +554,54 @@ export function observeCanvasResize(canvas: HTMLCanvasElement, resize: () => voi
   return () => globalThis.removeEventListener("resize", resize);
 }
 
+/**
+ * Runs one covered render through Three's asynchronous pipeline path.
+ *
+ * `compileAsync` is the only stock Three entry that hands `PipelineCache.getForRender` a promise
+ * list, which is what switches a device create to `createRenderPipelineAsync`. A normal `render()`
+ * passes none and therefore creates every missing pipeline synchronously, on the calling thread.
+ * The warm-up is a real render because only an output pipeline reaches the post and reflection
+ * passes, so it cannot be replaced by `compileAsync`; this lends that render the same promise list
+ * through the cache's own seam. A draw whose pipeline is still pending is skipped by
+ * `PipelineCache.isReady` — the pending/skip path `compileAsync` already relies on — and the
+ * warm-up awaits the whole list before the first visible frame. The frame is invisible behind the
+ * startup cover, so a skipped draw costs nothing.
+ *
+ * Returns `undefined` on a renderer without that cache or without async device creation, which
+ * keeps the previous synchronous covered render as the fallback.
+ *
+ * @internal Exported for the warm-up contract; not part of the public renderer API.
+ */
+export function beginAsyncPipelines(
+  raw: unknown,
+): { readonly restore: () => void; readonly settled: () => Promise<void> } | undefined {
+  if (!isObject(raw)) return undefined;
+  const pipelines = raw._pipelines;
+  if (!isObject(pipelines) || typeof pipelines.getForRender !== "function") return undefined;
+  const device = isObject(raw.backend) ? raw.backend.device : undefined;
+  if (!isObject(device) || typeof device.createRenderPipelineAsync !== "function") return undefined;
+  const original = pipelines.getForRender as (...args: unknown[]) => unknown;
+  const pending: Promise<unknown>[] = [];
+  pipelines.getForRender = function (this: unknown, ...args: unknown[]): unknown {
+    const next = [...args];
+    if (next.length < 2 || next[1] === undefined || next[1] === null) next[1] = pending;
+    return original.apply(this, next);
+  };
+  let restored = false;
+  return {
+    restore: () => {
+      if (restored) return;
+      restored = true;
+      pipelines.getForRender = original;
+    },
+    settled: async () => {
+      // A failed async creation resolves through Three's own error path and never rejects here;
+      // settle every ticket so one refusal cannot hide the compiles that did land.
+      await Promise.all(pending.map((ticket) => Promise.resolve(ticket).catch(() => undefined)));
+    },
+  };
+}
+
 function wrapRenderer(
   raw: RendererInstance,
   kind: RendererKind,
@@ -749,12 +797,15 @@ function wrapRenderer(
         }),
     get warmUpWorldPass() {
       if (outputPipeline === undefined) return undefined;
-      return (scene: Object3D, camera: Camera, targetScene?: Object3D): void => {
+      return (scene: Object3D, camera: Camera, targetScene?: Object3D): void | Promise<void> => {
         const outputRoot = targetScene ?? scene;
         const scoped = targetScene !== undefined && targetScene !== scene;
         const previousPassScene = outputPass?.scene;
         const previousPassCamera = outputPass?.camera;
         let restoreWorldPass: (() => void) | undefined;
+        let asyncPipelines:
+          | { readonly restore: () => void; readonly settled: () => Promise<void> }
+          | undefined;
         const warmRenderer = raw as RendererInstance &
           ThreeRenderer & {
             contextNode?: unknown;
@@ -814,9 +865,11 @@ function wrapRenderer(
             raw.setRenderTarget(warmOutputTarget);
           } else bindSurface();
           setOutputPipelineRoot(outputPass, outputRoot, camera);
+          asyncPipelines = beginAsyncPipelines(raw);
           outputPipeline?.render();
         } finally {
           renderingFrame -= 1;
+          asyncPipelines?.restore();
           if (outputPass !== undefined) {
             outputPass.scene = previousPassScene as Object3D;
             outputPass.camera = previousPassCamera as Camera;
@@ -850,6 +903,10 @@ function wrapRenderer(
           scene.matrix.copy(originalMatrix);
           scene.matrixWorld.copy(originalMatrixWorld);
         }
+        // Every pipeline this covered render requested now exists in the renderer's caches, so the
+        // first visible frame finds them instead of compiling them synchronously. A renderer with
+        // no async cache still returns synchronously, exactly as before.
+        return asyncPipelines?.settled();
       };
     },
     gpuFrameMs: () => gpuFrameSample()?.ms,

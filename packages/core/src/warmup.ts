@@ -227,8 +227,19 @@ export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
   computeAsync?: (node: unknown) => Promise<void>;
   pipelineCensus?: () => IPipelineCensus;
-  /** Performs one covered output-pipeline render without marking first present. */
-  warmUpWorldPass?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => void;
+  /**
+   * Performs one covered output-pipeline render without marking first present.
+   *
+   * May settle later than it returns: a renderer whose pipeline creation is asynchronous
+   * (Three's `createRenderPipelineAsync` with its pending/skip draw check) starts the work here
+   * and resolves once every requested pipeline exists, so the warm-up can wait instead of
+   * compiling on the main thread.
+   */
+  warmUpWorldPass?: (
+    scene: Object3D,
+    camera: Camera,
+    targetScene?: Object3D,
+  ) => void | Promise<void>;
   /** The renderer's own render path, used to build every pass's pipelines once. */
   render?: (scene: Object3D, camera: Camera) => void;
   raw?: unknown;
@@ -789,14 +800,14 @@ function hasReflector(scene: Object3D): boolean {
  * Returns `undefined` when the renderer exposes no `render`, so a stub renderer is skipped rather
  * than reported as a pass render that did nothing.
  */
-function renderWarmPasses(
+async function renderWarmPasses(
   renderer: IWarmUpRenderer,
   scene: Object3D,
   camera: Camera,
   enabled: boolean,
   includeHidden: boolean,
   targetScene?: Object3D,
-): IWarmPassRender | undefined {
+): Promise<IWarmPassRender | undefined> {
   const coveredWorldPass = renderer.warmUpWorldPass;
   const render =
     coveredWorldPass === undefined
@@ -867,7 +878,7 @@ function renderWarmPasses(
     if (sceneVisible === false) (scene as IWarmVisibilityHost).visible = true;
     if (raw !== undefined) raw.autoClear = false;
     if (shadowMap !== undefined) shadowMap.needsUpdate = true;
-    render();
+    await render();
   } finally {
     if (raw !== undefined) {
       if (hadOwnAutoClear) raw.autoClear = autoClear;
@@ -1097,19 +1108,22 @@ export async function warmUpScene(
     return preparation === undefined ? compile() : preparation.then(compile);
   };
   const invokeSceneCompile = (): Promise<void> => {
+    const compile = invokeCompile(scene, options.targetScene);
     // Stock Three compileAsync has no render-depth input, so an output pipeline's covered render
     // is the only path that can build the world graph against the target the first frame draws.
-    if (renderer.warmUpWorldPass !== undefined) {
-      const render = (): Promise<void> => {
-        const pass = renderWarmPassesOnce();
-        return pass === undefined
-          ? Promise.reject(passError ?? new Error("covered world warm render did not settle"))
-          : Promise.resolve();
-      };
-      const preparation = ensureEnvironmentPreparation();
-      return preparation === undefined ? render() : preparation.then(render);
-    }
-    return invokeCompile(scene, options.targetScene);
+    // Its own compile path is still worth running first: it builds every pipeline it can reach
+    // asynchronously and yields while it does, so the covered render that follows finds them in
+    // the cache. A compile failure here is not fatal: the covered render is the fallback, and the
+    // first frame that needs a pipeline will try again where the error belongs.
+    if (renderer.warmUpWorldPass === undefined) return compile;
+    return compile
+      .catch(() => undefined)
+      .then(async () => {
+        const pass = await renderWarmPassesOnce();
+        if (pass === undefined) {
+          throw passError ?? new Error("covered world warm render did not settle");
+        }
+      });
   };
 
   let gpuDrainSettled = true;
@@ -1151,13 +1165,13 @@ export async function warmUpScene(
   let passResult: IWarmPassRender | undefined;
   let passRendered = false;
   let passError: unknown;
-  const renderWarmPassesOnce = (): IWarmPassRender | undefined => {
+  const renderWarmPassesOnce = async (): Promise<IWarmPassRender | undefined> => {
     if (passRendered) return passResult;
     passRendered = true;
     if (environmentPreparationStarted && !environmentPrepared) return undefined;
     if (now() >= startedAt + budgetMs) return undefined;
     try {
-      passResult = renderWarmPasses(
+      passResult = await renderWarmPasses(
         renderer,
         scene,
         camera,
@@ -1209,7 +1223,7 @@ export async function warmUpScene(
           ? await withinDeadline(deadline, invokeSceneCompile(), yieldFrame, now)
           : false;
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-      renderWarmPassesOnce();
+      await renderWarmPassesOnce();
       await settleGpu();
       return finish(
         withPasses({
@@ -1232,7 +1246,7 @@ export async function warmUpScene(
         ? await withinDeadline(startedAt + budgetMs, invokeSceneCompile(), yieldFrame, now)
         : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-    renderWarmPassesOnce();
+    await renderWarmPassesOnce();
     await settleGpu();
     return finish(
       withPasses(
@@ -1314,7 +1328,13 @@ export async function warmUpScene(
     }
   }
 
-  renderWarmPassesOnce();
+  // The covered pass can now settle asynchronously too (the post/reflection pipelines it requests
+  // are compiled by the device). Bound it by the same budget as every other compile here; the
+  // render-only fallback stays a direct call so it costs no extra frame.
+  if (now() < startedAt + budgetMs) {
+    if (renderer.warmUpWorldPass === undefined) await renderWarmPassesOnce();
+    else await withinDeadline(startedAt + budgetMs, renderWarmPassesOnce(), yieldFrame, now);
+  }
   await settleGpu();
   const report: IWarmUpReport = {
     compiled,

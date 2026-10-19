@@ -2,7 +2,7 @@ import { Color, Object3D, PerspectiveCamera, Scene } from "three";
 import { pass } from "three/tsl";
 import { NodeFrame, NodeUpdateType, RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
-import { createRenderer, prewarm } from "../src/renderer.js";
+import { beginAsyncPipelines, createRenderer, prewarm } from "../src/renderer.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -1847,5 +1847,55 @@ describe("uploadTextures", () => {
       renderer.dispose();
       gpu.restore();
     }
+  });
+});
+
+describe("beginAsyncPipelines", () => {
+  it("turns the covered render's pipeline creates into pending tickets and settles them", async () => {
+    const events: string[] = [];
+    let release: (() => void) | undefined;
+    const pipelines = {
+      getForRender(_object: unknown, promises?: Promise<unknown>[] | null): void {
+        if (promises === undefined || promises === null) {
+          events.push("sync");
+          return;
+        }
+        events.push("async");
+        promises.push(
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+        );
+      },
+    };
+    const raw = {
+      _pipelines: pipelines,
+      backend: { device: { createRenderPipelineAsync: () => Promise.resolve() } },
+    };
+    const gate = beginAsyncPipelines(raw);
+    if (gate === undefined) throw new Error("the fake renderer exposes an async pipeline cache");
+
+    pipelines.getForRender({}, null);
+    expect(events).toEqual(["async"]);
+
+    let settled = false;
+    const waiting = gate.settled().then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    release?.();
+    await waiting;
+    expect(settled).toBe(true);
+
+    gate.restore();
+    pipelines.getForRender({}, null);
+    expect(events).toEqual(["async", "sync"]);
+  });
+
+  it("does nothing on a renderer without async device creation", () => {
+    expect(beginAsyncPipelines({})).toBeUndefined();
+    expect(beginAsyncPipelines({ _pipelines: { getForRender: () => undefined } })).toBeUndefined();
   });
 });
