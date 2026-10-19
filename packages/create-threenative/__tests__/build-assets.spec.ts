@@ -5,10 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { build } from "../src/build.js";
 
-const { calls } = vi.hoisted(() => ({ calls: [] as string[] }));
+const { calls, compiled } = vi.hoisted(() => ({
+  calls: [] as string[],
+  compiled: [] as Record<string, unknown>[],
+}));
 
 vi.mock("@threenative/assets", () => ({
-  compileAssets: async () => {
+  compileAssets: async (options: Record<string, unknown>) => {
+    compiled.push(options);
     calls.push("compile");
     return { skipped: 0, written: 0 };
   },
@@ -48,12 +52,17 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 afterEach(() => {
   calls.splice(0);
+  compiled.splice(0);
 });
 
-async function writeProject(root: string): Promise<void> {
+async function writeProject(root: string, engine = "threejs"): Promise<void> {
   await mkdir(path.join(root, "src"), { recursive: true });
   await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "asset-order" }));
   await writeFile(path.join(root, "src/game.ts"), "export default { start: async () => {} };\n");
+  await writeFile(
+    path.join(root, "threenative.config.ts"),
+    `export default { engine: "${engine}" };\n`,
+  );
 }
 
 async function writeRuntime(root: string, available = true): Promise<void> {
@@ -82,6 +91,26 @@ describe("threenative build asset compilation", () => {
     const spawnIndex = calls.findIndex((call) => call.startsWith("spawn:"));
     expect(compileIndex).toBeGreaterThanOrEqual(0);
     expect(spawnIndex).toBeGreaterThan(compileIndex);
+  });
+
+  it("should cook decoder-free models and textures for the web native engine", async () => {
+    const root = await makeTempDir("threenative-build-assets-web-native-");
+    await writeProject(root, "threenative");
+
+    await build({ cwd: root, target: "web" });
+
+    // The Wasm engine's glTF loader refuses Meshopt and KTX2, so the web cook must not emit them.
+    expect(compiled[0]?.runtimeDecoders).toEqual({ ktx2: false, meshopt: false });
+    expect(compiled[0]?.runtimeIdentity).toBe("web:native-engine");
+  });
+
+  it("should keep the decoders for the legacy web engine", async () => {
+    const root = await makeTempDir("threenative-build-assets-web-legacy-");
+    await writeProject(root);
+
+    await build({ cwd: root, target: "web" });
+
+    expect(compiled[0]?.runtimeDecoders).toBeUndefined();
   });
 
   it("should reject an unavailable desktop runtime before cooking assets", async () => {

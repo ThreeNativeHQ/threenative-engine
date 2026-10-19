@@ -404,6 +404,7 @@ void destroyBindingsState(BindingsState*& state) {
 #endif
         state->canvas2D.canvas2DContexts.clear();
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
+        state->registries.ownedResources->releaseAll();
         while (!state->registries.textureRegistry.empty()) {
             releaseTextureRegistryEntry(state, state->registries.textureRegistry.begin()->first);
         }
@@ -2764,9 +2765,13 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     , globalBindingHost},
         {"WebGPU", "__tnPresentedCount", 0, nullptr,
         &handleWebGpuPresentedCount
+    , globalBindingHost},
+        {"WebGPU", "__tnThreadCpuMs", 0, nullptr,
+        &handleWebGpuThreadCpuMs
     , globalBindingHost}})) ||
         !copyGlobalBinding(globalBindingHost, "__tnPresentationCap") ||
-        !copyGlobalBinding(globalBindingHost, "__tnPresentedCount")) return false;
+        !copyGlobalBinding(globalBindingHost, "__tnPresentedCount") ||
+        !copyGlobalBinding(globalBindingHost, "__tnThreadCpuMs")) return false;
 
     // Native helper that decodes image data off the frame thread
     if (!installBindingTable(state->engine, state, bindingTable({

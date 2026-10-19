@@ -1,6 +1,6 @@
 import { createOwnedRunResourceRelease } from "./ownedRunResources.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
-import { waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
 import { alignScenarioStartTick, preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
@@ -12,7 +12,7 @@ import {
   pairObservations,
   readCaptureProvenance,
 } from "./observationSampling.js";
-import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart, SCREENSHOT_TIMEOUT_MS } from "./shared.js";
+import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart, SCREENSHOT_TIMEOUT_MS, withPageCause } from "./shared.js";
 import {
   failedDiagnosticsAssertion,
   ManagedServerError,
@@ -86,6 +86,7 @@ import {
   type IRemoteBrowserSession,
 } from "./browserSession.js";
 import { startBrowserCpuProfile, type IBrowserCpuProfile } from "./cpuProfile.js";
+import { browserCpuProcess, cpuWindowLabels, measureCpuWindow, type ICpuWindow } from "./linuxCpuWindow.js";
 import { formatScenarioSummary } from "./scenario-summary.js";
 
 const TOUCH_BROWSER_USER_AGENT =
@@ -209,7 +210,16 @@ async function runStandalonePlaytestInternal(
     await loadPlaytestScenario(activeConfig.projectPath, activeConfig.scenarioPath),
     activeConfig.performanceBudget,
   );
-  const browserConfig = scenario.assert?.performance === undefined
+  const cpuLabels = cpuWindowLabels(scenario, "browser", activeConfig.liveClock === true);
+  if (cpuLabels.length > 0 && options.remoteBrowser !== undefined) {
+    throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: remote browser has no local owned process tree");
+  }
+  const cpuWindows: ICpuWindow[] = [];
+  const completionLabel = completionWindowLabel(scenario, "browser", activeConfig.liveClock === true);
+  let completionWindow: ICompletionWindow | undefined;
+  const completionDisplay = completionLabel === undefined ? undefined : completionWindowEnvironment("browser", activeConfig.headless);
+  if (completionLabel !== undefined && options.remoteBrowser !== undefined) throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: requires a fresh local browser process");
+  const browserConfig = scenario.assert?.performance === undefined && completionLabel === undefined
     ? activeConfig
     : {
         ...activeConfig,
@@ -313,7 +323,7 @@ async function runStandalonePlaytestInternal(
   // Pixel-producing runs have their display handled by the runner itself now (a private Xvfb
   // whenever Linux offers no usable X display), so the wrapper-only preflight advice is
   // muted exactly where provisioning answers it; every other run keeps it.
-  const needsPixels = options.remoteBrowser === undefined && runNeedsPixels(activeConfig, scenario);
+  const needsPixels = options.remoteBrowser === undefined && (completionLabel !== undefined || runNeedsPixels(activeConfig, scenario));
   const preflight = needsPixels ? undefined : preflightDisplay(activeConfig, scenario);
   if (preflight !== undefined) {
     process.stderr.write(`${JSON.stringify({ diagnostics: [preflight] })}\n`);
@@ -385,6 +395,8 @@ async function runStandalonePlaytestInternal(
     }
     ensureRunning();
     page = await context.newPage();
+    const requestUrls = new Set<string>();
+    page.on("request", (request) => requestUrls.add(request.url()));
     ensureRunning();
     await page.addInitScript((liveClock) => {
       // Announce the runner before any game code evaluates, so an adapter can hold its loop
@@ -654,6 +666,7 @@ async function runStandalonePlaytestInternal(
       }
     };
     const beforeSnapshot = await bridge?.sample(sampleRequest);
+    if (completionLabel !== undefined && beforeSnapshot?.clock.mode !== "fixed-step") throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: prefix requires fixed-step clock");
     let movementCursor = beforeSnapshot;
     const movementEntity = scenario.assert?.movement?.entity ?? scenario.subject;
     const movementNeedsBaseline = scenario.assert?.movement !== undefined
@@ -726,6 +739,38 @@ async function runStandalonePlaytestInternal(
         index === scenario.steps.length - 1,
         scenario.subject,
         activeConfig.liveClock === true,
+        step.label !== undefined && cpuLabels.includes(step.label)
+          ? async (advance) => {
+              if (browser === undefined || bridge === undefined) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: missing browser/bridge");
+              cpuWindows.push(await measureCpuWindow(step.label!, () => browserCpuProcess(browser!), bridge, advance));
+            }
+          : undefined,
+        step.label === completionLabel && completionLabel !== undefined ? async () => {
+          const setupSnapshot = await bridge!.sample({ ...sampleRequest, include: [...new Set([...(sampleRequest.include ?? []), "scene", "resources"])], resources: [...new Set([...(sampleRequest.resources ?? []), "state", "hud"])] });
+          if (setupSnapshot.clock.mode !== "fixed-step") throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: pose setup requires fixed-step clock");
+          completionWindow = await measureCompletionWindow(completionLabel,
+            (mode) => activePage.evaluate((value) => {
+              // quality-allow: the page-side bridge is read through a structural type, as the bridge client does in the page.
+              const bridge = (globalThis as unknown as { __THREENATIVE_PLAYTEST_BRIDGE__: { _setClockMode(mode: string): unknown } }).__THREENATIVE_PLAYTEST_BRIDGE__;
+              return bridge._setClockMode(value);
+            }, mode),
+            () => activePage.evaluate(async () => {
+              // quality-allow: the page-side bridge is read through a structural type, as the bridge client does in the page.
+              const bridge = (globalThis as unknown as { __THREENATIVE_PLAYTEST_BRIDGE__: {
+                _clockEpoch: number; sample(request: unknown): Promise<{ clock: unknown; runtimeDiagnosticsSeries: unknown }>;
+              } }).__THREENATIVE_PLAYTEST_BRIDGE__;
+              const epoch = bridge._clockEpoch;
+              const snapshot = await bridge.sample({ entities: [], include: ["runtimeDiagnosticsSeries"] });
+              return { clock: snapshot.clock, epoch, valid: epoch === bridge._clockEpoch, dropped: 0,
+                source: "render-callback-return", timebase: "performance-now-ms", samples: snapshot.runtimeDiagnosticsSeries };
+            }), async () => {
+              for (const key of inputState.heldKeys) await activePage.keyboard.up(key);
+              inputState.heldKeys.clear();
+              await setPointerButtons(activePage, inputState, 0);
+              await setBrowserPointers(activePage, inputState, [], scenario.viewport);
+            });
+          completionWindow.setupSnapshot = setupSnapshot;
+        } : undefined,
       );
       if (movementBaselineSnapshot === undefined && movementNeedsBaseline && movementEntity !== undefined) {
         const candidate = stepSamples.afterStep ?? stepSamples.afterInput;
@@ -825,6 +870,13 @@ async function runStandalonePlaytestInternal(
       undefined,
       tone,
     );
+    if (cpuWindows.length !== cpuLabels.length) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: missing requested CPU window");
+    if (completionWindow !== undefined) {
+      report.clock = "wall-clock";
+      completionWindow.provenance = { requestedDisplay: completionDisplay!, qualified: false,
+        browserArgs: resolveBrowserArguments(browserConfig.browserArgs) };
+    }
+    report.acquisition = { requestUrls: [...requestUrls], ...(cpuLabels.length === 0 ? {} : { cpuWindows }), ...(completionWindow === undefined ? {} : { completionWindow }) };
     await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,
       network: networkEntries,
@@ -850,7 +902,7 @@ async function runStandalonePlaytestInternal(
       } catch { /* Preserve the primary failure if diagnostic logging also fails. */ }
     }
     if (error instanceof PlaytestBridgeError || error instanceof ManagedServerError) {
-      return addPreflightDiagnostic(failureReport(activeConfig, scenario, error.diagnostic), preflight);
+      return addPreflightDiagnostic(failureReport(activeConfig, scenario, withPageCause(error.diagnostic, consoleEntries)), preflight);
     }
     const lifecycleDiagnostic = pageLifecycleDiagnostic(error, pageLifecycle, activeConfig.url);
     if (lifecycleDiagnostic !== undefined) {

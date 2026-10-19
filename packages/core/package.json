@@ -1,6 +1,6 @@
 {
   "name": "@threenative/core",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "license": "MIT AND GPL-2.0-or-later",
   "description": "The small vanilla Three.js game runtime foundation.",
   "keywords": [
@@ -33,7 +33,8 @@
     "scripts/postinstall.mjs",
     "patches",
     "capabilities.json",
-    "README.md"
+    "README.md",
+    "src/**/*.ts"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -87,7 +88,7 @@
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
     "threenative-asset-mcp": "0.14.0",
-    "threenative-sculpt-mcp": "0.2.1",
+    "threenative-sculpt-mcp": "0.2.2",
     "zustand": "catalog:"
   },
   "devDependencies": {
@@ -105,7 +106,7 @@
     "@typescript/native": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/playtest": ">=0.3.4 <0.4.0",
+    "@threenative/playtest": ">=0.3.5 <0.4.0",
     "react": ">=19.2.0 <20",
     "react-reconciler": ">=0.33.0 <0.34"
   },

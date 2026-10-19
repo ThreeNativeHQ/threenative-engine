@@ -1,0 +1,56 @@
+{
+  "name": "matrix4-compose-invert",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Matrix4.tests.js — compose, invert, multiplyMatrices and determinant",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "position", "class": "Vector3", "args": [1, 2, 3] },
+    { "op": "new", "id": "axisEuler", "class": "Euler", "args": [0.3, -0.7, 1.1, "ZYX"] },
+    { "op": "new", "id": "rotation", "class": "Quaternion", "args": [] },
+    { "op": "call", "id": "rotation", "method": "setFromEuler", "args": [{ "ref": "axisEuler" }] },
+    { "op": "new", "id": "scale", "class": "Vector3", "args": [2, 0.5, 3] },
+    { "op": "new", "id": "m", "class": "Matrix4", "args": [] },
+    {
+      "op": "call",
+      "id": "m",
+      "method": "compose",
+      "args": [{ "ref": "position" }, { "ref": "rotation" }, { "ref": "scale" }]
+    },
+    { "op": "new", "id": "inverse", "class": "Matrix4", "args": [] },
+    { "op": "call", "id": "inverse", "method": "copy", "args": [{ "ref": "m" }] },
+    { "op": "call", "id": "inverse", "method": "invert", "args": [] },
+    { "op": "new", "id": "roundTrip", "class": "Matrix4", "args": [] },
+    {
+      "op": "call",
+      "id": "roundTrip",
+      "method": "multiplyMatrices",
+      "args": [{ "ref": "inverse" }, { "ref": "m" }]
+    },
+    {
+      "op": "new",
+      "id": "singular",
+      "class": "Matrix4",
+      "args": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
+    { "op": "new", "id": "singularInverse", "class": "Matrix4", "args": [] },
+    { "op": "call", "id": "singularInverse", "method": "copy", "args": [{ "ref": "singular" }] },
+    { "op": "call", "id": "singularInverse", "method": "invert", "args": [] },
+    { "op": "new", "id": "decomposed", "class": "Matrix4", "args": [] },
+    { "op": "call", "id": "decomposed", "method": "copy", "args": [{ "ref": "m" }] },
+    {
+      "op": "call",
+      "id": "decomposed",
+      "method": "decompose",
+      "args": [{ "ref": "position" }, { "ref": "rotation" }, { "ref": "scale" }]
+    }
+  ],
+  "observe": [
+    { "id": "m", "path": "elements", "kind": "numbers" },
+    { "id": "m", "method": "determinant", "kind": "number" },
+    { "id": "inverse", "path": "elements", "kind": "numbers" },
+    { "id": "roundTrip", "path": "elements", "kind": "numbers" },
+    { "id": "singular", "method": "determinant", "kind": "number" },
+    { "id": "singularInverse", "path": "elements", "kind": "numbers" },
+    { "id": "scale", "path": "x", "kind": "number" },
+    { "id": "rotation", "path": "w", "kind": "number" }
+  ]
+}

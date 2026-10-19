@@ -1,0 +1,3951 @@
+{
+ "three": "0.185.1",
+ "scene": {
+  "name": "root",
+  "kind": "group",
+  "children": [
+   {
+    "name": "outer",
+    "kind": "group",
+    "position": [
+     0.1,
+     -0.2,
+     -1
+    ],
+    "rotation": [
+     0,
+     0.05,
+     0
+    ],
+    "children": [
+     {
+      "name": "inner",
+      "kind": "group",
+      "scale": [
+       1.25,
+       1,
+       0.8
+      ],
+      "children": [
+       {
+        "name": "front",
+        "kind": "mesh",
+        "side": 0,
+        "box": true
+       },
+       {
+        "name": "back",
+        "kind": "mesh",
+        "side": 1,
+        "position": [
+         4,
+         0,
+         0
+        ],
+        "indexed": false
+       },
+       {
+        "name": "double",
+        "kind": "mesh",
+        "side": 2,
+        "position": [
+         8,
+         0,
+         0
+        ],
+        "rotation": [
+         0.2,
+         0.4,
+         -0.1
+        ],
+        "scale": [
+         2,
+         0.5,
+         1.5
+        ],
+        "box": true
+       },
+       {
+        "name": "layer",
+        "kind": "mesh",
+        "side": 2,
+        "position": [
+         12,
+         0,
+         0
+        ],
+        "layer": 2,
+        "visible": false,
+        "channels": false
+       },
+       {
+        "name": "draw",
+        "kind": "mesh",
+        "side": 2,
+        "position": [
+         16,
+         0,
+         0
+        ],
+        "indexed": false,
+        "draw": [
+         3,
+         3
+        ]
+       },
+       {
+        "name": "morph",
+        "kind": "mesh",
+        "side": 2,
+        "position": [
+         20,
+         0,
+         0
+        ],
+        "morph": true
+       },
+       {
+        "name": "instances",
+        "kind": "instanced",
+        "side": 2,
+        "position": [
+         0,
+         4,
+         0
+        ],
+        "rotation": [
+         0,
+         0,
+         0.1
+        ],
+        "scale": [
+         0.75,
+         1.5,
+         2
+        ]
+       },
+       {
+        "name": "box-out",
+        "kind": "mesh",
+        "position": [
+         25,
+         0,
+         0
+        ],
+        "sphere": 100,
+        "box": true
+       },
+       {
+        "name": "sphere-out",
+        "kind": "mesh",
+        "position": [
+         30,
+         0,
+         0
+        ],
+        "sphere": 0.01
+       },
+       {
+        "name": "clipped-box",
+        "kind": "mesh",
+        "side": 2,
+        "position": [
+         35,
+         0,
+         0
+        ],
+        "clippedBox": true
+       },
+       {
+        "name": "line",
+        "kind": "line",
+        "position": [
+         40,
+         0,
+         0
+        ],
+        "scale": [
+         1.5,
+         1.5,
+         1.5
+        ]
+       },
+       {
+        "name": "segments",
+        "kind": "segments",
+        "position": [
+         45,
+         0,
+         0
+        ],
+        "indexed": false
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "name": "tie-a",
+    "kind": "mesh",
+    "side": 2,
+    "position": [
+     0,
+     -4,
+     0
+    ]
+   },
+   {
+    "name": "tie-b",
+    "kind": "mesh",
+    "side": 2,
+    "position": [
+     0,
+     -4,
+     0
+    ]
+   }
+  ]
+ },
+ "rays": [
+  {
+   "name": "front-0",
+   "origin": [
+    0.6744480247308257,
+    -0.4,
+    2.976258853103361
+   ],
+   "direction": [
+    -0.04997916927067833,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "3fde5eb8bac4d42a",
+      "bfd999999999999a",
+      "bff04cc49be8fe2d"
+     ],
+     "object": "front",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe4cccccccccccd",
+      "3fd999999999999a"
+     ],
+     "uv1": [
+      "3fe07ae147000000",
+      "3fe028f5bf99999a"
+     ],
+     "normal": [
+      "3fa99999a0000000",
+      "3fbeb85200000000",
+      "3fee666668000000"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd6666666666666",
+      "3fd0000000000000",
+      "3fd999999999999a"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "front-1",
+   "origin": [
+    0.274614670565399,
+    -0.4,
+    -5.013743230056369
+   ],
+   "direction": [
+    0.04997916927067833,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": []
+  },
+  {
+   "name": "front-2",
+   "origin": [
+    0.6744480247308257,
+    -0.4,
+    2.976258853103361
+   ],
+   "direction": [
+    -0.04997916927067833,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "front-3",
+   "origin": [
+    0.274614670565399,
+    -0.4,
+    -5.013743230056369
+   ],
+   "direction": [
+    0.04997916927067833,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "front-4",
+   "origin": [
+    0.9241355898295672,
+    -0.4,
+    2.963764060785691
+   ],
+   "direction": [
+    -0.11218216830151154,
+    0,
+    -0.9936876577250879
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "front-5",
+   "origin": [
+    0.274614670565399,
+    0.6000000000000001,
+    -5.013743230056369
+   ],
+   "direction": [
+    0.04997916927067833,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "front-6",
+   "origin": [
+    2.7967923280701292,
+    -0.4,
+    2.8700531184031695
+   ],
+   "direction": [
+    -0.04997916927067836,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "front-7",
+   "origin": [
+    -0.09991667708271335,
+    -0.2,
+    -4.995001041579865
+   ],
+   "direction": [
+    0.04997916927067834,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "back-0",
+   "origin": [
+    5.668199326705657,
+    -0.4,
+    2.7263630067499696
+   ],
+   "direction": [
+    -0.04997916927067836,
+    0,
+    -0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "back-1",
+   "origin": [
+    5.26836597254023,
+    -0.4,
+    -5.263639076409761
+   ],
+   "direction": [
+    0.04997916927067837,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "4015df857ca5a8b8",
+      "bfd999999999999a",
+      "bff44c576560e5d5"
+     ],
+     "object": "back",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe4ccccccccccc8",
+      "3fd9999999999998"
+     ],
+     "uv1": [
+      "3fe07ae146fffffc",
+      "3fe028f5bf999998"
+     ],
+     "normal": [
+      "bfa999999ffffff3",
+      "bfbeb851fffffffe",
+      "bfee666668000001"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd6666666666670",
+      "3fcffffffffffff0",
+      "3fd9999999999998"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "back-2",
+   "origin": [
+    5.668199326705657,
+    -0.4,
+    2.7263630067499696
+   ],
+   "direction": [
+    -0.04997916927067836,
+    0,
+    -0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "back-3",
+   "origin": [
+    5.26836597254023,
+    -0.4,
+    -5.263639076409761
+   ],
+   "direction": [
+    0.04997916927067837,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "back-4",
+   "origin": [
+    5.9178868918043985,
+    -0.4,
+    2.713868214432299
+   ],
+   "direction": [
+    -0.11218216830151162,
+    0,
+    -0.9936876577250878
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "back-5",
+   "origin": [
+    5.26836597254023,
+    0.6000000000000001,
+    -5.263639076409761
+   ],
+   "direction": [
+    0.04997916927067837,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "back-6",
+   "origin": [
+    7.79054363004496,
+    -0.4,
+    2.620157272049778
+   ],
+   "direction": [
+    -0.04997916927067836,
+    0,
+    -0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "back-7",
+   "origin": [
+    4.893834624892118,
+    -0.2,
+    -5.2448968879332565
+   ],
+   "direction": [
+    0.04997916927067836,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "40146000575fc1dc",
+      "bfc999999999999a",
+      "bff3ff92c977e7a9"
+     ],
+     "object": "back",
+     "faceIndex": 1,
+     "index": null,
+     "face": {
+      "a": 3,
+      "b": 4,
+      "c": 5,
+      "normal": [
+       "0000000000000000",
+       "0000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fdffffffffffff8",
+      "3fe0000000000000"
+     ],
+     "uv1": [
+      "3fd9999993fffffc",
+      "3fe1999993ffffff"
+     ],
+     "normal": [
+      "3c999999a0000000",
+      "bfc333333ffffffb",
+      "bff0000000000000"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fe0000000000000",
+      "3fdffffffffffff8",
+      "3cc0000000000000"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "double-0",
+   "origin": [
+    14.669216415445703,
+    -1.683207334724648,
+    3.48909359484849
+   ],
+   "direction": [
+    -0.5868624791542233,
+    0.20562257994234642,
+    -0.783142250921767
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "401ab28ba26d47c6",
+     "point": [
+      "4025812b6efb4619",
+      "bfd3e447727e676f",
+      "bffbce5b9c8f19c4"
+     ],
+     "object": "double",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe4ccccccccccd2",
+      "3fd999999999999c"
+     ],
+     "uv1": [
+      "3fe07ae147000004",
+      "3fe028f5bf99999b"
+     ],
+     "normal": [
+      "3fa99999a000000d",
+      "3fbeb85200000003",
+      "3fee666667ffffff"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd666666666665c",
+      "3fd0000000000008",
+      "3fd999999999999c"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "double-1",
+   "origin": [
+    6.83535257749915,
+    1.061591234775158,
+    -6.964854267529424
+   ],
+   "direction": [
+    0.5868624791542234,
+    -0.20562257994234642,
+    0.783142250921767
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": [
+    {
+     "distance": "401ab28ba26d47c7",
+     "point": [
+      "4025812b6efb4618",
+      "bfd3e447727e6773",
+      "bffbce5b9c8f19c1"
+     ],
+     "object": "double",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe4cccccccccccf",
+      "3fd999999999999a"
+     ],
+     "uv1": [
+      "3fe07ae147000002",
+      "3fe028f5bf99999a"
+     ],
+     "normal": [
+      "bfa99999a0000006",
+      "bfbeb85200000000",
+      "bfee666667ffffff"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd6666666666662",
+      "3fd0000000000004",
+      "3fd999999999999a"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "double-2",
+   "origin": [
+    14.669216415445703,
+    -1.683207334724648,
+    3.48909359484849
+   ],
+   "direction": [
+    -0.5868624791542233,
+    0.20562257994234642,
+    -0.783142250921767
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "double-3",
+   "origin": [
+    6.83535257749915,
+    1.061591234775158,
+    -6.964854267529424
+   ],
+   "direction": [
+    0.5868624791542234,
+    -0.20562257994234642,
+    0.783142250921767
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "double-4",
+   "origin": [
+    15.120482845065196,
+    -1.691553102204673,
+    3.338484875778886
+   ],
+   "direction": [
+    -0.6388201088207287,
+    0.2019248289866142,
+    -0.7423848274345313
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "double-5",
+   "origin": [
+    6.895941337031524,
+    1.5530382285486939,
+    -6.903976442383036
+   ],
+   "direction": [
+    0.5868624791542234,
+    -0.20562257994234642,
+    0.783142250921767
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "double-6",
+   "origin": [
+    18.50498106721139,
+    -1.7541463583048622,
+    2.2089194827568557
+   ],
+   "direction": [
+    -0.5868624791542233,
+    0.20562257994234642,
+    -0.783142250921767
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "double-7",
+   "origin": [
+    6.170570684976386,
+    1.172399284749903,
+    -6.726765623895741
+   ],
+   "direction": [
+    0.5868624791542233,
+    -0.20562257994234642,
+    0.783142250921767
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "401ab28ba26d47c8",
+     "point": [
+      "40242ccd242c8eab",
+      "bfc999999999999b",
+      "bff7ff2592efcf55"
+     ],
+     "object": "double",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe0000000000002",
+      "3fe0000000000000"
+     ],
+     "uv1": [
+      "3fd9999994000003",
+      "3fe1999994000000"
+     ],
+     "normal": [
+      "bc899999a0000000",
+      "bfc3333340000000",
+      "bff0000000000000"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fdffffffffffffc",
+      "3cb0000000000000",
+      "3fe0000000000000"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "layer-0",
+   "origin": [
+    15.655701930655319,
+    -0.4,
+    2.226571314043186
+   ],
+   "direction": [
+    -0.04997916927067836,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "layer-1",
+   "origin": [
+    15.255868576489892,
+    -0.4,
+    -5.763430769116544
+   ],
+   "direction": [
+    0.04997916927067836,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": []
+  },
+  {
+   "name": "layer-2",
+   "origin": [
+    15.655701930655319,
+    -0.4,
+    2.226571314043186
+   ],
+   "direction": [
+    -0.04997916927067836,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "layer-3",
+   "origin": [
+    15.255868576489892,
+    -0.4,
+    -5.763430769116544
+   ],
+   "direction": [
+    0.04997916927067836,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "402ee95caf4c2fd2",
+      "bfd999999999999a",
+      "bffc4b7cf850b528"
+     ],
+     "object": "layer",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": [
+      "3fd6666666666670",
+      "3fcffffffffffff0",
+      "3fd9999999999998"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "layer-4",
+   "origin": [
+    15.90538949575406,
+    -0.4,
+    2.214076521725516
+   ],
+   "direction": [
+    -0.1121821683015114,
+    0,
+    -0.9936876577250879
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "layer-5",
+   "origin": [
+    15.255868576489892,
+    0.6000000000000001,
+    -5.763430769116544
+   ],
+   "direction": [
+    0.04997916927067836,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "layer-6",
+   "origin": [
+    17.778046233994623,
+    -0.4,
+    2.1203655793429945
+   ],
+   "direction": [
+    -0.0499791692706788,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "layer-7",
+   "origin": [
+    14.88133722884178,
+    -0.2,
+    -5.74468858064004
+   ],
+   "direction": [
+    0.04997916927067836,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "draw-0",
+   "origin": [
+    20.64945323263015,
+    -0.4,
+    1.9766754676897942
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "draw-1",
+   "origin": [
+    20.249619878464728,
+    -0.4,
+    -6.013326615469936
+   ],
+   "direction": [
+    0.04997916927067793,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": []
+  },
+  {
+   "name": "draw-2",
+   "origin": [
+    20.64945323263015,
+    -0.4,
+    1.9766754676897942
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "draw-3",
+   "origin": [
+    20.249619878464728,
+    -0.4,
+    -6.013326615469936
+   ],
+   "direction": [
+    0.04997916927067793,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "draw-4",
+   "origin": [
+    20.899140797728894,
+    -0.4,
+    1.9641806753721243
+   ],
+   "direction": [
+    -0.11218216830151143,
+    0,
+    -0.993687657725088
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "draw-5",
+   "origin": [
+    20.249619878464728,
+    0.6000000000000001,
+    -6.013326615469936
+   ],
+   "direction": [
+    0.04997916927067793,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "draw-6",
+   "origin": [
+    22.771797535969455,
+    -0.4,
+    1.8704697329896027
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "draw-7",
+   "origin": [
+    19.875088530816615,
+    -0.2,
+    -5.994584426993432
+   ],
+   "direction": [
+    0.049979169270677914,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "403413338a92f511",
+      "bfc999999999999a",
+      "bffffe4b25df9ea6"
+     ],
+     "object": "draw",
+     "faceIndex": 1,
+     "index": null,
+     "face": {
+      "a": 3,
+      "b": 4,
+      "c": 5,
+      "normal": [
+       "0000000000000000",
+       "0000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fdffffffffffff4",
+      "3fe0000000000000"
+     ],
+     "uv1": [
+      "3fd9999993fffffa",
+      "3fe1999993ffffff"
+     ],
+     "normal": [
+      "3ca3333338000000",
+      "bfc333333ffffff9",
+      "bfefffffffffffff"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fe0000000000000",
+      "3fdffffffffffff4",
+      "3cc8000000000000"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "morph-0",
+   "origin": [
+    25.643204534604983,
+    -0.4,
+    1.7267796213364024
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "400eb851eb851eb8",
+     "point": [
+      "4039738761f25f33",
+      "bfd999999999999a",
+      "c000de0c07198411"
+     ],
+     "object": "morph",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe4ccccccccccc6",
+      "3fd999999999999c"
+     ],
+     "uv1": [
+      "3fe07ae146fffffb",
+      "3fe028f5bf99999a"
+     ],
+     "normal": [
+      "3fa999999fffffe6",
+      "3fbeb85200000003",
+      "3fee666668000002"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd6666666666674",
+      "3fcfffffffffffe0",
+      "3fd999999999999c"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "morph-1",
+   "origin": [
+    25.24337118043956,
+    -0.4,
+    -6.263222461823328
+   ],
+   "direction": [
+    0.049979169270677914,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": [
+    {
+     "distance": "4010a3d70a3d70a4",
+     "point": [
+      "4039738761f25f33",
+      "bfd999999999999a",
+      "c000de0c07198411"
+     ],
+     "object": "morph",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe4ccccccccccca",
+      "3fd999999999999c"
+     ],
+     "uv1": [
+      "3fe07ae146fffffe",
+      "3fe028f5bf99999a"
+     ],
+     "normal": [
+      "bfa999999ffffff3",
+      "bfbeb85200000003",
+      "bfee666668000001"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd666666666666c",
+      "3fcffffffffffff0",
+      "3fd999999999999c"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "morph-2",
+   "origin": [
+    25.643204534604983,
+    -0.4,
+    1.7267796213364024
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "morph-3",
+   "origin": [
+    25.24337118043956,
+    -0.4,
+    -6.263222461823328
+   ],
+   "direction": [
+    0.049979169270677914,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "morph-4",
+   "origin": [
+    25.892892099703726,
+    -0.4,
+    1.7142848290187325
+   ],
+   "direction": [
+    -0.11218216830151143,
+    0,
+    -0.993687657725088
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "morph-5",
+   "origin": [
+    25.24337118043956,
+    0.6000000000000001,
+    -6.263222461823328
+   ],
+   "direction": [
+    0.049979169270677914,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "morph-6",
+   "origin": [
+    27.765548837944287,
+    -0.4,
+    1.620573886636211
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "morph-7",
+   "origin": [
+    24.868839832791448,
+    -0.2,
+    -6.244480273346824
+   ],
+   "direction": [
+    0.049979169270677914,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4010a3d70a3d70a4",
+     "point": [
+      "403913a618a0e57c",
+      "bfc999999999999a",
+      "c000b7a9b92504fb"
+     ],
+     "object": "morph",
+     "faceIndex": 1,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 2,
+      "c": 3,
+      "normal": [
+       "0000000000000000",
+       "0000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fdffffffffffff4",
+      "3fe0000000000000"
+     ],
+     "uv1": [
+      "3fd9999993fffffa",
+      "3fe1999993ffffff"
+     ],
+     "normal": [
+      "3ca3333338000000",
+      "bfc333333ffffff9",
+      "bfefffffffffffff"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fe0000000000000",
+      "3fdffffffffffff4",
+      "3cc8000000000000"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "instances-0",
+   "origin": [
+    0.8167192864452769,
+    3.5239612691621285,
+    6.974144569748272
+   ],
+   "direction": [
+    -0.049979169270678345,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4020000000000000",
+     "point": [
+      "3fdaae4255537bba",
+      "400c31129b1b603e",
+      "bff040f3ced7f835"
+     ],
+     "object": "instances",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe4cccccccccccc",
+      "3fd9999999999998"
+     ],
+     "uv1": [
+      "3fe07ae146ffffff",
+      "3fe028f5bf999999"
+     ],
+     "normal": [
+      "3fa99999a0000000",
+      "3fbeb851fffffffe",
+      "3fee666668000000"
+     ],
+     "instanceId": 0,
+     "barycoord": [
+      "3fd6666666666668",
+      "3fd0000000000000",
+      "3fd9999999999998"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "instances-1",
+   "origin": [
+    0.017052578114423483,
+    3.5239612691621285,
+    -9.00585959657119
+   ],
+   "direction": [
+    0.04997916927067833,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": [
+    {
+     "distance": "4020000000000000",
+     "point": [
+      "3fdaae4255537bb8",
+      "400c31129b1b6040",
+      "bff040f3ced7f835"
+     ],
+     "object": "instances",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe4cccccccccccc",
+      "3fd999999999999c"
+     ],
+     "uv1": [
+      "3fe07ae146ffffff",
+      "3fe028f5bf99999a"
+     ],
+     "normal": [
+      "bfa999999ffffffa",
+      "bfbeb85200000003",
+      "bfee666668000000"
+     ],
+     "instanceId": 0,
+     "barycoord": [
+      "3fd6666666666668",
+      "3fcffffffffffff8",
+      "3fd999999999999c"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "instances-2",
+   "origin": [
+    0.8167192864452769,
+    3.5239612691621285,
+    6.974144569748272
+   ],
+   "direction": [
+    -0.049979169270678345,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "instances-3",
+   "origin": [
+    0.017052578114423483,
+    3.5239612691621285,
+    -9.00585959657119
+   ],
+   "direction": [
+    0.04997916927067833,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "instances-4",
+   "origin": [
+    1.003049411913809,
+    3.5389362816591525,
+    6.964820291947998
+   ],
+   "direction": [
+    -0.07325039106246613,
+    -0.0018713644907685566,
+    -0.9973118259622407
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "instances-5",
+   "origin": [
+    -0.16990114227083672,
+    5.0164675170791675,
+    -8.996504113015948
+   ],
+   "direction": [
+    0.04997916927067833,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "instances-6",
+   "origin": [
+    2.4005253529277994,
+    3.6512488753868344,
+    6.894888208445944
+   ],
+   "direction": [
+    -0.04997916927067836,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "instances-7",
+   "origin": [
+    -0.29983335416542667,
+    3.8,
+    -8.99000208315973
+   ],
+   "direction": [
+    0.04997916927067833,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4020000000000000",
+     "point": [
+      "3fb999999999998f",
+      "400e666666666666",
+      "bff0000000000000"
+     ],
+     "object": "instances",
+     "faceIndex": 1,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 2,
+      "c": 3,
+      "normal": [
+       "0000000000000000",
+       "0000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fdffffffffffffe",
+      "3fe0000000000000"
+     ],
+     "uv1": [
+      "3fd9999993ffffff",
+      "3fe1999994000000"
+     ],
+     "normal": [
+      "3c799999a0000000",
+      "bfc333333fffffff",
+      "bff0000000000000"
+     ],
+     "instanceId": 0,
+     "barycoord": [
+      "3fe0000000000000",
+      "3fdffffffffffffe",
+      "3ca0000000000000"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "box-out-0",
+   "origin": [
+    31.885393662073525,
+    -0.4,
+    1.4144098133946628
+   ],
+   "direction": [
+    -0.0499791692706788,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "403faf7b6b70b23b",
+      "bfd999999999999a",
+      "c004a50d038b3308"
+     ],
+     "object": "box-out",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe4ccccccccccc9",
+      "3fd999999999999a"
+     ],
+     "uv1": [
+      "3fe07ae146fffffd",
+      "3fe028f5bf99999a"
+     ],
+     "normal": [
+      "3fa999999ffffff3",
+      "3fbeb85200000000",
+      "3fee666668000001"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd666666666666e",
+      "3fcffffffffffff0",
+      "3fd999999999999a"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "box-out-1",
+   "origin": [
+    31.4855603079081,
+    -0.4,
+    -6.5755922697650675
+   ],
+   "direction": [
+    0.049979169270677914,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": []
+  },
+  {
+   "name": "box-out-2",
+   "origin": [
+    31.885393662073525,
+    -0.4,
+    1.4144098133946628
+   ],
+   "direction": [
+    -0.0499791692706788,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "box-out-3",
+   "origin": [
+    31.4855603079081,
+    -0.4,
+    -6.5755922697650675
+   ],
+   "direction": [
+    0.049979169270677914,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "box-out-4",
+   "origin": [
+    32.135081227172265,
+    -0.4,
+    1.4019150210769928
+   ],
+   "direction": [
+    -0.11218216830151143,
+    0,
+    -0.993687657725088
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "box-out-5",
+   "origin": [
+    31.4855603079081,
+    0.6000000000000001,
+    -6.5755922697650675
+   ],
+   "direction": [
+    0.049979169270677914,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "box-out-6",
+   "origin": [
+    34.00773796541283,
+    -0.4,
+    1.3082040786944713
+   ],
+   "direction": [
+    -0.04997916927067969,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "box-out-7",
+   "origin": [
+    31.111028960259986,
+    -0.2,
+    -6.556850081288563
+   ],
+   "direction": [
+    0.049979169270677914,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "sphere-out-0",
+   "origin": [
+    38.12758278954207,
+    -0.4,
+    1.1020400054529236
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "sphere-out-1",
+   "origin": [
+    37.72774943537664,
+    -0.4,
+    -6.887962077706806
+   ],
+   "direction": [
+    0.04997916927067969,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": []
+  },
+  {
+   "name": "sphere-out-2",
+   "origin": [
+    38.12758278954207,
+    -0.4,
+    1.1020400054529236
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "sphere-out-3",
+   "origin": [
+    37.72774943537664,
+    -0.4,
+    -6.887962077706806
+   ],
+   "direction": [
+    0.04997916927067969,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "sphere-out-4",
+   "origin": [
+    38.37727035464081,
+    -0.4,
+    1.0895452131352537
+   ],
+   "direction": [
+    -0.11218216830151054,
+    0,
+    -0.993687657725088
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "sphere-out-5",
+   "origin": [
+    37.72774943537664,
+    0.6000000000000001,
+    -6.887962077706806
+   ],
+   "direction": [
+    0.04997916927067969,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "sphere-out-6",
+   "origin": [
+    40.24992709288137,
+    -0.4,
+    0.9958342707527321
+   ],
+   "direction": [
+    -0.04997916927067969,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "sphere-out-7",
+   "origin": [
+    37.35321808772853,
+    -0.2,
+    -6.869219889230303
+   ],
+   "direction": [
+    0.049979169270677914,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "clipped-box-0",
+   "origin": [
+    44.3697719170106,
+    -0.4,
+    0.789670197511184
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "clipped-box-1",
+   "origin": [
+    43.96993856284517,
+    -0.4,
+    -7.200331885648547
+   ],
+   "direction": [
+    0.04997916927067968,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": []
+  },
+  {
+   "name": "clipped-box-2",
+   "origin": [
+    44.3697719170106,
+    -0.4,
+    0.789670197511184
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "clipped-box-3",
+   "origin": [
+    43.96993856284517,
+    -0.4,
+    -7.200331885648547
+   ],
+   "direction": [
+    0.04997916927067968,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "clipped-box-4",
+   "origin": [
+    44.61945948210934,
+    -0.4,
+    0.777175405193514
+   ],
+   "direction": [
+    -0.11218216830151054,
+    0,
+    -0.993687657725088
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "clipped-box-5",
+   "origin": [
+    43.96993856284517,
+    0.6000000000000001,
+    -7.200331885648547
+   ],
+   "direction": [
+    0.04997916927067968,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "clipped-box-6",
+   "origin": [
+    46.49211622034991,
+    -0.4,
+    0.6834644628109925
+   ],
+   "direction": [
+    -0.04997916927067969,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "clipped-box-7",
+   "origin": [
+    43.59540721519706,
+    -0.2,
+    -7.181589697172042
+   ],
+   "direction": [
+    0.04997916927067793,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "line-0",
+   "origin": [
+    50.89918505684456,
+    -0.5,
+    2.465429816121125
+   ],
+   "direction": [
+    -0.04997916927067909,
+    0,
+    -0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4017ffffffffffff",
+     "point": [
+      "404910c9632eae58",
+      "bfc000000000008e",
+      "c00c077682d4a614"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "4017ffffffffffff",
+     "point": [
+      "404910c9632eae58",
+      "bfc000000000008e",
+      "c00c077682d4a614"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 3,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
+   "name": "line-1",
+   "origin": [
+    50.299435025596416,
+    -0.5,
+    -9.519573308618472
+   ],
+   "direction": [
+    0.049979169270677894,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": [
+    {
+     "distance": "4018000000000000",
+     "point": [
+      "404910c9632eae58",
+      "bfc0000000000072",
+      "c00c077682d4a614"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "4018000000000000",
+     "point": [
+      "404910c9632eae58",
+      "bfc0000000000072",
+      "c00c077682d4a614"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 3,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
+   "name": "line-2",
+   "origin": [
+    50.89918505684456,
+    -0.5,
+    2.465429816121125
+   ],
+   "direction": [
+    -0.04997916927067909,
+    0,
+    -0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "line-3",
+   "origin": [
+    50.299435025596416,
+    -0.5,
+    -9.519573308618472
+   ],
+   "direction": [
+    0.049979169270677894,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "line-4",
+   "origin": [
+    51.27371640449267,
+    -0.5,
+    2.446687627644621
+   ],
+   "direction": [
+    -0.11218216830151168,
+    0,
+    -0.9936876577250878
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "line-5",
+   "origin": [
+    50.299435025596416,
+    1.0000000000000002,
+    -9.519573308618472
+   ],
+   "direction": [
+    0.049979169270677894,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "line-6",
+   "origin": [
+    54.082701511853514,
+    -0.5,
+    2.306121214070838
+   ],
+   "direction": [
+    -0.04997916927067909,
+    0,
+    -0.9987502603949661
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "line-7",
+   "origin": [
+    49.73763800412425,
+    -0.2,
+    -9.491460025903715
+   ],
+   "direction": [
+    0.0499791692706779,
+    0,
+    0.9987502603949661
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4018000000000001",
+     "point": [
+      "404904cd3a047f21",
+      "bfc9999999999a1f",
+      "c00bfdddef57864e"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "4018000000000001",
+     "point": [
+      "404904cd3a047f21",
+      "bfc9999999999a1f",
+      "c00bfdddef57864e"
+     ],
+     "object": "line",
+     "faceIndex": null,
+     "index": 3,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
+   "name": "segments-0",
+   "origin": [
+    56.85415017194768,
+    -0.4,
+    0.1649305816277047
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "404c53bdec543248",
+      "bff3333333333333",
+      "c00ea3fbfb36f630"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 0,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "404c2bcab8723f91",
+      "bfc33333333332cf",
+      "c00e83ff64eb36f2"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
+   "name": "segments-1",
+   "origin": [
+    56.45431681778225,
+    -0.4,
+    -7.825071501532026
+   ],
+   "direction": [
+    0.04997916927067968,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": true,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "404c53bdec543248",
+      "bff3333333333333",
+      "c00ea3fbfb36f630"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 0,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "404c2bcab8723f91",
+      "bfc3333333333319",
+      "c00e83ff64eb36f2"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
+   "name": "segments-2",
+   "origin": [
+    56.85415017194768,
+    -0.4,
+    0.1649305816277047
+   ],
+   "direction": [
+    -0.049979169270677914,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": false,
+   "target": "inner",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "segments-3",
+   "origin": [
+    56.45431681778225,
+    -0.4,
+    -7.825071501532026
+   ],
+   "direction": [
+    0.04997916927067968,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 2,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "segments-4",
+   "origin": [
+    57.10383773704642,
+    -0.4,
+    0.15243578931003476
+   ],
+   "direction": [
+    -0.11218216830151054,
+    0,
+    -0.993687657725088
+   ],
+   "near": 100,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "segments-5",
+   "origin": [
+    56.45431681778225,
+    0.6000000000000001,
+    -7.825071501532026
+   ],
+   "direction": [
+    0.04997916927067968,
+    0,
+    0.9987502603949662
+   ],
+   "near": 0,
+   "far": 1,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "segments-6",
+   "origin": [
+    58.976494475286984,
+    -0.4,
+    0.05872484692751323
+   ],
+   "direction": [
+    -0.04997916927067969,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "segments-7",
+   "origin": [
+    56.07978547013414,
+    -0.2,
+    -7.806329313055521
+   ],
+   "direction": [
+    0.04997916927067793,
+    0,
+    0.9987502603949664
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "400fffffffffffff",
+     "point": [
+      "404c23cd47ab756c",
+      "bff3333333333333",
+      "c00e7d99ad427719"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 0,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "400fffffffffffff",
+     "point": [
+      "404c23cd47ab756c",
+      "bfc99999999999b2",
+      "c00e7d99ad427719"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 2,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    },
+    {
+     "distance": "400fffffffffffff",
+     "point": [
+      "404c23cd47ab756c",
+      "3fe999999999999a",
+      "c00e7d99ad427719"
+     ],
+     "object": "segments",
+     "faceIndex": null,
+     "index": 4,
+     "face": null,
+     "uv": null,
+     "uv1": null,
+     "normal": null,
+     "instanceId": null,
+     "barycoord": null
+    }
+   ]
+  },
+  {
+   "name": "instance-0-false",
+   "origin": [
+    0.6303891609767448,
+    3.508986256665104,
+    6.983468847548545
+   ],
+   "direction": [
+    -0.04997916927067834,
+    0,
+    -0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4020000000000000",
+     "point": [
+      "3fcd82da4914291e",
+      "400c126762f3ebb1",
+      "bff01ac2981497f9"
+     ],
+     "object": "instances",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe1999999999999",
+      "3fd9999999999998"
+     ],
+     "uv1": [
+      "3fdc7ae145333332",
+      "3fdfae1473ffffff"
+     ],
+     "normal": [
+      "3f9eb851f3333334",
+      "3fbeb851fffffffe",
+      "3fef0a3d7199999a"
+     ],
+     "instanceId": 0,
+     "barycoord": [
+      "3fdcccccccccccce",
+      "3fc3333333333334",
+      "3fd9999999999998"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "instance-0-true",
+   "origin": [
+    -0.16927754735410858,
+    3.508986256665104,
+    -8.996535318770915
+   ],
+   "direction": [
+    0.04997916927067833,
+    0,
+    0.9987502603949663
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4020000000000000",
+     "point": [
+      "3fcd82da4914291d",
+      "400c126762f3ebb1",
+      "bff01ac2981497f9"
+     ],
+     "object": "instances",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe1999999999999",
+      "3fd9999999999998"
+     ],
+     "uv1": [
+      "3fdc7ae145333332",
+      "3fdfae1473ffffff"
+     ],
+     "normal": [
+      "bf9eb851f3333334",
+      "bfbeb851fffffffe",
+      "bfef0a3d7199999a"
+     ],
+     "instanceId": 0,
+     "barycoord": [
+      "3fdcccccccccccce",
+      "3fc3333333333334",
+      "3fd9999999999998"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "instance-1-false",
+   "origin": [
+    4.2594105701043485,
+    3.8078390848650985,
+    5.008370700885031
+   ],
+   "direction": [
+    -0.16684492287073313,
+    -0.009420224950730756,
+    -0.985938147691901
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "401f94f0355e9352",
+     "point": [
+      "40078969392c12f4",
+      "400dde216d1214dc",
+      "c006355ae2592772"
+     ],
+     "object": "instances",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe1999999999990",
+      "3fd999999999999c"
+     ],
+     "uv1": [
+      "3fdc7ae145333325",
+      "3fdfae1474000000"
+     ],
+     "normal": [
+      "3f9eb851f33332ee",
+      "3fbeb85200000003",
+      "3fef0a3d7199999c"
+     ],
+     "instanceId": 1,
+     "barycoord": [
+      "3fdccccccccccce0",
+      "3fc3333333333308",
+      "3fd999999999999c"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "instance-1-true",
+   "origin": [
+    1.6247798875401809,
+    3.659085300423718,
+    -10.56047520899082
+   ],
+   "direction": [
+    0.16684492287073305,
+    0.009420224950730756,
+    0.985938147691901
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "401f94f0355e9352",
+     "point": [
+      "40078969392c12f4",
+      "400dde216d1214dd",
+      "c006355ae2592773"
+     ],
+     "object": "instances",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe1999999999991",
+      "3fd999999999999e"
+     ],
+     "uv1": [
+      "3fdc7ae145333327",
+      "3fdfae1474000000"
+     ],
+     "normal": [
+      "bf9eb851f33332ee",
+      "bfbeb85200000005",
+      "bfef0a3d7199999c"
+     ],
+     "instanceId": 1,
+     "barycoord": [
+      "3fdcccccccccccde",
+      "3fc3333333333308",
+      "3fd999999999999e"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "instance-2-false",
+   "origin": [
+    7.8323378971636135,
+    4.103434185534555,
+    2.7243795815742553
+   ],
+   "direction": [
+    -0.2875038707436727,
+    -0.019206879199950927,
+    -0.9575868733952048
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "401e5c9b91bbc86a",
+     "point": [
+      "401699a8c1f17909",
+      "400fa9421553f65d",
+      "c0122d2eb236b458"
+     ],
+     "object": "instances",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe1999999999994",
+      "3fd9999999999998"
+     ],
+     "uv1": [
+      "3fdc7ae14533332b",
+      "3fdfae1473fffffe"
+     ],
+     "normal": [
+      "3f9eb851f3333314",
+      "3fbeb851fffffffe",
+      "3fef0a3d7199999a"
+     ],
+     "instanceId": 2,
+     "barycoord": [
+      "3fdcccccccccccd8",
+      "3fc3333333333320",
+      "3fd9999999999998"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "instance-2-true",
+   "origin": [
+    3.4677777460769934,
+    3.8118569647966147,
+    -11.812626469904519
+   ],
+   "direction": [
+    0.2875038707436725,
+    0.01920687919995081,
+    0.9575868733952049
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "401e5c9b91bbc86c",
+     "point": [
+      "401699a8c1f17909",
+      "400fa9421553f65e",
+      "c0122d2eb236b458"
+     ],
+     "object": "instances",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe1999999999994",
+      "3fd999999999999a"
+     ],
+     "uv1": [
+      "3fdc7ae14533332c",
+      "3fdfae1473ffffff"
+     ],
+     "normal": [
+      "bf9eb851f333330e",
+      "bfbeb85200000000",
+      "bfef0a3d7199999b"
+     ],
+     "instanceId": 2,
+     "barycoord": [
+      "3fdcccccccccccd8",
+      "3fc333333333331c",
+      "3fd999999999999a"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "tie-4-4",
+   "origin": [
+    0.2,
+    -4.3,
+    4
+   ],
+   "direction": [
+    0,
+    0,
+    -1
+   ],
+   "near": 4,
+   "far": 4,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "3fc999999999999a",
+      "c011333333333333",
+      "0000000000000000"
+     ],
+     "object": "tie-a",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe3333333333333",
+      "3fd6666666666668"
+     ],
+     "uv1": [
+      "3fdf0a3d70000000",
+      "3fde147adcccccce"
+     ],
+     "normal": [
+      "3fa999999ffffffd",
+      "3fbae147c0000002",
+      "3fee666668000000"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd999999999999a",
+      "3fcffffffffffffc",
+      "3fd6666666666668"
+     ]
+    },
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "3fc999999999999a",
+      "c011333333333333",
+      "0000000000000000"
+     ],
+     "object": "tie-b",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe3333333333333",
+      "3fd6666666666668"
+     ],
+     "uv1": [
+      "3fdf0a3d70000000",
+      "3fde147adcccccce"
+     ],
+     "normal": [
+      "3fa999999ffffffd",
+      "3fbae147c0000002",
+      "3fee666668000000"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd999999999999a",
+      "3fcffffffffffffc",
+      "3fd6666666666668"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "tie-4.0001-100",
+   "origin": [
+    0.2,
+    -4.3,
+    4
+   ],
+   "direction": [
+    0,
+    0,
+    -1
+   ],
+   "near": 4.0001,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "tie-0-3.9999",
+   "origin": [
+    0.2,
+    -4.3,
+    4
+   ],
+   "direction": [
+    0,
+    0,
+    -1
+   ],
+   "near": 0,
+   "far": 3.9999,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": []
+  },
+  {
+   "name": "tie-0-100",
+   "origin": [
+    0.2,
+    -4.3,
+    4
+   ],
+   "direction": [
+    0,
+    0,
+    -1
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "3fc999999999999a",
+      "c011333333333333",
+      "0000000000000000"
+     ],
+     "object": "tie-a",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe3333333333333",
+      "3fd6666666666668"
+     ],
+     "uv1": [
+      "3fdf0a3d70000000",
+      "3fde147adcccccce"
+     ],
+     "normal": [
+      "3fa999999ffffffd",
+      "3fbae147c0000002",
+      "3fee666668000000"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd999999999999a",
+      "3fcffffffffffffc",
+      "3fd6666666666668"
+     ]
+    },
+    {
+     "distance": "4010000000000000",
+     "point": [
+      "3fc999999999999a",
+      "c011333333333333",
+      "0000000000000000"
+     ],
+     "object": "tie-b",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe3333333333333",
+      "3fd6666666666668"
+     ],
+     "uv1": [
+      "3fdf0a3d70000000",
+      "3fde147adcccccce"
+     ],
+     "normal": [
+      "3fa999999ffffffd",
+      "3fbae147c0000002",
+      "3fee666668000000"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd999999999999a",
+      "3fcffffffffffffc",
+      "3fd6666666666668"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "origin-on-plane",
+   "origin": [
+    0.2,
+    -4.3,
+    0
+   ],
+   "direction": [
+    0,
+    0,
+    -1
+   ],
+   "near": 0,
+   "far": 100,
+   "layer": 0,
+   "recursive": true,
+   "target": "root",
+   "multiple": false,
+   "hits": [
+    {
+     "distance": "0000000000000000",
+     "point": [
+      "3fc999999999999a",
+      "c011333333333333",
+      "0000000000000000"
+     ],
+     "object": "tie-a",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe3333333333333",
+      "3fd6666666666668"
+     ],
+     "uv1": [
+      "3fdf0a3d70000000",
+      "3fde147adcccccce"
+     ],
+     "normal": [
+      "3fa999999ffffffd",
+      "3fbae147c0000002",
+      "3fee666668000000"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd999999999999a",
+      "3fcffffffffffffc",
+      "3fd6666666666668"
+     ]
+    },
+    {
+     "distance": "0000000000000000",
+     "point": [
+      "3fc999999999999a",
+      "c011333333333333",
+      "0000000000000000"
+     ],
+     "object": "tie-b",
+     "faceIndex": 0,
+     "index": null,
+     "face": {
+      "a": 0,
+      "b": 1,
+      "c": 2,
+      "normal": [
+       "0000000000000000",
+       "8000000000000000",
+       "3ff0000000000000"
+      ],
+      "materialIndex": 0
+     },
+     "uv": [
+      "3fe3333333333333",
+      "3fd6666666666668"
+     ],
+     "uv1": [
+      "3fdf0a3d70000000",
+      "3fde147adcccccce"
+     ],
+     "normal": [
+      "3fa999999ffffffd",
+      "3fbae147c0000002",
+      "3fee666668000000"
+     ],
+     "instanceId": null,
+     "barycoord": [
+      "3fd999999999999a",
+      "3fcffffffffffffc",
+      "3fd6666666666668"
+     ]
+    }
+   ]
+  }
+ ],
+ "layerCases": [
+  {
+   "mask": "3ff0000000000000",
+   "operation": "set",
+   "layer": 31,
+   "expected": "41e0000000000000",
+   "test": true,
+   "enabled": true
+  },
+  {
+   "mask": "3ff0000000000000",
+   "operation": "enable",
+   "layer": 31,
+   "expected": "c1dfffffffc00000",
+   "test": true,
+   "enabled": true
+  },
+  {
+   "mask": "3ff0000000000000",
+   "operation": "enableAll",
+   "layer": 0,
+   "expected": "bff0000000000000",
+   "test": true,
+   "enabled": true
+  },
+  {
+   "mask": "bff0000000000000",
+   "operation": "disable",
+   "layer": 0,
+   "expected": "c000000000000000",
+   "test": false,
+   "enabled": false
+  },
+  {
+   "mask": "41e0000000000000",
+   "operation": "toggle",
+   "layer": 31,
+   "expected": "0000000000000000",
+   "test": false,
+   "enabled": false
+  },
+  {
+   "mask": "3ff0000000000000",
+   "operation": "set",
+   "layer": -1,
+   "expected": "41e0000000000000",
+   "test": true,
+   "enabled": true
+  },
+  {
+   "mask": "3ff0000000000000",
+   "operation": "set",
+   "layer": 32,
+   "expected": "3ff0000000000000",
+   "test": true,
+   "enabled": true
+  },
+  {
+   "mask": "3ff0000000000000",
+   "operation": "set",
+   "layer": 63,
+   "expected": "41e0000000000000",
+   "test": true,
+   "enabled": true
+  },
+  {
+   "mask": "7ff0000000000000",
+   "operation": "enable",
+   "layer": 2,
+   "expected": "4010000000000000",
+   "test": true,
+   "enabled": true
+  },
+  {
+   "mask": "fff0000000000000",
+   "operation": "disable",
+   "layer": 2,
+   "expected": "0000000000000000",
+   "test": false,
+   "enabled": false
+  },
+  {
+   "mask": "41f00000001c0000",
+   "operation": "enable",
+   "layer": 2,
+   "expected": "4014000000000000",
+   "test": true,
+   "enabled": true
+  },
+  {
+   "mask": "c1f00000001c0000",
+   "operation": "toggle",
+   "layer": 2,
+   "expected": "c014000000000000",
+   "test": false,
+   "enabled": false
+  },
+  {
+   "mask": "8000000000000000",
+   "operation": "test",
+   "layer": 0,
+   "expected": "8000000000000000",
+   "test": false,
+   "enabled": false
+  },
+  {
+   "mask": "4270000000000000",
+   "operation": "test",
+   "layer": 0,
+   "expected": "4270000000000000",
+   "test": false,
+   "enabled": false
+  }
+ ],
+ "cameraCases": [
+  {
+   "kind": "perspective",
+   "coords": [
+    0,
+    0
+   ],
+   "origin": [
+    "3ff0000000000000",
+    "4000000000000000",
+    "4008000000000000"
+   ],
+   "direction": [
+    "bfc96dff233dd2be",
+    "3fb90c43c5af8edc",
+    "bfef349866eb90be"
+   ]
+  },
+  {
+   "kind": "perspective",
+   "coords": [
+    -0.7,
+    0.4
+   ],
+   "origin": [
+    "3ff0000000000000",
+    "4000000000000000",
+    "4008000000000000"
+   ],
+   "direction": [
+    "bfe04d733b4131b1",
+    "3fb80577484bf22c",
+    "bfeb5f2931fab6e9"
+   ]
+  },
+  {
+   "kind": "perspective",
+   "coords": [
+    1,
+    -1
+   ],
+   "origin": [
+    "3ff0000000000000",
+    "4000000000000000",
+    "4008000000000000"
+   ],
+   "direction": [
+    "3fd21c1ee74deed6",
+    "bf8d8f667c94673a",
+    "bfeeb04d486accb4"
+   ]
+  },
+  {
+   "kind": "perspective",
+   "coords": [
+    0.2,
+    0.3
+   ],
+   "origin": [
+    "3ff0000000000000",
+    "4000000000000000",
+    "4008000000000000"
+   ],
+   "direction": [
+    "bfc116e28f8891bc",
+    "3fca23cb6e13ba01",
+    "bfef086cabe1cb1f"
+   ]
+  },
+  {
+   "kind": "orthographic",
+   "coords": [
+    0,
+    0
+   ],
+   "origin": [
+    "3ffa58bc3b1b262d",
+    "400a0fc2090bb1f0",
+    "4007f4a0960abe12"
+   ],
+   "direction": [
+    "bfc96dff233dd2be",
+    "3fb90c43c5af8ed0",
+    "bfef349866eb90bf"
+   ]
+  },
+  {
+   "kind": "orthographic",
+   "coords": [
+    -0.7,
+    0.4
+   ],
+   "origin": [
+    "bf67953afed10a00",
+    "400b347826c42220",
+    "400ac23e1de03cf9"
+   ],
+   "direction": [
+    "bfc96dff233dd2be",
+    "3fb90c43c5af8ed0",
+    "bfef349866eb90bf"
+   ]
+  },
+  {
+   "kind": "orthographic",
+   "coords": [
+    1,
+    -1
+   ],
+   "origin": [
+    "4010d71286270334",
+    "400307a2508314a4",
+    "4003127c9d4fc0f5"
+   ],
+   "direction": [
+    "bfc96dff233dd2be",
+    "3fb90c43c5af8ed0",
+    "bfef349866eb90bf"
+   ]
+  },
+  {
+   "kind": "orthographic",
+   "coords": [
+    0.2,
+    0.3
+   ],
+   "origin": [
+    "3ffeb00b4dfe01dd",
+    "400ef406815c5bcf",
+    "40080112241767c7"
+   ],
+   "direction": [
+    "bfc96dff233dd2be",
+    "3fb90c43c5af8ed0",
+    "bfef349866eb90bf"
+   ]
+  }
+ ]
+}

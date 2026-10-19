@@ -1,6 +1,6 @@
 ---
 name: native-performance-loop
-description: Run an autonomous ThreeNative native-performance optimization loop using existing harnesses, quick synthetic load tests, and representative real games. Profile bottlenecks, make focused changes, accept or reject measured experiments, and maintain an HTML benchmark dashboard. Use for sustained native runtime optimization, frame pacing, startup, memory, or thermal efficiency campaigns.
+description: Run an autonomous ThreeNative native-performance optimization loop using existing harnesses, quick synthetic load tests, and representative real games. Profile bottlenecks, make focused changes, accept or reject measured experiments, and maintain an HTML benchmark dashboard. Use for sustained native runtime optimization, frame pacing, startup, memory, or thermal efficiency campaigns, including the Tempest (rain) campaign where the web Wasm engine must beat stock three.js with the same image.
 ---
 
 # Native performance loop
@@ -40,6 +40,15 @@ the developer to supervise each iteration. Creating or editing this skill does n
    experiment; default to native gameplay frame-time p95 in milliseconds, lower is better.
    Keep separate goals for frame tails, startup, memory, and energy. Never optimize a blended
    score that can conceal one game's regression. Run the unchanged baseline before editing.
+
+## KPIs and named campaigns
+
+- Score every campaign on [engine-kpis.md](references/engine-kpis.md) as well as on its primary
+  scalar. Keep a lever only if it moves at least one engine KPI and the sentinel game does not
+  regress. A lever that helps one game only is `provisional`.
+- For the Tempest sample (the `rain` template, web Wasm engine against stock three), read
+  [tempest.md](references/tempest.md). It sets goals T1 to T3, the image-identity rule, the arms,
+  the capture recipe and the known state.
 
 ## The experiment loop
 

@@ -2,11 +2,13 @@ import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { promisify } from 'node:util';
-import { afterEach, test } from 'vitest';
+import { afterAll, afterEach, test, vi } from 'vitest';
 import { PNG } from 'pngjs';
 
 import {
@@ -115,6 +117,44 @@ async function packRuntime(root) {
   const packed = JSON.parse(stdout);
   return { archive: packed.filename, files: packed.files.map(({ path }) => path) };
 }
+
+// The packed runtime depends on its unpublished cohort (core, assets, three-native). A consumer install
+// resolves every @threenative/* dependency from these packed tarballs, never from the npm registry.
+const packages = fileURLToPath(new URL('../..', import.meta.url));
+let cohort;
+async function cohortOverrides() {
+  cohort ??= (async () => {
+    // Not makeTempDirSync: that directory goes when the test that asked for it ends, and the cohort outlives it.
+    const root = mkdtempSync(join(tmpdir(), 'threenative-cohort-'));
+    cohortRoots.push(root);
+    const manifests = new Map(
+      readdirSync(packages).flatMap((directory) => {
+        const file = join(packages, directory, 'package.json');
+        if (!existsSync(file)) return [];
+        const manifest = JSON.parse(readFileSync(file, 'utf8'));
+        return [[manifest.name, { directory: join(packages, directory), manifest }]];
+      }),
+    );
+    const overrides = {};
+    const pending = ['@threenative/runtime-native'];
+    for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
+      const { manifest } = manifests.get(name);
+      for (const dependency of Object.keys({ ...manifest.dependencies, ...manifest.optionalDependencies })) {
+        if (!dependency.startsWith('@threenative/') || dependency in overrides) continue;
+        const { directory } = manifests.get(dependency);
+        const { stdout } = await run('pnpm', ['pack', '--json', '--pack-destination', root], { cwd: directory });
+        overrides[dependency] = `file:${JSON.parse(stdout).filename}`;
+        pending.push(dependency);
+      }
+    }
+    return overrides;
+  })();
+  return cohort;
+}
+const cohortRoots = [];
+afterAll(() => {
+  for (const root of cohortRoots) rmSync(root, { force: true, recursive: true });
+});
 
 afterEach(() => {
   Reflect.deleteProperty(process.env, 'THREENATIVE_ALLOW_INSECURE_PREBUILT');
@@ -384,6 +424,7 @@ test('a clean-room install builds for Android from a fixture manifest, with no e
         dependencies: { '@threenative/runtime-native': `file:${packed.archive}` },
         name: 'android-cleanroom-proof',
         private: true,
+        pnpm: { overrides: await cohortOverrides() },
       })}\n`,
     );
     await run('pnpm', ['install', '--ignore-scripts'], { cwd: consumer, env: { ...process.env } });
@@ -587,7 +628,7 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
         optionalDependencies: {
           '@threenative/runtime-native': `file:${packed.archive}`,
         },
-        pnpm: { onlyBuiltDependencies: ['@threenative/runtime-native'] },
+        pnpm: { onlyBuiltDependencies: ['@threenative/runtime-native'], overrides: await cohortOverrides() },
       })}\n`,
     );
     await run('pnpm', ['install'], {
@@ -645,6 +686,7 @@ test.runIf(process.platform === 'linux')('an installed runtime verifier uses pac
       dependencies: { '@threenative/runtime-native': `file:${packed.archive}` },
       name: 'installed-verifier-proof',
       private: true,
+      pnpm: { overrides: await cohortOverrides() },
     }),
   );
   await run('pnpm', ['install', '--ignore-scripts', '--node-linker=hoisted'], {
@@ -721,7 +763,7 @@ test('a corrupted download fails the packed consumer install lifecycle', async (
       `${JSON.stringify({
         dependencies: { '@threenative/runtime-native': `file:${packed.archive}` },
         name: 'native-consumer-corrupt-proof',
-        pnpm: { onlyBuiltDependencies: ['@threenative/runtime-native'] },
+        pnpm: { onlyBuiltDependencies: ['@threenative/runtime-native'], overrides: await cohortOverrides() },
         private: true,
       })}\n`,
     );
@@ -769,7 +811,16 @@ test('the actual packed archive excludes C++ runtime source', async () => {
   roots.push(root);
   const packed = await packRuntime(root);
   const files = packed.files.join('\n');
-  assert.doesNotMatch(files, /^(?:src|include|cmake|native|third_party|build)\//mu);
+  for (const file of ['scripts/package-engine-desktop.mjs', 'scripts/bundle-native-engine.mjs',
+    'src/engine/player/core-three.mjs', 'src/engine/player/core-webgpu.mjs',
+    'src/engine/player/core-tsl.mjs', 'src/engine/player/core-addons.mjs',
+    'src/engine/player/core-host.mjs', 'src/engine/player/core-assets.mjs',
+    'src/engine/player/core-audio.mjs', 'src/engine/player/core-textures.mjs',
+    'src/engine/player/core-hdr.mjs']) {
+    assert.ok(packed.files.includes(file), `pnpm pack omitted ${file}`);
+  }
+  // The Wasm engine (build/web) is the one build output the package ships, for the web native engine.
+  assert.doesNotMatch(files, /^(?:src(?!\/engine\/player\/[^/]+\.mjs$)|include|cmake|native|third_party|build(?!\/web\/))\//mu);
   assert.doesNotMatch(files, /\.(?:c|cc|cpp|cxx|h|hh|hpp|m|mm)$/mu);
 
   const manifest = JSON.parse(
@@ -1394,13 +1445,13 @@ test('a cached runtime without its verified helper is never reused', async () =>
 test('macOS is built but unpublished, and says so instead of 404ing', () => {
   const root = makeTempDirSync('threenative-unpublished-');
   roots.push(root);
-  // The published cohort is exactly what a release stages, and it excludes these four rows.
+  // The published cohort is exactly what a release stages, and it excludes these macOS rows.
   assert.deepEqual(
     PREBUILT_KEYS.filter((key) => !PUBLISHED_PREBUILT_KEYS.includes(key)).sort(),
     [...UNPUBLISHED_PREBUILT_KEYS].sort(),
   );
   // Windows ships unsigned - SmartScreen warns, Gatekeeper refuses - so only macOS is held back.
-  assert.deepEqual([...UNPUBLISHED_PREBUILT_KEYS].sort(), ['darwin-arm64', 'darwin-arm64-tools']);
+  assert.deepEqual([...UNPUBLISHED_PREBUILT_KEYS].sort(), ['darwin-arm64', 'darwin-arm64-engine-player', 'darwin-arm64-tools']);
   assert.ok(PUBLISHED_PREBUILT_KEYS.includes('win32-x64'));
   assert.ok(PUBLISHED_PREBUILT_KEYS.includes('win32-x64-tools'));
   // A complete candidate still refuses them, and names the reason rather than a missing asset:
@@ -1982,4 +2033,43 @@ test('macOS notarization staples and re-archives the signed bundle', () => {
   assert.ok(calls.includes('xcrun notarytool'));
   assert.ok(calls.includes('xcrun stapler'));
   assert.equal(archiveWrites, 2, 'the stapled bundle is archived again');
+});
+
+
+test('engine player assets install and verify checksums on each desktop platform', async () => {
+  const root = makeTempDirSync('threenative-engine-player-');
+  roots.push(root);
+  const manifestPath = join(root, 'prebuilt-lock.json');
+  try {
+    for (const [platform, arch] of [['linux', 'x64'], ['win32', 'x64']]) {
+      const key = `${platform}-${arch}-engine-player`;
+      assert.ok(PUBLISHED_PREBUILT_KEYS.includes(key));
+      assert.equal(PREBUILT_ASSET_NAMES[key], `threenative-engine-player-${platform}-${arch}${platform === 'win32' ? '.exe' : ''}`);
+      const payload = Buffer.from(`player:${key}`);
+      const artifact = { sha256: sha256(payload), url: `https://fixture.invalid/${key}` };
+      const writeManifest = () => writeFileSync(manifestPath, JSON.stringify({ artifacts: { [key]: artifact } }));
+      writeManifest();
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(payload)));
+      const output = join(root, platform, `tn-native-engine-player-v8${platform === 'win32' ? '.exe' : ''}`);
+      const install = { platform, arch, enginePlayer: true, output, manifestPath };
+      await installPrebuilt(install);
+      assert.deepEqual(readFileSync(output), payload);
+      assert.equal(JSON.parse(readFileSync(join(root, platform, 'engine-player-install-status.json'))).sha256, sha256(payload));
+      vi.stubGlobal('fetch', vi.fn(() => { throw new Error('offline'); }));
+      assert.equal(await installPrebuilt({ ...install, reuse: true }), output);
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(payload)));
+      artifact.sha256 = '0'.repeat(64);
+      writeManifest();
+      await assert.rejects(installPrebuilt({ ...install, reuse: true }), /Checksum verification failed/);
+      assert.equal(existsSync(output), false);
+    }
+    assert.ok(UNPUBLISHED_PREBUILT_KEYS.includes('darwin-arm64-engine-player'));
+    assert.equal(PREBUILT_ASSET_NAMES['darwin-arm64-engine-player'], 'threenative-engine-player-darwin-arm64');
+    await assert.rejects(installPrebuilt({ platform: 'darwin', arch: 'arm64', enginePlayer: true, output: join(root, 'mac-player'), manifestPath }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED');
+    assert.throws(() => readRelease(join(root, 'not-released.json'), 'linux-x64-engine-player'), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
+    await assert.rejects(downloadReleaseArtifact('linux-x64-engine-player', { manifestUrl: 'https://fixture.invalid/not-released' }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED' && error.message.includes('linux-x64-engine-player'));
+    writeFileSync(manifestPath, JSON.stringify({ artifacts: {} }));
+    await assert.rejects(installPrebuilt({ platform: 'linux', arch: 'x64', enginePlayer: true, output: join(root, 'absent-player'), manifestPath }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED' && error.message.includes('linux-x64-engine-player'));
+  } finally { vi.unstubAllGlobals(); }
 });

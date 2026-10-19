@@ -1,0 +1,202 @@
+{
+  "name": "math-primitives-plane",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Plane.tests.js — the whole surface except the Line3 forms",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "p03",
+      "kind": "number",
+      "path": "normal.y",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 1,
+      "id": "p03",
+      "kind": "number",
+      "path": "constant",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 2,
+      "id": "p04",
+      "kind": "number",
+      "path": "normal.x",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 3,
+      "id": "p04",
+      "kind": "number",
+      "path": "constant",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 4,
+      "id": "p06",
+      "kind": "number",
+      "path": "normal.x",
+      "value": "n:3fd11acee560242a",
+      "decimal": "0.2672612419124244"
+    },
+    {
+      "index": 5,
+      "id": "p06",
+      "kind": "number",
+      "path": "constant",
+      "value": "n:3ff11acee560242a",
+      "decimal": "1.0690449676496976"
+    },
+    {
+      "index": 6,
+      "id": "p08",
+      "kind": "number",
+      "path": "constant",
+      "value": "n:c010000000000000",
+      "decimal": "-4"
+    },
+    {
+      "index": 7,
+      "id": "p10",
+      "kind": "number",
+      "path": "normal.x",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 8,
+      "id": "p10",
+      "kind": "number",
+      "path": "constant",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 9,
+      "id": "p11",
+      "kind": "number",
+      "path": "constant",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    },
+    {
+      "index": 10,
+      "id": "p14",
+      "kind": "number",
+      "path": "constant",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    },
+    {
+      "index": 11,
+      "id": "p14",
+      "kind": "number",
+      "path": "normal.z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 12,
+      "id": "p19",
+      "kind": "number",
+      "path": "normal.x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 13,
+      "id": "p19",
+      "kind": "number",
+      "path": "constant",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 14,
+      "id": "r25",
+      "kind": "number",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 15,
+      "id": "r27",
+      "kind": "number",
+      "value": "n:401c000000000000",
+      "decimal": "7"
+    },
+    {
+      "index": 16,
+      "id": "r32",
+      "kind": "number",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 17,
+      "id": "r35",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 18,
+      "id": "r39",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 19,
+      "id": "r43",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff0000000000000,n:c000000000000000,n:bff0000000000000",
+      "decimal": "1, -2, -1"
+    },
+    {
+      "index": 20,
+      "id": "r47",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:8000000000000000,n:c000000000000000,n:8000000000000000",
+      "decimal": "-0, -2, -0"
+    },
+    {
+      "index": 21,
+      "id": "p50",
+      "kind": "number",
+      "path": "constant",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    },
+    {
+      "index": 22,
+      "id": "p50",
+      "kind": "number",
+      "path": "normal.x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 23,
+      "id": "p52",
+      "kind": "number",
+      "path": "constant",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 24,
+      "id": "r56",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    }
+  ]
+}

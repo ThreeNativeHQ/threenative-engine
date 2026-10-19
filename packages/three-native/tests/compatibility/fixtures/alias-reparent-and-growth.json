@@ -1,0 +1,755 @@
+{
+  "name": "alias-reparent-and-growth",
+  "adaptedFrom": "three@0.185.1 src/core/Object3D.js add()/remove() move a node between parents without reallocating it, and src/math/Vector3.js members are allocated once — so a position alias taken before the move still names its object after re-parenting and after the scene grows (scene_hierarchy_test.cpp alias(), through the differential runner)",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "o",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "o",
+      "method": "position",
+      "args": [],
+      "result": "p"
+    },
+    {
+      "op": "new",
+      "id": "parent",
+      "class": "Group",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "o"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n0",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n0"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n1",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n1"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n2",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n2"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n3",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n3"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n4",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n4"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n5",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n5"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n6",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n6"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n7",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n7"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n8",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n8"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n9",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n9"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n10",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n10"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n11",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n11"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n12",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n12"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n13",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n13"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n14",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n14"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n15",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n15"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n16",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n16"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n17",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n17"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n18",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n18"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n19",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n19"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n20",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n20"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n21",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n21"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n22",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n22"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n23",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n23"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n24",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n24"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n25",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n25"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n26",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n26"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n27",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n27"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n28",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n28"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n29",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n29"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n30",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n30"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n31",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n31"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n32",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n32"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n33",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n33"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n34",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n34"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n35",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n35"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n36",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n36"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n37",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n37"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n38",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n38"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n39",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "n39"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "parent2",
+      "class": "Group",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "parent",
+      "method": "remove",
+      "args": [
+        {
+          "ref": "o"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "parent2",
+      "method": "add",
+      "args": [
+        {
+          "ref": "o"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "p",
+      "path": "x",
+      "value": 7.5
+    },
+    {
+      "op": "call",
+      "id": "o",
+      "method": "position",
+      "args": [],
+      "result": "p2"
+    },
+    {
+      "op": "set",
+      "id": "p2",
+      "path": "y",
+      "value": 2.5
+    }
+  ],
+  "observe": [
+    {
+      "id": "o",
+      "path": "position.x",
+      "kind": "number"
+    },
+    {
+      "id": "o",
+      "path": "position.y",
+      "kind": "number"
+    },
+    {
+      "id": "p",
+      "path": "x",
+      "kind": "number"
+    },
+    {
+      "id": "p",
+      "path": "y",
+      "kind": "number"
+    },
+    {
+      "id": "p2",
+      "path": "x",
+      "kind": "number"
+    },
+    {
+      "id": "p2",
+      "path": "y",
+      "kind": "number"
+    }
+  ]
+}

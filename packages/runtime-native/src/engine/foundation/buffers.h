@@ -1,0 +1,150 @@
+#pragma once
+
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <span>
+#include <vector>
+
+namespace tn::engine {
+
+enum class Scalar : uint8_t { F32, F64, I8, U8, I16, U16, I32, U32 };
+
+uint32_t scalarSize(Scalar scalar);
+
+enum class BufferError : uint8_t {
+    None,
+    Range,   // TN_BUFFER_RANGE: offset + length past the end, or an overflowing pair
+    Layout,  // stride or alignment that does not fit the scalar type
+};
+
+/** Three's `BufferAttribute.updateRanges` entry, in elements. */
+struct UpdateRange {
+    uint64_t start;
+    uint64_t count;
+};
+
+/**
+ * One attribute's native storage (PRD-504). Every access is range-checked with overflow-safe
+ * arithmetic before it touches memory. A lease pins the storage: a resize requested under a lease
+ * waits for the last release, so a view or GPU job never reads memory that moved under it.
+ */
+class BufferStore : public std::enable_shared_from_this<BufferStore> {
+public:
+    BufferStore(Scalar scalar, uint64_t count);
+    ~BufferStore() {
+        released_.fetch_add(1, std::memory_order_relaxed);
+        if (deferred_ && forgetHook != nullptr) forgetHook(*this);
+    }
+    /** Moves whenever a store dies or lets its GPU copy go: a cache with none since its last sweep has nothing to sweep. */
+    static uint64_t released() { return released_.load(std::memory_order_relaxed); }
+
+    /**
+     * A back end that keeps its own copy of the bytes and defers writing it (the Wasm JS mirror of
+     * `attribute.array`) sets these: `pull` fills `data` before the store next reads or writes its
+     * bytes, and `forget` drops a deferral the store dies with. A pull leaves the write count, and
+     * answers how many elements it wrote: past those, bytes the store never filled read as zero.
+     */
+    static inline uint64_t (*pullHook)(const BufferStore& store, std::byte* data) = nullptr;
+    static inline void (*forgetHook)(const BufferStore& store) = nullptr;
+    void defer() { deferred_ = pullHook != nullptr; }
+
+    /** Accepts a byte window and element stride only if both fit the storage and the scalar type. */
+    BufferError validate(uint64_t byteOffset, uint64_t byteLength, uint64_t byteStride = 0) const;
+    BufferError write(uint64_t byteOffset, const void* source, uint64_t byteLength);
+    BufferError read(uint64_t byteOffset, void* destination, uint64_t byteLength) const;
+
+    /** Deferred while leased; returns true when it applied now. Contents up to the new size survive. */
+    bool resize(uint64_t count);
+    void acquireLease() { ++leases_; }
+    void releaseLease();
+    uint32_t leaseCount() const { return leases_; }
+
+    // BufferAttribute semantics, as three@0.185.1 records them.
+    void needsUpdate() { ++version_; }
+    uint32_t version() const { return version_; }
+    /** three's `geometry.dispose()`: the GPU copy goes now, and comes back only if the store is drawn again. */
+    void releaseGpuCopy() {
+        ++gpuReleases_;
+        released_.fetch_add(1, std::memory_order_relaxed);
+    }
+    uint32_t gpuReleases() const { return gpuReleases_; }
+    void addUpdateRange(uint64_t start, uint64_t count) { ranges_.push_back({start, count}); }
+    void clearUpdateRanges() { ranges_.clear(); }
+    std::span<const UpdateRange> updateRanges() const { return ranges_; }
+
+    Scalar scalar() const { return scalar_; }
+    uint64_t count() const { return bytes_.size() / scalarSize(scalar_); }
+    uint64_t byteLength() const { return bytes_.size(); }
+    /** Changes whenever the storage reallocates; a view compares it to know it must re-resolve. */
+    uint64_t epoch() const { return epoch_; }
+    /** Moves on every `write`, resize and mutable `data()`: a JS copy of the bytes is current while it holds. */
+    uint64_t writes() const { return writes_; }
+    std::byte* data() {
+        pull();
+        ++writes_;
+        return bytes_.data();
+    }
+    const std::byte* data() const {
+        pull();
+        return bytes_.data();
+    }
+
+private:
+    static inline std::atomic<uint64_t> released_{0};
+    // Storage left unwritten when made: a deferred store's pull writes it, and one that dies unread
+    // never touches its pages. `unfilled_` zeroes what no pull wrote before the first use.
+    template <typename T>
+    struct Uninitialized : std::allocator<T> {
+        template <typename U>
+        struct rebind {
+            using other = Uninitialized<U>;
+        };
+        template <typename U>
+        void construct(U* at) noexcept {
+            ::new (static_cast<void*>(at)) U;
+        }
+    };
+
+    void pull() const {
+        if (deferred_ || unfilled_) fill();
+    }
+    void fill() const;
+
+    Scalar scalar_;
+    std::vector<std::byte, Uninitialized<std::byte>> bytes_;
+    mutable bool unfilled_ = true;
+    uint64_t epoch_ = 0;
+    uint64_t writes_ = 0;
+    uint64_t pendingCount_ = 0;
+    bool resizePending_ = false;
+    mutable bool deferred_ = false;
+    uint32_t leases_ = 0;
+    uint32_t version_ = 0;
+    uint32_t gpuReleases_ = 0;
+    std::vector<UpdateRange> ranges_;
+};
+
+/**
+ * A retained view of a store (an attribute array or `.elements`). It holds the store, never a raw
+ * pointer, so a write on the native side is what it reads and a reallocation — Wasm memory growth
+ * included — is followed rather than read after free.
+ */
+class BufferView {
+public:
+    explicit BufferView(BufferStore& store) : store_(&store), seenEpoch_(store.epoch()) {}
+
+    std::span<std::byte> bytes() {
+        seenEpoch_ = store_->epoch();
+        return {store_->data(), static_cast<size_t>(store_->byteLength())};
+    }
+    /** True once the storage moved since the last `bytes()`: the caller's old span is invalid. */
+    bool stale() const { return seenEpoch_ != store_->epoch(); }
+
+private:
+    BufferStore* store_;
+    uint64_t seenEpoch_;
+};
+
+}  // namespace tn::engine

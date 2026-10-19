@@ -1,0 +1,289 @@
+{
+  "name": "tsl-post-template-high",
+  "adaptedFrom": "original \u2014 PRD-531 slice 4: the minimal template's high-tier chain: exposure 0.62, GTAO with denoise, bloom 0.22/0.6/1, vignette 0.22, SMAA, built live from the addon on the native side \u2014 tolerance: the engine's DenoiseNode WGSL port (PRD-526) lands within one 8-bit level of three's TSL output after its bilateral blend, measured deltaE 0.038 at most, so this frame allows one level and deltaE 0.04",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.x",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 5.5
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 6.5
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0.4, 0]
+    },
+    {
+      "op": "new",
+      "id": "sun",
+      "class": "DirectionalLight",
+      "args": [16777215, 2.5]
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.x",
+      "value": -2
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.y",
+      "value": 6
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.z",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "castShadow",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.bias",
+      "value": -0.0005
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [13426943, 3351057, 0.5]
+    },
+    {
+      "op": "new",
+      "id": "floorGeometry",
+      "class": "PlaneGeometry",
+      "args": [12, 12]
+    },
+    {
+      "op": "new",
+      "id": "floorMaterial",
+      "class": "MeshLambertMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "floor",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "floorGeometry"
+        },
+        {
+          "ref": "floorMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "floor",
+      "path": "rotation.x",
+      "value": -1.5707963267948966
+    },
+    {
+      "op": "set",
+      "id": "floor",
+      "path": "receiveShadow",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "waveGeometry",
+      "class": "PlaneGeometry",
+      "args": [4, 2.5, 96, 4]
+    },
+    {
+      "op": "new",
+      "id": "waveMaterial",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "waveMaterial",
+      "path": "color.r",
+      "value": 0.3
+    },
+    {
+      "op": "set",
+      "id": "waveMaterial",
+      "path": "color.g",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "waveMaterial",
+      "path": "color.b",
+      "value": 0.9
+    },
+    {
+      "op": "set",
+      "id": "waveMaterial",
+      "path": "side",
+      "value": 2
+    },
+    {
+      "op": "new",
+      "id": "wave",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "waveGeometry"
+        },
+        {
+          "ref": "waveMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "wave",
+      "path": "rotation.x",
+      "value": -1.5707963267948966
+    },
+    {
+      "op": "set",
+      "id": "wave",
+      "path": "position.y",
+      "value": 1.6
+    },
+    {
+      "op": "set",
+      "id": "wave",
+      "path": "castShadow",
+      "value": true
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "floor"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "wave"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sun"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "tsl",
+      "id": "scene",
+      "program": "post-template-high"
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.04,
+        "levels": 1,
+        "levelsReason": "DenoiseNode's 16-tap bilateral blend: the native WGSL port and three's TSL output differ below one 8-bit level (max 1/255, 7.6% of pixels measured); the live effect's inputs equal three's byte for byte (native_engine_post_DenoiseNode) and raw GTAO matches within 11 pixels (tsl-post-ao-raw)."
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb",
+    "shadowMap": true
+  }
+}

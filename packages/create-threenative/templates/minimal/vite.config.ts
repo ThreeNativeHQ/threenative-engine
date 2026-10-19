@@ -1,5 +1,9 @@
 import { watchAssets } from "@threenative/assets";
-import { createEngineFreshnessPlugin, createWebBrandPlugin } from "create-threenative";
+import {
+  createEngineFreshnessPlugin,
+  createWebBrandPlugin,
+  webRuntimeDecoders,
+} from "create-threenative";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 import config from "./threenative.config.js";
@@ -13,7 +17,11 @@ function assetsWatchPlugin(): Plugin {
     name: "threenative-assets-watch",
     apply: "serve",
     async configureServer(server) {
-      const handle = watchAssets({ config: config.assets, cwd: server.config.root });
+      const handle = watchAssets({
+        config: config.assets,
+        cwd: server.config.root,
+        runtimeDecoders: webRuntimeDecoders(config),
+      });
       server.httpServer?.once("close", () => handle.close());
       // Nothing is served before the first cook settles: until it does, `public/` has no
       // `assets.manifest.json` and every asset answers from its source fallback.

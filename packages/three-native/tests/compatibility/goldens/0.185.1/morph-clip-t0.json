@@ -1,0 +1,43 @@
+{
+  "name": "morph-clip-t0",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a glTF morph-influence clip (test-support/fixtures/morph-clip.glb, two targets, LINEAR weights) played by AnimationMixer and sampled at 0.4 s",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "mixer",
+      "kind": "number",
+      "path": "time",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 1,
+      "id": "breathe",
+      "kind": "number",
+      "path": "duration",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 2,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:852107e4776910872452411797d6739d3e9a3a1b35561fd32010009fa31c67fc",
+      "decimal": "852107e4776910872452411797d6739d3e9a3a1b35561fd32010009fa31c67fc"
+    }
+  ],
+  "render": {
+    "png": "morph-clip-t0.png",
+    "pngSha256": "852107e4776910872452411797d6739d3e9a3a1b35561fd32010009fa31c67fc",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

@@ -33,11 +33,14 @@ describe("web branding adapter", () => {
     const plugin = createWebBrandPlugin();
     await plugin.configResolved({ root });
     const html =
-      plugin.transformIndexHtml(`<!doctype html><html><head><title>old</title></head><body>
+      plugin.transformIndexHtml(`<!doctype html><html><head><title>old</title><link rel="icon" href="data:," /><link rel="icon" href="/old.ico" /></head><body>
       <div data-threenative-launch><span data-threenative-launch-name>old</span></div>
     </body></html>`);
     expect(html).toContain("<title>Branded Quest</title>");
     expect(html).toContain('rel="icon" href="/icon.svg"');
+    expect(html.match(/rel="icon"/gu)).toHaveLength(1);
+    expect(html).not.toContain("/old.ico");
+    expect(html).not.toContain("data:,");
     expect(html).toContain('rel="manifest" href="/manifest.webmanifest"');
     expect(html).toContain("data-threenative-launch-name>Branded Quest");
 
@@ -53,5 +56,21 @@ describe("web branding adapter", () => {
       name: "Branded Quest",
       theme_color: "#123456",
     });
+  });
+  it("keeps an authored favicon when config has no replacement", async () => {
+    const root = await makeTempDir("threenative-web-brand-");
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "compute-probe", type: "module" }),
+    );
+    const plugin = createWebBrandPlugin();
+    await plugin.configResolved({ root });
+    const html = plugin.transformIndexHtml(
+      '<html><head><link rel="icon" href="data:," /></head><body></body></html>',
+    );
+    expect(html).toContain('<link rel="icon" href="data:," />');
+    expect(html.match(/rel="icon"/gu)).toHaveLength(1);
+    expect(html).toContain('rel="manifest" href="/manifest.webmanifest"');
   });
 });

@@ -1,0 +1,219 @@
+{
+  "name": "scene-transforms-clone",
+  "adaptedFrom": "original — Object3D.clone(), as Midway clones a loaded ship's scene: a group holding a named mesh and a nested group; the clone copies names and transforms recursively, shares the mesh's geometry, and moving the clone's mesh leaves the source's",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "root",
+      "class": "Group",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "root",
+      "path": "name",
+      "value": "ship"
+    },
+    {
+      "op": "set",
+      "id": "root",
+      "path": "position.x",
+      "value": 2
+    },
+    {
+      "op": "new",
+      "id": "hullGeometry",
+      "class": "BoxGeometry",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "hullMaterial",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "hull",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "hullGeometry"
+        },
+        {
+          "ref": "hullMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "hull",
+      "path": "name",
+      "value": "hull"
+    },
+    {
+      "op": "set",
+      "id": "hull",
+      "path": "position.y",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "hull",
+      "path": "rotation.z",
+      "value": 0.3
+    },
+    {
+      "op": "new",
+      "id": "deck",
+      "class": "Group",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "deck",
+      "path": "name",
+      "value": "deck"
+    },
+    {
+      "op": "set",
+      "id": "deck",
+      "path": "position.z",
+      "value": -1
+    },
+    {
+      "op": "new",
+      "id": "gun",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "hullGeometry"
+        },
+        {
+          "ref": "hullMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "gun",
+      "path": "name",
+      "value": "gun"
+    },
+    {
+      "op": "set",
+      "id": "gun",
+      "path": "scale.x",
+      "value": 0.25
+    },
+    {
+      "op": "call",
+      "id": "deck",
+      "method": "add",
+      "args": [
+        {
+          "ref": "gun"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "add",
+      "args": [
+        {
+          "ref": "hull"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "add",
+      "args": [
+        {
+          "ref": "deck"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "clone",
+      "args": [],
+      "result": "copy"
+    },
+    {
+      "op": "call",
+      "id": "copy",
+      "method": "getObjectByName",
+      "args": ["hull"],
+      "result": "copyHull"
+    },
+    {
+      "op": "call",
+      "id": "copy",
+      "method": "getObjectByName",
+      "args": ["gun"],
+      "result": "copyGun"
+    },
+    {
+      "op": "set",
+      "id": "copyHull",
+      "path": "position.y",
+      "value": 4
+    },
+    {
+      "op": "call",
+      "id": "copy",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "copy",
+      "path": "name",
+      "kind": "string"
+    },
+    {
+      "id": "copy",
+      "path": "position.x",
+      "kind": "number"
+    },
+    {
+      "id": "copyHull",
+      "path": "position.y",
+      "kind": "number"
+    },
+    {
+      "id": "hull",
+      "path": "position.y",
+      "kind": "number"
+    },
+    {
+      "id": "copyHull",
+      "path": "rotation.z",
+      "kind": "number"
+    },
+    {
+      "id": "copyHull",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "copyGun",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    }
+  ]
+}

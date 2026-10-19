@@ -1,0 +1,27 @@
+{
+  "name": "alpha-test",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — MeshBasicMaterial tiles over an opaque red wall: alphaTest discards at or below the threshold for opaque and transparent materials alike, an opaque material ignores its opacity, a transparent one blends",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:267d2c3a09f8b53e91ec424f305a258a20a40291d87e4b62a2f263afcbb44219",
+      "decimal": "267d2c3a09f8b53e91ec424f305a258a20a40291d87e4b62a2f263afcbb44219"
+    }
+  ],
+  "render": {
+    "png": "alpha-test.png",
+    "pngSha256": "267d2c3a09f8b53e91ec424f305a258a20a40291d87e4b62a2f263afcbb44219",
+    "width": 256,
+    "height": 128,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

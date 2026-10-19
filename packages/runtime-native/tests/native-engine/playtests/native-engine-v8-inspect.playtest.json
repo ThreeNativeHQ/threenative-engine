@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "name": "native-engine-v8-inspect",
+  "target": "desktop",
+  "subject": "beacon",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 4,
+  "steps": [
+    {
+      "label": "settled",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "label": "moving",
+      "press": "KeyW",
+      "holdTicks": 8,
+      "release": true
+    }
+  ],
+  "assert": {
+    "movement": {
+      "entity": "player",
+      "minAxisDelta": {
+        "axis": "-z",
+        "min": 0.75
+      }
+    },
+    "resources": [
+      {
+        "id": "profile",
+        "path": "engine",
+        "equals": "native",
+        "allowTrivial": "The artifact profile is fixed when the binary is built, so it is already true before the scenario runs. Its being constant is the property PRD-529 phase 2 box 47 asks for, not a result the run produces."
+      },
+      {
+        "id": "profile",
+        "path": "gameRuntime",
+        "equals": "v8",
+        "allowTrivial": "The artifact profile is fixed when the binary is built, so it is already true before the scenario runs. Its being constant is the property PRD-529 phase 2 box 47 asks for, not a result the run produces."
+      }
+    ]
+  }
+}

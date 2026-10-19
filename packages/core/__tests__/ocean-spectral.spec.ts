@@ -436,11 +436,15 @@ describe("SpectralOcean lifetime", () => {
     const control = oceanRenderer();
     ocean.attachRenderer(control.renderer);
     ocean.process();
-    control.land(Float32Array.from([0, 2, 4, 6]));
+    control.land(Float32Array.from([0, -1, 2, -3, 4, -5, 6, -7]));
     await Promise.resolve();
     const fresh = ocean.sampleHeight(0, 0);
     expect(fresh?.height).toBeCloseTo(0, 12);
     expect(fresh?.staleFrames).toBe(0);
+    expect(fresh?.verticalVelocity).toBe(-1);
+    expect(ocean.sampleHeight(50, 50)?.height).toBeCloseTo(3, 12);
+    expect(ocean.sampleHeight(50, 50)?.verticalVelocity).toBeCloseTo(-4, 12);
+    expect(ocean.readbackFloats).toBe(8);
     ocean.process();
     ocean.process();
     const aged = ocean.sampleHeight(0, 0);

@@ -27,19 +27,21 @@ vi.mock("three", async (importOriginal) => {
   };
 });
 
-function rig(): { root: Group; mesh: SkinnedMesh; hip: Bone } {
+/** A two-bone rig; `copies` repeats its four vertices to scale the vertex count. */
+function rig(copies = 1): { root: Group; mesh: SkinnedMesh; hip: Bone } {
+  const repeat = (values: number[]) => Array.from({ length: copies }, () => values).flat();
   const geometry = new BufferGeometry();
   geometry.setAttribute(
     "position",
-    new Float32BufferAttribute([-0.1, 0, 0, 0.1, 0, 0, -0.1, 2, 0, 0.1, 2, 0], 3),
+    new Float32BufferAttribute(repeat([-0.1, 0, 0, 0.1, 0, 0, -0.1, 2, 0, 0.1, 2, 0]), 3),
   );
   geometry.setAttribute(
     "skinIndex",
-    new Float32BufferAttribute([0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], 4),
+    new Float32BufferAttribute(repeat([0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]), 4),
   );
   geometry.setAttribute(
     "skinWeight",
-    new Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], 4),
+    new Float32BufferAttribute(repeat([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]), 4),
   );
 
   const mesh = new SkinnedMesh(geometry, new MeshBasicMaterial());
@@ -56,6 +58,20 @@ function rig(): { root: Group; mesh: SkinnedMesh; hip: Bone } {
   root.add(mesh);
   root.updateWorldMatrix(true, true);
   return { root, mesh, hip };
+}
+
+/** Counts reads of `key` made by pose-measure itself; three's own skinning reads it per vertex. */
+function countMeasureReads(target: object, key: string): { reads: number } {
+  // On the native host every property read crosses to the engine; `bones` wraps each bone.
+  const value = (target as Record<string, unknown>)[key];
+  const counter = { reads: 0 };
+  Object.defineProperty(target, key, {
+    get: () => {
+      if (new Error().stack?.split("\n")[2]?.includes("pose-measure")) counter.reads += 1;
+      return value;
+    },
+  });
+  return counter;
 }
 
 describe("posedBounds", () => {
@@ -113,6 +129,39 @@ describe("posedBounds", () => {
       expect(precise).not.toBeNull();
       expect(Math.abs(cheap.min[1] - (precise?.min[1] ?? 0))).toBeLessThanOrEqual(0.02);
     }
+  });
+
+  it("reads the skeleton's bones once per mesh, not once per vertex", () => {
+    const { root, mesh } = rig();
+    const bones = countMeasureReads(mesh.skeleton, "bones");
+
+    posedBounds(root, [mesh]);
+
+    expect(bones.reads).toBe(1);
+  });
+
+  it("reads world matrices a fixed number of times, whatever the vertex count", () => {
+    const worldReads = (copies: number) => {
+      const { root, mesh, hip } = rig(copies);
+      const counters = [mesh, hip, hip.children[0] as Bone].map((object) =>
+        countMeasureReads(object, "matrixWorld"),
+      );
+      posedBounds(root, [mesh]);
+      return counters.map((counter) => counter.reads);
+    };
+
+    expect(worldReads(25)).toEqual(worldReads(1));
+  });
+
+  it("skips a vertex whose dominant bone the skeleton lacks", () => {
+    const { root, mesh } = rig();
+    // With every weight zero, skinning ignores the index and the dominant one names no bone.
+    mesh.geometry.getAttribute("skinIndex").setX(3, 7);
+    mesh.geometry.getAttribute("skinWeight").setX(3, 0);
+
+    const bounds = posedBounds(root, [mesh]);
+
+    expect([...bounds.min, ...bounds.max].every(Number.isFinite)).toBe(true);
   });
 
   it("does not reuse an explicit subset for an unscoped measurement", () => {

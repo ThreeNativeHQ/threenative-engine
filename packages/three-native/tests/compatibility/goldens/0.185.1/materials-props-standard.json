@@ -1,0 +1,88 @@
+{
+  "name": "materials-props-standard",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — MeshStandardMaterial: roughness and metalness defaults, matching lit-render",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "fresh",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshStandardMaterial",
+      "decimal": "MeshStandardMaterial"
+    },
+    {
+      "index": 1,
+      "id": "fresh",
+      "kind": "number",
+      "path": "roughness",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 2,
+      "id": "fresh",
+      "kind": "number",
+      "path": "metalness",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 3,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 4,
+      "id": "m",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshStandardMaterial",
+      "decimal": "MeshStandardMaterial"
+    },
+    {
+      "index": 5,
+      "id": "m",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3fe999999999999a",
+      "decimal": "0.8"
+    },
+    {
+      "index": 6,
+      "id": "m",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3fd6666666666666",
+      "decimal": "0.35"
+    },
+    {
+      "index": 7,
+      "id": "m",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3fc999999999999a",
+      "decimal": "0.2"
+    },
+    {
+      "index": 8,
+      "id": "m",
+      "kind": "number",
+      "path": "roughness",
+      "value": "n:3fd6666666666666",
+      "decimal": "0.35"
+    },
+    {
+      "index": 9,
+      "id": "m",
+      "kind": "number",
+      "path": "metalness",
+      "value": "n:3fb999999999999a",
+      "decimal": "0.1"
+    }
+  ]
+}

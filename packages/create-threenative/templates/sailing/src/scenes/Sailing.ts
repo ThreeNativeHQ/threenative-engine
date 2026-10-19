@@ -8,7 +8,7 @@ import {
   isTouchscreenAvailable,
 } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
-import type { Group, PerspectiveCamera, Texture } from "three";
+import { type Group, type PerspectiveCamera, type Texture, Vector3 } from "three";
 import { Ship } from "../entities/Ship.js";
 import { followShip, setupCamera } from "../render/camera.js";
 import { loadedEnvironmentSample } from "../render/environmentSetup.js";
@@ -68,6 +68,7 @@ const MAX_WAKE_SPEED = 4.6;
 const WIND_DURATION = 120;
 
 export class Sailing extends Scene<GameState, IPhysicsContext> {
+  #observeRender: ((ctx: GameCtx) => void) | undefined;
   #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
   #post: ReturnType<typeof setupPost> | undefined;
   static override readonly initialState: GameState = {
@@ -145,12 +146,51 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
       buoy.position.set(mark.x, 0, mark.z);
       marks.push(buoy);
       markReflected(ctx.add(buoy));
+      ctx.interpolate(buoy);
     }
 
     const ship = new Ship(ctx, ocean, shipModel);
     // The ship is deliberately not in the sea's mirror: it is a second draw of the hull *and its
     // keel*, which the mirror sees from below as a black blot smeared under the stern.
     ctx.entities.add("player", ship);
+    const projected = new Vector3();
+    let previous: { time: number; x: number; y: number; vx?: number; vy?: number } | undefined;
+    let sampleFrame = -1;
+    let lowestY = Number.POSITIVE_INFINITY;
+    let highestY = Number.NEGATIVE_INFINITY;
+    this.#observeRender = (renderCtx) => {
+      if (renderCtx.startup.phase !== "ready") return;
+      projected.copy(ship.visual.position).project(camera);
+      if (Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1 || projected.z > 1) {
+        previous = undefined;
+        return;
+      }
+      const motion = ship.renderMotion;
+      lowestY = Math.min(lowestY, ship.visual.position.y);
+      highestY = Math.max(highestY, ship.visual.position.y);
+      motion.verticalRange = highestY - lowestY;
+      motion.frames += 1;
+      motion.fractionalFrames += Number(renderCtx.alpha > 0 && renderCtx.alpha < 1);
+      const sample = ocean.sampleHeight(ship.visual.position.x, ship.visual.position.z);
+      const frame = sample === undefined ? -1 : ocean.steps - sample.staleFrames;
+      motion.readbacks += Number(frame >= 0 && frame !== sampleFrame);
+      sampleFrame = frame;
+      const time = renderCtx.frameTime / 1_000;
+      const x = (projected.x * renderCtx.viewport.size.width) / 2;
+      const y = (projected.y * renderCtx.viewport.size.height) / 2;
+      const delta = time - (previous?.time ?? time);
+      if (previous === undefined || delta <= 0) {
+        previous = { time, x, y };
+        return;
+      }
+      const vx = (x - previous.x) / delta;
+      const vy = (y - previous.y) / delta;
+      motion.maxJitterPixels = Math.max(
+        motion.maxJitterPixels,
+        Math.hypot(vx - (previous.vx ?? vx), vy - (previous.vy ?? vy)) / 60,
+      );
+      previous = { time, x, y, vx, vy };
+    };
     this.#materialLighting = ctx.entities.add(
       "material-lighting",
       createMaterialLighting(ctx.scene, ctx.camera, sun, {
@@ -291,7 +331,12 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     };
   }
 
+  override render(ctx: GameCtx): void {
+    this.#observeRender?.(ctx);
+  }
+
   override exit(ctx: GameCtx): void {
+    this.#observeRender = undefined;
     this.#materialLighting?.dispose();
     this.#materialLighting = undefined;
     this.#post?.dispose();

@@ -1,6 +1,6 @@
 {
   "name": "@threenative/terrain",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "description": "Headless terrain authoring \u2014 noise, erosion, sculpting, roads, rivers, material splats and scatter \u2014 evaluated into ordinary typed arrays and indexed Three.js geometry.",
   "keywords": ["threenative", "terrain", "heightfield", "three", "threejs", "procedural", "webgpu"],

@@ -189,11 +189,13 @@ const BUG_REPORT_SKILL_PATHS = [
 // Three patch. Restoring the previous patch recovers every prior fingerprint.
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
+// Recomputed 2026-10-15 for the native engine default (PRD-573): every template AGENTS.md/CLAUDE.md pair gains
+// an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
+// Recomputed 2026-10-18 through all thirteen actual createProject trees after release-cohort preparation and Sailing motion repair.
+// Re-measured all 13 trees for the SMAA mip0 patch; restoring only copied patch bytes recovers every prior hash.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // PR489: all thirteen createProject trees change only by the four-line AA dispose closure;
-  // removing that closure from each generated tree recovers its previous fingerprint.
-  // PRD-564: measured all thirteen trees after retained-target sampling changes in
-  // worldEnvironment.ts and starter's grade/grain support declarations.
+  // Recomputed 2026-10-17 for the engine rename ("native" -> "threenative", "legacy" -> "threejs"):
+  // every template's AGENTS/CLAUDE engine section and the pinned configs. Measured by this test.
   // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
@@ -255,26 +257,32 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // createProject on the merged tree.
   // PRD-566/569/609 merge: measured all thirteen trees; action-rpg carries emitParticle bursts and onCull instructions.
   // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
-  // 2026-10-17 merged develop (PRD-619 interpolation) into PRD-564: all thirteen trees re-measured through
-  // createProject on the merged tree.
-  // Merged develop 1d056cec3 into PRD-564: AA disposal and the PR486 Three patch ship, so all thirteen
-  // trees are measured through createProject on this combined worktree, not either side's value.
-  // 2026-10-17 merged develop d27bad825 (PRD-564) into PRD-478: the only scaffold input that differs from
-  // develop is the three patch (settled-texture and alphaTestNode fixes), so all thirteen trees are re-measured.
-  "action-rpg": "befc4c1b95bd9482b1103330d018a49ca1441fbeaa3ada9433583d343380e7e4",
-  minimal: "d590825451c562e0992dd11c44b974476d85e76349832a428b516fa4dcad3816",
-  platformer: "4b0cc7157c555258ad1e6203893edadda98ab02b7b08a9282d87df2a6e98e2ca",
-  puzzle: "ef0508e20a99a579ade06215c4ee6889f977746da63c576f778a0a022cf32bab",
-  racing: "27f6ae53d4d492c81f82f34b1583e8647c87e7a974daae290cc642e86f667fbf",
-  rain: "96b4addf3df6fc80eed7261113708528b17de3a43e112ff55edd2db419233e89",
-  rts: "955be4f0f700cdbc2edc5df17150cb060b6ace9c40466d24c530c9d122121d47",
-  runner: "a151b9d8c8059696812ce44d66f64c83b3a43ee163490ba86066355d2cb76ce9",
-  // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "f27d5b0a54d15aab2d0d4247ec71890ddc2ed6b993d695118b20031ff22c9064",
-  shooter: "1166b62eace58ac770330027381dd4dfdcd037522ac2e1298cfda066258547c8",
-  snow: "a158d4b3818f90d58705c0be7ca3694a8558fc562ea8162d452960d484ddfd20",
-  starter: "0e70af8cc24ab3fc4dc8f1c5e87ff3bb6a9cd8e5fdea91d87ca2c470b75817ce",
-  "tower-defense": "d2a486795e4c86add8e40dae077983a8561301cfec8573d425101aedfd9c4eda",
+  // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
+  // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
+  // Recomputed 2026-10-15: puzzle drops its legacy pin and its Engine paragraph (PRD-617); the other twelve are unchanged.
+  // Recomputed 2026-10-15 through createProject after recovery: all kits now share the decoder-aware asset watch.
+  // Recomputed 2026-10-18: a queue-fenced renderer prepares PMREMNode textures asynchronously; only the patch bytes move.
+  // Recomputed 2026-10-18: the Three patch groups async PMREM face fences by GPU cost; only the patch bytes move, so all thirteen trees change.
+  // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
+  // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
+  // boot-failure text both engines now show, so only puzzle's tree moves.
+  "action-rpg": "fe5a4a777f4e221094d111166521f482eecbbe88473721fd0e11209aa90289ef",
+  minimal: "3605632fe648cd2e8f144cdcf86ced58a3b3dbb6698d1014f52b818905ad26f7",
+  platformer: "6a47f1b8e2f293dbc112177307faaa22e63a8ab68b0a3b7fbb6edffe02ba199a",
+  puzzle: "51f8cb08471b9eb42017c8e66a1dfe1d09ae91b885e5cf3f33aea6cf7431613e",
+  racing: "e72b20d0ace2c958a7713e558887fac9f928a7164effd2a261b8049ad047ebac",
+  rain: "74c1d142ae51b6ec1ff30bcd013c47aa740816dac4e52572e0f4031851a0bd16",
+  rts: "088fd5eb481190d8c21b8d36c8ec1ab24b4a4c8e55f4c17c24567312e2b8183c",
+  runner: "09a62f1c2c82a8a012ef1d6cd7e978680399089139430370c4cb20df9e68421f",
+  // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
+  sailing: "3b591f15aa6000de8720166be330427b81a4dd17af46d66653ee1821a2bd52fb",
+  shooter: "99985dd51b67ae0a40a4930a76ccc9d1031b40f07cfb83112a2ed93052aad66c",
+  snow: "ea34babbdd0b128070c4b75529245cabe7bb865d476d1aadf07749f2c5f20461",
+  // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
+  // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
+  // to stay under the 200-line render-file cap; only starter's tree moves.
+  starter: "b73e9c2e115b9347ee8ea3dfcb768c622558eba0c171e115d4122ea14bca0704",
+  "tower-defense": "93eef51fb1b6238eba3674a98cafce9117a52ceac40e13e6b4de75618c1b0800",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -373,6 +381,7 @@ const STARTER_PATHS = [
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
+  "src/render/qualityPolicy.ts",
   "src/render/worldEnvironment.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
@@ -1093,6 +1102,15 @@ describe("create-threenative", () => {
       const result = await createProject(
         { install: false, target: "minimal-bundle", template: "minimal" },
         root,
+      );
+      // This build checks core's bundle, not an engine: it names the legacy engine so it needs no Wasm module.
+      const configPath = path.join(result.target, "threenative.config.ts");
+      await writeFile(
+        configPath,
+        (await readFile(configPath, "utf8")).replace(
+          "const config: IThreeNativeConfig = {",
+          'const config: IThreeNativeConfig = {\n  engine: "threejs",',
+        ),
       );
       const scope = path.join(result.target, "node_modules", "@threenative");
       await mkdir(scope, { recursive: true });

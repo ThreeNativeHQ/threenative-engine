@@ -1,0 +1,303 @@
+{
+  "name": "math-edges-singular-invert",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/{Matrix3,Matrix4}.tests.js \u2014 the singular branches: invert() answers the zero matrix, extractRotation and decompose answer the identity",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "m01",
+      "class": "Matrix3",
+      "args": [1, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "m01",
+      "method": "determinant",
+      "args": [],
+      "result": "r02"
+    },
+    {
+      "op": "new",
+      "id": "m03",
+      "class": "Matrix3",
+      "args": [1, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "m03",
+      "method": "invert",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m04",
+      "class": "Matrix3",
+      "args": [1, 2, 3, 4, 1, 2, 3, 4, 5]
+    },
+    {
+      "op": "call",
+      "id": "m04",
+      "method": "determinant",
+      "args": [],
+      "result": "r05"
+    },
+    {
+      "op": "new",
+      "id": "m06",
+      "class": "Matrix3",
+      "args": [1, 2, 3, 4, 1, 2, 3, 4, 5]
+    },
+    {
+      "op": "call",
+      "id": "m06",
+      "method": "invert",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m07",
+      "class": "Matrix3",
+      "args": [1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200]
+    },
+    {
+      "op": "call",
+      "id": "m07",
+      "method": "determinant",
+      "args": [],
+      "result": "r08"
+    },
+    {
+      "op": "new",
+      "id": "m09",
+      "class": "Matrix3",
+      "args": [1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200]
+    },
+    {
+      "op": "call",
+      "id": "m09",
+      "method": "invert",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m10",
+      "class": "Matrix4",
+      "args": [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "m10",
+      "method": "determinant",
+      "args": [],
+      "result": "r11"
+    },
+    {
+      "op": "new",
+      "id": "m12",
+      "class": "Matrix4",
+      "args": [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "m12",
+      "method": "invert",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m13",
+      "class": "Matrix4",
+      "args": [1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8]
+    },
+    {
+      "op": "call",
+      "id": "m13",
+      "method": "determinant",
+      "args": [],
+      "result": "r14"
+    },
+    {
+      "op": "new",
+      "id": "m15",
+      "class": "Matrix4",
+      "args": [1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8]
+    },
+    {
+      "op": "call",
+      "id": "m15",
+      "method": "invert",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m16",
+      "class": "Matrix4",
+      "args": [
+        1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200,
+        1e-200, 1e-200, 1e-200, 1e-200, 1e-200
+      ]
+    },
+    {
+      "op": "call",
+      "id": "m16",
+      "method": "determinant",
+      "args": [],
+      "result": "r17"
+    },
+    {
+      "op": "new",
+      "id": "m18",
+      "class": "Matrix4",
+      "args": [
+        1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200, 1e-200,
+        1e-200, 1e-200, 1e-200, 1e-200, 1e-200
+      ]
+    },
+    {
+      "op": "call",
+      "id": "m18",
+      "method": "invert",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "s19",
+      "class": "Matrix4",
+      "args": [1, 2, 3, 4, 0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "m20",
+      "class": "Matrix4",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53]
+    },
+    {
+      "op": "call",
+      "id": "m20",
+      "method": "extractRotation",
+      "args": [
+        {
+          "ref": "s19"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m21",
+      "class": "Matrix4",
+      "args": [1, 2, 3, 4, 0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "p22",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "r23",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "s24",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m21",
+      "method": "decompose",
+      "args": [
+        {
+          "ref": "p22"
+        },
+        {
+          "ref": "r23"
+        },
+        {
+          "ref": "s24"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "r02",
+      "kind": "number"
+    },
+    {
+      "id": "m03",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r05",
+      "kind": "number"
+    },
+    {
+      "id": "m06",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r08",
+      "kind": "number"
+    },
+    {
+      "id": "m09",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r11",
+      "kind": "number"
+    },
+    {
+      "id": "m12",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r14",
+      "kind": "number"
+    },
+    {
+      "id": "m15",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r17",
+      "kind": "number"
+    },
+    {
+      "id": "m18",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m20",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "p22",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r23",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "s24",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

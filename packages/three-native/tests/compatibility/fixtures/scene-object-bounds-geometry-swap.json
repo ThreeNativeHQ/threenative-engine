@@ -1,0 +1,102 @@
+{
+  "name": "scene-object-bounds-geometry-swap",
+  "adaptedFrom": "original — Mesh.geometry is a plain property in three: Midway swaps a mesh's geometry after building it; Box3.setFromObject then measures the new geometry",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "small",
+      "class": "BoxGeometry",
+      "args": [1, 1, 1]
+    },
+    {
+      "op": "new",
+      "id": "large",
+      "class": "BoxGeometry",
+      "args": [2, 4, 6]
+    },
+    {
+      "op": "new",
+      "id": "material",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "mesh",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "small"
+        },
+        {
+          "ref": "material"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "geometry",
+      "value": {
+        "ref": "large"
+      }
+    },
+    {
+      "op": "call",
+      "id": "mesh",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "bounds",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "bounds",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "bounds",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "bounds",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "bounds",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "bounds",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "bounds",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "bounds",
+      "kind": "number",
+      "path": "max.z"
+    }
+  ]
+}

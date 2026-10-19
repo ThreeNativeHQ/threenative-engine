@@ -43,6 +43,7 @@ import {
   describeNativeCssFindings,
   findNativeCssViolations,
 } from "./native-css-compat.js";
+import { webRuntimeDecoders } from "./web-engine.js";
 
 export type BuildTarget = "android" | "desktop" | "ios" | "web";
 type NativeBuildTarget = Exclude<BuildTarget, "web">;
@@ -1102,7 +1103,14 @@ export async function buildWeb(
 ): Promise<void> {
   const config = await loadConfig(cwd, { target: "web", profile });
   announceProfile(config);
-  await compileAssets({ config: config.assets, cwd, platform: "web" });
+  // The Wasm engine's glTF loader takes neither Meshopt nor KTX2, so its web cook is decoder-free.
+  await compileAssets({
+    config: config.assets,
+    cwd,
+    platform: "web",
+    runtimeDecoders: webRuntimeDecoders(config),
+    ...(config.engine !== "threejs" && { runtimeIdentity: "web:native-engine" }),
+  });
   const assets = assetRoot(cwd, config);
   // Vite empties and rewrites its outDir in place, so a build that dies half-way through leaves a
   // truncated `dist` where a working one used to be — the same failure a native artifact had, and
@@ -1116,14 +1124,32 @@ export async function buildWeb(
   try {
     await mkdir(path.dirname(staging), { recursive: true });
     await mkdir(path.dirname(driver), { recursive: true });
-    await writeFile(driver, webBuildDriver(cwd, assets));
+    const native = config.engine === "threenative";
+    const configIndex = viteArgs.findIndex(
+      (arg) => arg === "--config" || arg.startsWith("--config="),
+    );
+    const configArg = configIndex === -1 ? undefined : viteArgs[configIndex];
+    const configFile = configArg?.includes("=")
+      ? configArg.slice(configArg.indexOf("=") + 1)
+      : viteArgs[configIndex + 1];
+    const forwardedArgs =
+      native && configIndex !== -1
+        ? viteArgs.filter(
+            (_, index) =>
+              index !== configIndex && (configArg !== "--config" || index !== configIndex + 1),
+          )
+        : viteArgs;
+    await writeFile(
+      driver,
+      webBuildDriver(cwd, assets, native, configIndex === -1 ? undefined : configFile),
+    );
     await run(
       process.execPath,
       [
         path.join(packageRoot(cwd, "vite"), "bin/vite.js"),
         "build",
-        ...stagedViteArgs(viteArgs, staging),
-        ...ownConfigArgs(viteArgs, driver, assets === path.resolve(cwd, "public")),
+        ...stagedViteArgs(forwardedArgs, staging),
+        ...ownConfigArgs(forwardedArgs, driver, !native && assets === path.resolve(cwd, "public")),
       ],
       cwd,
     );
@@ -1164,17 +1190,29 @@ export async function buildWeb(
  *
  * A `publicDir` the project set itself is left alone, detected by the same signal the choice has
  * in every Vite version: the key is present in its own config (`false` is a choice too). A caller
- * who passed `--config` gets exactly the config they named, for the same reason.
+ * who passed `--config` keeps that config; the native engine switch still applies.
  */
-function webBuildDriver(cwd: string, assets: string): string {
+function webBuildDriver(cwd: string, assets: string, native = false, configFile?: string): string {
   const literal = (value: string): string => JSON.stringify(value);
   return `${[
     'import { defineConfig, loadConfigFromFile, mergeConfig } from "vite";',
+    ...(native
+      ? [
+          `import { createWebBrandPlugin } from ${literal(path.join(packageRoot(cwd, "create-threenative"), "dist/index.js"))};`,
+        ]
+      : []),
     "",
     `const root = ${literal(cwd)};`,
     `const assets = ${literal(assets)};`,
     "export default defineConfig(async ({ command, mode }) => {",
-    "  const own = (await loadConfigFromFile({ command, mode }, undefined, root))?.config ?? {};",
+    `  const own = (await loadConfigFromFile({ command, mode }, ${configFile === undefined ? "undefined" : literal(path.resolve(cwd, configFile))}, root))?.config ?? {};`,
+    ...(native
+      ? [
+          '  if (!(own.plugins ?? []).flat(Infinity).some((plugin) => plugin?.name === "threenative-web-brand"))',
+          "    own.plugins = [...(own.plugins ?? []), createWebBrandPlugin()];",
+          '  own.build = { target: "es2022", ...own.build };',
+        ]
+      : []),
     "  return mergeConfig(own, own.publicDir === undefined ? { publicDir: assets } : {});",
     "});",
     "",
@@ -1537,6 +1575,62 @@ async function assertArtifactBudget(
   }
 }
 
+/** Where a desktop `engine: "threenative"` build finds the engine player, absent an explicit path. */
+export function engineDesktopPlayer(
+  runtimeRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd(),
+): string {
+  const explicit = env.THREENATIVE_ENGINE_PLAYER;
+  if (explicit !== undefined) return path.resolve(cwd, explicit);
+  const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
+  const checkout = path.join(runtimeRoot, "build", "tn-engine-ui", filename);
+  return existsSync(checkout)
+    ? checkout
+    : path.join(runtimeRoot, "prebuilt", `${process.platform}-${process.arch}`, filename);
+}
+
+/** The desktop package of a game with `engine: "threenative"`: the engine player, the game on its own three, cooked assets and UI. */
+async function buildEngineDesktop(
+  cwd: string,
+  config: IResolvedThreeNativeConfig,
+  entry: string,
+): Promise<void> {
+  if (config.ui.renderer === "native-css") {
+    throw new Error(
+      'TN_ENGINE_NATIVE_UI_UNSUPPORTED: engine "threenative" on desktop draws a "web" UI through the engine player\'s overlay; set ui.renderer to "web" or "native", or set engine: "threejs" to keep the native-css host.',
+    );
+  }
+  const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
+  const packager = path.join(runtimeRoot, "scripts", "package-engine-desktop.mjs");
+  const bundler = path.join(runtimeRoot, "scripts", "bundle-native-engine.mjs");
+  if (!existsSync(packager) || !existsSync(bundler)) {
+    throw new Error(
+      `TN_ENGINE_BUNDLER_MISSING: engine "threenative" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
+    );
+  }
+  const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
+  const output = path.join(cwd, "dist-native", await projectName(cwd));
+  await packageStaged(output, cwd, [
+    packager,
+    "--project",
+    cwd,
+    "--entry",
+    entry,
+    "--player",
+    engineDesktopPlayer(runtimeRoot, process.env, cwd),
+    ...(ui === undefined ? [] : ["--ui", ui]),
+    "--width",
+    String(config.window.width),
+    "--height",
+    String(config.window.height),
+    "--title",
+    config.window.title,
+    "--output",
+    output,
+  ]);
+}
+
 async function buildNative(
   target: NativeBuildTarget,
   cwd: string,
@@ -1549,6 +1643,12 @@ async function buildNative(
   announceProfile(config);
   assertNativeUiRendererCompatible(target, config.ui.renderer);
   const entry = await nativeEntry(cwd, config);
+  // `engine: "threenative"` opts a desktop game into the C++ engine player, as it opts a web build into the Wasm
+  // engine: its own bundler, decoder-free cook and packager, never the legacy host's prebuilt.
+  if (target === "desktop" && config.engine === "threenative") {
+    await buildEngineDesktop(cwd, config, entry);
+    return;
+  }
   // Resolve the same desktop binary the packager will receive, before cooking. A default
   // prebuilt used to be selected only after the cook had guessed from the build machine.
   let selectedRuntime: string | undefined;

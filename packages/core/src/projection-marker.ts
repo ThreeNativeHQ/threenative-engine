@@ -27,6 +27,8 @@ export interface IProjectionWindowJson {
   readonly drawsPlanned: number;
   readonly exact: Partial<Record<ProjectionExactReason, number>>;
   readonly exactObjects: number;
+  /** Who batched the frame: the host renderer, or core's JS mirror. */
+  readonly path?: IRenderProjectionReport["path"];
   readonly projecting: boolean;
   readonly reason?: string;
   readonly reasonCode: string;
@@ -128,6 +130,7 @@ export function formatProjectionWindow(
     ...(matrixWorld === undefined
       ? {}
       : { matrixWorld: { mode: matrixWorld.mode, visited: matrixWorld.visited } }),
+    path: report.path,
     projecting: report.projecting,
     ...(report.reason === undefined ? {} : { reason: report.reason }),
     reasonCode: report.reasonCode,

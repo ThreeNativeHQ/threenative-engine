@@ -876,6 +876,11 @@ js::JSValueHandle handleGpuDeviceCreateSampler(BindingsState* state, BindingDest
                             }
                             auto jsSampler = createNativeWrapper(state, "GPUSampler", sampler);
                             state->engine->setProperty(jsSampler, "_type", state->engine->newString("sampler"));
+                            auto ownedResources = state->registries.ownedResources;
+                            const uint64_t samplerId = ownedResources->trackSampler(sampler);
+                            state->engine->registerRelease(jsSampler, [ownedResources, samplerId]() {
+                                ownedResources->releaseSampler(samplerId);
+                            });
                             if (state->verboseLogging) std::cout << "[WebGPU] Created sampler" << std::endl;
                             return jsSampler;
 }

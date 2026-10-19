@@ -1,0 +1,27 @@
+{
+  "name": "traa-history",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "PRD-526/523: real TRAANode, 20 moving frames, complementary dense pattern on a camera cut, capture fourth cut frame (history accumulation and reset)",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:fac199bc50274092b2cfcbc97a47f85753a915a7daaa1da42beb0ad8fc07a237",
+      "decimal": "fac199bc50274092b2cfcbc97a47f85753a915a7daaa1da42beb0ad8fc07a237"
+    }
+  ],
+  "render": {
+    "png": "traa-history.png",
+    "pngSha256": "fac199bc50274092b2cfcbc97a47f85753a915a7daaa1da42beb0ad8fc07a237",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

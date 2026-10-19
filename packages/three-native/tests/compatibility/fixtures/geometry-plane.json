@@ -1,0 +1,83 @@
+{
+  "name": "geometry-plane",
+  "adaptedFrom": "three@0.185.1 src/geometries/PlaneGeometry.js — the default grid and a non-unit segmented grid",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "default",
+      "class": "PlaneGeometry",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "segmented",
+      "class": "PlaneGeometry",
+      "args": [2.5, 3.5, 2, 3]
+    }
+  ],
+  "observe": [
+    {
+      "id": "default",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "default",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "default",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "default",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "default",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "default",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "segmented",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "segmented",
+      "path": "parameters",
+      "kind": "json"
+    }
+  ]
+}

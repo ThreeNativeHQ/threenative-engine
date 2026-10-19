@@ -1,0 +1,246 @@
+{
+  "name": "scene-transforms-manual",
+  "adaptedFrom": "three@0.185.1 test/unit/src/core/Object3D.tests.js \u2014 matrixAutoUpdate and matrixWorldAutoUpdate off, and a matrix written by hand",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "manual",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "manual",
+      "path": "position.x",
+      "value": 100
+    },
+    {
+      "op": "set",
+      "id": "manual",
+      "path": "matrixAutoUpdate",
+      "value": false
+    },
+    {
+      "op": "new",
+      "id": "written",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "written",
+      "method": "set",
+      "args": [2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 4, 0, 5, -6, 7, 1]
+    },
+    {
+      "op": "call",
+      "id": "manual",
+      "method": "applyMatrix4",
+      "args": [
+        {
+          "ref": "written"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "manual",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "frozen",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "frozen",
+      "path": "position.x",
+      "value": 9
+    },
+    {
+      "op": "set",
+      "id": "frozen",
+      "path": "matrixWorldAutoUpdate",
+      "value": false
+    },
+    {
+      "op": "call",
+      "id": "frozen",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "underFrozen",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "underFrozen",
+      "path": "position.y",
+      "value": 1
+    },
+    {
+      "op": "call",
+      "id": "frozen",
+      "method": "add",
+      "args": [
+        {
+          "ref": "underFrozen"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "frozen",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "unparented",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "unparented",
+      "path": "scale.z",
+      "value": 0.25
+    },
+    {
+      "op": "call",
+      "id": "unparented",
+      "method": "updateMatrix",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "spin",
+      "class": "Euler",
+      "args": [0.2, -0.4, 1.1, "YXZ"]
+    },
+    {
+      "op": "call",
+      "id": "unparented",
+      "method": "setRotationFromEuler",
+      "args": [
+        {
+          "ref": "spin"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "unparented",
+      "method": "setRotationFromMatrix",
+      "args": [
+        {
+          "ref": "written"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "unparented",
+      "method": "updateWorldMatrix",
+      "args": [true, true, true]
+    },
+    {
+      "op": "new",
+      "id": "copied",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "copied",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "manual"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "copied",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "manual",
+      "path": "matrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "manual",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "manual",
+      "path": "position.x",
+      "kind": "number"
+    },
+    {
+      "id": "manual",
+      "path": "scale.y",
+      "kind": "number"
+    },
+    {
+      "id": "manual",
+      "path": "matrixWorldNeedsUpdate",
+      "kind": "boolean"
+    },
+    {
+      "id": "frozen",
+      "path": "matrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "frozen",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "underFrozen",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "unparented",
+      "path": "matrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "unparented",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "unparented",
+      "path": "quaternion.z",
+      "kind": "number"
+    },
+    {
+      "id": "copied",
+      "path": "matrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "copied",
+      "path": "position.z",
+      "kind": "number"
+    }
+  ]
+}

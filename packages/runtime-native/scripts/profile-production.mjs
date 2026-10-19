@@ -1085,6 +1085,23 @@ export async function installNativeProfileEntry(project, target, options) {
   await writeFile(profileMarkerPath, profileMarker);
   await writeFile(entryPath, source);
   await setNativeProfileEntry(project, 'src/profile-native-entry.ts', options.renderSize);
+  if (target === 'desktop') await pinThreejsDesktopHost(project);
+}
+
+/**
+ * A desktop profile launches the Three.js host's packaged executable (`mystral`), but a config that
+ * sets no `engine` now builds a directory around the V8 engine player. Name the override in the
+ * staged copy, once, and leave an `engine` the game declares as authored.
+ */
+export async function pinThreejsDesktopHost(project) {
+  const configPath = join(project, 'threenative.config.ts');
+  const config = await readFile(configPath, 'utf8').catch(() => undefined);
+  if (config === undefined || /^\s*["']?engine["']?\s*:/mu.test(config)) return;
+  const opening = /(?:=|export default)\s*\{/u;
+  if (!opening.test(config)) {
+    throw new ProductionEvidenceError('TN_PROD_ENGINE_PIN_FAILED', `${configPath} has no config object to pin engine: "threejs" into.`);
+  }
+  await writeFile(configPath, config.replace(opening, '$&\n  engine: "threejs",'));
 }
 
 export async function setNativeProfileEntry(project, entry, renderSize = undefined) {

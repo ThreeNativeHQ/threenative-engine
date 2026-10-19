@@ -19,4 +19,4 @@ foreach(SCRIPT_NAME IN LISTS SCRIPT_NAMES)
     )
 endforeach()
 
-file(APPEND "${OUTPUT}" "\ninline ScriptView find(std::string_view name) {\n${SCRIPT_CASES}    return {};\n}\n\n}  // namespace mystral::runtime_scripts\n")
+file(APPEND "${OUTPUT}" "\nstatic inline ScriptView find(std::string_view name) {\n${SCRIPT_CASES}    return {};\n}\n\n}  // namespace mystral::runtime_scripts\n")

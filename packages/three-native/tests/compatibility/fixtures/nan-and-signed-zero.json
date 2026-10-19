@@ -1,0 +1,36 @@
+{
+  "name": "nan-and-signed-zero",
+  "adaptedFrom": "original — the values JSON cannot hold, so goldens record binary64 bits",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "base", "class": "Vector3", "args": [-0, 0, { "num": "NaN" }] },
+    { "op": "new", "id": "sum", "class": "Vector3", "args": [1, 1, 1] },
+    { "op": "call", "id": "sum", "method": "add", "args": [{ "ref": "base" }] },
+    { "op": "new", "id": "assigned", "class": "Vector3", "args": [1, 2, 3] },
+    { "op": "set", "id": "assigned", "path": "x", "value": { "num": "-0" } },
+    { "op": "new", "id": "negated", "class": "Vector3", "args": [0, 0, 0] },
+    { "op": "call", "id": "negated", "method": "negate", "args": [] },
+    { "op": "new", "id": "infinite", "class": "Vector3", "args": [0, 0, 0] },
+    { "op": "call", "id": "infinite", "method": "multiplyScalar", "args": [{ "num": "Infinity" }] },
+    { "op": "new", "id": "overflow", "class": "Vector3", "args": [1e308, 1e308, 0] },
+    { "op": "call", "id": "overflow", "method": "addScalar", "args": [{ "num": "Infinity" }] },
+    { "op": "new", "id": "indeterminate", "class": "Vector3", "args": [0, 0, 0] },
+    { "op": "call", "id": "indeterminate", "method": "divideScalar", "args": [0] },
+    { "op": "new", "id": "readback", "class": "Vector3", "args": [] },
+    { "op": "call", "id": "readback", "method": "toArray", "args": [], "result": "readbackArray" }
+  ],
+  "observe": [
+    { "id": "base", "path": "x", "kind": "number" },
+    { "id": "base", "method": "toArray", "kind": "numbers" },
+    { "id": "base", "method": "length", "kind": "number" },
+    { "id": "sum", "method": "toArray", "kind": "numbers" },
+    { "id": "sum", "method": "length", "kind": "number" },
+    { "id": "assigned", "path": "x", "kind": "number" },
+    { "id": "negated", "path": "x", "kind": "number" },
+    { "id": "negated", "method": "toArray", "kind": "numbers" },
+    { "id": "infinite", "method": "toArray", "kind": "numbers" },
+    { "id": "overflow", "path": "x", "kind": "number" },
+    { "id": "indeterminate", "method": "length", "kind": "number" },
+    { "id": "readbackArray", "kind": "numbers" }
+  ]
+}

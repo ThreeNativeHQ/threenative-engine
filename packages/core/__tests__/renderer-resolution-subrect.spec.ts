@@ -218,6 +218,44 @@ it("owns subrect installations while keeping the full drawing buffer", async () 
   }
 });
 
+it("falls back to surface resolution scaling when the backend owns only the frame surface", async () => {
+  const canvas = Object.assign(new EventTarget(), {
+    clientWidth: 320,
+    clientHeight: 180,
+    parentElement: null,
+  }) as unknown as HTMLCanvasElement;
+  const resize = vi.fn();
+  const renderer = await createRenderer({
+    canvas,
+    source: {
+      createCanvas: () => canvas,
+      hasWebGPU: () => true,
+      readSize: () => [canvas.clientWidth, canvas.clientHeight],
+      observeResize: () => () => undefined,
+    },
+    webgpuFactory: () => ({
+      domElement: canvas,
+      init: async () => undefined,
+      render: () => undefined,
+      setSize: resize,
+      supportsRetainedTargetSubrect: false,
+    }),
+  });
+  try {
+    expect(renderer.createResolutionSubrect).toBeUndefined();
+    renderer.setResolutionScale(0.5, "auto");
+    expect(resize).toHaveBeenLastCalledWith(160, 90, false);
+    expect(renderer.surface()).toMatchObject({
+      drawingBufferWidth: 160,
+      drawingBufferHeight: 90,
+      resolutionScale: 0.5,
+      resolutionSubrect: false,
+    });
+  } finally {
+    renderer.dispose();
+  }
+});
+
 it("updates scene viewport/scissor without allocations and reallocates once on renderer canvas growth", async () => {
   const canvas = Object.assign(new EventTarget(), {
     clientWidth: 1280,

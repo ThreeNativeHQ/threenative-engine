@@ -1,0 +1,35 @@
+{
+  "name": "gltf-model-specular",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — two UV spheres from one GLB: KHR_materials_ior (1000, Midway's value) and KHR_materials_specular with one RGBA PNG as both specularTexture (alpha) and specularColorTexture (sRGB rgb), beside a plain MeshStandardMaterial sphere, under a directional and a hemisphere light",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "physical",
+      "kind": "string",
+      "path": "name",
+      "value": "s:specular",
+      "decimal": "specular"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:de36061119db4171474047ac9a89bdadcffade6fc9a80c02672eeed31ac103b1",
+      "decimal": "de36061119db4171474047ac9a89bdadcffade6fc9a80c02672eeed31ac103b1"
+    }
+  ],
+  "render": {
+    "png": "gltf-model-specular.png",
+    "pngSha256": "de36061119db4171474047ac9a89bdadcffade6fc9a80c02672eeed31ac103b1",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

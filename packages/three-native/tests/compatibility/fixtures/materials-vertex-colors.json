@@ -1,0 +1,430 @@
+{
+  "name": "materials-vertex-colors",
+  "adaptedFrom": "original \u2014 vertexColors: an rgb color attribute on a MeshBasicMaterial plane and on a lit MeshStandardMaterial box, an rgba one on a transparent plane (alpha multiplies opacity), and a control plane whose material leaves vertexColors off",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 128,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 2.5, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 5
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "light",
+      "class": "DirectionalLight",
+      "args": [16777215, 3]
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.x",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.y",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.z",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "light"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [11189137, 2236962, 0.6]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "basicGeo",
+      "class": "PlaneGeometry",
+      "args": [1.4, 1.4]
+    },
+    {
+      "op": "new",
+      "id": "basicCol",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [1, 0.1, 0.1, 0.1, 1, 0.1, 0.1, 0.1, 1, 1, 1, 1],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "basicGeo",
+      "method": "setAttribute",
+      "args": [
+        "color",
+        {
+          "ref": "basicCol"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "basicMat",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "basicMat",
+      "path": "vertexColors",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "basic",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "basicGeo"
+        },
+        {
+          "ref": "basicMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "basic",
+      "path": "position.x",
+      "value": -3
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "basic"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "litGeo",
+      "class": "BoxGeometry",
+      "args": [1.2, 1.2, 1.2]
+    },
+    {
+      "op": "new",
+      "id": "litCol",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [
+            1, 0.5, 0.2, 0.2, 0.6, 1, 0.3, 1, 0.4, 1, 1, 0.3, 1, 0.5, 0.2, 0.2, 0.6, 1, 0.3, 1, 0.4,
+            1, 1, 0.3, 1, 0.5, 0.2, 0.2, 0.6, 1, 0.3, 1, 0.4, 1, 1, 0.3, 1, 0.5, 0.2, 0.2, 0.6, 1,
+            0.3, 1, 0.4, 1, 1, 0.3, 1, 0.5, 0.2, 0.2, 0.6, 1, 0.3, 1, 0.4, 1, 1, 0.3, 1, 0.5, 0.2,
+            0.2, 0.6, 1, 0.3, 1, 0.4, 1, 1, 0.3
+          ],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "litGeo",
+      "method": "setAttribute",
+      "args": [
+        "color",
+        {
+          "ref": "litCol"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "litMat",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "litMat",
+      "path": "vertexColors",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "lit",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "litGeo"
+        },
+        {
+          "ref": "litMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "lit",
+      "path": "position.x",
+      "value": -1
+    },
+    {
+      "op": "set",
+      "id": "lit",
+      "path": "rotation.x",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "lit",
+      "path": "rotation.y",
+      "value": 0.7
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "lit"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "alphaGeo",
+      "class": "PlaneGeometry",
+      "args": [1.4, 1.4]
+    },
+    {
+      "op": "new",
+      "id": "alphaCol",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [1, 0.8, 0.2, 1, 0.2, 0.8, 1, 0.6, 1, 0.2, 0.8, 0.3, 0.9, 0.9, 0.9, 0.1],
+          "type": "Float32Array"
+        },
+        4
+      ]
+    },
+    {
+      "op": "call",
+      "id": "alphaGeo",
+      "method": "setAttribute",
+      "args": [
+        "color",
+        {
+          "ref": "alphaCol"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "alphaMat",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "alphaMat",
+      "path": "vertexColors",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "alphaMat",
+      "path": "transparent",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "alpha",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "alphaGeo"
+        },
+        {
+          "ref": "alphaMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "alpha",
+      "path": "position.x",
+      "value": 1
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "alpha"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "ignoredGeo",
+      "class": "PlaneGeometry",
+      "args": [1.4, 1.4]
+    },
+    {
+      "op": "new",
+      "id": "ignoredCol",
+      "class": "BufferAttribute",
+      "args": [
+        {
+          "array": [1, 0.1, 0.1, 0.1, 1, 0.1, 0.1, 0.1, 1, 1, 1, 1],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "ignoredGeo",
+      "method": "setAttribute",
+      "args": [
+        "color",
+        {
+          "ref": "ignoredCol"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "ignoredMat",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "ignored",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "ignoredGeo"
+        },
+        {
+          "ref": "ignoredMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "ignored",
+      "path": "position.x",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "ignored"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "basicMat",
+      "path": "vertexColors",
+      "kind": "boolean"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}
