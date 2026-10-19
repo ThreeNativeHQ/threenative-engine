@@ -233,7 +233,7 @@ describe("integration work applies to the changed source", () => {
       "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
       "cancel-in-progress: false",
     ],
-    ["shared paths job", "timeout-minutes: 5", "timeout-minutes: 6"],
+    ["shared paths job", "timeout-minutes: 10", "timeout-minutes: 11"],
     ["entry cross-lane dependency", "needs: paths", "needs: [paths,csg]"],
     ["entry self-cycle", "needs: paths", "needs: [paths,tone]"],
     ["unknown dependency", "needs: [decals]", "needs: [missing-job]"],
