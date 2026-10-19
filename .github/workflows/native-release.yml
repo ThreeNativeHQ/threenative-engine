@@ -491,7 +491,9 @@ jobs:
           set "CXX=cl"
           set "VCPKG_ROOT=%VCPKG_INSTALLATION_ROOT%"
           where cl
-          pnpm --filter @threenative/runtime-native native:build
+          rem `pnpm` is a batch file: without `call`, cmd hands the script to it and never returns, so
+          rem the engine player below was never configured or built (release run 39247695392).
+          call pnpm --filter @threenative/runtime-native native:build || exit /b 1
           cd packages/runtime-native
           cmake --preset ${{ matrix.preset }} -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=${{ matrix.player_ui }}
           cmake --build build/tn-engine-ui --config Release --target tn-native-engine-player-v8

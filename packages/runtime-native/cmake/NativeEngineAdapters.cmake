@@ -47,6 +47,13 @@ function(tn_adapter_v8_executable target)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
     if(NOT APPLE AND NOT WIN32)
         target_link_options(${target} PRIVATE "LINKER:--allow-multiple-definition")
+    elseif(APPLE)
+        # ld64 has no --allow-multiple-definition: V8 and Dawn both carry Abseil, and native physics
+        # and SWC both carry the Rust runtime (release run 39247695392). Same recipe as
+        # mystral-runtime: load V8 whole first and dead-strip the unused duplicates.
+        get_target_property(_tn_v8_location v8::v8 IMPORTED_LOCATION)
+        target_link_libraries(${target} PRIVATE "-Wl,-force_load,${_tn_v8_location}")
+        target_link_options(${target} PRIVATE "-Wl,-dead_strip")
     endif()
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_V8_TARGETS ${target})
 endfunction()
