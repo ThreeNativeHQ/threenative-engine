@@ -1110,6 +1110,14 @@ describe("the PRD-446 upgrade proof", () => {
         args.some((argument) => argument.endsWith(".tgz"))
       ) {
         seen.installs.push([command, ...args]);
+        // A cohort package reached only through another one resolves from these overrides, not
+        // from the command line, so a missing one is a registry fetch of an unpublished version.
+        const { pnpm } = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf8")) as {
+          pnpm?: { overrides?: Record<string, string> };
+        };
+        for (const [name, tarball] of Object.entries(candidate.tarballs))
+          if (pnpm?.overrides?.[name] !== `file:${tarball}`)
+            throw new Error(`${name} is not overridden to its packed tarball`);
         installCandidate(cwd, options.version ?? CORE_VERSION);
         writePnpmLockfile(
           cwd,

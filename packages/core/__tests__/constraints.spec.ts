@@ -170,6 +170,9 @@ describe("core constraints", () => {
           // The render-trap audit reads game-authored opacity and environment dimensions to
           // report ignored inputs. It constructs and changes no appearance; checked below.
           file !== "profiling/render-trap-audit.ts" &&
+          // The opacity convention makes the game's own opacity take effect: it turns `transparent`
+          // on where opacity < 1 would otherwise be ignored, and sets no value of its own; checked below.
+          file !== "profiling/opacity-convention.ts" &&
           file !== "index.ts",
       )
       .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
@@ -194,6 +197,19 @@ describe("core constraints", () => {
       /\b(material|scene|drawable|environment)\.\w+\s*(=(?!=)|\+=|-=|\*=|\/=|\+\+|--)/u,
     );
     expect(renderTrapAudit).not.toMatch(/\.(set|copy|setValues)\s*\(/u);
+
+    // The convention's only writes are `transparent = true` and the recompile flag that applies it.
+    const opacityConvention = withoutComments(
+      readFileSync(path.join(sourceDirectory, "profiling/opacity-convention.ts"), "utf8"),
+    );
+    expect(opacityConvention).not.toMatch(
+      /new\s+\w*(Material|Light|Texture|Geometry)|new\s+(Color|Scene)|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(
+      opacityConvention
+        .replace(/material\.transparent = true;/gu, "")
+        .replace(/\.needsUpdate = true;/gu, ""),
+    ).not.toMatch(/\.\w+\s*(=(?!=)|\+=|-=|\*=|\/=|\+\+|--)|\.(set|copy|setValues)\s*\(/u);
 
     // The same terms as `warmup.ts` for the same reason: `mergeByMaterial` reads a material's
     // identity to decide which meshes share a draw call, and the material itself is the game's —

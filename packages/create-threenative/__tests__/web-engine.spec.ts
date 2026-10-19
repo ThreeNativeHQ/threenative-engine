@@ -372,7 +372,7 @@ describe("the web engine's asset decoders", () => {
   it("cooks without KTX2 or Meshopt unless the game pins the legacy engine", () => {
     expect(webRuntimeDecoders({})).toEqual({ ktx2: false, meshopt: false });
     expect(webRuntimeDecoders({ engine: "threenative" })).toEqual({ ktx2: false, meshopt: false });
-    expect(webRuntimeDecoders({ engine: "threejs" })).toBeUndefined();
+    expect(webRuntimeDecoders({ engine: "threejs" })).toEqual({ ktx2: true, meshopt: true });
   });
 
   it("is what every template's dev-server asset watch cooks with, as its build does", async () => {

@@ -5,13 +5,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 /**
  * The asset decoders the web engine ships: its glTF loader decodes neither KTX2 nor Meshopt (addons/gltf-loader-web.ts), so a
- * native-engine game's models are cooked without it. `undefined` (the cooker's default) for `engine: "threejs"`.
+ * native-engine game's models are cooked without it, which is also the cooker's default. `engine: "threejs"` names both.
  * `threenative build` and each template's dev-server asset watch both read it, so the two cook the same bytes.
  */
 export function webRuntimeDecoders(config: {
   readonly engine?: "threejs" | "threenative";
-}): { readonly ktx2: boolean; readonly meshopt: boolean } | undefined {
-  return config.engine === "threejs" ? undefined : { ktx2: false, meshopt: false };
+}): { readonly ktx2: boolean; readonly meshopt: boolean } {
+  return config.engine === "threejs"
+    ? { ktx2: true, meshopt: true }
+    : { ktx2: false, meshopt: false };
 }
 
 /** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "threenative"`. */

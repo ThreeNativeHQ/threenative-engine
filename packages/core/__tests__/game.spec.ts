@@ -70,12 +70,16 @@ class EmptyScene extends Scene {
 describe("IGame", () => {
   it("reports render traps once per scene entry, including re-entry", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const faded: MeshBasicMaterial[] = [];
     class Traps extends Scene {
       override enter(ctx: ICtx): void {
         const texture = new DataTexture(new Uint8Array(8 * 65 * 4), 8, 65);
         texture.mapping = EquirectangularReflectionMapping;
         ctx.scene.environment = texture;
-        ctx.scene.add(new Mesh(undefined, new MeshBasicMaterial({ opacity: 0.5 })));
+        const material = new MeshBasicMaterial({ opacity: 0.5 });
+        faded.push(material);
+        ctx.scene.add(new Mesh(undefined, material));
       }
     }
     const game = defineGame({
@@ -84,19 +88,51 @@ describe("IGame", () => {
       scenes: { traps: Traps },
       start: "traps",
     });
-    const markers = (): string[] =>
-      error.mock.calls
-        .map(([line]) => String(line))
-        .filter((line) => /TN_ENVIRONMENT_TOO_SMALL|TN_OPACITY_IGNORED/u.test(line));
+    const markers = (spy: typeof error, pattern: RegExp): string[] =>
+      spy.mock.calls.map(([line]) => String(line)).filter((line) => pattern.test(line));
     try {
       await game.start();
       await Promise.resolve();
-      expect(markers()).toHaveLength(2);
+      // Authored opacity takes effect: the material turns transparent, and the engine says so as
+      // a warning, so the game's playtests keep passing while the report stays honest.
+      expect(markers(error, /TN_ENVIRONMENT_TOO_SMALL/u)).toHaveLength(1);
+      expect(markers(error, /TN_OPACITY_IGNORED/u)).toEqual([]);
+      expect(markers(warn, /TN_OPACITY_TRANSPARENT/u)).toHaveLength(1);
+      expect(faded[0]?.transparent).toBe(true);
       await game.goto("traps");
-      expect(markers()).toHaveLength(4);
+      expect(markers(error, /TN_ENVIRONMENT_TOO_SMALL/u)).toHaveLength(2);
+      expect(markers(warn, /TN_OPACITY_TRANSPARENT/u)).toHaveLength(2);
+      expect(faded[1]?.transparent).toBe(true);
     } finally {
       game.stop();
       error.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it("leaves an alpha-hashed material opaque, the named override", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const material = new MeshBasicMaterial({ alphaHash: true, opacity: 0.5 });
+    class Hashed extends Scene {
+      override enter(ctx: ICtx): void {
+        ctx.scene.add(new Mesh(undefined, material));
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      renderer: renderer(testCanvas()),
+      scenes: { hashed: Hashed },
+      start: "hashed",
+    });
+    try {
+      await game.start();
+      expect(material.transparent).toBe(false);
+      expect(warn.mock.calls.some(([line]) => /TN_OPACITY_TRANSPARENT/u.test(String(line)))).toBe(
+        false,
+      );
+    } finally {
+      game.stop();
+      warn.mockRestore();
     }
   });
 
