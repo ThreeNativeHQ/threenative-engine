@@ -1330,11 +1330,10 @@ export async function warmUpScene(
 
   // The covered pass can now settle asynchronously too (the post/reflection pipelines it requests
   // are compiled by the device). Bound it by the same budget as every other compile here; the
-  // render-only fallback stays a direct call so it costs no extra frame.
-  if (now() < startedAt + budgetMs) {
-    if (renderer.warmUpWorldPass === undefined) await renderWarmPassesOnce();
-    else await withinDeadline(startedAt + budgetMs, renderWarmPassesOnce(), yieldFrame, now);
-  }
+  // render-only fallback stays a direct call so it costs no extra frame. The pass is always
+  // issued, as before; past the budget only the wait is skipped, and its compiles keep landing.
+  if (renderer.warmUpWorldPass === undefined) await renderWarmPassesOnce();
+  else await withinDeadline(startedAt + budgetMs, renderWarmPassesOnce(), yieldFrame, now);
   await settleGpu();
   const report: IWarmUpReport = {
     compiled,
