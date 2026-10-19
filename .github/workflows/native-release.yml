@@ -496,7 +496,8 @@ jobs:
           call pnpm --filter @threenative/runtime-native native:build || exit /b 1
           cd packages/runtime-native
           cmake --preset ${{ matrix.preset }} -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=${{ matrix.player_ui }}
-          cmake --build build/tn-engine-ui --config Release --target tn-native-engine-player-v8
+          rem `-k 0` reports every MSVC error in one run; this is the only MSVC build of the engine.
+          cmake --build build/tn-engine-ui --config Release --target tn-native-engine-player-v8 -- -k 0
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Build Release engine player

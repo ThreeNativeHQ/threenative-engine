@@ -1,4 +1,5 @@
 #include "engine/scene/raycaster.h"
+#include "engine/foundation/prefetch.h"
 #include "render_database.h"
 #include "engine/renderer/reflector.h"
 
@@ -899,43 +900,43 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
         }
 #if defined(__GNUC__) && !defined(__EMSCRIPTEN__)
         if (ordered && i + 32 < slotRecords_.size() && slotRecords_[i + 32])
-            __builtin_prefetch(slotRecords_[i + 32], 0, 1);
+            TN_PREFETCH(slotRecords_[i + 32], 0, 1);
         if (ordered && i + 16 < slotRecords_.size() && i + 16 < object.children.size()) {
             const auto* next = reinterpret_cast<const char*>(object.children[i + 16]);
             for (std::size_t offset = 0; offset <= sizeof(Object3D); offset += 64)
-                __builtin_prefetch(next + offset, 0, 1);
+                TN_PREFETCH(next + offset, 0, 1);
             if (const Record* future = slotRecords_[i + 16]) {
                 const auto* material = reinterpret_cast<const char*>(future->material.get());
                 if (material)
                     for (std::size_t offset = 0; offset < sizeof(Material); offset += 64)
-                        __builtin_prefetch(material + offset, 0, 1);
+                        TN_PREFETCH(material + offset, 0, 1);
             }
         }
         // Sparse authored metadata remains outside the dense transform columns. Fetch it
         // ahead of the fused traversal instead of serializing every cache miss at 64k.
         if (updateChildren && i + 32 < object.children.size())
-            __builtin_prefetch(&flatRecords_[i + 32], 0, 1);
+            TN_PREFETCH(&flatRecords_[i + 32], 0, 1);
         if (updateChildren && i + 16 < object.children.size()) {
             const auto* future = object.children[i + 16];
             const auto* next = reinterpret_cast<const char*>(future);
             for (std::size_t offset = 0; offset < sizeof(Object3D); offset += 64)
-                __builtin_prefetch(next + offset, 0, 1);
+                TN_PREFETCH(next + offset, 0, 1);
             if (flatPlainMeshes_[i + 16])
-                __builtin_prefetch(next + sizeof(Object3D), 0, 1);
+                TN_PREFETCH(next + sizeof(Object3D), 0, 1);
             const auto* material = reinterpret_cast<const char*>(flatRecords_[i + 16].material.get());
             if (material)
                 for (std::size_t offset = 0; offset < sizeof(Material); offset += 64)
-                    __builtin_prefetch(material + offset, 0, 1);
+                    TN_PREFETCH(material + offset, 0, 1);
         }
         if (updateChildren && i + 8 < object.children.size()) {
             const auto* future = object.children[i + 8];
-            __builtin_prefetch(&future->position, 0, 1);
-            __builtin_prefetch(&future->quaternion, 0, 1);
-            __builtin_prefetch(&future->scale, 0, 1);
-            __builtin_prefetch(&future->matrix, 1, 1);
-            __builtin_prefetch(reinterpret_cast<const char*>(&future->matrix) + 64, 1, 1);
-            __builtin_prefetch(&future->matrixWorld, 1, 1);
-            __builtin_prefetch(reinterpret_cast<const char*>(&future->matrixWorld) + 64, 1, 1);
+            TN_PREFETCH(&future->position, 0, 1);
+            TN_PREFETCH(&future->quaternion, 0, 1);
+            TN_PREFETCH(&future->scale, 0, 1);
+            TN_PREFETCH(&future->matrix, 1, 1);
+            TN_PREFETCH(reinterpret_cast<const char*>(&future->matrix) + 64, 1, 1);
+            TN_PREFETCH(&future->matrixWorld, 1, 1);
+            TN_PREFETCH(reinterpret_cast<const char*>(&future->matrixWorld) + 64, 1, 1);
         }
 #endif
         if (updateChildren)
@@ -1266,8 +1267,8 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
 #if defined(__GNUC__) && !defined(__EMSCRIPTEN__)
             if (i + 16 < members.size()) {
                 const auto next = members[i + 16];
-                __builtin_prefetch(&batchTransforms_[next], 0, 3);
-                if (color) __builtin_prefetch(&batchRgb_[next], 0, 3);
+                TN_PREFETCH(&batchTransforms_[next], 0, 3);
+                if (color) TN_PREFETCH(&batchRgb_[next], 0, 3);
             }
 #endif
             const auto index = members[i];
