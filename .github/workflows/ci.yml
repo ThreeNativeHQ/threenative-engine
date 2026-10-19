@@ -842,7 +842,10 @@ jobs:
     # adapter each launch now takes about 7 minutes, against about 1 minute on develop (runs
     # 38818830914 and 38824021621), so five launches exceed the 30-minute cap. Only rain gets the
     # larger cap until that software launch cost is reduced; every other leg keeps 30 minutes.
-    timeout-minutes: ${{ matrix.template == 'rain' && 60 || 30 }}
+    # shooter joined it with the native web engine default (#493): its enemy scenarios take 3 to
+    # 7 minutes each on SwiftShader against about 35 s before (run 39205153764 against
+    # 39099724054), so its 26 scenarios need about 70 minutes. Every scenario and assertion stays.
+    timeout-minutes: ${{ matrix.template == 'shooter' && 90 || matrix.template == 'rain' && 60 || 30 }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       TN_PLAYTEST_ALLOW_SOFTWARE: "1"

@@ -752,6 +752,10 @@ jobs:
           # 16 KB qualification from an ordinary one afterwards, and PRD-221 turns on exactly that
           # distinction. Captured on the same folded line for the same reason as the logcat dump:
           # `android-emulator-runner` destroys the emulator when `script` returns.
+          # A SwiftShader emulator can drop to "offline" right after a long conformance run, after
+          # every row passed; `adb reconnect offline` plus a bounded wait-for-device lets the dump
+          # read the buffer it would otherwise lose. A device that stays gone still records
+          # TN_ADB_LOGCAT_FAILED below.
           script: >-
             adb shell getconf PAGE_SIZE > "$RUNNER_TEMP/android-page-size.txt" 2>
             "$RUNNER_TEMP/android-page-size.err" || echo TN_ADB_PAGE_SIZE_FAILED >>
@@ -759,7 +763,9 @@ jobs:
             packages/runtime-native/conformance/run-conformance.mjs --target android
             --device emulator-5554 --reference artifacts/conformance/web
             --out artifacts/conformance/android; status=$?; echo "$status" >
-            "$RUNNER_TEMP/conformance-status.txt"; if adb -s emulator-5554 logcat -d >
+            "$RUNNER_TEMP/conformance-status.txt"; adb reconnect offline >/dev/null 2>&1;
+            timeout 60 adb -s emulator-5554 wait-for-device >/dev/null 2>&1; if adb -s
+            emulator-5554 logcat -d >
             "$RUNNER_TEMP/emulator-logcat.txt" 2> "$RUNNER_TEMP/emulator-logcat.err"; then
             :; else logcat_status=$?; printf 'TN_ADB_LOGCAT_FAILED exitCode=%s\n'
             "$logcat_status" >> "$RUNNER_TEMP/emulator-logcat.err";
