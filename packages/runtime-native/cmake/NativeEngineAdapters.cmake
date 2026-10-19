@@ -55,8 +55,10 @@ function(tn_adapter_v8_executable target)
         target_link_libraries(${target} PRIVATE "-Wl,-force_load,${_tn_v8_location}")
         target_link_options(${target} PRIVATE "-Wl,-dead_strip")
     elseif(MSVC)
-        # Same as mystral-runtime: the prebuilt Rust and Abseil archives carry overlapping symbols.
+        # Same as mystral-runtime: the prebuilt Rust and Abseil archives carry overlapping symbols,
+        # and Rust std (native physics, SWC) imports from these system libraries, ntdll included.
         target_link_options(${target} PRIVATE "/FORCE:MULTIPLE")
+        target_link_libraries(${target} PRIVATE ws2_32 advapi32 crypt32 bcrypt userenv ntdll)
     endif()
     set_property(GLOBAL APPEND PROPERTY TN_NATIVE_ENGINE_V8_TARGETS ${target})
 endfunction()
