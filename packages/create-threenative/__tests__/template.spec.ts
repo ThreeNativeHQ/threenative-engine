@@ -1125,7 +1125,8 @@ describe("template contracts", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
-  }, 30_000);
+    // A Vite build of the scaffold took 34 s on a loaded CI runner (main run 39226537203).
+  }, 120_000);
 
   it("should document and apply the forward axis conversion once per template", async () => {
     const movementFiles = [
