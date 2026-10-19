@@ -14,12 +14,25 @@ describe("asset worker pool lifetime", () => {
     await mkdir(path.join(root, "assets"));
     await writeFile(path.join(root, "assets/proof.txt"), "unchanged");
     const moduleUrl = pathToFileURL(path.resolve("packages/assets/src/compile.ts")).href;
-    const script = `const {compileAssets} = await import(${JSON.stringify(moduleUrl)});
+    const script = `const started = performance.now();
+      const mark = (phase) => console.error("TN_ASSETS_WORKER_STAGE " + JSON.stringify({phase, elapsedMs:performance.now()-started}));
+      mark("startup");
+      const {compileAssets} = await import(${JSON.stringify(moduleUrl)});
+      mark("imported");
       const result = await compileAssets({cwd:${JSON.stringify(root)}, concurrency:2,
         config:{audio:"none",models:"none",textures:"none"}});
+      mark("compiled");
       if(result.concurrencyUsed!==1 || result.passCosts.length!==0) throw new Error("unexpected worker/pass");
       console.log("empty-chain-exited");`;
-    const result = await new Promise<{ output: string; code: number | null }>((resolve, reject) => {
+    const result = await new Promise<{
+      output: string;
+      code: number | null;
+      signal: NodeJS.Signals | null;
+      timedOut: boolean;
+      pid: number | undefined;
+      elapsedMs: number;
+    }>((resolve, reject) => {
+      const started = performance.now();
       const child = spawn(process.execPath, [
         "--import",
         "tsx",
@@ -28,21 +41,38 @@ describe("asset worker pool lifetime", () => {
         script,
       ]);
       let output = "";
+      let timedOut = false;
       child.stdout.on("data", (chunk) => {
         output += String(chunk);
       });
       child.stderr.on("data", (chunk) => {
         output += String(chunk);
       });
-      child.once("error", reject);
-      const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
-      child.once("exit", (code) => {
+      child.once("error", (error) => {
         clearTimeout(timer);
-        resolve({ output, code });
+        reject(error);
+      });
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill("SIGKILL");
+      }, 5000);
+      child.once("close", (code, signal) => {
+        clearTimeout(timer);
+        resolve({
+          output,
+          code,
+          signal,
+          timedOut,
+          pid: child.pid,
+          elapsedMs: performance.now() - started,
+        });
       });
     });
-    expect(result.output).toContain("empty-chain-exited");
-    expect(result.code).toBe(0);
+    const diagnostic = JSON.stringify(result);
+    expect(result.output, diagnostic).toContain("empty-chain-exited");
+    expect(result.code, diagnostic).toBe(0);
+    expect(result.signal, diagnostic).toBeNull();
+    expect(result.timedOut, diagnostic).toBe(false);
   }, 10000);
 
   it("terminates every worker when disposed", async () => {

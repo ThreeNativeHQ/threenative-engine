@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -37,6 +45,12 @@ const generatedRecordEnd = "<!-- native-coverage-generated:end -->";
 const sanitizerGeneratedStart = "<!-- native-sanitizer-generated:start -->";
 const sanitizerGeneratedEnd = "<!-- native-sanitizer-generated:end -->";
 const sourceExtensions = new Set([".c", ".cc", ".cpp", ".cxx", ".m", ".mm"]);
+const engineCoverageLabel = "native-engine";
+// A test that only reads an executable artifact never launches it, so it can produce no execution
+// profile. This label routes it to the correctness run instead of the profiled run.
+const coverageInspectionLabel = "coverage-inspection";
+const engineTestAggregate = "tn-native-engine-tests";
+const engineSourcePrefix = "src/engine/";
 const configurationBlockers = new Map([
   [
     "threenative-physics-actuation-bindings-test",
@@ -227,6 +241,107 @@ export function instrumentedFilesFromLcov(reports) {
   }));
 }
 
+// Shared sources keep conservative maxima so merging trees never double-counts covered lines.
+export function mergeInstrumentedFiles(...collections) {
+  const byPath = new Map();
+  for (const files of collections) {
+    for (const { covered, lines, path } of files) {
+      const current = byPath.get(path);
+      byPath.set(path, {
+        covered: current === undefined ? covered : Math.max(current.covered, covered),
+        lines: current === undefined ? lines : Math.max(current.lines, lines),
+        path,
+      });
+    }
+  }
+  return [...byPath.values()].sort((left, right) => left.path.localeCompare(right.path));
+}
+
+// Wrapped CTest commands can also name non-executable build data.
+function isExecutableFile(path) {
+  try {
+    const stat = statSync(path);
+    return stat.isFile() && (stat.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+// Wrappers pass the instrumented executable as an argument.
+export function engineTestExecutable(command, buildDirectory, isExecutable = isExecutableFile) {
+  return command.find(
+    (token) =>
+      typeof token === "string" && token.startsWith(`${buildDirectory}/`) && isExecutable(token),
+  );
+}
+
+// CTest emits a LABELS property either as a token array or as a `;`-separated string. Match exact
+// tokens, so `native-engine-extended` is not mistaken for the `native-engine` label.
+function testLabels(properties) {
+  const value = (properties ?? []).find((property) => property.name === "LABELS")?.value ?? [];
+  return Array.isArray(value) ? value : String(value).split(";").filter(Boolean);
+}
+
+// Non-binary reference checks still run for correctness without profiles. An inspection test reads
+// an executable artifact through an argument but never launches it, so its label is honoured before
+// any command token is classified as a profiled executable.
+export function selectEngineCoverageTests(inventory, buildDirectory, isExecutable = isExecutableFile) {
+  const selected = [];
+  const unprofiled = [];
+  for (const { command = [], name, properties } of inventory) {
+    const labels = testLabels(properties);
+    if (!labels.includes(engineCoverageLabel)) continue;
+    if (labels.includes(coverageInspectionLabel)) {
+      unprofiled.push(name);
+      continue;
+    }
+    const executable = engineTestExecutable(command, buildDirectory, isExecutable);
+    if (executable === undefined) unprofiled.push(name);
+    else selected.push({ executable, name });
+  }
+  return { selected, unprofiled };
+}
+
+export function requireSelectedEngineTests(selected) {
+  if (!Array.isArray(selected) || selected.length === 0) {
+    throw new Error("CTest registered no measurable native-engine executable test");
+  }
+}
+
+// Fresh CTest inventories omit executable commands until their targets are built.
+export function buildEngineTestsThenSelect({ build, buildDirectory, inventory, isExecutable }) {
+  build();
+  return selectEngineCoverageTests(inventory(), buildDirectory, isExecutable);
+}
+
+function isEngineSource(path) {
+  return typeof path === "string" && path.startsWith(engineSourcePrefix);
+}
+
+// Shared legacy sources cannot satisfy owned-engine coverage.
+export function requireEngineCoverageSources({ compiledSourceFiles, instrumentedFiles }) {
+  if (!Array.isArray(compiledSourceFiles) || compiledSourceFiles.length === 0) {
+    throw new Error("engine coverage compiled zero owned engine source files");
+  }
+  if (!Array.isArray(instrumentedFiles) || instrumentedFiles.length === 0) {
+    throw new Error("engine coverage instrumented zero owned engine source files");
+  }
+  const compiledOwned = compiledSourceFiles.filter(isEngineSource);
+  if (compiledOwned.length === 0) {
+    throw new Error("engine coverage compiled zero owned engine source files");
+  }
+  const measuredOwned = new Set(
+    instrumentedFiles.filter((file) => isEngineSource(file.path)).map((file) => file.path),
+  );
+  if (measuredOwned.size === 0) {
+    throw new Error("engine coverage instrumented zero owned engine source files");
+  }
+  const missing = compiledOwned.filter((path) => !measuredOwned.has(path)).sort();
+  if (missing.length > 0) {
+    throw new Error(`engine coverage omitted owned engine source files: ${missing.join(", ")}`);
+  }
+}
+
 function compiledProductObjects(buildDirectory) {
   const commandsPath = join(buildDirectory, "compile_commands.json");
   if (!existsSync(commandsPath)) {
@@ -318,7 +433,9 @@ export function retainedCoverageFloors(previousRecord, subsystems) {
   }
   return subsystems.map(({ name, percent }) => {
     const path = `src/${name}${name.includes(".") ? "" : "/"}`;
-    return { name: path, percent: recorded.get(path) ?? percent };
+    // Match the gate's five-point margin without ever loosening an established floor.
+    const ratcheted = Number((percent - 5).toFixed(2));
+    return { name: path, percent: Math.max(recorded.get(path) ?? percent, ratcheted) };
   });
 }
 
@@ -374,7 +491,7 @@ export function requireInvocationProfiles(expectedPrefixes, profileNames) {
   }
 }
 
-function coverageExports({ buildDirectory, compiledProducts, executedTargets, profileNames }) {
+function coverageExports({ compiledProducts, executions, profileDirectory }) {
   const commonArguments = [
     "--format=lcov",
     "-ignore-filename-regex=(third_party|\\.runtime|/usr/|/opt/|sdl3-build)",
@@ -392,20 +509,17 @@ function coverageExports({ buildDirectory, compiledProducts, executedTargets, pr
     const files = instrumentedFilesFromLcov([report]);
     if (!files.some(({ path }) => path === source)) zeroLineSources.push(source);
   }
-  for (const target of executedTargets) {
-    const targetProfiles = profileNames
-      .filter((name) => name.startsWith(`${target}-`))
-      .map((name) => join(profileDirectory, name));
-    if (targetProfiles.length === 0) {
-      throw new Error(`native coverage target profile is missing: ${target}`);
+  for (const { executable, label, profiles } of executions) {
+    if (profiles.length === 0) {
+      throw new Error(`native coverage target profile is missing: ${label}`);
     }
-    const targetProfile = join(profileDirectory, `${target}.profdata`);
-    run("llvm-profdata", ["merge", "-sparse", ...targetProfiles, "-o", targetProfile]);
+    const targetProfile = join(profileDirectory, `${label}.profdata`);
+    run("llvm-profdata", ["merge", "-sparse", ...profiles, "-o", targetProfile]);
     requireCoverageProfile(targetProfile);
     reports.push(
       runForStdout("llvm-cov", [
         "export",
-        nativeTestExecutable(buildDirectory, target),
+        executable,
         ...commonArguments,
         `-instr-profile=${targetProfile}`,
       ]),
@@ -648,13 +762,7 @@ export function staleGeneratorBuildDirectory(buildDirectory, generator, dependen
   return previous === generator ? null : buildDirectory;
 }
 
-export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
-  if (process.platform === "win32") {
-    throw new Error("native coverage currently requires a clang desktop host");
-  }
-  const cmake = resolveCmake();
-  const ctest = resolveCtest(cmake);
-  const buildDirectory = desktopBuildDirectory("coverage");
+function configureCoverageTree(cmake, buildDirectory, extraArguments = []) {
   const conflicting = staleGeneratorBuildDirectory(buildDirectory, COVERAGE_GENERATOR);
   if (conflicting !== null) {
     throw new Error(
@@ -676,12 +784,13 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
       "-DTN_ENABLE_COVERAGE=ON",
       "-DTN_ENABLE_NATIVE_PHYSICS=OFF",
       "-DTN_ENABLE_UI_OVERLAY=OFF",
+      ...extraArguments,
     ],
     { timeout: 900_000 },
   );
-  const cmakeSource = readFileSync(join(runtimeRoot, "CMakeLists.txt"), "utf8");
-  const targets = discoverNativeTestTargets(cmakeSource);
-  validateExecutionContracts(targets, executionContracts);
+}
+
+function requireCoverageWebgpuBackend(buildDirectory) {
   const compileCommandsPath = join(buildDirectory, "compile_commands.json");
   if (!existsSync(compileCommandsPath)) {
     throw new Error(`the coverage configure wrote no compile inventory: ${compileCommandsPath}`);
@@ -691,6 +800,97 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
       "the coverage configure selected no WebGPU backend, so the native host cannot compile. third_party/ is missing or incomplete - run pnpm native:build (or node packages/runtime-native/scripts/download-deps.mjs) and re-run.",
     );
   }
+}
+
+// Engine-only CMake returns before legacy targets, so coverage needs a second tree.
+function measureEngineCoverage({ cmake, ctest }) {
+  const buildDirectory = desktopBuildDirectory("coverage-engine");
+  configureCoverageTree(cmake, buildDirectory, ["-DTN_ENGINE_ONLY=ON"]);
+  requireCoverageWebgpuBackend(buildDirectory);
+  const engineProfileDirectory = join(buildDirectory, "coverage-profiles");
+  rmSync(engineProfileDirectory, { force: true, recursive: true });
+  mkdirSync(engineProfileDirectory, { recursive: true });
+  // Build the aggregate before selecting: `engineTestExecutable` only accepts a built executable, and
+  // a fresh tree has none until this build runs. Selecting first marks every candidate unprofiled.
+  const { selected, unprofiled } = buildEngineTestsThenSelect({
+    build: () => buildNativeTarget(cmake, buildDirectory, engineTestAggregate, 1_800_000),
+    buildDirectory,
+    inventory: () => ctestInventory(buildDirectory, ctest),
+  });
+  requireSelectedEngineTests(selected);
+  const executionFailures = [];
+  const expectedProfilePrefixes = [];
+  for (const { name } of selected) {
+    const profilePrefix = `${name}-0-`;
+    expectedProfilePrefixes.push(profilePrefix);
+    const env = { ...process.env };
+    env[coverageProfileEnvironmentVariable] = join(
+      engineProfileDirectory,
+      `${profilePrefix}%p.profraw`,
+    );
+    try {
+      run(ctest, ["--test-dir", buildDirectory, "--output-on-failure", "-R", `^${name}$`], {
+        env,
+        timeout: 900_000,
+      });
+    } catch (error) {
+      executionFailures.push({ reason: compactFailure(error), target: name });
+    }
+  }
+  // Tests that spawn no engine binary - the CMake graph and blocking-wait checks, and the pnpm/node
+  // reference checks - run for correctness here and contribute no profile.
+  for (const name of unprofiled) {
+    try {
+      run(ctest, ["--test-dir", buildDirectory, "--output-on-failure", "-R", `^${name}$`], {
+        timeout: 900_000,
+      });
+    } catch (error) {
+      executionFailures.push({ reason: compactFailure(error), target: name });
+    }
+  }
+  if (executionFailures.length > 0) {
+    const detail = executionFailures.map(({ reason, target }) => `${target}: ${reason}`).join("\n");
+    throw new Error(`native coverage engine execution failed:\n${detail}`);
+  }
+  const profileNames = readdirSync(engineProfileDirectory).filter((name) =>
+    name.endsWith(".profraw"),
+  );
+  requireInvocationProfiles(expectedProfilePrefixes, profileNames);
+  const compiledProducts = compiledProductObjects(buildDirectory);
+  const coverage = coverageExports({
+    compiledProducts,
+    executions: selected.map(({ executable, name }) => ({
+      executable,
+      label: name,
+      profiles: profileNames
+        .filter((profile) => profile.startsWith(`${name}-0-`))
+        .map((profile) => join(engineProfileDirectory, profile)),
+    })),
+    profileDirectory: engineProfileDirectory,
+  });
+  const instrumentedFiles = [
+    ...instrumentedFilesFromLcov(coverage.reports),
+    ...coverage.zeroLineSources.map((path) => ({ covered: 0, lines: 0, path })),
+  ];
+  requireEngineCoverageSources({
+    compiledSourceFiles: compiledProducts.sourceFiles,
+    instrumentedFiles,
+  });
+  return { compiledSourceFiles: compiledProducts.sourceFiles, instrumentedFiles };
+}
+
+export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
+  if (process.platform === "win32") {
+    throw new Error("native coverage currently requires a clang desktop host");
+  }
+  const cmake = resolveCmake();
+  const ctest = resolveCtest(cmake);
+  const buildDirectory = desktopBuildDirectory("coverage");
+  configureCoverageTree(cmake, buildDirectory);
+  const cmakeSource = readFileSync(join(runtimeRoot, "CMakeLists.txt"), "utf8");
+  const targets = discoverNativeTestTargets(cmakeSource);
+  validateExecutionContracts(targets, executionContracts);
+  requireCoverageWebgpuBackend(buildDirectory);
   const hollow = targetsMissingBlockedRegistration(cmakeSource);
   if (hollow.length > 0) {
     throw new Error(
@@ -725,19 +925,30 @@ export function measureNativeCoverage({ recordPath = defaultRecord } = {}) {
   requireInvocationProfiles(expectedProfilePrefixes, profileNames);
   const compiledProducts = compiledProductObjects(buildDirectory);
   const coverage = coverageExports({
-    buildDirectory,
     compiledProducts,
-    executedTargets,
-    profileNames,
+    executions: executedTargets.map((target) => ({
+      executable: nativeTestExecutable(buildDirectory, target),
+      label: target,
+      profiles: profileNames
+        .filter((name) => name.startsWith(`${target}-`))
+        .map((name) => join(profileDirectory, name)),
+    })),
+    profileDirectory,
   });
+  const engine = measureEngineCoverage({ cmake, ctest });
   const report = summarizeNativeCoverage({
     blockedTargets,
-    compiledSourceFiles: compiledProducts.sourceFiles,
-    configuration: `${desktopPreset()}-coverage`,
-    instrumentedFiles: [
-      ...instrumentedFilesFromLcov(coverage.reports),
-      ...coverage.zeroLineSources.map((path) => ({ covered: 0, lines: 0, path })),
+    compiledSourceFiles: [
+      ...new Set([...compiledProducts.sourceFiles, ...engine.compiledSourceFiles]),
     ],
+    configuration: `${desktopPreset()}-coverage`,
+    instrumentedFiles: mergeInstrumentedFiles(
+      [
+        ...instrumentedFilesFromLcov(coverage.reports),
+        ...coverage.zeroLineSources.map((path) => ({ covered: 0, lines: 0, path })),
+      ],
+      engine.instrumentedFiles,
+    ),
     sourceFiles: sourceInventory(),
   });
   const previousRecord = existsSync(recordPath) ? readFileSync(recordPath, "utf8") : "";

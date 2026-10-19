@@ -72,7 +72,9 @@ launches with no game and the run reports `TN_PLAYTEST_BRIDGE_MISSING` at zero f
 owns a temporary local
 mailbox and passes its root to the native host through `TN_PLAYTEST_MAILBOX_ROOT`. Keep it that way:
 an assertion that only
-means something on one target is a fork of the harness.
+means something on one target is a fork of the harness. `--live-clock` adds
+`TN_PLAYTEST_CLOCK=wall-clock` beside it, and only when the flag is named; the host reads it before
+the game entry evaluates.
 
 A device target that cannot be reached fails `TN_PLAYTEST_DEVICE_FAILED`; it never degrades
 to a browser run. Desktop observes HTTP and asset fetch failures through the native host mailbox

@@ -4,7 +4,7 @@
 **Priority:** P2 — Phase 1 measurement gate and the per-level shadow cut are unbuilt, and the shadow cost of clustered casters has never been measured.
 **Complexity:** 5 (MEDIUM) — 1–5 implementation files (+1), a second cut keyed by shadow texel is a new path in the shadow node (+2), cached shadow levels must stay valid when the camera cut changes (+1), native proof on the owned host (+1); risk override: none
 **Owner:** unassigned
-**Depends on:** None. Uses [PRD-600](PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md)'s view-pruned walk when that has shipped, and a flat scan with a per-cluster sphere test when it has not. Respects [PRD-457](PRD-457-virtual-shadows-scale-by-measurement.md), [PRD-538](PRD-538-shadow-maps-redraw-only-what-streamed-in.md) and [PRD-377](../../assets/PRD-377-auto-lod-is-on-by-default.md) (no independent shadow proxy meshes in its v1, so this PRD derives the shadow cut from the same DAG and adds no second mesh).
+**Depends on:** None. Uses [PRD-600](PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md)'s view-pruned walk when that has shipped, and a flat scan with a per-cluster sphere test when it has not. Respects [PRD-457](PRD-457-virtual-shadows-scale-by-measurement.md), [PRD-538](../../done/PRD-538-shadow-maps-redraw-only-what-streamed-in.md) and [PRD-377](../../assets/PRD-377-auto-lod-is-on-by-default.md) (no independent shadow proxy meshes in its v1, so this PRD derives the shadow cut from the same DAG and adds no second mesh).
 
 ## Context
 

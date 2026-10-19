@@ -1,0 +1,16 @@
+{
+  "name": "arrays-indexed-read",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 BufferAttribute.array — reading `attribute.array[i]` names that element",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "p",
+      "kind": "number",
+      "path": "array.1",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    }
+  ]
+}

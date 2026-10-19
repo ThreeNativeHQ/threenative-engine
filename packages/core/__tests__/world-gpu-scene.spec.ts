@@ -14,6 +14,7 @@ import {
   MeshBasicMaterial,
   type Object3D,
   PerspectiveCamera,
+  Quaternion,
   Ray,
   Vector3,
   WebGPUCoordinateSystem,
@@ -35,6 +36,7 @@ import { isStatic } from "../src/static-transform.js";
 import {
   COARSEST_SHADOW_LEVEL,
   DRAW_ARGS_BYTES,
+  type IAssetSlot,
   type IGpuPlacement,
   type IKernelInput,
   type IKernelResult,
@@ -236,6 +238,40 @@ function pineIn(...cells: string[]): number {
 /** The world-space centre of cell `(x, z)`, from the package's own extent and cell size. */
 function cellCentre(x: number, z: number): { x: number; z: number } {
   return { x: manifest.extent.minX + (x + 0.5) * CELL, z: manifest.extent.minZ + (z + 0.5) * CELL };
+}
+
+/** The complete source transform set for resident cells, independent of WorldGpuScene storage. */
+function sourceMatricesFor(...cells: string[]): string[] {
+  const wanted = new Set(cells);
+  const records = new Float32Array(
+    placementBytes.buffer,
+    placementBytes.byteOffset,
+    placementBytes.byteLength / Float32Array.BYTES_PER_ELEMENT,
+  );
+  const matrices: string[] = [];
+  for (const cell of manifest.cells) {
+    if (!wanted.has(`${String(cell.x)},${String(cell.z)}`)) continue;
+    for (const run of cell.runs)
+      for (let index = 0; index < run.count; index += 1) {
+        const base = (run.offset + index) * 8;
+        const matrix = new Matrix4().compose(
+          new Vector3(
+            records[base] as number,
+            records[base + 1] as number,
+            records[base + 2] as number,
+          ),
+          new Quaternion(
+            records[base + 3] as number,
+            records[base + 4] as number,
+            records[base + 5] as number,
+            records[base + 6] as number,
+          ),
+          new Vector3().setScalar(records[base + 7] as number),
+        );
+        matrices.push(Float32Array.from(matrix.elements).join(","));
+      }
+  }
+  return matrices.sort();
 }
 
 function plainModel(): Group {
@@ -1101,10 +1137,11 @@ describe("the CPU reference's pyramid occlusion test", () => {
  * The GPU scene wired into `WorldCells`, default off and proven with the flag on.
  *
  * The claims are the ones the walk has to earn: a moving follow point spends nothing on the CPU work
- * the dispatch replaced — no main regroup, no `maxDistance`/`lods` refilter — residency still feeds
- * the source buffer both ways, and every main key's mesh is dressed against the scene's own buffers
- * rather than its own. The renderer is a stub that reports the three features, because what is under
- * test is the wiring and the counters, not a draw.
+ * the dispatch replaced — no main regroup and no cull/LOD replacement — while the retained aggregate
+ * scan remains observable. Residency still feeds the complete source buffer both ways, and every main
+ * key's mesh is dressed against the scene's own buffers rather than its own. The renderer is a stub
+ * that reports the three features, because what is under test is the wiring and the counters, not a
+ * hardware draw.
  */
 describe("WorldCells with the GPU-driven main pass", () => {
   it("keeps every multi-part placement drawable after partial eviction and readmission", async () => {
@@ -1153,7 +1190,7 @@ describe("WorldCells with the GPU-driven main pass", () => {
     world.dispose();
   });
 
-  it("spends no regroup and no refilter, feeds the source buffer, and dresses every main key", async () => {
+  it("spends no regroup or replacement LOD work, feeds the source buffer, and dresses every main key", async () => {
     stubManifestFetch();
     const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
     const world = await WorldCells.load({
@@ -1206,15 +1243,19 @@ describe("WorldCells with the GPU-driven main pass", () => {
     // option off the same walk repacks every time the window moves.
     expect(after.mainCull.repacks - settled.mainCull.repacks).toBe(0);
     expect(after.mainCull.windows - settled.mainCull.windows).toBe(0);
+    // The aggregate pass still runs as the follow point moves, but complete GPU source admission
+    // means it finds no cull/LOD replacement to rebuild. The dispatch owns those two decisions.
+    expect(after.refilters - settled.refilters).toBeGreaterThan(0);
+    expect(after.refilterEntries - settled.refilterEntries).toBe(0);
+    expect(after.levelRefilters - settled.levelRefilters).toBe(0);
     expect(after.gpuScene.dispatches - settled.gpuScene.dispatches).toBe(200);
     expect(after.gpuScene.instances).toBeGreaterThan(0);
     expect(world.stats().failures).toBe(0);
     const gpuRebuilds = after.refilterEntries - settled.refilterEntries;
     world.dispose();
 
-    // The refilter still runs, because a build culls at `maxDistance` and the dispatch can only
-    // select a placement it was given; but only the cull gate is read, never a `lods` switch the
-    // dispatch makes itself, so the same walk rebuilds strictly less than the CPU path does.
+    // The CPU path retains its maxDistance/lods source filtering, so this control still does actual
+    // replacement selection on the same walk.
     stubManifestFetch();
     const cpuFollow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
     const cpu = await WorldCells.load({
@@ -1238,7 +1279,9 @@ describe("WorldCells with the GPU-driven main pass", () => {
       cpuFollow.position.z = at.z;
       cpu.update(renderer, camera);
     }
-    const cpuRebuilds = cpu.stats().refilterEntries - cpuSettled.refilterEntries;
+    const cpuAfter = cpu.stats();
+    const cpuRebuilds = cpuAfter.refilterEntries - cpuSettled.refilterEntries;
+    expect(cpuAfter.levelRefilters - cpuSettled.levelRefilters).toBeGreaterThan(0);
     expect(gpuRebuilds).toBeLessThan(cpuRebuilds);
     cpu.dispose();
   });
@@ -1264,6 +1307,8 @@ describe("WorldCells with the GPU-driven main pass", () => {
       prefetchSeconds: 0,
       ring: 1,
       surface,
+      // The synthetic clock refuses terrain-block merges; this fixture measures prop admission.
+      terrain: false,
       url: "/world/world.json",
     });
     await flushed(world);
@@ -1766,6 +1811,32 @@ describe("WorldCells with the GPU-driven main pass", () => {
     expect(world.stats().gpuScene.instances).toBe(0);
     world.dispose();
   });
+
+  it.each([false, true])(
+    "publishes the CPU shadow fallback policy for authored LODs=%s",
+    async (authoredLods) => {
+      stubManifestFetch(authoredLods);
+      const adopted = vi.spyOn(WorldGpuScene.prototype, "slot");
+      const world = await WorldCells.load({
+        admissionBudgetMs: Number.POSITIVE_INFINITY,
+        budgets,
+        follow: { position: { ...cellCentre(0, 1), y: 0 } },
+        gpuScene: true,
+        loadModel: async () => plainModel(),
+        prefetchSeconds: 0,
+        ring: 1,
+        shadows: { cast: true, castLevels: 1 },
+        surface,
+        url: "/world/world.json",
+      });
+      world.update(gpuRendererStub(), playerCamera());
+      await flushed(world);
+      const pine = adopted.mock.calls.filter(([name]) => name === "pine");
+      expect(pine.length).toBeGreaterThan(0);
+      for (const [, slot] of pine) expect(slot.shadowFallback).toBe(!authoredLods);
+      world.dispose();
+    },
+  );
 
   it("is the CPU path byte for byte with the option off", async () => {
     stubManifestFetch();
@@ -2450,24 +2521,21 @@ describe("WorldCells whose GPU scene comes up under a built ring", () => {
       });
       cpu.update();
       await flushed(cpu);
-      const expected = mainKeys(cpu).reduce((sum, mesh) => sum + mesh.count, 0);
+      // GPU source residency is the raw resident placement count, not the CPU path's already
+      // maxDistance-filtered draw count. The dispatch applies that cull later.
+      const expected = cpu.stats().instances;
+      const expectedMatrices = sourceMatricesFor("1,1");
       expect(world.stats().gpuScene.instances).toBe(expected);
       expect(mainReport).toContain(`instances=${String(expected)} `);
-      const matrices = mainKeys(cpu)
-        .flatMap((mesh) =>
-          Array.from({ length: mesh.count }, (_, index) =>
-            mesh.instanceMatrix.array.slice(index * 16, (index + 1) * 16).join(","),
-          ),
-        )
-        .sort();
       const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
+      expect(expectedMatrices).toHaveLength(expected);
       const assertSources = (): void => {
         expect(
           scene.placements
             .filter((one) => one.slot >= 0)
             .map((one) => one.matrix.join(","))
             .sort(),
-        ).toEqual(matrices);
+        ).toEqual(expectedMatrices);
       };
       assertSources();
       Object.assign(follow.position, cellCentre(6, 1));
@@ -2641,6 +2709,8 @@ describe("WorldCells caster admission while the GPU scene is still being seeded"
       ring: 1,
       shadows: { cast: true },
       surface,
+      // The synthetic clock refuses terrain-block merges; this fixture measures prop admission.
+      terrain: false,
       url: "/world/world.json",
     });
     const renderer = gpuRendererStub();
@@ -2757,9 +2827,9 @@ describe("WorldCells caster admission while the GPU scene is still being seeded"
 
 describe("WorldCells GPU scene source records past the build-time cull", () => {
   it("gives the dispatch a placement that was past maxDistance once the camera walks into its range", async () => {
-    // One cell, two props 42 m apart under a 40 m `maxDistance`: the build at the first culls the
-    // second. With the GPU scene on the refilter was skipped, so walking to the midpoint, where
-    // both are in range, never gave the second a source record: ground cover never appeared.
+    // One cell, two props 42 m apart under a 40 m `maxDistance`: the dispatch culls the second at
+    // the first pose, but GPU admission must retain its source record so the midpoint can draw it
+    // without a CPU replacement.
     const centre = cellCentre(0, 0);
     const pkg: IWorldPackage = {
       assets: {
@@ -2815,14 +2885,16 @@ describe("WorldCells GPU scene source records past the build-time cull", () => {
       }),
     );
     const follow = { position: { ...centre } };
+    const sourceBudget = { bytes: 2 * 32, instances: 2, residentCells: 1 };
     const renderer = {
       compute: (): void => {},
       kind: "webgpu",
       raw: { backend: { hasFeature: (): boolean => true } },
     } as unknown as IRendererLike;
+    const keyed = vi.spyOn(WorldGpuScene.prototype, "key");
     const world = await WorldCells.load({
       admissionBudgetMs: Number.POSITIVE_INFINITY,
-      budgets,
+      budgets: sourceBudget,
       follow,
       gpuScene: true,
       loadModel: async () => plainModel(),
@@ -2835,7 +2907,38 @@ describe("WorldCells GPU scene source records past the build-time cull", () => {
     await flushed(world);
 
     expect(world.stats().gpuScene.on).toBe(true);
-    expect(world.stats().gpuScene.instances).toBe(1);
+    expect(world.stats().gpuScene.instances).toBe(2);
+    expect(world.stats().pressure.instances).toBe(0);
+    expect(world.stats().pressure.bytes).toBe(0);
+    const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
+    const key = keyOf(scene, "prop:0:0");
+    const slot = scene.placements[0]?.slot ?? -1;
+    expect(slot).toBeGreaterThanOrEqual(0);
+    const drawnAt = (x: number, z: number): number => {
+      const planes = new Float32Array(24);
+      const input: IKernelInput = {
+        camera: { planes, x, y: 0, z },
+        count: scene.placements.length,
+        placements: scene.placements,
+        regionCount: scene.regions.length,
+        regions: scene.regions,
+        slots: scene.gates(),
+      };
+      const actual = kernelDrawn(cullAndSelect(input), input);
+      const expected = cpuReference(
+        scene.placements,
+        { planes, x, z },
+        slot,
+        [0],
+        40 - 40 / 8,
+        key,
+        1,
+      );
+      expect(actual).toEqual(expected);
+      return actual.get(key)?.length ?? 0;
+    };
+    expect(drawnAt(centre.x, centre.z)).toBe(1);
+    const beforeWalk = world.stats();
     follow.position.x = centre.x + 15;
     follow.position.z = centre.z + 15;
     for (let frame = 0; frame < 10; frame += 1) {
@@ -2843,6 +2946,10 @@ describe("WorldCells GPU scene source records past the build-time cull", () => {
       await flushed(world);
     }
     expect(world.stats().gpuScene.instances).toBe(2);
+    expect(drawnAt(follow.position.x, follow.position.z)).toBe(2);
+    const afterWalk = world.stats();
+    expect(afterWalk.refilterEntries - beforeWalk.refilterEntries).toBe(0);
+    expect(afterWalk.levelRefilters - beforeWalk.levelRefilters).toBe(0);
     world.dispose();
   });
 });
@@ -2942,6 +3049,15 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     expect(scene.gates()).toHaveLength(2);
     const levels = scene.footprint().levels;
     expect((levels?.count ?? 0) * 4).toBeGreaterThanOrEqual(6);
+  });
+
+  it("republishes a slot when its shadow fallback policy changes", () => {
+    const scene = wired([{ name: "rock", levels: DISTANCES }], 1, 4);
+    const slot = scene.gates()[0] as IAssetSlot;
+    scene.slot("rock", { ...slot, shadowFallback: false });
+    expect(scene.gates()[0]?.shadowFallback).toBe(false);
+    scene.slot("rock", { ...slot, shadowFallback: true });
+    expect(scene.gates()[0]?.shadowFallback).toBe(true);
   });
 
   it("keeps every regrown binding as wide as the kernel declares it", () => {
@@ -3185,6 +3301,178 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     await drive(scene, renderer, 30);
     expect(lines.some((line) => line.includes("device-error"))).toBe(false);
     expect(scene.validation.verdict).not.toBe("error");
+  });
+
+  it("reuses and releases validation readback buffers", async () => {
+    const { camera, planes } = cameraAt(0, 0);
+    const scene = new WorldGpuScene();
+    const targets: unknown[] = [];
+    const releases = new Map<unknown, number>();
+    const disposals = new Set<unknown>();
+    const mirror = (attribute: unknown, target?: unknown): Promise<ArrayBuffer> => {
+      expect(target).toBeDefined();
+      if (!releases.has(target)) {
+        releases.set(target, 0);
+        const readback = target as {
+          addEventListener: (type: string, listener: () => void) => void;
+        };
+        readback.addEventListener("release", () => {
+          releases.set(target, (releases.get(target) ?? 0) + 1);
+        });
+        readback.addEventListener("dispose", () => disposals.add(target));
+      }
+      targets.push(target);
+      const result = cullAndSelect({
+        camera: { planes, x: 0, y: 0, z: 0 },
+        count: scene.placements.length,
+        placements: scene.placements,
+        regionCount: scene.regions.length,
+        regions: scene.regions,
+        slots: scene.gates(),
+      });
+      const words = (attribute as { array: Uint32Array | Float32Array }).array;
+      const bytes = words instanceof Float32Array ? result.drawn : result.args;
+      return Promise.resolve(bytes.slice().buffer as ArrayBuffer);
+    };
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (): void => {},
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: mirror,
+    } as unknown as IRendererLike;
+    expect(scene.enable(renderer, true, true)).toBe(true);
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+
+    await drive(scene, renderer, 30);
+    expect(targets).toHaveLength(2);
+    expect([...releases.values()]).toEqual([1, 1]);
+    await drive(scene, renderer, 30);
+    expect(targets).toHaveLength(4);
+    expect(targets[2]).toBe(targets[0]);
+    expect(targets[3]).toBe(targets[1]);
+    expect([...releases.values()]).toEqual([2, 2]);
+    scene.dispose();
+    expect(disposals.size).toBe(2);
+  });
+
+  it("returns one completed manual frame validation with its dispatch identity", async () => {
+    const { camera, planes } = cameraAt(0, 0);
+    const scene = new WorldGpuScene();
+    let readbacks = 0;
+    const mirror = (attribute: unknown): Promise<ArrayBuffer> => {
+      readbacks += 1;
+      const result = cullAndSelect({
+        camera: { planes, x: 0, y: 0, z: 0 },
+        count: scene.placements.length,
+        placements: scene.placements,
+        regionCount: scene.regions.length,
+        regions: scene.regions,
+        slots: scene.gates(),
+      });
+      const words = (attribute as { array: Uint32Array | Float32Array }).array;
+      const bytes = words instanceof Float32Array ? result.drawn : result.args;
+      return Promise.resolve(bytes.slice().buffer as ArrayBuffer);
+    };
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: mirror,
+    } as unknown as IRendererLike;
+    expect(scene.enable(renderer, true, false)).toBe(true);
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+    scene.dispatch(renderer, camera);
+
+    const result = await scene.validateCurrentDispatch(renderer, 17);
+    expect(result.frame).toBe(17);
+    expect(result.dispatch).toBe(1);
+    expect(result.verdict).toBe("ok");
+    expect(result.compared).toBe(1);
+    expect(result.instancesGpu).toBe(1);
+    expect(result.instancesCpu).toBe(1);
+    await expect(scene.validateCurrentDispatch(renderer, 18)).rejects.toThrow(
+      "already manually validated",
+    );
+    for (let dispatch = 2; dispatch <= 30; dispatch += 1) scene.dispatch(renderer, camera);
+    const thirtieth = await scene.validateCurrentDispatch(renderer, 30);
+    expect(thirtieth.dispatch).toBe(30);
+    expect(thirtieth.frame).toBe(30);
+    expect(thirtieth.verdict).toBe("ok");
+    expect(readbacks).toBe(4);
+    scene.dispose();
+  });
+
+  it("holds both validation targets until a failed pair has settled", async () => {
+    const lines: string[] = [];
+    const scene = new WorldGpuScene();
+    const targets: unknown[] = [];
+    const releases = new Map<unknown, number>();
+    const disposals = new Set<unknown>();
+    let calls = 0;
+    let settleDrawn!: (bytes: ArrayBuffer) => void;
+    const drawnPending = new Promise<ArrayBuffer>((resolve) => {
+      settleDrawn = resolve;
+    });
+    const readback = (_attribute: unknown, target?: unknown): Promise<ArrayBuffer> => {
+      expect(target).toBeDefined();
+      if (!releases.has(target)) {
+        releases.set(target, 0);
+        const readbackTarget = target as {
+          addEventListener: (type: string, listener: () => void) => void;
+        };
+        readbackTarget.addEventListener("release", () => {
+          releases.set(target, (releases.get(target) ?? 0) + 1);
+        });
+        readbackTarget.addEventListener("dispose", () => disposals.add(target));
+      }
+      targets.push(target);
+      calls += 1;
+      if (calls === 1) return Promise.reject(new Error("args map failed"));
+      if (calls === 2) return drawnPending;
+      return Promise.resolve(new ArrayBuffer(0));
+    };
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (line: string): void => {
+        lines.push(line);
+      },
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback,
+    } as unknown as IRendererLike;
+    expect(scene.enable(renderer, true, true)).toBe(true);
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+
+    await drive(scene, renderer, 30);
+    expect(scene.validation.verdict).toBe("error");
+    expect(lines).toContain("TN_WORLD_GPU_SCENE_VALIDATE cause=readback-failed: args map failed");
+    expect(targets).toHaveLength(2);
+    expect([...releases.values()]).toEqual([0, 0]);
+    expect(disposals.size).toBe(0);
+
+    // A structural grow while the pair is pending must not replace or release either target.
+    scene.key("oak:0:0", LOCAL, 128, { group: "oak:0", part: 0, parts: 1 });
+    scene.slot("oak", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 1, parts: 1 }] });
+    await drive(scene, renderer, 30);
+    expect(targets).toHaveLength(2);
+    expect([...releases.values()]).toEqual([0, 0]);
+    expect(disposals.size).toBe(0);
+
+    // Disposal also waits for the GPU operation: the cleanup owns the pair after the scene drops it.
+    scene.dispose();
+    expect([...releases.values()]).toEqual([0, 0]);
+    expect(disposals.size).toBe(0);
+    settleDrawn(new ArrayBuffer(0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect([...releases.values()]).toEqual([1, 1]);
+    expect(disposals.size).toBe(2);
   });
 
   /**
@@ -4602,6 +4890,25 @@ describe("a shadow level's own selection", () => {
     expect([...(coarse.get(0) ?? [])]).toEqual([0, 1, 3]);
     expect([...(coarse.get(2) ?? [])]).toEqual([]);
   });
+
+  it.each([0, COARSEST_SHADOW_LEVEL])(
+    "does not restore authored LODs past their casting levels (base=%s)",
+    (base) => {
+      const { input } = shadowFixture();
+      const authored: IKernelInput = {
+        ...input,
+        slots: input.slots.map((slot) => ({ ...slot, shadowFallback: false })),
+        regions: input.regions.map((region, index) =>
+          index === 0 ? region : { ...region, uncast: true },
+        ),
+      };
+      const level = { base, gate: 1, planes: levelPlanes(100) };
+      const drawn = drawnPlacements(cullAndSelectShadow(authored, level), authored);
+      expect(drawn.get(0)).toEqual([0, 3]);
+      expect(drawn.get(1)).toEqual([]);
+      expect(cullAndSelect(authored)).toEqual(cullAndSelect(input));
+    },
+  );
 
   it("reads a base past the chain as the coarsest shape the asset has, without reading past its levels", () => {
     const { input } = shadowFixture();

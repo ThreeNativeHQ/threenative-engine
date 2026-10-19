@@ -1,13 +1,16 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { read as readKTX2 } from "ktx-parse";
+import { read as readKTX2, write as writeKTX2 } from "ktx-parse";
 import { PNG } from "pngjs";
 import { describe, expect, it, vi } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
+import * as imageQualityModule from "../src/image-quality.js";
+import { decodeBasisKtx2, transcodeKtx2ToAstc } from "../src/image-quality.js";
 import { type IAssetSourceConfig, compileAssets, texturePass } from "../src/index.js";
-import { KTX2_ENCODER_VERSION, encodeToKTX2 } from "../src/ktx2-encoder.js";
+import { KTX2_ENCODER_VERSION, decodeAstcKtx2, encodeToKTX2 } from "../src/ktx2-encoder.js";
+import { encodeTextureLadder } from "../src/passes/model-textures.js";
 import { parsePng } from "../src/png.js";
 
 const TRANSCODER = basisTranscoderPaths();
@@ -38,6 +41,19 @@ async function compileOne(
   };
 }
 
+/** Flat levels run from 30 at the top-left to 240 at the bottom-right. A flip moves each level to another corner. */
+function quadrantLevel(size: number, x: number, y: number): number {
+  return 30 + 70 * ((y < size / 2 ? 0 : 2) + (x < size / 2 ? 0 : 1));
+}
+
+/** Grey quadrants. Hashed noise from -16 to 15 levels keeps ASTC inexact after a resize. */
+function quadrantPng(size: number, noisy = false): Buffer {
+  const noise = (x: number, y: number) =>
+    (((Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d)) >>> 16) % 32) - 16;
+  const level = (x: number, y: number) => quadrantLevel(size, x, y) + (noisy ? noise(x, y) : 0);
+  return rgbaPng({ blue: level, green: level, height: size, red: level, width: size });
+}
+
 function ktx2Magic(bytes: Buffer): boolean {
   return [...bytes.subarray(1, 7)].map((byte) => String.fromCharCode(byte)).join("") === "KTX 20";
 }
@@ -59,6 +75,180 @@ function compressiblePng(alpha?: (x: number, y: number) => number): Buffer {
 }
 
 describe("the ktx2 texture pass", () => {
+  it("rejects final off-colour ASTC despite a passing Basis intermediate", async () => {
+    const emit = transcodeKtx2ToAstc;
+    const spy = vi
+      .spyOn(imageQualityModule, "transcodeKtx2ToAstc")
+      .mockImplementation(async (basis) => {
+        const astc = readKTX2(await emit(basis));
+        for (const level of astc.levels)
+          for (let offset = 0; offset < level.levelData.length; offset += 16)
+            level.levelData.set(
+              [252, 253, 255, 255, 255, 255, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255],
+              offset,
+            );
+        return writeKTX2(astc);
+      });
+    try {
+      const input = rgbaPng({
+        width: 8,
+        height: 8,
+        red: () => 240,
+        green: () => 20,
+        blue: () => 40,
+      });
+      await expect(
+        texturePass({ astc: true, overrides: [{ glob: "colour.png", codec: "uastc" }] }).apply(
+          input,
+          "colour.png",
+        ),
+      ).rejects.toThrow(/TN_ASSETS_TEXTURE_FLOOR/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it("retains the source when Basis saves bytes but emitted ASTC would grow it", async () => {
+    const input = compressiblePng();
+    const floor = { ssim: 0, meanDeltaE00: 100 };
+    const basis = await texturePass({
+      floor,
+      overrides: [{ glob: "colour.png", codec: "etc1s" }],
+    }).apply(input, "colour.png");
+    if (Buffer.isBuffer(basis)) throw new Error("fixture was not encoded");
+    const astc = await transcodeKtx2ToAstc(basis.buffer);
+    expect(basis.buffer.byteLength).toBeLessThan(input.byteLength);
+    expect(astc.byteLength).toBeGreaterThan(input.byteLength);
+
+    const result = await texturePass({ astc: true, floor }).apply(input, "colour.png");
+    if (Buffer.isBuffer(result)) throw new Error("fixture has no pass metadata");
+    expect(result.buffer).toEqual(input);
+    expect(result.entry).toMatchObject({ format: "none", compressionSkipped: "not-smaller" });
+  });
+
+  it("rejects ladder candidates whose emitted ASTC exceeds maxBytes", async () => {
+    const source = PNG.sync.read(compressiblePng());
+    const options = { floor: { ssim: 0, meanDeltaE00: 100 }, srgb: true, quality: 150 };
+    const basis = await encodeTextureLadder(source.data, source.width, source.height, options);
+    if (basis.encoded === undefined) throw new Error("fixture was not encoded");
+    const astc = await transcodeKtx2ToAstc(basis.encoded);
+    const maxBytes = Math.floor((basis.encoded.byteLength + astc.byteLength) / 2);
+    expect(basis.encoded.byteLength).toBeLessThan(maxBytes);
+    expect(astc.byteLength).toBeGreaterThan(maxBytes);
+
+    const admitted = await encodeTextureLadder(source.data, source.width, source.height, {
+      ...options,
+      astc: true,
+      maxBytes: astc.byteLength + 1,
+    });
+    expect(admitted.encoded?.byteLength).toBe(astc.byteLength);
+    expect(admitted.codec).toBe("etc1s");
+    expect(readKTX2(admitted.encoded as Uint8Array).vkFormat).toBe(158);
+
+    const result = await encodeTextureLadder(source.data, source.width, source.height, {
+      ...options,
+      astc: true,
+      maxBytes,
+    });
+    expect(result.encoded).toBeUndefined();
+    expect(result.quality.compressionSkipped).toBe("not-smaller");
+  });
+
+  it.each(["android", "ios"] as const)(
+    "cooks raw ASTC on %s without admitting decoder-backed custom passes",
+    async (platform) => {
+      const root = await makeTempDir("threenative-mobile-astc-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "colour.png"), compressiblePng());
+      await writeFile(path.join(root, "assets", "map_normal.png"), compressiblePng());
+      const config = {
+        textures: {
+          maxSize: 32,
+          overrides: [
+            { glob: "colour.png", codec: "etc1s" },
+            { glob: "map_normal.png", codec: "uastc" },
+          ],
+          floor: { ssim: 0, meanDeltaE00: 100 },
+        },
+      } satisfies IAssetSourceConfig;
+      const readOutputs = async () => {
+        const manifest = JSON.parse(
+          await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+        ) as {
+          entries: Record<
+            string,
+            {
+              output: string;
+              format: string;
+              transcodeTargets?: string[];
+              quality: { codec: string };
+            }
+          >;
+        };
+        return Promise.all(
+          Object.values(manifest.entries).map(async (entry) => ({
+            entry,
+            bytes: await readFile(path.join(root, "public", entry.output)),
+          })),
+        );
+      };
+      await compileAssets({
+        cwd: root,
+        config,
+        platform: "web",
+        transcoder: TRANSCODER,
+        concurrency: 1,
+      });
+      const web = await readOutputs();
+      await compileAssets({
+        cwd: root,
+        config,
+        platform: "desktop",
+        transcoder: TRANSCODER,
+        concurrency: 1,
+      });
+      expect(await readOutputs()).toEqual(web);
+      const options = {
+        cwd: root,
+        config,
+        platform,
+        runtimeDecoders: { ktx2: false, meshopt: false },
+        concurrency: 1,
+      };
+      const mobile = await compileAssets(options);
+      expect(mobile.written).toBe(2);
+      const outputs = await readOutputs();
+      expect(outputs.map(({ entry }) => entry.format)).toEqual(["astc4x4", "astc4x4"]);
+      for (const { entry, bytes } of outputs) {
+        const raw = readKTX2(bytes);
+        expect(raw.vkFormat).toBe(entry.quality.codec === "etc1s" ? 158 : 157);
+        expect(raw.supercompressionScheme).toBe(0);
+        expect([raw.pixelWidth, raw.pixelHeight, raw.levelCount]).toEqual([32, 32, 6]);
+        expect(entry.transcodeTargets).toBeUndefined();
+      }
+      await expect(
+        stat(path.join(root, "public", "basis", "basis_transcoder.wasm")),
+      ).rejects.toThrow();
+      expect((await compileAssets(options)).written).toBe(0);
+      expect(await readOutputs()).toEqual(outputs);
+      await compileAssets({
+        cwd: root,
+        config,
+        platform: "web",
+        transcoder: TRANSCODER,
+        concurrency: 1,
+      });
+      expect(await readOutputs()).toEqual(web);
+      const apply = vi.fn(async (input: Buffer) => input);
+      const custom = await compileAssets({
+        ...options,
+        passes: [{ name: "basis-only", appliesTo: ["texture"], needsRuntimeDecoder: true, apply }],
+      });
+      expect(apply).not.toHaveBeenCalled();
+      expect(custom.skippedCompression).toContainEqual(
+        expect.objectContaining({ pass: "basis-only", reason: "platform" }),
+      );
+    },
+  );
   it("preserves pure noise when every compressed rung falls below the quality floor", async () => {
     const channel = (x: number, y: number, shift: number): number => {
       let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
@@ -158,6 +348,63 @@ describe("the ktx2 texture pass", () => {
     expect(Math.max(ktx2.pixelWidth, ktx2.pixelHeight)).toBeLessThanOrEqual(10);
     expect(ktx2.pixelWidth % 4).toBe(0);
     expect(ktx2.pixelHeight % 4).toBe(0);
+  });
+
+  it("stores standalone ASTC rows bottom-up, so an upload without flipY matches the PNG", async () => {
+    const size = 64;
+    const result = await texturePass({
+      astc: true,
+      overrides: [{ glob: "colour.png", codec: "uastc" }],
+    }).apply(quadrantPng(size), "colour.png");
+    if (Buffer.isBuffer(result)) throw new Error("texture was not encoded");
+    expect(result.entry?.format).toBe("astc4x4");
+    const decoded = await decodeAstcKtx2(result.buffer, size, size);
+    const red = (x: number, y: number) => decoded[(y * size + x) * 4] ?? Number.NaN;
+    // Decoded row y must hold source row size - 1 - y. A column flip or no flip fails these samples.
+    for (const y of [8, 56])
+      for (const x of [8, 56])
+        expect(Math.abs(red(x, y) - quadrantLevel(size, x, size - 1 - y))).toBeLessThanOrEqual(16);
+  });
+
+  it("keeps PNG orientation for codec none, retained PNG and non-ASTC output", async () => {
+    const size = 64;
+    const input = quadrantPng(size, true);
+    const none = await texturePass({
+      astc: true,
+      overrides: [{ glob: "colour.png", codec: "none" }],
+    }).apply(input, "colour.png");
+    if (Buffer.isBuffer(none)) throw new Error("codec none did not pass the source through");
+    expect(none.buffer).toEqual(input);
+
+    // No lossy encoder meets this floor, so the pass retains the resized PNG.
+    const retained = await texturePass({
+      astc: true,
+      floor: { meanDeltaE00: 0, ssim: 1 },
+      maxSize: 32,
+    }).apply(input, "colour.png");
+    if (Buffer.isBuffer(retained)) throw new Error("texture was not retained");
+    expect(retained.entry?.format).toBe("none");
+    const png = PNG.sync.read(retained.buffer);
+    // An 8x8 window mean cancels the hashed noise. A row flip moves each mean to another quadrant.
+    const mean = (cx: number, cy: number) => {
+      let sum = 0;
+      for (let y = cy - 4; y < cy + 4; y += 1)
+        for (let x = cx - 4; x < cx + 4; x += 1) sum += png.data[(y * 32 + x) * 4] ?? Number.NaN;
+      return sum / 64;
+    };
+    for (const y of [8, 24])
+      for (const x of [8, 24])
+        expect(Math.abs(mean(x, y) - quadrantLevel(size, x * 2, y * 2))).toBeLessThanOrEqual(16);
+
+    // The Basis path keeps source row order. A row flip would move level 30 to level 170 here.
+    // The flat source keeps this single-pixel sample free of the hashed noise.
+    const basis = await texturePass({
+      overrides: [{ glob: "colour.png", codec: "uastc" }],
+    }).apply(quadrantPng(size), "colour.png");
+    if (Buffer.isBuffer(basis)) throw new Error("texture was not encoded");
+    const decodedBasis = await decodeBasisKtx2(basis.buffer, size, size);
+    const basisRed = decodedBasis[(8 * size + 8) * 4] ?? Number.NaN;
+    expect(Math.abs(basisRed - quadrantLevel(size, 8, 8))).toBeLessThanOrEqual(16);
   });
 
   it("should cap standalone colour and normal textures through the encoder decoder without upscaling or changing none bytes", async () => {
@@ -499,12 +746,13 @@ describe("the decoder-free size cap", () => {
     await writeFile(path.join(root, "assets", "decal.png"), alpha);
     await writeFile(path.join(root, "assets", "small.png"), small);
 
-    // Android is the decoder-free case: no WebAssembly, so the KTX2 pass drops and the cap is
-    // applied by the resize pass. Read back the emitted bytes, not the resolved config.
+    // A decoder-free desktop runtime retains the PNG resize path. Mobile cooks raw ASTC.
+    // Read back the emitted bytes, not the resolved config.
     await compileAssets({
       config: { textures: { maxSize: 1024 } },
       cwd: root,
-      platform: "android",
+      platform: "desktop",
+      runtimeDecoders: { ktx2: false, meshopt: false },
     });
 
     const manifest = JSON.parse(
@@ -567,7 +815,8 @@ describe("the decoder-free size cap", () => {
     await compileAssets({
       config: { textures: { maxSize: 64, overrides: [{ codec: "none", glob: "ui/**" }] } },
       cwd: root,
-      platform: "android",
+      platform: "desktop",
+      runtimeDecoders: { ktx2: false, meshopt: false },
     });
 
     const manifest = JSON.parse(
@@ -594,7 +843,8 @@ describe("the decoder-free size cap", () => {
       compileAssets({
         config: { textures: { maxSize: 1024 } },
         cwd: root,
-        platform: "android",
+        platform: "desktop",
+        runtimeDecoders: { ktx2: false, meshopt: false },
       }),
     ).rejects.toThrow(/TN_ASSETS_TEXTURE_UNDECODABLE.*broken\.png/su);
   });

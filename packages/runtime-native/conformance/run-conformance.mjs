@@ -50,7 +50,7 @@ import {
   writeProjectScene,
 } from "./project-mode.mjs";
 
-const REPORT_SCHEMA_VERSION = "0.3.0";
+export const REPORT_SCHEMA_VERSION = "0.3.0";
 const REGISTRY_SCHEMA_VERSION = "0.1.0";
 const runtimeRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
@@ -389,8 +389,17 @@ export function validateProvenance(provenance) {
   return [...errors, ...validateProvenanceEnv(provenance.env)];
 }
 
-export function validateReport(report, registry) {
+/**
+ * Validates a conformance report.
+ *
+ * `suite` names a lane that brings its own rows: the native-engine fixture suite reports each
+ * fixture as a row instead of a registry scene, so its ids come from `expectedIds` and a `pass`
+ * means every observation matched. Everything else — the field list, the provenance contract, the
+ * statuses, the summary arithmetic and the exit code — is the same rule every lane answers to.
+ */
+export function validateReport(report, registry, options = {}) {
   const errors = [];
+  const suite = options.suite ?? null;
   for (const field of Object.keys(report)) {
     if (!REPORT_FIELDS.includes(field)) {
       errors.push(`report.${field} is not a recognised report field`);
@@ -412,10 +421,14 @@ export function validateReport(report, registry) {
     errors.push("report.results must be an array");
     return errors;
   }
-  const expectedIds = registry.tests.map((entry) => entry.id);
+  const expectedIds = options.expectedIds ?? registry.tests.map((entry) => entry.id);
   const resultIds = report.results.map((entry) => entry.id);
   if (JSON.stringify(resultIds) !== JSON.stringify(expectedIds)) {
-    errors.push("report result IDs/order must exactly match the registry");
+    errors.push(
+      options.expectedIds === undefined
+        ? "report result IDs/order must exactly match the registry"
+        : "report result IDs/order must exactly match the suite's rows",
+    );
   }
   for (const exclusion of registry.exclusions ?? []) {
     if (exclusion.target !== report.target || typeof exclusion.row !== "string") continue;
@@ -436,7 +449,17 @@ export function validateReport(report, registry) {
     actualSummary[result.status] += 1;
     if (result.status !== "pass") continue;
     const target = report.target || "desktop";
-    if (target === "web") {
+    if (suite === "native-engine") {
+      if (result.native?.completed !== true) {
+        errors.push(`${result.id}: pass requires a completed native driver run`);
+      }
+      if (result.fixture?.matched !== result.fixture?.observations) {
+        errors.push(`${result.id}: pass requires every observation to match`);
+      }
+      if (!Array.isArray(result.gpuValidationErrors) || result.gpuValidationErrors.length > 0) {
+        errors.push(`${result.id}: pass requires zero GPU validation errors`);
+      }
+    } else if (target === "web") {
       if (result.browser?.completed !== true) {
         errors.push(`${result.id}: pass requires completed browser execution`);
       }
@@ -801,6 +824,7 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
   const url = `http://127.0.0.1:${port}/${htmlRelative}`;
   let browser;
   const pageErrors = [];
+  const worldProofOutput = [];
   let adapterInfo = null;
   try {
     browser = await chromium.launch({
@@ -816,6 +840,10 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
     });
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    if (test.id === "world-gpu-scene-readback")
+      page.on("console", (message) => {
+        if (message.text().startsWith("TN_WORLD_GPU_")) worldProofOutput.push(message.text());
+      });
     const completion = broker.wait(test.id, Number(process.env.TN_BROWSER_TIMEOUT_MS || 90_000));
     broker.capture(test.id, async (frameLabel) => {
       const screenshot = join(captureRoot, `${test.id}${frameLabel ? `-${frameLabel}` : ""}.png`);
@@ -926,6 +954,10 @@ async function runBrowser(test, bundlePath, result, port, broker, captureRoot) {
       result.browser.error = error instanceof Error ? error.message : String(error);
     }
     if (pageErrors.length > 0) result.status = "fail";
+    if (test.id === "world-gpu-scene-readback") {
+      result.browser.worldProof = validateWorldGpuReadbackOutput(worldProofOutput.join("\n"));
+      if (result.browser.worldProof.errors.length > 0) result.status = "fail";
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const adapterBlocker = hardwareAdapterBlocker(message);
@@ -954,6 +986,31 @@ function validationErrors(output) {
   const pattern =
     /GPUValidationError|Validation Error|Device error \(Validation\)|Unhandled|ThreeNative conformance\] failed/giu;
   return output.match(pattern) || [];
+}
+
+export function validateWorldGpuReadbackOutput(log) {
+  const lineFor = (prefix) => log.split("\n").find((entry) => entry.includes(prefix)) ?? "";
+  const fields = (line) => {
+    return Object.fromEntries([...line.matchAll(/(?:^|\s)([a-zA-Z]+)=(\d+)(?=\s|$)/gu)]
+      .map((match) => [match[1], Number(match[2])]));
+  };
+  const handoff = fields(lineFor("TN_WORLD_GPU_IMPOSTOR_HANDOFF "));
+  const lifecycleLine = lineFor("TN_WORLD_GPU_SCENE_READBACK final ");
+  const lifecycle = fields(lifecycleLine);
+  const errors = [];
+  if (!(Object.values(handoff).every(Number.isSafeInteger) &&
+    handoff.frames >= 200 && handoff.levelRefilters === 0 &&
+    handoff.terminalDrawFrames > 0 && handoff.atlasBytes > 0))
+    errors.push("missing or incomplete 200-frame GPU impostor handoff proof");
+  if (!(Object.values(lifecycle).every(Number.isSafeInteger) &&
+    /(?:^|\s)original=disposed(?:\s|$)/u.test(lifecycleLine) &&
+    /(?:^|\s)reload=ready(?:\s|$)/u.test(lifecycleLine) &&
+    lifecycle.framewise >= 200 && lifecycle.originalNonempty >= 200 &&
+    lifecycle.censuses >= 200 && lifecycle.lastDispatch >= lifecycle.framewise &&
+    lifecycle.targetIdentities === 4 && lifecycle.disposeEvents === 4 &&
+    lifecycle.releaseEvents >= 400 && lifecycle.reloadNonempty > 0 && lifecycle.reloadFailures === 0))
+    errors.push("missing or incomplete GPU readback disposal/reload proof");
+  return { handoff, lifecycle, errors };
 }
 
 /**
@@ -1208,6 +1265,7 @@ async function runDesktop(test, bundlePath, result, runtime, captureRoot, assets
             ? { ...process.env, SDL_VIDEODRIVER: "x11" }
             : process.env,
         timeout: 180_000,
+        maxBuffer: 64 * 1024 * 1024,
       },
     );
     const combined = `${proc.stdout || ""}\n${proc.stderr || ""}`;
@@ -1218,10 +1276,18 @@ async function runDesktop(test, bundlePath, result, runtime, captureRoot, assets
       screenshot: hasScreenshot ? screenshot : null,
       stdout: (proc.stdout || "").slice(-4000),
       stderr: (proc.stderr || "").slice(-4000),
+      error: proc.error instanceof Error ? proc.error.message : proc.error ? String(proc.error) : null,
       uniform: null,
     };
     const gpuErrors = validationErrors(combined);
     result.gpuValidationErrors.push(...gpuErrors);
+    if (test.id === "world-gpu-scene-readback") {
+      result.native.worldProof = validateWorldGpuReadbackOutput(combined);
+      if (result.native.worldProof.errors.length > 0) {
+        result.status = "fail";
+        return;
+      }
+    }
     if (test.windowedSurface !== undefined) {
       const surface = validateWindowedSurfaceOutput(combined, test.windowedSurface);
       result.native.windowedSurface = surface;

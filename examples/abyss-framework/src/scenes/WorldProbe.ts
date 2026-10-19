@@ -8,6 +8,9 @@ import {
   MeshStandardMaterial,
   SphereGeometry,
 } from "three";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { pass } from "three/tsl";
+import { ShadowPartialProbe } from "../probes/shadowPartial.js";
 import { terrainMaterial } from "../render/terrain.js";
 import { worldFog } from "../render/worldFog.js";
 
@@ -51,6 +54,18 @@ const VIEW_DISTANCE = /[?&]viewDistance\b/.test(globalThis.location?.search ?? "
  * which nothing hands to `trackCaster`: PRD-572's proof that the node finds a mover by measuring it.
  */
 const SHADOW_MOVERS = /[?&]shadowMovers\b/.test(globalThis.location?.search ?? "");
+/**
+ * `?world&shadowPartial` holds the camera still and, once the world is idle, changes the scene in
+ * three steps (a caster arrives, one leaves while another arrives, one leaves) and compares each
+ * partial shadow redraw to a whole one: PRD-538's depth-equivalence proof, read off the GPU.
+ */
+// The native host has no query string and forwards only `TN_DEBUG_*` into `process.env`.
+const SHADOW_PARTIAL =
+  /[?&]shadowPartial\b/.test(
+    globalThis.location?.search ?? globalThis.document?.location?.search ?? "",
+  ) ||
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+    ?.TN_DEBUG_SHADOW_PARTIAL === "1";
 /** Metres the sphere swings either side of its rest point, and radians per second of the swing. */
 const BALL_SWING = 8;
 const BALL_RATE = 2;
@@ -67,6 +82,7 @@ const initialState = {
   shadowDeferrals: 0,
   shadowFrame: 0,
   shadowLevels: 0,
+  shadowPartialDone: 0,
   shadowRendered: 0,
 };
 
@@ -86,6 +102,7 @@ export class WorldProbe extends Scene<WorldState> {
   #residenceChanges = 0;
   #shadow: VirtualShadowNode | undefined;
   #ball: Mesh | undefined;
+  #partial: ShadowPartialProbe | undefined;
   /** Tiles holding a body right now, as the game's own `createCollider` sees them. */
   readonly #bodies = new Map<string, { tileX: number; tileZ: number }>();
 
@@ -129,7 +146,14 @@ export class WorldProbe extends Scene<WorldState> {
     // engine's own: this scene names no shadow mechanism, it just asks for one and reports what
     // the engine did with it.
     sun.castShadow = true;
-    this.#shadow = new VirtualShadowNode(sun, { clipExtents: [24, 96, 320] });
+    // The partial proof asks for no delay, so each step redraws on the next frame.
+    this.#shadow = new VirtualShadowNode(sun, {
+      clipExtents: [24, 96, 320],
+      // Keep depth coordinates identical across caster changes so byte comparisons test redraws.
+      ...(SHADOW_PARTIAL
+        ? { depthRange: 400, followViewFocus: false, invalidationDelay: 0, lightDistance: 200 }
+        : {}),
+    });
     sun.shadow.shadowNode = this.#shadow;
     // The framework's renderer ships with the shadow map off, because most games never ask for
     // one. This one does, so it turns it on the way the engine's own `Daylight` rig does.
@@ -148,6 +172,19 @@ export class WorldProbe extends Scene<WorldState> {
       ball.position.set(-30, 6, 0);
       this.#ball = ball;
       ctx.add(ball);
+    }
+    if (SHADOW_PARTIAL) {
+      this.#partial = new ShadowPartialProbe({
+        done: () => ctx.state.set({ shadowPartialDone: 1 }),
+        ready: () => {
+          const stats = this.#world?.stats();
+          return stats !== undefined && stats.loadsInFlight === 0 && stats.pendingPrewarm === 0;
+        },
+        renderer: ctx.renderer.raw,
+        scene: ctx.scene,
+        shadow: this.#shadow,
+      });
+      void this.#partial.run();
     }
     ctx.entities.add("world", {
       debug: () => this.#debug(ctx),
@@ -172,6 +209,16 @@ export class WorldProbe extends Scene<WorldState> {
     // hundreds of fixed steps while first-use compilation settles, and a time-driven camera would
     // have crossed the whole fixture before the baseline observation.
     if (ctx.input.pressed("fly")) this.#elapsed += dt;
+    if (SHADOW_PARTIAL) {
+      const held = this.#partial?.cameraOffset;
+      ctx.camera.position.set(-45, 14, 0);
+      // The partial proof's own travel: a camera that moves while the scene holds its shape.
+      if (held !== undefined) ctx.camera.position.add(held);
+      this.#cameraTarget = [-30, 2, 0];
+      ctx.camera.lookAt(...this.#cameraTarget);
+      this.#sample(ctx);
+      return;
+    }
     if (this.#ball !== undefined) {
       // The camera holds still over the fixture and only the sphere answers the input.
       this.#ball.position.z = Math.sin(this.#elapsed * BALL_RATE) * BALL_SWING;
@@ -291,6 +338,37 @@ export class WorldProbe extends Scene<WorldState> {
       shadowLevels: shadow?.levels ?? 0,
       shadowRendered: this.#shadowRenders,
       ...this.#moverDebug(),
+      ...this.#partial?.results,
     };
+  }
+}
+
+export class WorldWarmUpProbe extends WorldProbe {
+  #worldPass: ReturnType<typeof pass> | undefined;
+  #outputInstallation: { dispose(): void } | undefined;
+
+  override enter(ctx: WorldCtx): void {
+    const worldPass = pass(ctx.scene, ctx.camera);
+    const colour = worldPass.getTextureNode();
+    const installation = ctx.renderer.setOutputNode(
+      colour.add(bloom(colour, 0.9, 0.5, 0.25)),
+      worldPass,
+    );
+    if (ctx.renderer.warmUpWorldPass === undefined)
+      throw new Error("WorldWarmUpProbe requires renderer.warmUpWorldPass.");
+    this.#worldPass = worldPass;
+    if (installation !== undefined) this.#outputInstallation = installation;
+    console.info("[WorldWarmUpProbe] installed world output pass");
+    super.enter(ctx);
+  }
+
+  override exit(ctx: WorldCtx): void {
+    super.exit(ctx);
+    this.#outputInstallation?.dispose();
+    this.#outputInstallation = undefined;
+    const worldPass = this.#worldPass;
+    this.#worldPass = undefined;
+    ctx.renderer.clearOutputNode?.(worldPass);
+    worldPass?.dispose();
   }
 }

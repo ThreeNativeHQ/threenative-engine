@@ -1,4 +1,6 @@
 import type { Camera, Object3D } from "three";
+import type { IFrameBudgetSimulation, IFrameBudgetWindow } from "./frame-budget.js";
+import { type IBudgetCandidate, ParticleSignificance } from "./particle-significance.js";
 import type { IRendererLike } from "./renderer.js";
 
 /**
@@ -20,6 +22,12 @@ export interface IComputeDriven {
   /** Render admission needed to settle a startup hold, after initial compilation. */
   readonly processDuringStartup?: boolean;
   /**
+   * Yield simulation work in order of projected size when measured GPU compute exceeds budget.
+   * @situation Let the render loop pause low-significance particle emitters under GPU pressure.
+   * @constraint Only live render-cadence objects participate; missing measurements never shed.
+   */
+  readonly budget?: IBudgetCandidate;
+  /**
    * Dispatched once per fixed step, in scene-add order unless render cadence is declared.
    *
    * `camera` is the frame's render camera, handed over at render cadence so a consumer that culls by
@@ -30,7 +38,13 @@ export interface IComputeDriven {
    * `covered` is true while the startup cover hides the world and readiness is still pending, so
    * a streamed world may spend more of the frame admitting the spawn it is waiting on.
    */
-  process(renderer: IRendererLike, camera?: Camera, covered?: boolean): void;
+  process(
+    renderer: IRendererLike,
+    camera?: Camera,
+    covered?: boolean,
+    view?: undefined,
+    simulatedSeconds?: number,
+  ): void;
   detach(): void;
   readonly released: boolean;
 }
@@ -44,6 +58,7 @@ interface IComputeDrivenEntry {
 /** The ordered registry used by the game loop for all compute-driven scene objects. */
 export class ComputeDrivenRegistry {
   #entries = new Map<IComputeDriven, IComputeDrivenEntry>();
+  readonly #significance = new ParticleSignificance();
 
   get size(): number {
     return this.#entries.size;
@@ -76,12 +91,43 @@ export class ComputeDrivenRegistry {
     this.#process(renderer, "fixed");
   }
 
+  /** Forward a measured frame window to the particle budget coordinator. */
+  observeBudget(
+    window: Pick<
+      IFrameBudgetWindow,
+      "frames" | "presented" | "gpuMs" | "gpuCompute" | "targetFps" | "simulatedSeconds"
+    >,
+  ): void {
+    this.#significance.observe(window);
+  }
+
   /**
    * Dispatch render-cadence objects once with the frame's render camera; detached scene children are
    * released before dispatch.
    */
-  processRender(renderer: IRendererLike, camera?: Camera, startupOnly = false): void {
-    this.#process(renderer, "render", camera, startupOnly);
+  processRender(
+    renderer: IRendererLike,
+    camera?: Camera,
+    startupOnly = false,
+    simulation?: IFrameBudgetSimulation,
+  ): void {
+    const simulatedSeconds =
+      simulation === undefined ? undefined : simulation.tick() * simulation.step;
+    if (camera !== undefined) {
+      const candidates: IBudgetCandidate[] = [];
+      for (const { object, driven } of this.#entries.values()) {
+        if (
+          !driven.released &&
+          object.parent !== null &&
+          driven.processCadence === "render" &&
+          driven.budget !== undefined
+        )
+          candidates.push(driven.budget);
+      }
+      // Wall time is only for callers without a loop clock.
+      this.#significance.apply(candidates, camera, simulatedSeconds ?? performance.now() / 1000);
+    }
+    this.#process(renderer, "render", camera, startupOnly, simulatedSeconds);
   }
 
   #process(
@@ -89,6 +135,7 @@ export class ComputeDrivenRegistry {
     cadence: "fixed" | "render",
     camera?: Camera,
     startupOnly = false,
+    simulatedSeconds?: number,
   ): void {
     for (const entry of [...this.#entries.values()]) {
       if (entry.driven.released || entry.object.parent === null) {
@@ -97,7 +144,8 @@ export class ComputeDrivenRegistry {
       }
       if ((entry.driven.processCadence ?? "fixed") !== cadence) continue;
       if (startupOnly && entry.driven.processDuringStartup !== true) continue;
-      entry.driven.process(renderer, camera, startupOnly);
+      // TerrainTiles owns the fourth argument for its LOD view.
+      entry.driven.process(renderer, camera, startupOnly, undefined, simulatedSeconds);
     }
   }
 

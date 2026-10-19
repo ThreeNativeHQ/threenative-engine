@@ -1,0 +1,51 @@
+{
+  "name": "materials-instance-color-attribute",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — InstancedMesh.instanceColor assigned as the game's own InstancedBufferAttribute (Midway's tracers), not grown by setColorAt: two lit crates tinted red and blue",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff4c8dc2e423980,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ffbb67ae8584cab,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.299038105676658, 0, 0, 0, 0, 1.7320508075688774, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:3ff6666666666666,n:400999999999999a,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1.4, 3.2, 1"
+    },
+    {
+      "index": 2,
+      "id": "light",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:4000000000000000,n:4008000000000000,n:3ff0000000000000,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 3, 1, 1"
+    },
+    {
+      "index": 3,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:7607d6220e25e4fc7c9c1f2b169df9100c8b36f7d34cf0014e49f5c2b8071a23",
+      "decimal": "7607d6220e25e4fc7c9c1f2b169df9100c8b36f7d34cf0014e49f5c2b8071a23"
+    }
+  ],
+  "render": {
+    "png": "materials-instance-color-attribute.png",
+    "pngSha256": "7607d6220e25e4fc7c9c1f2b169df9100c8b36f7d34cf0014e49f5c2b8071a23",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

@@ -39,6 +39,10 @@ typedef WGPUSurfaceDescriptorFromWindowsHWND WGPUSurfaceDescriptorFromWindowsHWN
 typedef WGPUSurfaceDescriptorFromXlibWindow WGPUSurfaceDescriptorFromXlibWindow_Compat;
 #define WGPUSType_SurfaceDescriptorFromXlibWindow_Compat WGPUSType_SurfaceDescriptorFromXlibWindow
 
+// Surface descriptors - Linux Wayland
+typedef WGPUSurfaceDescriptorFromWaylandSurface WGPUSurfaceDescriptorFromWaylandSurface_Compat;
+#define WGPUSType_SurfaceDescriptorFromWaylandSurface_Compat WGPUSType_SurfaceDescriptorFromWaylandSurface
+
 // Surface descriptors - Android ANativeWindow
 typedef WGPUSurfaceDescriptorFromAndroidNativeWindow WGPUSurfaceDescriptorFromAndroidNativeWindow_Compat;
 #define WGPUSType_SurfaceDescriptorFromAndroidNativeWindow_Compat WGPUSType_SurfaceDescriptorFromAndroidNativeWindow
@@ -121,6 +125,8 @@ inline void setupShaderModuleWGSL(WGPUShaderModuleDescriptor* desc,
 // Dawn uses newer WebGPU API naming
 // ============================================================================
 
+// Native window surfaces; the browser build (emdawnwebgpu) has a canvas and none of these.
+#if !defined(__EMSCRIPTEN__)
 // Surface descriptors - macOS Metal
 typedef WGPUSurfaceSourceMetalLayer WGPUSurfaceDescriptorFromMetalLayer_Compat;
 #define WGPUSType_SurfaceDescriptorFromMetalLayer_Compat WGPUSType_SurfaceSourceMetalLayer
@@ -133,9 +139,14 @@ typedef WGPUSurfaceSourceWindowsHWND WGPUSurfaceDescriptorFromWindowsHWND_Compat
 typedef WGPUSurfaceSourceXlibWindow WGPUSurfaceDescriptorFromXlibWindow_Compat;
 #define WGPUSType_SurfaceDescriptorFromXlibWindow_Compat WGPUSType_SurfaceSourceXlibWindow
 
+// Surface descriptors - Linux Wayland
+typedef WGPUSurfaceSourceWaylandSurface WGPUSurfaceDescriptorFromWaylandSurface_Compat;
+#define WGPUSType_SurfaceDescriptorFromWaylandSurface_Compat WGPUSType_SurfaceSourceWaylandSurface
+
 // Surface descriptors - Android ANativeWindow
 typedef WGPUSurfaceSourceAndroidNativeWindow WGPUSurfaceDescriptorFromAndroidNativeWindow_Compat;
 #define WGPUSType_SurfaceDescriptorFromAndroidNativeWindow_Compat WGPUSType_SurfaceSourceAndroidNativeWindow
+#endif  // !__EMSCRIPTEN__
 
 // Dawn proc initialization - Dawn requires setting up procs before use
 #define WGPU_NEEDS_PROC_INIT 1

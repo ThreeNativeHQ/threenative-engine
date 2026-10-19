@@ -44,7 +44,18 @@ export interface IPipelineCaptureEvent {
   readonly wallMs?: number;
   readonly label?: string;
   readonly error?: string;
+  readonly nodeBuilds?: number;
   readonly beforeFirstPresent?: boolean;
+  readonly beforeWarmUpSettled?: boolean;
+  readonly afterWarmUpScope?: string;
+}
+
+export interface IPipelineCaptureNodeBuild {
+  readonly provenance: IPipelineCaptureProvenance;
+  readonly startedMs: number;
+  readonly beforeFirstPresent?: boolean;
+  readonly beforeWarmUpSettled?: boolean;
+  readonly afterWarmUpScope?: string;
 }
 
 export interface IPipelineCaptureCounts {
@@ -56,6 +67,7 @@ export interface IPipelineCaptureCounts {
   readonly uniquePipelines: number;
   readonly recordedEvents: number;
   readonly droppedEvents: number;
+  readonly nodeBuilds?: number;
 }
 
 /**
@@ -84,8 +96,26 @@ export interface IPipelineCapture {
   readonly build?: Readonly<Record<string, unknown>>;
   readonly adapter?: Readonly<Record<string, unknown>>;
   readonly firstPresent?: { readonly boundaryMs: number; readonly eventsSettled: number };
+  readonly warmUpSettled?: {
+    readonly boundaryMs: number;
+    readonly eventsSettled: number;
+    readonly nodeBuilds: number;
+    readonly renderPipelineCreations: number;
+  };
+  readonly warmUpScopes?: readonly {
+    readonly label: string;
+    readonly boundaryMs: number;
+    readonly eventsSettled: number;
+    readonly nodeBuilds: number;
+    readonly renderPipelineCreations: number;
+    readonly firstDraw?: {
+      readonly nodeBuilds: number;
+      readonly renderPipelineCreations: number;
+    };
+  }[];
   readonly counts: IPipelineCaptureCounts;
   readonly events: readonly IPipelineCaptureEvent[];
+  readonly nodeBuilds?: readonly IPipelineCaptureNodeBuild[];
   readonly incompleteReasons: readonly string[];
 }
 
@@ -100,9 +130,12 @@ export interface IPipelinePassSummary {
 }
 
 export interface IPipelineContributorSummary {
+  readonly afterWarmUpSettledCreations: number;
+  readonly afterWarmUpSettledNodeBuilds: number;
   readonly creations: number;
   readonly failures: number;
   readonly label: string;
+  readonly nodeBuilds: number;
   readonly sampleCount: number;
   /** Sum of observed device-call service durations; absent when the driver did not expose them. */
   readonly serviceMs?: number;
@@ -129,10 +162,23 @@ export interface IPipelineSizeTimeSummary {
 
 export interface IPipelineWarmupSummary {
   readonly afterFirstPresent: number;
+  readonly afterWarmUpSettled: number;
   readonly beforeFirstPresent: number;
   readonly eventsSettledAtFirstPresent?: number;
+  readonly eventsSettledAtWarmUpSettled?: number;
+  readonly nodeBuildsAfterWarmUpSettled?: number;
+  readonly renderPipelineCreationsAfterWarmUpSettled?: number;
+  /** Post-boundary work attributed to material contributors already observed during warm-up. */
+  readonly warmedNodeBuildsAfterWarmUpSettled?: number;
+  readonly warmedRenderPipelineCreationsAfterWarmUpSettled?: number;
   readonly total: number;
   readonly unreported: number;
+  readonly scopes: readonly {
+    readonly label: string;
+    readonly nodeBuilds: number;
+    readonly renderPipelineCreations: number;
+    readonly observed?: boolean;
+  }[];
 }
 
 export interface IPipelineSummary {
@@ -453,8 +499,43 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
   const sizeMap = new Map<string, { bytes: number; serviceMs: number; samples: number }>();
   let beforeFirstPresent = 0;
   let afterFirstPresent = 0;
+  let afterWarmUpSettled = 0;
+  let renderPipelineCreationsAfterWarmUpSettled = 0;
+  let warmedNodeBuildsAfterWarmUpSettled = 0;
+  let warmedRenderPipelineCreationsAfterWarmUpSettled = 0;
+  const scopeMap = new Map<
+    string,
+    { nodeBuilds: number; renderPipelineCreations: number; observed?: boolean }
+  >();
+  const measuredScopeLabels = new Set<string>();
+  for (const scope of capture.warmUpScopes ?? []) {
+    const previous = scopeMap.get(scope.label);
+    if (scope.firstDraw !== undefined) measuredScopeLabels.add(scope.label);
+    scopeMap.set(scope.label, {
+      nodeBuilds: Math.max(previous?.nodeBuilds ?? 0, scope.firstDraw?.nodeBuilds ?? 0),
+      renderPipelineCreations: Math.max(
+        previous?.renderPipelineCreations ?? 0,
+        scope.firstDraw?.renderPipelineCreations ?? 0,
+      ),
+      ...(scope.firstDraw !== undefined && (previous === undefined || previous.observed === true)
+        ? { observed: true }
+        : {}),
+    });
+  }
   let unreported = 0;
   let sizeSamples = 0;
+  const hasNodeBuildRecords = capture.nodeBuilds !== undefined;
+  const warmedMaterialLabels =
+    capture.warmUpSettled === undefined
+      ? undefined
+      : new Set<string>([
+          capture.events
+            .filter(({ beforeWarmUpSettled, provenance }) => beforeWarmUpSettled === true && provenance.material !== undefined)
+            .map(contributorLabel),
+          ...(capture.nodeBuilds ?? [])
+            .filter(({ beforeWarmUpSettled, provenance }) => beforeWarmUpSettled === true && provenance.material !== undefined)
+            .map(({ provenance }) => contributorLabelOfProvenance(provenance)),
+        ].flat());
   for (const event of capture.events) {
     const serviceMs = event.serviceMs;
     const previousPass = passMap.get(event.pass);
@@ -468,9 +549,17 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
     const label = contributorLabel(event);
     const previousContributor = contributorMap.get(label);
     contributorMap.set(label, {
+      afterWarmUpSettledCreations:
+        (previousContributor?.afterWarmUpSettledCreations ?? 0) +
+        (event.beforeWarmUpSettled === false && event.status === "created" ? 1 : 0),
+      afterWarmUpSettledNodeBuilds:
+        (previousContributor?.afterWarmUpSettledNodeBuilds ?? 0) +
+        (hasNodeBuildRecords || event.beforeWarmUpSettled !== false ? 0 : event.nodeBuilds ?? 0),
       label,
       creations: (previousContributor?.creations ?? 0) + 1,
       failures: (previousContributor?.failures ?? 0) + (event.status === "failed" ? 1 : 0),
+      nodeBuilds: (previousContributor?.nodeBuilds ?? 0) +
+        (hasNodeBuildRecords ? 0 : event.nodeBuilds ?? 0),
       sampleCount: (previousContributor?.sampleCount ?? 0) + (event.serviceMs === undefined ? 0 : 1),
       ...(serviceMs === undefined && previousContributor?.serviceMs === undefined
         ? {}
@@ -497,8 +586,62 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
     if (event.beforeFirstPresent === true) beforeFirstPresent += 1;
     else if (event.beforeFirstPresent === false) afterFirstPresent += 1;
     else unreported += 1;
+    if (event.beforeWarmUpSettled === false) {
+      afterWarmUpSettled += 1;
+      if (event.kind === "render" && event.status === "created")
+        renderPipelineCreationsAfterWarmUpSettled += 1;
+      if (warmedMaterialLabels?.has(label) === true) {
+        if (!hasNodeBuildRecords) warmedNodeBuildsAfterWarmUpSettled += event.nodeBuilds ?? 0;
+        if (event.kind === "render" && event.status === "created")
+          warmedRenderPipelineCreationsAfterWarmUpSettled += 1;
+      }
+    }
+    if (event.afterWarmUpScope !== undefined) {
+      const scope = scopeMap.get(event.afterWarmUpScope) ?? {
+        nodeBuilds: 0,
+        renderPipelineCreations: 0,
+      };
+      if (!measuredScopeLabels.has(event.afterWarmUpScope)) {
+        if (!hasNodeBuildRecords) scope.nodeBuilds += event.nodeBuilds ?? 0;
+        if (event.kind === "render" && event.status === "created")
+          scope.renderPipelineCreations += 1;
+      }
+      scopeMap.set(event.afterWarmUpScope, scope);
+    }
+  }
+  for (const nodeBuild of capture.nodeBuilds ?? []) {
+    const label = contributorLabelOfProvenance(nodeBuild.provenance);
+    const previousContributor = contributorMap.get(label);
+    contributorMap.set(label, {
+      afterWarmUpSettledCreations: previousContributor?.afterWarmUpSettledCreations ?? 0,
+      afterWarmUpSettledNodeBuilds:
+        (previousContributor?.afterWarmUpSettledNodeBuilds ?? 0) +
+        (nodeBuild.beforeWarmUpSettled === false ? 1 : 0),
+      label,
+      creations: previousContributor?.creations ?? 0,
+      failures: previousContributor?.failures ?? 0,
+      nodeBuilds: (previousContributor?.nodeBuilds ?? 0) + 1,
+      sampleCount: previousContributor?.sampleCount ?? 0,
+      ...(previousContributor?.serviceMs === undefined
+        ? {}
+        : { serviceMs: previousContributor.serviceMs }),
+    });
+    if (nodeBuild.beforeWarmUpSettled === false && warmedMaterialLabels?.has(label) === true)
+      warmedNodeBuildsAfterWarmUpSettled += 1;
+    if (nodeBuild.afterWarmUpScope !== undefined) {
+      const scope = scopeMap.get(nodeBuild.afterWarmUpScope) ?? {
+        nodeBuilds: 0,
+        renderPipelineCreations: 0,
+      };
+      if (!measuredScopeLabels.has(nodeBuild.afterWarmUpScope)) scope.nodeBuilds += 1;
+      scopeMap.set(nodeBuild.afterWarmUpScope, scope);
+    }
   }
   const source = capture.source;
+  const nodeBuildsAfterWarmUpSettled =
+    capture.warmUpSettled === undefined || capture.counts.nodeBuilds === undefined
+      ? undefined
+      : capture.counts.nodeBuilds - capture.warmUpSettled.nodeBuilds;
   return {
     adapter: capture.adapter,
     ...(capture.boundary === undefined ? {} : { boundary: capture.boundary }),
@@ -537,8 +680,25 @@ export function summarizePipelineCapture(capture: IPipelineCapture): IPipelineSu
       total: capture.events.length,
       beforeFirstPresent,
       afterFirstPresent,
+      afterWarmUpSettled,
       unreported,
       ...(capture.firstPresent === undefined ? {} : { eventsSettledAtFirstPresent: capture.firstPresent.eventsSettled }),
+      ...(capture.warmUpSettled === undefined
+        ? {}
+        : {
+            eventsSettledAtWarmUpSettled: capture.warmUpSettled.eventsSettled,
+            renderPipelineCreationsAfterWarmUpSettled,
+          }),
+      ...(nodeBuildsAfterWarmUpSettled === undefined ? {} : { nodeBuildsAfterWarmUpSettled }),
+      ...(warmedMaterialLabels === undefined || warmedMaterialLabels.size === 0
+        ? {}
+        : {
+            warmedNodeBuildsAfterWarmUpSettled,
+            warmedRenderPipelineCreationsAfterWarmUpSettled,
+          }),
+      scopes: [...scopeMap.entries()]
+        .map(([label, value]) => ({ label, ...value }))
+        .sort((left, right) => left.label.localeCompare(right.label)),
     },
   };
 }
@@ -569,7 +729,10 @@ export function formatPipelineSummary(summary: IPipelineSummary): string {
   if (summary.contributors.length > 0) {
     lines.push("top material/object contributors:");
     for (const contributor of summary.contributors.slice(0, 5)) {
-      lines.push(`  ${contributor.label.padEnd(28)} ${contributor.creations} creation(s), ${formatService(contributor.serviceMs)} service`);
+      lines.push(
+        `  ${contributor.label.padEnd(28)} ${contributor.creations} creation(s), ` +
+          `${contributor.nodeBuilds} node build(s), ${formatService(contributor.serviceMs)} service`,
+      );
     }
   }
   if (summary.programReasons.length > 0) {
@@ -582,6 +745,18 @@ export function formatPipelineSummary(summary: IPipelineSummary): string {
     `warm-up: ${summary.warmup.beforeFirstPresent} before first present, ` +
       `${summary.warmup.afterFirstPresent} after, ${summary.warmup.unreported} unreported`,
   );
+  if (summary.warmup.eventsSettledAtWarmUpSettled !== undefined) {
+    lines.push(
+      `warm-up settled: ${summary.warmup.afterWarmUpSettled} event(s) after, ` +
+        `${summary.warmup.nodeBuildsAfterWarmUpSettled ?? "unreported"} node build(s), ` +
+        `${summary.warmup.renderPipelineCreationsAfterWarmUpSettled} render pipeline creation(s)`,
+    );
+    if (summary.warmup.warmedNodeBuildsAfterWarmUpSettled !== undefined)
+      lines.push(
+        `warmed materials after warm-up: ${summary.warmup.warmedNodeBuildsAfterWarmUpSettled} node build(s), ` +
+          `${summary.warmup.warmedRenderPipelineCreationsAfterWarmUpSettled} render pipeline creation(s)`,
+      );
+  }
   if (summary.sizeTime.byPass.length > 0) {
     lines.push("shader size/time by pass:");
     for (const pass of summary.sizeTime.byPass) {
@@ -600,6 +775,7 @@ function parseBrowserCapture(value: JsonRecord): IPipelineCapture {
   const eventsValue = value.events;
   if (!Array.isArray(eventsValue)) throw malformed("browser capture is missing an events array");
   const events = eventsValue.map((event, index) => normaliseBrowserEvent(event, index));
+  const nodeBuilds = parseNodeBuilds(value.nodeBuilds);
   validateEventSequence(events, "browser capture", true);
   const declaredCounts = parseCounts(value.counts);
   const reasons: string[] = [];
@@ -659,6 +835,71 @@ function parseBrowserCapture(value: JsonRecord): IPipelineCapture {
         reasons.push("an event is marked after first present but settled before its boundary");
     }
   }
+  const warmUpSettled = parseWarmUpSettled(value.warmUpSettled);
+  const warmUpScopes = parseWarmUpScopes(value.warmUpScopes);
+  if (warmUpSettled !== undefined) {
+    const settledAtWarmUp = events.filter(
+      ({ settledMs }) => settledMs !== undefined && settledMs <= warmUpSettled.boundaryMs,
+    ).length;
+    if (warmUpSettled.eventsSettled !== settledAtWarmUp)
+      reasons.push("warm-up settled event count does not match event timings");
+    const renderCreationsAtWarmUp = events.filter(
+      ({ kind, status, settledMs }) =>
+        kind === "render" &&
+        status === "created" &&
+        settledMs !== undefined &&
+        settledMs <= warmUpSettled.boundaryMs,
+    ).length;
+    if (warmUpSettled.renderPipelineCreations !== renderCreationsAtWarmUp)
+      reasons.push("warm-up settled render creation count does not match event timings");
+    for (const event of events) {
+      if (event.beforeWarmUpSettled === true && event.settledMs !== undefined && event.settledMs > warmUpSettled.boundaryMs)
+        reasons.push("an event is marked before warm-up settled but settled after its boundary");
+      if (event.beforeWarmUpSettled === false && event.settledMs !== undefined && event.settledMs <= warmUpSettled.boundaryMs)
+        reasons.push("an event is marked after warm-up settled but settled before its boundary");
+      if (event.beforeWarmUpSettled === undefined)
+        reasons.push("an event is missing its warm-up settled boundary tag");
+      if (event.beforeWarmUpSettled === false && event.nodeBuilds === undefined)
+        reasons.push("an event after warm-up settled is missing its node-build count");
+    }
+    if (declaredCounts.nodeBuilds !== undefined && declaredCounts.nodeBuilds < warmUpSettled.nodeBuilds)
+      reasons.push("warm-up settled node-build count exceeds the total node-build count");
+    for (const [index, nodeBuild] of (nodeBuilds ?? []).entries()) {
+      if (nodeBuild.beforeWarmUpSettled === undefined)
+        reasons.push(`node build ${index + 1} is missing its warm-up settled boundary tag`);
+      else if (
+        (nodeBuild.beforeWarmUpSettled && nodeBuild.startedMs > warmUpSettled.boundaryMs) ||
+        (!nodeBuild.beforeWarmUpSettled && nodeBuild.startedMs <= warmUpSettled.boundaryMs)
+      )
+        reasons.push(`node build ${index + 1} has an invalid warm-up settled boundary tag`);
+    }
+  }
+  if (warmUpScopes !== undefined) {
+    const labels = new Set(warmUpScopes.map(({ label }) => label));
+    for (const event of events) {
+      if (event.afterWarmUpScope !== undefined && !labels.has(event.afterWarmUpScope))
+        reasons.push(`event ${event.sequence} names an unknown warm-up scope`);
+    }
+    for (const scope of warmUpScopes) {
+      const settled = events.filter(
+        ({ settledMs }) => settledMs !== undefined && settledMs <= scope.boundaryMs,
+      ).length;
+      if (settled !== scope.eventsSettled)
+        reasons.push(`warm-up scope '${scope.label}' event count does not match event timings`);
+      const creations = events.filter(
+        ({ kind, status, settledMs }) =>
+          kind === "render" && status === "created" && settledMs !== undefined && settledMs <= scope.boundaryMs,
+      ).length;
+      if (creations !== scope.renderPipelineCreations)
+        reasons.push(`warm-up scope '${scope.label}' render creation count does not match event timings`);
+    }
+    for (const [index, nodeBuild] of (nodeBuilds ?? []).entries()) {
+      if (nodeBuild.afterWarmUpScope !== undefined && !labels.has(nodeBuild.afterWarmUpScope))
+        reasons.push(`node build ${index + 1} names an unknown warm-up scope`);
+    }
+  }
+  if (nodeBuilds !== undefined && declaredCounts.nodeBuilds !== undefined && nodeBuilds.length !== declaredCounts.nodeBuilds)
+    reasons.push("node-build count does not match the nodeBuilds array");
   return {
     version: PIPELINE_CAPTURE_VERSION,
     source: "browser",
@@ -669,8 +910,11 @@ function parseBrowserCapture(value: JsonRecord): IPipelineCapture {
     ...(build === undefined ? {} : { build }),
     ...(adapter === undefined ? {} : { adapter }),
     ...(firstPresent === undefined ? {} : { firstPresent }),
+    ...(warmUpSettled === undefined ? {} : { warmUpSettled }),
+    ...(warmUpScopes === undefined ? {} : { warmUpScopes }),
     counts: declaredCounts,
     events,
+    ...(nodeBuilds === undefined ? {} : { nodeBuilds }),
     incompleteReasons: reasons,
   };
 }
@@ -922,7 +1166,10 @@ function normaliseBrowserEvent(value: unknown, index: number): IPipelineCaptureE
     ...optionalNumber(event.queueMs, "queueMs", index),
     ...optionalNumber(event.wallMs, "wallMs", index),
     ...(event.error === undefined ? {} : { error: stringValue(event.error, `event ${index + 1} error`) }),
+    ...(event.nodeBuilds === undefined ? {} : { nodeBuilds: nonNegativeInteger(event.nodeBuilds, `event ${index + 1} nodeBuilds`) }),
     ...(event.beforeFirstPresent === undefined ? {} : { beforeFirstPresent: booleanValue(event.beforeFirstPresent, `event ${index + 1} beforeFirstPresent`) }),
+    ...(event.beforeWarmUpSettled === undefined ? {} : { beforeWarmUpSettled: booleanValue(event.beforeWarmUpSettled, `event ${index + 1} beforeWarmUpSettled`) }),
+    ...(event.afterWarmUpScope === undefined ? {} : { afterWarmUpScope: stringValue(event.afterWarmUpScope, `event ${index + 1} afterWarmUpScope`) }),
   };
   validateEventTiming(result, `event ${index + 1}`);
   if (status === "failed" && result.error === undefined)
@@ -1003,6 +1250,7 @@ function parseCounts(value: unknown): IPipelineCaptureCounts {
     uniquePipelines: nonNegativeInteger(source.uniquePipelines, "counts uniquePipelines"),
     recordedEvents: nonNegativeInteger(source.recordedEvents, "counts recordedEvents"),
     droppedEvents: nonNegativeInteger(source.droppedEvents, "counts droppedEvents"),
+    ...(source.nodeBuilds === undefined ? {} : { nodeBuilds: nonNegativeInteger(source.nodeBuilds, "counts nodeBuilds") }),
   };
 }
 
@@ -1050,6 +1298,78 @@ function parseFirstPresent(value: unknown): IPipelineCapture["firstPresent"] {
     boundaryMs: nonNegativeNumber(source.boundaryMs, "firstPresent boundaryMs"),
     eventsSettled: nonNegativeInteger(source.eventsSettled, "firstPresent eventsSettled"),
   };
+}
+
+function parseWarmUpSettled(value: unknown): IPipelineCapture["warmUpSettled"] {
+  if (value === undefined) return undefined;
+  const source = asRecord(value);
+  if (source === undefined) throw malformed("warmUpSettled is not an object");
+  return {
+    boundaryMs: nonNegativeNumber(source.boundaryMs, "warmUpSettled boundaryMs"),
+    eventsSettled: nonNegativeInteger(source.eventsSettled, "warmUpSettled eventsSettled"),
+    nodeBuilds: nonNegativeInteger(source.nodeBuilds, "warmUpSettled nodeBuilds"),
+    renderPipelineCreations: nonNegativeInteger(
+      source.renderPipelineCreations,
+      "warmUpSettled renderPipelineCreations",
+    ),
+  };
+}
+
+function parseWarmUpScopes(value: unknown): IPipelineCapture["warmUpScopes"] {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw malformed("warmUpScopes is not an array");
+  return value.map((entry, index) => {
+    const source = asRecord(entry);
+    if (source === undefined) throw malformed(`warmUpScopes[${index}] is not an object`);
+    const label = stringValue(source.label, `warmUpScopes[${index}] label`);
+    if (label.trim() === "") throw malformed(`warmUpScopes[${index}] label is empty`);
+    const firstDraw = source.firstDraw === undefined
+      ? undefined
+      : (() => {
+          const draw = asRecord(source.firstDraw);
+          if (draw === undefined) throw malformed(`warmUpScopes[${index}] firstDraw is not an object`);
+          return {
+            nodeBuilds: nonNegativeInteger(draw.nodeBuilds, `warmUpScopes[${index}] firstDraw nodeBuilds`),
+            renderPipelineCreations: nonNegativeInteger(
+              draw.renderPipelineCreations,
+              `warmUpScopes[${index}] firstDraw renderPipelineCreations`,
+            ),
+          };
+        })();
+    return {
+      label,
+      boundaryMs: nonNegativeNumber(source.boundaryMs, `warmUpScopes[${index}] boundaryMs`),
+      eventsSettled: nonNegativeInteger(source.eventsSettled, `warmUpScopes[${index}] eventsSettled`),
+      nodeBuilds: nonNegativeInteger(source.nodeBuilds, `warmUpScopes[${index}] nodeBuilds`),
+      renderPipelineCreations: nonNegativeInteger(
+        source.renderPipelineCreations,
+        `warmUpScopes[${index}] renderPipelineCreations`,
+      ),
+      ...(firstDraw === undefined ? {} : { firstDraw }),
+    };
+  });
+}
+
+function parseNodeBuilds(value: unknown): IPipelineCapture["nodeBuilds"] {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw malformed("nodeBuilds is not an array");
+  return value.map((entry, index) => {
+    const source = asRecord(entry);
+    if (source === undefined) throw malformed(`nodeBuilds[${index}] is not an object`);
+    return {
+      provenance: normaliseProvenance(source.provenance, `nodeBuilds[${index}]`),
+      startedMs: nonNegativeNumber(source.startedMs, `nodeBuilds[${index}] startedMs`),
+      ...(source.beforeFirstPresent === undefined
+        ? {}
+        : { beforeFirstPresent: booleanValue(source.beforeFirstPresent, `nodeBuilds[${index}] beforeFirstPresent`) }),
+      ...(source.beforeWarmUpSettled === undefined
+        ? {}
+        : { beforeWarmUpSettled: booleanValue(source.beforeWarmUpSettled, `nodeBuilds[${index}] beforeWarmUpSettled`) }),
+      ...(source.afterWarmUpScope === undefined
+        ? {}
+        : { afterWarmUpScope: stringValue(source.afterWarmUpScope, `nodeBuilds[${index}] afterWarmUpScope`) }),
+    };
+  });
 }
 
 function validateCaptureVersion(value: unknown, label: string): void {
@@ -1114,11 +1434,15 @@ function nativePass(pass: string, labelValue: unknown): string {
 }
 
 function contributorLabel(event: IPipelineCaptureEvent): string {
-  const material = event.provenance.material;
+  return contributorLabelOfProvenance(event.provenance);
+}
+
+function contributorLabelOfProvenance(provenance: IPipelineCaptureProvenance): string {
+  const material = provenance.material;
   if (material?.name !== undefined) return `material:${material.name}`;
   if (material?.id !== undefined) return `material#${material.id}`;
   if (material?.type !== undefined) return `material:${material.type}`;
-  const object = event.provenance.object;
+  const object = provenance.object;
   if (object?.name !== undefined) return `object:${object.name}`;
   if (object?.id !== undefined) return `object#${object.id}`;
   return "unknown provenance";

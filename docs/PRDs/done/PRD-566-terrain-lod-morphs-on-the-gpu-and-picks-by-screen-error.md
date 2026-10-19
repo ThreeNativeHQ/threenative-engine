@@ -4,7 +4,7 @@
 **Priority:** P1 — completed terrain LOD morph, screen-error selection and aligned blend-frame measurement.
 **Complexity:** 3 (LOW) — 1–5 implementation files (`world-tiles.ts`, the terrain probe) (+1), per-tile transition state already exists (+0), native proof reuses the installed morph path (+0); the score stays 3 because the morph replaces a CPU loop with stock three morph targets; risk override: none
 **Owner:** João
-**Depends on:** None. Respects [PRD-473](../open-world/PRD-473-open-worlds-hold-120-fps-gpu-driven.md) (merged blocks, rejected height texture), [PRD-460](../Unreal/open-world/PRD-460-invisible-streaming-transitions.md) (terrain is its non-goal) and [PRD-461](open-world/PRD-461-view-distance-basics.md) (switches stay in the haze).
+**Depends on:** None. Respects [PRD-473](./PRD-473-open-worlds-hold-120-fps-gpu-driven.md) (merged blocks, rejected height texture), [PRD-460](../Unreal/open-world/PRD-460-invisible-streaming-transitions.md) (terrain is its non-goal) and [PRD-461](open-world/PRD-461-view-distance-basics.md) (switches stay in the haze).
 
 ## Context
 

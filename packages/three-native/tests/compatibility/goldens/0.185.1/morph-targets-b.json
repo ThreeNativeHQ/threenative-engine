@@ -1,0 +1,43 @@
+{
+  "name": "morph-targets-b",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a sphere with two morph targets (a squash and a twist, positions and normals), absolute on the left and relative on the right, at influences 1, 0.85",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "absolute",
+      "kind": "numbers",
+      "path": "morphTargetInfluences",
+      "value": "n:3ff0000000000000,n:3feb333333333333",
+      "decimal": "1, 0.85"
+    },
+    {
+      "index": 1,
+      "id": "relative",
+      "kind": "numbers",
+      "path": "morphTargetInfluences",
+      "value": "n:3ff0000000000000,n:3feb333333333333",
+      "decimal": "1, 0.85"
+    },
+    {
+      "index": 2,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:64b776210ac1fd7b43bdf87679b33b143bd00daff4758abf6e45baaabd8e2b1b",
+      "decimal": "64b776210ac1fd7b43bdf87679b33b143bd00daff4758abf6e45baaabd8e2b1b"
+    }
+  ],
+  "render": {
+    "png": "morph-targets-b.png",
+    "pngSha256": "64b776210ac1fd7b43bdf87679b33b143bd00daff4758abf6e45baaabd8e2b1b",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

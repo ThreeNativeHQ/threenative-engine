@@ -1,0 +1,83 @@
+{
+  "name": "geometry-circle",
+  "adaptedFrom": "three@0.185.1 src/geometries/CircleGeometry.js — a coarse disc and a partial sector",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "coarse",
+      "class": "CircleGeometry",
+      "args": [1, 6]
+    },
+    {
+      "op": "new",
+      "id": "sector",
+      "class": "CircleGeometry",
+      "args": [2.5, 8, 0.5, 4]
+    }
+  ],
+  "observe": [
+    {
+      "id": "coarse",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "coarse",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "sector",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sector",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sector",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sector",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sector",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "sector",
+      "path": "parameters",
+      "kind": "json"
+    }
+  ]
+}

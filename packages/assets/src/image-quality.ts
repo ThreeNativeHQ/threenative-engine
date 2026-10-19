@@ -2,7 +2,18 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  KHR_DF_MODEL_ASTC,
+  KHR_DF_TRANSFER_LINEAR,
+  KHR_DF_TRANSFER_SRGB,
+  KHR_SUPERCOMPRESSION_NONE,
+  VK_FORMAT_ASTC_4x4_SRGB_BLOCK,
+  VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
+  read as readKTX2,
+  write as writeKTX2,
+} from "ktx-parse";
 import { resolveBasisTranscoder } from "./compile.js";
+import { decodeAstcKtx2 } from "./ktx2-encoder.js";
 
 // The sculpt MCP math is not present in this repository. Minimal SSIM port: Rec.709
 // encoded luma (0..255), non-overlapping 8x8 windows, population moments, equal-window mean.
@@ -290,6 +301,7 @@ interface IBasisFile {
   startTranscoding(): boolean;
   getWidth(): number;
   getHeight(): number;
+  getLevels(): number;
   getImageTranscodedSizeInBytes(mip: number, layer: number, face: number, format: number): number;
   transcodeImage(
     dst: Uint8Array,
@@ -305,7 +317,10 @@ interface IBasisFile {
 interface IBasisModule {
   readonly KTX2File: new (bytes: Uint8Array) => IBasisFile;
   initializeBasis(): void;
-  readonly transcoder_texture_format: { readonly cTFRGBA32: { readonly value: number } };
+  readonly transcoder_texture_format: {
+    readonly cTFRGBA32: { readonly value: number };
+    readonly cTFASTC_4x4_RGBA: { readonly value: number };
+  };
 }
 let basisPromise: Promise<IBasisModule> | undefined;
 
@@ -331,7 +346,85 @@ async function basisModule(): Promise<IBasisModule> {
   return basisPromise;
 }
 
-/** Decode only mip zero to RGBA32 using the shipped Basis transcoder; never re-encode. */
+/** Cook the measured Basis result to decoder-free ASTC without re-encoding its pixels. */
+export async function transcodeKtx2ToAstc(
+  encoded: Uint8Array,
+  gltfColorPrimaries?: 0 | 1,
+): Promise<Uint8Array> {
+  const container = readKTX2(encoded);
+  const descriptor = container.dataFormatDescriptor[0];
+  if (
+    gltfColorPrimaries !== undefined &&
+    ((gltfColorPrimaries !== 0 && gltfColorPrimaries !== 1) ||
+      descriptor?.transferFunction !==
+        (gltfColorPrimaries === 0 ? KHR_DF_TRANSFER_LINEAR : KHR_DF_TRANSFER_SRGB))
+  )
+    throw new Error("TN_ASSETS_ASTC_METADATA: explicit glTF primaries must be 0/linear or 1/sRGB.");
+  if (
+    container.vkFormat !== 0 ||
+    container.pixelWidth <= 0 ||
+    container.pixelHeight <= 0 ||
+    container.pixelDepth !== 0 ||
+    container.layerCount !== 0 ||
+    container.faceCount !== 1 ||
+    container.levelCount !==
+      Math.floor(Math.log2(Math.max(container.pixelWidth, container.pixelHeight))) + 1 ||
+    descriptor === undefined
+  )
+    throw new Error("TN_ASSETS_ASTC_INPUT: expected a 2D Basis KTX2 with its full mip chain.");
+  const basis = await basisModule();
+  const file = new basis.KTX2File(encoded);
+  try {
+    if (!file.isValid() || !file.startTranscoding() || file.getLevels() !== container.levelCount)
+      throw new Error("TN_ASSETS_ASTC_INPUT: the Basis transcoder rejected the cooked texture.");
+    const format = basis.transcoder_texture_format.cTFASTC_4x4_RGBA.value;
+    container.levels = container.levels.map((_, mip) => {
+      const width = Math.max(1, container.pixelWidth >> mip);
+      const height = Math.max(1, container.pixelHeight >> mip);
+      const bytes = Math.ceil(width / 4) * Math.ceil(height / 4) * 16;
+      const levelData = new Uint8Array(bytes);
+      if (
+        file.getImageTranscodedSizeInBytes(mip, 0, 0, format) !== bytes ||
+        !file.transcodeImage(levelData, mip, 0, 0, format, 0, -1, -1)
+      )
+        throw new Error(
+          `TN_ASSETS_ASTC_TRANSCODE: mip ${String(mip)} could not transcode to ASTC 4x4.`,
+        );
+      return { levelData, uncompressedByteLength: bytes };
+    });
+    container.vkFormat =
+      descriptor.transferFunction === KHR_DF_TRANSFER_SRGB
+        ? VK_FORMAT_ASTC_4x4_SRGB_BLOCK
+        : VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+    container.supercompressionScheme = KHR_SUPERCOMPRESSION_NONE;
+    container.globalData = null;
+    container.dataFormatDescriptor = [
+      {
+        ...descriptor,
+        ...(gltfColorPrimaries === undefined ? {} : { colorPrimaries: gltfColorPrimaries }),
+        colorModel: KHR_DF_MODEL_ASTC,
+        texelBlockDimension: [3, 3, 0, 0],
+        bytesPlane: [16, 0, 0, 0, 0, 0, 0, 0],
+        samples: [
+          {
+            bitOffset: 0,
+            bitLength: 127,
+            channelType: 0,
+            samplePosition: [0, 0, 0, 0],
+            sampleLower: 0,
+            sampleUpper: 0xffffffff,
+          },
+        ],
+      },
+    ];
+    return writeKTX2(container);
+  } finally {
+    file.close();
+    file.delete();
+  }
+}
+
+/** Score final mip zero; raw ASTC also validates and decodes every emitted mip. */
 export async function measureKtx2(
   source: Uint8Array,
   encoded: Uint8Array,
@@ -340,6 +433,40 @@ export async function measureKtx2(
   options: IImageQualityOptions = {},
 ): Promise<IImageQuality> {
   validatePixels(source, width, height);
+  if (readKTX2(encoded).vkFormat !== 0)
+    return imageQuality(
+      source,
+      await decodeAstcKtx2(encoded, width, height),
+      width,
+      height,
+      options,
+    );
+  return imageQuality(
+    source,
+    await decodeBasisKtx2(encoded, width, height),
+    width,
+    height,
+    options,
+  );
+}
+
+/** Internal authored-Basis baseline; the pre-Basis source pixels are unavailable. */
+export async function decodeBasisKtx2(
+  encoded: Uint8Array,
+  width: number,
+  height: number,
+  fullMipChain = false,
+): Promise<Uint8Array> {
+  const container = readKTX2(encoded);
+  if (
+    fullMipChain &&
+    (container.vkFormat !== 0 ||
+      container.pixelDepth !== 0 ||
+      container.layerCount !== 0 ||
+      container.faceCount !== 1 ||
+      container.levelCount !== Math.floor(Math.log2(Math.max(width, height))) + 1)
+  )
+    throw new Error("TN_ASSETS_QUALITY_DECODE: expected full-mip 2D Basis KTX2.");
   const basis = await basisModule();
   const file = new basis.KTX2File(encoded);
   try {
@@ -347,15 +474,28 @@ export async function measureKtx2(
       !file.isValid() ||
       file.getWidth() !== width ||
       file.getHeight() !== height ||
-      !file.startTranscoding()
+      !file.startTranscoding() ||
+      (fullMipChain && file.getLevels() !== container.levelCount)
     ) {
       throw new Error("TN_ASSETS_QUALITY_DECODE: invalid KTX2 or comparison dimensions.");
     }
     const format = basis.transcoder_texture_format.cTFRGBA32.value;
-    const decoded = new Uint8Array(file.getImageTranscodedSizeInBytes(0, 0, 0, format));
+    if (file.getImageTranscodedSizeInBytes(0, 0, 0, format) !== width * height * 4)
+      throw new Error("TN_ASSETS_QUALITY_DECODE: invalid RGBA32 byte length.");
+    const decoded = new Uint8Array(width * height * 4);
     if (!file.transcodeImage(decoded, 0, 0, 0, format, 0, -1, -1))
       throw new Error("TN_ASSETS_QUALITY_DECODE: mip zero RGBA32 transcode failed.");
-    return imageQuality(source, decoded, width, height, options);
+    if (fullMipChain) {
+      for (let mip = 1; mip < file.getLevels(); mip += 1) {
+        const bytes = Math.max(1, width >> mip) * Math.max(1, height >> mip) * 4;
+        if (
+          file.getImageTranscodedSizeInBytes(mip, 0, 0, format) !== bytes ||
+          !file.transcodeImage(new Uint8Array(bytes), mip, 0, 0, format, 0, -1, -1)
+        )
+          throw new Error("TN_ASSETS_QUALITY_DECODE: authored Basis mip RGBA32 transcode failed.");
+      }
+    }
+    return decoded;
   } finally {
     file.close();
     file.delete();

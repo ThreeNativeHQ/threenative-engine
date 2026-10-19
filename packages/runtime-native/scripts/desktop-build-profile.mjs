@@ -6,9 +6,9 @@ export function desktopPreset(platform = process.platform) {
   return "tn-linux";
 }
 
-// Linux arm64 has neither a V8 nor a Dawn prebuilt.
+// Linux arm64 uses the locked V8 cache and wgpu-native; Dawn remains x64-only.
 export function desktopBuildOverrides(platform = process.platform, arch = process.arch) {
   return platform === "linux" && arch === "arm64"
-    ? { MYSTRAL_USE_V8: "OFF", MYSTRAL_USE_QUICKJS: "ON", MYSTRAL_USE_DAWN: "OFF", MYSTRAL_USE_WGPU: "ON" }
+    ? { MYSTRAL_USE_V8: "ON", MYSTRAL_USE_QUICKJS: "OFF", MYSTRAL_USE_DAWN: "OFF", MYSTRAL_USE_WGPU: "ON" }
     : {};
 }

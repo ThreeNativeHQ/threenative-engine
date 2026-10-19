@@ -43,7 +43,7 @@ test.each([false, true])(
       startup: { phase: "ready", progress: 1 },
     } as unknown as ICtx;
     const runtime: IGamePluginRuntime = {
-      fixedStep: (ticks) => loop.advance(ticks),
+      fixedStep: (ticks, options) => loop.advance(ticks, options),
       freezeClock: () => loop.freezeClock(0),
       tick: loop.tick,
       step: 0.01,

@@ -68,15 +68,17 @@ were already identical in the runs that disagreed.
 ## `--live-clock`: the one wall clock a measurement may ask for
 
 **A standing scene is not measurable on counted ticks, and that is not the game's defect.** The
-runner turns `waitTicks` — and, under `runtime.fixedStep`, `waitFrames` — into batches of ten
-`advance()` calls, and a counted batch presents no frame: a game standing still while a scenario
-watches it reports one boot window and nothing after it, because there was no second frame to close
-a window on.
+browser runner sends each fixed-step tick through its own bounded `advance(1)` request, while recording
+path samples in groups of ten ticks. A counted group presents no extra observation frame: a game
+standing still while a scenario watches it reports one boot window and nothing after it, because
+there was no second frame to close a window on.
 
-`--live-clock` (browser target) is the opt-in, and it is the browser half of what the native
-production profile's own `--live-clock` already does there. The runner puts
+`--live-clock` (browser and desktop targets) is the opt-in, and it is the harness half of what the
+native production profile's own `--live-clock` already does there. On the browser the runner puts
 `globalThis.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock"` in an `addInitScript` — ahead of every
-page script, so a request that lands after the game's module evaluated cannot happen — and the
+page script, so a request that lands after the game's module evaluated cannot happen — and on the
+native desktop host it hands the same request over as `TN_PLAYTEST_CLOCK=wall-clock`, which
+`loadScript` reads before it evaluates the game entry (`runtime.cpp`). Either way the
 producer reads it: the loop is left unfrozen, the host's frame pump moves the simulation at the
 machine's own rate, and `advance` spends the span of wall time its ticks name and reports the ticks
 that pump really ran instead of insisting on the count it asked for. Every report then carries
@@ -92,4 +94,6 @@ not playing.
 It is a measurement switch, not scenario semantics. `holdTicks` and `waitTicks` stay tick counts,
 the flag is refused on the device targets (their hosts take the request from the production
 profile's injected instrumentation, not from this runner), and a deterministic scenario that wants
-ticks asks for none.
+ticks asks for none. A value the host does not recognize is refused there too:
+`TN_PLAYTEST_CLOCK_UNSUPPORTED` on stderr, and the launch fails rather than reporting a wall-clock
+run that never happened.

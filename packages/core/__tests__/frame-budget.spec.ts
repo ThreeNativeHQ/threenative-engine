@@ -10,6 +10,73 @@ import {
 import { FixedStepLoop } from "../src/loop.js";
 import type { IRenderPassSample } from "../src/render-pass-budget.js";
 
+describe("frame budget simulation clock", () => {
+  it("waits for the requested rendered sample count after the simulation boundary", () => {
+    let tick = 0;
+    const windows: IFrameBudgetWindow[] = [];
+    const budget = new FrameBudget({
+      simulation: { tick: () => tick, step: 1 / 60 },
+      reportEvery: 30,
+      minFrames: 30,
+      report: () => undefined,
+      onWindow: (window) => windows.push(window),
+    });
+    for (let frame = 0; frame < 30; frame += 1) {
+      budget.beginFrame(frame * 16, frame * 16);
+      tick += 30;
+      budget.endFrame(frame * 16 + 1);
+      expect(windows).toHaveLength(frame === 29 ? 1 : 0);
+    }
+    expect(windows[0]?.frames).toBe(30);
+    expect(windows[0]?.simulatedSeconds).toBe(15);
+    for (const minFrames of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => new FrameBudget({ minFrames })).toThrow("minFrames");
+    }
+  });
+
+  it("closes after 60 ticks across three presented frames and starts the next window there", () => {
+    let tick = 0;
+    const windows: IFrameBudgetWindow[] = [];
+    const budget = new FrameBudget({
+      simulation: { tick: () => tick, step: 1 / 60 },
+      reportEvery: 60,
+      report: () => undefined,
+      onWindow: (window) => windows.push(window),
+    });
+    for (let frame = 0; frame < 3; frame += 1) {
+      budget.beginFrame(frame * 16, frame * 16);
+      tick += 20;
+      budget.endFrame(frame * 16 + 1);
+      expect(windows).toHaveLength(frame === 2 ? 1 : 0);
+    }
+    expect(windows[0]?.frames).toBe(3);
+    expect(windows[0]?.simulatedSeconds).toBe(1);
+    budget.beginFrame(48, 48);
+    tick += 90;
+    budget.endFrame(49);
+    expect(windows[1]?.simulatedSeconds).toBe(1.5);
+    expect(budget.window().simulatedSeconds).toBe(0);
+  });
+
+  it("does not close with 60 presented frames inside 10 simulated ticks", () => {
+    let tick = 0;
+    const report = vi.fn();
+    const budget = new FrameBudget({
+      simulation: { tick: () => tick, step: 1 / 60 },
+      reportEvery: 60,
+      report,
+    });
+    for (let frame = 0; frame < 60; frame += 1) {
+      budget.beginFrame(frame * 16, frame * 16);
+      if (frame % 6 === 0) tick += 1;
+      budget.endFrame(frame * 16 + 1);
+    }
+    expect(report).not.toHaveBeenCalled();
+    expect(budget.window().frames).toBe(60);
+    expect(budget.window().simulatedSeconds).toBeCloseTo(10 / 60);
+  });
+});
+
 /**
  * A scripted device frame. The numbers are the measured Pixel 8 shape from
  * `docs/bugs/mobile-stability-2026-08-23.md` bug 3: a 54.44 ms frame whose renderer.render()

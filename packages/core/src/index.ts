@@ -6,7 +6,7 @@
  * unavoidable here — core is bundled for browsers and cannot read `package.json` at runtime — so
  * the spec now asserts this equals the manifest instead of asserting a number somebody typed.
  */
-export const version = "0.3.4";
+export const version = "0.3.5";
 
 /**
  * Play a skinned or sprite animation from game code.
@@ -549,6 +549,7 @@ export {
 export type {
   FrameBudgetPhase,
   IFrameBudgetOptions,
+  IFrameBudgetSimulation,
   IFrameBudgetPassSummary,
   IFrameBudgetSummary,
   IFrameBudgetWindow,
@@ -672,12 +673,14 @@ export {
 export type { IUnlitFoliageWarning } from "./profiling/unlit-foliage-warning.js";
 /**
  * Catch scene state that silently loses environment fill or ignores authored opacity.
- * Printed once after `enter()` as `TN_ENVIRONMENT_TOO_SMALL` or `TN_OPACITY_IGNORED`,
- * with the fix in the same console error line so playtest `noConsoleErrors` rejects it.
+ * After `enter()` the game first applies the opacity convention: a drawn material with
+ * `opacity < 1` turns transparent and one `TN_OPACITY_TRANSPARENT` console warning names it
+ * (override: `alphaHash: true`, or `opacity: 1`). It then prints `TN_ENVIRONMENT_TOO_SMALL`
+ * as a console error with the fix, so playtest `noConsoleErrors` rejects it.
  * @situation audit an equirectangular sky too narrow for three's WebGPU PMREM
  * @situation find visible opaque materials whose authored opacity is ignored
  * @constraint structural scene reads only, one visible-tree walk per entry, at most five material examples
- * @constraint it changes no scene state; environment and transparency remain the game's decisions
+ * @constraint the audit itself changes no scene state; the game loop's opacity convention is the only writer
  * @example renderTrapAudit(ctx.scene); // marker lines with the fixes, or an empty array
  */
 export {
@@ -1005,10 +1008,31 @@ export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js"
  * @situation spawn water droplets, mist, or foam bubbles above a fluid surface
  * @situation falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard
  * @situation kick up a spray of powder snow or dust where a foot or a ball lands
+ * @situation a hit, impact or explosion burst that starts at the point and moment it is asked for, and a second hit that must not move the first hit's live particles
+ * @situation emitParticle a burst of GPU particles at a world position with its own free slots
  * @constraint geometry, color, and timing remain supplied by the game
+ * @constraint a `spawn` kernel makes bursts requests: `emitParticle({ count, origin })` reserves ring slots, the engine stamps `buffers.births` and `process` reads age as `runtime.time - births[i]`; there is no readback
+ * @constraint a spawn emitter is world space (identity world matrix); `localCoords: true` follows the parent
+ * @constraint requests over `amount` or `maxSpawnPerFrame` clamp, add to `stats.clamped` and warn once; `stats.recycledLive` is `undefined` without the `lifetime` option
+ * @constraint the emitter measures its own bounds and stops computing and drawing after graceSeconds outside the camera view
+ * @constraint a game needs no emitting = visible gate, and an emitter with no measured bounds is never culled for leaving the view
+ * @constraint when measured GPU cost passes the frame budget, the smallest projected emitters pause first, and cull.reason reads outside-view or over-budget
+ * @override localCoords, maxSpawnPerFrame and lifetime tune a spawn emitter; `restart()` kills every particle and rewinds the ring
+ * @override onCull: "clear" restarts a returning effect, the default "pause" resumes it with buffers intact
+ * @override bounds supplies a fixed local Box3 and skips GPU measurement, padding enlarges the world box, boundsEveryFrames sets the measurement cadence
+ * @override graceSeconds sets the seconds outside the view before culling, and Infinity disables view culling
  * @example const particles = new GPUParticles3D(particleOptions);
+ * particles.emitParticle({ count: 220, origin: hit.position });
  */
 export { GPUParticles3D } from "./particles.js";
+export type {
+  IEmitParticleRequest,
+  IGPUParticles3DOptions,
+  IGPUParticles3DRuntime,
+  IGPUParticles3DSpawnBuffers,
+  IGPUParticles3DSpawnRequest,
+  IGPUParticles3DStats,
+} from "./particles.js";
 /**
  * Simulate a deterministic 2D velocity-and-dye field on the GPU while exposing its data to game-owned rendering.
  * @situation simulate smoke, fire, fog, wind, or fluid response on a grid

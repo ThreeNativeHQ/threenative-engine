@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { TraceMap, encodedMappings } from "@jridgewell/trace-mapping";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildFixtureGlb } from "../../../test-support/generate-fixture-model.js";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
@@ -168,6 +169,11 @@ describe("threenative build", () => {
       { install: false, target: "game", template: "starter" },
       root,
     );
+    // Keep pickup.wav to exercise the audio worker pool without basis-heavy fixtures.
+    for (const name of await readdir(path.join(target, "assets"))) {
+      if (name !== "pickup.wav")
+        await rm(path.join(target, "assets", name), { force: true, recursive: true });
+    }
     await installDeterministicVite(target);
     const cli = path.resolve("packages/create-threenative/dist/threenative.js");
 
@@ -212,10 +218,12 @@ describe("threenative build", () => {
       code: 0,
       timedOut: false,
     });
+    expect(result.output).toContain("cost pass audio: ran on 1 input");
   }, 90_000);
 
   it("resolves every declared brand input through the live packaging-config caller", async () => {
     const config = {
+      engine: "threejs" as const,
       app: {
         build: 4,
         icon: "public/icon.png",
@@ -354,6 +362,52 @@ describe("threenative build", () => {
     // Each template ships assets/sky.jpg, so each buildWeb pays a real texture cook (~84 s total).
   }, 240_000);
 
+  it.each([
+    { args: [] },
+    { args: ["--config", "custom.vite.ts"] },
+    { args: ["--config=custom.vite.ts"] },
+  ])("honors native engine config on the CLI web path with args %j", async ({ args }) => {
+    const root = await cookedOutputProject();
+    await rm(path.join(root, "assets"), { recursive: true });
+    await symlink(
+      path.resolve("packages/create-threenative"),
+      path.join(root, "node_modules/create-threenative"),
+      "dir",
+    );
+    const runtime = path.join(root, "node_modules/@threenative/runtime-native");
+    await mkdir(path.join(runtime, "build/web"), { recursive: true });
+    await writeFile(path.join(runtime, "package.json"), '{"name":"@threenative/runtime-native"}');
+    await writeFile(
+      path.join(runtime, "build/web/tn-native-engine-web.mjs"),
+      "export default async function createModule() { return {}; }\n",
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { engine: "threenative" };\n',
+    );
+    await writeFile(
+      path.join(root, "src/main.ts"),
+      'import { Mesh } from "three"; console.info(Mesh);\n',
+    );
+    await writeFile(
+      path.join(root, "custom.vite.ts"),
+      'export default { build: { target: "es2022" } };\n',
+    );
+    // The engine's glTF loader decodes no Meshopt, so the web cook for the native engine is decoder-free.
+    await mkdir(path.join(root, "assets"), { recursive: true });
+    await writeFile(path.join(root, "assets/hero.glb"), await buildFixtureGlb());
+    await buildWeb(root, args);
+    const cooked = JSON.parse(await readFile(path.join(root, "dist/assets.manifest.json"), "utf8"));
+    expect(cooked.entries["hero.glb"].extensions ?? []).not.toContain("EXT_meshopt_compression");
+    const assets = path.join(root, "dist/assets");
+    const chunks = (await readdir(assets)).filter((name) => name.endsWith(".js"));
+    const output = (
+      await Promise.all(chunks.map((name) => readFile(path.join(assets, name), "utf8")))
+    ).join("\n");
+    expect(output).toContain("is not available on the Wasm engine");
+    expect(output).not.toContain("Object3D.add: object not an instance of THREE.Object3D.");
+  });
+
   // PRD-448. The web build publishes the way a native artifact already does, so the last working
   // `dist` is what a player is served until a build that finished replaces it. A Vite run that
   // dies half-way through its write must not take that with it.
@@ -483,7 +537,7 @@ process.exit(1);
     );
     await writeFile(
       path.join(root, "threenative.config.ts"),
-      'export default { assets: { concurrency: 1, output: "cooked" } };\n',
+      'export default { engine: "threejs", assets: { concurrency: 1, output: "cooked" } };\n',
     );
     await writeFile(
       path.join(root, "index.html"),
@@ -1338,6 +1392,10 @@ cpSync("public", out, { recursive: true });
     const config = { assets: { output: "public" } } as Parameters<
       typeof assertNativeAssetsCompatible
     >[2];
+    const model = await buildFixtureGlb({ textured: false });
+    await mkdir(path.join(root, "public", "models"), { recursive: true });
+    await writeFile(path.join(root, "public", "models/hero.12345678.glb"), model);
+    await writeFile(path.join(root, "public", "models/rock.87654321.glb"), model);
     await writeFile(
       manifestPath,
       JSON.stringify({

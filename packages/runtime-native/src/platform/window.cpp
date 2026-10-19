@@ -228,9 +228,15 @@ bool createWindow(
     std::cout << "[Window] Creating window: " << title << " (" << width << "x" << height << ")" << std::endl;
 
 #if defined(__linux__) && !defined(__ANDROID__)
-    // The Linux WebGPU surface currently consumes SDL's X11 handles. Prefer that supported
-    // backend even in a Wayland session; an explicit SDL_VIDEODRIVER remains an override.
-    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+    // X11 stays the default because it is the backend the UI overlay and the verified desktop lane
+    // use. SDL 3 reads SDL_VIDEO_DRIVER only, so an explicit request written with the SDL 2
+    // spelling (SDL_VIDEODRIVER) is honoured here as well; SDL_VIDEO_DRIVER wins when both are set.
+    const char* sdl3Driver = std::getenv("SDL_VIDEO_DRIVER");
+    const char* legacyDriver = std::getenv("SDL_VIDEODRIVER");
+    const char* requestedDriver = (sdl3Driver != nullptr && *sdl3Driver != '\0') ? sdl3Driver
+        : ((legacyDriver != nullptr && *legacyDriver != '\0') ? legacyDriver : "x11");
+    std::cout << "[Window] SDL video driver request: " << requestedDriver << std::endl;
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, requestedDriver);
 #endif
     // Initialize SDL
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) {
@@ -267,6 +273,8 @@ bool createWindow(
         std::cerr << "[Window] SDL_CreateWindow failed: " << SDL_GetError() << std::endl;
         return false;
     }
+    setUiOverlayWindow(g_window.sdlWindow);
+    setUiOverlayKeyboardReset(&resetUiOverlayKeyboard);
 
     // Get actual window size (may differ from requested, especially on mobile)
     int actualWidth, actualHeight;
@@ -316,6 +324,7 @@ void destroyWindow() {
 #endif
 
     if (g_window.sdlWindow) {
+        setUiOverlayWindow(nullptr);
         SDL_DestroyWindow(g_window.sdlWindow);
         g_window.sdlWindow = nullptr;
     }

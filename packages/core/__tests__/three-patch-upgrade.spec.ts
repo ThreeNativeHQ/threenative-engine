@@ -3,7 +3,10 @@ import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, it } from "vitest";
+import { Texture } from "three";
+import { vec3 } from "three/tsl";
+import { PMREMGenerator, PMREMNode } from "three/webgpu";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 // @ts-expect-error -- the postinstall helper is plain ESM with no type declarations.
@@ -11,9 +14,41 @@ import { applyThreePatch } from "../scripts/apply-three-patch.mjs";
 
 const roots: string[] = [];
 
+// three's declarations omit the members packages/core/patches/three@0.185.1.patch adds to PMREMNode.
+const PatchedPMREMNode = PMREMNode as typeof PMREMNode & {
+  prepareTextureAsync(renderer: unknown, texture: Texture): Promise<boolean>;
+};
+type PatchedPMREMNodeInstance = PMREMNode & { updateFromTexture(texture: Texture): void };
+
+it("preserves the async PMREM API's synchronous fallback on non-WebGPU backends", async () => {
+  const syncTarget = {};
+  const generator = Object.create(PMREMGenerator.prototype) as {
+    _renderer: { backend: { isWebGPUBackend?: boolean }; init: () => Promise<void> };
+    _fromTexture: (...args: unknown[]) => unknown;
+    _fromTextureAsync: (...args: unknown[]) => Promise<unknown>;
+    fromEquirectangularAsync: (...args: unknown[]) => Promise<unknown>;
+    fromCubemapAsync: (...args: unknown[]) => Promise<unknown>;
+  };
+  generator._renderer = {
+    backend: { isWebGLBackend: true } as never,
+    init: vi.fn(async () => undefined),
+  };
+  generator._fromTexture = vi.fn(() => syncTarget);
+  generator._fromTextureAsync = vi.fn(async () => {
+    throw new Error("WebGPU-only async path must not run on WebGL");
+  });
+
+  await expect(generator.fromEquirectangularAsync({} as never)).resolves.toBe(syncTarget);
+  await expect(generator.fromCubemapAsync({} as never)).resolves.toBe(syncTarget);
+  expect(generator._renderer.init).toHaveBeenCalledTimes(2);
+  expect(generator._fromTexture).toHaveBeenCalledTimes(2);
+  expect(generator._fromTextureAsync).not.toHaveBeenCalled();
+});
+
+// Removing the copied three trees took over 10 s on a loaded CI runner (run 39217177505).
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { force: true, recursive: true });
-});
+}, 60_000);
 
 async function tempRoot(): Promise<string> {
   const root = await makeTempDir("threenative-three-patch-");
@@ -49,6 +84,387 @@ const FULLY_PATCHED = [
   "const epsilon = 5;",
   "",
 ];
+
+it("fences each PMREM cube face and restores renderer MRT and draw state before awaiting", async () => {
+  const events: string[] = [];
+  const originalTarget = {};
+  const originalMRT = {};
+  const interveningTarget = {};
+  const interveningMRT = {};
+  const pmremTarget = {};
+  let currentTarget: unknown = originalTarget;
+  let currentMRT: unknown = originalMRT;
+  let draws = 0;
+  const renderer = {
+    autoClear: true,
+    backend: {
+      device: {
+        queue: {
+          onSubmittedWorkDone: vi.fn(async () => {
+            events.push("fence");
+            if (draws === 1) {
+              currentTarget = interveningTarget;
+              currentMRT = interveningMRT;
+              renderer.autoClear = false;
+            }
+          }),
+        },
+      },
+    },
+    getRenderTarget: () => currentTarget,
+    getActiveCubeFace: () => 2,
+    getActiveMipmapLevel: () => 3,
+    getMRT: () => currentMRT,
+    setMRT: (value: unknown) => {
+      currentMRT = value;
+    },
+    setRenderTarget: (value: unknown) => {
+      currentTarget = value;
+    },
+    render: (mesh: { geometry: { drawRange: { start: number; count: number } } }) => {
+      events.push(
+        `draw:${mesh.geometry.drawRange.start}:${mesh.geometry.drawRange.count}:${renderer.autoClear}:${currentMRT === null}:${currentTarget === pmremTarget}`,
+      );
+      draws += 1;
+    },
+  };
+  const geometry = {
+    drawRange: { start: 0, count: 36 },
+    setDrawRange(start: number, count: number) {
+      this.drawRange = { start, count };
+    },
+  };
+  const generator = Object.create(PMREMGenerator.prototype) as {
+    _renderer: typeof renderer;
+    _setViewport: () => void;
+    _renderFacesAsync: (...args: unknown[]) => Promise<void>;
+  };
+  generator._renderer = renderer;
+  generator._setViewport = () => undefined;
+
+  await generator._renderFacesAsync({ geometry }, pmremTarget, 0, 0, 32, 32);
+
+  expect(events).toEqual(
+    Array.from({ length: 6 }, (_unused, face) => [
+      `draw:${face * 6}:6:${face === 0}:true:true`,
+      "fence",
+    ]).flat(),
+  );
+  expect(geometry.drawRange).toEqual({ start: 0, count: 36 });
+  expect(renderer.autoClear).toBe(false);
+  expect(currentMRT).toBe(interveningMRT);
+  expect(currentTarget).toBe(interveningTarget);
+});
+
+it("restores renderer state when a PMREM face fence rejects", async () => {
+  const originalTarget = {};
+  const originalMRT = {};
+  let currentTarget: unknown = originalTarget;
+  let currentMRT: unknown = originalMRT;
+  const renderer = {
+    autoClear: true,
+    backend: {
+      device: {
+        queue: { onSubmittedWorkDone: vi.fn().mockRejectedValue(new Error("fence failed")) },
+      },
+    },
+    getRenderTarget: () => currentTarget,
+    getActiveCubeFace: () => 2,
+    getActiveMipmapLevel: () => 3,
+    getMRT: () => currentMRT,
+    setMRT: (value: unknown) => {
+      currentMRT = value;
+    },
+    setRenderTarget: (value: unknown) => {
+      currentTarget = value;
+    },
+    render: vi.fn(),
+  };
+  const geometry = {
+    drawRange: { start: 4, count: 12 },
+    setDrawRange(start: number, count: number) {
+      this.drawRange = { start, count };
+    },
+  };
+  const generator = Object.create(PMREMGenerator.prototype) as {
+    _renderer: typeof renderer;
+    _setViewport: () => void;
+    _renderFacesAsync: (...args: unknown[]) => Promise<void>;
+  };
+  generator._renderer = renderer;
+  generator._setViewport = () => undefined;
+
+  await expect(generator._renderFacesAsync({ geometry }, {}, 0, 0, 16, 16)).rejects.toThrow(
+    "fence failed",
+  );
+  expect(renderer.render).toHaveBeenCalledOnce();
+  expect(renderer.autoClear).toBe(true);
+  expect(currentMRT).toBe(originalMRT);
+  expect(currentTarget).toBe(originalTarget);
+  expect(geometry.drawRange).toEqual({ start: 4, count: 12 });
+});
+
+it("fences groups of PMREM faces by GPU cost and fences once more before publishing", async () => {
+  const events: string[] = [];
+  const renderer = {
+    autoClear: true,
+    backend: {
+      device: { queue: { onSubmittedWorkDone: vi.fn(async () => void events.push("fence")) } },
+    },
+    getRenderTarget: () => null,
+    getActiveCubeFace: () => 0,
+    getActiveMipmapLevel: () => 0,
+    getMRT: () => null,
+    setMRT: () => undefined,
+    setRenderTarget: () => undefined,
+    render: vi.fn(() => void events.push("draw")),
+  };
+  const generator = new PMREMGenerator(renderer as never);
+  const source = new Texture({ height: 8, width: 8 } as never);
+  Object.assign(source, { image: { height: 2048, width: 4096 }, mapping: 303 });
+
+  const target = (await (
+    generator as unknown as {
+      _fromTextureAsync: (texture: Texture, target: null) => Promise<{ dispose: () => void }>;
+    }
+  )._fromTextureAsync(source, null)) as { dispose: () => void };
+
+  const draws = events.filter((event) => event === "draw").length;
+  const fences = events.filter((event) => event === "fence").length;
+  // A 4096-wide equirect bakes 150 faces; one fence per face used to cost 150 queue round trips.
+  expect(draws).toBe(150);
+  expect(fences).toBe(10);
+  // The first GGX filter pass is the heaviest face: its six faces cannot share a fence.
+  expect(fences).toBeGreaterThanOrEqual(6);
+  expect(events.at(-1)).toBe("fence");
+  target.dispose();
+  source.dispose();
+});
+
+const fencedRenderer = () => ({
+  backend: { device: { queue: { onSubmittedWorkDone: vi.fn(async () => undefined) } } },
+});
+
+it("never bakes a ready equirect synchronously on a queue-fenced backend", async () => {
+  const renderer = fencedRenderer();
+  const source = new Texture({ height: 8 } as never);
+  const generatedTexture = new Texture({ height: 16 } as never);
+  const target = { texture: generatedTexture, dispose: vi.fn() };
+  let releasePreparation: ((target: never) => void) | undefined;
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releasePreparation = resolve;
+        }),
+    );
+  const generateSync = vi.spyOn(PMREMGenerator.prototype, "fromEquirectangular");
+  const prepare = vi.spyOn(PatchedPMREMNode, "prepareTextureAsync");
+  const node = new PMREMNode(source) as PatchedPMREMNodeInstance;
+  const update = vi.spyOn(node, "updateFromTexture");
+
+  try {
+    node.setup({ renderer, context: { getUV: () => vec3(0, 1, 0) } } as never);
+    for (let frame = 0; frame < 5; frame += 1) node.updateBefore({ renderer } as never);
+
+    expect(generateSync).not.toHaveBeenCalled();
+    expect(prepare).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(generateAsync).toHaveBeenCalledOnce());
+    expect(update).not.toHaveBeenCalled();
+
+    releasePreparation?.(target as never);
+    await vi.waitFor(() => expect(prepare.mock.results[0]?.value).toBeInstanceOf(Promise));
+    await prepare.mock.results[0]?.value;
+    node.updateBefore({ renderer } as never);
+
+    expect(update).toHaveBeenCalledWith(generatedTexture);
+    expect(generateSync).not.toHaveBeenCalled();
+    expect(prepare).toHaveBeenCalledOnce();
+  } finally {
+    generateAsync.mockRestore();
+    generateSync.mockRestore();
+    prepare.mockRestore();
+  }
+});
+
+it("logs a rejected fenced preparation once per texture version and retries on a new version", async () => {
+  const renderer = fencedRenderer();
+  const source = new Texture({ height: 8 } as never);
+  const failure = new Error("bake failed");
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockRejectedValue(failure);
+  const generateSync = vi.spyOn(PMREMGenerator.prototype, "fromEquirectangular");
+  const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const node = new PMREMNode(source) as PatchedPMREMNodeInstance;
+
+  try {
+    node.setup({ renderer, context: { getUV: () => vec3(0, 1, 0) } } as never);
+    node.updateBefore({ renderer } as never);
+    await vi.waitFor(() => expect(logged).toHaveBeenCalledOnce());
+    for (let frame = 0; frame < 5; frame += 1) {
+      node.updateBefore({ renderer } as never);
+      await Promise.resolve();
+    }
+
+    expect(logged).toHaveBeenCalledWith(failure);
+    expect(generateAsync).toHaveBeenCalledOnce();
+    expect(generateSync).not.toHaveBeenCalled();
+
+    source.pmremVersion += 1;
+    node.updateBefore({ renderer } as never);
+    await vi.waitFor(() => expect(logged).toHaveBeenCalledTimes(2));
+    expect(generateAsync).toHaveBeenCalledTimes(2);
+  } finally {
+    generateAsync.mockRestore();
+    generateSync.mockRestore();
+    logged.mockRestore();
+  }
+});
+
+it("reuses an asynchronously prepared PMREM from the same renderer cache", async () => {
+  const renderer = {};
+  const source = new Texture({ height: 8 } as never);
+  const generatedTexture = new Texture({ height: 16 } as never);
+  const target = { texture: generatedTexture, dispose: vi.fn() };
+  let releasePreparation: ((target: never) => void) | undefined;
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releasePreparation = resolve;
+        }),
+    );
+  const generateSync = vi.spyOn(PMREMGenerator.prototype, "fromEquirectangular");
+  const node = new PMREMNode(source) as PatchedPMREMNodeInstance;
+  const update = vi.spyOn(node, "updateFromTexture");
+
+  try {
+    const preparation = PatchedPMREMNode.prepareTextureAsync(renderer, source);
+    await vi.waitFor(() => expect(generateAsync).toHaveBeenCalledOnce());
+    expect(() =>
+      node.setup({ renderer, context: { getUV: () => vec3(0, 1, 0) } } as never),
+    ).not.toThrow();
+    releasePreparation?.(target as never);
+    await expect(preparation).resolves.toBe(true);
+    node.updateBefore({ renderer } as never);
+
+    expect(generateAsync).toHaveBeenCalledOnce();
+    expect(generateSync).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(generatedTexture);
+    source.dispose();
+    expect(target.dispose).toHaveBeenCalledOnce();
+  } finally {
+    generateAsync.mockRestore();
+    generateSync.mockRestore();
+  }
+});
+
+it("restarts an in-flight PMREM preparation when its source version changes", async () => {
+  const renderer = {};
+  const source = new Texture({ height: 8 } as never);
+  const staleTarget = { texture: new Texture({ height: 16 } as never), dispose: vi.fn() };
+  const currentTarget = { texture: new Texture({ height: 16 } as never), dispose: vi.fn() };
+  let releaseStale: ((target: never) => void) | undefined;
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseStale = resolve;
+        }),
+    )
+    .mockResolvedValueOnce(currentTarget as never);
+
+  try {
+    const stale = PatchedPMREMNode.prepareTextureAsync(renderer, source);
+    await vi.waitFor(() => expect(generateAsync).toHaveBeenCalledOnce());
+    source.pmremVersion += 1;
+    const current = PatchedPMREMNode.prepareTextureAsync(renderer, source);
+    releaseStale?.(staleTarget as never);
+
+    await expect(stale).resolves.toBe(false);
+    await expect(current).resolves.toBe(true);
+    expect(generateAsync).toHaveBeenCalledTimes(2);
+    expect(staleTarget.dispose).toHaveBeenCalledOnce();
+
+    const node = new PMREMNode(source) as PatchedPMREMNodeInstance;
+    const update = vi.spyOn(node, "updateFromTexture");
+    node.updateBefore({ renderer } as never);
+    expect(update).toHaveBeenCalledWith(currentTarget.texture);
+  } finally {
+    generateAsync.mockRestore();
+  }
+});
+
+it("does not cache a PMREM when its queue-fenced preparation fails", async () => {
+  const renderer = {};
+  const source = new Texture({ height: 8 } as never);
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockRejectedValue(new Error("queue fence failed"));
+  const generatedTexture = new Texture({ height: 16 } as never);
+  const syncTarget = { texture: generatedTexture, dispose: vi.fn() };
+  const generateSync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangular")
+    .mockReturnValue(syncTarget as never);
+
+  try {
+    await expect(PatchedPMREMNode.prepareTextureAsync(renderer, source)).rejects.toThrow(
+      "queue fence failed",
+    );
+
+    const node = new PMREMNode(source);
+    node.setup({ renderer, context: { getUV: () => vec3(0, 1, 0) } } as never);
+    node.updateBefore({ renderer } as never);
+
+    expect(generateSync).toHaveBeenCalledOnce();
+    expect(generateAsync).toHaveBeenCalledOnce();
+  } finally {
+    generateAsync.mockRestore();
+    generateSync.mockRestore();
+  }
+});
+
+it("disposes a PMREM generated after its source is disposed and does not cache it", async () => {
+  const renderer = {};
+  const source = new Texture({ height: 8 } as never);
+  const generatedTexture = new Texture({ height: 16 } as never);
+  const pendingTarget = { texture: generatedTexture, dispose: vi.fn() };
+  let releasePreparation: ((target: never) => void) | undefined;
+  const generateAsync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangularAsync")
+    .mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releasePreparation = resolve;
+        }),
+    );
+  const syncTarget = { texture: new Texture({ height: 16 } as never), dispose: vi.fn() };
+  const generateSync = vi
+    .spyOn(PMREMGenerator.prototype, "fromEquirectangular")
+    .mockReturnValue(syncTarget as never);
+
+  try {
+    const preparation = PatchedPMREMNode.prepareTextureAsync(renderer, source);
+    await vi.waitFor(() => expect(generateAsync).toHaveBeenCalledOnce());
+    source.dispose();
+    releasePreparation?.(pendingTarget as never);
+
+    await expect(preparation).resolves.toBe(false);
+    expect(pendingTarget.dispose).toHaveBeenCalledOnce();
+
+    const node = new PMREMNode(source);
+    node.setup({ renderer, context: { getUV: () => vec3(0, 1, 0) } } as never);
+    node.updateBefore({ renderer } as never);
+    expect(generateSync).toHaveBeenCalledOnce();
+  } finally {
+    generateAsync.mockRestore();
+    generateSync.mockRestore();
+  }
+});
 
 /** The candidate release's patch: the previous hunk plus one this release adds. */
 const CANDIDATE_PATCH = `diff --git a/src/thing.js b/src/thing.js
@@ -178,6 +594,27 @@ const CURRENT_RECONSTRUCTION_BLOBS = {
   "src/renderers/webgpu/utils/WebGPUBindingUtils.js": "a5da7ca09f746c0b2859ef173df663ccdc851ebc",
 };
 
+// Exact PR486 candidate before the separate-encoder ordering correction.
+// Exact source/bundle blobs at PR486 matrix-guard predecessor 4a7224834.
+const ABORT_PREDECESSOR_BLOBS = {
+  "build/three.webgpu.js": "7e34d05be672a7fa2e38b19c035f744a8b486446",
+  "build/three.webgpu.nodes.js": "4b7a3baea4fc2a99f9453211d2807131f8a86dd4",
+  "src/renderers/common/Renderer.js": "769c909b0a63708dea7d22efc5379c39bdf57d92",
+  "src/renderers/webgpu/WebGPUBackend.js": "0fbcc307d39cbf6d74d9dbc5f199f2b0e4f58b33",
+};
+
+const MATRIX_GUARD_BLOBS = {
+  "build/three.webgpu.js": "2a70eb319b4235c958c7b5b1ede148c808d0b4b2",
+  "build/three.webgpu.nodes.js": "bfa242835dfef49019dd368e3593a62a221dda3d",
+  "src/renderers/webgpu/WebGPUBackend.js": "5dbb9bf2ed43fa055c0f7dd2859c146485825817",
+};
+
+const QUEUE_ORDER_BLOBS = {
+  "build/three.webgpu.js": "ee394e98d798be749776cce1fa3e043fb9951769",
+  "build/three.webgpu.nodes.js": "a0fab1c7c37cfaf270d9ce36dd3d91453ae6a44c",
+  "src/renderers/webgpu/WebGPUBackend.js": "94b48d64ed8f2e57f00cb5fd5bd0112da085aeae",
+};
+
 function blobHash(contents: string): string {
   return createHash("sha1")
     .update(`blob ${Buffer.byteLength(contents)}\0`)
@@ -197,16 +634,24 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
     join(packageRoot, "patches/three@0.185.1-prd269-upgrade.patch"),
     "utf8",
   );
-  const selected = migration
-    .split(/(?=^diff --git )/mu)
-    .filter((block) => {
-      const file = /^diff --git a\/(\S+) /mu.exec(block)?.[1];
-      const hash = /^index ([a-f0-9]{40})\.\./mu.exec(block)?.[1];
-      return file !== undefined && hash !== undefined && priorBlobs[file] === hash;
-    })
-    .join("");
+  const blocks = migration.split(/(?=^diff --git )/mu);
+  const selected: string[] = [];
+  for (const [file, initialHash] of Object.entries(priorBlobs)) {
+    let hash = initialHash;
+    const chain: string[] = [];
+    for (;;) {
+      const block = blocks.find(
+        (candidate) =>
+          candidate.startsWith(`diff --git a/${file} `) && candidate.includes(`index ${hash}..`),
+      );
+      if (!block) break;
+      chain.unshift(block);
+      hash = /^index [a-f0-9]{40}\.\.([a-f0-9]{40}) /mu.exec(block)?.[1] ?? "";
+    }
+    selected.push(...chain);
+  }
   const inverse = join(root, "prior.patch");
-  await writeFile(inverse, selected);
+  await writeFile(inverse, selected.join(""));
   await promisify(execFile)(
     "patch",
     ["--reverse", "--batch", "--fuzz=0", "--silent", "-p1", "-i", inverse],
@@ -221,6 +666,9 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
 }
 
 describe.each([
+  ["PR486 matrix-guard predecessor", MATRIX_GUARD_BLOBS],
+  ["PR486 abort predecessor", ABORT_PREDECESSOR_BLOBS],
+  ["PR486 queue-order predecessor", QUEUE_ORDER_BLOBS],
   ["develop dcbc5131", PRIOR_BLOBS],
   ["published PR393 455ed1dd", PUBLISHED_BLOBS],
   ["published PR393 daef254c", RECOMPILE_BLOBS],
@@ -257,4 +705,39 @@ describe.each([
     );
     expect(after).toEqual(before);
   });
+});
+
+it("follows exact predecessor hashes and rejects a cyclic migration without writing", async () => {
+  const { packageRoot, threeRoot, target } = await fixture(STOCK);
+  const transition = (before: readonly string[], after: readonly string[]) =>
+    `diff --git a/src/thing.js b/src/thing.js
+index ${blobHash(before.join("\n"))}..${blobHash(after.join("\n"))} 100644
+--- a/src/thing.js
++++ b/src/thing.js
+@@ -1,5 +1,5 @@
+${before
+  .slice(0, 5)
+  .map((line) => `-${line}`)
+  .join("\n")}
+${after
+  .slice(0, 5)
+  .map((line) => `+${line}`)
+  .join("\n")}
+`;
+  const migration = join(packageRoot, "patches/three@0.185.1-prd269-upgrade.patch");
+  await writeFile(
+    migration,
+    transition(STOCK, PATCHED_BY_THE_PREVIOUS_RELEASE) +
+      transition(PATCHED_BY_THE_PREVIOUS_RELEASE, FULLY_PATCHED),
+  );
+  await expect(applyThreePatch({ packageRoot, threeRoot })).resolves.toBe("patched");
+  expect(await readFile(target, "utf8")).toBe(FULLY_PATCHED.join("\n"));
+  await writeFile(target, STOCK.join("\n"));
+  await writeFile(
+    migration,
+    transition(STOCK, PATCHED_BY_THE_PREVIOUS_RELEASE) +
+      transition(PATCHED_BY_THE_PREVIOUS_RELEASE, STOCK),
+  );
+  await expect(applyThreePatch({ packageRoot, threeRoot })).rejects.toThrow("cyclic known upgrade");
+  expect(await readFile(target, "utf8")).toBe(STOCK.join("\n"));
 });

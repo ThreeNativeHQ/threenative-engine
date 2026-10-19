@@ -23,6 +23,13 @@ const metahumanTarget = "threenative-metahuman-bindings-test";
 const videoTarget = "threenative-video-recorder-state-test";
 
 export const executionContracts = {
+  "threenative-transient-attachments-test": {
+    invocations: [
+      { args: [], passLine: "native transient attachments host contract passed:" },
+      { args: ["--feature-off"], passLine: "native transient attachments host contract passed:" },
+      { args: ["--direct"], passLine: "native transient attachments host contract passed:" },
+    ],
+  },
   "threenative-exposure-graph-test": {
     invocations: [
       { args: [], passLine: "native exposure graph contract passed" },
@@ -141,7 +148,7 @@ export const executionContracts = {
     invocations: [
       {
         args: [],
-        passLine: "shader-module-metadata: wrapper=erase+release-once teardown=release-survivors",
+        passLine: "shader-module-metadata: wrapper=erase+release-once duplicate-wrapper-refs=release-each teardown=release-survivors",
       },
     ],
   },

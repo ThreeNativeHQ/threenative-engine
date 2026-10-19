@@ -4,7 +4,7 @@
 **Priority:** P2 — AC-1 to AC-3 are open: no GPU particle can ask the scene where a surface is, so every spark falls through the floor it was thrown at.
 **Complexity:** 6 (MEDIUM) — 6–10 files (a new `scene-depth-sampler.ts`, its spec, the index export, a conformance scene and registry row, the gallery probe, the action-rpg template) (+2), new public class (+2), depth texture paired with the previous frame's camera across frames (+2); risk override: none
 **Owner:** unassigned
-**Depends on:** None for Phases 1 and 2. Phase 3 waits on [PRD-609](PRD-609-a-gpu-burst-starts-where-and-when-it-is-asked-and-live-particles-stay-put.md) Phase 3, because the template's hit burst needs a stateful kernel and a real spawn. Respects [PRD-316](PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md) (§3): the class decides no appearance.
+**Depends on:** None for Phases 1 and 2. Phase 3 waits on [PRD-609](../../done/PRD-609-a-gpu-burst-starts-where-and-when-it-is-asked-and-live-particles-stay-put.md) Phase 3, because the template's hit burst needs a stateful kernel and a real spawn. Respects [PRD-316](PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md) (§3): the class decides no appearance.
 
 ## Context
 

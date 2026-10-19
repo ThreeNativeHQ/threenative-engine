@@ -341,18 +341,18 @@ function addSkinnedMesh(mesh: Mesh, radii: Map<Object3D, number>, vertex: Vector
   }
 
   skinned.skeleton.update();
-  for (let index = 0; index < position.count; index += 1) {
+  // Loop invariants are read once: on the native host each read crosses to the engine.
+  const bones = skinned.skeleton.bones;
+  const world = mesh.matrixWorld;
+  const heads = bones.map((bone) => bone.matrixWorld.elements);
+  for (let index = 0, count = position.count; index < count; index += 1) {
     skinned.getVertexPosition(index, vertex);
-    vertex.applyMatrix4(mesh.matrixWorld);
+    vertex.applyMatrix4(world);
     const dominant = dominantSkinIndex(skinIndex, skinWeight, index);
-    const bone = skinned.skeleton.bones[dominant];
-    if (bone === undefined) continue;
-    const elements = bone.matrixWorld.elements;
-    const radius = Math.hypot(
-      vertex.x - elements[12],
-      vertex.y - elements[13],
-      vertex.z - elements[14],
-    );
+    const bone = bones[dominant];
+    const head = heads[dominant];
+    if (bone === undefined || head === undefined) continue;
+    const radius = Math.hypot(vertex.x - head[12], vertex.y - head[13], vertex.z - head[14]);
     if (radius > (radii.get(bone) ?? 0)) radii.set(bone, radius);
   }
   return true;

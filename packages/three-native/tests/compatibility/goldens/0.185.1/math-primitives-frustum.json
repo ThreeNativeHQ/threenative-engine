@@ -1,0 +1,300 @@
+{
+  "name": "math-primitives-frustum",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Frustum.tests.js — set and copy, then setFromProjectionMatrix in both coordinate systems and reversed depth",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "f13",
+      "kind": "number",
+      "path": "planes.0.constant",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 1,
+      "id": "f13",
+      "kind": "number",
+      "path": "planes.5.normal.x",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 2,
+      "id": "f14",
+      "kind": "number",
+      "path": "planes.3.constant",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 3,
+      "id": "f16",
+      "kind": "number",
+      "path": "planes.4.constant",
+      "value": "n:4059000000000021",
+      "decimal": "100.00000000000047"
+    },
+    {
+      "index": 4,
+      "id": "f16",
+      "kind": "number",
+      "path": "planes.4.normal.z",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 5,
+      "id": "f16",
+      "kind": "number",
+      "path": "planes.5.constant",
+      "value": "n:bff0000000000001",
+      "decimal": "-1.0000000000000002"
+    },
+    {
+      "index": 6,
+      "id": "f16",
+      "kind": "number",
+      "path": "planes.0.normal.x",
+      "value": "n:bfe6a09e667f3bcc",
+      "decimal": "-0.7071067811865475"
+    },
+    {
+      "index": 7,
+      "id": "r19",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 8,
+      "id": "r21",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 9,
+      "id": "r24",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 10,
+      "id": "r28",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 11,
+      "id": "r32",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 12,
+      "id": "f33",
+      "kind": "number",
+      "path": "planes.4.constant",
+      "value": "n:4058ffffffffffd3",
+      "decimal": "99.99999999999936"
+    },
+    {
+      "index": 13,
+      "id": "f33",
+      "kind": "number",
+      "path": "planes.4.normal.z",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 14,
+      "id": "f33",
+      "kind": "number",
+      "path": "planes.5.constant",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 15,
+      "id": "f33",
+      "kind": "number",
+      "path": "planes.0.normal.x",
+      "value": "n:bfe6a09e667f3bcc",
+      "decimal": "-0.7071067811865475"
+    },
+    {
+      "index": 16,
+      "id": "r36",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 17,
+      "id": "r38",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 18,
+      "id": "r41",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 19,
+      "id": "r45",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 20,
+      "id": "r49",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 21,
+      "id": "f50",
+      "kind": "number",
+      "path": "planes.4.constant",
+      "value": "n:4058ffffffffffff",
+      "decimal": "99.99999999999999"
+    },
+    {
+      "index": 22,
+      "id": "f50",
+      "kind": "number",
+      "path": "planes.4.normal.z",
+      "value": "n:3fefffffffffffff",
+      "decimal": "0.9999999999999999"
+    },
+    {
+      "index": 23,
+      "id": "f50",
+      "kind": "number",
+      "path": "planes.5.constant",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 24,
+      "id": "f50",
+      "kind": "number",
+      "path": "planes.0.normal.x",
+      "value": "n:bfe6a09e667f3bcc",
+      "decimal": "-0.7071067811865475"
+    },
+    {
+      "index": 25,
+      "id": "r53",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 26,
+      "id": "r55",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 27,
+      "id": "r58",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 28,
+      "id": "r62",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 29,
+      "id": "r66",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 30,
+      "id": "f67",
+      "kind": "number",
+      "path": "planes.4.constant",
+      "value": "n:4058ffffffffffff",
+      "decimal": "99.99999999999999"
+    },
+    {
+      "index": 31,
+      "id": "f67",
+      "kind": "number",
+      "path": "planes.4.normal.z",
+      "value": "n:3fefffffffffffff",
+      "decimal": "0.9999999999999999"
+    },
+    {
+      "index": 32,
+      "id": "f67",
+      "kind": "number",
+      "path": "planes.5.constant",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 33,
+      "id": "f67",
+      "kind": "number",
+      "path": "planes.0.normal.x",
+      "value": "n:bfe6a09e667f3bcc",
+      "decimal": "-0.7071067811865475"
+    },
+    {
+      "index": 34,
+      "id": "r70",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 35,
+      "id": "r72",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 36,
+      "id": "r75",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 37,
+      "id": "r79",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 38,
+      "id": "r83",
+      "kind": "boolean",
+      "value": "b:1",
+      "decimal": "true"
+    }
+  ]
+}

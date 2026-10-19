@@ -9,7 +9,9 @@
 #include "mystral/webgpu/context.h"
 #include "mystral/runtime.h"
 
+#include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -17,7 +19,65 @@
 #include <string>
 #include <thread>
 
+#if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#define TN_TEST_DUP _dup
+#define TN_TEST_DUP2 _dup2
+#define TN_TEST_FILENO _fileno
+#define TN_TEST_CLOSE _close
+#define TN_TEST_READ _read
+#else
+#include <unistd.h>
+#define TN_TEST_DUP dup
+#define TN_TEST_DUP2 dup2
+#define TN_TEST_FILENO fileno
+#define TN_TEST_CLOSE close
+#define TN_TEST_READ read
+#endif
+
 namespace {
+
+void writeTestLine(const std::string& line) {
+    const size_t written = std::fwrite(line.data(), 1, line.size(), stdout);
+    const int flushed = std::fflush(stdout);
+    if (written != line.size() || flushed != 0) std::abort();
+}
+
+// Descriptor redirection captures both C stdio and synchronized C++ streams.
+class StdoutCapture {
+public:
+    StdoutCapture() : file_(std::tmpfile()) {
+        if (!file_ || std::fflush(stdout) != 0) std::abort();
+        saved_ = TN_TEST_DUP(TN_TEST_FILENO(stdout));
+        if (saved_ < 0 || TN_TEST_DUP2(TN_TEST_FILENO(file_), TN_TEST_FILENO(stdout)) < 0)
+            std::abort();
+    }
+    ~StdoutCapture() { finish(); }
+    std::string read() {
+        if (std::fflush(stdout) != 0 || std::fseek(file_, position_, SEEK_SET) != 0)
+            std::abort();
+        std::string text;
+        char buffer[4096];
+        size_t count;
+        while ((count = std::fread(buffer, 1, sizeof(buffer), file_)) != 0)
+            text.append(buffer, count);
+        if (std::ferror(file_)) std::abort();
+        position_ = std::ftell(file_);
+        if (position_ < 0 || std::fseek(file_, 0, SEEK_END) != 0) std::abort();
+        return text;
+    }
+    void finish() {
+        if (saved_ < 0) return;
+        if (std::fflush(stdout) != 0 || TN_TEST_DUP2(saved_, TN_TEST_FILENO(stdout)) < 0 ||
+            TN_TEST_CLOSE(saved_) != 0 || std::fclose(file_) != 0) std::abort();
+        saved_ = -1;
+    }
+private:
+    FILE* file_;
+    int saved_ = -1;
+    long position_ = 0;
+};
 
 constexpr const char* kScript = R"JS((async () => {
  try {
@@ -432,6 +492,30 @@ constexpr const char* kScript = R"JS((async () => {
   bundleEncoder.setIndexBuffer(idxBuf, "uint16");
   bundleEncoder.draw(3, 1, 0, 0);
   bundleEncoder.drawIndexed(3, 1, 0, 0, 0);
+  // The GPU-driven world records its indirect batches into render bundles: a host whose bundle
+  // encoder lacks these throws "drawIndexedIndirect is not a function" on the first streamed cell.
+  bundleEncoder.drawIndirect(indirectBuf, 16);
+  bundleEncoder.drawIndexedIndirect(indirectBuf, 16);
+  // A bad indirect call fails closed with a TypeError that names the method, never a silent skip.
+  for (const method of ["drawIndirect", "drawIndexedIndirect"]) {
+    const bad = {
+      "no arguments": [],
+      "no offset": [indirectBuf],
+      "not a buffer": [{}, 16],
+      "NaN offset": [indirectBuf, NaN],
+      "infinite offset": [indirectBuf, Infinity],
+      "negative offset": [indirectBuf, -4],
+      "unaligned offset": [indirectBuf, 6],
+      "string offset": [indirectBuf, "16"],
+    };
+    for (const [label, callArgs] of Object.entries(bad)) {
+      let error;
+      try { bundleEncoder[method](...callArgs); } catch (e) { error = e; }
+      if (!(error instanceof TypeError) || !String(error.message).includes("GPURenderBundleEncoder." + method)) {
+        throw new Error("bundle " + method + " (" + label + ") did not throw a named TypeError: " + error);
+      }
+    }
+  }
   const renderBundle = bundleEncoder.finish();
   globalThis.__renderBundle = renderBundle;
 
@@ -855,22 +939,20 @@ bool parseCheckpoint(const std::string& text, PipelineCheckpoint& checkpoint) {
  * silent. Nothing below kills the compile pool, and the runtime is left running afterwards.
  */
 bool checkLivePipelineCheckpoint(mystral::Runtime& runtime, mystral::webgpu::BindingsState* state) {
-    std::ostringstream captured;
-    std::streambuf* const previous = std::cout.rdbuf(captured.rdbuf());
+    StdoutCapture captured;
     // Read beside the checkpoint, never after the compile below: this run keeps handing out
     // request ids, and comparing a snapshot against a later reading measures the gap, not the count.
     const uint64_t requestedAtFirst = state->asyncPipelines.nextRequestId - 1;
     mystral::webgpu::reportPipelineCheckpoint(state, 1);
-    const std::string firstText = captured.str();
-    captured.str("");
+    const std::string firstText = captured.read();
     // A second present that changed nothing: a checkpoint per frame would bury the log it rides in.
     mystral::webgpu::reportPipelineCheckpoint(state, 2);
-    const std::string unchangedText = captured.str();
-    captured.str("");
+    const std::string unchangedText = captured.read();
     const bool compiled = runtime.evalScript(kCheckpointCompileScript, "checkpoint_compile.js");
     mystral::webgpu::reportPipelineCheckpoint(state, 3);
-    const std::string secondText = captured.str();
-    std::cout.rdbuf(previous);
+    const std::string secondText = captured.read();
+    captured.finish();
+    writeTestLine(firstText + unchangedText + secondText);
 
     PipelineCheckpoint first;
     PipelineCheckpoint second;
@@ -923,6 +1005,88 @@ bool checkLivePipelineCheckpoint(mystral::Runtime& runtime, mystral::webgpu::Bin
     }
     if (countMarkers(secondText, "TN_PIPELINE_COMPLETE:") != 0) {
         std::cerr << "a live checkpoint printed a completion marker: " << secondText << '\n';
+        return false;
+    }
+    return true;
+}
+
+bool checkPipelineOutputContention(mystral::Runtime& runtime,
+                                   mystral::webgpu::BindingsState* state) {
+    int descriptors[2];
+#if defined(_WIN32)
+    if (_pipe(descriptors, 4096, _O_BINARY) != 0) std::abort();
+#else
+    if (pipe(descriptors) != 0) std::abort();
+#endif
+    if (std::fflush(stdout) != 0) std::abort();
+    const int saved = TN_TEST_DUP(TN_TEST_FILENO(stdout));
+    if (saved < 0 || TN_TEST_DUP2(descriptors[1], TN_TEST_FILENO(stdout)) < 0 ||
+        TN_TEST_CLOSE(descriptors[1]) != 0) std::abort();
+    std::string captured;
+    std::thread reader([&] {
+        char buffer[1024];
+        for (;;) {
+            const auto count = TN_TEST_READ(descriptors[0], buffer, sizeof(buffer));
+            if (count < 0) std::abort();
+            if (count == 0) break;
+            captured.append(buffer, static_cast<size_t>(count));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (TN_TEST_CLOSE(descriptors[0]) != 0) std::abort();
+    });
+    std::atomic<bool> started{false};
+    std::atomic<bool> done{false};
+    std::thread competingWriter([&] {
+        do {
+            writeTestLine("TN_UI_SNAPSHOT:{\"visible\":true,\"text\":\"pipeline contention\"}\n");
+            started.store(true);
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        } while (!done.load());
+    });
+    while (!started.load()) std::this_thread::yield();
+    const uint64_t before = state->asyncPipelines.emitted;
+    const bool compiled = runtime.evalScript(R"JS((() => {
+        __device.createRenderPipeline({
+            label: "stdio-contention-" + "L".repeat(96 * 1024),
+            layout: __device.createPipelineLayout({ bindGroupLayouts: [] }),
+            vertex: {
+                module: __device.createShaderModule({
+                    code: "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0, 0, 0, 1); }",
+                }),
+                entryPoint: "vs",
+            },
+            fragment: {
+                module: __device.createShaderModule({
+                    code: "@fragment fn fs() -> @location(0) vec4f { return vec4f(1); }",
+                }),
+                entryPoint: "fs",
+                targets: [{ format: "rgba8unorm" }],
+            },
+        });
+        console.log("stdio-console-" + "C".repeat(96 * 1024));
+    })())JS", "stdio_contention.js");
+    mystral::webgpu::reportPipelineCheckpoint(state, 4);
+    done.store(true);
+    competingWriter.join();
+    if (std::fflush(stdout) != 0 || TN_TEST_DUP2(saved, TN_TEST_FILENO(stdout)) < 0 ||
+        TN_TEST_CLOSE(saved) != 0) std::abort();
+    reader.join();
+    // Replay the actual producer bytes for the unchanged external strict parser.
+    writeTestLine(captured);
+    std::istringstream records(captured);
+    std::string record;
+    while (std::getline(records, record)) {
+        const bool critical = record.find("TN_PIPELINE_") != std::string::npos ||
+            record.find("[log] stdio-console-") != std::string::npos;
+        if (critical && record.find("TN_UI_SNAPSHOT:") != std::string::npos) {
+            std::cerr << "UI snapshot spliced into a pipeline/console producer record\n";
+            return false;
+        }
+    }
+    if (!compiled || state->asyncPipelines.emitted != before + 1 ||
+        captured.find("stdio-contention-" + std::string(96 * 1024, 'L')) == std::string::npos ||
+        captured.find("stdio-console-" + std::string(96 * 1024, 'C')) == std::string::npos) {
+        std::cerr << "pipeline/console contention lost a complete large producer record\n";
         return false;
     }
     return true;
@@ -1029,7 +1193,8 @@ int main() {
             std::cerr << "webgpu comprehensive script did not expose its device\n";
             return 1;
         }
-        if (!checkLivePipelineCheckpoint(*runtime, state)) return 1;
+        if (!checkLivePipelineCheckpoint(*runtime, state) ||
+            !checkPipelineOutputContention(*runtime, state)) return 1;
         auto nativeEncoder = mystral::webgpu::handleGpuDeviceCreateCommandEncoder(state, deviceHandle, {});
         if (!nativeEncoder.ptr || engine->isUndefined(nativeEncoder) ||
             !engine->setGlobalProperty("__nativeEncoder", nativeEncoder)) {

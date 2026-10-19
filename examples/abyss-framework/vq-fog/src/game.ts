@@ -461,7 +461,7 @@ export class FogProbe extends GameScene<FogState> {
 export default defineGame<FogState>({
   camera: { far: 80, near: 0.1, fov: 52, projection: "perspective" },
   initialState,
-  frameBudget: { reportEvery: 30 },
+  frameBudget: { reportEvery: 30, minFrames: 30 },
   input: {
     exposureOn: { keys: ["Digit9"] },
     exposureOff: { keys: ["Digit0"] },

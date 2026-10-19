@@ -24,10 +24,14 @@ export async function startVisualScene(canvas, dimensions, type, build, options 
     ? () => subject.render()
     : () => renderer.render(scene, camera);
   function frame() {
+    if (options.awaitRender === true) {
+      Promise.resolve(renderFrame()).then(() => requestAnimationFrame(frame));
+      return;
+    }
     renderFrame();
     requestAnimationFrame(frame);
   }
-  if (options.deferInitialRender !== true) renderFrame();
+  if (options.deferInitialRender !== true) await Promise.resolve(renderFrame());
   requestAnimationFrame(frame);
   globalThis.__TN_CONFORMANCE = { ok: true, type, detail: subject?.detail ?? null };
   return { renderer, scene, camera, subject };

@@ -29,7 +29,7 @@ import {
   classify,
 } from "../compile.js";
 import { type IMaterialMergeSummary, mergeIdenticalMaterials } from "../foliage.js";
-import { createGltfReader, readGltfDocument } from "../gltf-io.js";
+import { EXTTextureAstc, createGltfReader, readGltfDocument } from "../gltf-io.js";
 import {
   IMAGE_QUALITY_IDENTITY,
   type ITextureQuality,
@@ -322,7 +322,7 @@ async function writeDocument(
   await MeshoptEncoder.ready;
   const io = new NodeIO()
     .setVertexLayout(vertexLayout === "separate" ? VertexLayout.SEPARATE : VertexLayout.INTERLEAVED)
-    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry, TNDiscreteLod])
+    .registerExtensions([...ALL_EXTENSIONS, EXTTextureAstc, TNVirtualGeometry, TNDiscreteLod])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   try {
     const buffer = Buffer.from(await io.writeBinary(document));
@@ -871,6 +871,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         options.textures === "none"
           ? "none"
           : {
+              ...(options.textures?.astc === true ? { astc: "raw4x4-gltf-authored-basis-v2" } : {}),
               decoderFree: options.textures?.decoderFree ?? false,
               encoder: KTX2_ENCODER_VERSION,
               instrument: IMAGE_QUALITY_IDENTITY,
@@ -889,7 +890,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
     // geometry rewrites and shared-image emission remain plain glTF and stay enabled there.
     needsRuntimeDecoder:
       (options.passes?.meshopt ?? true) ||
-      (options.textures !== "none" && options.textures?.decoderFree !== true),
+      (options.textures !== "none" &&
+        options.textures?.decoderFree !== true &&
+        options.textures?.astc !== true),
     apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
       if (classify(logicalPath) !== "model") return input;
       const passes = options.passes ?? {};
@@ -1152,6 +1155,7 @@ function sharedSettings(
       textureOptions === undefined
         ? "none"
         : {
+            ...(textureOptions.astc === true ? { astc: "raw4x4-gltf-authored-basis-v2" } : {}),
             decoderFree: textureOptions.decoderFree ?? false,
             encoder: KTX2_ENCODER_VERSION,
             instrument: IMAGE_QUALITY_IDENTITY,
@@ -1293,7 +1297,7 @@ async function writeAndVerifyShared(
   await MeshoptEncoder.ready;
   const io = new NodeIO()
     .setVertexLayout(vertexLayout === "separate" ? VertexLayout.SEPARATE : VertexLayout.INTERLEAVED)
-    .registerExtensions([...ALL_EXTENSIONS, TNVirtualGeometry, TNDiscreteLod])
+    .registerExtensions([...ALL_EXTENSIONS, EXTTextureAstc, TNVirtualGeometry, TNDiscreteLod])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   // Encoded bytes → every store key they were filed under. Equal encoded bytes can come from
   // distinct source keys, so each writer callback consumes one deterministic candidate rather

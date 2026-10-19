@@ -155,6 +155,22 @@
       "required": false
     },
     {
+      "id": "resolution-subrect",
+      "title": "retained target resolution scale through a viewport sub-rectangle",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/resolution-subrect.js",
+      "captureFrames": 12,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "lut-grade",
       "title": "colour grade table and film grain",
       "category": "rendering",
@@ -809,6 +825,18 @@
       "required": true
     },
     {
+      "id": "transient-output-depth",
+      "title": "owned output preserves physical MSAA depth and submission order",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/transient-output-depth.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": { "pixelMismatchRatio": 0.01, "perceptualDeltaE": 3.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "71-tsl-color-node",
       "title": "tsl color node",
       "category": "webgpu-tsl",
@@ -896,6 +924,28 @@
       "required": true
     },
     {
+      "id": "vfx-spawn-requests",
+      "title": "VFX particle spawn requests",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/vfx-spawn-requests.js",
+      "baseline": "conformance/baselines/vfx-spawn-requests.json",
+      "captureFrames": 12,
+      "temporal": { "settledFrame": 8, "nextFrame": 9, "assertsDifferenceFromFrameZero": true, "capture": "settled" },
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "deviceMetrics": { "notThermallyConfounded": true },
+      "laneRegistrations": {
+        "browser": { "registered": true, "target": "web", "assertsAdapter": true },
+        "desktop": { "registered": true, "target": "desktop" },
+        "android": { "registered": true, "target": "android", "assertsThermal": true },
+        "ios": { "registered": true, "target": "ios" }
+      },
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "terrain-splat-array",
       "title": "sixteen-layer terrain splat and a height set through five array textures",
       "category": "world",
@@ -909,6 +959,38 @@
       },
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "world-hlod-lifecycle",
+      "title": "hand-placed chunk HLOD swap, protected shadow/collision source and eviction",
+      "category": "world",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-hlod-lifecycle.js",
+      "browserRecipe": "webgpu",
+      "captureFrames": 180,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "world-gpu-scene-readback",
+      "title": "GPU WorldCells validation reuses two readback targets per layout across late cutout atlas publication",
+      "category": "world",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-gpu-scene-readback.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "captureFrames": 1200,
+      "nativeFrames": 1200,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": false
     },
     {
       "id": "world-terrain-inline-hash",
@@ -1242,6 +1324,19 @@
         "perceptualDeltaE": 3.0
       },
       "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "91-queue-write-buffer-zero",
+      "title": "zero-length queue writeBuffer preserves nonzero writes and rejects invalid sources",
+      "category": "runtime",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/queue-write-buffer-zero.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
       "required": true
     },
     {

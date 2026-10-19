@@ -17,6 +17,21 @@ if(NOT MYSTRAL_PACKAGE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+")
 endif()
 
 project(MystralNativeRuntime VERSION ${MYSTRAL_PACKAGE_VERSION} LANGUAGES C CXX)
+
+# The browser port builds only the portable engine core (PRD-499, owner decision 4): no host
+# services, no GPU backend, no JS engine. Its CPU tests run under node through ctest.
+# The portable engine core alone: Wasm, and any cross toolchain (an Android NDK build that runs the
+# fixture driver on a device) that needs no host services, SDL or JS engine.
+option(TN_ENGINE_CORE_ONLY "Configure only the portable native-engine core" OFF)
+if(EMSCRIPTEN OR TN_ENGINE_CORE_ONLY)
+    enable_testing()
+    if(EMSCRIPTEN)
+        # This package is "type": "module"; Emscripten emits CommonJS, and the nearest package.json wins.
+        file(WRITE "${CMAKE_BINARY_DIR}/package.json" "{\"type\": \"commonjs\"}\n")
+    endif()
+    include(cmake/NativeEngineCore.cmake)
+    return()
+endif()
 enable_testing()
 
 function(tn_register_contract_test target)
@@ -351,6 +366,8 @@ if(SDL3_SOURCE_DIRS)
         # SDL_appid.c member when mystral-tools pulls it in. SDL_uclibc contributes objects to the
         # same archive, so keep both static producers position independent.
         if(TARGET SDL3-static)
+            # The desktop tray symbol rewrite uses objcopy, which requires non-LTO objects.
+            set_property(TARGET SDL3-static PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
             set_target_properties(SDL3-static PROPERTIES POSITION_INDEPENDENT_CODE ON)
         endif()
         if(TARGET SDL_uclibc)
@@ -705,6 +722,56 @@ if(MYSTRAL_USE_DAWN)
     endif()
 endif()
 
+# The prebuilt Rust Rapier world. The engine's PhysicsSync and the V8 player link it, so it is defined
+# before the engine targets; the legacy host adds its binding source where it assembles its own.
+if(TN_ENABLE_NATIVE_PHYSICS)
+    if(NOT THREENATIVE_PHYSICS_LIBRARY)
+        if(ANDROID_ABI STREQUAL "arm64-v8a")
+            set(THREENATIVE_PHYSICS_TARGET "aarch64-linux-android")
+        elseif(ANDROID_ABI STREQUAL "x86_64")
+            set(THREENATIVE_PHYSICS_TARGET "x86_64-linux-android")
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND CMAKE_OSX_SYSROOT MATCHES "simulator")
+            set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios-sim")
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+            set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios")
+        else()
+            message(FATAL_ERROR "Native physics has no prebuilt target for this platform/architecture")
+        endif()
+        set(THREENATIVE_PHYSICS_LIBRARY
+            "${CMAKE_CURRENT_SOURCE_DIR}/.runtime/physics-target/${THREENATIVE_PHYSICS_TARGET}/release/libthreenative_native_physics.a"
+        )
+    endif()
+    if(NOT EXISTS "${THREENATIVE_PHYSICS_LIBRARY}")
+        message(FATAL_ERROR
+            "Native physics artifact is missing: ${THREENATIVE_PHYSICS_LIBRARY}. "
+            "Run node scripts/build-native-physics.mjs with --android, --ios-simulator, "
+            "or --ios-device as appropriate, or supply -DTHREENATIVE_PHYSICS_LIBRARY."
+        )
+    endif()
+    add_library(threenative-native-physics STATIC IMPORTED)
+    set_target_properties(threenative-native-physics PROPERTIES
+        IMPORTED_LOCATION "${THREENATIVE_PHYSICS_LIBRARY}"
+    )
+endif()
+
+# The JS-free native engine (PRD-573): its GPU-backed targets are configured only on request, so the
+# default (legacy) configure defines no engine target. The portable CPU core has its own switch,
+# TN_ENGINE_CORE_ONLY, near the top of this file.
+option(TN_ENGINE_ONLY "Configure only the JS-free native engine targets" OFF)
+# The V8 player and adapter (PRD-573 slice 6) are JS artifacts above the engine. They are configured
+# only by `-DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF`:
+# the configure then continues far enough to define V8 and the runtime scripts, includes
+# cmake/NativeEngineAdapters.cmake and stops, so the legacy host is never defined.
+option(TN_ENGINE_PLAYER "With TN_ENGINE_ONLY, also configure the V8 engine player (needs MYSTRAL_USE_V8)" OFF)
+if(TN_ENGINE_ONLY)
+    include(cmake/NativeEngine.cmake)
+    if(NOT TN_ENGINE_PLAYER)
+        message(STATUS "TN_ENGINE_ONLY: native engine targets only, no scripting configured")
+        return()
+    endif()
+    message(STATUS "TN_ENGINE_ONLY + TN_ENGINE_PLAYER: native engine targets and the V8 player")
+endif()
+
 # QuickJS-NG (actively maintained fork with MSVC/Windows support)
 if(MYSTRAL_USE_QUICKJS)
     set(QUICKJS_DIR ${THIRD_PARTY_DIR}/quickjs)
@@ -759,7 +826,7 @@ endif()
 # Prebuilts from kuoruan/libv8: https://github.com/kuoruan/libv8/releases
 # See docs/V8_PREBUILTS.md for fork/update information
 if(MYSTRAL_USE_V8)
-    set(V8_DIR ${THIRD_PARTY_DIR}/v8)
+    set(V8_DIR "${THIRD_PARTY_DIR}/v8" CACHE PATH "Desktop V8 headers and monolith")
     # Android ships a shared `libv8android.so` rather than the desktop monolith archive, and it
     # lives beside the desktop one so a host build and a device build can coexist in one checkout.
     # Without this the arm64 link pulls in the x86_64 archive and fails object by object.
@@ -844,9 +911,19 @@ if(MYSTRAL_USE_V8)
             elseif(UNIX)
                 # V8 on Linux needs pthread and dl
                 set(V8_SYSTEM_LIBS pthread dl)
+                if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+                    list(APPEND V8_SYSTEM_LIBS atomic)
+                endif()
             elseif(WIN32)
                 # V8 on Windows needs these
                 set(V8_SYSTEM_LIBS winmm dbghelp shlwapi)
+                # v8config.h refuses anything below C++20 by `__cplusplus`, which MSVC reports as
+                # 199711L without this flag. mystral-runtime set it for itself, so the engine
+                # player's V8 services failed "C++20 or later required" (release-proof run
+                # 39258851241); every target that includes V8 headers needs it.
+                if(MSVC)
+                    set_property(TARGET v8::v8 APPEND PROPERTY INTERFACE_COMPILE_OPTIONS /Zc:__cplusplus)
+                endif()
             endif()
         else()
             message(WARNING "V8 not found:")
@@ -1096,8 +1173,20 @@ else()
         endif()
     else()
         set(SKIA_PLATFORM_DIR "linux-gpu")
-        set(SKIA_LIB_SUBDIR "x64")
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+            set(SKIA_LIB_SUBDIR "arm64")
+        else()
+            set(SKIA_LIB_SUBDIR "x64")
+        endif()
     endif()
+endif()
+
+# Linux arm64 ships an arm64 Skia prebuilt (library-builder chrome/m145), so a build that asked
+# for Canvas2D and cannot find it is a missing dependency, not a host that never had Canvas2D.
+# Disabling it there made the arm64 desktop artifact quietly differ from every other platform.
+if(TN_ENABLE_CANVAS2D AND MYSTRAL_PLATFORM STREQUAL "linux"
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    set(TN_SKIA_ARM64_REQUIRED ON)
 endif()
 
 if(TN_ENABLE_CANVAS2D AND EXISTS ${SKIA_TARGET_DIR})
@@ -1131,6 +1220,13 @@ if(TN_ENABLE_CANVAS2D AND EXISTS ${SKIA_TARGET_DIR})
         message(STATUS "Found Skia: ${SKIA_LIBRARY}")
         message(STATUS "Skia includes: ${SKIA_INCLUDE_DIR}")
     else()
+        if(TN_SKIA_ARM64_REQUIRED)
+            message(FATAL_ERROR
+                "TN_SKIA_ARM64_MISSING: Canvas2D was requested on arm64 but Skia is incomplete.\n"
+                "  Library: ${SKIA_LIB_PATH}\n"
+                "  Include: ${SKIA_INCLUDE_DIR}\n"
+                "  Run 'node scripts/download-deps.mjs --only skia' on an arm64 host, or configure with -DTN_ENABLE_CANVAS2D=OFF to drop the surface deliberately.")
+        endif()
         message(WARNING "Skia library or headers not found:")
         message(WARNING "  Library: ${SKIA_LIB_PATH}")
         message(WARNING "  Include: ${SKIA_INCLUDE_DIR}")
@@ -1138,6 +1234,11 @@ if(TN_ENABLE_CANVAS2D AND EXISTS ${SKIA_TARGET_DIR})
 else()
     if(NOT TN_ENABLE_CANVAS2D)
         message(STATUS "Skia disabled because TN_ENABLE_CANVAS2D=OFF")
+    endif()
+    if(TN_SKIA_ARM64_REQUIRED)
+        message(FATAL_ERROR
+            "TN_SKIA_ARM64_MISSING: Canvas2D was requested on arm64 but no Skia was found at ${SKIA_TARGET_DIR}.\n"
+            "  Run 'node scripts/download-deps.mjs --only skia' on an arm64 host, or configure with -DTN_ENABLE_CANVAS2D=OFF to drop the surface deliberately.")
     endif()
     if(MYSTRAL_PLATFORM STREQUAL "ios")
         message(STATUS "Skia iOS not found - Canvas 2D support disabled. Run 'node scripts/download-deps.mjs --only skia-ios' to enable.")
@@ -1456,6 +1557,11 @@ add_custom_command(
 )
 add_custom_target(threenative-runtime-scripts DEPENDS "${TN_RUNTIME_SCRIPT_HEADER}")
 
+if(TN_ENGINE_ONLY AND TN_ENGINE_PLAYER)
+    include(cmake/NativeEngineAdapters.cmake)
+    return()
+endif()
+
 # Android requires shared library for JNI/SDL loading
 set(MYSTRAL_SOURCES
     src/runtime.cpp
@@ -1475,6 +1581,7 @@ set(MYSTRAL_SOURCES
     src/webgpu/bindings_pipeline_cache.cpp
     src/webgpu/pipeline_cache.cpp
     src/webgpu/bindings_presentation.cpp
+    src/webgpu/presentation.cpp
     src/webgpu/bindings_ui_composite.cpp
     src/webgpu/bindings_resources.cpp
     src/webgpu/bindings_screenshot.cpp
@@ -1503,33 +1610,6 @@ set(MYSTRAL_SOURCES
 )
 
 if(TN_ENABLE_NATIVE_PHYSICS)
-    if(NOT THREENATIVE_PHYSICS_LIBRARY)
-        if(ANDROID_ABI STREQUAL "arm64-v8a")
-            set(THREENATIVE_PHYSICS_TARGET "aarch64-linux-android")
-        elseif(ANDROID_ABI STREQUAL "x86_64")
-            set(THREENATIVE_PHYSICS_TARGET "x86_64-linux-android")
-        elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND CMAKE_OSX_SYSROOT MATCHES "simulator")
-            set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios-sim")
-        elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-            set(THREENATIVE_PHYSICS_TARGET "aarch64-apple-ios")
-        else()
-            message(FATAL_ERROR "Native physics has no prebuilt target for this platform/architecture")
-        endif()
-        set(THREENATIVE_PHYSICS_LIBRARY
-            "${CMAKE_CURRENT_SOURCE_DIR}/.runtime/physics-target/${THREENATIVE_PHYSICS_TARGET}/release/libthreenative_native_physics.a"
-        )
-    endif()
-    if(NOT EXISTS "${THREENATIVE_PHYSICS_LIBRARY}")
-        message(FATAL_ERROR
-            "Native physics artifact is missing: ${THREENATIVE_PHYSICS_LIBRARY}. "
-            "Run node scripts/build-native-physics.mjs with --android, --ios-simulator, "
-            "or --ios-device as appropriate, or supply -DTHREENATIVE_PHYSICS_LIBRARY."
-        )
-    endif()
-    add_library(threenative-native-physics STATIC IMPORTED)
-    set_target_properties(threenative-native-physics PROPERTIES
-        IMPORTED_LOCATION "${THREENATIVE_PHYSICS_LIBRARY}"
-    )
     list(APPEND MYSTRAL_SOURCES src/physics/native_bindings.cpp)
 endif()
 
@@ -2260,17 +2340,19 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/physics_actuation_bindings_test.cpp)
     target_link_libraries(threenative-physics-actuation-bindings-test PRIVATE mystral-runtime)
 
-    # The synthetic DNA and its reference vectors live in the package that owns the ABI
-    # contract; the path is compiled in so the executable needs no working directory.
-    add_executable(threenative-metahuman-bindings-test EXCLUDE_FROM_ALL
-        tests/metahuman_bindings_test.cpp)
-    target_link_libraries(threenative-metahuman-bindings-test PRIVATE mystral-runtime)
-    target_include_directories(threenative-metahuman-bindings-test PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_compile_definitions(threenative-metahuman-bindings-test PRIVATE
-        THREENATIVE_METAHUMAN_DNA="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.dna"
-        THREENATIVE_METAHUMAN_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.vectors.json"
-        THREENATIVE_METAHUMAN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.reference.json")
+    if(TN_ENABLE_METAHUMAN)
+        # The synthetic DNA and its reference vectors live in the package that owns the ABI
+        # contract; the path is compiled in so the executable needs no working directory.
+        add_executable(threenative-metahuman-bindings-test EXCLUDE_FROM_ALL
+            tests/metahuman_bindings_test.cpp)
+        target_link_libraries(threenative-metahuman-bindings-test PRIVATE mystral-runtime)
+        target_include_directories(threenative-metahuman-bindings-test PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_compile_definitions(threenative-metahuman-bindings-test PRIVATE
+            THREENATIVE_METAHUMAN_DNA="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.dna"
+            THREENATIVE_METAHUMAN_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.vectors.json"
+            THREENATIVE_METAHUMAN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.reference.json")
+    endif()
 
     add_executable(threenative-dom-dispatch-lifetime-test EXCLUDE_FROM_ALL
         tests/dom_dispatch_lifetime_test.cpp)
@@ -2390,6 +2472,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         target_include_directories(threenative-exposure-graph-test PRIVATE ${TN_EXPOSURE_WGPU_INCLUDES})
     endif()
 
+    add_executable(threenative-transient-attachments-test EXCLUDE_FROM_ALL
+        tests/transient_attachments_test.cpp)
+    target_link_libraries(threenative-transient-attachments-test PRIVATE mystral-runtime)
+    if(MYSTRAL_USE_DAWN)
+        target_include_directories(threenative-transient-attachments-test PRIVATE ${DAWN_INCLUDE_DIR})
+    elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
+        target_include_directories(threenative-transient-attachments-test PRIVATE ${WGPU_INCLUDE_DIR})
+    endif()
+
     add_executable(threenative-timestamp-query-test EXCLUDE_FROM_ALL
         tests/timestamp_query_test.cpp)
     target_link_libraries(threenative-timestamp-query-test PRIVATE mystral-runtime)
@@ -2443,6 +2534,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-webgpu-bindings-reentrancy-test EXCLUDE_FROM_ALL
         tests/webgpu_bindings_reentrancy_test.cpp)
     target_link_libraries(threenative-webgpu-bindings-reentrancy-test PRIVATE mystral-runtime)
+    if(TARGET skia::skia)
+        target_link_libraries(threenative-webgpu-bindings-reentrancy-test PRIVATE skia::skia)
+    endif()
 
     add_executable(threenative-handle-lifetime-test EXCLUDE_FROM_ALL
         tests/handle_lifetime_test.cpp)
@@ -2724,6 +2818,13 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-pipeline-cache-lifecycle-test)
     tn_register_contract_test(threenative-pipeline-cache-test)
     tn_register_contract_test(threenative-stall-budget-hitch-test)
+    tn_register_contract_test(threenative-transient-attachments-test)
+    add_test(NAME threenative-transient-attachments-test-feature-off
+        COMMAND $<TARGET_FILE:threenative-transient-attachments-test> --feature-off)
+    add_test(NAME threenative-transient-attachments-test-direct
+        COMMAND $<TARGET_FILE:threenative-transient-attachments-test> --direct)
+    set_tests_properties(threenative-transient-attachments-test-feature-off
+        threenative-transient-attachments-test-direct PROPERTIES LABELS "native-contract")
     tn_register_contract_test(threenative-timestamp-query-test)
     tn_register_contract_test(threenative-exposure-graph-test)
     add_test(NAME threenative-exposure-graph-test-validation-negative
@@ -2749,9 +2850,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_mark_sanitizer_contract_test(threenative-dom-dispatch-lifetime-test)
     tn_mark_sanitizer_contract_test(threenative-frame-op-stream-replay-test)
     tn_mark_sanitizer_contract_test(threenative-handle-lifetime-test)
-    # The facial rig is the one contract that parses untrusted bytes into the C ABI, so it runs
-    # instrumented too: a leak or a bad free in the DNA reader is invisible without it.
-    tn_mark_sanitizer_contract_test(threenative-metahuman-bindings-test)
+    if(TN_ENABLE_METAHUMAN)
+        # The facial rig is the one contract that parses untrusted bytes into the C ABI, so it runs
+        # instrumented too: a leak or a bad free in the DNA reader is invisible without it.
+        tn_mark_sanitizer_contract_test(threenative-metahuman-bindings-test)
+    endif()
     tn_mark_sanitizer_contract_test(threenative-shutdown-lifetime-test)
     tn_mark_sanitizer_contract_test(threenative-webgpu-bindings-reentrancy-test)
     get_property(TN_NATIVE_SANITIZER_TARGETS GLOBAL PROPERTY TN_NATIVE_SANITIZER_TARGETS)
@@ -2799,7 +2902,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # Use --copy-dt-needed-entries to pull in dependencies from shared libraries.
     # Also allow multiple definitions because wgpu-native and swc both contain Rust runtime symbols.
     if(UNIX AND NOT APPLE)
-        target_link_options(mystral PRIVATE
+        target_link_options(mystral-runtime INTERFACE
             "LINKER:--copy-dt-needed-entries"
             "LINKER:--allow-multiple-definition"
         )

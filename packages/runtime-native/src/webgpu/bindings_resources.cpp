@@ -876,6 +876,11 @@ js::JSValueHandle handleGpuDeviceCreateSampler(BindingsState* state, BindingDest
                             }
                             auto jsSampler = createNativeWrapper(state, "GPUSampler", sampler);
                             state->engine->setProperty(jsSampler, "_type", state->engine->newString("sampler"));
+                            auto ownedResources = state->registries.ownedResources;
+                            const uint64_t samplerId = ownedResources->trackSampler(sampler);
+                            state->engine->registerRelease(jsSampler, [ownedResources, samplerId]() {
+                                ownedResources->releaseSampler(samplerId);
+                            });
                             if (state->verboseLogging) std::cout << "[WebGPU] Created sampler" << std::endl;
                             return jsSampler;
 }
@@ -1063,6 +1068,21 @@ js::JSValueHandle handleGpuDeviceCreateTexture(BindingsState* state, BindingDest
                             uint32_t mipLevelCount = state->engine->isUndefined(mipLevelCountVal) ? 1 : (uint32_t)state->engine->toNumber(mipLevelCountVal);
                             auto sampleCountVal = state->engine->getProperty(descriptor, "sampleCount");
                             uint32_t sampleCount = state->engine->isUndefined(sampleCountVal) ? 1 : (uint32_t)state->engine->toNumber(sampleCountVal);
+                            // Only a renderer proof may opt in; usage alone never establishes lifetime.
+                            const auto lifetime = state->engine->getProperty(descriptor, "_tnPassLocalMSAA");
+                            if (!state->engine->isUndefined(lifetime) && !state->engine->isBoolean(lifetime)) {
+                                state->engine->throwException("_tnPassLocalMSAA must be boolean");
+                                return state->engine->newUndefined();
+                            }
+                            bool transientAttachment = false;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+                            transientAttachment = state->engine->toBoolean(lifetime) && sampleCount > 1 &&
+                                usage == WGPUTextureUsage_RenderAttachment &&
+                                dimension == WGPUTextureDimension_2D && depthOrArrayLayers == 1 &&
+                                mipLevelCount == 1 &&
+                                wgpuDeviceHasFeature(state->device, WGPUFeatureName_TransientAttachments);
+                            if (transientAttachment) usage |= WGPUTextureUsage_TransientAttachment;
+#endif
                             // Create texture descriptor
                             WGPUTextureDescriptor texDesc = {};
                             texDesc.size.width = width;
@@ -1098,6 +1118,8 @@ js::JSValueHandle handleGpuDeviceCreateTexture(BindingsState* state, BindingDest
                             textureInfo.mipLevelCount = mipLevelCount;
                             textureInfo.dimension = dimension;
                             textureInfo.sampleCount = sampleCount;
+                            textureInfo.transientAttachment = transientAttachment;
+                            textureInfo.transientNominalBytes = transientAttachment ? textureMetricBytes(textureInfo) : 0;
                             textureInfo.ownsTexture = true;
                             textureInfo.accounted = false;
                             state->registries.textureRegistry[textureId] = textureInfo;

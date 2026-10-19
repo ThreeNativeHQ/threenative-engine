@@ -68,13 +68,14 @@ describe("the frame budget names the surface the game's own loop drew", () => {
         warn.mockClear();
         log.mockClear();
         if (!frame) throw new Error("Game did not start its loop");
-        frame(16.7); // Establish the one-time projection verdict before the measurement windows.
+        const startTime = performance.now();
+        frame(startTime + 16.7); // Establish the one-time projection verdict before the measurement windows.
         windows = 0;
         lines.length = 0;
         info.mockClear();
         warn.mockClear();
         log.mockClear();
-        for (let index = 2; index <= 5; index += 1) frame(index * 16.7);
+        for (let index = 2; index <= 5; index += 1) frame(startTime + index * 16.7);
         expect(windows).toBe(4);
         const projection = (line: unknown) =>
           typeof line === "string" && line.startsWith("TN_PROJECTION:");
@@ -137,12 +138,14 @@ describe("the frame budget names the surface the game's own loop drew", () => {
     try {
       await game.start();
       if (frame === undefined) throw new Error("Game did not start its loop.");
-      for (let index = 1; index <= 4; index += 1) frame(index * 16.7);
+      const startTime = performance.now();
+      for (let index = 1; index <= 4; index += 1) frame(startTime + index * 16.7);
       const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));
       expect(marker, "no frame-budget window was reported").toBeDefined();
       const reported = JSON.parse(marker?.slice(FRAME_BUDGET_MARKER.length + 1) ?? "{}");
       expect(reported.surface).toEqual({
         atFloor: false,
+        compiling: false,
         drawingBufferHeight: 540,
         drawingBufferWidth: 1200,
         resolutionScale: 0.5,
@@ -198,8 +201,9 @@ describe("the frame budget names the surface the game's own loop drew", () => {
     try {
       await game.start();
       if (frame === undefined) throw new Error("Game did not start its loop.");
-      frame(16.7);
-      frame(33.4);
+      const startTime = performance.now();
+      frame(startTime + 16.7);
+      frame(startTime + 33.4);
 
       const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));
       expect(marker).toBeDefined();
@@ -259,8 +263,9 @@ describe("the frame budget names the surface the game's own loop drew", () => {
     try {
       await game.start();
       if (frame === undefined) throw new Error("Game did not start its loop.");
-      frame(16.7);
-      frame(33.4);
+      const startTime = performance.now();
+      frame(startTime + 16.7);
+      frame(startTime + 33.4);
       await Promise.resolve();
 
       const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));
@@ -388,6 +393,78 @@ describe("the frame budget names the surface the game's own loop drew", () => {
     } finally {
       await game.stop();
       nowSpy.mockRestore();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+    }
+  });
+});
+
+describe("game frame budget surface compilation telemetry", () => {
+  it("reports explicit compiling state across active compile overlap and clean windows", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    const surfaces: Array<boolean | undefined> = [];
+    const game = defineGame({
+      frameBudget: {
+        report: () => {},
+        reportEvery: 1,
+        onWindow: (window) => {
+          surfaces.push(window.surface?.compiling);
+        },
+      },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync: () => Promise.resolve(),
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: EmptySceneForReporting },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      let time = performance.now();
+      for (let index = 0; index < 10; index += 1) {
+        time += 8;
+        frame(time);
+        await Promise.resolve();
+      }
+      await game.ctx?.startup.whenReady();
+      surfaces.length = 0;
+      const ctx = game.ctx;
+      if (ctx === undefined) throw new Error("Game context was not created.");
+      const active = ctx.renderer.compileAsync(ctx.scene, ctx.camera);
+      expect(ctx.renderer.compiling).toBe(true);
+      time += 16.7;
+      frame(time);
+      await active;
+      await Promise.resolve();
+      await ctx.renderer.compileAsync(ctx.scene, ctx.camera);
+      expect(ctx.renderer.compiling).toBe(false);
+      time += 16.7;
+      frame(time);
+      await Promise.resolve();
+      time += 16.7;
+      frame(time);
+      await Promise.resolve();
+      expect(surfaces.slice(-3)).toEqual([true, true, false]);
+    } finally {
+      await game.stop();
       Object.defineProperty(globalThis, "requestAnimationFrame", {
         configurable: true,
         value: requestFrame,

@@ -72,6 +72,13 @@ test("should register every native executable with CTest", () => {
   );
 });
 
+test("keeps optional MetaHuman test target out of disabled sanitizer aggregates", () => {
+  assert.match(cmake, /if\(TN_ENABLE_METAHUMAN\)\s*# The synthetic DNA and its reference vectors[\s\S]*add_executable\(threenative-metahuman-bindings-test[\s\S]*endif\(\)/u);
+  assert.match(cmake, /if\(TN_ENABLE_METAHUMAN\)\s*tn_register_contract_test\(threenative-metahuman-bindings-test\)\s*else\(\)\s*tn_register_blocked_test\(threenative-metahuman-bindings-test\s*"TN_ENABLE_METAHUMAN=OFF"\)/u);
+
+  assert.match(cmake, /if\(TN_ENABLE_METAHUMAN\)\s*# The facial rig is the one contract that parses untrusted bytes[\s\S]*tn_mark_sanitizer_contract_test\(threenative-metahuman-bindings-test\)\s*endif\(\)/u);
+});
+
 test("regenerates an existing native build before reading CTest registrations", () => {
   const runner = coverageRunner.slice(
     coverageRunner.indexOf("export function runNativeCtest()"),
@@ -96,9 +103,9 @@ test("should fail when a declared test target is not executed", () => {
   // cache contract; +1 for PRD-399's presentation-pacing contract; +1 for PRD-465 Phase 2's
   // MetaHuman facial rig bindings contract; +1 for VQ07's surface acquisition status contract.; +1 for the desktop CSS UI overlay contract.
   // Bump alongside any new add_executable contract target.
-  // 49 targets include both exposure graph and fog presentation contracts.
+  // 50 targets include the transient attachment host contract.
   // itself, so the literal is a tripwire for an unreviewed target, not the source of truth.
-  assert.equal(discovered.length, 49);
+  assert.equal(discovered.length, 50);
   const missingExposure = { ...executionContracts };
   Reflect.deleteProperty(missingExposure, "threenative-exposure-graph-test");
   assert.throws(() => validateExecutionContracts(discovered, missingExposure),

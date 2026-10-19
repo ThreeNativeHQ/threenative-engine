@@ -1,0 +1,19 @@
+{
+  "name": "buffer-version-set-no-bump",
+  "adaptedFrom": "three@0.185.1 BufferAttribute.setX/setXYZ — a component write does not bump version, only needsUpdate does",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "box", "class": "BoxGeometry", "args": [1, 1, 1] },
+    { "op": "call", "id": "box", "method": "getAttribute", "args": ["position"], "result": "p" },
+    { "op": "call", "id": "p", "method": "setX", "args": [0, 99] },
+    { "op": "call", "id": "p", "method": "setXYZ", "args": [1, 1, 2, 3] },
+    { "op": "new", "id": "box2", "class": "BoxGeometry", "args": [1, 1, 1] },
+    { "op": "call", "id": "box2", "method": "getAttribute", "args": ["position"], "result": "q" },
+    { "op": "call", "id": "q", "method": "setX", "args": [0, 5] },
+    { "op": "set", "id": "q", "path": "needsUpdate", "value": true }
+  ],
+  "observe": [
+    { "id": "p", "path": "version", "kind": "number" },
+    { "id": "q", "path": "version", "kind": "number" }
+  ]
+}

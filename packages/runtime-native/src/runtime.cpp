@@ -652,34 +652,53 @@ public:
             return false;
         }
 #elif defined(__linux__)
-        // Linux: Use X11 from SDL (Wayland support would need additional work)
+        // Linux: use whichever handles SDL actually gave us. The driver is named here because the
+        // receipt for "this ran on Wayland" has to come from SDL, not from an environment variable
+        // a caller set.
         SDL_Window* sdlWindow = platform::getSDLWindow();
         if (!sdlWindow) {
             std::cerr << "[Mystral] Failed to get SDL window" << std::endl;
             return false;
         }
 
-        // Try X11 first
-        void* xdisplay = SDL_GetPointerProperty(SDL_GetWindowProperties(sdlWindow),
-            SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
-        if (xdisplay) {
-            auto xwindow = static_cast<unsigned long>(SDL_GetNumberProperty(SDL_GetWindowProperties(sdlWindow),
-                SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
-            if (xwindow) {
-                std::cout << "[Mystral] Using X11 display: " << xdisplay << " window: " << xwindow << std::endl;
-                // Pass both display and window pointer for proper X11 surface creation
-                // Dawn requires the display pointer, wgpu-native can work with just window
-                if (!webgpu_->createSurfaceWithDisplay(xdisplay, reinterpret_cast<void*>(xwindow), webgpu::Context::PLATFORM_XLIB)) {
-                    std::cerr << "[Mystral] Failed to create WebGPU surface" << std::endl;
-                    return false;
-                }
-            } else {
-                std::cerr << "[Mystral] Failed to get X11 window" << std::endl;
+        SDL_PropertiesID windowProps = SDL_GetWindowProperties(sdlWindow);
+        std::cout << "[Mystral] SDL video driver: "
+                  << (SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "none") << std::endl;
+
+        void* wlDisplay = SDL_GetPointerProperty(windowProps,
+            SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nullptr);
+        if (wlDisplay) {
+            void* wlSurface = SDL_GetPointerProperty(windowProps,
+                SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, nullptr);
+            if (!wlSurface) {
+                std::cerr << "[Mystral] Wayland display without a surface" << std::endl;
+                return false;
+            }
+            std::cout << "[Mystral] Using Wayland display: " << wlDisplay << " surface: " << wlSurface << std::endl;
+            if (!webgpu_->createSurfaceWithDisplay(wlDisplay, wlSurface, webgpu::Context::PLATFORM_WAYLAND)) {
+                std::cerr << "[Mystral] Failed to create WebGPU surface" << std::endl;
                 return false;
             }
         } else {
-            std::cerr << "[Mystral] X11 display not available. Wayland not yet supported." << std::endl;
-            return false;
+            void* xdisplay = SDL_GetPointerProperty(windowProps,
+                SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
+            if (!xdisplay) {
+                std::cerr << "[Mystral] Wayland or X11 display not available." << std::endl;
+                return false;
+            }
+            auto xwindow = static_cast<unsigned long>(SDL_GetNumberProperty(windowProps,
+                SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+            if (!xwindow) {
+                std::cerr << "[Mystral] Failed to get X11 window" << std::endl;
+                return false;
+            }
+            std::cout << "[Mystral] Using X11 display: " << xdisplay << " window: " << xwindow << std::endl;
+            // Pass both display and window pointer for proper X11 surface creation
+            // Dawn requires the display pointer, wgpu-native can work with just window
+            if (!webgpu_->createSurfaceWithDisplay(xdisplay, reinterpret_cast<void*>(xwindow), webgpu::Context::PLATFORM_XLIB)) {
+                std::cerr << "[Mystral] Failed to create WebGPU surface" << std::endl;
+                return false;
+            }
         }
 #else
         std::cerr << "[Mystral] WebGPU surface creation not implemented for this platform" << std::endl;
@@ -805,7 +824,8 @@ public:
             bindingsState_ = nullptr;
             return false;
         }
-        webgpu_->setBindingsState(bindingsState_);
+        frameCapture_ = webgpu::makeFrameCaptureSource(bindingsState_);
+        webgpu_->setFrameCaptureSource(frameCapture_.get());
 
         // In no-SDL mode, set the offscreen texture for headless rendering
         if (config_.noSdl) {
@@ -946,7 +966,8 @@ public:
         }
 
         if (bindingsState_) {
-            if (webgpu_) webgpu_->setBindingsState(nullptr);
+            if (webgpu_) webgpu_->setFrameCaptureSource(nullptr);
+            frameCapture_.reset();
             webgpu::destroyBindingsState(bindingsState_);
             bindingsState_ = nullptr;
         }
@@ -985,6 +1006,24 @@ public:
             });
             if (watchId_ >= 0) {
                 std::cout << "[HotReload] Watching for changes: " << path << std::endl;
+            }
+        }
+
+        // The clock the run asked for, read before the game module evaluates so the request cannot
+        // land after the producer that owns the loop was installed. Unset changes nothing.
+        const char* requestedClock = std::getenv("TN_PLAYTEST_CLOCK");
+        if (requestedClock != nullptr && requestedClock[0] != '\0') {
+            if (std::string(requestedClock) != "wall-clock") {
+                // Refuse rather than fall back: a misspelling that quietly left the loop frozen
+                // would publish a frame rate for a game that was not playing.
+                std::cerr << "TN_PLAYTEST_CLOCK_UNSUPPORTED: '" << requestedClock
+                          << "' is not a known clock; expected 'wall-clock'." << std::endl;
+                return false;
+            }
+            if (!jsEngine_->evalScript("globalThis.__THREENATIVE_PLAYTEST_CLOCK__ = \"wall-clock\";",
+                                      "tn-playtest-clock.js")) {
+                std::cerr << "[Mystral] TN_PLAYTEST_CLOCK=wall-clock was not installed" << std::endl;
+                return false;
             }
         }
 
@@ -1073,7 +1112,14 @@ private:
 
     // A screenshot the mailbox asked for, waiting for its requested frame to be captured.
     std::string pendingScreenshotPath_;
-    int pendingScreenshotTicks_ = 0;
+    std::chrono::steady_clock::time_point pendingScreenshotStartedAt_{};
+
+    // How long the host waits for the requested present before giving up. This replaced a count of
+    // host poll iterations: in a driven frame loop the host spins so fast that 120 iterations
+    // expired in about a millisecond — before the runner could see its request was consumed and ask
+    // the game for its render-only frame. A wall-clock budget matches the ~120 frames a normal
+    // presenting loop would spend, and does not depend on how fast the loop spins.
+    static constexpr auto kScreenshotCaptureBudget = std::chrono::seconds(2);
 
     void processPlaytestScreenshotRequest() {
         const char* configuredRoot = std::getenv("TN_PLAYTEST_MAILBOX_ROOT");
@@ -1102,15 +1148,17 @@ private:
             const std::string screenshotPath = contents.str();
             if (screenshotPath.empty() || screenshotPath.size() > 4096) return;
             pendingScreenshotPath_ = screenshotPath;
-            pendingScreenshotTicks_ = 0;
+            pendingScreenshotStartedAt_ = std::chrono::steady_clock::now();
         }
 
-        // The capture lands at a present boundary after the request below; poll briefly rather
-        // than failing on the first not-yet-captured tick. Bounded so a dead surface errors once,
-        // like the single-shot failure this replaced.
+        // The capture lands at a present boundary after the request below; poll rather than failing
+        // on the first not-yet-captured tick. A driven loop presents nothing on its own, so the
+        // runner asks the game for one render-only frame once it sees this request consumed; the
+        // budget is wall-clock so that wait fits inside it whatever the loop's spin rate. Bounded
+        // so a dead surface errors once, like the single-shot failure this replaced.
         if (!webgpu_->isFrameScreenshotReady()) {
             webgpu_->requestFrameScreenshot();
-            if (++pendingScreenshotTicks_ > 120) {
+            if (std::chrono::steady_clock::now() - pendingScreenshotStartedAt_ > kScreenshotCaptureBudget) {
                 std::cerr << "[Playtest] Native screenshot request failed: " << pendingScreenshotPath_ << std::endl;
                 pendingScreenshotPath_.clear();
             }
@@ -2730,49 +2778,7 @@ private:
      * platform. Fail closed: a malformed publication leaves the previous rectangles in place and
      * every later click is decided against rectangles that no longer exist, so it is named.
      */
-    bool applyUiHitRegions(const std::string& frame) {
-        if (frame.find("\"tn:hit-regions\"") == std::string::npos) return false;
-        // The registry emits each rectangle as x, y, width, height and nothing else lives in this
-        // frame, so reading the four keys in order is the whole parse. Named keys rather than
-        // "every number after a colon": a payload that grows a field would otherwise silently
-        // shift every rectangle by one.
-        static constexpr const char* kKeys[] = {"\"x\":", "\"y\":", "\"width\":", "\"height\":"};
-        std::vector<float> regions;
-        size_t cursor = 0;
-        while (true) {
-            float rectangle[4];
-            size_t next = cursor;
-            bool complete = true;
-            for (size_t index = 0; index < 4; ++index) {
-                const size_t found = frame.find(kKeys[index], next);
-                if (found == std::string::npos) {
-                    complete = false;
-                    break;
-                }
-                const size_t value = found + std::strlen(kKeys[index]);
-                char* end = nullptr;
-                rectangle[index] = std::strtof(frame.c_str() + value, &end);
-                if (end == frame.c_str() + value) {
-                    complete = false;
-                    break;
-                }
-                next = static_cast<size_t>(end - frame.c_str());
-            }
-            if (!complete) break;
-            regions.insert(regions.end(), std::begin(rectangle), std::end(rectangle));
-            cursor = next;
-        }
-        platform::setUiHitRegions(regions);
-        // The rectangles themselves, not just the count: a hit that lands in the wrong place is a
-        // layout or coordinate question, and only the published rectangles can answer it.
-        std::cout << "TN_UI_HIT_REGIONS:{\"count\":" << regions.size() / 4 << ",\"regions\":[";
-        for (size_t index = 0; index < regions.size(); ++index) {
-            if (index > 0) std::cout << ",";
-            std::cout << regions[index];
-        }
-        std::cout << "]}" << std::endl;
-        return true;
-    }
+    bool applyUiHitRegions(const std::string& frame) { return platform::applyUiHitRegionsFrame(frame); }
 
     void drainUiMessages() {
         if (!jsEngine_) return;
@@ -3044,6 +3050,7 @@ private:
 
     std::unique_ptr<webgpu::Context> webgpu_;
     webgpu::BindingsState* bindingsState_ = nullptr;
+    std::unique_ptr<host::IFrameCaptureSource> frameCapture_;
     std::unique_ptr<js::Engine> jsEngine_;
     std::unique_ptr<js::ModuleSystem> moduleSystem_;
     std::unordered_set<int> activeWorkerIds_;

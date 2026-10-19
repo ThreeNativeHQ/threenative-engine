@@ -35,6 +35,7 @@
       "packages/runtime-native/native/css-ui/vendor/**",
       "examples/native-css-hud/corpus/out/**",
       "examples/native-css-hud/corpus/out-interaction/**",
+      "packages/three-native/generated/**",
       "packages/assets/vendor/basis-encoder/basis_encoder.js",
       "packages/runtime-native/**/*.json",
       "packages/terrain/starter/*/recipe.json",
@@ -125,7 +126,8 @@
         "packages/physics/src/**",
         "packages/ui/src/**",
         "packages/create-threenative/src/**",
-        "packages/playtest/src/**"
+        "packages/playtest/src/**",
+        "packages/three-native/src/**"
       ],
       "linter": {
         "rules": {
@@ -209,6 +211,37 @@
       ],
       "formatter": {
         "enabled": false
+      }
+    },
+    {
+      "include": ["examples/procedural-animals/src/render/donor/core/motion/quadruped.js"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useNamingConvention": {
+              "level": "error",
+              "options": {
+                "conventions": [
+                  {
+                    "selector": {
+                      "kind": "interface"
+                    },
+                    "match": "I(.*)"
+                  },
+                  {
+                    "selector": {
+                      "kind": "objectLiteralProperty"
+                    },
+                    "match": "(?:D|DL|T|F|H|W|U|Lf|(.+))",
+                    "formats": ["camelCase"]
+                  }
+                ],
+                "strictCase": false,
+                "requireAscii": false
+              }
+            }
+          }
+        }
       }
     }
   ]

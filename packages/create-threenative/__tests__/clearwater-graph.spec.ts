@@ -87,7 +87,11 @@ function sampledWater() {
     reflection: false,
     caustics: false,
   });
-  vi.spyOn(water.ocean, "sampleHeight").mockReturnValue({ height: 0.25, staleFrames: 2 });
+  vi.spyOn(water.ocean, "sampleHeight").mockReturnValue({
+    height: 0.25,
+    staleFrames: 2,
+    verticalVelocity: 0,
+  });
   water.ripples.height.fill(0.125);
   return water;
 }

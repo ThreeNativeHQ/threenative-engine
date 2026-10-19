@@ -122,6 +122,7 @@ describe("visual gate", () => {
             content: Buffer.from(`${template} visual-gate capture`),
             stats: {
               brightPixelRatio: 1,
+              contentRatio: 1,
               distinctColors: 8,
               height: 1,
               luminanceStdDev: 1,

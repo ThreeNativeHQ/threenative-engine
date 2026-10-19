@@ -48,11 +48,18 @@ export function verifyWindowsUninstall(directory, files) {
   }
   if (!existsSync(directory)) return [];
   // Dirents let us inventory links without traversing their targets.
-  return readdirSync(directory, { recursive: true, withFileTypes: true })
-    .map((entry) => ({
-      path: relative(directory, join(entry.parentPath, entry.name)).replaceAll('\\', '/'),
-      type: entry.isSymbolicLink() ? 'link' : entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
-    }))
+  const entries = [];
+  const directories = [directory];
+  while (directories.length) {
+    const current = directories.pop();
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      const type = entry.isSymbolicLink() ? 'link' : entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other';
+      entries.push({ path: relative(directory, path).replaceAll('\\', '/'), type });
+      if (type === 'directory') directories.push(path);
+    }
+  }
+  return entries
     // NSIS cannot remove its own running executable in synchronous _?= mode; the verifier does.
     .filter((entry) => entry.path !== 'Uninstall.exe')
     .sort((a, b) => a.path.localeCompare(b.path));

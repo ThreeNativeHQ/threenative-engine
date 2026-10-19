@@ -260,6 +260,7 @@
       "exports": [".", "./capture", "./package.json", "./protocol", "./runner", "./three"],
       "symbols": {
         "@threenative/playtest/capture#assertCaptureNotBlank": "export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }",
+        "@threenative/playtest/capture#assertDesktopCaptureNotBlank": "export function assertDesktopCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }",
         "@threenative/playtest/capture#assertFrameShowsSomething": "assertFrameShowsSomething = assertCaptureNotBlank",
         "@threenative/playtest/capture#CaptureGuardError": "export class CaptureGuardError extends Error { … }",
         "@threenative/playtest/capture#collectRegionalTone": "export function collectRegionalTone( png: Buffer, assertions: readonly IPlaytestToneAssertion[], label: string, atStep?: string, ): IPlaytestRegionalToneObservation[] { … }",
@@ -268,7 +269,7 @@
         "@threenative/playtest/protocol#jsonByteLength": "export function jsonByteLength(value: JsonValue): number { … }",
         "@threenative/playtest/protocol#requestedPlaytestClockMode": "export function requestedPlaytestClockMode(): PlaytestClockMode | undefined { … }",
         "@threenative/playtest/runner#AdbAndroidDriver": "export class AdbAndroidDriver implements IAndroidDriver { … }",
-        "@threenative/playtest/runner#advanceFixedStep": "export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, \"advance\">, ticks: number, ): Promise<void> { … }",
+        "@threenative/playtest/runner#advanceFixedStep": "export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, \"advance\">, ticks: number, render = false, ): Promise<void> { … }",
         "@threenative/playtest/runner#advanceTimeoutMs": "export function advanceTimeoutMs( ticks: number, perTickMs: number = PLAYTEST_ADVANCE_TICK_BUDGET_MS, ): number { … }",
         "@threenative/playtest/runner#androidMailboxPaths": "export function androidMailboxPaths( packageName: string, root = `/sdcard/Android/data/$ { … }",
         "@threenative/playtest/runner#androidTouchBatches": "export function androidTouchBatches( identity: readonly string[], positions: readonly string[], ): string[][] { … }",
@@ -280,6 +281,7 @@
         "@threenative/playtest/runner#connectPlaytestBridge": "export async function connectPlaytestBridge( page: Page, scenario: IPlaytestScenario, timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs, ): Promise<IPlaytestBridgeClient | undefined> { … }",
         "@threenative/playtest/runner#connectPlaytestBridgeTransport": "export async function connectPlaytestBridgeTransport( transport: IBridgeTransport, scenario: IPlaytestScenario, timeoutMs: number = bridgeWaitTimeoutMs(), target?: string, ): Promise<IPlaytestBridgeClient | undefined> { … }",
         "@threenative/playtest/runner#decideDisplayStrategy": "export function decideDisplayStrategy(input: IDisplayDecisionInput): IDisplayStrategy { … }",
+        "@threenative/playtest/runner#desktopConsoleType": "export function desktopConsoleType(stream: \"stderr\" | \"stdout\", line: string): string { … }",
         "@threenative/playtest/runner#DesktopPlaytestDriver": "export class DesktopPlaytestDriver implements IDevicePlaytestDriver { … }",
         "@threenative/playtest/runner#DeviceBridgeTransport": "export class DeviceBridgeTransport implements IDevicePlaytestTransport { … }",
         "@threenative/playtest/runner#deviceMailboxPaths": "export function deviceMailboxPaths(root: string): IDeviceMailboxPaths { … }",
@@ -454,6 +456,10 @@
         "@threenative/terrain#validateDocument": "export function validateDocument(doc: ITerrainDocument): void { … }",
         "@threenative/terrain#validatePlacementOverrides": "export function validatePlacementOverrides( value: unknown = { … }"
       }
+    },
+    "@threenative/three-native": {
+      "exports": ["./package.json"],
+      "symbols": {}
     },
     "@threenative/ueformat": {
       "exports": [".", "./package.json"],

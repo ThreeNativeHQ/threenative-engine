@@ -218,15 +218,19 @@ async function runWindows(options: {
   readonly frameMs: number;
   readonly roundTripFrames: number;
   readonly passes?: number;
-  readonly frames?: number;
 }): Promise<{
+  readonly frames: number;
   readonly windows: IWindow[];
   readonly tracked: number;
   readonly skippedResolves: number;
 }> {
   const canvas = testCanvas();
   const passes = options.passes ?? 6;
-  const presented = options.frames ?? 900;
+  // Windows close on simulated ticks. Converting 300 presented frames at this frame rate keeps each
+  // window at the frame count the sampler is tested against.
+  const reportEvery = Math.round((300 * options.frameMs) / (1000 / 60));
+  // Three 300-frame windows plus a margin, so the third window closes at every frame rate.
+  const presented = 930;
   let presentedFrame = 0;
   const windows: IWindow[] = [];
   let tracked = 0;
@@ -317,7 +321,7 @@ async function runWindows(options: {
         if (!line.startsWith("TN_FRAME_BUDGET")) return;
         windows.push(JSON.parse(line.slice(line.indexOf("{"))) as IWindow);
       },
-      reportEvery: 300,
+      reportEvery,
     },
     renderer: { canvas, webgpuFactory: () => raw as never },
     scenes: { test: Empty },
@@ -337,7 +341,8 @@ async function runWindows(options: {
   try {
     await game.start();
     if (frame === undefined) throw new Error("Game did not start its loop.");
-    let now = 0;
+    // The loop seeds its clock from performance.now() at start, so the fake frames start there too.
+    let now = performance.now();
     for (let index = 1; index <= presented; index += 1) {
       now += options.frameMs;
       presentedFrame = index;
@@ -352,7 +357,12 @@ async function runWindows(options: {
         for (let waited = 0; waited < ready.length * 4; waited += 1) await Promise.resolve();
       }
     }
-    return { skippedResolves: render.skippedWhilePending, tracked, windows };
+    return {
+      frames: presentedFrame,
+      skippedResolves: render.skippedWhilePending,
+      tracked,
+      windows,
+    };
   } finally {
     Object.defineProperty(globalThis, "requestAnimationFrame", {
       configurable: true,
@@ -366,13 +376,13 @@ async function runWindows(options: {
 
 describe("a window's GPU samples survive three's one-number-per-resolve", () => {
   it("reports a sample per sampled frame at 200 fps, where the resolve round trip outlives the stride", async () => {
-    const { skippedResolves, tracked, windows } = await runWindows({
+    const { frames, skippedResolves, tracked, windows } = await runWindows({
       frameMs: 5,
       roundTripFrames: 12,
     });
 
     // The sampler is unchanged: one frame in eight, counted by the wrapper.
-    expect(tracked).toBe(Math.ceil(900 / 8));
+    expect(tracked).toBe(Math.ceil(frames / 8));
     // And the ported pool really did refuse resolves while one was in flight, which is the whole
     // mechanism: without that this test would pass with a stub three never behaves like.
     expect(skippedResolves).toBeGreaterThan(0);
@@ -390,6 +400,9 @@ describe("a window's GPU samples survive three's one-number-per-resolve", () => 
     const slow = await runWindows({ frameMs: 1000 / 60, roundTripFrames: 12 });
     const fast = await runWindows({ frameMs: 1000 / 240, roundTripFrames: 12 });
 
+    // Each run must close its windows, or the minimum below passes vacuously on an empty list.
+    expect(slow.windows).toHaveLength(3);
+    expect(fast.windows).toHaveLength(3);
     const perWindow = (run: { readonly windows: IWindow[] }): number =>
       Math.min(...run.windows.map((window) => window.gpu?.samples ?? 0));
     // A frame rate is not an input to how many frames the device answered for.

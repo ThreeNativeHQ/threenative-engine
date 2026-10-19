@@ -1,0 +1,30 @@
+{
+  "name": "geometry-rounded-box",
+  "adaptedFrom": "three@0.185.1 examples/jsm/geometries/RoundedBoxGeometry.js — the default box, the minimal template's bevelled blocks and a radius clamped to the shortest side",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    { "op": "new", "id": "unit", "class": "RoundedBoxGeometry", "args": [] },
+    { "op": "new", "id": "ramp", "class": "RoundedBoxGeometry", "args": [6.2, 0.4, 4, 2, 0.03] },
+    { "op": "new", "id": "clamped", "class": "RoundedBoxGeometry", "args": [1, 0.5, 2, 3, 0.4] },
+    { "op": "new", "id": "square", "class": "RoundedBoxGeometry", "args": [2, 2, 2, 0, 0.2] }
+  ],
+  "observe": [
+    { "id": "unit", "path": "attributes.position.array", "kind": "numbers" },
+    { "id": "unit", "path": "attributes.normal.array", "kind": "numbers" },
+    { "id": "unit", "path": "attributes.uv.array", "kind": "numbers" },
+    { "id": "unit", "path": "groups", "kind": "json" },
+    { "id": "unit", "path": "parameters", "kind": "json" },
+    { "id": "ramp", "path": "attributes.position.array", "kind": "numbers" },
+    { "id": "ramp", "path": "attributes.normal.array", "kind": "numbers" },
+    { "id": "ramp", "path": "attributes.uv.array", "kind": "numbers" },
+    { "id": "ramp", "path": "parameters", "kind": "json" },
+    { "id": "clamped", "path": "attributes.position.array", "kind": "numbers" },
+    { "id": "clamped", "path": "attributes.uv.array", "kind": "numbers" },
+    { "id": "clamped", "path": "parameters", "kind": "json" },
+    { "id": "square", "path": "attributes.position.array", "kind": "numbers" },
+    { "id": "square", "path": "index.array", "kind": "numbers" },
+    { "id": "square", "path": "parameters", "kind": "json" }
+  ]
+}

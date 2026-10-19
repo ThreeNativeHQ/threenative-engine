@@ -86,11 +86,16 @@ describe("native definition lookup", () => {
       },
     ];
 
+    let corpusReads = 0;
     const found = nativeBindingDefinition("GPUDevice", "createBindGroup", {
-      readFiles: () => files,
+      readFiles: () => {
+        corpusReads += 1;
+        return files;
+      },
     });
 
     expect(found.path).toBe("device.cpp");
     expect(found.text).toMatch(/failClosed/u);
+    expect(corpusReads).toBe(1);
   });
 });

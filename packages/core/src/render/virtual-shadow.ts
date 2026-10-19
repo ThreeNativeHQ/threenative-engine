@@ -13,6 +13,7 @@ import {
   PCFSoftShadowMap,
   type RenderTarget,
   Sphere,
+  VSMShadowMap,
   Vector3,
 } from "three";
 import {
@@ -55,10 +56,22 @@ import {
   DirectionalClipmap,
   type IBoundsLike,
   type IClipWindow,
+  type IPageRect,
   type IVector3Like,
   ShadowInvalidationTracker,
+  containsPages,
+  pageArea,
+  pageSpan,
+  parsePageKey,
   projectBounds,
+  unionPageRect,
 } from "./virtual-shadow-pages.js";
+import {
+  type IPartialPass,
+  type IPartialShadowNode,
+  installPartialRender,
+  pixelRect,
+} from "./virtual-shadow-partial.js";
 
 /** One clipmap axis' view of a world region, as the interval it covers in light space. */
 type ILightAxisRange = { low: number; high: number };
@@ -210,6 +223,14 @@ export interface IVirtualShadowOptions {
    */
   readonly shadowLodBias?: boolean;
   /**
+   * Redraw only the pages an invalidation dirtied, default true. A level whose window did not move
+   * and whose asks named under half its pages renders those rectangles alone: pages casters were
+   * removed from are put back to the far plane first, pages casters streamed into are just drawn.
+   * `false` renders the whole level for every invalidation, as before. A VSM shadow map always
+   * renders whole, because its blur pass reads the entire map.
+   */
+  readonly partialRedraw?: boolean;
+  /**
    * Quiet frames before an automatically detected mover goes back into the cached levels, default
    * 100 (Unreal's `FramesStaticThreshold`). A caster whose world matrix, instance matrix or
    * deformation changed is drawn through the mover maps without a `trackCaster` call; this is how
@@ -282,6 +303,14 @@ export interface IVirtualShadowStats {
   readonly windowSteps: number;
   /** Of those, the renders taken because an invalidation asked and its level's delay had passed. */
   readonly byInvalidation: number;
+  /** Of the renders taken for an invalidation (`byInvalidation`), those whose dirty set held only streamed-in casters. */
+  readonly byAdmission: number;
+  /** Of the renders taken for an invalidation, those whose dirty set held anything else: a removed caster, a region-less ask, a caster flag change. */
+  readonly byEviction: number;
+  /** Pages the dirty set held at each render, summed over the node's lifetime. A window move counts the whole level. */
+  readonly pagesDirty: number;
+  /** Pages each render actually drew, summed over the node's lifetime. Equals pagesDirty once a partial redraw exists. */
+  readonly pagesRedrawn: number;
   /**
    * Invalidation asks that cost no render of their own, over the node's lifetime: absorbed by a
    * render the level was taking anyway for its window, or merged into an ask already waiting out
@@ -596,6 +625,23 @@ interface ILevel {
    */
   dirty: boolean;
   /**
+   * The pages casters streamed into since this level's last render, in the clipmap's absolute page
+   * coordinates, or undefined while none did. An added caster only brings depth closer, so these
+   * pages need no clear. Meaningless while {@link dirtyAll} is set.
+   */
+  dirtyAdmit: IPageRect | undefined;
+  /**
+   * The pages any other ask touched: a removed caster, a flag change, the tracker's pages. The old
+   * depth in them can be wrong, so they are put back to the far plane before they are redrawn.
+   */
+  dirtyEvict: IPageRect | undefined;
+  /** An ask named no pages, or none inside the window, so the whole level is dirty. */
+  dirtyAll: boolean;
+  /** The rectangle this level is rendering now, set only around a partial redraw. */
+  pass: IPartialPass | undefined;
+  /** The caster interval along the light, from the centre, that the derived depth was drawn for. */
+  drawnSpan: ILightAxisRange;
+  /**
    * The engine frame clock's reading when this level last rendered, in seconds. A dirty level
    * re-renders for the invalidation no sooner than `invalidationDelay` after this. `-Infinity`
    * until the first render, so a level invalidated before it holds a map is due immediately.
@@ -678,6 +724,9 @@ const _shadowProjection = new Matrix4();
 const _oldWorld = new Matrix4();
 const _shadowFrustum = new Frustum();
 const _shadowPlanes = new Float32Array(24);
+/** The depth row a level's map was drawn under, and the one this frame proposes: uploaded float32. */
+const _drawnDepth = new Float32Array(4);
+const _proposedDepth = new Float32Array(4);
 /**
  * `world-gpu-scene`'s `COARSEST_SHADOW_LEVEL`, duplicated rather than imported: this module must not
  * know the world package, and the value is a level index the far side clamps to each asset's own.
@@ -875,9 +924,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #levels: ILevel[] = [];
   #invalidateAll = false;
   /** Regions handed to `invalidateRegion`, read and cleared by the next `updateBefore`. */
-  #regions: Array<IBoundsLike & { urgent?: true }> = [];
+  #regions: Array<IBoundsLike & { admission?: true; urgent?: true }> = [];
   /** The same regions, resolved onto the clipmap's axes; scratch, so a frame allocates nothing. */
-  #projectedRegions: { u: ILightAxisRange; urgent: boolean; v: ILightAxisRange }[] | undefined;
+  #projectedRegions:
+    | { admission: boolean; u: ILightAxisRange; urgent: boolean; v: ILightAxisRange }[]
+    | undefined;
   #casters = new Map<string, Object3D>();
   #casterChildren = new Map<string, Set<Object3D>>();
   /** Per caster mesh, what the motion scan remembers; entries live as long as the mesh does. */
@@ -912,6 +963,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #byMove = 0;
   #windowSteps = 0;
   #byInvalidation = 0;
+  #byAdmission = 0;
+  #byEviction = 0;
+  #pagesDirty = 0;
+  #pagesRedrawn = 0;
   #coalesced = 0;
   /** Read from the URL once, for the `?tnShadowStats=1` marker cadence. */
   #statsRequested: boolean | undefined;
@@ -999,7 +1054,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     };
     if (mesh.isMesh === true && (mesh.castShadow !== true || mesh.userData?.tnShadowSwap === true))
       return;
-    this.#askAboutCaster(child);
+    this.#askAboutCaster(child, event.type === "childadded");
   };
   /** Casters the current level's size gate hid, restored the moment that render is over. */
   #hidden: Object3D[] = [];
@@ -1144,11 +1199,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
       refreshStep: steps,
       selectionGuard: guardedExtent,
       shadowLodBias: options.shadowLodBias ?? true,
+      partialRedraw: options.partialRedraw ?? true,
       staticAfterFrames,
       followViewFocus: options.followViewFocus ?? true,
       receiverPlaneBias: options.receiverPlaneBias ?? true,
     };
     this.#stats = {
+      byAdmission: 0,
+      byEviction: 0,
       byInvalidation: 0,
       byMove: 0,
       cached: 0,
@@ -1164,6 +1222,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       autoMovers: 0,
       autoScanMs: 0,
       autoTransitions: 0,
+      pagesDirty: 0,
+      pagesRedrawn: 0,
       perLevel: this.#perLevel,
       rendered: 0,
       rendersTotal: 0,
@@ -1294,10 +1354,18 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * `bounds` is `{ min: {x,y,z}, max: {x,y,z} }`, a plain object so a game can hand one over without
    * importing three. Regions are consumed by the next `updateBefore`; one that arrives before the
    * levels exist is dropped, because their first frame renders all of them anyway.
+   *
+   * `admission` says the region only gained casters. An added caster can only bring a texel's depth
+   * closer, so a redraw for admissions alone never has to clear what the map already holds. The
+   * default reads `bounds.admission === true`; an explicit second argument overrides it.
    */
-  invalidateRegion(bounds: IBoundsLike): void {
+  invalidateRegion(
+    bounds: IBoundsLike & { admission?: boolean },
+    admission = bounds.admission === true,
+  ): void {
     if (this.#levels.length === 0) return;
     this.#regions.push({
+      ...(admission ? { admission: true as const } : {}),
       max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
       min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
     });
@@ -1543,7 +1611,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   /** Ask the levels covering one changed caster to redraw. */
-  #askAboutCaster(object: Object3D): void {
+  #askAboutCaster(object: Object3D, admission = false): void {
     if (this.#levels.length === 0) return;
     // Nothing that casts: the level lights this node parents into the scene are `Object3D`s with a
     // shadow slot and no geometry, and asking for all three levels redraws on their arrival. A group
@@ -1552,7 +1620,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if ((object as { isMesh?: boolean }).isMesh !== true && object.children.length === 0) return;
     const bounds = this.#casterBounds(object);
     if (bounds === undefined) this.invalidateAll();
-    else this.invalidateRegion(bounds);
+    else this.invalidateRegion(bounds, admission);
   }
 
   /**
@@ -1938,13 +2006,22 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // The level's own keys, selected against this map's own three numbers, before the render that
     // submits them. A mover map is never keyed: it draws the tracked casters and nothing else, so
     // a dispatch there would put the whole world into a 256² map of one moving object.
-    if (mover === false) this.#dispatchKeys(frame, level, index);
+    if (mover === false) {
+      if (level.pass !== undefined) this.#aim(level, level.pass, index);
+      this.#dispatchKeys(frame, level, index);
+    }
     // What a level's own render costs, measured around the draw and smoothed over the reading
     // before it. A mover map is a handful of tracked casters and is never scheduled against, so it
     // is not measured, and with both adaptive refresh and the adaptive caster gate off nothing is:
     // the reading buys a wider trail and a raised gate, and is what those two switches gate. What
     // the reading buys is set on the next frame, by `#adaptiveTrails`.
-    if (mover || !(this.options.adaptiveRefresh || this.options.adaptiveCasterGate)) {
+    // A partial redraw is not the level's price either: the reading steers how far a window trails
+    // before a whole-level render, so a rectangle's cost would widen the trail for nothing.
+    if (
+      mover ||
+      level.pass !== undefined ||
+      !(this.options.adaptiveRefresh || this.options.adaptiveCasterGate)
+    ) {
       node.updateShadow(frame);
       return;
     }
@@ -1965,6 +2042,74 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   /**
+   * The rectangles an invalidation-only render draws, or undefined when it draws the whole level:
+   * a disabled switch, more than half the pages dirty, or a blur pass that reads the whole map.
+   * Pages casters were removed from are put back to the far plane first. Pages casters streamed
+   * into are only drawn, because an added caster can only bring a texel's depth closer.
+   */
+  #planPasses(level: ILevel, levelPages: number, frame: NodeFrame): IPartialPass[] | undefined {
+    if (!this.options.partialRedraw) return undefined;
+    const renderer = (frame as { renderer?: { shadowMap?: { type?: number } } }).renderer;
+    if (renderer?.shadowMap?.type === VSMShadowMap) return undefined;
+    if (this.#dirtyPages(level) * 2 > levelPages) return undefined;
+    const passes: IPartialPass[] = [];
+    const { dirtyAdmit, dirtyEvict } = level;
+    if (dirtyEvict !== undefined) passes.push({ pixels: undefined, rect: dirtyEvict, reset: true });
+    if (dirtyAdmit !== undefined && !containsPages(dirtyEvict, dirtyAdmit)) {
+      passes.push({ pixels: undefined, rect: dirtyAdmit, reset: false });
+    }
+    return passes.length > 0 ? passes : undefined;
+  }
+
+  /** Pages the level's dirty rectangles hold, the overlap of two counted twice. */
+  #dirtyPages(level: ILevel): number {
+    const { dirtyAdmit, dirtyEvict } = level;
+    return (
+      (dirtyEvict === undefined ? 0 : pageArea(dirtyEvict)) +
+      (dirtyAdmit === undefined || containsPages(dirtyEvict, dirtyAdmit) ? 0 : pageArea(dirtyAdmit))
+    );
+  }
+
+  /**
+   * Aim the level's shadow camera at one pass: bake the receivers' matrix from the full projection,
+   * then narrow the camera to the rectangle so its depths are the whole map's and its frustum, and
+   * the keys culled against it, are the rectangle's. Always from the full projection, because
+   * `updateMatrices` reads whatever offset the camera still holds.
+   */
+  #aim(level: ILevel, pass: IPartialPass, index: number): void {
+    const camera = level.shadow.camera;
+    camera.clearViewOffset();
+    // quality-allow: the light's own shadow owns this update, and the stock node calls it too.
+    level.shadow.updateMatrices(level.light as unknown as DirectionalLight);
+    const size = this.options.mapSize;
+    const pageSize = this.clipmap.pageWorldSize(index);
+    const { rect } = pass;
+    const corners = [
+      [rect.minX, rect.minY],
+      [rect.maxX + 1, rect.minY],
+      [rect.minX, rect.maxY + 1],
+      [rect.maxX + 1, rect.maxY + 1],
+    ].map(([x, y]) => {
+      const at = this.clipmap.unproject({
+        u: (x as number) * pageSize,
+        v: (y as number) * pageSize,
+        w: level.centerW,
+      });
+      return new Vector3(at.x, at.y, at.z);
+    });
+    const pixels = pixelRect(camera, size, corners);
+    camera.setViewOffset(size, size, pixels.x, pixels.y, pixels.width, pixels.height);
+    pass.pixels = pixels;
+  }
+
+  /** Put the level's shadow camera back on the whole map after a partial redraw. */
+  #endPartial(level: ILevel): void {
+    if (level.pass === undefined) return;
+    level.pass = undefined;
+    level.shadow.camera.clearViewOffset();
+  }
+
+  /**
    * Hand this level's set to whatever published keys on the world's root, in the three numbers that
    * are the map's own and not the main camera's: its own light frustum, the window centre its map
    * was rendered with, the texel gate `#probe` just decided on, and the chain level it draws at.
@@ -1982,8 +2127,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const keys = this.#gpuKeys;
     if (keys === undefined) return;
     const shadow = level.shadow;
+    // #aim already baked the full receiver matrix before narrowing a partial camera.
     // quality-allow: the light's own shadow owns this update, and the stock node calls it too.
-    shadow.updateMatrices(level.light as unknown as DirectionalLight);
+    if (level.pass === undefined) shadow.updateMatrices(level.light as unknown as DirectionalLight);
     _shadowProjection.multiplyMatrices(
       shadow.camera.projectionMatrix,
       shadow.camera.matrixWorldInverse,
@@ -2127,7 +2273,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * sphere, because a sphere has to cover a 128 m tile's diagonal and would report 180 m of cliff
    * where the tile has 15 m of it.
    */
-  #deriveDepth(level: ILevel, centre: IVector3Like): void {
+  #deriveDepth(level: ILevel, centre: IVector3Like): ILightAxisRange | undefined {
     const pool = this.#pool;
     const count = this.#poolCount;
     const { basisU, basisV, basisW } = this.clipmap;
@@ -2141,7 +2287,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const fits = extent * 2 * MAX_MASS_WINDOW_WIDTHS;
     const sin = basisW.y;
     // A sun on or below the horizon needs the fallback span rather than division by almost zero.
-    if (sin < MIN_SUN_COSINE) return;
+    if (sin < MIN_SUN_COSINE) return undefined;
     const heightReach = extent * (Math.abs(basisU.y) + Math.abs(basisV.y));
     // Everything that writes depth: the casters whose bounding sphere reaches into the window's
     // u/v box. A receiver writes no depth, so a piece of ground that only receives is not in the
@@ -2175,15 +2321,36 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (along - radius < low) low = along - radius;
       if (along + radius > high) high = along + radius;
     }
-    if (!Number.isFinite(low)) return;
+    if (!Number.isFinite(low)) return undefined;
     const span = high - low;
-    if (!(span > 0)) return;
+    if (!(span > 0)) return undefined;
     // Two per cent of slack, and never less than a metre: the pool holds bounding spheres, which
     // round up, and a caster a shadow-map texel taller than the window's own ground must still draw.
     const margin = Math.max(1, span * 0.02);
     level.eye = high + margin;
     level.depthNear = margin;
     level.depthFar = margin + span;
+    return { high, low };
+  }
+
+  /**
+   * Derive a level's depth, or keep the depth its map was drawn with. The span is always measured;
+   * a rectangle whose casters all fit inside the drawn span keeps the drawn camera, so the texels it
+   * does not redraw still decode as they were written. Only a caster beyond that span moves the
+   * encoding, and the depth-row check then makes the render whole.
+   */
+  #measureDepth(level: ILevel, centre: IVector3Like, keep: boolean): void {
+    const { eye, depthNear, depthFar, drawnSpan } = level;
+    const measured = this.#deriveDepth(level, centre);
+    if (measured === undefined) return;
+    if (keep && measured.low >= drawnSpan.low && measured.high <= drawnSpan.high) {
+      level.eye = eye;
+      level.depthNear = depthNear;
+      level.depthFar = depthFar;
+      return;
+    }
+    drawnSpan.low = measured.low;
+    drawnSpan.high = measured.high;
   }
 
   /** Put a level's camera on its window with the depth it last derived, and hold both maps to it. */
@@ -2206,6 +2373,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
     camera.near = level.depthNear;
     camera.far = level.depthFar;
     camera.updateProjectionMatrix();
+  }
+
+  /** Read the uploaded depth row without recomposing the camera that drew retained texels. */
+  #readDepthRow(level: ILevel, into: Float32Array): void {
+    const row = level.shadow.matrix.elements;
+    for (let at = 0; at < 4; at += 1) into[at] = row[2 + at * 4] as number;
   }
 
   #init(): void {
@@ -2334,7 +2507,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const material = getShadowMaterial(node.light);
       shadowColor ??= material.colorNode;
       material.colorNode = shadowColor;
-      this.#levels.push({
+      const entry: ILevel = {
         appliedStep: at(this.options.refreshStep, index),
         costMs: 0,
         costReadings: 0,
@@ -2346,6 +2519,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
         depthFar: this.options.lightDistance + this.options.depthRange,
         depthNear: 1,
         dirty: false,
+        dirtyAdmit: undefined,
+        dirtyAll: false,
+        dirtyEvict: undefined,
+        drawnSpan: { high: Number.NaN, low: Number.NaN },
+        pass: undefined,
         eye: this.options.lightDistance,
         extent,
         extentUniform: uniform(extent).setGroup(renderGroup),
@@ -2367,7 +2545,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
         moverNode,
         node,
         shadow: levelShadow,
-      });
+      };
+      this.#levels.push(entry);
+      // quality-allow: Three's public node type omits the render method this wrapper replaces
+      installPartialRender(node as unknown as IPartialShadowNode, () => entry.pass);
     });
   }
 
@@ -2630,7 +2811,16 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const invalidateAll = this.#invalidateAll;
     const invalidatedKeys = this.tracker.consumeInvalidatedKeys();
     const invalidatedLevels = new Set<number>();
-    for (const key of invalidatedKeys) invalidatedLevels.add(Number(key.split(":")[0]));
+    // The tracker's pages, per level, as the one rectangle that holds them.
+    const keyedPages = new Map<number, IPageRect>();
+    for (const key of invalidatedKeys) {
+      const { level, x, y } = parsePageKey(key);
+      invalidatedLevels.add(level);
+      keyedPages.set(
+        level,
+        unionPageRect(keyedPages.get(level), { maxX: x, maxY: y, minX: x, minY: y }),
+      );
+    }
     // The regions `invalidateRegion` was handed, resolved once onto the two axes every level's
     // window is built on. The per-level test below is then four comparisons, not a projection per
     // level per region per frame.
@@ -2639,6 +2829,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     projected.length = 0;
     for (const region of this.#regions) {
       projected.push({
+        admission: region.admission === true,
         u: projectBounds(region, this.clipmap.basisU),
         urgent: region.urgent === true,
         v: projectBounds(region, this.clipmap.basisV),
@@ -2693,6 +2884,20 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // The same ask, when a fragment of the old spot is read from *this* level: a finer level's
         // guarded window did not take all of it, so the finer map being redrawn does not clear it.
         let urgentSelected = false;
+        // The pages the regions that reach this level cover, clipped to its window: those casters
+        // streamed into, which need no clear, and those of any other ask.
+        let regionAdmit: IPageRect | undefined;
+        let regionEvict: IPageRect | undefined;
+        let regionWhole = false;
+        const clip = (rect: IPageRect): IPageRect | undefined => {
+          const clipped = {
+            maxX: Math.min(rect.maxX, window.maxX - 1),
+            maxY: Math.min(rect.maxY, window.maxY - 1),
+            minX: Math.max(rect.minX, window.minX),
+            minY: Math.max(rect.minY, window.minY),
+          };
+          return clipped.minX <= clipped.maxX && clipped.minY <= clipped.maxY ? clipped : undefined;
+        };
         for (const region of projected) {
           if (
             region.u.low <= cu + level.extent &&
@@ -2701,6 +2906,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
             region.v.high >= cv - level.extent
           ) {
             regionDirty = true;
+            const spanX = pageSpan(region.u.low, region.u.high, window.pageWorldSize);
+            const spanY = pageSpan(region.v.low, region.v.high, window.pageWorldSize);
+            const pages = clip({
+              maxX: spanX.max,
+              maxY: spanY.max,
+              minX: spanX.min,
+              minY: spanY.min,
+            });
+            if (pages === undefined) regionWhole = true;
+            else if (region.admission) regionAdmit = unionPageRect(regionAdmit, pages);
+            else regionEvict = unionPageRect(regionEvict, pages);
             if (region.urgent) {
               urgent = true;
               urgentSelected ||= !finer.some(
@@ -2728,6 +2944,25 @@ export class VirtualShadowNode extends ShadowBaseNode {
           // how much a streaming world's once-a-second invalidation actually cost.
           if (level.dirty) this.#coalesced += 1;
           level.dirty = true;
+          // Which pages the ask named. An ask that names none inside the window dirties them all,
+          // and so does one the tracker or `needsUpdate` made, which carry no admission claim.
+          const keyed = keyedPages.get(index);
+          const keyedPagesInWindow = keyed === undefined ? undefined : clip(keyed);
+          if (
+            invalidateAll ||
+            source.shadow.needsUpdate ||
+            regionWhole ||
+            (keyed !== undefined && keyedPagesInWindow === undefined)
+          ) {
+            level.dirtyAll = true;
+          }
+          if (regionAdmit !== undefined)
+            level.dirtyAdmit = unionPageRect(level.dirtyAdmit, regionAdmit);
+          for (const pages of [regionEvict, keyedPagesInWindow]) {
+            if (pages !== undefined) level.dirtyEvict = unionPageRect(level.dirtyEvict, pages);
+          }
+          if (level.dirtyAdmit === undefined && level.dirtyEvict === undefined)
+            level.dirtyAll = true;
         }
         // A window that moved is never delayed. A dirty level waits `invalidationDelay` after its
         // *own* last render, so a burst spanning that delay is one render and a lone ask is one
@@ -2749,7 +2984,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // blob never stands next to the mover's new shadow. It fires once per caster, on the frame
         // the node classifies it, and at most one render per level.
         const grant = due && (!budgetSpent || (urgentSelected && matured));
+        // The rectangles this render draws, or undefined for the whole level.
+        let passes: IPartialPass[] | undefined;
+        // The pages this render counted as rectangles, kept for the derived span below that turns
+        // them into the whole level and has to say so in the counters it already spent.
+        let countedPages = 0;
+        // A rectangle with a derived span keeps the camera its map was drawn from while the casters
+        // still fit, so kept texels decode as written and a shrunk span no longer moves them.
+        let keepsDepth = false;
         if (grant) {
+          const sameWindow =
+            level.mapped.value === 1 && window.minX === level.minX && window.minY === level.minY;
           // A level's first render places its window; only later renders are travel.
           if (Number.isFinite(level.minX)) {
             this.#windowSteps +=
@@ -2757,11 +3002,26 @@ export class VirtualShadowNode extends ShadowBaseNode {
           }
           level.minX = window.minX;
           level.minY = window.minY;
-          level.centerW = this.clipmap.centerLight.w;
           level.mapped.value = 1;
           level.pending = REASON_NONE;
           level.lastRender = now;
           this.#rendersTotal += 1;
+          // A window that moved, a region-less ask, or more than half the pages dirty is the whole
+          // level; anything else is the rectangles the asks named.
+          const levelPages = this.clipmap.pagesPerAxis ** 2;
+          passes =
+            reason === REASON_MOVE || level.dirtyAll
+              ? undefined
+              : this.#planPasses(level, levelPages, frame);
+          const dirtyPages = this.#dirtyPages(level);
+          this.#pagesDirty +=
+            reason === REASON_MOVE || level.dirtyAll || dirtyPages * 2 > levelPages
+              ? levelPages
+              : dirtyPages;
+          this.#pagesRedrawn += passes === undefined ? levelPages : dirtyPages;
+          countedPages = dirtyPages;
+          keepsDepth = passes !== undefined && sameWindow && this.#autoDepth;
+          if (!keepsDepth) level.centerW = this.clipmap.centerLight.w;
           if (reason === REASON_MOVE) {
             this.#byMove += 1;
             // The render was already going to happen for the window, so the invalidation rode
@@ -2769,10 +3029,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
             if (level.dirty) this.#coalesced += 1;
           } else {
             this.#byInvalidation += 1;
+            if (level.dirtyEvict === undefined && !level.dirtyAll) this.#byAdmission += 1;
+            else this.#byEviction += 1;
           }
           // A render of any reason answers whatever asked, so a movement render clears the dirty
           // flag too and the coalesced level is not redrawn a frame later for nothing.
           level.dirty = false;
+          level.dirtyAdmit = undefined;
+          level.dirtyAll = false;
+          level.dirtyEvict = undefined;
           rendered += 1;
           budgetSpent = true;
         } else if (due) {
@@ -2820,12 +3085,51 @@ export class VirtualShadowNode extends ShadowBaseNode {
           // texels. Both are undone the moment the render is over — by `#restoreHidden`, which the
           // mover maps and the main pass both need back.
           this.#probe(level, centre, index, stat);
-          if (this.#autoDepth) this.#deriveDepth(level, centre);
+          // A rectangle redraws only the pages it names and keeps every other texel, and a kept
+          // texel holds its depth as the camera that drew it encoded it: an absolute distance along
+          // the light, measured from that camera's own origin. A span this render derived moves
+          // both, and a camera that moved moves the encoding even when near, far and the width
+          // between them are the same numbers the map already holds: a level whose casters all
+          // translate along the sun, or an authored span whose camera travels with a window that
+          // did not move. Either way the level draws whole instead of leaving numbers no camera the
+          // map was not drawn from can read. What decides it is the encoding itself — the depth row
+          // the kept texels are read through, in the float32 three uploads it — read from the map
+          // the level still holds and from the one this render proposes.
+          const drawnNear = level.depthNear;
+          const drawnFar = level.depthFar;
+          this.#readDepthRow(level, _drawnDepth);
+          if (this.#autoDepth) this.#measureDepth(level, centre, keepsDepth);
           this.#place(level, centre);
+          if (passes !== undefined) {
+            // quality-allow: the light's own shadow owns this update, and the stock node calls it too.
+            level.shadow.updateMatrices(level.light as unknown as DirectionalLight);
+            this.#readDepthRow(level, _proposedDepth);
+            if (
+              level.depthNear !== drawnNear ||
+              level.depthFar !== drawnFar ||
+              _proposedDepth[0] !== _drawnDepth[0] ||
+              _proposedDepth[1] !== _drawnDepth[1] ||
+              _proposedDepth[2] !== _drawnDepth[2] ||
+              _proposedDepth[3] !== _drawnDepth[3]
+            ) {
+              const whole = this.clipmap.pagesPerAxis ** 2 - countedPages;
+              this.#pagesDirty += whole;
+              this.#pagesRedrawn += whole;
+              passes = undefined;
+            }
+          }
           try {
             // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
-            this.#renderLevel(frame, level, false, index);
+            if (passes === undefined) {
+              this.#renderLevel(frame, level, false, index);
+            } else {
+              for (const pass of passes) {
+                level.pass = pass;
+                this.#renderLevel(frame, level, false, index);
+              }
+            }
           } finally {
+            this.#endPartial(level);
             this.#restoreHidden();
           }
         } else {
@@ -2866,6 +3170,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#served += this.#levels.length - rendered;
     const total = this.#rendered + this.#served;
     this.#stats = {
+      byAdmission: this.#byAdmission,
+      byEviction: this.#byEviction,
       byInvalidation: this.#byInvalidation,
       byMove: this.#byMove,
       cached: this.#levels.length - rendered,
@@ -2881,6 +3187,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       autoMovers: this.#autoMovers.size,
       autoScanMs: this.#autoScanTotalMs / this.#frame,
       autoTransitions: this.#autoTransitions,
+      pagesDirty: this.#pagesDirty,
+      pagesRedrawn: this.#pagesRedrawn,
       perLevel: this.#perLevel,
       rendered,
       rendersTotal: this.#rendersTotal,
@@ -2958,6 +3266,8 @@ const VIRTUAL_SHADOW_STAT_FIELDS = [
   "autoMovers",
   "autoScanMs",
   "autoTransitions",
+  "byAdmission",
+  "byEviction",
   "byInvalidation",
   "byMove",
   "cached",
@@ -2970,6 +3280,8 @@ const VIRTUAL_SHADOW_STAT_FIELDS = [
   "moved",
   "moverRenders",
   "movers",
+  "pagesDirty",
+  "pagesRedrawn",
   "rendered",
   "rendersTotal",
   "reuseRatio",

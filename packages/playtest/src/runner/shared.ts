@@ -14,6 +14,7 @@ import type {
   IPlaytestSetupRecord,
   PlaytestVec3,
 } from "../report.js";
+import type { ICpuWindow } from "./linuxCpuWindow.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
 
 export const UNHANDLED_REJECTION_PREFIX = "__THREENATIVE_PLAYTEST_UNHANDLED_REJECTION__:";
@@ -48,6 +49,7 @@ export interface IRunStepSamples {
 
 export interface IStandalonePlaytestReport extends IPlaytestReport {
   artifactDirectory: string;
+  acquisition?: { requestUrls: readonly string[]; cpuWindows?: readonly ICpuWindow[]; completionWindow?: import("./steps.js").ICompletionWindow };
   /**
    * The clock this run measured on, as the protocol names it: `fixed-step` for the default
    * tick-counted scenario, `wall-clock` when `--live-clock` put the host's own frame pump in
@@ -124,6 +126,21 @@ export function failedDiagnosticsAssertion(policy: IPlaytestDiagnosticsPolicy): 
     id: "diagnostics",
     pass: false,
   };
+}
+
+/**
+ * A page that throws while booting never installs its bridge, so the run ends on a bare
+ * bridge-missing or a 30 s operation timeout. The throw is already collected: name it there.
+ */
+export function withPageCause<T extends { readonly code: string; readonly message: string }>(
+  diagnostic: T,
+  entries: readonly IRunnerConsoleEntry[],
+): T {
+  if (diagnostic.code !== "TN_PLAYTEST_BRIDGE_MISSING" && diagnostic.code !== "TN_PLAYTEST_OPERATION_TIMEOUT")
+    return diagnostic;
+  const cause = entries.find(({ type }) => type === "pageerror") ?? entries.find(({ type }) => type === "error");
+  if (cause === undefined) return diagnostic;
+  return { ...diagnostic, message: `${diagnostic.message} The page reported: ${cause.text.split("\n")[0]}` };
 }
 
 export function failureReport(

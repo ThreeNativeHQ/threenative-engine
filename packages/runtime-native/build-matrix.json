@@ -47,6 +47,7 @@
         "threenative-timer-delivery-test",
         "threenative-timer-engine-first-test",
         "threenative-timestamp-query-test",
+        "threenative-transient-attachments-test",
         "threenative-webgpu-bindings-reentrancy-test",
         "threenative-webgpu-comprehensive-test",
         "threenative-webtransport-surface-test",
@@ -103,6 +104,7 @@
         "threenative-timer-delivery-test",
         "threenative-timer-engine-first-test",
         "threenative-timestamp-query-test",
+        "threenative-transient-attachments-test",
         "threenative-webgpu-bindings-reentrancy-test",
         "threenative-webgpu-comprehensive-test",
         "threenative-webtransport-surface-test",
@@ -149,6 +151,7 @@
         "threenative-rg11b10-renderable-test",
         "threenative-async-pipeline-thread-test",
         "threenative-timestamp-query-test",
+        "threenative-transient-attachments-test",
         "threenative-exposure-graph-test"
       ]
     },

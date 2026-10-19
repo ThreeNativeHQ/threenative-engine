@@ -1364,11 +1364,13 @@ if (isMobile()) showTouchControls();
 export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 ```
 
-- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles · splash spray droplets with lifetime and gravity · spawn water droplets, mist, or foam bubbles above a fluid surface · falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard · kick up a spray of powder snow or dust where a foot or a ball lands
-- **Constraints:** geometry, color, and timing remain supplied by the game
+- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles · splash spray droplets with lifetime and gravity · spawn water droplets, mist, or foam bubbles above a fluid surface · falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard · kick up a spray of powder snow or dust where a foot or a ball lands · a hit, impact or explosion burst that starts at the point and moment it is asked for, and a second hit that must not move the first hit's live particles · emitParticle a burst of GPU particles at a world position with its own free slots
+- **Constraints:** geometry, color, and timing remain supplied by the game · a `spawn` kernel makes bursts requests: `emitParticle({ count, origin })` reserves ring slots, the engine stamps `buffers.births` and `process` reads age as `runtime.time - births[i]`; there is no readback · a spawn emitter is world space (identity world matrix); `localCoords: true` follows the parent · requests over `amount` or `maxSpawnPerFrame` clamp, add to `stats.clamped` and warn once; `stats.recycledLive` is `undefined` without the `lifetime` option · the emitter measures its own bounds and stops computing and drawing after graceSeconds outside the camera view · a game needs no emitting = visible gate, and an emitter with no measured bounds is never culled for leaving the view · when measured GPU cost passes the frame budget, the smallest projected emitters pause first, and cull.reason reads outside-view or over-budget
+- **Overrides:** localCoords, maxSpawnPerFrame and lifetime tune a spawn emitter; `restart()` kills every particle and rewinds the ring · onCull: "clear" restarts a returning effect, the default "pause" resumes it with buffers intact · bounds supplies a fixed local Box3 and skips GPU measurement, padding enlarges the world box, boundsEveryFrames sets the measurement cadence · graceSeconds sets the seconds outside the view before culling, and Infinity disables view culling
 
 ```ts
 const particles = new GPUParticles3D(particleOptions);
+particles.emitParticle({ count: 220, origin: hit.position });
 ```
 
 ### `GPUReadback`
@@ -2013,14 +2015,14 @@ if (renderListValidationRequested()) console.log(formatValidationReport(report))
 
 ### `renderTrapAudit`
 
-`function` — Catch scene state that silently loses environment fill or ignores authored opacity. Printed once after `enter()` as `TN_ENVIRONMENT_TOO_SMALL` or `TN_OPACITY_IGNORED`, with the fix in the same console error line so playtest `noConsoleErrors` rejects it.
+`function` — Catch scene state that silently loses environment fill or ignores authored opacity. After `enter()` the game first applies the opacity convention: a drawn material with `opacity < 1` turns transparent and one `TN_OPACITY_TRANSPARENT` console warning names it (override: `alphaHash: true`, or `opacity: 1`). It then prints `TN_ENVIRONMENT_TOO_SMALL` as a console error with the fix, so playtest `noConsoleErrors` rejects it.
 
 ```ts
 export function renderTrapAudit(scene: Object3D & { … }
 ```
 
 - **Use when:** audit an equirectangular sky too narrow for three's WebGPU PMREM · find visible opaque materials whose authored opacity is ignored
-- **Constraints:** structural scene reads only, one visible-tree walk per entry, at most five material examples · it changes no scene state; environment and transparency remain the game's decisions
+- **Constraints:** structural scene reads only, one visible-tree walk per entry, at most five material examples · the audit itself changes no scene state; the game loop's opacity convention is the only writer
 
 ```ts
 renderTrapAudit(ctx.scene); // marker lines with the fixes, or an empty array
@@ -3146,14 +3148,14 @@ const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer
 
 ### `WorldCells`
 
-`class` — Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game. An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch` each, and a scattered part whose own material is transparent draws as an alpha cutout unless the game asks for blending, because an `InstancedMesh` cannot sort its instances. An asset with no nonempty authored `lods` can draw its own model's baked AutoLOD chain at distances measured over the `autoLod` viewport. An explicit empty list enrolls only unchanged static parts; section ranges, custom attributes, alpha foliage and vertex deformation retain source geometry.
+`class` — Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, CPU per-asset `maxDistance` filtering, GPU dispatch culling, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game. An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch` each, and a scattered part whose own material is transparent draws as an alpha cutout unless the game asks for blending, because an `InstancedMesh` cannot sort its instances. An asset with no nonempty authored `lods` can draw its own model's baked AutoLOD chain at distances measured over the `autoLod` viewport. An explicit empty list enrolls only unchanged static parts; section ranges, custom attributes, alpha foliage and vertex deformation retain source geometry.
 
 ```ts
 export class WorldCells extends Group implements IComputeDriven { … }
 ```
 
 - **Use when:** stream a large Blender-authored world by cell instead of one huge GLB · keep scattered props and hand-placed chunks resident around a moving player · honour per-asset draw distances and hard streaming budgets without a mid-frame throw
-- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose · a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts · eligible static CPU cells can use their cooked HLOD after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation · `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number · every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers · two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct · the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds · a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left · `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
+- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose · a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts · eligible static sources can use cooked HLOD (chunk-only alongside GPU scatter, whole-cell on CPU) after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation · `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number · every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers · two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct · the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds · a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left · `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
 - **Overrides:** `hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
 
 ```ts
@@ -3906,6 +3908,21 @@ export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrame
 assertCaptureNotBlank(png, "first frame");
 ```
 
+### `assertDesktopCaptureNotBlank`
+
+`function` — Fail closed when a desktop-host frame shows no rendered content. A native desktop frame has no HTML overlay, so the browser bright-pixel floor does not apply.
+
+```ts
+export function assertDesktopCaptureNotBlank(png: Buffer, label: string): ICaptureFrameStats { … }
+```
+
+- **Use when:** guard a native desktop capture of a 3D scene
+- **Constraints:** keeps the uniform-frame checks and replaces only the bright-pixel floor
+
+```ts
+assertDesktopCaptureNotBlank(png, "panned-culled.png");
+```
+
 ### `assertFrameShowsSomething`
 
 `function` — Fail closed when a screenshot is blank or uniform.
@@ -4032,7 +4049,7 @@ const adb = discoverAdb(process.env);
 `function` — Execute scenario steps, assertions, and evidence capture.
 
 ```ts
-export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, "advance">, ticks: number, ): Promise<void> { … }
+export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, "advance">, ticks: number, render = false, ): Promise<void> { … }
 ```
 
 - **Use when:** run a complete browser or device playtest · capture diagnostics and screenshots from a managed server
@@ -4207,6 +4224,21 @@ export function decideDisplayStrategy(input: IDisplayDecisionInput): IDisplayStr
 import { decideDisplayStrategy } from "@threenative/playtest/runner";
 const lane = decideDisplayStrategy({ env: process.env, platform: "linux" });
 if (lane.kind === "private-xvfb") throw new Error("refuse to judge this frame rate");
+```
+
+### `desktopConsoleType`
+
+`function` — Drive a local desktop playtest mailbox.
+
+```ts
+export function desktopConsoleType(stream: "stderr" | "stdout", line: string): string { … }
+```
+
+- **Use when:** run a desktop target through the playtest protocol · exchange observations with a native desktop host
+- **Constraints:** the mailbox lifecycle must be disposed after the run
+
+```ts
+const driver = new DesktopPlaytestDriver(options);
 ```
 
 ### `DesktopPlaytestDriver`

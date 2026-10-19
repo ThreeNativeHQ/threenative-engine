@@ -81,6 +81,8 @@ Full text and rationale: [PRD-497 § Decisions](PRD-497-n00-architecture-decisio
 | N19 | [PRD-532 — WebAssembly native-core browser port](PRD-532-n19-webassembly-native-core-browser-port.md) (mandatory) | N03, N07–N09, N18 |
 | N20 | [PRD-533 — Platform qualification, performance and default promotion](PRD-533-n20-platform-qualification-performance-default-promotion.md) | CP1, N00–N16, N18, N19 |
 | N21 | [PRD-535 — The JS engine is deleted](PRD-535-n21-the-js-engine-is-deleted.md) | N20 + one release, N19 |
+| Perf | [PRD-612 — The web Wasm engine beats three.js on Midway](PRD-612-web-wasm-engine-beats-threejs-on-midway.md) (owner bar 1.5x) | N19, PRD-610 |
+| Perf | [PRD-613 — Native render thread](PRD-613-native-render-thread.md) (PRD-610 AC-16) | N09, PRD-610 |
 
 ```mermaid
 flowchart LR

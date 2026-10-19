@@ -109,7 +109,7 @@ export const PLAYTEST_FLAGS = {
   "--endpoint": { default: "http://127.0.0.1:41777/playtest", summary: "device bridge endpoint", takesValue: true },
   "--headed": { default: "false", summary: "show the browser window", takesValue: false },
   "--judge-marker-url": { default: "none", summary: "judge-owned loopback marker URL whose POST failures are not network errors", takesValue: true },
-  "--live-clock": { default: "false", summary: "measure the game on its own frame clock (browser target only); a standing scene is unmeasurable on counted ticks", takesValue: false },
+  "--live-clock": { default: "false", summary: "measure the game on its own frame clock (browser and desktop targets); a standing scene is unmeasurable on counted ticks", takesValue: false },
   // `allowDashValue` so a host flag can be passed as one: `--host-arg --ui` is the UI root the
   // overlay serves, and the parser would otherwise read `--ui` as a playtest flag and reject it.
   "--host-arg": { allowDashValue: true, default: "none", repeatable: true, summary: "argument passed to the native desktop host, repeatable", takesValue: true },
@@ -163,6 +163,9 @@ export function formatUsage(): string {
     "                        --allow-virtual-display accepts a frame rate the display did not",
     "                        see (a private Xvfb, or a loop the presentation cap outran); without",
     "                        it such a run prints no fps column and refuses a --min-fps bound",
+    "                        --soak <frames> (with --executable, default 1800, minimum 1800) runs",
+    "                        that many frames, samples RSS every 100, and fails with",
+    "                        TN_SOAK_CRASH or TN_SOAK_RSS_GROWTH past 10% growth after frame 300",
     "  trace                 record a Chrome performance trace of a running game and name the",
     "                        functions inside its slow frames — a percentile says a frame was",
     "                        slow, a trace says which function. Take one BEFORE attributing any",
@@ -299,11 +302,12 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     }
   }
   const liveClock = argv.includes("--live-clock");
-  // Fail closed rather than silently measuring on the clock nobody asked for: the native lanes take
+  // Fail closed rather than silently measuring on the clock nobody asked for: the device lanes take
   // this switch from the production profile's injected instrumentation, not from this runner, so a
-  // flag here would report a wall-clock run that never happened.
-  if (liveClock && target !== "browser") {
-    throw new PlaytestCliUsageError(`--live-clock runs on the browser target only; '${target}' is driven by its own host instrumentation.`);
+  // flag here would report a wall-clock run that never happened. The native desktop host reads the
+  // same request from TN_PLAYTEST_CLOCK, which the desktop runner hands it, so it is accepted here.
+  if (liveClock && target !== "browser" && target !== "desktop") {
+    throw new PlaytestCliUsageError(`--live-clock runs on the browser and desktop targets only; '${target}' is driven by its own host instrumentation.`);
   }
   const rawTouchRotation = flags.get("--touch-rotation")?.[0];
   // Fail closed rather than defaulting: a mistyped rotation that quietly became 0 would put every

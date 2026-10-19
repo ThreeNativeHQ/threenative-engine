@@ -13,6 +13,9 @@
 #include "mystral/webgpu/registration_table.h"
 #include "../src/webgpu/bindings_state.h"
 #include "../src/webgpu/surface_texture_transaction.h"
+#if defined(MYSTRAL_HAS_SKIA)
+#include "include/core/SkGraphics.h"
+#endif
 
 namespace {
 
@@ -1817,6 +1820,76 @@ bool exercisePreservedCallTrace(mystral::Runtime& runtime) {
     return runtime.evalScript(script, "webgpu-bindings-call-trace.js");
 }
 
+bool checkDetachedRenderBundleEncoderMethodAfterGc(mystral::Runtime& runtime) {
+    if (!runtime.evalScript(R"JS((() => {
+        const device = navigator.gpu.requestAdapter().requestDevice();
+        let encoder = device.createRenderBundleEncoder({colorFormats: ["rgba8unorm"]});
+        globalThis.__tnDetachedRenderBundleFinish = encoder.finish;
+        encoder = null;
+    })())JS", "webgpu-detached-bundle-method-setup.js")) {
+        return false;
+    }
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    state->engine->clearFrameHandles();
+    state->engine->gc();
+    state->engine->gc();
+    return runtime.evalScript(R"JS((() => {
+        try {
+            __tnDetachedRenderBundleFinish();
+            throw new Error("detached render bundle method unexpectedly succeeded");
+        } catch (error) {
+            if (!String(error).includes("encoder is no longer valid")) throw error;
+        }
+    })())JS", "webgpu-detached-bundle-method-after-gc.js");
+}
+
+bool checkRenderBundleEncoderPinDuringReentrantGc(mystral::Runtime& runtime) {
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
+    auto* engine = state->engine;
+    const auto collectGarbage = engine->newFunction(
+        "collectWebGpuWrapperGarbage",
+        [engine](void*, const std::vector<mystral::js::JSValueHandle>&) {
+            engine->gc();
+            engine->gc();
+            return engine->newUndefined();
+        });
+    if (!collectGarbage.ptr ||
+        !engine->setGlobalProperty("__tnCollectWebGpuWrapperGarbage", collectGarbage)) {
+        if (collectGarbage.ptr) engine->freeHandle(collectGarbage);
+        return false;
+    }
+    engine->freeHandle(collectGarbage);
+    if (!runtime.evalScript(R"JS((() => {
+        const device = navigator.gpu.requestAdapter().requestDevice();
+        const encoder = device.createRenderBundleEncoder({colorFormats: ["rgba8unorm"]});
+        globalThis.__tnReentrantBundleEncoder = encoder;
+        globalThis.__tnReentrantBundleDraw = encoder.draw;
+        globalThis.__tnReentrantBundleFinish = encoder.finish;
+    })())JS", "webgpu-reentrant-bundle-gc-setup.js")) {
+        return false;
+    }
+    engine->clearFrameHandles();
+    const bool called = runtime.evalScript(R"JS((() => {
+        __tnReentrantBundleDraw({
+            valueOf() {
+                globalThis.__tnReentrantBundleEncoder = null;
+                __tnCollectWebGpuWrapperGarbage();
+                return 1;
+            },
+        });
+        try {
+            __tnReentrantBundleFinish();
+            throw new Error("collected render bundle encoder unexpectedly remained live");
+        } catch (error) {
+            if (!String(error).includes("encoder is no longer valid")) throw error;
+        }
+        delete globalThis.__tnCollectWebGpuWrapperGarbage;
+        delete globalThis.__tnReentrantBundleDraw;
+        delete globalThis.__tnReentrantBundleFinish;
+    })())JS", "webgpu-reentrant-bundle-gc-dispatch.js");
+    return called;
+}
+
 bool exerciseAsyncWebGPUObservation(mystral::Runtime& runtime) {
     auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime.getWebGPUBindingsState());
     auto* engine = state->engine;
@@ -1923,7 +1996,7 @@ bool exerciseAsyncWebGPUObservation(mystral::Runtime& runtime) {
     while (report.empty() && std::chrono::steady_clock::now() < asyncDeadline) {
         mystral::webgpu::drainAsyncPipelineCompiles(bindingsState);
         engine->processMicrotasks();
-        if (!runtime.evalScript("undefined", "webgpu-async-observation-drain.js")) return false;
+        if (!engine->evalScript("undefined", "webgpu-async-observation-drain.js")) return false;
     }
     if (report != "ok") {
         std::cerr << "WebGPU async observation proof failed: "
@@ -1950,6 +2023,10 @@ int main() {
 
     if (!exercisePublishedWebGPUObjects(*first)) return 1;
     std::cout << "proof: public-binding-surface" << std::endl;
+    if (!checkDetachedRenderBundleEncoderMethodAfterGc(*first)) return 1;
+    std::cout << "proof: detached-bundle-method-after-gc" << std::endl;
+    if (!checkRenderBundleEncoderPinDuringReentrantGc(*first)) return 1;
+    std::cout << "proof: bundle-method-pinned-during-reentrant-gc" << std::endl;
     if (!exercisePreservedCallTrace(*first)) return 1;
     std::cout << "proof: call-trace" << std::endl;
     if (!exerciseAsyncWebGPUObservation(*first)) return 1;
@@ -2035,6 +2112,11 @@ int main() {
 
     if (!checkRepeatedBindingsStateDestroy()) return 1;
 
+    second.reset();
+#if defined(MYSTRAL_HAS_SKIA)
+    // Skia keeps process-wide typeface references after the last canvas owner dies.
+    SkGraphics::PurgeFontCache();
+#endif
     std::cout << "native WebGPU bindings reentrancy passed" << std::endl;
     return 0;
 }

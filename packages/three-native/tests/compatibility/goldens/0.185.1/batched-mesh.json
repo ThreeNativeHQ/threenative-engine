@@ -1,0 +1,35 @@
+{
+  "name": "batched-mesh",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — three r185's BatchedMesh as core's projection builds one: a MeshStandardMaterial over a box and a sphere geometry, five instances with their own matrices (one rotated) and colours, one hidden by setVisibleAt, lit by a sun and an ambient light",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:72596d06256c6ae6af826060fa55cc89a8bdae8dd5082a13c4e0b88a39e69f84",
+      "decimal": "72596d06256c6ae6af826060fa55cc89a8bdae8dd5082a13c4e0b88a39e69f84"
+    }
+  ],
+  "render": {
+    "png": "batched-mesh.png",
+    "pngSha256": "72596d06256c6ae6af826060fa55cc89a8bdae8dd5082a13c4e0b88a39e69f84",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

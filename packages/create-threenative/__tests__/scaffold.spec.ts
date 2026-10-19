@@ -16,6 +16,7 @@ import {
 import path from "node:path";
 import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
+import { read as readKTX2 } from "ktx-parse";
 import { describe, expect, it } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -188,7 +189,14 @@ const BUG_REPORT_SKILL_PATHS = [
 // Three patch. Restoring the previous patch recovers every prior fingerprint.
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
+// Recomputed 2026-10-15 for the native engine default (PRD-573): every template AGENTS.md/CLAUDE.md pair gains
+// an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
+// Recomputed 2026-10-18 through all thirteen actual createProject trees after release-cohort preparation and Sailing motion repair.
+// Re-measured all 13 trees for the SMAA mip0 patch; restoring only copied patch bytes recovers every prior hash.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-10-17 for the engine rename ("native" -> "threenative", "legacy" -> "threejs"):
+  // every template's AGENTS/CLAUDE engine section and the pinned configs. Measured by this test.
+  // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
   // af6dfc8 + ba72eed publication merge, after capability and canonical patch generation.
@@ -247,21 +255,34 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-560: fingerprints include both height fog and PRD-571 histogram exposure.
   // Recomputed 2026-10-11 on the merge of develop e6ed27869 into PRD-563: measured through
   // createProject on the merged tree.
-  // PRD-566 merge: measured all thirteen trees; only the shared morph pipeline patch changes bytes.
-  "action-rpg": "8984c4f355d35eb5c1d0958746172f457c9c2ecad615f3bfcd38642533ff8c37",
-  minimal: "8d834289ea3940529d925f53a4946cc718771dc4fb8577c2199ba6a29faf51d4",
-  platformer: "f5d4a0362bd3a6f7bb3f8530178e22d5cbe0bd8625d0c83121b53f8f5aa3a2ec",
-  puzzle: "cdacbec8e3543a394263bd73c42d7482b61c433df6cb60ce42bc8306f91f71e9",
-  racing: "cec5c42b232f5f858fdefae9275b324378c2914d5113185e3ec3a748162caf23",
-  rain: "05027f3370b26deb260e158240a09904ea54e593a8184767eead660810bf7551",
-  rts: "6f331bb87e10340cd33263edbff4f7ce1fc40d24b601ea786a06ea41e1f065a5",
-  runner: "4f7a6b3ace688771a7c96e67062a8b696d0b50c09376183f2f02eead97361c12",
-  // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "9c9edb14b880fc446e9b921b60dd99053f45032f053c4fcb5cc820a323c43904",
-  shooter: "699758de47b7642a38b998dad0437b17c6a68df046d8807ddbaf35a61d9f1423",
-  snow: "837eee8058f3bf043eabe5161207e62fbc5accd83cd1353902b79bb55f2dd1cf",
-  starter: "21b5ccb273b27ff8b711c7b2c5f42345adb7ab941fa19e605b64b01626f5aa68",
-  "tower-defense": "95e514738bd04ba2a561f3500d877af1d0c540a9e40fb00829770455006fd14c",
+  // PRD-566/569/609 merge: measured all thirteen trees; action-rpg carries emitParticle bursts and onCull instructions.
+  // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
+  // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
+  // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
+  // Recomputed 2026-10-15: puzzle drops its legacy pin and its Engine paragraph (PRD-617); the other twelve are unchanged.
+  // Recomputed 2026-10-15 through createProject after recovery: all kits now share the decoder-aware asset watch.
+  // Recomputed 2026-10-18: a queue-fenced renderer prepares PMREMNode textures asynchronously; only the patch bytes move.
+  // Recomputed 2026-10-18: the Three patch groups async PMREM face fences by GPU cost; only the patch bytes move, so all thirteen trees change.
+  // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
+  // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
+  // boot-failure text both engines now show, so only puzzle's tree moves.
+  "action-rpg": "fe5a4a777f4e221094d111166521f482eecbbe88473721fd0e11209aa90289ef",
+  minimal: "3605632fe648cd2e8f144cdcf86ced58a3b3dbb6698d1014f52b818905ad26f7",
+  platformer: "6a47f1b8e2f293dbc112177307faaa22e63a8ab68b0a3b7fbb6edffe02ba199a",
+  puzzle: "51f8cb08471b9eb42017c8e66a1dfe1d09ae91b885e5cf3f33aea6cf7431613e",
+  racing: "e72b20d0ace2c958a7713e558887fac9f928a7164effd2a261b8049ad047ebac",
+  rain: "74c1d142ae51b6ec1ff30bcd013c47aa740816dac4e52572e0f4031851a0bd16",
+  rts: "088fd5eb481190d8c21b8d36c8ec1ab24b4a4c8e55f4c17c24567312e2b8183c",
+  runner: "09a62f1c2c82a8a012ef1d6cd7e978680399089139430370c4cb20df9e68421f",
+  // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
+  sailing: "3b591f15aa6000de8720166be330427b81a4dd17af46d66653ee1821a2bd52fb",
+  shooter: "99985dd51b67ae0a40a4930a76ccc9d1031b40f07cfb83112a2ed93052aad66c",
+  snow: "ea34babbdd0b128070c4b75529245cabe7bb865d476d1aadf07749f2c5f20461",
+  // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
+  // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
+  // to stay under the 200-line render-file cap; only starter's tree moves.
+  starter: "b73e9c2e115b9347ee8ea3dfcb768c622558eba0c171e115d4122ea14bca0704",
+  "tower-defense": "93eef51fb1b6238eba3674a98cafce9117a52ceac40e13e6b4de75618c1b0800",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -360,6 +381,7 @@ const STARTER_PATHS = [
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
+  "src/render/qualityPolicy.ts",
   "src/render/worldEnvironment.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
@@ -396,10 +418,12 @@ const STARTER_PATHS = [
   "src/ui/main.tsx",
   "src/ui/App.tsx",
   "src/state.ts",
-  // PRD-449: three, and only the three that prove a new game works. The other 21 are engine
-  // guards in `packages/create-threenative/template-playtests/starter/`, which `pnpm test:templates`
-  // copies into the scaffold; the "exactly three" assertion below is what keeps them out.
+  // Ship the starter smoke, outcome, readiness and movement scenarios. Engine guards stay in
+  // `packages/create-threenative/template-playtests/starter/`, copied by `pnpm test:templates`.
   "playtests/survives.playtest.json",
+  "playtests/movement.playtest.json",
+  "playtests/live/smooth-motion.playtest.json",
+  "native-playtests/smooth-motion.playtest.json",
   "playtests/play.playtest.json",
   "native-playtests/react-hud.playtest.json",
   "playtests/production-readiness.playtest.json",
@@ -837,16 +861,8 @@ describe("create-threenative", () => {
   );
 
   it("keeps the starter's shipped assets mobile-shippable", async () => {
-    // Mobile has no WebAssembly, so neither Basis-decoded textures nor Meshopt-decoded geometry
-    // can ship there — the red hit on 2026-08-27: `build:android` on a machine with the Basis
-    // encoder refused TN_NATIVE_KTX2_UNSUPPORTED on a starter scaffold that had built clean the
-    // week before, purely because the encoder got installed in between.
-    //
-    // The template used to pin `models`/`textures` to `"none"` to prevent it, which held for
-    // android and followed the same game onto web: one shipped 2,003 MB of manifest output with
-    // no compressed texture in it. The build names its `--target` and the compile step now drops
-    // the passes that target cannot decode, so this asserts what a mobile bake *produces* rather
-    // than what the config file says — and the web bake of the same config stays compressed.
+    // Decoder-free mobile cooking may emit raw ASTC, while Basis and Meshopt still need decoders.
+    // Check the produced KTX2 headers rather than treating every KTX2 as Basis.
     const root = await makeTempDir("threenative-scaffold-mobile-");
     try {
       await mkdir(path.join(root, "assets"), { recursive: true });
@@ -870,14 +886,38 @@ describe("create-threenative", () => {
         }),
       );
 
-      await compileAssets({ cwd: root, platform: "android" });
+      await compileAssets({
+        cwd: root,
+        platform: "android",
+        runtimeDecoders: { ktx2: false, meshopt: false },
+      });
       const android = JSON.parse(
         await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
-      ) as { entries: Record<string, { extensions?: string[]; output: string }> };
+      ) as { entries: Record<string, { extensions?: string[]; output: string; format?: string }> };
       const mobileOutputs = Object.values(android.entries);
       expect(mobileOutputs.length).toBeGreaterThan(0);
+      expect(
+        mobileOutputs.some((entry) => /\.ktx2$/u.test(entry.output) && entry.format === "astc4x4"),
+      ).toBe(true);
       for (const entry of mobileOutputs) {
-        expect(entry.output).not.toMatch(/\.ktx2$/u);
+        if (/\.ktx2$/u.test(entry.output)) {
+          const raw = readKTX2(await readFile(path.join(root, "public", entry.output)));
+          expect([157, 158]).toContain(raw.vkFormat);
+          expect(raw.supercompressionScheme).toBe(0);
+          expect(raw.globalData).toBeNull();
+          const levels = Math.floor(Math.log2(Math.max(raw.pixelWidth, raw.pixelHeight))) + 1;
+          expect(raw.levelCount).toBe(levels);
+          expect(raw.levels).toHaveLength(levels);
+          for (const [mip, level] of raw.levels.entries()) {
+            const bytes =
+              Math.ceil(Math.max(1, raw.pixelWidth >> mip) / 4) *
+              Math.ceil(Math.max(1, raw.pixelHeight >> mip) / 4) *
+              16;
+            expect(level.levelData.byteLength).toBe(bytes);
+            expect(level.uncompressedByteLength).toBe(bytes);
+          }
+          expect(entry.format).toBe("astc4x4");
+        }
         expect(entry.extensions ?? []).not.toContain("EXT_meshopt_compression");
       }
 
@@ -917,7 +957,7 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
-      // The whole point of the cut (PRD-449): a new game proves itself with three scenarios, and
+      // The whole point of the cut (PRD-449): a new game proves itself with four scenarios, and
       // the engine's own guards live outside the template. `readdir` rather than the STARTER_PATHS
       // membership, so a file nobody added to the list still fails here.
       expect(
@@ -925,6 +965,7 @@ describe("create-threenative", () => {
           name.endsWith(".playtest.json"),
         ),
       ).toEqual([
+        "movement.playtest.json",
         "play.playtest.json",
         "production-readiness.playtest.json",
         "survives.playtest.json",
@@ -1061,6 +1102,15 @@ describe("create-threenative", () => {
       const result = await createProject(
         { install: false, target: "minimal-bundle", template: "minimal" },
         root,
+      );
+      // This build checks core's bundle, not an engine: it names the legacy engine so it needs no Wasm module.
+      const configPath = path.join(result.target, "threenative.config.ts");
+      await writeFile(
+        configPath,
+        (await readFile(configPath, "utf8")).replace(
+          "const config: IThreeNativeConfig = {",
+          'const config: IThreeNativeConfig = {\n  engine: "threejs",',
+        ),
       );
       const scope = path.join(result.target, "node_modules", "@threenative");
       await mkdir(scope, { recursive: true });

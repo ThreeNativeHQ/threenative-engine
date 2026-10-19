@@ -1,0 +1,75 @@
+{
+  "name": "materials-physical-clearcoat-maps",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — the materials-physical-clearcoat sphere with the clearcoat maps: clearcoatMap (.r, a checker of 1 and 0.25), clearcoatRoughnessMap (.r, a horizontal ramp) and a tangent-space clearcoatNormalMap with clearcoatNormalScale (0.6, 0.6), roughness 0.3 under it; MaterialNode's CLEARCOAT, CLEARCOAT_ROUGHNESS and CLEARCOAT_NORMAL",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff4c8dc2e423980,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ffbb67ae8584cab,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.299038105676658, 0, 0, 0, 0, 1.7320508075688774, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:3ff6666666666666,n:400999999999999a,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1.4, 3.2, 1"
+    },
+    {
+      "index": 2,
+      "id": "light",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:4000000000000000,n:4008000000000000,n:3ff0000000000000,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 3, 1, 1"
+    },
+    {
+      "index": 3,
+      "id": "mesh",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1"
+    },
+    {
+      "index": 4,
+      "id": "geometry",
+      "kind": "json",
+      "path": "parameters",
+      "value": "s:%7B%22heightSegments%22%3A16%2C%22phiLength%22%3A6.283185307179586%2C%22phiStart%22%3A0%2C%22radius%22%3A1%2C%22thetaLength%22%3A3.141592653589793%2C%22thetaStart%22%3A0%2C%22widthSegments%22%3A32%7D",
+      "decimal": "{\"heightSegments\":16,\"phiLength\":6.283185307179586,\"phiStart\":0,\"radius\":1,\"thetaLength\":3.141592653589793,\"thetaStart\":0,\"widthSegments\":32}"
+    },
+    {
+      "index": 5,
+      "id": "material",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshPhysicalMaterial",
+      "decimal": "MeshPhysicalMaterial"
+    },
+    {
+      "index": 6,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:27714d55323687bb871804da839008633a396c290881ac675d75d5525efe5e0c",
+      "decimal": "27714d55323687bb871804da839008633a396c290881ac675d75d5525efe5e0c"
+    }
+  ],
+  "render": {
+    "png": "materials-physical-clearcoat-maps.png",
+    "pngSha256": "27714d55323687bb871804da839008633a396c290881ac675d75d5525efe5e0c",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

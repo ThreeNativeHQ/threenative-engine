@@ -4,6 +4,7 @@ import {
   AnimationMixer,
   LoopOnce,
   LoopRepeat,
+  Matrix4,
   type Object3D,
   Vector3,
   type VectorKeyframeTrack,
@@ -133,24 +134,33 @@ function clipRootMotionSpeed(clip: AnimationClip): number {
 function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
   const objects: Object3D[] = [];
   root.traverse((object) => objects.push(object));
-  const restore = objects.map((object) => ({
-    object,
-    position: object.position.clone(),
-    quaternion: object.quaternion.clone(),
-    scale: object.scale.clone(),
-  }));
+
+  // The root belongs to the game, which turns it with `rotation.y +=`. A quaternion restore
+  // rewrites `rotation` as the equivalent Euler, so a yaw of PI comes back as (PI, 0, PI) and the
+  // next increment turns the figure the mirrored way. Bones keep the exact quaternion: a round trip
+  // through Euler would lose precision on every joint.
+  const rootRotation = root.rotation.clone();
 
   const mixer = new AnimationMixer(root);
   const action = mixer.clipAction(clip);
   action.play();
   const paths = objects.map(() => [] as { x: number; y: number; z: number }[]);
   const step = clip.duration / PLANT_SAMPLES;
+  // The mixer animates only the rig, so its ancestors need one refresh, not one per sample.
+  root.parent?.updateWorldMatrix(true, false);
   try {
     for (let frame = 0; frame <= PLANT_SAMPLES; frame += 1) {
       mixer.setTime(frame * step);
       root.updateMatrixWorld(true);
       for (let index = 0; index < objects.length; index += 1) {
-        (objects[index] as Object3D).getWorldPosition(scratchWorld);
+        // The frame's updateMatrixWorld already holds every bone; getWorldPosition re-walks ancestors.
+        const object = objects[index] as Object3D & {
+          __tnCopyMatrixWorld?: (target: Matrix4) => void;
+        };
+        if (object.__tnCopyMatrixWorld !== undefined) {
+          object.__tnCopyMatrixWorld(scratchMatrixWorld);
+          scratchWorld.setFromMatrixPosition(scratchMatrixWorld);
+        } else scratchWorld.setFromMatrixPosition(object.matrixWorld);
         (paths[index] as { x: number; y: number; z: number }[]).push({
           x: scratchWorld.x,
           y: scratchWorld.y,
@@ -159,13 +169,10 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
       }
     }
   } finally {
+    // Stopping restores every animated binding saved by this isolated mixer when it played.
     action.stop();
     mixer.uncacheClip(clip);
-    for (const entry of restore) {
-      entry.object.position.copy(entry.position);
-      entry.object.quaternion.copy(entry.quaternion);
-      entry.object.scale.copy(entry.scale);
-    }
+    root.rotation.copy(rootRotation);
     root.updateMatrixWorld(true);
   }
 
@@ -234,6 +241,7 @@ export class AnimationPlayer {
   #mode: AnimationMode = "loop";
   #advancedFrames = 0;
   #finished = false;
+  #posed = false;
   #fadeOut: { action: AnimationAction; from: number }[] = [];
   #fadeElapsed = 0;
   #fadeDuration = 0;
@@ -406,8 +414,15 @@ export class AnimationPlayer {
 
   #uniformWorldScale(): number | undefined {
     const root = this.mixer.getRoot() as Object3D;
-    const owner = root.parent ?? root;
+    const owner = (root.parent ?? root) as Object3D & {
+      __tnCopyMatrixWorld?: (target: Matrix4) => void;
+    };
     owner.updateWorldMatrix(true, false);
+    if (owner.__tnCopyMatrixWorld !== undefined) {
+      // Native copies into owned storage so this read cannot escape the live transform alias.
+      owner.__tnCopyMatrixWorld(scratchMatrixWorld);
+      return uniformYawScale(scratchMatrixWorld);
+    }
     return uniformYawScale(owner.matrixWorld);
   }
 
@@ -563,6 +578,31 @@ export class AnimationPlayer {
   }
 
   play(name: string, options: IAnimationPlayOptions = {}): void {
+    this.#start(name, options);
+    this.#poseAtStart();
+  }
+
+  /**
+   * Whether a clip has posed the skeleton. False until the first `play` or `playWeighted`, so a
+   * rig that never plays a clip stays observably in its bind pose.
+   */
+  get posed(): boolean {
+    return this.#posed;
+  }
+
+  /**
+   * Pose the skeleton from the clip that just started, before any `update`. `play` only schedules
+   * an action, and three applies a pose only inside `mixer.update`, so a character added to the
+   * scene on the frame it starts would otherwise render once in its bind pose (a T-pose) and snap
+   * to its clip on the next tick. A zero step applies the pose and advances nothing.
+   */
+  #poseAtStart(): void {
+    if (this.#posed) return;
+    this.mixer.update(0);
+    this.#posed = true;
+  }
+
+  #start(name: string, options: IAnimationPlayOptions): void {
     const next = this.#actions.get(name);
     if (next === undefined) throw new Error(`Unknown animation clip '${name}'.`);
     // One owner at a time. A single-clip request takes the rig back from a weighted blend, exactly
@@ -658,6 +698,7 @@ export class AnimationPlayer {
     // A zero transition is the caller's request for these weights right now, not on the next
     // frame; a positive one leaves them where the previous request left them and ramps from there.
     this.#advanceBlend(0);
+    this.#poseAtStart();
   }
 
   /**
@@ -802,6 +843,7 @@ export class AnimationPlayer {
 /** Reused so a per-frame stride read costs no allocation. See PRD-189. */
 const scratchWorld = new Vector3();
 const scratchScale = new Vector3();
+const scratchMatrixWorld = new Matrix4();
 
 /**
  * Validate one weighted request into normalized, non-zero target weights.

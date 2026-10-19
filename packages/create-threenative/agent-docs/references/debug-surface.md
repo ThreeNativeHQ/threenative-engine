@@ -51,7 +51,8 @@ On web this global does not exist — do not probe for it in portable code.
 ## Scene-entry markers
 
 `TN_ENVIRONMENT_TOO_SMALL`: scene-entry console error; use an equirectangular environment at least 64 pixels wide for PMREM.
-`TN_OPACITY_IGNORED`: scene-entry console error; set `transparent: true` or `alphaHash: true` on visible materials with `opacity < 1`.
+`TN_OPACITY_TRANSPARENT`: scene-entry console warning; the engine turned `transparent` on for visible materials with `opacity < 1` so the authored opacity takes effect. Override on the material: `alphaHash: true`, or `opacity: 1` for an opaque surface.
+`TN_OPACITY_IGNORED`: printed by a direct `renderTrapAudit(scene)` call for a material that still ignores its opacity.
 
 ## Runner-side markers
 

@@ -4,7 +4,7 @@ import type { IAssetPass } from "./compile.js";
 import { applyPasses } from "./pass-chain.js";
 import { audioPass } from "./passes/audio.js";
 import { blenderImportPass } from "./passes/blender-import.js";
-import { lightmapPass } from "./passes/lightmap.js";
+import { createLightmapPass } from "./passes/lightmap.js";
 import { modelPass } from "./passes/model.js";
 import { createSharedImageStore } from "./passes/shared-images.js";
 import { texturePass, textureResizePass } from "./passes/texture.js";
@@ -31,7 +31,7 @@ function buildInstances(specs: readonly PassSpec[], root: string): readonly IAss
       case "blender-import":
         return blenderImportPass();
       case "lightmap":
-        return lightmapPass(spec.options);
+        return createLightmapPass(spec.options, spec.astc);
       case "model":
         return modelPass({
           ...spec.options,

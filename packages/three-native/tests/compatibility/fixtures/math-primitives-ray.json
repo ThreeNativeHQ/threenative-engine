@@ -1,0 +1,1690 @@
+{
+  "name": "math-primitives-ray",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Ray.tests.js \u2014 the whole surface; an intersection writes its target only on a hit, and the fixture compares that target either way",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "o01",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d02",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r03",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r03",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o01"
+        },
+        {
+          "ref": "d02"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "r04",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "o05",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d06",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r07",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r07",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o05"
+        },
+        {
+          "ref": "d06"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "o08",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d09",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "r10",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r10",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o08"
+        },
+        {
+          "ref": "d09"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r07",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "r10"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "o11",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d12",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r13",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r13",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o11"
+        },
+        {
+          "ref": "d12"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t14",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r13",
+      "method": "at",
+      "args": [
+        2.5,
+        {
+          "ref": "t14"
+        }
+      ],
+      "result": "r15"
+    },
+    {
+      "op": "new",
+      "id": "o16",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d17",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r18",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r18",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o16"
+        },
+        {
+          "ref": "d17"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q19",
+      "class": "Vector3",
+      "args": [1, 2, 0]
+    },
+    {
+      "op": "call",
+      "id": "r18",
+      "method": "lookAt",
+      "args": [
+        {
+          "ref": "q19"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "o20",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d21",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r22",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r22",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o20"
+        },
+        {
+          "ref": "d21"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r22",
+      "method": "recast",
+      "args": [2]
+    },
+    {
+      "op": "new",
+      "id": "o23",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d24",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r25",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r25",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o23"
+        },
+        {
+          "ref": "d24"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q26",
+      "class": "Vector3",
+      "args": [4, 5, 3]
+    },
+    {
+      "op": "new",
+      "id": "t27",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r25",
+      "method": "closestPointToPoint",
+      "args": [
+        {
+          "ref": "q26"
+        },
+        {
+          "ref": "t27"
+        }
+      ],
+      "result": "r28"
+    },
+    {
+      "op": "new",
+      "id": "o29",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d30",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r31",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r31",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o29"
+        },
+        {
+          "ref": "d30"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q32",
+      "class": "Vector3",
+      "args": [4, 5, 3]
+    },
+    {
+      "op": "call",
+      "id": "r31",
+      "method": "distanceToPoint",
+      "args": [
+        {
+          "ref": "q32"
+        }
+      ],
+      "result": "r33"
+    },
+    {
+      "op": "new",
+      "id": "q34",
+      "class": "Vector3",
+      "args": [4, 5, 3]
+    },
+    {
+      "op": "call",
+      "id": "r31",
+      "method": "distanceSqToPoint",
+      "args": [
+        {
+          "ref": "q34"
+        }
+      ],
+      "result": "r35"
+    },
+    {
+      "op": "new",
+      "id": "o36",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d37",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r38",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r38",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o36"
+        },
+        {
+          "ref": "d37"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v039",
+      "class": "Vector3",
+      "args": [4, 5, 3]
+    },
+    {
+      "op": "new",
+      "id": "v140",
+      "class": "Vector3",
+      "args": [4, 5, -3]
+    },
+    {
+      "op": "call",
+      "id": "r38",
+      "method": "distanceSqToSegment",
+      "args": [
+        {
+          "ref": "v039"
+        },
+        {
+          "ref": "v140"
+        }
+      ],
+      "result": "r41"
+    },
+    {
+      "op": "new",
+      "id": "o42",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d43",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r44",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r44",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o42"
+        },
+        {
+          "ref": "d43"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "p45",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "s46",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r44",
+      "method": "distanceSqToSegment",
+      "args": [
+        {
+          "ref": "v039"
+        },
+        {
+          "ref": "v140"
+        },
+        {
+          "ref": "p45"
+        },
+        {
+          "ref": "s46"
+        }
+      ],
+      "result": "r47"
+    },
+    {
+      "op": "new",
+      "id": "o48",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d49",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r50",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r50",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o48"
+        },
+        {
+          "ref": "d49"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n51",
+      "class": "Vector3",
+      "args": [0, 0, 1]
+    },
+    {
+      "op": "new",
+      "id": "p52",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p52",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n51"
+        },
+        -5
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r50",
+      "method": "distanceToPlane",
+      "args": [
+        {
+          "ref": "p52"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r50",
+      "method": "intersectsPlane",
+      "args": [
+        {
+          "ref": "p52"
+        }
+      ],
+      "result": "r53"
+    },
+    {
+      "op": "new",
+      "id": "o54",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d55",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r56",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r56",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o54"
+        },
+        {
+          "ref": "d55"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "n57",
+      "class": "Vector3",
+      "args": [0, 0, 1]
+    },
+    {
+      "op": "new",
+      "id": "p58",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p58",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n57"
+        },
+        -5
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r56",
+      "method": "intersectsPlane",
+      "args": [
+        {
+          "ref": "p58"
+        }
+      ],
+      "result": "r59"
+    },
+    {
+      "op": "new",
+      "id": "n60",
+      "class": "Vector3",
+      "args": [0, 0, 1]
+    },
+    {
+      "op": "new",
+      "id": "p61",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p61",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n60"
+        },
+        5
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r56",
+      "method": "intersectsPlane",
+      "args": [
+        {
+          "ref": "p61"
+        }
+      ],
+      "result": "r62"
+    },
+    {
+      "op": "new",
+      "id": "o63",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d64",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r65",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r65",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o63"
+        },
+        {
+          "ref": "d64"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t66",
+      "class": "Vector3",
+      "args": [7, 8, 9]
+    },
+    {
+      "op": "new",
+      "id": "n67",
+      "class": "Vector3",
+      "args": [0, 0, 1]
+    },
+    {
+      "op": "new",
+      "id": "p68",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p68",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n67"
+        },
+        -5
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r65",
+      "method": "intersectPlane",
+      "args": [
+        {
+          "ref": "p68"
+        },
+        {
+          "ref": "t66"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "o69",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d70",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r71",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r71",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o69"
+        },
+        {
+          "ref": "d70"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t72",
+      "class": "Vector3",
+      "args": [7, 8, 9]
+    },
+    {
+      "op": "new",
+      "id": "n73",
+      "class": "Vector3",
+      "args": [0, 0, 1]
+    },
+    {
+      "op": "new",
+      "id": "p74",
+      "class": "Plane",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "p74",
+      "method": "set",
+      "args": [
+        {
+          "ref": "n73"
+        },
+        5
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r71",
+      "method": "intersectPlane",
+      "args": [
+        {
+          "ref": "p74"
+        },
+        {
+          "ref": "t72"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "o75",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d76",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r77",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r77",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o75"
+        },
+        {
+          "ref": "d76"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c78",
+      "class": "Vector3",
+      "args": [0, 0, -5]
+    },
+    {
+      "op": "new",
+      "id": "s79",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s79",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c78"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r77",
+      "method": "intersectsSphere",
+      "args": [
+        {
+          "ref": "s79"
+        }
+      ],
+      "result": "r80"
+    },
+    {
+      "op": "new",
+      "id": "c81",
+      "class": "Vector3",
+      "args": [0, 0, 5]
+    },
+    {
+      "op": "new",
+      "id": "s82",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s82",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c81"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r77",
+      "method": "intersectsSphere",
+      "args": [
+        {
+          "ref": "s82"
+        }
+      ],
+      "result": "r83"
+    },
+    {
+      "op": "new",
+      "id": "lo84",
+      "class": "Vector3",
+      "args": [-1, -1, -5]
+    },
+    {
+      "op": "new",
+      "id": "hi85",
+      "class": "Vector3",
+      "args": [1, 1, -4]
+    },
+    {
+      "op": "new",
+      "id": "b86",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b86",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo84"
+        },
+        {
+          "ref": "hi85"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r77",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b86"
+        }
+      ],
+      "result": "r87"
+    },
+    {
+      "op": "new",
+      "id": "lo88",
+      "class": "Vector3",
+      "args": [-1, -1, 5]
+    },
+    {
+      "op": "new",
+      "id": "hi89",
+      "class": "Vector3",
+      "args": [1, 1, 6]
+    },
+    {
+      "op": "new",
+      "id": "b90",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b90",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo88"
+        },
+        {
+          "ref": "hi89"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r77",
+      "method": "intersectsBox",
+      "args": [
+        {
+          "ref": "b90"
+        }
+      ],
+      "result": "r91"
+    },
+    {
+      "op": "new",
+      "id": "o92",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d93",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r94",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r94",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o92"
+        },
+        {
+          "ref": "d93"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t95",
+      "class": "Vector3",
+      "args": [7, 8, 9]
+    },
+    {
+      "op": "new",
+      "id": "c96",
+      "class": "Vector3",
+      "args": [0, 0, -5]
+    },
+    {
+      "op": "new",
+      "id": "s97",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s97",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c96"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r94",
+      "method": "intersectSphere",
+      "args": [
+        {
+          "ref": "s97"
+        },
+        {
+          "ref": "t95"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "o98",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d99",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r100",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r100",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o98"
+        },
+        {
+          "ref": "d99"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t101",
+      "class": "Vector3",
+      "args": [7, 8, 9]
+    },
+    {
+      "op": "new",
+      "id": "c102",
+      "class": "Vector3",
+      "args": [0, 0, 5]
+    },
+    {
+      "op": "new",
+      "id": "s103",
+      "class": "Sphere",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "s103",
+      "method": "set",
+      "args": [
+        {
+          "ref": "c102"
+        },
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r100",
+      "method": "intersectSphere",
+      "args": [
+        {
+          "ref": "s103"
+        },
+        {
+          "ref": "t101"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "o104",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d105",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r106",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r106",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o104"
+        },
+        {
+          "ref": "d105"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t107",
+      "class": "Vector3",
+      "args": [7, 8, 9]
+    },
+    {
+      "op": "new",
+      "id": "lo108",
+      "class": "Vector3",
+      "args": [-1, -1, -5]
+    },
+    {
+      "op": "new",
+      "id": "hi109",
+      "class": "Vector3",
+      "args": [1, 1, -4]
+    },
+    {
+      "op": "new",
+      "id": "b110",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b110",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo108"
+        },
+        {
+          "ref": "hi109"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r106",
+      "method": "intersectBox",
+      "args": [
+        {
+          "ref": "b110"
+        },
+        {
+          "ref": "t107"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "o111",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d112",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r113",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r113",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o111"
+        },
+        {
+          "ref": "d112"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t114",
+      "class": "Vector3",
+      "args": [7, 8, 9]
+    },
+    {
+      "op": "new",
+      "id": "lo115",
+      "class": "Vector3",
+      "args": [-1, -1, 5]
+    },
+    {
+      "op": "new",
+      "id": "hi116",
+      "class": "Vector3",
+      "args": [1, 1, 6]
+    },
+    {
+      "op": "new",
+      "id": "b117",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "b117",
+      "method": "set",
+      "args": [
+        {
+          "ref": "lo115"
+        },
+        {
+          "ref": "hi116"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r113",
+      "method": "intersectBox",
+      "args": [
+        {
+          "ref": "b117"
+        },
+        {
+          "ref": "t114"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "a118",
+      "class": "Vector3",
+      "args": [-1, -1, -5]
+    },
+    {
+      "op": "new",
+      "id": "b119",
+      "class": "Vector3",
+      "args": [1, -1, -5]
+    },
+    {
+      "op": "new",
+      "id": "c120",
+      "class": "Vector3",
+      "args": [0, 1, -5]
+    },
+    {
+      "op": "new",
+      "id": "o121",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d122",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r123",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r123",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o121"
+        },
+        {
+          "ref": "d122"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t124",
+      "class": "Vector3",
+      "args": [7, 8, 9]
+    },
+    {
+      "op": "call",
+      "id": "r123",
+      "method": "intersectTriangle",
+      "args": [
+        {
+          "ref": "a118"
+        },
+        {
+          "ref": "b119"
+        },
+        {
+          "ref": "c120"
+        },
+        false,
+        {
+          "ref": "t124"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "o125",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "d126",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r127",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r127",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o125"
+        },
+        {
+          "ref": "d126"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "t128",
+      "class": "Vector3",
+      "args": [7, 8, 9]
+    },
+    {
+      "op": "call",
+      "id": "r127",
+      "method": "intersectTriangle",
+      "args": [
+        {
+          "ref": "a118"
+        },
+        {
+          "ref": "b119"
+        },
+        {
+          "ref": "c120"
+        },
+        true,
+        {
+          "ref": "t128"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m129",
+      "class": "Matrix4",
+      "args": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 3, 4, 1]
+    },
+    {
+      "op": "new",
+      "id": "o130",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d131",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r132",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r132",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o130"
+        },
+        {
+          "ref": "d131"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r132",
+      "method": "applyMatrix4",
+      "args": [
+        {
+          "ref": "m129"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "o133",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "d134",
+      "class": "Vector3",
+      "args": [0, 0, -1]
+    },
+    {
+      "op": "new",
+      "id": "r135",
+      "class": "Ray",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "r135",
+      "method": "set",
+      "args": [
+        {
+          "ref": "o133"
+        },
+        {
+          "ref": "d134"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "r135",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "r04"
+        }
+      ],
+      "result": "r136"
+    }
+  ],
+  "observe": [
+    {
+      "id": "r03",
+      "kind": "number",
+      "path": "origin.x"
+    },
+    {
+      "id": "r03",
+      "kind": "number",
+      "path": "direction.z"
+    },
+    {
+      "id": "r04",
+      "kind": "number",
+      "path": "origin.x"
+    },
+    {
+      "id": "r04",
+      "kind": "number",
+      "path": "direction.z"
+    },
+    {
+      "id": "r07",
+      "kind": "number",
+      "path": "origin.x"
+    },
+    {
+      "id": "r07",
+      "kind": "number",
+      "path": "direction.y"
+    },
+    {
+      "id": "r15",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r18",
+      "kind": "number",
+      "path": "direction.x"
+    },
+    {
+      "id": "r18",
+      "kind": "number",
+      "path": "direction.y"
+    },
+    {
+      "id": "r22",
+      "kind": "number",
+      "path": "origin.x"
+    },
+    {
+      "id": "r28",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r33",
+      "kind": "number"
+    },
+    {
+      "id": "r35",
+      "kind": "number"
+    },
+    {
+      "id": "r41",
+      "kind": "number"
+    },
+    {
+      "id": "r47",
+      "kind": "number"
+    },
+    {
+      "id": "p45",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "s46",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r53",
+      "kind": "boolean"
+    },
+    {
+      "id": "r59",
+      "kind": "boolean"
+    },
+    {
+      "id": "r62",
+      "kind": "boolean"
+    },
+    {
+      "id": "t66",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t72",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r80",
+      "kind": "boolean"
+    },
+    {
+      "id": "r83",
+      "kind": "boolean"
+    },
+    {
+      "id": "r87",
+      "kind": "boolean"
+    },
+    {
+      "id": "r91",
+      "kind": "boolean"
+    },
+    {
+      "id": "t95",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t101",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t107",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t114",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t124",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t128",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r132",
+      "kind": "number",
+      "path": "origin.x"
+    },
+    {
+      "id": "r132",
+      "kind": "number",
+      "path": "direction.z"
+    },
+    {
+      "id": "r136",
+      "kind": "boolean"
+    }
+  ]
+}

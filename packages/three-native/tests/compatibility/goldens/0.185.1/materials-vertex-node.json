@@ -1,0 +1,27 @@
+{
+  "name": "materials-vertex-node",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — NodeMaterial.vertexNode: a screen-space quad (vec4(positionGeometry.xy, 0, 1) scaled and moved) and a world-space wave through cameraProjectionMatrix and cameraViewMatrix, which ignores the mesh's own position as three's vertexNode does",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:e9c0710d3d3eb2ff582485a7bb2c901b4bdbd703028956a84dcc25006a10c20a",
+      "decimal": "e9c0710d3d3eb2ff582485a7bb2c901b4bdbd703028956a84dcc25006a10c20a"
+    }
+  ],
+  "render": {
+    "png": "materials-vertex-node.png",
+    "pngSha256": "e9c0710d3d3eb2ff582485a7bb2c901b4bdbd703028956a84dcc25006a10c20a",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

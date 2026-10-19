@@ -1,6 +1,366 @@
 import { expect, test } from "vitest";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 
 import { AdbAndroidDriver, parseAndroidConsole } from "../src/runner/android.js";
+import { runDevicePlaytest } from "../src/runner/androidRunner.js";
+import { PlaytestBridgeError } from "../src/runner/bridgeClient.js";
+import {
+  androidMailboxPaths,
+  type IDevicePlaytestTransport,
+} from "../src/runner/deviceTransport.js";
+import { PLAYTEST_PROTOCOL_LIMITS } from "../src/protocol.js";
+
+test("Android console attributes errors to the launched app rather than another running game", async () => {
+  const own = "I/MystralRuntime(15365): TN_NATIVE_SMOKE_FIRST_FRAME";
+  const driver = new AdbAndroidDriver({
+    activity: ".MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.threenative.vq01",
+    user: "0",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+    args,
+  ) => {
+    if (args[1] === "pidof") return "15365\n";
+    if (args[0] === "logcat" && args[1] === "-d")
+      return [
+        own,
+        "E/BufferQueueProducer(30108): SurfaceView[com.threenative.game/com.threenative.runtime.MystralActivity] BufferQueue has been abandoned",
+        'E/MystralRuntime(30108): TN_SURFACE_ACQUIRE_FAILED:{"status":5}',
+      ].join("\n");
+    return "";
+  };
+  await driver.prepare("http://127.0.0.1:41777/playtest");
+  expect(await driver.captureConsole()).toEqual([{ text: own, type: "log" }]);
+});
+
+test("Android console retains its launched pid's errors after that process exits", async () => {
+  let alive = true;
+  const error = "E/MystralRuntime(15365): TN_NATIVE_START_FAILED: authored startup failed";
+  const driver = new AdbAndroidDriver({
+    activity: ".MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.threenative.vq01",
+    user: "0",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+    args,
+  ) => {
+    if (args[1] === "pidof") return alive ? "15365\n" : "";
+    if (args[0] === "logcat" && args[1] === "-d") return error;
+    return "";
+  };
+  await driver.prepare("http://127.0.0.1:41777/playtest");
+  alive = false;
+  expect(await driver.captureConsole()).toEqual([{ text: error, type: "error" }]);
+});
+
+test.each([
+  "E/platform(15365): driver-specific diagnostic",
+  "F/VendorDisplay(15365): vendor-specific diagnostic",
+])(
+  "Android console preserves runtime tag selection for own-PID vendor records: %s",
+  async (vendor) => {
+    const own = "E/MystralRuntime(15365): TN_NATIVE_START_FAILED: authored startup failed";
+    const driver = new AdbAndroidDriver({
+      activity: ".MystralActivity",
+      adbPath: "/nonexistent/adb",
+      packageName: "com.threenative.vq01",
+      user: "0",
+    });
+    (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+      args,
+    ) => {
+      if (args[1] === "pidof") return "15365\n";
+      if (args[0] === "logcat" && args[1] === "-d") return `${vendor}\n${own}`;
+      return "";
+    };
+    await driver.prepare("http://127.0.0.1:41777/playtest");
+    expect(await driver.captureConsole()).toEqual([{ text: own, type: "error" }]);
+  },
+);
+
+test.each(
+  ["AndroidRuntime", "libc", "DEBUG"].flatMap((tag) =>
+    ["E", "F"].map((level) => `${level}/${tag.padEnd(8, " ")}(15365): startup crash evidence`),
+  ),
+)(
+  "Android console retains own-PID critical crash records beyond runtime tags: %s",
+  async (crash) => {
+    const driver = new AdbAndroidDriver({
+      activity: ".MystralActivity",
+      adbPath: "/nonexistent/adb",
+      packageName: "com.threenative.vq01",
+      user: "0",
+    });
+    (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+      args,
+    ) => {
+      if (args[1] === "pidof") return "15365\n";
+      if (args[0] === "logcat" && args[1] === "-d") return crash;
+      return "";
+    };
+    await driver.prepare("http://127.0.0.1:41777/playtest");
+    expect(await driver.captureConsole()).toEqual([{ text: crash, type: "error" }]);
+  },
+);
+
+test.each([
+  [
+    "activity launch",
+    "I/ActivityManager( 575): Start proc 15365:com.threenative.vq01/u0a217 for next-top-activity",
+    "E/AndroidRuntime(15365): FATAL EXCEPTION: main",
+  ],
+  [
+    "Java crash identity",
+    "E/AndroidRuntime(15365): Process: com.threenative.vq01, PID: 15365",
+    "E/AndroidRuntime(15365): java.lang.IllegalStateException: startup failed",
+  ],
+  [
+    "native tombstone",
+    "F/DEBUG(16000): pid: 15365, tid: 15365, name: native >>> com.threenative.vq01 <<<",
+    "F/libc(15365): Fatal signal 6 (SIGABRT)",
+  ],
+])(
+  "Android console retains a crash before pidof resolves via %s",
+  async (_kind, identity, error) => {
+    const driver = new AdbAndroidDriver({
+      activity: ".MystralActivity",
+      adbPath: "/nonexistent/adb",
+      packageName: "com.threenative.vq01",
+      user: "0",
+    });
+    (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+      args,
+    ) => {
+      if (args[0] === "logcat" && args[1] === "-d")
+        return `${identity}\n${error}\nE/MystralRuntime(30108): unrelated game failed`;
+      return "";
+    };
+    await driver.prepare("http://127.0.0.1:41777/playtest");
+    const entries = await driver.captureConsole();
+    expect(entries).toContainEqual({ text: error, type: "error" });
+    expect(entries.some(({ text }) => text.includes("30108"))).toBe(false);
+    if (identity.startsWith("F/"))
+      expect(entries).toContainEqual({ text: identity, type: "error" });
+  },
+);
+
+test.each(["", "15365invalid", "0"])(
+  "Android console fails closed with evidence when pidof returns %j and no launch identity exists",
+  async (pidof) => {
+    const error = "E/AndroidRuntime(15365): FATAL EXCEPTION before any process identity";
+    const driver = new AdbAndroidDriver({
+      activity: ".MystralActivity",
+      adbPath: "/nonexistent/adb",
+      packageName: "com.threenative.vq01",
+      user: "0",
+    });
+    (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+      args,
+    ) => {
+      if (args[1] === "pidof") return pidof;
+      if (args[0] === "logcat" && args[1] === "-d") return error;
+      return "";
+    };
+    await driver.prepare("http://127.0.0.1:41777/playtest");
+    await expect(driver.captureConsole()).rejects.toThrow(
+      "TN_PLAYTEST_ANDROID_CONSOLE_UNATTRIBUTED",
+    );
+    await expect(driver.captureConsole()).rejects.toThrow(error);
+  },
+);
+
+test.each(["0", "15365invalid"])(
+  "Android console rejects invalid historical process identity %s",
+  async (pid) => {
+    const packageName = "com.threenative.vq01";
+    const raw = [
+      `I/ActivityManager(575): Start proc ${pid}:${packageName}/u0a217`,
+      `E/AndroidRuntime(15365): Process: ${packageName}, PID: ${pid}`,
+      `F/DEBUG(16000): pid: ${pid}, tid: 15365, name: native >>> ${packageName} <<<`,
+    ].join("\n");
+    const driver = new AdbAndroidDriver({
+      activity: ".MystralActivity",
+      adbPath: "/nonexistent/adb",
+      packageName,
+      user: "0",
+    });
+    (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+      args,
+    ) => (args[0] === "logcat" && args[1] === "-d" ? raw : "");
+    await driver.prepare("http://127.0.0.1:41777/playtest");
+    await expect(driver.captureConsole()).rejects.toThrow(
+      "TN_PLAYTEST_ANDROID_CONSOLE_UNATTRIBUTED",
+    );
+  },
+);
+
+test.each([false, true])(
+  "unknown console attribution cannot pass with diagnostics disabled; prior bridge failure %s",
+  async (bridgeFailed) => {
+    const projectPath = await makeTempDir("playtest-console-attribution-");
+    const packageName = "com.threenative.vq01";
+    const raw = `${"I/AndroidRuntime(15365): unclassified launch\n".repeat(100)}E/AndroidRuntime(15365): boot crashed`;
+    await writeFile(
+      join(projectPath, "scenario.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        name: "console-attribution",
+        warmupFrames: 0,
+        steps: [{ waitFrames: 1 }],
+        viewport: { width: 960, height: 640 },
+        artifacts: { screenshots: false },
+        assert: {
+          resources: [{ id: "state", path: "frames", changed: true }],
+          diagnostics: {
+            noConsoleErrors: false,
+            noRuntimeDiagnostics: false,
+            noNetworkErrors: false,
+            networkErrorsOptOutReason: "No Android network observer.",
+            consoleErrorsOptOutReason:
+              "This test disables JavaScript console policy to verify mandatory attribution.",
+            runtimeDiagnosticsOptOutReason: "This test isolates console attribution.",
+          },
+        },
+      }),
+    );
+    const driver = new AdbAndroidDriver({
+      activity: ".MystralActivity",
+      adbPath: "/nonexistent/adb",
+      packageName,
+      user: "0",
+    });
+    (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+      args,
+    ) => {
+      if (args[0] === "logcat" && args[1] === "-d") return raw;
+      if (args.join(" ") === "shell wm size") return "Physical size: 960x640";
+      return "";
+    };
+    driver.isAlive = async () => true;
+    driver.stop = async () => {};
+    let tick = 0;
+    const transport: IDevicePlaytestTransport = {
+      capabilities: ["browser.console", "browser.screenshot"],
+      start: async () => {},
+      close: async () => {},
+      waitForBridge: async () => true,
+      async call<T>(method: string): Promise<T> {
+        if (method === "describe")
+          return {
+            capabilities: ["runtime.resources", "runtime.fixedStep"],
+            limits: PLAYTEST_PROTOCOL_LIMITS,
+            name: "console-attribution",
+            protocolVersion: 1,
+          } as T;
+        if (method === "ready") {
+          if (bridgeFailed)
+            throw new PlaytestBridgeError({
+              code: "TN_PLAYTEST_STARTUP_HOST_EXITED",
+              message: "Startup crashed",
+              severity: "error",
+              fix: { instruction: "Inspect the startup console." },
+            });
+          return { ready: true } as T;
+        }
+        if (method === "sample")
+          return {
+            clock: { mode: "fixed-step", tick: ++tick },
+            resources: { state: { frames: tick } },
+            entities: [],
+            diagnostics: [],
+          } as T;
+        return {} as T;
+      },
+    };
+    const artifactDirectory = join(projectPath, "artifacts");
+    const run = runDevicePlaytest(
+      {
+        projectPath,
+        scenarioPath: "scenario.json",
+        artifactDirectory,
+        headless: true,
+        timeoutMs: 1000,
+        trace: false,
+        url: "",
+        target: "android",
+      },
+      {
+        driver,
+        mailboxPaths: androidMailboxPaths(packageName),
+        name: "android",
+        processName: packageName,
+        transport,
+      },
+    );
+    if (!bridgeFailed) {
+      await expect(run).rejects.toThrow("TN_PLAYTEST_ANDROID_CONSOLE_UNATTRIBUTED");
+    } else {
+      expect((await run).pass).toBe(false);
+      const console = JSON.parse(await readFile(join(artifactDirectory, "console.json"), "utf8"));
+      expect(console).toContainEqual({
+        text: expect.stringContaining("TN_PLAYTEST_ANDROID_CONSOLE_UNATTRIBUTED"),
+        type: "error",
+      });
+      expect(console[0].text).toContain("boot crashed");
+      expect(console[0].text.length).toBeLessThan(2300);
+    }
+  },
+);
+
+test("Android console keeps app errors and explicit package crash records from system reporters", async () => {
+  const own = "E/AndroidRuntime(15365): FATAL EXCEPTION: main";
+  const reported = "E/ActivityManager( 575): Process com.threenative.vq01 (pid 15365) has crashed";
+  const driver = new AdbAndroidDriver({
+    activity: ".MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.threenative.vq01",
+    user: "0",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+    args,
+  ) => {
+    if (args[1] === "pidof") return "15365\n";
+    if (args[0] === "logcat" && args[1] === "-d")
+      return [
+        own,
+        reported,
+        "E/ActivityManager( 575): Process com.threenative.vq01.other (pid 30108) has crashed",
+      ].join("\n");
+    return "";
+  };
+  await driver.prepare("http://127.0.0.1:41777/playtest");
+  expect(await driver.captureConsole()).toEqual([
+    { text: own, type: "error" },
+    { text: reported, type: "error" },
+  ]);
+});
+
+test("Android console starts a new attribution scope on each prepare", async () => {
+  let pid = "15365";
+  const current = "I/MystralRuntime(16000): current launch";
+  const driver = new AdbAndroidDriver({
+    activity: ".MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.threenative.vq01",
+    user: "0",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+    args,
+  ) => {
+    if (args[1] === "pidof") return pid;
+    if (args[0] === "logcat" && args[1] === "-d")
+      return `E/MystralRuntime(15365): prior launch\n${current}`;
+    return "";
+  };
+  await driver.prepare("http://127.0.0.1:41777/playtest");
+  pid = "16000";
+  await driver.prepare("http://127.0.0.1:41777/playtest");
+  expect(await driver.captureConsole()).toEqual([{ text: current, type: "log" }]);
+});
 
 test("Android console starts after stopping the previous process and keeps new launch errors", async () => {
   let log = "";
@@ -12,6 +372,7 @@ test("Android console starts after stopping the previous process and keeps new l
     user: "0",
   });
   (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (args) => {
+    if (args[1] === "pidof") return "8001\n";
     if (args.includes("force-stop")) {
       log += "E/InputDispatcher( 658): channel 'com.example.game/MystralActivity' ~ Channel is unrecoverably broken and will be disposed!\n";
     }
@@ -46,6 +407,7 @@ test("Android console capture retries a dropped logcat transport instead of fail
   });
   (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (args) => {
     calls.push(args);
+    if (args[1] === "pidof") return "8001\n";
     if (args[0] === "logcat" && args[1] === "-d") {
       logcatAttempts += 1;
       if (logcatAttempts === 1) throw new Error("adb logcat -d -v brief failed: I/SDL     ( 8001): [Mystral] Runtime ini");

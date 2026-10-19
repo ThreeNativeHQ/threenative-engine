@@ -203,6 +203,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
   private touchViewport?: IAndroidTouchViewport;
   private readonly user?: string;
   private activeUser?: string;
+  private readonly consolePids = new Set<string>();
   /** Set by a lifecycle `rotate`, whose display lock `stop()` has to free on its own account. */
   private lifecycleRotationLocked = false;
   private viewportPresented = false;
@@ -234,6 +235,7 @@ export class AdbAndroidDriver implements IAndroidDriver {
     if (viewport !== undefined) await this.presentViewport(viewport);
     // Stopping the old app can log a broken input channel. Capture only the new launch.
     await this.adb(["logcat", "-c"]);
+    this.consolePids.clear();
     await this.adb([
       "shell",
       "am",
@@ -253,6 +255,13 @@ export class AdbAndroidDriver implements IAndroidDriver {
       // the same two variables in the environment mean the same thing on both device lanes.
       ...hostCssUiExtras(),
     ]);
+    await this.rememberConsolePids();
+  }
+
+  private async rememberConsolePids(): Promise<void> {
+    const output = await this.adb(["shell", "pidof", this.options.packageName]).catch(() => "");
+    for (const pid of output.trim().split(/\s+/u))
+      if (/^[1-9]\d*$/u.test(pid)) this.consolePids.add(pid);
   }
 
   private async resolveUser(): Promise<string> {
@@ -424,7 +433,31 @@ export class AdbAndroidDriver implements IAndroidDriver {
       }
     }
     if (output === undefined) throw failedLogcat(args.join(" "), lastError);
-    return parseAndroidConsole(output);
+    await this.rememberConsolePids();
+    // A launch may crash before pidof sees it; the cleared log retains its process identity.
+    for (const line of output.split(/\r?\n/u)) {
+      const launch = /\bStart proc ([1-9]\d*):([^\s/]+)/u.exec(line);
+      const java = /\bProcess:\s*([^,\s]+),\s*PID:\s*([1-9]\d*)\b/u.exec(line);
+      const native = /\bpid:\s*([1-9]\d*),.*>>>\s*([^<\s]+)\s*<<</u.exec(line);
+      const name = launch?.[2] ?? java?.[1] ?? native?.[2];
+      const pid = launch?.[1] ?? java?.[2] ?? native?.[1];
+      if (
+        pid !== undefined &&
+        (name === this.options.packageName || name?.startsWith(`${this.options.packageName}:`))
+      )
+        this.consolePids.add(pid);
+    }
+    if (this.consolePids.size === 0) {
+      const excerpt =
+        output.length > LOGCAT_ERROR_LIMIT ? `…${output.slice(-LOGCAT_ERROR_LIMIT)}` : output;
+      throw new Error(
+        `TN_PLAYTEST_ANDROID_CONSOLE_UNATTRIBUTED: no process identity for '${this.options.packageName}'; console tail:\n${excerpt}`,
+      );
+    }
+    return parseAndroidConsoleEntries(output, {
+      packageName: this.options.packageName,
+      pids: this.consolePids,
+    });
   }
 
   async screenshot(path: string): Promise<void> {
@@ -758,19 +791,46 @@ function failedLogcat(command: string, message: string): Error {
 }
 
 export function parseAndroidConsole(output: string): Array<{ text: string; type: string }> {
-  return output
-    .split(/\r?\n/u)
-    // system_server and the compositor name the activity while reporting on themselves.
-    .filter((line) => !/^[VDIWEF]\/(?:SurfaceSyncGroup|TransitionController)\(/u.test(line))
-    .filter((line) => /Mystral|THREENATIVE|chromium/u.test(line))
-    .map((text) => ({
-      text,
-      type: isPlatformWebViewNoise(text)
-        ? "log"
-        : /^(?:E|F)\//u.test(text) || /\b(?:Error|FATAL|FAILED)\b/u.test(text)
-          ? "error"
-          : "log",
-    }));
+  return parseAndroidConsoleEntries(output);
+}
+
+function parseAndroidConsoleEntries(
+  output: string,
+  app?: { packageName: string; pids: ReadonlySet<string> },
+): Array<{ text: string; type: string }> {
+  const packageRecord =
+    app === undefined
+      ? undefined
+      : new RegExp(
+          `(?:^|[^\\w.])${app.packageName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?=[:/\\s,})]|$)`,
+          "u",
+        );
+  return (
+    output
+      .split(/\r?\n/u)
+      // system_server and the compositor name the activity while reporting on themselves.
+      .filter((line) => !/^[VDIWEF]\/(?:SurfaceSyncGroup|TransitionController)\(/u.test(line))
+      .filter((line) => {
+        if (app === undefined) return /Mystral|THREENATIVE|chromium/u.test(line);
+        if (app.pids.size === 0) return line.trim().length > 0;
+        const pid = /^[VDIWEF]\/[^\n(]+\(\s*(\d+)\)/u.exec(line)?.[1];
+        return (
+          (pid !== undefined &&
+            app.pids.has(pid) &&
+            (/Mystral|THREENATIVE|chromium/u.test(line) ||
+              /^[EF]\/(?:AndroidRuntime|libc|DEBUG)\s*\(/u.test(line))) ||
+          (/^[EF]\//u.test(line) && packageRecord!.test(line))
+        );
+      })
+      .map((text) => ({
+        text,
+        type: isPlatformWebViewNoise(text)
+          ? "log"
+          : /^(?:E|F)\//u.test(text) || /\b(?:Error|FATAL|FAILED)\b/u.test(text)
+            ? "error"
+            : "log",
+      }))
+  );
 }
 
 /**

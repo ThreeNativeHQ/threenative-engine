@@ -425,6 +425,14 @@ export function evaluateDiagnosticsPolicy(
       suggestion: "Inspect runtime diagnostics and bundle validation output before replaying the scenario.",
     });
   }
+  if (report.observations?.console.some(({ text }) => /^\s*\[Playtest\] TN_V8_FRAME_FAILED:/u.test(text))) {
+    diagnostics.push({
+      code: "TN_PLAYTEST_NATIVE_FRAME_FAILED",
+      message: "The native frame callback threw. A failed frame cannot pass a playtest.",
+      severity: "error",
+      suggestion: "Inspect console.json and fix the first TN_V8_FRAME_FAILED error.",
+    });
+  }
   const capturedConsoleErrors = consoleErrors(report.observations?.console ?? []);
   if (policy.noConsoleErrors && capturedConsoleErrors.length > 0) {
     diagnostics.push({

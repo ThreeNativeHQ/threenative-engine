@@ -1,0 +1,476 @@
+{
+  "name": "shadows-directional",
+  "adaptedFrom": "original \u2014 a directional light's PCF shadow map (bias, normalBias, a fitted orthographic shadow camera, 1024 map) on Standard, Lambert and Phong meshes; the box casts but does not receive, and a slab inside the sphere's shadow does neither",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.x",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 4.5
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 6
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0.3, 0.3]
+    },
+    {
+      "op": "new",
+      "id": "sun",
+      "class": "DirectionalLight",
+      "args": [16777215, 2.5]
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.x",
+      "value": -3
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.y",
+      "value": 5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.z",
+      "value": -3
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "castShadow",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.bias",
+      "value": -0.0005
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.normalBias",
+      "value": 0.02
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.camera.left",
+      "value": -5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.camera.right",
+      "value": 5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.camera.top",
+      "value": 5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.camera.bottom",
+      "value": -5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.mapSize.width",
+      "value": 1024
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "shadow.mapSize.height",
+      "value": 1024
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [11189196, 3355443, 0.6]
+    },
+    {
+      "op": "new",
+      "id": "floorGeometry",
+      "class": "PlaneGeometry",
+      "args": [10, 10]
+    },
+    {
+      "op": "new",
+      "id": "floorMaterial",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "floorMaterial",
+      "path": "roughness",
+      "value": 0.9
+    },
+    {
+      "op": "new",
+      "id": "floor",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "floorGeometry"
+        },
+        {
+          "ref": "floorMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "floor",
+      "path": "rotation.x",
+      "value": -1.5707963267948966
+    },
+    {
+      "op": "set",
+      "id": "floor",
+      "path": "receiveShadow",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "sphereGeometry",
+      "class": "SphereGeometry",
+      "args": [0.8, 32, 16]
+    },
+    {
+      "op": "new",
+      "id": "sphereMaterial",
+      "class": "MeshLambertMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "sphereMaterial",
+      "path": "color.g",
+      "value": 0.7
+    },
+    {
+      "op": "set",
+      "id": "sphereMaterial",
+      "path": "color.b",
+      "value": 0.4
+    },
+    {
+      "op": "new",
+      "id": "sphere",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "sphereGeometry"
+        },
+        {
+          "ref": "sphereMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "sphere",
+      "path": "position.y",
+      "value": 1.1
+    },
+    {
+      "op": "set",
+      "id": "sphere",
+      "path": "position.x",
+      "value": -0.8
+    },
+    {
+      "op": "set",
+      "id": "sphere",
+      "path": "castShadow",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "sphere",
+      "path": "receiveShadow",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "boxGeometry",
+      "class": "BoxGeometry",
+      "args": [1, 1.6, 1]
+    },
+    {
+      "op": "new",
+      "id": "boxMaterial",
+      "class": "MeshPhongMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "boxMaterial",
+      "path": "color.g",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "boxMaterial",
+      "path": "color.b",
+      "value": 0.3
+    },
+    {
+      "op": "new",
+      "id": "box",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "boxGeometry"
+        },
+        {
+          "ref": "boxMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "box",
+      "path": "position.x",
+      "value": 1.2
+    },
+    {
+      "op": "set",
+      "id": "box",
+      "path": "position.y",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "box",
+      "path": "position.z",
+      "value": -0.6
+    },
+    {
+      "op": "set",
+      "id": "box",
+      "path": "rotation.y",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "box",
+      "path": "castShadow",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "slabGeometry",
+      "class": "BoxGeometry",
+      "args": [1.2, 0.05, 1.2]
+    },
+    {
+      "op": "new",
+      "id": "slabMaterial",
+      "class": "MeshLambertMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "slabMaterial",
+      "path": "color.r",
+      "value": 0.55
+    },
+    {
+      "op": "set",
+      "id": "slabMaterial",
+      "path": "color.g",
+      "value": 0.75
+    },
+    {
+      "op": "new",
+      "id": "slab",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "slabGeometry"
+        },
+        {
+          "ref": "slabMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "slab",
+      "path": "position.x",
+      "value": -0.14
+    },
+    {
+      "op": "set",
+      "id": "slab",
+      "path": "position.y",
+      "value": 0.025
+    },
+    {
+      "op": "set",
+      "id": "slab",
+      "path": "position.z",
+      "value": 0.66
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "slab"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "floor"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sphere"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "box"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sun"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "sun",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "sun",
+      "path": "shadow.bias",
+      "kind": "number"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb",
+    "shadowMap": true
+  }
+}

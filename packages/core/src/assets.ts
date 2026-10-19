@@ -7,6 +7,7 @@ import {
   Mesh,
   NoColorSpace,
   Object3D,
+  RGBA_ASTC_4x4_Format,
   SRGBColorSpace,
   Texture,
   type TextureLoader,
@@ -189,19 +190,78 @@ interface ICompiledLightmap {
 }
 
 const MANIFEST_VERSION = 1;
+const ASTC_FORMAT = "astc4x4";
 
 function entryUsesKtx2(entry: unknown): boolean {
   if (!isRecord(entry)) return false;
   if (typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)) return true;
-  return (
-    Array.isArray(entry.lightmaps) &&
-    entry.lightmaps.some(
-      (lightmap) =>
-        isRecord(lightmap) &&
-        typeof lightmap.output === "string" &&
-        /\.ktx2$/iu.test(lightmap.output),
+  if (
+    Array.isArray(entry.extensions) &&
+    entry.extensions.some(
+      (extension) => extension === "KHR_texture_basisu" || extension === "EXT_texture_astc",
     )
+  )
+    return true;
+  const embeddedTextures = entry.embeddedTextures;
+  if (
+    isRecord(embeddedTextures) &&
+    isRecord(embeddedTextures.formats) &&
+    Object.values(embeddedTextures.formats).some(
+      (format) => typeof format === "string" && format !== "none",
+    )
+  )
+    return true;
+  return [entry.lightmaps, entry.sharedImages].some(
+    (outputs) =>
+      Array.isArray(outputs) &&
+      outputs.some(
+        (item) =>
+          isRecord(item) && typeof item.output === "string" && /\.ktx2$/iu.test(item.output),
+      ),
   );
+}
+
+interface IManifestAstcAsset {
+  readonly logicalPath: string;
+  readonly output: string;
+}
+
+function manifestOutput(entry: Record<string, unknown>, fallback: string): string {
+  return typeof entry.output === "string" ? entry.output : fallback;
+}
+
+function firstRawAstcAsset(logicalPath: string, entry: unknown): IManifestAstcAsset | undefined {
+  if (!isRecord(entry)) return undefined;
+  const output = manifestOutput(entry, logicalPath);
+  if (entry.format === ASTC_FORMAT) return { logicalPath, output };
+  if (Array.isArray(entry.lightmaps)) {
+    const lightmap = entry.lightmaps.find((item) => isRecord(item) && item.format === ASTC_FORMAT);
+    if (isRecord(lightmap)) return { logicalPath, output: manifestOutput(lightmap, output) };
+  }
+  if (Array.isArray(entry.sharedImages)) {
+    const sharedImage = entry.sharedImages.find(
+      (item) => isRecord(item) && item.codec === ASTC_FORMAT,
+    );
+    if (isRecord(sharedImage)) return { logicalPath, output: manifestOutput(sharedImage, output) };
+  }
+  const embeddedTextures = entry.embeddedTextures;
+  if (
+    isRecord(embeddedTextures) &&
+    isRecord(embeddedTextures.formats) &&
+    Object.values(embeddedTextures.formats).some((format) => format === ASTC_FORMAT)
+  )
+    return { logicalPath, output };
+  return undefined;
+}
+
+function firstRawAstcManifestAsset(
+  manifest: IAssetManifest | undefined,
+): IManifestAstcAsset | undefined {
+  for (const [logicalPath, entry] of Object.entries(manifest?.entries ?? {})) {
+    const asset = firstRawAstcAsset(logicalPath, entry);
+    if (asset !== undefined) return asset;
+  }
+  return undefined;
 }
 
 function compiledLightmaps(entry: unknown, logicalPath: string): readonly ICompiledLightmap[] {
@@ -510,6 +570,39 @@ export async function createKtx2Loader(options: {
   return loader as unknown as IKTX2LoaderLike;
 }
 
+function hasAstcSupport(loader: IKTX2LoaderLike | undefined): boolean {
+  return (
+    (loader as (IKTX2LoaderLike & { workerConfig?: { astcSupported?: boolean } }) | undefined)
+      ?.workerConfig?.astcSupported === true
+  );
+}
+
+function astcUnsupported(asset: IManifestAstcAsset): Error {
+  return new Error(
+    `TN_ASSETS_ASTC_UNSUPPORTED: '${asset.logicalPath}' uses raw ASTC 4x4 output '${asset.output}', but the renderer lacks ASTC texture-compression support.`,
+  );
+}
+
+async function prepareCompressedTextures(
+  manifest: IAssetManifest | undefined,
+  loader: Promise<IKTX2LoaderLike | undefined>,
+): Promise<void> {
+  const astcAsset = firstRawAstcManifestAsset(manifest);
+  if (astcAsset !== undefined) {
+    try {
+      const shared = await loader;
+      if (!hasAstcSupport(shared)) throw astcUnsupported(astcAsset);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("TN_ASSETS_KTX2_UNSUPPORTED:")) {
+        throw astcUnsupported(astcAsset);
+      }
+      throw error;
+    }
+    return;
+  }
+  if (Object.values(manifest?.entries ?? {}).some(entryUsesKtx2)) await loader;
+}
+
 /**
  * Widen every quantized `POSITION` a loaded model carries back to float32.
  *
@@ -688,10 +781,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       ? undefined
       : (() => {
           const loader = createKtx2Loader({ basePath, renderer: options.renderer });
-          const ready = manifestOnce().then(async (manifest) => {
-            const requiresKtx2 = Object.values(manifest?.entries ?? {}).some(entryUsesKtx2);
-            if (requiresKtx2) await loader;
-          });
+          const ready = manifestOnce().then((manifest) =>
+            prepareCompressedTextures(manifest, loader),
+          );
           loader.catch(() => undefined);
           ready.catch(() => undefined);
           return { loader, ready };
@@ -717,7 +809,14 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         `TN_ASSETS_KTX2_UNPROBED: '${url}' is compiled compressed output but the provided renderer exposes no support-detection surface (neither WebGPU features nor WebGL extensions).`,
       );
     }
-    return loadWith(shared, url);
+    const texture = await loadWith(shared, url);
+    if (texture.format === RGBA_ASTC_4x4_Format && !hasAstcSupport(shared)) {
+      texture.dispose();
+      throw new Error(
+        `TN_ASSETS_ASTC_UNSUPPORTED: '${url}' contains raw ASTC 4x4 but the renderer lacks ASTC texture-compression support.`,
+      );
+    }
+    return texture;
   };
 
   const attachCompiledLightmaps = async (logicalPath: string, value: unknown): Promise<void> => {
@@ -950,13 +1049,53 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         const extensions = declaredExtensions(data);
         const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
         const loader = new GLTFLoader();
-        // Models carrying KHR_texture_basisu textures transcode through the same shared,
-        // support-detected instance `texture()` uses — never a second detection pass.
-        if (compressedTextures !== undefined && extensions.has("KHR_texture_basisu")) {
-          const shared = await compressedTextures.loader;
+        // Both glTF texture extensions use the same support-detected instance as texture().
+        const astcExtension = "EXT_texture_astc";
+        const hasBasis = extensions.has("KHR_texture_basisu");
+        const hasAstc = extensions.has(astcExtension);
+        let shared: IKTX2LoaderLike | undefined;
+        if (compressedTextures !== undefined && (hasBasis || hasAstc)) {
+          try {
+            shared = await compressedTextures.loader;
+          } catch (error) {
+            // Only ASTC-only models may select their ordinary fallback on capability refusal.
+            // Import/setup failures and the existing Basis contract still reject unchanged.
+            if (
+              hasBasis ||
+              !(error instanceof Error) ||
+              !error.message.startsWith("TN_ASSETS_KTX2_UNSUPPORTED:")
+            )
+              throw error;
+          }
           if (shared !== undefined) {
             loader.setKTX2Loader(shared as unknown as Parameters<typeof loader.setKTX2Loader>[0]);
           }
+        }
+        if (hasAstc) {
+          const astcLoader = shared;
+          const astcSupported = hasAstcSupport(astcLoader);
+          // EXT_texture_astc is an official vendor draft. Borrow Three's Basis plugin handoff,
+          // but raw ASTC cannot use Basis's format fallback and needs this explicit GPU guard.
+          loader.register((parser) => {
+            if (!astcSupported && parser.json.extensionsRequired?.includes(astcExtension)) {
+              throw new Error(
+                "TN_ASSETS_ASTC_UNSUPPORTED: required EXT_texture_astc needs a renderer with ASTC texture-compression support.",
+              );
+            }
+            return {
+              name: astcExtension,
+              loadTexture(textureIndex) {
+                const extension = parser.json.textures[textureIndex].extensions?.[astcExtension];
+                if (extension === undefined || !astcSupported || astcLoader === undefined)
+                  return null;
+                return parser.loadTextureImage(
+                  textureIndex,
+                  extension.source,
+                  astcLoader as NonNullable<Parameters<typeof loader.setKTX2Loader>[0]>,
+                );
+              },
+            };
+          });
         }
         // three's own decoder embeds its WASM; it compiles only once a compressed model is
         // actually loaded. The native bundle inlines this branch (no runtime import remains),
@@ -977,7 +1116,13 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // The discrete chain the asset pipeline baked in. Registered only when the file declares it,
         // so a game with no auto LOD never pays for the plugin. Levels are built after the quantized
         // positions are widened, so the derived geometries share the widened attributes.
-        const discreteLod = extensions.has(TN_DISCRETE_LOD) ? new DiscreteLodPlugin() : undefined;
+        // The Wasm engine's loader hosts this plugin too, and sets `failClosed`: a chain it cannot
+        // deliver rejects the load there instead of being logged.
+        const discreteLod = extensions.has(TN_DISCRETE_LOD)
+          ? new DiscreteLodPlugin({
+              failClosed: (loader as { failClosed?: boolean }).failClosed === true,
+            })
+          : undefined;
         if (discreteLod !== undefined) {
           const plugin = discreteLod;
           loader.register((parser) => {

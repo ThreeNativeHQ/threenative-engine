@@ -11,6 +11,11 @@ on:
       candidate_sha:
         type: string
         required: true
+      # PRD-620: the parent's single admitted slice of eligible HEAVY instances. Empty (or a direct
+      # dispatch) means every heavy lane stays hosted.
+      runner_admission:
+        type: string
+        default: ""
       base_sha:
         type: string
         default: ""
@@ -43,7 +48,8 @@ jobs:
     name: exact candidate integration inventory
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
-    timeout-minutes: 5
+    # The full-history checkout passed 5 minutes on a loaded light runner (run 39217177505).
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read
@@ -65,6 +71,9 @@ jobs:
       vegetation: ${{ steps.filter.outputs.vegetation }}
       velocity: ${{ steps.filter.outputs.velocity }}
       world-capture: ${{ steps.filter.outputs.world-capture }}
+      # PRD-620: the caller's admitted heavy slice, validated and re-emitted as safe JSON. Absent
+      # or empty input stays hosted; a malformed plan throws and fails this scope job closed.
+      runner_admission: ${{ steps.filter.outputs.runner_admission }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -75,6 +84,7 @@ jobs:
         env:
           TN_BASE_SHA: ${{ inputs.base_sha }}
           TN_HEAD_SHA: ${{ inputs.candidate_sha }}
+          TN_RUNNER_ADMISSION: ${{ inputs.runner_admission }}
           # Exact source filters; workflow-only changes compare each job and filter separately.
           TN_LANE_FILTERS: |
             animation ^packages/core/src/animation\.ts$|^packages/core/__tests__/animation[^/]*\.spec\.ts$|^examples/abyss-framework/src/render/animation-reversal[^/]*\.ts$|^examples/abyss-framework/src/animation-reversal-main\.ts$|^examples/abyss-framework/animation-reversal\.html$|^examples/abyss-framework/playtests/animation-reversal\.playtest\.json$|^scripts/verify-animation-reversal\.ts$|^packages/core/__tests__/vq-locomotion-blend-spaces\.spec\.ts$|^examples/abyss-framework/src/render/locomotion-[^/]*\.ts$|^examples/abyss-framework/src/render/vq-locomotion-[^/]*\.ts$|^examples/abyss-framework/src/vq-locomotion-main\.ts$|^examples/abyss-framework/playtests/vq-locomotion-blend-spaces\.playtest\.json$|^examples/abyss-framework/assets/mannequin\.glb$|^scripts/verify-vq-locomotion\.ts$
@@ -84,7 +94,7 @@ jobs:
             decals ^packages/playtest/.*$|^packages/create-threenative/templates/shooter/src/render/decals\.ts$|^packages/create-threenative/templates/shooter/src/scenes/Play\.ts$|^packages/create-threenative/__tests__/shooter-decals[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/bounded-decals/.*$|^packages/runtime-native/.*$|^scripts/xvfb\.sh$|^\.github/actions/workspace-dist/.*$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^pnpm-lock\.yaml$
             fluid-particles ^packages/core/(src|__tests__)/(fluid|gpu-readback|particles)[^/]*$|^packages/(physics|playtest)/.*$|^examples/prd476-fluid-particles/.*$|^scripts/fluid-collision-proof\.ts$|^scripts/__tests__/fluid-collision-(proof|view)\.spec\.ts$|^package\.json$|^pnpm-(lock|workspace)\.yaml$|^tsconfig[^/]*\.json$|^patches/.*$|^\.github/actions/pnpm/.*$|^scripts/workspace-packages\.ts$|^scripts/verify-fluid-(collision|consumers)\.ts$|^\.github/actions/playwright-chromium/.*$|^scripts/xvfb\.sh$|^scripts/observe-fluid-ci\.mjs$|^scripts/__tests__/observe-fluid-ci\.spec\.ts$
             fluid-native ^packages/core/(src|__tests__)/(fluid|gpu-readback|particles)[^/]*$|^packages/(physics|playtest)/.*$|^examples/prd476-fluid-particles/.*$|^scripts/fluid-collision-proof\.ts$|^scripts/__tests__/fluid-collision-(proof|view)\.spec\.ts$|^package\.json$|^pnpm-(lock|workspace)\.yaml$|^tsconfig[^/]*\.json$|^patches/.*$|^\.github/actions/pnpm/.*$|^scripts/workspace-packages\.ts$|^packages/runtime-native/.*$|^scripts/verify-fluid-collision-native\.ts$|^scripts/__tests__/fluid-collision-native-proof\.spec\.ts$|^\.github/actions/workspace-dist/.*$
-            fog ^packages/create-threenative/templates/starter/src/render/volumetricFog[A-Za-z]*\.ts$|^packages/create-threenative/templates/starter/src/render/postprocessing\.ts$|^packages/create-threenative/templates/starter/src/scenes/Play\.ts$|^packages/create-threenative/template-assets/worldEnvironment\.ts$|^packages/create-threenative/__tests__/vq-(volumetric-fog|fog-fixture)\.spec\.ts$|^packages/core/src/renderer\.ts$|^packages/core/src/render/chain\.ts$|^examples/abyss-framework/vq-fog/.*$|^examples/abyss-framework/playtests/vq-volumetric-fog\.playtest\.json$|^scripts/verify-volumetric-fog\.ts$|^scripts/__tests__/(verify-volumetric-fog|vq-fog-native-proof)\.spec\.ts$|^packages/runtime-native/include/mystral/webgpu_compat\.h$|^packages/runtime-native/src/webgpu/bindings_presentation\.cpp$|^packages/runtime-native/tests/surface_texture_status_test\.cpp$|^packages/runtime-native/tests/canvas_presentation_test\.cpp$
+            fog ^packages/create-threenative/templates/starter/src/render/volumetricFog[A-Za-z]*\.ts$|^packages/create-threenative/templates/starter/src/render/postprocessing\.ts$|^packages/create-threenative/templates/starter/src/scenes/Play\.ts$|^packages/create-threenative/template-assets/worldEnvironment\.ts$|^packages/create-threenative/__tests__/vq-(volumetric-fog|fog-fixture)\.spec\.ts$|^packages/core/src/renderer\.ts$|^packages/core/src/render/chain\.ts$|^examples/abyss-framework/vq-fog/.*$|^examples/abyss-framework/playtests/vq-volumetric-fog\.playtest\.json$|^scripts/verify-volumetric-fog\.ts$|^scripts/__tests__/(verify-volumetric-fog|vq-fog-native-proof)\.spec\.ts$|^packages/runtime-native/include/mystral/webgpu_compat\.h$|^packages/runtime-native/src/webgpu/bindings_presentation\.cpp$|^packages/runtime-native/src/webgpu/presentation\.cpp$|^packages/runtime-native/include/mystral/webgpu/presentation\.h$|^packages/runtime-native/tests/surface_texture_status_test\.cpp$|^packages/runtime-native/tests/canvas_presentation_test\.cpp$
             ik ^examples/integrations/ik/.*$
             native-assets ^packages/create-threenative/src/build\.ts$|^packages/create-threenative/src/buildReport\.ts$|^packages/create-threenative/__tests__/vq-native-[^/]*\.spec\.ts$|^packages/assets/src/(compile|report)\.ts$|^packages/core/src/assets\.ts$|^packages/runtime-native/scripts/bundle\.mjs$|^packages/runtime-native/scripts/package-desktop\.mjs$|^packages/runtime-native/scripts/native-build\.mjs$|^packages/runtime-native/scripts/download-deps\.mjs$|^examples/abyss-framework/vq-assets/.*$|^examples/abyss-framework/playtests/vq-native-asset-capabilities\.playtest\.json$|^scripts/verify-native-asset-capabilities\.ts$|^scripts/native-asset-capture-proof\.ts$|^scripts/__tests__/native-asset-capture-proof\.spec\.ts$
             temporal ^packages/core/src/render/chain\.ts$|^packages/core/src/render/velocity\.ts$|^packages/core/__tests__/temporal-chain\.spec\.ts$|^packages/create-threenative/templates/starter/src/render/temporalAA[^/]*\.ts$|^packages/create-threenative/templates/starter/src/render/temporalResolve[^/]*\.ts$|^packages/create-threenative/templates/starter/src/render/temporalCurrent[^/]*\.ts$|^packages/create-threenative/templates/starter/src/render/temporalRejectionCounter\.ts$|^packages/create-threenative/__tests__/temporal[^/]*\.spec\.ts$|^packages/runtime-native/conformance/scenes/shared/temporal-aa[^/]*\.js$|^packages/runtime-native/conformance/scenes/shared/temporal-velocity-probe\.ts$|^packages/runtime-native/conformance/scenes/shared/temporal-resolve-probe\.ts$|^packages/runtime-native/__tests__/temporal-velocity-probe\.spec\.ts$|^examples/abyss-framework/temporal[^/]*$|^examples/abyss-framework/playtests/temporal-[^/]*\.playtest\.json$|^scripts/verify-temporal-[^/]*\.ts$|^scripts/temporal-aa-[^/]*\.ts$|^scripts/__tests__/temporal-aa-[^/]*\.spec\.ts$
@@ -92,14 +102,16 @@ jobs:
             tone ^scripts/xvfb\.sh$|^packages/playtest/.*$|^examples/abyss-framework/src/render/toneCalibration\.ts$|^examples/abyss-framework/src/tone-main\.ts$|^examples/abyss-framework/tone\.html$|^examples/abyss-framework/tone\.vite\.config\.ts$|^examples/abyss-framework/playtests/tone\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-tone-exposure\.ts$|^scripts/tone-capture-proof\.ts$|^scripts/__tests__/tone-capture-proof\.spec\.ts$|^scripts/non-visual-scenarios\.mjs$|^package\.json$|^pnpm-lock\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^packages/create-threenative/(template-assets|templates/[^/]+/src/render)/(autoExposure|exposure|exposureGraph|exposureReadback|exposureSettings|worldEnvironment)\.ts$
             vegetation ^examples/integrations/vegetation/.*$
             world-capture ^packages/core/src/world[^/]*\.ts$|^packages/core/__tests__/world-capture-fixture\.spec\.ts$|^packages/playtest/.*$|^packages/assets/.*$|^examples/abyss-framework/src/scenes/WorldProbe\.ts$|^examples/abyss-framework/src/world-main\.ts$|^examples/abyss-framework/src/style\.css$|^examples/abyss-framework/assets/world/.*$|^examples/abyss-framework/index\.html$|^examples/abyss-framework/vite\.config\.ts$|^examples/abyss-framework/threenative\.config\.ts$|^examples/abyss-framework/playtests/phase477-world-capture\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-world-capture\.ts$|^scripts/world-capture-manifest\.ts$|^scripts/world-visual-gate\.ts$|^scripts/capture-guard\.ts$|^scripts/__tests__/verify-world-capture\.spec\.ts$|^scripts/__tests__/world-capture-manifest\.spec\.ts$|^scripts/__tests__/world-visual-gate\.spec\.ts$|^package\.json$|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$
-        run: node scripts/ci-integration-scope.mjs
+        run: |
+          node scripts/ci-integration-scope.mjs
+          node scripts/ci-runner-admission.mjs --validate-admission
 
   csg:
     name: csg
     if: ${{ needs.paths.outputs.csg == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    # PRD-550: generic lanes run hosted so the local build/test capacity stays free for the heavy jobs.
-    runs-on: ubuntu-24.04
+    # PRD-620: generic lanes route to idle tn-local with hosted fallback; forks fall through to hosted.
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:csg')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     defaults:
       run:
@@ -135,7 +147,7 @@ jobs:
     name: ik
     if: ${{ needs.paths.outputs.ik == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:ik')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     defaults:
       run:
@@ -167,7 +179,7 @@ jobs:
     name: vegetation
     if: ${{ needs.paths.outputs.vegetation == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:vegetation')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     defaults:
       run:
@@ -199,7 +211,7 @@ jobs:
     name: decals
     if: ${{ needs.paths.outputs.decals == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:decals')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -315,7 +327,7 @@ jobs:
     name: exposure
     if: ${{ needs.paths.outputs.tone == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:tone')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -359,7 +371,7 @@ jobs:
     name: temporal
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.temporal == 'true' }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:temporal')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -406,7 +418,7 @@ jobs:
     name: velocity
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.velocity == 'true' }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:velocity')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -455,7 +467,7 @@ jobs:
     name: animation
     if: ${{ needs.paths.outputs.animation == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:animation')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -468,6 +480,8 @@ jobs:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The fixtures build on the default engine, which loads the web Wasm engine.
+      - uses: ./.github/actions/native-engine-wasm
       - uses: ./.github/actions/workspace-dist
         with:
           pack-archives: 'false'
@@ -579,7 +593,7 @@ jobs:
     name: fog capture
     if: ${{ needs.paths.outputs.fog == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:fog')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -619,7 +633,7 @@ jobs:
   fog-native:
     name: Linux native fog correctness
     needs: [fog]
-    # Reuse the proven native-platforms / native-assets ARM QuickJS route without changing defaults.
+    # Use the shipped ARM V8/wgpu default for native fog correctness.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     env:
@@ -713,7 +727,7 @@ jobs:
     name: capture
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.world-capture == 'true' }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:capture')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -763,7 +777,7 @@ jobs:
     name: fluid collision
     if: ${{ needs.paths.outputs.fluid-particles == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:fluid-collision')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -810,7 +824,7 @@ jobs:
     name: Linux native fluid correctness
     if: ${{ needs.paths.outputs.fluid-native == 'true' && !github.event.pull_request.draft }}
     needs: paths
-    # Established native-platforms ARM QuickJS/wgpu route; no default backend change.
+    # Use the shipped ARM V8/wgpu default for native fluid correctness.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     env:
@@ -888,8 +902,7 @@ jobs:
     name: packaged native asset fallback
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.native-assets == 'true' }}
     needs: paths
-    # Match native-platforms starter-linux: this architecture selects QuickJS/wgpu without
-    # changing any runtime default. Native dependencies use the repository's locked provisioner.
+    # This fallback proof explicitly selects QuickJS; the ARM desktop default is V8.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     env:
@@ -934,8 +947,12 @@ jobs:
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
           libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
           libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
-      - name: Build the same QuickJS host the normal ARM desktop lane ships
-        run: pnpm --filter @threenative/runtime-native native:build
+      - name: Build the QuickJS host required by the packaged fallback
+        run: |
+          pnpm --filter @threenative/runtime-native native:build
+          node packages/runtime-native/scripts/download-deps.mjs --only quickjs
+          cmake -S packages/runtime-native -B packages/runtime-native/build/tn-linux -DMYSTRAL_USE_V8=OFF -DMYSTRAL_USE_QUICKJS=ON
+          cmake --build packages/runtime-native/build/tn-linux --target mystral --parallel 2
       - name: Build the real fixture and capture its packaged native executable
         env:
           THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
@@ -965,7 +982,7 @@ jobs:
     name: auto-exposure
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.exposure == 'true' }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:exposure')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -1010,7 +1027,7 @@ jobs:
     name: auto-exposure cold boot
     if: ${{ !github.event.pull_request.draft && needs.paths.outputs.cold-boot == 'true' }}
     needs: paths
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.paths.outputs.runner_admission || '[]'), 'integration:cold-boot')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

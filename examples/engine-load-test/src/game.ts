@@ -59,6 +59,7 @@ import {
   resolutionOf,
   rungAtLeast,
 } from "./ladder.js";
+import { type IPhaseRecorder, PHASE } from "./phases.js";
 import {
   DEFAULT_AXES,
   type ICubePlacement,
@@ -100,6 +101,22 @@ export type CollapseFactory = (
 export interface ILoadTestEnginePasses {
   readonly cameraCull: RenderCameraCull;
   readonly matrixWorld: MatrixWorldPass;
+}
+
+/**
+ * Wraps the world-matrix pass so its time is its own phase wherever it is called from: the render projection
+ * calls it inside `reconcile` too, and the exclusive phases then move that time out of `projection`.
+ */
+function timeMatrixWorld(pass: MatrixWorldPass, phases: IPhaseRecorder): void {
+  const apply = pass.apply.bind(pass);
+  pass.apply = (root, force) => {
+    phases.begin(PHASE.matrixWorld);
+    try {
+      return apply(root, force);
+    } finally {
+      phases.end();
+    }
+  };
 }
 
 export interface ILoadTestRung {
@@ -152,13 +169,17 @@ export interface ILoadTestHarness {
    * fails instead of comparing two differently-sized scenes.
    */
   foxMeasurement(): IFoxMeasurement | undefined;
+  /** Render and compute pipelines this renderer has created so far; the driver reads the window's delta. */
+  pipelineCompiles(): number;
   positionHash: string;
   /**
    * PRD-464: render the rung's current frame into a readable target and report what the pixels say.
    * It draws the same scene the timed loop draws, once, after warmup — the read-back is a GPU stall
    * and must never land inside a measured window.
    */
-  probeFrame(): Promise<IFrameStats>;
+  probeFrame(
+    save?: (pixels: ArrayLike<number>, width: number, height: number) => void,
+  ): Promise<IFrameStats>;
   render(): Promise<void>;
   renderer: WebGPURenderer;
   setRung(rung: ILoadTestRung): void;
@@ -250,6 +271,10 @@ function buildAuthoredCubes(
       placement.z,
     );
     if (index < shadowCasterCount) cube.castShadow = true;
+    // Where the projection batches the cubes, three culls the batch as one object while the engine's host
+    // batching culls each member against the view, which is 21k fewer triangles in the R5 frame. One cull
+    // unit on both arms, as L2's batch and the characters already are, so both submit the same work.
+    if (mode === "L3" || isRealisticRung(mode)) cube.frustumCulled = false;
     parent.add(cube);
     cubes.push(cube);
   }
@@ -351,6 +376,29 @@ export function writeInstanceMatrices(
   return changed;
 }
 
+/**
+ * Counts every pipeline three asks its backend to create. `Pipelines` calls these two methods only on
+ * a cache miss, so the count is the number of compiles. A backend without them (a moved seam) throws:
+ * the scoreboard refuses a missing counter, and a silent zero would pass it.
+ */
+export function countPipelineCreates(renderer: WebGPURenderer): () => number {
+  const backend = (renderer as unknown as { backend?: Record<string, unknown> }).backend;
+  // The native engine has no three backend to hook: its facade reads the player's own pipeline cache.
+  if (typeof backend?.pipelineCompiles === "function")
+    return backend.pipelineCompiles as () => number;
+  let count = 0;
+  for (const method of ["createRenderPipeline", "createComputePipeline"]) {
+    const original = backend?.[method];
+    if (backend === undefined || typeof original !== "function")
+      throw new Error(`TN_BENCH_NO_PIPELINE_COUNTER:${method}`);
+    backend[method] = function (this: unknown, ...args: unknown[]) {
+      count += 1;
+      return original.apply(this, args);
+    };
+  }
+  return () => count;
+}
+
 export async function createLoadTestHarness(
   canvas: HTMLCanvasElement,
   adapterLabel = "unknown",
@@ -359,11 +407,16 @@ export async function createLoadTestHarness(
   createCollapse?: CollapseFactory,
   enginePasses?: ILoadTestEnginePasses,
   characters?: ICharacterCrowd,
+  readFrame?: () => Promise<Uint8Array>,
+  phases?: IPhaseRecorder,
 ): Promise<ILoadTestHarness> {
+  if (phases !== undefined && enginePasses !== undefined)
+    timeMatrixWorld(enginePasses.matrixWorld, phases);
   const renderer = new WebGPURenderer({ antialias: false, canvas });
   renderer.setPixelRatio(1);
   renderer.setSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT, false);
   await renderer.init();
+  const pipelineCompiles = countPipelineCreates(renderer);
   // three's own rAF clears the per-frame counters even when no animation loop is set, so a
   // harness that reads them after yielding reads zero. This harness owns the reset.
   renderer.info.autoReset = false;
@@ -670,6 +723,7 @@ export async function createLoadTestHarness(
   const step = (frameIndex: number): void => {
     if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
     const startedAt = performance.now();
+    phases?.begin(PHASE.game);
     const pose = cameraPose(frameIndex, state.rung.objectCount);
     camera.position.set(pose.x, pose.y, pose.z);
     camera.lookAt(pose.targetX, pose.targetY, pose.targetZ);
@@ -681,7 +735,9 @@ export async function createLoadTestHarness(
         const at = pointLightPosition(index, frameIndex, extent);
         (pointLights[index] as PointLight).position.set(at.x, at.y, at.z);
       }
+      phases?.begin(PHASE.animation);
       characters?.step(frameIndex);
+      phases?.end();
     }
     // The mutation-rate axis decides which objects are dirty this frame; at the default 1 every
     // transform moves, which is the honest worst case a game with moving actors pays.
@@ -698,15 +754,19 @@ export async function createLoadTestHarness(
       const collapseStartedAt = performance.now();
       // The walk counts the nodes this frame visits, so its count opens before the reconcile that
       // walks the authored scene, as `defineGame` does.
+      phases?.begin(PHASE.projection);
       shippedDefaultPasses()?.matrixWorld.beginFrame();
       state.collapse?.reconcile();
+      phases?.end();
       collapseMs = performance.now() - collapseStartedAt;
       stepMs = performance.now() - startedAt;
+      phases?.end();
       return;
     }
     const instanced = state.instanced;
     if (instanced === undefined) {
       stepMs = performance.now() - startedAt;
+      phases?.end();
       return;
     }
     if (
@@ -716,6 +776,7 @@ export async function createLoadTestHarness(
       instanced.instanceMatrix.needsUpdate = true;
     }
     stepMs = performance.now() - startedAt;
+    phases?.end();
   };
 
   /** One frame of the rung, into whatever target the renderer currently holds. */
@@ -735,13 +796,16 @@ export async function createLoadTestHarness(
     // draws with. A rung without a projection keeps the plain frame: it is the independent cell.
     const passes = shippedDefaultPasses();
     if (passes !== undefined) {
+      phases?.begin(PHASE.projection);
       passes.cameraCull.apply(root, camera, renderer.getDrawingBufferSize(drawingBufferSize).y);
+      phases?.end();
       root.matrixWorldAutoUpdate = false;
       passes.matrixWorld.apply(root);
     }
     // The post chain draws through the pipeline rather than through the renderer, and the pipeline
     // is the one that renders the scene pass, so the two paths never both run for one frame.
     for (let pass = 0; pass < axes.passCount; pass += 1) {
+      phases?.begin(PHASE.render);
       if (postPipeline === undefined) await renderer.render(root, camera);
       else {
         // The pass was built on the authored scene; every other rung draws the projection's root, so
@@ -749,12 +813,15 @@ export async function createLoadTestHarness(
         if (postScenePass !== undefined) postScenePass.scene = root;
         postPipeline.render();
       }
+      phases?.end();
     }
+    phases?.begin(PHASE.projection);
     if (passes !== undefined) passes.cameraCull.restore();
     // The velocity snapshot the colour and velocity passes consume. A no-op unless the render
     // chain allocates per-object velocity, which this arm has none of — a shipped game with no
     // post chain resolves the same way, so L3 pays the same commit a shipped game does.
     state?.collapse?.commit();
+    phases?.end();
   };
 
   return {
@@ -783,6 +850,7 @@ export async function createLoadTestHarness(
       enginePasses?.matrixWorld.dispose();
       renderer.dispose();
     },
+    pipelineCompiles,
     get positionHash() {
       return positionHash(state?.placements ?? []);
     },
@@ -795,15 +863,25 @@ export async function createLoadTestHarness(
      * re-authored scene — a probe that rendered something else would pass a ladder rung that
      * measured a blank screen.
      */
-    probeFrame: async () => {
+    probeFrame: async (save) => {
       if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
       const size = renderer.getDrawingBufferSize(drawingBufferSize);
+      // A host whose post pass does not draw into a render target reads the frame it last drew
+      // instead (the engine player). It is the frame a player sees, post chain included.
+      if (readFrame !== undefined) {
+        const pixels = await readFrame();
+        if (pixels.length !== size.x * size.y * 4)
+          throw new Error(`TN_BENCH_PROBE_SIZE:${pixels.length}!=${size.x}x${size.y}`);
+        save?.(pixels, size.x, size.y);
+        return frameStats(pixels, size.x, size.y);
+      }
       const target = new RenderTarget(size.x, size.y);
       try {
         renderer.setRenderTarget(target);
         await renderFrame();
         renderer.setRenderTarget(null);
         const pixels = await renderer.readRenderTargetPixelsAsync(target, 0, 0, size.x, size.y);
+        save?.(pixels as ArrayLike<number>, size.x, size.y);
         return frameStats(pixels as ArrayLike<number>, size.x, size.y);
       } finally {
         renderer.setRenderTarget(null);

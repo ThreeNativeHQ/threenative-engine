@@ -79,6 +79,7 @@ const REQUIRED_FEATURE_IDENTIFIERS = [
   "TimestampQuery",
   "RG11B10UfloatRenderable",
   "CoreFeaturesAndLimits",
+  "TransientAttachments",
 ];
 
 function featureIdentifiers(text) {
@@ -116,8 +117,8 @@ function assertFeatureUnpackAtEveryInitialization(source) {
     const block = source.slice(start, end);
     assert.match(block, /hasIndirectFirstInstance_\s*=\s*requiredFeatures\.hasIndirectFirstInstance;/u);
     assert.match(block, /hasTimestampQuery_\s*=\s*requiredFeatures\.hasTimestampQuery;/u);
-    assert.match(block, /deviceDesc\.requiredFeatureCount\s*=\s*requiredFeatures\.count;/u);
-    assert.match(block, /deviceDesc\.requiredFeatures\s*=\s*requiredFeatures\.count\s*>\s*0/u);
+    assert.match(block, /deviceDesc\.requiredFeatureCount\s*=\s*requiredFeatures\.names\.size\(\);/u);
+    assert.match(block, /deviceDesc\.requiredFeatures\s*=\s*!requiredFeatures\.names\.empty\(\)/u);
   }
 }
 
@@ -452,6 +453,8 @@ test.runIf(!behaviorContract || behaviorContract === "webgpu")(
     const productExecutable = process.env.TN_NATIVE_BEHAVIOR_EXECUTABLE;
     const fixture = behaviorExecutable(`
     console.log("proof: public-binding-surface");
+    console.log("proof: detached-bundle-method-after-gc");
+    console.log("proof: bundle-method-pinned-during-reentrant-gc");
     console.log("proof: call-trace");
     console.log("proof: async-observation");
     console.log("proof: whole-table-verification");
@@ -463,6 +466,8 @@ test.runIf(!behaviorContract || behaviorContract === "webgpu")(
       executable,
       [
         "public-binding-surface",
+        "detached-bundle-method-after-gc",
+        "bundle-method-pinned-during-reentrant-gc",
         "call-trace",
         "async-observation",
         "whole-table-verification",
@@ -472,6 +477,8 @@ test.runIf(!behaviorContract || behaviorContract === "webgpu")(
     );
     assert.deepEqual(result.proofs, [
       "public-binding-surface",
+      "detached-bundle-method-after-gc",
+      "bundle-method-pinned-during-reentrant-gc",
       "call-trace",
       "async-observation",
       "whole-table-verification",

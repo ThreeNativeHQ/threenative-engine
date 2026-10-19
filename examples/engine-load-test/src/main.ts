@@ -172,22 +172,37 @@ async function measureCullingRung(
   };
 }
 
+// "tn-web", or "tn-engine-web" when `vite.config.ts` bound `three` to the Wasm engine (PRD-573 slice 7).
+declare const __TN_WEB_ARM__: string;
+const onEngine = __TN_WEB_ARM__ === "tn-engine-web";
+
 // What every tn-web report says about the workload, whichever build served it.
-const BUILD_DETAILS =
-  "SceneRenderProjection consumer on three/webgpu; culling A/B uses the production planner and excludes the presentation draw";
+const BUILD_DETAILS = onEngine
+  ? "SceneRenderProjection consumer on the Wasm engine (three bound to tn-native-engine-web); no culling A/B"
+  : "SceneRenderProjection consumer on three/webgpu; culling A/B uses the production planner and excludes the presentation draw";
 
 const TN_WEB_ARM: ILadderArm = {
-  arm: "tn-web",
+  arm: __TN_WEB_ARM__,
   buildNotes: BUILD_DETAILS,
-  createCollapse: (scene, options) => new SceneRenderProjection(scene, options),
+  // `projection=js` is the named override that forces core's mirror where the host batches the scene itself.
+  createCollapse: (scene, options) =>
+    new SceneRenderProjection(
+      scene,
+      new URLSearchParams(globalThis.location.search).get("projection") === "js"
+        ? { ...options, projection: "js" }
+        : options,
+    ),
   // PRD-464's R3 characters, through the engine's loader and `SkeletalMesh3D`. Only requested when
   // a ladder rung is in `modes`, so an L-only run never decodes the Fox.
   createCharacters: createFoxCrowd,
   engineName: "threenative",
   engineVersion:
     new URLSearchParams(globalThis.location.search).get("engineVersion") ?? "workspace",
-  measureCulling: (renderer) => measureCullingRung(renderer, LADDER_KNOBS),
-  rendererLabel: "three/webgpu WebGPURenderer",
+  // The culling A/B times three's BatchedMesh planner, which the engine arm does not draw with.
+  ...(onEngine ? {} : { measureCulling: (renderer) => measureCullingRung(renderer, LADDER_KNOBS) }),
+  rendererLabel: onEngine
+    ? "tn-native-engine-web (Wasm + browser WebGPU)"
+    : "three/webgpu WebGPURenderer",
   stageHooks: installRendererStageHooks,
 };
 

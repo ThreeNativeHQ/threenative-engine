@@ -104,17 +104,19 @@ describe("WorldImpostorSurface material", () => {
     expect(material.normalNode).not.toBeNull();
     expect(material.positionNode).not.toBeNull();
     expect(material.alphaTestNode).not.toBeNull();
-    // The number stays positive for the virtual-shadow alpha caster even though the discard uses the
-    // mip-aware node.
+    // The shadow pass copies the number as its own cutoff and ignores `alphaTestNode`: it must stay
+    // a tiny positive floor, and the mip-aware discard rides on `maskShadowNode` instead. A 0.42
+    // number here discarded every blended fragment in a metres-wide shadow texel.
     expect(material.alphaTest).toBeGreaterThan(0);
-    expect(material.alphaTest).toBeCloseTo(0.42, 6);
+    expect(material.alphaTest).toBeLessThan(0.01);
+    expect(material.maskShadowNode).not.toBeNull();
     expect(material.userData.tnWholeAssetImpostor).toBe(true);
     expect(source.userData.tnWholeAssetImpostor).toBeUndefined();
     expect(material.transparent).toBe(false);
     expect(material.side).toBe(DoubleSide);
     expect(source.map).toBe(sourceMap);
     expect(source.alphaTest).toBeCloseTo(0.42, 6);
-    expect(IMPOSTOR_SURFACE_PARALLAX).toBe(false);
+    expect(IMPOSTOR_SURFACE_PARALLAX).toBe(true);
     surface.dispose();
     atlas.dispose();
   });
@@ -324,5 +326,51 @@ describe("WorldImpostorSurface far cull contract", () => {
     expect(far.cull).toBe(true);
     far.dispose();
     atlas.dispose();
+  });
+});
+
+// Independent geometric oracle for the covered-continuous crossing contract. Hardware captures
+// exercise the actual TSL graph; these controls distinguish intersections from alpha/depth jumps.
+function coveredCrossing(sample: (t: number) => { alpha: number; gap: number }): number | null {
+  let previous = { t: 1.3, ...sample(1.3) };
+  for (let i = 1; i <= 128; i++) {
+    const current = { t: 1.3 * (1 - (2 * i) / 128), ...sample(1.3 * (1 - (2 * i) / 128)) };
+    const before = previous;
+    previous = current;
+    if (before.alpha <= 0.5 || current.alpha <= 0.5 || before.gap <= 0 || current.gap > 0) continue;
+    {
+      let front = before.t;
+      let back = current.t;
+      let valid = true;
+      for (let j = 0; j < 8; j++) {
+        const mid = (front + back) / 2;
+        const value = sample(mid);
+        if (value.alpha <= 0.5) valid = false;
+        if (value.gap > 0) front = mid;
+        else back = mid;
+      }
+      const hit = (front + back) / 2;
+      const value = sample(hit);
+      if (valid && value.alpha > 0.5 && Math.abs(value.gap) <= (2 * 1.3) / 255 / value.alpha)
+        return hit;
+    }
+  }
+  return null;
+}
+
+describe("covered continuous depth geometry controls", () => {
+  it("recovers an oblique plane UV where orthogonal projection is wrong", () => {
+    const hit = coveredCrossing((t) => ({ alpha: 1, gap: (t - 0.75) / Math.sqrt(3) }));
+    expect(hit).not.toBeNull();
+    expect(hit as number).toBeCloseTo(0.75, 4);
+    const expected = (0.6 - 0.75) / Math.sqrt(2);
+    expect((0.6 - (hit as number)) / Math.sqrt(2)).toBeCloseTo(expected, 4);
+    expect(Math.abs(0.6 / Math.sqrt(2) - expected)).toBeGreaterThan(0.5);
+  });
+  it("rejects late coverage behind an alpha hole", () => {
+    expect(coveredCrossing((t) => ({ alpha: t < -0.4 ? 1 : 0, gap: t }))).toBeNull();
+  });
+  it("rejects a depth discontinuity with no surface crossing", () => {
+    expect(coveredCrossing((t) => ({ alpha: 1, gap: t > 0 ? 1 : -1 }))).toBeNull();
   });
 });

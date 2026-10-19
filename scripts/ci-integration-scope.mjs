@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { validateEventPlan } from "./ci-change-scope.mjs";
+import { NATIVE_ENGINE_PATHS, validateEventPlan } from "./ci-change-scope.mjs";
 
 const WORKFLOW = ".github/workflows/integration.yml";
 const SELECTOR = "scripts/ci-integration-scope.mjs";
@@ -224,9 +224,11 @@ export function integrationSelection({ files, before, after }) {
     .split("\n")
     .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
     .filter((line) => {
-      if (!/^ {6}(?:candidate_sha|required_jobs): /u.test(line)) return true;
+      // Non-lane metadata outputs (`candidate_sha`, `required_jobs`, PRD-620's `runner_admission`)
+      // ride the paths job but are not lane selectors; the CLI emits them from the same step.
+      if (!/^ {6}(?:candidate_sha|required_jobs|runner_admission): /u.test(line)) return true;
       const metadata =
-        /^ {6}(candidate_sha|required_jobs): \$\{\{ steps\.filter\.outputs\.(candidate_sha|required_jobs) \}\}$/u.exec(
+        /^ {6}(candidate_sha|required_jobs|runner_admission): \$\{\{ steps\.filter\.outputs\.(candidate_sha|required_jobs|runner_admission) \}\}$/u.exec(
           line,
         );
       if (!metadata || metadata[1] !== metadata[2])
@@ -264,6 +266,7 @@ export function integrationSelection({ files, before, after }) {
     if (files.includes(SELECTOR)) return all("shared selector changed");
     const lanes = new Set();
     for (const file of files) {
+      if (NATIVE_ENGINE_PATHS.some((pattern) => pattern.test(file))) continue;
       const dependency = dependencyLanes(file, current);
       if (
         dependency === PACKAGE_LANES &&

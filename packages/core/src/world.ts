@@ -535,6 +535,23 @@ export class Heightfield extends Group implements IComputeDriven {
       throw new Error(
         `Heightfield geometry has ${position.count} vertices, expected ${this.rows * this.columns}.`,
       );
+    // Only a plain BufferAttribute exposes its lanes raw; a custom subclass or an own setter would be bypassed.
+    const floatLanes = (attribute: typeof position): Float32Array | undefined => {
+      if (Object.getPrototypeOf(attribute) !== BufferAttribute.prototype) return undefined;
+      if (Object.hasOwn(attribute, "setY") || Object.hasOwn(attribute, "setXYZ")) return undefined;
+      if (attribute.itemSize !== 3 || attribute.normalized === true) return undefined;
+      if (
+        (attribute as { isInterleavedBufferAttribute?: boolean }).isInterleavedBufferAttribute ===
+        true
+      )
+        return undefined;
+      const array: unknown = attribute.array;
+      return array instanceof Float32Array && array.length === position.count * 3
+        ? array
+        : undefined;
+    };
+    const positionArray = floatLanes(position);
+    const normalArray = normalAttribute === undefined ? undefined : floatLanes(normalAttribute);
     const column =
       bounds === undefined
         ? { count: this.columns, start: 0 }
@@ -549,15 +566,25 @@ export class Heightfield extends Group implements IComputeDriven {
         const source = column.start + offset;
         const vertex = target * this.columns + source;
         const height = this.#height(vertex);
-        position.setY(vertex, height);
+        if (positionArray === undefined) position.setY(vertex, height);
+        else positionArray[vertex * 3 + 1] = height;
         lowest = Math.min(lowest, height);
         highest = Math.max(highest, height);
         if (normalAttribute === undefined) continue;
-        this.#gridNormal(source, target, normalAttribute, vertex);
+        this.#gridNormal(source, target, normalArray ?? normalAttribute, vertex);
       }
     }
-    position.needsUpdate = true;
-    if (normalAttribute !== undefined) normalAttribute.needsUpdate = true;
+    // Upload only the rows this refresh touched. Ranges accumulate until the renderer uploads, and
+    // an unbounded refresh records the full range so a later window cannot shrink a pending one.
+    const first = row.start * this.columns + column.start;
+    const last = (row.start + row.count - 1) * this.columns + column.start + column.count;
+    for (const attribute of normalAttribute === undefined
+      ? [position]
+      : [position, normalAttribute]) {
+      if (attribute instanceof BufferAttribute && row.count > 0 && column.count > 0)
+        attribute.addUpdateRange(first * 3, (last - first) * 3);
+      attribute.needsUpdate = true;
+    }
     // Only heights move, so a windowed refresh grows the existing bounds by the window's own
     // range instead of walking every vertex again: on a 321-sample field the full recompute cost
     // two milliseconds for a footprint-sized window. Bounds may stay conservative after a refill.
@@ -681,7 +708,7 @@ export class Heightfield extends Group implements IComputeDriven {
   #gridNormal(
     column: number,
     row: number,
-    target: { setXYZ(index: number, x: number, y: number, z: number): unknown },
+    target: { setXYZ(index: number, x: number, y: number, z: number): unknown } | Float32Array,
     vertex: number,
   ): void {
     const left = Math.max(0, column - 1);
@@ -695,7 +722,16 @@ export class Heightfield extends Group implements IComputeDriven {
       (this.#height(far * this.columns + column) - this.#height(near * this.columns + column)) /
       ((far - near) * this.#cellDepth);
     const length = Math.hypot(slopeX, 1, slopeZ);
-    target.setXYZ(vertex, -slopeX / length, 1 / length, -slopeZ / length);
+    const x = -slopeX / length;
+    const y = 1 / length;
+    const z = -slopeZ / length;
+    if (target instanceof Float32Array) {
+      target[vertex * 3] = x;
+      target[vertex * 3 + 1] = y;
+      target[vertex * 3 + 2] = z;
+    } else {
+      target.setXYZ(vertex, x, y, z);
+    }
   }
 
   #height(index: number): number {
@@ -766,3 +802,4 @@ export type {
   IWorldCellsTerrainOptions,
   IWorldRegionReadiness,
 } from "./world-cells.js";
+export type { IWorldGpuFrameValidation } from "./world-gpu-scene.js";

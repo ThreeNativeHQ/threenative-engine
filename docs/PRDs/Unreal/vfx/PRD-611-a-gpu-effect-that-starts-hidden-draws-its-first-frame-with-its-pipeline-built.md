@@ -4,7 +4,7 @@
 **Priority:** P2 — AC-1 is open: the action-rpg attack, hit and surge emitters start with `visible = false`, so their draw pipelines are predicted to build in the frame each effect first appears.
 **Complexity:** 4 (MEDIUM) — 1–5 files (`particles.ts`, `warmup.ts`, two specs, the template notes) (+1), a flag that the warm-up honors beside `includeHidden` (+1), an async compile state that carries across frames (+2); risk override: none
 **Owner:** unassigned
-**Depends on:** [PRD-616](../../performance/PRD-616-the-startup-warm-up-builds-what-the-first-frame-draws.md): a warm render at call depth 0 builds nothing the world pass reuses, so the emitter warm-up in Phase 2 needs the world-pass warm-up first. Independent of [PRD-609](PRD-609-a-gpu-burst-starts-where-and-when-it-is-asked-and-live-particles-stay-put.md), which removes the template's hide/show pair, and of [PRD-569](PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md), whose `"pause"` cull reaction only suspends a dispatch.
+**Depends on:** [PRD-616](../../done/PRD-616-the-startup-warm-up-builds-what-the-first-frame-draws.md): a warm render at call depth 0 builds nothing the world pass reuses, so the emitter warm-up in Phase 2 needs the world-pass warm-up first. Independent of [PRD-609](../../done/PRD-609-a-gpu-burst-starts-where-and-when-it-is-asked-and-live-particles-stay-put.md), which removes the template's hide/show pair, and of [PRD-569](../../done/PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md), whose `"pause"` cull reaction only suspends a dispatch.
 
 ## Context
 

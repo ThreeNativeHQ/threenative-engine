@@ -34,6 +34,15 @@ const none = Object.fromEntries(
 );
 const all = Object.fromEntries(Object.keys(none).map((key) => [key, true]));
 describe("integration work applies to the changed source", () => {
+  it.each([
+    "packages/runtime-native/src/engine/render.cpp",
+    "packages/runtime-native/tests/native-engine/render_test.cpp",
+    "packages/runtime-native/cmake/NativeEngineWeb.cmake",
+  ])("selects no integration lane for an engine-only diff: %s", (file) => {
+    expect(select(workflow, [file])).toEqual(none);
+    expect(select(workflow, [file, "scripts/unclassified.ts"])).toEqual(all);
+    expect(select(workflow, [file, "packages/runtime-native/src/main.cpp"]).decals).toBe(true);
+  });
   it("retains animation routing for weighted playback and authored locomotion", () => {
     for (const file of [
       "packages/core/src/animation.ts",
@@ -224,7 +233,7 @@ describe("integration work applies to the changed source", () => {
       "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
       "cancel-in-progress: false",
     ],
-    ["shared paths job", "timeout-minutes: 5", "timeout-minutes: 6"],
+    ["shared paths job", "timeout-minutes: 10", "timeout-minutes: 11"],
     ["entry cross-lane dependency", "needs: paths", "needs: [paths,csg]"],
     ["entry self-cycle", "needs: paths", "needs: [paths,tone]"],
     ["unknown dependency", "needs: [decals]", "needs: [missing-job]"],

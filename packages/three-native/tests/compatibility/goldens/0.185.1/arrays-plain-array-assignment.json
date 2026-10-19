@@ -1,0 +1,16 @@
+{
+  "name": "arrays-plain-array-assignment",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 BufferAttribute.array — a plain Array assigned where a TypedArray is expected",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "p",
+      "kind": "numbers",
+      "path": "array",
+      "value": "n:4010000000000000,n:4014000000000000,n:4018000000000000",
+      "decimal": "4, 5, 6"
+    }
+  ]
+}

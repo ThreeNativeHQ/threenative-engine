@@ -4,7 +4,7 @@ import { acceptHotUpdate } from "@threenative/core/hot";
 import { playtest } from "@threenative/core/playtest";
 import "./style.css";
 import { createRoot } from "react-dom/client";
-import { installReplayProof } from "./replay-proof.js";
+import { installReplayProof, installStartupProof } from "./replay-proof.js";
 import { Abyss, type AbyssState } from "./scenes/Abyss.js";
 import { ViewportProbe } from "./scenes/ViewportProbe.js";
 import { App } from "./ui/App.js";
@@ -13,12 +13,11 @@ const viewportProbe = new URLSearchParams(globalThis.location.search).has("viewp
 const replayPlugin = replay<AbyssState>();
 let gameRuntime: IGamePluginRuntime | undefined;
 const replayRuntime: IGamePluginHooks<AbyssState> = {
-  setup: (_ctx, runtime) => {
+  setup: (ctx, runtime) => {
     gameRuntime = runtime;
-    return undefined;
+    return installStartupProof(ctx, runtime);
   },
 };
-
 const game = defineGame<AbyssState>({
   camera: { far: 7_000, near: 5_000, projection: "orthogonal", size: 520 },
   inputTarget: window,
@@ -38,6 +37,7 @@ const game = defineGame<AbyssState>({
   scenes: { play: viewportProbe ? ViewportProbe : Abyss },
   seed: 90210,
   start: "play",
+  warmUp: {},
 });
 
 if (import.meta.env.DEV) {

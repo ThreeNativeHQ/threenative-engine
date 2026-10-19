@@ -1,0 +1,817 @@
+{
+  "modules": {
+    "packages/core/src/animation.ts": {
+      "class": "native-engine",
+      "owner": "N11a"
+    },
+    "packages/core/src/assets.ts": {
+      "class": "native-engine",
+      "owner": "N10"
+    },
+    "packages/core/src/atmosphere/index.ts": {
+      "class": "native-engine",
+      "owner": "N08c"
+    },
+    "packages/core/src/atmosphere/luts.ts": {
+      "class": "native-engine",
+      "owner": "N08c"
+    },
+    "packages/core/src/atmosphere/params.ts": {
+      "class": "native-engine",
+      "owner": "N08c"
+    },
+    "packages/core/src/audio.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/billboard.ts": {
+      "class": "native-engine",
+      "owner": "N06"
+    },
+    "packages/core/src/bone-lengths.ts": {
+      "class": "native-engine",
+      "owner": "N11c"
+    },
+    "packages/core/src/camera-shake.ts": {
+      "class": "native-engine",
+      "owner": "N06"
+    },
+    "packages/core/src/canvas-layer.ts": {
+      "class": "native-engine",
+      "owner": "N09"
+    },
+    "packages/core/src/clip-audit.ts": {
+      "class": "native-engine",
+      "owner": "N11a"
+    },
+    "packages/core/src/clustered-batch.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/clustered-mesh.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/compute-driven.ts": {
+      "class": "native-engine",
+      "owner": "N08d"
+    },
+    "packages/core/src/config.ts": {
+      "class": "binding-glue",
+      "owner": "N18"
+    },
+    "packages/core/src/debug.ts": {
+      "class": "binding-glue",
+      "owner": "N18"
+    },
+    "packages/core/src/engine-render-hook.ts": {
+      "class": "native-engine",
+      "owner": "N09"
+    },
+    "packages/core/src/entities.ts": {
+      "class": "native-engine",
+      "owner": "N06"
+    },
+    "packages/core/src/entity-snapshot.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/flight.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/fluid-field.ts": {
+      "class": "native-engine",
+      "owner": "N14e"
+    },
+    "packages/core/src/fluid-particles.ts": {
+      "class": "native-engine",
+      "owner": "N14e"
+    },
+    "packages/core/src/frame-budget.ts": {
+      "class": "native-engine",
+      "owner": "N16"
+    },
+    "packages/core/src/game.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/geometry-capture.ts": {
+      "class": "native-engine",
+      "owner": "N20"
+    },
+    "packages/core/src/gpu-readback.ts": {
+      "class": "native-engine",
+      "owner": "N07"
+    },
+    "packages/core/src/gpu-scene-bvh.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/grounding.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/hot.ts": {
+      "class": "build-tool",
+      "owner": "N05"
+    },
+    "packages/core/src/import-meta.d.ts": {
+      "class": "build-tool",
+      "owner": "N05"
+    },
+    "packages/core/src/index.ts": {
+      "class": "binding-glue",
+      "owner": "N03"
+    },
+    "packages/core/src/input.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/instanced-batch-lod.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/instanced-batch.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/launch-diagnostics.ts": {
+      "class": "native-engine",
+      "owner": "N16"
+    },
+    "packages/core/src/loop.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/matrix-world.ts": {
+      "class": "native-engine",
+      "owner": "N06"
+    },
+    "packages/core/src/merge-parts.ts": {
+      "class": "native-engine",
+      "owner": "N06"
+    },
+    "packages/core/src/model-lod.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/net-protocol.ts": {
+      "class": "unsupported",
+      "owner": "N00"
+    },
+    "packages/core/src/net-session.ts": {
+      "class": "unsupported",
+      "owner": "N00"
+    },
+    "packages/core/src/net.ts": {
+      "class": "unsupported",
+      "owner": "N00"
+    },
+    "packages/core/src/ocean/fft.ts": {
+      "class": "native-engine",
+      "owner": "N08d"
+    },
+    "packages/core/src/ocean/spectral.ts": {
+      "class": "native-engine",
+      "owner": "N14e"
+    },
+    "packages/core/src/particles.ts": {
+      "class": "native-engine",
+      "owner": "N14e"
+    },
+    "packages/core/src/path-follow.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/picking.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/pipeline-census.ts": {
+      "class": "native-engine",
+      "owner": "N20"
+    },
+    "packages/core/src/platform.ts": {
+      "class": "binding-glue",
+      "owner": "N02"
+    },
+    "packages/core/src/playtest.ts": {
+      "class": "binding-glue",
+      "owner": "N16"
+    },
+    "packages/core/src/pointer-events.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/pose-measure.ts": {
+      "class": "native-engine",
+      "owner": "N11c"
+    },
+    "packages/core/src/profiling/FrameCounters.ts": {
+      "class": "native-engine",
+      "owner": "N16"
+    },
+    "packages/core/src/profiling/Spans.ts": {
+      "class": "native-engine",
+      "owner": "N16"
+    },
+    "packages/core/src/profiling/render-list-validate.ts": {
+      "class": "native-engine",
+      "owner": "N16"
+    },
+    "packages/core/src/profiling/scene-warning.ts": {
+      "class": "native-engine",
+      "owner": "N16"
+    },
+    "packages/core/src/profiling/span-probes.ts": {
+      "class": "native-engine",
+      "owner": "N16"
+    },
+    "packages/core/src/projection-apply.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/projection-marker.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/projection-plan.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/projection-skinned.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/projection-stability.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/projection-uniform.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/random.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/react-glyphs.ts": {
+      "class": "binding-glue",
+      "owner": "N18"
+    },
+    "packages/core/src/react-host.ts": {
+      "class": "binding-glue",
+      "owner": "N18"
+    },
+    "packages/core/src/react-layout.ts": {
+      "class": "binding-glue",
+      "owner": "N18"
+    },
+    "packages/core/src/react.ts": {
+      "class": "binding-glue",
+      "owner": "N18"
+    },
+    "packages/core/src/render-camera-cull.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/render-pass-budget.ts": {
+      "class": "native-engine",
+      "owner": "N16"
+    },
+    "packages/core/src/render/alpha-antialiasing.ts": {
+      "class": "native-engine",
+      "owner": "N14d"
+    },
+    "packages/core/src/render/batched-velocity.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/render/chain.ts": {
+      "class": "native-engine",
+      "owner": "N14a"
+    },
+    "packages/core/src/render/daylight.ts": {
+      "class": "native-engine",
+      "owner": "N08c"
+    },
+    "packages/core/src/render/foliage-alpha.ts": {
+      "class": "native-engine",
+      "owner": "N08c"
+    },
+    "packages/core/src/render/material-key.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/render/mesh-pool.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/render/probe-volume.ts": {
+      "class": "native-engine",
+      "owner": "N14c"
+    },
+    "packages/core/src/render/velocity.ts": {
+      "class": "native-engine",
+      "owner": "N14d"
+    },
+    "packages/core/src/render/virtual-shadow-pages.ts": {
+      "class": "native-engine",
+      "owner": "N14b"
+    },
+    "packages/core/src/render/virtual-shadow.ts": {
+      "class": "native-engine",
+      "owner": "N14b"
+    },
+    "packages/core/src/render/world-impostor-surface.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/render/world-impostor.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/renderProjection.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/renderer-config.ts": {
+      "class": "native-engine",
+      "owner": "N20"
+    },
+    "packages/core/src/renderer.ts": {
+      "class": "native-engine",
+      "owner": "N09"
+    },
+    "packages/core/src/replay-protocol.ts": {
+      "class": "binding-glue",
+      "owner": "N16"
+    },
+    "packages/core/src/replay.ts": {
+      "class": "binding-glue",
+      "owner": "N16"
+    },
+    "packages/core/src/resolution-scaler.ts": {
+      "class": "native-engine",
+      "owner": "N20"
+    },
+    "packages/core/src/rig-preparation.ts": {
+      "class": "native-engine",
+      "owner": "N11c"
+    },
+    "packages/core/src/ripple-field.ts": {
+      "class": "native-engine",
+      "owner": "N14e"
+    },
+    "packages/core/src/scale.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/scene.ts": {
+      "class": "native-engine",
+      "owner": "N06"
+    },
+    "packages/core/src/schedule.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/skeletal-mesh.ts": {
+      "class": "native-engine",
+      "owner": "N11c"
+    },
+    "packages/core/src/skeleton.ts": {
+      "class": "native-engine",
+      "owner": "N11c"
+    },
+    "packages/core/src/snow-field.ts": {
+      "class": "native-engine",
+      "owner": "N14e"
+    },
+    "packages/core/src/softbody-topology.ts": {
+      "class": "unsupported",
+      "owner": "N00"
+    },
+    "packages/core/src/softbody.ts": {
+      "class": "unsupported",
+      "owner": "N00"
+    },
+    "packages/core/src/sprite-animator.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/startup-readiness.ts": {
+      "class": "native-engine",
+      "owner": "N16"
+    },
+    "packages/core/src/state.ts": {
+      "class": "binding-glue",
+      "owner": "N18"
+    },
+    "packages/core/src/static-transform.ts": {
+      "class": "native-engine",
+      "owner": "N06"
+    },
+    "packages/core/src/streaming.ts": {
+      "class": "native-engine",
+      "owner": "N13a"
+    },
+    "packages/core/src/target-fps.ts": {
+      "class": "native-engine",
+      "owner": "N15"
+    },
+    "packages/core/src/terrain-jobs-worker.ts": {
+      "class": "binding-glue",
+      "owner": "N13b"
+    },
+    "packages/core/src/terrain-jobs.ts": {
+      "class": "native-engine",
+      "owner": "N13b"
+    },
+    "packages/core/src/textures.ts": {
+      "class": "native-engine",
+      "owner": "N07"
+    },
+    "packages/core/src/tracers.ts": {
+      "class": "native-engine",
+      "owner": "N14e"
+    },
+    "packages/core/src/ui-bridge.ts": {
+      "class": "binding-glue",
+      "owner": "N18"
+    },
+    "packages/core/src/ui-hit-regions.ts": {
+      "class": "binding-glue",
+      "owner": "N18"
+    },
+    "packages/core/src/ui-layer.ts": {
+      "class": "binding-glue",
+      "owner": "N18"
+    },
+    "packages/core/src/ui-state.ts": {
+      "class": "binding-glue",
+      "owner": "N18"
+    },
+    "packages/core/src/version.ts": {
+      "class": "build-tool",
+      "owner": "N03"
+    },
+    "packages/core/src/viewport.ts": {
+      "class": "native-engine",
+      "owner": "N07"
+    },
+    "packages/core/src/warmup.ts": {
+      "class": "native-engine",
+      "owner": "N07"
+    },
+    "packages/core/src/water-surface.ts": {
+      "class": "native-engine",
+      "owner": "N14e"
+    },
+    "packages/core/src/wave-field.ts": {
+      "class": "native-engine",
+      "owner": "N14e"
+    },
+    "packages/core/src/world-capabilities.ts": {
+      "class": "binding-glue",
+      "owner": "N02"
+    },
+    "packages/core/src/world-cells.ts": {
+      "class": "native-engine",
+      "owner": "N13b"
+    },
+    "packages/core/src/world-gpu-scene.ts": {
+      "class": "native-engine",
+      "owner": "N12"
+    },
+    "packages/core/src/world-heightmap.ts": {
+      "class": "native-engine",
+      "owner": "N13b"
+    },
+    "packages/core/src/world-package.ts": {
+      "class": "native-engine",
+      "owner": "N10"
+    },
+    "packages/core/src/world-passes.ts": {
+      "class": "native-engine",
+      "owner": "N14a"
+    },
+    "packages/core/src/world-region.ts": {
+      "class": "native-engine",
+      "owner": "N13c"
+    },
+    "packages/core/src/world-terrain-splat.ts": {
+      "class": "native-engine",
+      "owner": "N08c"
+    },
+    "packages/core/src/world-tiles.ts": {
+      "class": "native-engine",
+      "owner": "N13b"
+    },
+    "packages/core/src/world-topology.ts": {
+      "class": "native-engine",
+      "owner": "N13b"
+    },
+    "packages/core/src/world-validate.ts": {
+      "class": "native-engine",
+      "owner": "N13c"
+    },
+    "packages/core/src/world.ts": {
+      "class": "native-engine",
+      "owner": "N13c"
+    }
+  },
+  "symbols": {
+    "imports": [
+      "three/addons/animation/CCDIKSolver.js:CCDIKSolver",
+      "three/addons/geometries/DecalGeometry.js:DecalGeometry",
+      "three/addons/geometries/RoundedBoxGeometry.js:RoundedBoxGeometry",
+      "three/addons/loaders/GLTFLoader.js:GLTFLoader",
+      "three/addons/tsl/display/BloomNode.js:bloom",
+      "three/addons/tsl/display/DenoiseNode.js:denoise",
+      "three/addons/tsl/display/FXAANode.js:fxaa",
+      "three/addons/tsl/display/GTAONode.js:ao",
+      "three/addons/tsl/display/GodraysNode.js:godrays",
+      "three/addons/tsl/display/SMAANode.js:smaa",
+      "three/addons/tsl/display/SSGINode.js:ssgi",
+      "three/addons/tsl/display/SSRNode.js:ssr",
+      "three/addons/tsl/display/SharpenNode.js:sharpen",
+      "three/addons/utils/BufferGeometryUtils.js:mergeGeometries",
+      "three/addons/utils/BufferGeometryUtils.js:mergeVertices",
+      "three/examples/jsm/utils/BufferGeometryUtils.js:mergeGeometries",
+      "three/examples/jsm/utils/SkeletonUtils.js:clone",
+      "three/tsl:Break",
+      "three/tsl:Continue",
+      "three/tsl:Fn",
+      "three/tsl:If",
+      "three/tsl:Loop",
+      "three/tsl:abs",
+      "three/tsl:add",
+      "three/tsl:atan",
+      "three/tsl:attribute",
+      "three/tsl:cameraFar",
+      "three/tsl:cameraNear",
+      "three/tsl:cameraPosition",
+      "three/tsl:clamp",
+      "three/tsl:color",
+      "three/tsl:convertToTexture",
+      "three/tsl:cos",
+      "three/tsl:cross",
+      "three/tsl:deltaTime",
+      "three/tsl:depth",
+      "three/tsl:div",
+      "three/tsl:dot",
+      "three/tsl:exp",
+      "three/tsl:float",
+      "three/tsl:floor",
+      "three/tsl:fract",
+      "three/tsl:frameGroup",
+      "three/tsl:fwidth",
+      "three/tsl:getViewPosition",
+      "three/tsl:hash",
+      "three/tsl:instanceIndex",
+      "three/tsl:instancedArray",
+      "three/tsl:int",
+      "three/tsl:ivec2",
+      "three/tsl:length",
+      "three/tsl:lightShadowMatrix",
+      "three/tsl:linearDepth",
+      "three/tsl:mat2",
+      "three/tsl:max",
+      "three/tsl:metalness",
+      "three/tsl:min",
+      "three/tsl:mix",
+      "three/tsl:mod",
+      "three/tsl:modelWorldMatrixInverse",
+      "three/tsl:mrt",
+      "three/tsl:mul",
+      "three/tsl:nodeObject",
+      "three/tsl:normalGeometry",
+      "three/tsl:normalLocal",
+      "three/tsl:normalView",
+      "three/tsl:normalWorld",
+      "three/tsl:normalize",
+      "three/tsl:oneMinus",
+      "three/tsl:output",
+      "three/tsl:pass",
+      "three/tsl:positionGeometry",
+      "three/tsl:positionLocal",
+      "three/tsl:positionViewDirection",
+      "three/tsl:positionWorld",
+      "three/tsl:pow",
+      "three/tsl:property",
+      "three/tsl:reference",
+      "three/tsl:reflect",
+      "three/tsl:roughness",
+      "three/tsl:rtt",
+      "three/tsl:saturate",
+      "three/tsl:screenCoordinate",
+      "three/tsl:screenSize",
+      "three/tsl:screenUV",
+      "three/tsl:select",
+      "three/tsl:sin",
+      "three/tsl:smoothstep",
+      "three/tsl:step",
+      "three/tsl:sub",
+      "three/tsl:texture",
+      "three/tsl:texture3D",
+      "three/tsl:textureLoad",
+      "three/tsl:time",
+      "three/tsl:transformNormalToView",
+      "three/tsl:uniform",
+      "three/tsl:uv",
+      "three/tsl:varying",
+      "three/tsl:vec2",
+      "three/tsl:vec3",
+      "three/tsl:vec4",
+      "three/tsl:viewportLinearDepth",
+      "three/tsl:wgslFn",
+      "three/webgpu:ACESFilmicToneMapping",
+      "three/webgpu:AdditiveBlending",
+      "three/webgpu:AmbientLight",
+      "three/webgpu:BatchedMesh",
+      "three/webgpu:Bone",
+      "three/webgpu:Box3",
+      "three/webgpu:BoxGeometry",
+      "three/webgpu:BufferGeometry",
+      "three/webgpu:BundleGroup",
+      "three/webgpu:Color",
+      "three/webgpu:ComputeNode",
+      "three/webgpu:ConeGeometry",
+      "three/webgpu:CylinderGeometry",
+      "three/webgpu:DirectionalLight",
+      "three/webgpu:Float32BufferAttribute",
+      "three/webgpu:FloatType",
+      "three/webgpu:Frustum",
+      "three/webgpu:Group",
+      "three/webgpu:HemisphereLight",
+      "three/webgpu:IcosahedronGeometry",
+      "three/webgpu:InstancedMesh",
+      "three/webgpu:LinearToneMapping",
+      "three/webgpu:Material",
+      "three/webgpu:MathUtils",
+      "three/webgpu:Matrix4",
+      "three/webgpu:Mesh",
+      "three/webgpu:MeshBasicMaterial",
+      "three/webgpu:MeshBasicNodeMaterial",
+      "three/webgpu:MeshLambertNodeMaterial",
+      "three/webgpu:MeshStandardMaterial",
+      "three/webgpu:MeshStandardNodeMaterial",
+      "three/webgpu:NearestFilter",
+      "three/webgpu:NoToneMapping",
+      "three/webgpu:Node",
+      "three/webgpu:NodeBuilder",
+      "three/webgpu:NodeFrame",
+      "three/webgpu:NodeMaterial",
+      "three/webgpu:NodeUpdateType",
+      "three/webgpu:NormalBlending",
+      "three/webgpu:Object3D",
+      "three/webgpu:OrthographicCamera",
+      "three/webgpu:PassNode",
+      "three/webgpu:PerspectiveCamera",
+      "three/webgpu:PlaneGeometry",
+      "three/webgpu:PointLight",
+      "three/webgpu:PostProcessing",
+      "three/webgpu:QuadMesh",
+      "three/webgpu:REVISION",
+      "three/webgpu:RenderPipeline",
+      "three/webgpu:RenderTarget",
+      "three/webgpu:Renderer",
+      "three/webgpu:RendererUtils",
+      "three/webgpu:Scene",
+      "three/webgpu:Skeleton",
+      "three/webgpu:SkinnedMesh",
+      "three/webgpu:Sphere",
+      "three/webgpu:SphereGeometry",
+      "three/webgpu:Sprite",
+      "three/webgpu:SpriteNodeMaterial",
+      "three/webgpu:StorageBufferNode",
+      "three/webgpu:StructNode",
+      "three/webgpu:TempNode",
+      "three/webgpu:TextureNode",
+      "three/webgpu:TorusGeometry",
+      "three/webgpu:Uint16BufferAttribute",
+      "three/webgpu:Vector2",
+      "three/webgpu:Vector3",
+      "three/webgpu:WebGPURenderer",
+      "three:ACESFilmicToneMapping",
+      "three:AdditiveBlending",
+      "three:AgXToneMapping",
+      "three:AmbientLight",
+      "three:AnimationClip",
+      "three:AnimationMixer",
+      "three:Audio",
+      "three:BackSide",
+      "three:Bone",
+      "three:Box3",
+      "three:BoxGeometry",
+      "three:BufferAttribute",
+      "three:BufferGeometry",
+      "three:Camera",
+      "three:CanvasTexture",
+      "three:CapsuleGeometry",
+      "three:CatmullRomCurve3",
+      "three:CircleGeometry",
+      "three:ClampToEdgeWrapping",
+      "three:Color",
+      "three:ColorRepresentation",
+      "three:ConeGeometry",
+      "three:CylinderGeometry",
+      "three:Data3DTexture",
+      "three:DataTexture",
+      "three:DepthTexture",
+      "three:DirectionalLight",
+      "three:DodecahedronGeometry",
+      "three:DoubleSide",
+      "three:DynamicDrawUsage",
+      "three:EdgesGeometry",
+      "three:EquirectangularReflectionMapping",
+      "three:Euler",
+      "three:ExtrudeGeometry",
+      "three:Float32BufferAttribute",
+      "three:FloatType",
+      "three:Fog",
+      "three:FogExp2",
+      "three:GridHelper",
+      "three:Group",
+      "three:HalfFloatType",
+      "three:HemisphereLight",
+      "three:IcosahedronGeometry",
+      "three:InstancedBufferGeometry",
+      "three:InstancedMesh",
+      "three:InterleavedBufferAttribute",
+      "three:LOD",
+      "three:LatheGeometry",
+      "three:Line",
+      "three:LineBasicMaterial",
+      "three:LineSegments",
+      "three:LinearFilter",
+      "three:LinearMipmapLinearFilter",
+      "three:LinearSRGBColorSpace",
+      "three:LoopOnce",
+      "three:Material",
+      "three:MathUtils",
+      "three:Matrix4",
+      "three:Mesh",
+      "three:MeshBasicMaterial",
+      "three:MeshNormalMaterial",
+      "three:MeshStandardMaterial",
+      "three:NearestFilter",
+      "three:NeutralToneMapping",
+      "three:NoColorSpace",
+      "three:NoToneMapping",
+      "three:NormalBlending",
+      "three:NumberKeyframeTrack",
+      "three:Object3D",
+      "three:OctahedronGeometry",
+      "three:OrthographicCamera",
+      "three:PCFSoftShadowMap",
+      "three:Path",
+      "three:PerspectiveCamera",
+      "three:PlaneGeometry",
+      "three:PointLight",
+      "three:Points",
+      "three:PointsMaterial",
+      "three:Quaternion",
+      "three:QuaternionKeyframeTrack",
+      "three:RGBAFormat",
+      "three:Raycaster",
+      "three:RenderTarget",
+      "three:RepeatWrapping",
+      "three:RingGeometry",
+      "three:SRGBColorSpace",
+      "three:Scene",
+      "three:Shape",
+      "three:ShapeGeometry",
+      "three:Skeleton",
+      "three:SkinnedMesh",
+      "three:SphereGeometry",
+      "three:Sprite",
+      "three:SpriteMaterial",
+      "three:Texture",
+      "three:TorusGeometry",
+      "three:TorusKnotGeometry",
+      "three:TubeGeometry",
+      "three:Uint16BufferAttribute",
+      "three:UnsignedByteType",
+      "three:Vector2",
+      "three:Vector3",
+      "three:Vector3Like",
+      "three:Vector4",
+      "three:VectorKeyframeTrack",
+      "three:WebGPUCoordinateSystem"
+    ],
+    "rendererRawProperties": [
+      "backend",
+      "info",
+      "logarithmicDepthBuffer",
+      "outputColorSpace",
+      "readRenderTargetPixelsAsync",
+      "resolveTimestampsAsync",
+      "reversedDepthBuffer",
+      "shadowMap",
+      "toneMapping",
+      "toneMappingExposure"
+    ]
+  }
+}

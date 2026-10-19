@@ -404,6 +404,7 @@ void destroyBindingsState(BindingsState*& state) {
 #endif
         state->canvas2D.canvas2DContexts.clear();
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
+        state->registries.ownedResources->releaseAll();
         while (!state->registries.textureRegistry.empty()) {
             releaseTextureRegistryEntry(state, state->registries.textureRegistry.begin()->first);
         }
@@ -916,6 +917,9 @@ static WGPUFeatureName jsFeatureNameToWGPU(const std::string& featureName) {
     // resolveQuerySet. Answered from the real adapter and device below, so an adapter without it
     // still reports false — the feature is advertised because it works, not because it is named.
     if (featureName == "timestamp-query") return WGPUFeatureName_TimestampQuery;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    if (featureName == "transient-attachments") return WGPUFeatureName_TransientAttachments;
+#endif
 #if defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU)
     // The feature behind three's SSGI target format (RGBFormat + UnsignedInt101111Type maps to
     // an rg11b10ufloat render target). Both shipped WebGPU C headers define this enum; without
@@ -1685,8 +1689,29 @@ static js::JSValueHandle handleGpuQueueWriteBuffer(BindingsState* state, Binding
                             size_t dataSize = 0;
                             void* dataPtr = state->engine->getArrayBufferData(args[2], &dataSize);
                             if (!dataPtr || dataSize == 0) {
-                                state->engine->throwException("writeBuffer: invalid data");
-                                return state->engine->newUndefined();
+                                // Empty backing stores may have no pointer; brand-check before accepting a no-op.
+                                js::JSValueGuard isEmptySource(*state->engine, state->engine->evalScriptWithResult(R"JS((data) => {
+                                    const typedArrays = Object.getPrototypeOf(Uint8Array.prototype);
+                                    const emptySource = (prototype, probe) => {
+                                        let empty;
+                                        try { empty = Object.getOwnPropertyDescriptor(prototype, "byteLength").get.call(data) === 0; }
+                                        catch { return false; }
+                                        if (!empty) return false;
+                                        try { probe(data); } catch { return false; }
+                                        return true;
+                                    };
+                                    // A detached ArrayBuffer or TypedArray still reports byteLength 0, so probe it:
+                                    // both probes throw on a detached receiver and run no user code.
+                                    if (emptySource(ArrayBuffer.prototype, (value) => new Uint8Array(value))) return true;
+                                    if (emptySource(typedArrays, (value) => typedArrays.values.call(value))) return true;
+                                    return emptySource(DataView.prototype, () => {});
+                                })JS", "write-buffer-empty-source.js"));
+                                js::JSValueGuard validEmpty(*state->engine, state->engine->call(
+                                    isEmptySource.get(), state->engine->newUndefined(), {args[2]}));
+                                if (!state->engine->toBoolean(validEmpty.get())) {
+                                    state->engine->throwException("writeBuffer: invalid data");
+                                    return state->engine->newUndefined();
+                                }
                             }
                             // WebGPU expresses dataOffset/size in elements for a TypedArray,
                             // but in bytes for ArrayBuffer and DataView inputs.
@@ -1713,6 +1738,7 @@ static js::JSValueHandle handleGpuQueueWriteBuffer(BindingsState* state, Binding
                                 state->engine->throwException("writeBuffer: source range exceeds the supplied buffer view");
                                 return state->engine->newUndefined();
                             }
+                            if (writeSize == 0) return state->engine->newUndefined();
                             const uint8_t* source = static_cast<uint8_t*>(dataPtr) + dataOffset;
                             if (buffer && state->queue) {
                                 const size_t alignedWriteSize = (writeSize + 3) & ~size_t(3);
@@ -2739,9 +2765,13 @@ static bool installWebGPUBindingTables(BindingsState* state, js::Engine* engine)
     , globalBindingHost},
         {"WebGPU", "__tnPresentedCount", 0, nullptr,
         &handleWebGpuPresentedCount
+    , globalBindingHost},
+        {"WebGPU", "__tnThreadCpuMs", 0, nullptr,
+        &handleWebGpuThreadCpuMs
     , globalBindingHost}})) ||
         !copyGlobalBinding(globalBindingHost, "__tnPresentationCap") ||
-        !copyGlobalBinding(globalBindingHost, "__tnPresentedCount")) return false;
+        !copyGlobalBinding(globalBindingHost, "__tnPresentedCount") ||
+        !copyGlobalBinding(globalBindingHost, "__tnThreadCpuMs")) return false;
 
     // Native helper that decodes image data off the frame thread
     if (!installBindingTable(state->engine, state, bindingTable({

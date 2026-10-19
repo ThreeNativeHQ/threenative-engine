@@ -18,10 +18,9 @@ import { isStatic } from "./static-transform.js";
  *
  * The pass mirrors three exactly for a visible node: `matrixAutoUpdate` -> `updateMatrix()`, then
  * the `matrixWorldNeedsUpdate || force` recompute honouring `matrixWorldAutoUpdate` and a null
- * parent, then force the children. A node with `visible === false` still composes its **own**
- * matrix — that is what makes the next part cheap — and is not recursed into; when it was forced
- * (or carried a dirty flag) it is remembered, so the first frame it is visible again its whole
- * subtree is recomputed with `force = true`.
+ * parent, then force the children. A node with `visible === false` defers its own compose and its
+ * subtree's walk. Every skipped root is remembered, so the first frame it is visible again both
+ * its own world matrix and its descendants are recomputed with `force = true`.
  *
  * Two things are never dropped by the pruning, because both are read while nothing above them is
  * visible:
@@ -43,6 +42,14 @@ import { isStatic } from "./static-transform.js";
  * moved, `invalidateStatic` re-arms one something wrote inside, and both compose the subtree once at
  * that moment. `isStatic` is what separates the engine's freeze from a game that turned the flags off
  * for its own reasons. See `static-transform.ts`.
+ *
+ * Where the root is a native-engine object it has its own walk, `__tnUpdateMatrixWorld(force, prune)`: this
+ * pass run natively in one call, answering the nodes it visited. The pass calls that and nothing else, since the
+ * walk above costs a bridge call per node read and written (about 16 to 25 thousand a frame at 4,096 cubes).
+ * With `prune` (the `"visible"` mode) the native walk leaves a hidden subtree where it stands by the same rules,
+ * bones included; `"all"` visits every node. A JS subclass of `Object3D` that overrides `updateMatrixWorld` is not
+ * called from inside it; the engine's own `SkinnedMesh` and `Camera` keep their derived matrices. The web and the
+ * legacy host have no such method and walk as above.
  *
  * A game that reads a **hidden** object's `matrixWorld` directly must not rely on this pass
  * having reached it: use `getWorldPosition`/`getWorldQuaternion`/`getWorldScale` (which update the
@@ -73,6 +80,9 @@ export interface IMatrixWorldOptions {
   /** `"visible"` (default) skips a hidden subtree; `"all"` reproduces three's own walk. */
   readonly mode?: MatrixWorldMode;
 }
+
+/** What a native-engine root offers: the whole walk in one call, answering the nodes it covered. */
+type NativeWalk = (this: Object3D, force: boolean, prune: boolean) => number;
 
 /** The base walk, to tell a class that overrides `updateMatrixWorld` (SkinnedMesh, Camera) apart. */
 const BASE_UPDATE_MATRIX_WORLD = Object3D.prototype.updateMatrixWorld;
@@ -175,7 +185,11 @@ export class MatrixWorldPass {
     const before = this.#visited;
     beginSpan(SPANS.sceneUpdate);
     try {
-      this.#step(root, force, this.#mode === "visible");
+      const native = (root as Object3D & { __tnUpdateMatrixWorld?: NativeWalk })
+        .__tnUpdateMatrixWorld;
+      if (typeof native === "function")
+        this.#visited += native.call(root, force, this.#mode === "visible");
+      else this.#step(root, force, this.#mode === "visible");
     } finally {
       endSpan(SPANS.sceneUpdate);
     }
@@ -196,16 +210,15 @@ export class MatrixWorldPass {
       root.updateMatrixWorld(force || stale);
       return;
     }
-    if (root.matrixAutoUpdate) root.updateMatrix();
-    let childForce = composeWorld(root, force) || force;
-    // The recompose cleared the flag, so `childForce` is now true exactly when this node's own
-    // world matrix changed — and therefore when its subtree is dirty. Nothing under a hidden node
-    // can draw, so defer the recursion; the node itself is already correct for the frame it shows.
+    // Nothing here can draw. Remember even a clean root: local or ancestor transforms can change
+    // while it is hidden without leaving a world-matrix dirty flag on this node.
     if (prune && root.visible === false && !this.#holdsBones(root)) {
-      if (childForce) this.#stale.add(root);
+      this.#stale.add(root);
       return;
     }
-    if (this.#stale.delete(root)) childForce = true;
+    const stale = this.#stale.delete(root);
+    if (root.matrixAutoUpdate) root.updateMatrix();
+    const childForce = composeWorld(root, force || stale) || force || stale;
     // The frozen subtree's world matrices were composed when the engine placed it, and only a write
     // to something in it can change them: `refreshStaticTransforms` re-arms a frozen root whose own
     // transform moved, and `invalidateStatic` re-arms one something wrote inside. Both compose the

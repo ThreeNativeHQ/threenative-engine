@@ -1,0 +1,59 @@
+{
+  "name": "textures-data-float",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a gradient FloatType (RGBA32Float) DataTexture, Linear filter and ClampToEdge, on a lit MeshStandardMaterial plane and a MeshBasicMaterial box",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "tex",
+      "kind": "string",
+      "path": "colorSpace",
+      "value": "s:",
+      "decimal": ""
+    },
+    {
+      "index": 1,
+      "id": "tex",
+      "kind": "number",
+      "path": "wrapS",
+      "value": "n:408f480000000000",
+      "decimal": "1001"
+    },
+    {
+      "index": 2,
+      "id": "tex",
+      "kind": "number",
+      "path": "magFilter",
+      "value": "n:408f700000000000",
+      "decimal": "1006"
+    },
+    {
+      "index": 3,
+      "id": "boxMaterial",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshBasicMaterial",
+      "decimal": "MeshBasicMaterial"
+    },
+    {
+      "index": 4,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:50a4c6aa8ef645a03a181b7aafdfc3707562e61110160dbeb12a721baab83657",
+      "decimal": "50a4c6aa8ef645a03a181b7aafdfc3707562e61110160dbeb12a721baab83657"
+    }
+  ],
+  "render": {
+    "png": "textures-data-float.png",
+    "pngSha256": "50a4c6aa8ef645a03a181b7aafdfc3707562e61110160dbeb12a721baab83657",
+    "width": 256,
+    "height": 128,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

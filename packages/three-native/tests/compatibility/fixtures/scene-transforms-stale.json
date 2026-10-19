@@ -1,0 +1,290 @@
+{
+  "name": "scene-transforms-stale",
+  "adaptedFrom": "three@0.185.1 test/unit/src/core/Object3D.tests.js \u2014 a matrix read before updateMatrix, a world matrix read before updateMatrixWorld, and updateWorldMatrix with its parent and child flags",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "stale",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "stale",
+      "path": "position.y",
+      "value": 5
+    },
+    {
+      "op": "set",
+      "id": "stale",
+      "path": "scale.x",
+      "value": 3
+    },
+    {
+      "op": "new",
+      "id": "composed",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "composed",
+      "path": "position.y",
+      "value": 5
+    },
+    {
+      "op": "set",
+      "id": "composed",
+      "path": "scale.x",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "composed",
+      "method": "updateMatrix",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "staleParent",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "staleParent",
+      "path": "position.x",
+      "value": 4
+    },
+    {
+      "op": "new",
+      "id": "staleChild",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "staleChild",
+      "path": "position.z",
+      "value": 6
+    },
+    {
+      "op": "call",
+      "id": "staleParent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "staleChild"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "liveParent",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "liveParent",
+      "path": "position.x",
+      "value": 4
+    },
+    {
+      "op": "new",
+      "id": "liveChild",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "liveChild",
+      "path": "position.z",
+      "value": 6
+    },
+    {
+      "op": "call",
+      "id": "liveParent",
+      "method": "add",
+      "args": [
+        {
+          "ref": "liveChild"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "liveParent",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "queried",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "queried",
+      "path": "position.y",
+      "value": 2
+    },
+    {
+      "op": "call",
+      "id": "queried",
+      "method": "rotateX",
+      "args": [0.35]
+    },
+    {
+      "op": "new",
+      "id": "queriedChild",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "queried",
+      "method": "add",
+      "args": [
+        {
+          "ref": "queriedChild"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "point",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "queriedChild",
+      "method": "localToWorld",
+      "args": [
+        {
+          "ref": "point"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "backAgain",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "queriedChild",
+      "method": "worldToLocal",
+      "args": [
+        {
+          "ref": "backAgain"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "queriedScale",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "queriedChild",
+      "method": "getWorldScale",
+      "args": [
+        {
+          "ref": "queriedScale"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "queriedDirection",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "queriedChild",
+      "method": "getWorldDirection",
+      "args": [
+        {
+          "ref": "queriedDirection"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "stale",
+      "path": "matrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "stale",
+      "path": "matrixWorldNeedsUpdate",
+      "kind": "boolean"
+    },
+    {
+      "id": "composed",
+      "path": "matrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "composed",
+      "path": "matrixWorldNeedsUpdate",
+      "kind": "boolean"
+    },
+    {
+      "id": "staleParent",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "staleChild",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "liveParent",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "liveChild",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "liveChild",
+      "path": "matrixWorldNeedsUpdate",
+      "kind": "boolean"
+    },
+    {
+      "id": "point",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "backAgain",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "queriedScale",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "queriedDirection",
+      "method": "toArray",
+      "kind": "numbers"
+    }
+  ]
+}

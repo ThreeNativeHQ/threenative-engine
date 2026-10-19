@@ -1,0 +1,10 @@
+{
+  "name": "arrays-matrix-elements-write",
+  "adaptedFrom": "three@0.185.1 Matrix4.elements — a write through the flat array is seen by the matrix",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "m", "class": "Matrix4", "args": [] },
+    { "op": "set", "id": "m", "path": "elements.0", "value": 5 }
+  ],
+  "observe": [{ "id": "m", "path": "elements", "kind": "numbers" }]
+}

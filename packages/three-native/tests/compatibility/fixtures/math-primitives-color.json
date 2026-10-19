@@ -1,0 +1,905 @@
+{
+  "name": "math-primitives-color",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Color.tests.js \u2014 the whole surface, including the sRGB transfer function three's ColorManagement applies in both directions",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "c01",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c01",
+      "method": "getHex",
+      "args": [],
+      "result": "r02"
+    },
+    {
+      "op": "call",
+      "id": "c01",
+      "method": "getHexString",
+      "args": [],
+      "result": "r03"
+    },
+    {
+      "op": "new",
+      "id": "c04",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c04",
+      "method": "setHex",
+      "args": [16744512]
+    },
+    {
+      "op": "call",
+      "id": "c04",
+      "method": "getHex",
+      "args": [],
+      "result": "r05"
+    },
+    {
+      "op": "call",
+      "id": "c04",
+      "method": "getHexString",
+      "args": [],
+      "result": "r06"
+    },
+    {
+      "op": "new",
+      "id": "c07",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c07",
+      "method": "setHex",
+      "args": [1715004, "srgb-linear"]
+    },
+    {
+      "op": "call",
+      "id": "c07",
+      "method": "getHex",
+      "args": ["srgb-linear"],
+      "result": "r08"
+    },
+    {
+      "op": "new",
+      "id": "c09",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c09",
+      "method": "setRGB",
+      "args": [0.25, 0.5, 0.75, "srgb"]
+    },
+    {
+      "op": "new",
+      "id": "c10",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c10",
+      "method": "setScalar",
+      "args": [0.5]
+    },
+    {
+      "op": "new",
+      "id": "c11",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c11",
+      "method": "setHSL",
+      "args": [0.3, 0.5, 0.25]
+    },
+    {
+      "op": "new",
+      "id": "c12",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c12",
+      "method": "setHSL",
+      "args": [0.3, 0, 0.25]
+    },
+    {
+      "op": "new",
+      "id": "c13",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c13",
+      "method": "setStyle",
+      "args": ["rgb(255,128,64)"]
+    },
+    {
+      "op": "call",
+      "id": "c13",
+      "method": "getHexString",
+      "args": [],
+      "result": "r14"
+    },
+    {
+      "op": "new",
+      "id": "c15",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c15",
+      "method": "setStyle",
+      "args": ["#f80"]
+    },
+    {
+      "op": "call",
+      "id": "c15",
+      "method": "getHexString",
+      "args": [],
+      "result": "r16"
+    },
+    {
+      "op": "new",
+      "id": "c17",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c17",
+      "method": "setStyle",
+      "args": ["rgba(10,20,30,0.5)"]
+    },
+    {
+      "op": "call",
+      "id": "c17",
+      "method": "getHexString",
+      "args": [],
+      "result": "r18"
+    },
+    {
+      "op": "new",
+      "id": "c19",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c19",
+      "method": "setStyle",
+      "args": ["hsl(120,50%,50%)"]
+    },
+    {
+      "op": "call",
+      "id": "c19",
+      "method": "getHexString",
+      "args": [],
+      "result": "r20"
+    },
+    {
+      "op": "new",
+      "id": "c21",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c21",
+      "method": "setStyle",
+      "args": ["hsla(120,50%,50%,0.5)"]
+    },
+    {
+      "op": "call",
+      "id": "c21",
+      "method": "getHexString",
+      "args": [],
+      "result": "r22"
+    },
+    {
+      "op": "new",
+      "id": "c23",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c23",
+      "method": "setStyle",
+      "args": ["rebeccapurple"]
+    },
+    {
+      "op": "call",
+      "id": "c23",
+      "method": "getHexString",
+      "args": [],
+      "result": "r24"
+    },
+    {
+      "op": "new",
+      "id": "c25",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c25",
+      "method": "setStyle",
+      "args": ["rgb(300,-20,0)"]
+    },
+    {
+      "op": "call",
+      "id": "c25",
+      "method": "getHexString",
+      "args": [],
+      "result": "r26"
+    },
+    {
+      "op": "new",
+      "id": "c27",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c27",
+      "method": "setStyle",
+      "args": ["not-a-colour"]
+    },
+    {
+      "op": "call",
+      "id": "c27",
+      "method": "getHexString",
+      "args": [],
+      "result": "r28"
+    },
+    {
+      "op": "new",
+      "id": "c29",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c29",
+      "method": "setColorName",
+      "args": ["tomato"]
+    },
+    {
+      "op": "new",
+      "id": "c30",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c30",
+      "method": "setColorName",
+      "args": ["chartreuse"]
+    },
+    {
+      "op": "new",
+      "id": "c31",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c31",
+      "method": "setColorName",
+      "args": ["no-such-colour"]
+    },
+    {
+      "op": "new",
+      "id": "a32",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "new",
+      "id": "b33",
+      "class": "Color",
+      "args": [0.75, 0.5, 0.25]
+    },
+    {
+      "op": "new",
+      "id": "c34",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c34",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "a32"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "c34",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "a32"
+        }
+      ],
+      "result": "r35"
+    },
+    {
+      "op": "new",
+      "id": "c36",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c36",
+      "method": "copySRGBToLinear",
+      "args": [
+        {
+          "ref": "a32"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c37",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c37",
+      "method": "copyLinearToSRGB",
+      "args": [
+        {
+          "ref": "a32"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c38",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c38",
+      "method": "convertSRGBToLinear",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "c39",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c39",
+      "method": "convertLinearToSRGB",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "t40",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "c41",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c41",
+      "method": "getRGB",
+      "args": [
+        {
+          "ref": "t40"
+        },
+        "srgb"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v42",
+      "class": "Vector3",
+      "args": [0.1, 0.2, 0.3]
+    },
+    {
+      "op": "new",
+      "id": "m43",
+      "class": "Matrix3",
+      "args": [0.5, 0.2, 0, 0.1, 0.7, 0, 0, 0, 1]
+    },
+    {
+      "op": "new",
+      "id": "c44",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c44",
+      "method": "add",
+      "args": [
+        {
+          "ref": "a32"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c45",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c45",
+      "method": "addScalar",
+      "args": [0.25]
+    },
+    {
+      "op": "new",
+      "id": "c46",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c46",
+      "method": "sub",
+      "args": [
+        {
+          "ref": "b33"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c47",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c47",
+      "method": "multiply",
+      "args": [
+        {
+          "ref": "b33"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c48",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c48",
+      "method": "multiplyScalar",
+      "args": [2]
+    },
+    {
+      "op": "new",
+      "id": "c49",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c49",
+      "method": "lerp",
+      "args": [
+        {
+          "ref": "b33"
+        },
+        0.25
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c50",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c50",
+      "method": "lerpHSL",
+      "args": [
+        {
+          "ref": "b33"
+        },
+        0.25
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c51",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c51",
+      "method": "offsetHSL",
+      "args": [0.1, 0.1, 0.1]
+    },
+    {
+      "op": "new",
+      "id": "c52",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c52",
+      "method": "setFromVector3",
+      "args": [
+        {
+          "ref": "v42"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c53",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c53",
+      "method": "applyMatrix3",
+      "args": [
+        {
+          "ref": "m43"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c54",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c54",
+      "method": "addColors",
+      "args": [
+        {
+          "ref": "a32"
+        },
+        {
+          "ref": "b33"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "c55",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "c55",
+      "method": "lerpColors",
+      "args": [
+        {
+          "ref": "a32"
+        },
+        {
+          "ref": "b33"
+        },
+        0.5
+      ]
+    },
+    {
+      "op": "new",
+      "id": "s56",
+      "class": "Color",
+      "args": [0.25, 0.5, 0.75]
+    },
+    {
+      "op": "call",
+      "id": "s56",
+      "method": "toArray",
+      "args": [],
+      "result": "arr"
+    },
+    {
+      "op": "new",
+      "id": "c57",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "c57",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "arr"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "c01",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r02",
+      "kind": "number"
+    },
+    {
+      "id": "r03",
+      "kind": "string"
+    },
+    {
+      "id": "c04",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r05",
+      "kind": "number"
+    },
+    {
+      "id": "r06",
+      "kind": "string"
+    },
+    {
+      "id": "c07",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r08",
+      "kind": "number"
+    },
+    {
+      "id": "c09",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c10",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c11",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c12",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c13",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r14",
+      "kind": "string"
+    },
+    {
+      "id": "c15",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r16",
+      "kind": "string"
+    },
+    {
+      "id": "c17",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r18",
+      "kind": "string"
+    },
+    {
+      "id": "c19",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r20",
+      "kind": "string"
+    },
+    {
+      "id": "c21",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r22",
+      "kind": "string"
+    },
+    {
+      "id": "c23",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r24",
+      "kind": "string"
+    },
+    {
+      "id": "c25",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r26",
+      "kind": "string"
+    },
+    {
+      "id": "c27",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r28",
+      "kind": "string"
+    },
+    {
+      "id": "c29",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c30",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c31",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c34",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r35",
+      "kind": "boolean"
+    },
+    {
+      "id": "c36",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c37",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c38",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c39",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "t40",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c44",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c45",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c46",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c47",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c48",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c49",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c50",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c51",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c52",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c53",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c54",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "c55",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "arr",
+      "kind": "numbers"
+    },
+    {
+      "id": "c57",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

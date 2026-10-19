@@ -16,6 +16,7 @@ import {
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { GLB_BUFFER, NodeIO } from "@gltf-transform/core";
 import {
   TraceMap,
   decodedMappings,
@@ -25,6 +26,15 @@ import {
   traceSegment,
 } from "@jridgewell/trace-mapping";
 import { compileAssets } from "@threenative/assets";
+import {
+  KHR_DF_MODEL_ASTC,
+  KHR_DF_TRANSFER_LINEAR,
+  KHR_DF_TRANSFER_SRGB,
+  KHR_SUPERCOMPRESSION_NONE,
+  VK_FORMAT_ASTC_4x4_SRGB_BLOCK,
+  VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
+  read as readKTX2,
+} from "ktx-parse";
 import { BUILD_REPORT_SUFFIX, measureTreeBytes, writeBuildReport } from "./buildReport.js";
 import { writeCompressionSidecars } from "./compress.js";
 import { type IResolvedThreeNativeConfig, loadConfig } from "./config.js";
@@ -33,6 +43,7 @@ import {
   describeNativeCssFindings,
   findNativeCssViolations,
 } from "./native-css-compat.js";
+import { webRuntimeDecoders } from "./web-engine.js";
 
 export type BuildTarget = "android" | "desktop" | "ios" | "web";
 type NativeBuildTarget = Exclude<BuildTarget, "web">;
@@ -178,6 +189,244 @@ export function assetRoot(cwd: string, config: IResolvedThreeNativeConfig): stri
   return path.resolve(cwd, config.assets?.output ?? "public");
 }
 
+/** Structural package admission only; the cook owns decoded quality and the host checks GPU support. */
+function isMobileRawAstc(bytes: Uint8Array, gltf = false): boolean {
+  try {
+    if (bytes.byteLength < 80) return false;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const width = view.getUint32(20, true);
+    const height = view.getUint32(24, true);
+    const count = view.getUint32(40, true);
+    const indexEnd = 80 + count * 24;
+    if (
+      width === 0 ||
+      height === 0 ||
+      count !== Math.floor(Math.log2(Math.max(width, height))) + 1 ||
+      indexEnd > bytes.byteLength
+    )
+      return false;
+    // Bound descriptor parsing before handing untrusted bytes to the installed parser.
+    const dfd = view.getUint32(48, true);
+    const dfdLength = view.getUint32(52, true);
+    if (
+      dfd < indexEnd ||
+      dfd % 4 !== 0 ||
+      dfdLength !== 44 ||
+      dfd + dfdLength > bytes.byteLength ||
+      view.getUint32(dfd, true) !== dfdLength ||
+      view.getUint16(dfd + 10, true) !== 40 ||
+      view.getBigUint64(64, true) !== 0n ||
+      view.getBigUint64(72, true) !== 0n
+    )
+      return false;
+    const regions: [number, number][] = [
+      [0, indexEnd],
+      [dfd, dfd + dfdLength],
+    ];
+    const kvd = view.getUint32(56, true);
+    const kvdLength = view.getUint32(60, true);
+    if (kvdLength > 0) {
+      if (kvd < indexEnd || kvd % 4 !== 0 || kvd + kvdLength > bytes.byteLength) return false;
+      regions.push([kvd, kvd + kvdLength]);
+    }
+    for (let mip = 0; mip < count; mip += 1) {
+      const offset = view.getBigUint64(80 + mip * 24, true);
+      const expected =
+        Math.ceil(Math.max(1, Math.floor(width / 2 ** mip)) / 4) *
+        Math.ceil(Math.max(1, Math.floor(height / 2 ** mip)) / 4) *
+        16;
+      if (
+        !Number.isSafeInteger(expected) ||
+        view.getBigUint64(88 + mip * 24, true) !== BigInt(expected) ||
+        view.getBigUint64(96 + mip * 24, true) !== BigInt(expected) ||
+        offset % 16n !== 0n ||
+        offset + BigInt(expected) > BigInt(bytes.byteLength)
+      )
+        return false;
+      regions.push([Number(offset), Number(offset) + expected]);
+    }
+    regions.sort((a, b) => a[0] - b[0]);
+    if (regions.some(([start], i) => i > 0 && start < (regions[i - 1]?.[1] ?? 0))) return false;
+    const container = readKTX2(bytes);
+    const descriptor = container.dataFormatDescriptor[0];
+    const sample = descriptor?.samples[0];
+    return (
+      [VK_FORMAT_ASTC_4x4_UNORM_BLOCK, VK_FORMAT_ASTC_4x4_SRGB_BLOCK].includes(
+        container.vkFormat,
+      ) &&
+      container.typeSize === 1 &&
+      container.pixelDepth === 0 &&
+      container.layerCount === 0 &&
+      container.faceCount === 1 &&
+      container.supercompressionScheme === KHR_SUPERCOMPRESSION_NONE &&
+      container.globalData === null &&
+      container.levelCount === count &&
+      container.levels.length === count &&
+      container.dataFormatDescriptor.length === 1 &&
+      descriptor?.vendorId === 0 &&
+      descriptor.descriptorType === 0 &&
+      descriptor.versionNumber === 2 &&
+      descriptor.colorModel === KHR_DF_MODEL_ASTC &&
+      (descriptor.flags === 0 || descriptor.flags === 1) &&
+      (!gltf ||
+        (descriptor.flags === 0 &&
+          descriptor.colorPrimaries ===
+            (container.vkFormat === VK_FORMAT_ASTC_4x4_SRGB_BLOCK ? 1 : 0) &&
+          (container.keyValue.KTXorientation === undefined ||
+            container.keyValue.KTXorientation === "rd"))) &&
+      descriptor.transferFunction ===
+        (container.vkFormat === VK_FORMAT_ASTC_4x4_SRGB_BLOCK
+          ? KHR_DF_TRANSFER_SRGB
+          : KHR_DF_TRANSFER_LINEAR) &&
+      descriptor.texelBlockDimension.join() === "3,3,0,0" &&
+      descriptor.bytesPlane.join() === "16,0,0,0,0,0,0,0" &&
+      descriptor.samples.length === 1 &&
+      sample?.bitOffset === 0 &&
+      sample.bitLength === 127 &&
+      sample.channelType === 0 &&
+      sample.samplePosition.join() === "0,0,0,0" &&
+      sample.sampleLower === 0 &&
+      sample.sampleUpper === 0xffffffff
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** NodeIO resolves GLB, external and data resources; every filesystem read stays in the cook root. */
+class CompiledModelIO extends NodeIO {
+  constructor(
+    private readonly outputRoot: string,
+    private readonly canonicalRoot: string,
+  ) {
+    super();
+    this.setAllowNetwork(false);
+  }
+  protected override readURI(uri: string, type: "view"): Promise<Uint8Array<ArrayBuffer>>;
+  protected override readURI(uri: string, type: "text"): Promise<string>;
+  protected override async readURI(
+    uri: string,
+    type: "view" | "text",
+  ): Promise<Uint8Array<ArrayBuffer> | string> {
+    if (/^[a-z][a-z0-9+.-]*:/iu.test(uri))
+      throw new Error("External resource protocols are forbidden.");
+    const resolved = path.resolve(uri);
+    const relative = path.relative(this.outputRoot, resolved);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+      throw new Error("Model resource escapes the compiled root.");
+    const canonical = await realpath(resolved);
+    const realRelative = path.relative(this.canonicalRoot, canonical);
+    if (
+      realRelative === ".." ||
+      realRelative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(realRelative)
+    )
+      throw new Error("Model resource escapes the compiled root through a symlink.");
+    return type === "text" ? readFile(canonical, "utf8") : readFile(canonical);
+  }
+}
+
+/** Inspect actual model images and extension ownership without loading a decoder or scene graph. */
+async function inspectMobileModel(outputRoot: string, output: string): Promise<string[]> {
+  const io = new CompiledModelIO(outputRoot, await realpath(outputRoot));
+  const { json, resources } = await io.readAsJSON(path.resolve(outputRoot, output));
+  const extensions = new Set([...(json.extensionsUsed ?? []), ...(json.extensionsRequired ?? [])]);
+  for (const view of json.bufferViews ?? [])
+    for (const name of Object.keys(view.extensions ?? {})) extensions.add(name);
+  for (const mesh of json.meshes ?? [])
+    for (const primitive of mesh.primitives)
+      for (const name of Object.keys(primitive.extensions ?? {})) extensions.add(name);
+  if (extensions.has("KHR_texture_basisu"))
+    throw new Error("Basis model textures require a decoder.");
+  const astcImages = new Set<number>();
+  for (const texture of json.textures ?? []) {
+    if (texture.extensions?.KHR_texture_basisu !== undefined)
+      throw new Error("Basis texture ownership is forbidden.");
+    const astc = texture.extensions?.EXT_texture_astc as { source?: number } | undefined;
+    if (astc === undefined) continue;
+    if (
+      !Number.isSafeInteger(astc.source) ||
+      !json.images?.[astc.source ?? -1] ||
+      texture.source !== undefined
+    )
+      throw new Error("Invalid ASTC source or unsupported paired fallback.");
+    astcImages.add(astc.source as number);
+  }
+  const hasAstcImages = astcImages.size > 0;
+  if (
+    extensions.has("EXT_texture_astc") !== hasAstcImages ||
+    (hasAstcImages &&
+      (!(json.extensionsUsed ?? []).includes("EXT_texture_astc") ||
+        !(json.extensionsRequired ?? []).includes("EXT_texture_astc")))
+  )
+    throw new Error("ASTC model extension membership is inconsistent.");
+  for (const [index, image] of (json.images ?? []).entries()) {
+    let bytes: Uint8Array | undefined;
+    if (typeof image.uri === "string") bytes = resources[image.uri];
+    else {
+      if (!Number.isSafeInteger(image.bufferView) || (image.bufferView ?? -1) < 0)
+        throw new Error("Invalid model image bufferView index.");
+      const view = json.bufferViews?.[image.bufferView ?? -1];
+      const buffer = json.buffers?.[view?.buffer ?? -1];
+      const resource = buffer === undefined ? undefined : resources[buffer.uri ?? GLB_BUFFER];
+      const offset = view?.byteOffset ?? 0;
+      const length = view?.byteLength;
+      if (
+        !view ||
+        !buffer ||
+        !resource ||
+        !Number.isSafeInteger(view.buffer) ||
+        (buffer.uri === undefined && view.buffer !== 0) ||
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(length) ||
+        (length ?? 0) <= 0 ||
+        !Number.isSafeInteger(buffer.byteLength) ||
+        offset + (length ?? 0) > buffer.byteLength ||
+        offset + (length ?? 0) > resource.byteLength
+      )
+        throw new Error("Invalid model image buffer bounds.");
+      bytes = resource.subarray(offset, offset + (length as number));
+    }
+    if (!bytes || bytes.byteLength === 0) throw new Error("Missing model image payload.");
+    const isKtx =
+      image.mimeType === "image/ktx2" ||
+      Buffer.from(bytes.subarray(0, 12)).equals(Buffer.from("ab4b5458203230bb0d0a1a0a", "hex"));
+    if (astcImages.has(index) || isKtx) {
+      if (
+        !astcImages.has(index) ||
+        image.mimeType !== "image/ktx2" ||
+        !isMobileRawAstc(bytes, true) ||
+        (json.textures ?? []).some((texture) => texture.source === index)
+      )
+        throw new Error("Model KTX2 must be valid raw ASTC owned by EXT_texture_astc.");
+    }
+  }
+  return [...extensions];
+}
+
+/** Only files in the compiled root can qualify for the mobile raw-ASTC exception. */
+async function isCompiledMobileAstc(outputRoot: string, output: string): Promise<boolean> {
+  const resolved = path.resolve(outputRoot, output);
+  const relative = path.relative(outputRoot, resolved);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+    return false;
+  try {
+    const canonicalRoot = await realpath(outputRoot);
+    const canonical = await realpath(resolved);
+    const realRelative = path.relative(canonicalRoot, canonical);
+    if (
+      realRelative === ".." ||
+      realRelative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(realRelative)
+    )
+      return false;
+    return isMobileRawAstc(await readFile(canonical));
+  } catch {
+    return false;
+  }
+}
+
 /** Refuse compiled codecs the selected runtime/bundle cannot decode before packaging starts. */
 export async function assertNativeAssetsCompatible(
   cwd: string,
@@ -210,21 +459,70 @@ export async function assertNativeAssetsCompatible(
   const rows = Object.entries(entries as Record<string, unknown>).map(
     ([logical, entry]) => [logical, (entry ?? {}) as Record<string, unknown>] as const,
   );
-  const ktx2 = rows
-    .filter(
-      ([, entry]) =>
-        (typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)) ||
-        (Array.isArray(entry.extensions) && entry.extensions.includes("KHR_texture_basisu")) ||
-        (Array.isArray(entry.sharedImages) &&
-          entry.sharedImages.some(
-            (image) =>
+  if (!capabilities.decoders.ktx2 && (target === "android" || target === "ios")) {
+    for (const [logical, entry] of rows) {
+      if (
+        typeof entry.output !== "string" ||
+        !(entry.kind === "model" || /\.gl(?:b|tf)$/iu.test(entry.output))
+      )
+        continue;
+      try {
+        const actual = await inspectMobileModel(outputRoot, entry.output);
+        entry.extensions = [
+          ...new Set([...(Array.isArray(entry.extensions) ? entry.extensions : []), ...actual]),
+        ];
+      } catch (error) {
+        throw new Error(
+          `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot admit model '${logical}': ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+  const ktx2Rows = rows.filter(
+    ([, entry]) =>
+      (typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)) ||
+      (Array.isArray(entry.extensions) && entry.extensions.includes("KHR_texture_basisu")) ||
+      (Array.isArray(entry.sharedImages) &&
+        entry.sharedImages.some(
+          (image) =>
+            image !== null &&
+            typeof image === "object" &&
+            typeof image.output === "string" &&
+            /\.ktx2$/iu.test(image.output),
+        )),
+  );
+  const ktx2: string[] = [];
+  for (const [logical, entry] of ktx2Rows) {
+    if (
+      !capabilities.decoders.ktx2 &&
+      (target === "android" || target === "ios") &&
+      !(Array.isArray(entry.extensions) && entry.extensions.includes("KHR_texture_basisu"))
+    ) {
+      const outputs = [
+        ...(typeof entry.output === "string" && /\.ktx2$/iu.test(entry.output)
+          ? [entry.output]
+          : []),
+        ...(Array.isArray(entry.sharedImages)
+          ? entry.sharedImages.flatMap((image) =>
               image !== null &&
               typeof image === "object" &&
               typeof image.output === "string" &&
-              /\.ktx2$/iu.test(image.output),
-          )),
-    )
-    .map(([logical]) => logical);
+              /\.ktx2$/iu.test(image.output)
+                ? [image.output as string]
+                : [],
+            )
+          : []),
+      ];
+      if (
+        outputs.length > 0 &&
+        (
+          await Promise.all(outputs.map((output) => isCompiledMobileAstc(outputRoot, output)))
+        ).every(Boolean)
+      )
+        continue;
+    }
+    ktx2.push(logical);
+  }
   if (!capabilities.decoders.ktx2 && ktx2.length > 0) {
     throw new Error(
       `TN_NATIVE_KTX2_UNSUPPORTED: ${target} cannot ship compiled KTX2 textures (${namedAssets(ktx2)}). Selected artifact ${capabilities.artifact} (${capabilities.engine}) has no admitted Basis/KTX2 decoder in its bundle. Replace or transcode the authored KTX2 source for ${target === "desktop" ? "this runtime" : "mobile"}, or exclude it from ${target === "desktop" ? "this runtime's" : "mobile"} builds; keep compressed textures on the web target.`,
@@ -805,7 +1103,14 @@ export async function buildWeb(
 ): Promise<void> {
   const config = await loadConfig(cwd, { target: "web", profile });
   announceProfile(config);
-  await compileAssets({ config: config.assets, cwd, platform: "web" });
+  // The Wasm engine's glTF loader takes neither Meshopt nor KTX2, so its web cook is decoder-free.
+  await compileAssets({
+    config: config.assets,
+    cwd,
+    platform: "web",
+    runtimeDecoders: webRuntimeDecoders(config),
+    ...(config.engine !== "threejs" && { runtimeIdentity: "web:native-engine" }),
+  });
   const assets = assetRoot(cwd, config);
   // Vite empties and rewrites its outDir in place, so a build that dies half-way through leaves a
   // truncated `dist` where a working one used to be — the same failure a native artifact had, and
@@ -819,14 +1124,32 @@ export async function buildWeb(
   try {
     await mkdir(path.dirname(staging), { recursive: true });
     await mkdir(path.dirname(driver), { recursive: true });
-    await writeFile(driver, webBuildDriver(cwd, assets));
+    const native = config.engine === "threenative";
+    const configIndex = viteArgs.findIndex(
+      (arg) => arg === "--config" || arg.startsWith("--config="),
+    );
+    const configArg = configIndex === -1 ? undefined : viteArgs[configIndex];
+    const configFile = configArg?.includes("=")
+      ? configArg.slice(configArg.indexOf("=") + 1)
+      : viteArgs[configIndex + 1];
+    const forwardedArgs =
+      native && configIndex !== -1
+        ? viteArgs.filter(
+            (_, index) =>
+              index !== configIndex && (configArg !== "--config" || index !== configIndex + 1),
+          )
+        : viteArgs;
+    await writeFile(
+      driver,
+      webBuildDriver(cwd, assets, native, configIndex === -1 ? undefined : configFile),
+    );
     await run(
       process.execPath,
       [
         path.join(packageRoot(cwd, "vite"), "bin/vite.js"),
         "build",
-        ...stagedViteArgs(viteArgs, staging),
-        ...ownConfigArgs(viteArgs, driver, assets === path.resolve(cwd, "public")),
+        ...stagedViteArgs(forwardedArgs, staging),
+        ...ownConfigArgs(forwardedArgs, driver, !native && assets === path.resolve(cwd, "public")),
       ],
       cwd,
     );
@@ -867,17 +1190,29 @@ export async function buildWeb(
  *
  * A `publicDir` the project set itself is left alone, detected by the same signal the choice has
  * in every Vite version: the key is present in its own config (`false` is a choice too). A caller
- * who passed `--config` gets exactly the config they named, for the same reason.
+ * who passed `--config` keeps that config; the native engine switch still applies.
  */
-function webBuildDriver(cwd: string, assets: string): string {
+function webBuildDriver(cwd: string, assets: string, native = false, configFile?: string): string {
   const literal = (value: string): string => JSON.stringify(value);
   return `${[
     'import { defineConfig, loadConfigFromFile, mergeConfig } from "vite";',
+    ...(native
+      ? [
+          `import { createWebBrandPlugin } from ${literal(path.join(packageRoot(cwd, "create-threenative"), "dist/index.js"))};`,
+        ]
+      : []),
     "",
     `const root = ${literal(cwd)};`,
     `const assets = ${literal(assets)};`,
     "export default defineConfig(async ({ command, mode }) => {",
-    "  const own = (await loadConfigFromFile({ command, mode }, undefined, root))?.config ?? {};",
+    `  const own = (await loadConfigFromFile({ command, mode }, ${configFile === undefined ? "undefined" : literal(path.resolve(cwd, configFile))}, root))?.config ?? {};`,
+    ...(native
+      ? [
+          '  if (!(own.plugins ?? []).flat(Infinity).some((plugin) => plugin?.name === "threenative-web-brand"))',
+          "    own.plugins = [...(own.plugins ?? []), createWebBrandPlugin()];",
+          '  own.build = { target: "es2022", ...own.build };',
+        ]
+      : []),
     "  return mergeConfig(own, own.publicDir === undefined ? { publicDir: assets } : {});",
     "});",
     "",
@@ -1240,6 +1575,62 @@ async function assertArtifactBudget(
   }
 }
 
+/** Where a desktop `engine: "threenative"` build finds the engine player, absent an explicit path. */
+export function engineDesktopPlayer(
+  runtimeRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd(),
+): string {
+  const explicit = env.THREENATIVE_ENGINE_PLAYER;
+  if (explicit !== undefined) return path.resolve(cwd, explicit);
+  const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
+  const checkout = path.join(runtimeRoot, "build", "tn-engine-ui", filename);
+  return existsSync(checkout)
+    ? checkout
+    : path.join(runtimeRoot, "prebuilt", `${process.platform}-${process.arch}`, filename);
+}
+
+/** The desktop package of a game with `engine: "threenative"`: the engine player, the game on its own three, cooked assets and UI. */
+async function buildEngineDesktop(
+  cwd: string,
+  config: IResolvedThreeNativeConfig,
+  entry: string,
+): Promise<void> {
+  if (config.ui.renderer === "native-css") {
+    throw new Error(
+      'TN_ENGINE_NATIVE_UI_UNSUPPORTED: engine "threenative" on desktop draws a "web" UI through the engine player\'s overlay; set ui.renderer to "web" or "native", or set engine: "threejs" to keep the native-css host.',
+    );
+  }
+  const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
+  const packager = path.join(runtimeRoot, "scripts", "package-engine-desktop.mjs");
+  const bundler = path.join(runtimeRoot, "scripts", "bundle-native-engine.mjs");
+  if (!existsSync(packager) || !existsSync(bundler)) {
+    throw new Error(
+      `TN_ENGINE_BUNDLER_MISSING: engine "threenative" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
+    );
+  }
+  const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
+  const output = path.join(cwd, "dist-native", await projectName(cwd));
+  await packageStaged(output, cwd, [
+    packager,
+    "--project",
+    cwd,
+    "--entry",
+    entry,
+    "--player",
+    engineDesktopPlayer(runtimeRoot, process.env, cwd),
+    ...(ui === undefined ? [] : ["--ui", ui]),
+    "--width",
+    String(config.window.width),
+    "--height",
+    String(config.window.height),
+    "--title",
+    config.window.title,
+    "--output",
+    output,
+  ]);
+}
+
 async function buildNative(
   target: NativeBuildTarget,
   cwd: string,
@@ -1252,6 +1643,12 @@ async function buildNative(
   announceProfile(config);
   assertNativeUiRendererCompatible(target, config.ui.renderer);
   const entry = await nativeEntry(cwd, config);
+  // `engine: "threenative"` opts a desktop game into the C++ engine player, as it opts a web build into the Wasm
+  // engine: its own bundler, decoder-free cook and packager, never the legacy host's prebuilt.
+  if (target === "desktop" && config.engine === "threenative") {
+    await buildEngineDesktop(cwd, config, entry);
+    return;
+  }
   // Resolve the same desktop binary the packager will receive, before cooking. A default
   // prebuilt used to be selected only after the cook had guessed from the build machine.
   let selectedRuntime: string | undefined;

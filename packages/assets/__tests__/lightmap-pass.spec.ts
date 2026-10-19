@@ -2,7 +2,7 @@ import { Document, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, KHRLightsPunctual } from "@gltf-transform/extensions";
 import { read as readKtx2 } from "ktx-parse";
 import { describe, expect, it } from "vitest";
-import { lightmapPass } from "../src/passes/lightmap.js";
+import { createLightmapPass, lightmapPass } from "../src/passes/lightmap.js";
 import { modelPass } from "../src/passes/model.js";
 
 async function staticGlb(animated = false, indexed = true): Promise<Buffer> {
@@ -95,6 +95,14 @@ function uniquePositions(primitive: Awaited<ReturnType<typeof readPrimitive>>): 
 }
 
 describe("lightmapPass", () => {
+  it("separates mobile lightmap cache keys while preserving the public Basis key", () => {
+    const options = { atlasSize: 128, padding: 2 };
+    const basis = lightmapPass(options);
+    expect(basis.cacheKey).toBe(JSON.stringify(options));
+    expect(createLightmapPass(options, false).cacheKey).toBe(basis.cacheKey);
+    expect(createLightmapPass(options, true).cacheKey).not.toBe(basis.cacheKey);
+  });
+
   it("writes TEXCOORD_1 for every baked primitive and preserves TEXCOORD_0", async () => {
     const input = await staticGlb();
     const source = await readPrimitive(input);

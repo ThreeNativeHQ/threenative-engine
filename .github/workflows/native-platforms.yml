@@ -19,6 +19,11 @@ on:
         required: false
         type: boolean
         default: false
+      build_linux_arm64_v8:
+        description: "Build and cache the Linux arm64 V8 source payload (up to 210 minutes)"
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       selection_plan:
@@ -27,6 +32,11 @@ on:
         default: ""
       candidate_sha:
         description: Immutable source commit captured once by CI scope.
+        type: string
+        default: ""
+      # PRD-620: the parent's single admitted slice of eligible HEAVY instances. Empty (or a direct
+      # dispatch) means every heavy lane stays hosted.
+      runner_admission:
         type: string
         default: ""
       ios_only:
@@ -73,6 +83,9 @@ jobs:
       # request into main; `reduced` for an ordinary pull request, which runs the Linux rows only.
       native_tier: ${{ steps.classify.outputs.native_tier }}
       starter_rows: ${{ steps.rows.outputs.starter_rows }}
+      # PRD-620: the caller's admitted heavy slice, validated and re-emitted as safe JSON. Absent
+      # or empty input stays hosted; a malformed plan throws and fails this scope job closed.
+      runner_admission: ${{ steps.admission.outputs.runner_admission }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -90,14 +103,21 @@ jobs:
           fi
           grep -Fx "candidate_sha=$candidate" "$RUNNER_TEMP/ci-scope.outputs"
           cat "$RUNNER_TEMP/ci-scope.outputs" >> "$GITHUB_OUTPUT"
+      # PRD-620: validate the caller's single admitted slice; an absent or empty plan stays hosted
+      # and a malformed nonempty plan fails this scope job closed.
+      - id: admission
+        name: Validate the caller's admitted heavy instances
+        env:
+          TN_RUNNER_ADMISSION: ${{ inputs.runner_admission }}
+        run: node scripts/ci-runner-admission.mjs --validate-admission
       # A job's `if` cannot read `matrix` (GitHub's context table lists github, needs, vars and
       # inputs there), so a row an ordinary pull request does not owe is dropped by shaping the
       # matrix instead. x64 and arm64 run the identical release-container proof; the arm64 leg is
       # GitHub's free hosted `ubuntu-24.04-arm` runner, because there is no V8 or Dawn prebuilt for
-      # Linux arm64 (kuoruan/libv8 ships Linux x64 only; Dawn's ubuntu-latest asset is x64) and a
-      # source V8 build is not allowed in CI — so that host is built with QuickJS over wgpu-native,
-      # the one WebGPU backend publishing an arm64 Linux archive, which scripts/download-deps.mjs
-      # and scripts/native-build.mjs select from `process.arch`. A reduced run keeps x64 alone, and
+      # Linux arm64 (kuoruan/libv8 ships Linux x64 only; Dawn's ubuntu-latest asset is x64).
+      # The ARM host consumes the locked source-built V8 payload over wgpu-native; dependency
+      # verification fails closed rather than building V8 in a consumer lane.
+      # A reduced run keeps x64 alone, and
       # x64 routes through the same TN_RUNNER switch every other movable Linux job uses (PRD-480).
       - id: rows
         env:
@@ -106,7 +126,7 @@ jobs:
           set -euo pipefail
           node -e '
             const rows = [
-              { platform: "linux-x64", runner: "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}" },
+              { platform: "linux-x64", runner: "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(steps.admission.outputs.runner_admission || '[]'), 'native:starter-linux:linux-x64')) && 'ubuntu-24.04' || vars.TN_RUNNER }}" },
               { platform: "linux-arm64", runner: "ubuntu-24.04-arm" },
             ];
             // Reduced only when the tier says so: an unreadable tier keeps every row.
@@ -130,7 +150,7 @@ jobs:
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only == false
     # Keep this platform prerequisite out of the local queue during CI/Integration bursts.
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'native:web-reference')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -178,7 +198,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
     # Keep this platform prerequisite out of the local queue during CI/Integration bursts.
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'native:android-v8-source')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
     timeout-minutes: 210
     outputs:
@@ -253,6 +273,178 @@ jobs:
               --prerelease --latest=false --title "CI cache: Android V8 payload" \
               --notes "Built Android V8 payloads, one asset per recipe hash, for CI to download instead of rebuilding. Not a product release."
           gh release upload ci-v8-android "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+
+  # PRD-615 phase 1: opt-in cache producer; starter selection changes in the consumer phase.
+  linux-arm64-v8-source:
+    name: Linux arm64 V8 source payload
+    needs: scope
+    if: github.event_name == 'workflow_dispatch' && inputs.build_linux_arm64_v8 == true && needs.scope.outputs.selection == 'full' && needs.scope.outputs.native_tier != 'reduced' && inputs.ios_only != true
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 210
+    permissions:
+      contents: read
+    outputs:
+      recipe-hash: ${{ steps.recipe.outputs.hash }}
+      published: ${{ steps.published.outputs.hit }}
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - name: Compute the Linux arm64 V8 recipe hash
+        id: recipe
+        env:
+          RECIPE_HASH: >-
+            ${{ hashFiles(
+              'packages/runtime-native/scripts/build-linux-arm64-v8.mjs') }}
+        run: echo "hash=$RECIPE_HASH" >> "$GITHUB_OUTPUT"
+      - name: Download the published Linux arm64 V8 payload
+        id: published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: v8-linux-arm64-${{ steps.recipe.outputs.hash }}.tgz
+        run: |
+          set -euo pipefail
+          if gh release download ci-v8-linux-arm64 --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" \
+            --dir "$RUNNER_TEMP" --clobber; then
+            mkdir -p packages/runtime-native/third_party/v8-linux-arm64
+            tar -xzf "$RUNNER_TEMP/$ASSET" -C packages/runtime-native/third_party/v8-linux-arm64
+            node packages/runtime-native/scripts/build-linux-arm64-v8.mjs --verify
+            echo "Published Linux arm64 V8 asset hit: $ASSET; no rebuild."
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No published $ASSET; falling back to cache and source build."
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Restore the Linux arm64 V8 payload
+        id: payload
+        if: steps.published.outputs.hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/runtime-native/third_party/v8-linux-arm64
+          key: linux-arm64-v8-payload-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}
+      - name: Restore resumable Linux arm64 V8 source
+        if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            packages/runtime-native/third_party/.v8-linux-arm64-source
+            packages/runtime-native/third_party/v8-linux-arm64
+          key: linux-arm64-v8-source-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # Exact completed compilation from the packaging-only LICENSE repair; no broad fallback.
+          restore-keys: |
+            linux-arm64-v8-source-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}-
+            linux-arm64-v8-source-Linux-ARM64-e6cd6d572634333391f1f0a607f71a51a9d3ead5b94a6545649654ee48e2f90d-38711129527-1
+      - name: Install the pinned Linux arm64 V8 compiler
+        if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --allow-downgrades clang-18=1:18.1.3-1ubuntu1 lld-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 libclang-rt-18-dev=1:18.1.3-1 ninja-build build-essential python3 git pkg-config libglib2.0-dev
+          pkg-config --modversion glib-2.0 gmodule-2.0 gobject-2.0 gthread-2.0
+          # The adjacent Linux runtime config links libatomic when using the system C++ library.
+          printf 'int main() { return 0; }\n' | /usr/lib/llvm-18/bin/clang++ -x c++ - -latomic -o "$RUNNER_TEMP/v8-linux-link-preflight"
+      - name: Build the Linux arm64 V8 payload
+        id: build
+        if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
+        env:
+          # Fixed destination of the one-off packaging repair, never derived at runtime.
+          THREENATIVE_V8_PACKAGING_REPAIR_SCRIPT_SHA: cf3a8edabe1fd91691285d9402d3cec716a8723ff32b92789a3b04b509712beb
+        run: |
+          set -euo pipefail
+          export THREENATIVE_V8_BUILD_JOBS="${THREENATIVE_V8_BUILD_JOBS:-$(nproc)}"
+          timeout --signal=TERM --kill-after=30s 180m \
+            node packages/runtime-native/scripts/build-linux-arm64-v8.mjs
+      - name: Verify and package the Linux arm64 V8 payload
+        id: verify
+        env:
+          ASSET: v8-linux-arm64-${{ steps.recipe.outputs.hash }}.tgz
+        run: |
+          set -euo pipefail
+          node packages/runtime-native/scripts/build-linux-arm64-v8.mjs --verify
+          mkdir -p "$RUNNER_TEMP/linux-arm64-v8-proof"
+          mapfile -t libraries < <(find packages/runtime-native/third_party/v8-linux-arm64 -name libv8_monolith.a -type f)
+          test "${#libraries[@]}" -eq 1
+          library="${libraries[0]}"
+          ar t "$library" > "$RUNNER_TEMP/linux-arm64-v8-proof/ar-members.txt"
+          member="$(sed -n '1p' "$RUNNER_TEMP/linux-arm64-v8-proof/ar-members.txt")"
+          test -n "$member"
+          ar p "$library" "$member" > "$RUNNER_TEMP/v8-arm64-member.o"
+          file "$RUNNER_TEMP/v8-arm64-member.o" | tee "$RUNNER_TEMP/linux-arm64-v8-proof/file.txt"
+          readelf -h "$RUNNER_TEMP/v8-arm64-member.o" | tee "$RUNNER_TEMP/linux-arm64-v8-proof/elf-header.txt"
+          grep -Eq 'Machine:.*AArch64' "$RUNNER_TEMP/linux-arm64-v8-proof/elf-header.txt"
+          if [ "${{ steps.published.outputs.hit }}" != 'true' ]; then
+            tar -czf "$RUNNER_TEMP/$ASSET" -C packages/runtime-native/third_party/v8-linux-arm64 .
+          fi
+          (cd "$RUNNER_TEMP" && sha256sum "$ASSET") > "$RUNNER_TEMP/linux-arm64-v8-proof/payload.sha256"
+      - name: Save the verified Linux arm64 V8 payload
+        if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true' && steps.verify.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: packages/runtime-native/third_party/v8-linux-arm64
+          key: linux-arm64-v8-payload-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}
+      - name: Save interrupted Linux arm64 V8 source
+        if: >-
+          always() && steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true' &&
+          (steps.build.outcome == 'failure' ||
+          (steps.build.outcome == 'cancelled' && github.event_name != 'pull_request'))
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            packages/runtime-native/third_party/.v8-linux-arm64-source
+            packages/runtime-native/third_party/v8-linux-arm64
+          key: linux-arm64-v8-source-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-arm64-v8-${{ needs.scope.outputs.candidate_sha }}
+          path: |
+            ${{ runner.temp }}/v8-linux-arm64-${{ steps.recipe.outputs.hash }}.tgz
+            ${{ runner.temp }}/linux-arm64-v8-proof
+          if-no-files-found: error
+          retention-days: 2
+
+  # Release writes are isolated from candidate source and restricted to trusted refs.
+  publish-linux-arm64-v8:
+    name: Publish the Linux arm64 V8 payload
+    needs: [scope, linux-arm64-v8-source]
+    if: >-
+      needs.linux-arm64-v8-source.outputs.published == 'false' &&
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: linux-arm64-v8-${{ needs.scope.outputs.candidate_sha }}
+          path: payload
+      - name: Publish the exact verified Linux arm64 V8 tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: v8-linux-arm64-${{ needs.linux-arm64-v8-source.outputs.recipe-hash }}.tgz
+          TARGET: ${{ needs.scope.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          (cd payload && sha256sum --check linux-arm64-v8-proof/payload.sha256)
+          gh release view ci-v8-linux-arm64 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create ci-v8-linux-arm64 --repo "$GITHUB_REPOSITORY" --target "$TARGET" \
+              --prerelease --latest=false --title "CI cache: Linux arm64 V8 payload" \
+              --notes "Linux arm64 V8 source payloads keyed by recipe hash. Not a product release."
+          if gh release view ci-v8-linux-arm64 --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[].name' | grep -Fx "$ASSET"; then
+            mkdir -p "$RUNNER_TEMP/published-v8"
+            gh release download ci-v8-linux-arm64 --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" \
+              --dir "$RUNNER_TEMP/published-v8"
+            cmp -- "payload/$ASSET" "$RUNNER_TEMP/published-v8/$ASSET"
+          else
+            gh release upload ci-v8-linux-arm64 "payload/$ASSET" --repo "$GITHUB_REPOSITORY"
+          fi
 
   performance-coverage:
     name: Native collector evidence coverage
@@ -560,6 +752,10 @@ jobs:
           # 16 KB qualification from an ordinary one afterwards, and PRD-221 turns on exactly that
           # distinction. Captured on the same folded line for the same reason as the logcat dump:
           # `android-emulator-runner` destroys the emulator when `script` returns.
+          # A SwiftShader emulator can drop to "offline" right after a long conformance run, after
+          # every row passed; `adb reconnect offline` plus a bounded wait-for-device lets the dump
+          # read the buffer it would otherwise lose. A device that stays gone still records
+          # TN_ADB_LOGCAT_FAILED below.
           script: >-
             adb shell getconf PAGE_SIZE > "$RUNNER_TEMP/android-page-size.txt" 2>
             "$RUNNER_TEMP/android-page-size.err" || echo TN_ADB_PAGE_SIZE_FAILED >>
@@ -567,9 +763,15 @@ jobs:
             packages/runtime-native/conformance/run-conformance.mjs --target android
             --device emulator-5554 --reference artifacts/conformance/web
             --out artifacts/conformance/android; status=$?; echo "$status" >
-            "$RUNNER_TEMP/conformance-status.txt"; adb logcat -d >
-            "$RUNNER_TEMP/emulator-logcat.txt" 2> "$RUNNER_TEMP/emulator-logcat.err" || echo
-            TN_ADB_LOGCAT_FAILED >> "$RUNNER_TEMP/emulator-logcat.err";
+            "$RUNNER_TEMP/conformance-status.txt"; adb reconnect offline >/dev/null 2>&1;
+            timeout 60 adb -s emulator-5554 wait-for-device >/dev/null 2>&1; if adb -s
+            emulator-5554 logcat -d >
+            "$RUNNER_TEMP/emulator-logcat.txt" 2> "$RUNNER_TEMP/emulator-logcat.err"; then
+            :; else logcat_status=$?; printf 'TN_ADB_LOGCAT_FAILED exitCode=%s\n'
+            "$logcat_status" >> "$RUNNER_TEMP/emulator-logcat.err";
+            { printf 'get-state:\n'; adb -s emulator-5554 get-state 2>&1 | head -c 960;
+            printf '\ndevices -l:\n'; adb devices -l 2>&1 | head -c 960; } |
+            head -c 2048 >> "$RUNNER_TEMP/emulator-logcat.err"; fi;
             test "$status" -eq 0 -o "$status" -eq 2
       - name: Verify the observed Android page size
         if: always()
@@ -905,7 +1107,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'native:desktop-parity')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1300,6 +1502,10 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-starter-native
           template: starter
+          # This job verifies the Three.js host's packaged executable: the overlay markers, the
+          # release container, the installer and the signing proof. A config with no `engine`
+          # builds the V8 engine player directory instead, so the `threejs` override is named here.
+          engine: threejs
       - name: Build and verify the starter's WebView HUD
         shell: bash
         run: |
@@ -1359,15 +1565,36 @@ jobs:
           # The release container is a ZIP on macOS and Windows and desktop-distribution.mjs shells
           # out to `zip -r -q`. A missing archiver must be a red job, never a silent pass.
           if [ "${{ matrix.platform }}" = "Windows" ]; then
-            # The community feed drops requests now and then ("package was not found" for a listed
-            # version, run 37079046851). Retry twice; makensis -VERSION below still fails closed.
-            for attempt in 1 2 3; do
-              choco install zip -y --no-progress && choco install nsis --version=3.11.0 -y --no-progress && break
-              [ "$attempt" = 3 ] || sleep 30
-            done
-            nsis='/c/Program Files (x86)/NSIS'
-            "$nsis/makensis.exe" -VERSION
-            cygpath -w "$nsis" >> "$GITHUB_PATH"
+            # Pinned upstream archives keep the Windows packaging proof independent of Chocolatey's feed.
+            root=$(cygpath -u "$RUNNER_TEMP")
+            tools="$root/tn-packaging-tools"
+            mkdir -p "$tools/nsis" "$tools/zip"
+            curl -fsSL --retry 2 --retry-all-errors --retry-delay 3 --connect-timeout 15 --max-time 120 \
+              -o "$tools/nsis.zip" \
+              'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11.zip'
+            curl -fsSL --retry 2 --retry-all-errors --retry-delay 3 --connect-timeout 15 --max-time 120 \
+              -o "$tools/zip.zip" \
+              'https://fossies.org/windows/misc/zip300xn-x64.zip'
+            printf '%s  %s\n' \
+              'c7d27f780ddb6cffb4730138cd1591e841f4b7edb155856901cdf5f214394fa1' "$tools/nsis.zip" \
+              '63f32f1f797680d9c68379d36cff4373674d405527d7fa2b4bbd34edcc3370d2' "$tools/zip.zip" \
+              | sha256sum --check
+            export TN_NSIS_ARCHIVE="$(cygpath -w "$tools/nsis.zip")"
+            export TN_NSIS_DEST="$(cygpath -w "$tools/nsis")"
+            export TN_ZIP_ARCHIVE="$(cygpath -w "$tools/zip.zip")"
+            export TN_ZIP_DEST="$(cygpath -w "$tools/zip")"
+            powershell.exe -NoLogo -NoProfile -NonInteractive -Command '
+              $ErrorActionPreference = "Stop"
+              Expand-Archive -LiteralPath $env:TN_NSIS_ARCHIVE -DestinationPath $env:TN_NSIS_DEST -Force
+              Expand-Archive -LiteralPath $env:TN_ZIP_ARCHIVE -DestinationPath $env:TN_ZIP_DEST -Force
+            '
+            nsis="$tools/nsis/nsis-3.11"
+            export NSISDIR="$(cygpath -w "$nsis")"
+            "$nsis/Bin/makensis.exe" -VERSION
+            printf 'NSISDIR=%s\n' "$NSISDIR" >> "$GITHUB_ENV"
+            cygpath -w "$nsis/Bin" >> "$GITHUB_PATH"
+            cygpath -w "$tools/zip" >> "$GITHUB_PATH"
+            PATH="$tools/zip:$PATH"
             # The starter sets app.icon, so desktop-distribution.mjs shells out to rcedit to embed
             # the icon and version strings in the PE resources. rcedit is not on the runner image.
             # Pin the release: `latest` would make the packaged identity move under us.
@@ -1997,6 +2224,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-starter-native
           template: starter
+          # The Three.js host's `test:native` proof below; the default engine has its own step.
+          engine: threejs
       - name: Build and verify the scaffolded starter
         run: |
           target="$RUNNER_TEMP/threenative-starter-native"
@@ -2009,6 +2238,118 @@ jobs:
           TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS=30000 \
           TN_PLAYTEST_ALLOW_SOFTWARE=1 \
             pnpm --dir "$target" test:native
+      # The default engine on desktop: the scaffold sets no `engine`, so `threenative build --target
+      # desktop` packages the V8 engine player with the game bundled on the engine's own three. An
+      # installed runtime-native fetches that player from the release at install time, and this job
+      # installs with --ignore-scripts, so it builds the player and names it the way a checkout
+      # build does (`THREENATIVE_ENGINE_PLAYER`). No release ships a linux-arm64 player, so the
+      # arm64 row keeps to the `threejs` host proof above.
+      - name: Scaffold the starter on the default engine
+        if: matrix.platform == 'linux-x64'
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/threenative-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-starter-default
+          template: starter
+      - name: Build the engine player
+        if: matrix.platform == 'linux-x64'
+        working-directory: packages/runtime-native
+        run: |
+          set -euo pipefail
+          cmake --preset tn-linux -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON
+          cmake --build build/tn-engine-ui --target tn-native-engine-player-v8 --parallel "$(nproc)"
+      - name: Build the default-engine starter for desktop and boot its player
+        if: matrix.platform == 'linux-x64'
+        env:
+          THREENATIVE_ENGINE_PLAYER: ${{ github.workspace }}/packages/runtime-native/build/tn-engine-ui/tn-native-engine-player-v8
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-starter-default"
+          ! grep -q 'engine:' "$target/threenative.config.ts"
+          pnpm --dir "$target" install --ignore-scripts
+          pnpm --dir "$target" build:desktop
+          artifact=$(dirname "$(find "$target/dist-native" -name tn-native-engine-player-v8 -print -quit)")
+          for entry in tn-native-engine-player-v8 game.js native/assets.tnpk; do
+            test -s "$artifact/$entry" || { echo "TN_STARTER_ENGINE_ARTIFACT_MISSING: $entry"; exit 1; }
+          done
+          sh scripts/xvfb.sh "$artifact/tn-native-engine-player-v8" "$artifact/game.js" --check-game 2>&1 | tee "$RUNNER_TEMP/starter-default-boot.log"
+          grep -q 'TN_PLAYER_V8_GAME_CHECK: engine=native gameRuntime=v8 startup=passed' "$RUNNER_TEMP/starter-default-boot.log"
+      - name: Compare paired starter JS frame duration on Linux ARM64
+        if: matrix.platform == 'linux-arm64'
+        shell: bash
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+        run: |
+          set -euo pipefail
+          runtime="$PWD/packages/runtime-native"
+          target="$RUNNER_TEMP/threenative-starter-native"
+          evidence="$PWD/packages/runtime-native/artifacts/starter-linux-arm64/js-frame-pair"
+          mkdir -p "$evidence"
+          # Keep the V8 host before reconfiguring this same build: every non-engine feature
+          # (including Canvas2D and the web UI library) stays in the same CMake cache.
+          cp "$runtime/build/tn-linux/mystral" "$runtime/build/tn-linux/mystral-v8"
+          cp "$runtime/build/tn-linux/CMakeCache.txt" "$evidence/v8-CMakeCache.txt"
+          # The physics library too: the tn-linux preset names the x86_64 build, and this runner is arm64.
+          mapfile -t feature_flags < <(sed -n 's/^\(TN_ENABLE_[^:]*\|THREENATIVE_PHYSICS_LIBRARY\):[^=]*=\(.*\)$/-D\1=\2/p' "$evidence/v8-CMakeCache.txt")
+          restore_v8() {
+            cp "$runtime/build/tn-linux/mystral-v8" "$runtime/build/tn-linux/mystral"
+            cmake --preset tn-linux -S "$runtime" -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF \
+              -DMYSTRAL_USE_DAWN=OFF -DMYSTRAL_USE_WGPU=ON "${feature_flags[@]}"
+          }
+          trap restore_v8 EXIT
+          (
+            cd "$runtime"
+            cmake --preset tn-linux -DMYSTRAL_USE_V8=OFF -DMYSTRAL_USE_QUICKJS=ON \
+              -DMYSTRAL_USE_DAWN=OFF -DMYSTRAL_USE_WGPU=ON "${feature_flags[@]}"
+            cmake --build build/tn-linux --target mystral --parallel 2
+          )
+          cp "$runtime/build/tn-linux/CMakeCache.txt" "$evidence/quickjs-CMakeCache.txt"
+          # Fail if selecting an engine changed a feature rather than comparing unlike hosts.
+          diff <(sed -n '/^TN_ENABLE_.*:/p' "$evidence/v8-CMakeCache.txt" | sort) \
+               <(sed -n '/^TN_ENABLE_.*:/p' "$evidence/quickjs-CMakeCache.txt" | sort)
+          grep -qx 'TN_ENABLE_CANVAS2D:BOOL=ON' "$evidence/quickjs-CMakeCache.txt"
+          # Pin the existing resolution override in this temporary scaffold for BOTH arms.
+          # Cook and bundle once for QuickJS; both engines use the same prepared assets.
+          cp "$target/threenative.config.ts" "$evidence/original-config.ts"
+          # The cook replaces the consumer whose exact bytes the starter receipt already verified.
+          cp -p "$target/dist-native/threenative-starter-native" "$evidence/verified-consumer"
+          trap 'cp -p "$evidence/verified-consumer" "$target/dist-native/threenative-starter-native"; cp "$evidence/original-config.ts" "$target/threenative.config.ts"; restore_v8' EXIT
+          sed -i 's/resolutionScale: "auto"/resolutionScale: 1/' "$target/threenative.config.ts"
+          THREENATIVE_RUNTIME_BINARY="$runtime/build/tn-linux/mystral" \
+            pnpm --dir "$target" exec threenative build --target desktop
+          cp "$target/.threenative/build/game.js" "$target/dist-native/perf-game.js"
+          cp "$target/public/assets.manifest.json" "$evidence/assets.manifest.json"
+          cp "$target/threenative.config.ts" "$evidence/paired-config.ts"
+          cp "$evidence/original-config.ts" "$target/threenative.config.ts"
+          # Hosted software Vulkan is intentional here: JS callback durations only, no FPS/GPU claim.
+          sh scripts/xvfb.sh node "$runtime/scripts/measure-starter-js-frame-pair.mjs" \
+            "$runtime/build/tn-linux/mystral" "$runtime/build/tn-linux/mystral-v8" \
+            "$target/dist-native/perf-game.js" "$evidence"
+          # Separate visual proof uses the shipped deterministic scenario (seed 90210),
+          # not elapsed wall time. Preserve full reports for camera/tick/scene comparison.
+          for engine in quickjs v8; do
+            binary="$runtime/build/tn-linux/mystral"
+            [ "$engine" != v8 ] || binary="$runtime/build/tn-linux/mystral-v8"
+            for capture in 1 2; do
+              mkdir -p "$evidence/same-pose/$engine-$capture"
+              sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js \
+                "$target/native-playtests/render-chain.playtest.json" --target desktop \
+                --project "$target/public" --executable "$binary" \
+                --host-arg run --host-arg "$target/dist-native/perf-game.js" \
+                --host-arg --ui --host-arg "$target/dist-native/ui" \
+                --artifacts "$evidence/same-pose/$engine-$capture" \
+                > "$evidence/same-pose/$engine-$capture/report.json" \
+                2> "$evidence/same-pose/$engine-$capture/runner.stderr.log"
+            done
+          done
+      - name: Upload paired starter JS frame evidence
+        if: always() && matrix.platform == 'linux-arm64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-starter-js-frame-pair-linux-arm64
+          path: packages/runtime-native/artifacts/starter-linux-arm64/js-frame-pair/
+          if-no-files-found: error
       # PRD-365 acceptance criterion 1, Linux flavour of the desktop release container: tar.gz, no
       # zip, and the verifier finds the packaged xvfb.sh itself. The debug step above is untouched.
       - name: Build the desktop release container
@@ -2434,7 +2775,7 @@ jobs:
 
   completion:
     name: Native required coverage receipt
-    needs: [scope, web-reference, android-v8-source, android-emulator-parity, desktop-parity, release-reports, performance-coverage, networking-matrix, desktop, starter-linux, ios-simulator, publish-android-v8]
+    needs: [scope, web-reference, android-v8-source, android-emulator-parity, desktop-parity, release-reports, performance-coverage, networking-matrix, desktop, starter-linux, ios-simulator, publish-android-v8, linux-arm64-v8-source, publish-linux-arm64-v8]
     # Isolated iOS dispatch remains advisory and emits no full qualification receipt.
     if: ${{ always() && inputs.ios_only != true }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}

@@ -1,0 +1,500 @@
+{
+  "name": "scene-object-bounds-hierarchy",
+  "adaptedFrom": "three@0.185.1 Box3.expandByObject, InstancedMesh.computeBoundingBox and SkinnedMesh.applyBoneTransform: hierarchy updates, cached versus precise bounds and explicit recomputation",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "root",
+      "class": "Group",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "geometry",
+      "class": "BufferGeometry",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "position",
+      "class": "Float32BufferAttribute",
+      "args": [
+        {
+          "array": [-1, 0, 0, 1, 0, 0, 0, 1, 0],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "geometry",
+      "method": "setAttribute",
+      "args": [
+        "position",
+        {
+          "ref": "position"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "morph",
+      "class": "Float32BufferAttribute",
+      "args": [
+        {
+          "array": [0, 0, 2, 0, 0, 2, 0, 0, 2],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "set",
+      "id": "geometry",
+      "path": "morphAttributes.position",
+      "value": {
+        "refs": ["morph"]
+      }
+    },
+    {
+      "op": "set",
+      "id": "geometry",
+      "path": "morphTargetsRelative",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "mesh",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geometry"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "morphTargetInfluences.0",
+      "value": 0.75
+    },
+    {
+      "op": "set",
+      "id": "root",
+      "path": "position.x",
+      "value": 10
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "position.y",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "rotation.z",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "scale.x",
+      "value": -2
+    },
+    {
+      "op": "set",
+      "id": "mesh",
+      "path": "scale.y",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "add",
+      "args": [
+        {
+          "ref": "mesh"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "set",
+      "id": "root",
+      "path": "position.x",
+      "value": 20
+    },
+    {
+      "op": "new",
+      "id": "conservative",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "conservative",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        false
+      ]
+    },
+    {
+      "op": "new",
+      "id": "precise",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "precise",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "mesh"
+        },
+        true
+      ]
+    },
+    {
+      "op": "new",
+      "id": "hierarchy",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "hierarchy",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "root"
+        },
+        false
+      ]
+    },
+    {
+      "op": "new",
+      "id": "preciseHierarchy",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "preciseHierarchy",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "root"
+        },
+        true
+      ]
+    },
+    {
+      "op": "new",
+      "id": "point",
+      "class": "Vector3",
+      "args": [-100, 20, 30]
+    },
+    {
+      "op": "new",
+      "id": "expanded",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "expanded",
+      "method": "expandByPoint",
+      "args": [
+        {
+          "ref": "point"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "expanded",
+      "method": "expandByObject",
+      "args": [
+        {
+          "ref": "root"
+        },
+        true
+      ]
+    },
+    {
+      "op": "new",
+      "id": "emptyGeometry",
+      "class": "BufferGeometry",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "emptyMesh",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "emptyGeometry"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "empty",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "empty",
+      "method": "setFromObject",
+      "args": [
+        {
+          "ref": "emptyMesh"
+        },
+        true
+      ]
+    },
+    {
+      "op": "new",
+      "id": "attributeBox",
+      "class": "Box3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "attributeBox",
+      "method": "setFromBufferAttribute",
+      "args": [
+        {
+          "ref": "position"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "precise",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "expanded",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "expanded",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "expanded",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "expanded",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "expanded",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "expanded",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "empty",
+      "kind": "number",
+      "path": "max.z"
+    },
+    {
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "min.x"
+    },
+    {
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "min.y"
+    },
+    {
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "min.z"
+    },
+    {
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "max.x"
+    },
+    {
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "max.y"
+    },
+    {
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "max.z"
+    }
+  ]
+}
