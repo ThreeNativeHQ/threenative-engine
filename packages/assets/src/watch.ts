@@ -74,7 +74,14 @@ export function watchAssets(options: IAssetWatchOptions = {}): IAssetWatchHandle
   const cwd = path.resolve(options.cwd ?? process.cwd());
   // Every option but the two watch-only ones is the compiler's and is forwarded whole, so a dev
   // loop cooking for a platform or under a concurrency bound cooks exactly what its build does.
-  const compileOptions: IAssetCompileOptions = { ...compileOverrides, cwd };
+  // A dev loop is a web page, and absent decoders means the default web engine's, which decodes
+  // neither KTX2 nor Meshopt: a pre-0.3.5 vite config names none and must still cook loadable
+  // models. `threenative build` cooks the same for a game that names no engine.
+  const compileOptions: IAssetCompileOptions = {
+    ...compileOverrides,
+    runtimeDecoders: compileOverrides.runtimeDecoders ?? { ktx2: false, meshopt: false },
+    cwd,
+  };
   // Resolution only. compileAssets validates the layout it is handed — unknown config keys, a
   // source that overlaps its output — on every call below, including the first one.
   const sourceRoot = path.resolve(cwd, options.source ?? options.config?.source ?? DEFAULT_SOURCE);

@@ -5,7 +5,7 @@ export const ENVIRONMENT_TOO_SMALL_MARKER = "TN_ENVIRONMENT_TOO_SMALL";
 /** Marker for a drawn material whose opacity three ignores. */
 export const OPACITY_IGNORED_MARKER = "TN_OPACITY_IGNORED";
 
-interface IRenderTrapMaterial {
+export interface IRenderTrapMaterial {
   opacity?: number;
   transparent?: boolean;
   alphaHash?: boolean;
@@ -25,6 +25,32 @@ function opacityIgnored(
     material.transparent !== true &&
     material.alphaHash !== true
   );
+}
+
+/** Drawn materials whose opacity three ignores, each once. Structural reads only. */
+export function opacityIgnoredMaterials(scene: Object3D): Set<IRenderTrapMaterial> {
+  const materials = new Set<IRenderTrapMaterial>();
+  scene.traverseVisible((object) => {
+    const drawable = object as Object3D & {
+      isMesh?: boolean;
+      isPoints?: boolean;
+      isLine?: boolean;
+      isSprite?: boolean;
+      material?: IRenderTrapMaterial | IRenderTrapMaterial[];
+    };
+    if (!(drawable.isMesh || drawable.isPoints || drawable.isLine || drawable.isSprite)) return;
+    const slot = drawable.material;
+    for (const material of Array.isArray(slot) ? slot : [slot])
+      if (opacityIgnored(material)) materials.add(material);
+  });
+  return materials;
+}
+
+/** Up to five names for a marker line. */
+export function materialExamples(materials: Iterable<IRenderTrapMaterial>): string[] {
+  return [...materials]
+    .slice(0, 5)
+    .map((material) => material.name || material.type || "unnamed material");
 }
 
 /** Structural reads only: Node materials, native adapters and test stubs share this audit. */
@@ -47,24 +73,8 @@ export function renderTrapAudit(scene: Object3D & { environment?: unknown }): st
     );
   }
 
-  const materials = new Set<IRenderTrapMaterial>();
-  const examples: string[] = [];
-  scene.traverseVisible((object) => {
-    const drawable = object as Object3D & {
-      isMesh?: boolean;
-      isPoints?: boolean;
-      isLine?: boolean;
-      isSprite?: boolean;
-      material?: IRenderTrapMaterial | IRenderTrapMaterial[];
-    };
-    if (!(drawable.isMesh || drawable.isPoints || drawable.isLine || drawable.isSprite)) return;
-    const slot = drawable.material;
-    for (const material of Array.isArray(slot) ? slot : [slot]) {
-      if (!opacityIgnored(material) || materials.has(material)) continue;
-      materials.add(material);
-      if (examples.length < 5) examples.push(material.name || material.type || "unnamed material");
-    }
-  });
+  const materials = opacityIgnoredMaterials(scene);
+  const examples = materialExamples(materials);
   if (materials.size > 0) {
     lines.push(
       `${OPACITY_IGNORED_MARKER}:${JSON.stringify({ materials: materials.size, examples })} set transparent: true or alphaHash: true on these materials so opacity takes effect`,

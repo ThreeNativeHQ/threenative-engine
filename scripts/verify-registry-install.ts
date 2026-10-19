@@ -1337,6 +1337,26 @@ export async function verifyRegistryInstall(
                 `TN_REGISTRY_UPGRADE_CANDIDATE_INCOMPLETE: ${name}@${version} has no packed tarball to upgrade onto.`,
               );
           const tarballs = Object.values(candidate.tarballs);
+          // A tarball on the command line resolves only the direct dependency. A cohort package
+          // reached through another one (`three-native` under `runtime-native`) would come from
+          // the registry, which is a 404 before its first publish and old bytes after it.
+          const manifestPath = path.join(project, "package.json");
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+            pnpm?: { overrides?: Record<string, string> };
+          };
+          manifest.pnpm = {
+            ...manifest.pnpm,
+            overrides: {
+              ...manifest.pnpm?.overrides,
+              ...Object.fromEntries(
+                Object.entries(candidate.tarballs).map(([name, tarball]) => [
+                  name,
+                  `file:${tarball}`,
+                ]),
+              ),
+            },
+          };
+          fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
           run(command, [...installArgs, ...tarballs], project);
           // Version first because it names the consumer's mistake; bytes second because the version
           // cannot tell this candidate from the `latest` it was supposed to replace.
@@ -1446,7 +1466,10 @@ export async function verifyRegistryInstall(
       steps.push(step(prefix("mcp"), () => mcpStep(project, mcp)));
     }
   } finally {
-    fs.rmSync(parent, { force: true, recursive: true });
+    // TN_KEEP_CLEAN_ROOT keeps the scaffolded games so a red step's playtest reports can be read.
+    if (process.env.TN_KEEP_CLEAN_ROOT === undefined)
+      fs.rmSync(parent, { force: true, recursive: true });
+    else process.stderr.write(`TN_CLEAN_ROOT_KEPT ${parent}\n`);
   }
   return {
     consumerTargets: [...consumerTargets.values()],
