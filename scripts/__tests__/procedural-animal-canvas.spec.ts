@@ -5,15 +5,18 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // Inert authored HTML only: no game modules, GPU contexts, captures or renderer.
 describe("procedural animal canvas layout", () => {
   let browser: Browser;
+  // Launch and close are process lifetime, not the claim: a loaded CI runner took over 10 s to
+  // close Chromium after all four layouts passed.
+  const BROWSER_LIFETIME_MS = 60_000;
   beforeAll(async () => {
     browser = await chromium.launch({
       headless: true,
       args: ["--disable-gpu", "--disable-software-rasterizer"],
     });
-  });
+  }, BROWSER_LIFETIME_MS);
   afterAll(async () => {
     await browser?.close();
-  });
+  }, BROWSER_LIFETIME_MS);
   it.each(["index.html", "crowd.html", "high.html", "baseline.html"])(
     "%s retains its CSS viewport when the drawing buffer shrinks",
     async (name) => {
