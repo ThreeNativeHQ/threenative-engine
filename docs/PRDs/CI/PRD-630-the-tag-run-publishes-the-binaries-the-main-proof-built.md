@@ -8,20 +8,27 @@
 
 ## Context
 
-PRD-629 removes the hand work between the gates. The wall time inside the gates stays. The tag run
-`runtime-native-v0.3.5` (run 39304823341, 2026-10-19) shows where the time goes after the tag push.
+PRD-629 removes the hand work between the gates. The wall time inside the gates stays. The first
+full tag run, `runtime-native-v0.3.5` (run 39327476745, 2026-10-19, tag push 21:26 UTC), shows where
+the time goes after the tag push. Every job below succeeded except `clean-consumer-ios`, which is
+not a supported target and does not gate `finalize`.
 
 | Job | Minutes | On the critical path |
 |---|---|---|
-| `build` linux-x64 | 15 | no |
-| `build` darwin-arm64 | 22 | no |
-| `build` win32-x64 | 30 | **yes, the longest build** |
-| `build-android` | 9 | no |
-| `build-ios-simulator` | 20 | no |
+| `validate-tag`, `gates` | 0 and 1 | yes |
+| `build` win32-x64 | 31 | **yes, the longest build** |
+| `build` darwin-arm64 | 18 | no |
+| `build` linux-x64 | 17 | no |
+| `build-android` | 10 | no |
+| `build-ios-simulator` | 22 | no |
+| `publish` | under 1 | yes |
+| `clean-consumer` (Linux) | 10 | yes |
+| `clean-consumer-windows` | 5 | no, runs beside the Linux one |
+| `finalize` | under 1 | yes |
 
-`publish`, `clean-consumer`, `clean-consumer-windows` and `finalize` come after the last build. The
-`clean-consumer` job has a 60 minute cap, and no tag run has completed it yet, so its real duration
-is not measured. This PRD does not claim a number for it.
+The critical path is about 43 minutes, and 31 of them are the Windows build. The earlier tag run
+39304823341 measured the same build at 30 minutes. The npm publish and `verify-registry-install` come
+after `finalize` and are not measured yet.
 
 The same `build` and `build-android` jobs already run on the main commit before the tag exists. Each
 main CI completion starts `native-release.yml` through `workflow_run`, and that run uploads
@@ -98,4 +105,4 @@ Each box sits under the phase that delivers it, so progress moves phase by phase
 **Implementation:** Read the job times of the tag run from AC-4 and record them next to the table in Context.
 **Verification:** AC-5 on the same tag run.
 
-- [ ] AC-5 [shared]: On the tag run from AC-4, the time from tag push to `finalize` finished is recorded, with the per-job times. The recorded `build` time is gone from the critical path (a saving of the longest build, 30 minutes in run 39304823341). proof: the run id and the job times in the PRD. Evidence: pending.
+- [ ] AC-5 [shared]: On the tag run from AC-4, the time from tag push to `finalize` finished is recorded, with the per-job times. The recorded `build` time is gone from the critical path (a saving of the longest build, 31 minutes in run 39327476745). proof: the run id and the job times in the PRD. Evidence: pending.
