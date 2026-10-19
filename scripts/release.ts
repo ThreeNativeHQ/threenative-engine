@@ -334,8 +334,43 @@ export async function proveUpgradeFromLatest(
   );
 }
 
-async function main(argv: readonly string[]): Promise<void> {
+/**
+ * Answer the prebuilt-release question from a lock file instead of the public release URL.
+ *
+ * The release rehearsal (PRD-629) packs the npm cohort while the real `runtime-native-v<version>`
+ * release does not exist yet. The lock it generated stands in for the one a consumer would read.
+ */
+export function prebuiltFromLock(
+  lockPath: string,
+): Pick<ICheckPublishOptions, "prebuiltLock" | "prebuiltProbe"> {
+  const lock: unknown = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+  return { prebuiltLock: () => lock, prebuiltProbe: () => "present" };
+}
+
+/** `--lock <file>` takes a value, so it is removed before unknown flags are rejected. */
+function lockArgument(argv: readonly string[]): { lockPath?: string; rest: readonly string[] } {
+  const index = argv.indexOf("--lock");
+  if (index === -1) return { rest: argv };
+  const lockPath = argv[index + 1];
+  if (lockPath === undefined || lockPath.startsWith("--"))
+    throw new Error("TN_RELEASE_LOCK_USAGE: --lock requires a prebuilt-lock.json path.");
+  return {
+    lockPath,
+    rest: argv.filter((_, position) => position !== index && position !== index + 1),
+  };
+}
+
+async function main(args: readonly string[]): Promise<void> {
+  if (args[0] === "ship") {
+    const { runShip } = await import("./release-ship.js");
+    return runShip(args.slice(1));
+  }
+  const { lockPath, rest: argv } = lockArgument(args);
   const publish = argv.includes("--yes");
+  const dryRun = argv.includes("--dry-run");
+  if (publish && dryRun)
+    throw new Error("TN_RELEASE_FLAGS_CONFLICT: --dry-run and --yes cannot be combined.");
+  const lockOptions = lockPath === undefined ? {} : prebuiltFromLock(lockPath);
   const prepare = argv.includes("--prepare");
   const skipGates = argv.includes("--skip-gates");
   // Publish the runtime package before its prebuilt release exists. A deliberate, named decision:
@@ -344,7 +379,10 @@ async function main(argv: readonly string[]): Promise<void> {
   // native lane fails closed later on the binary that is not there.
   const allowMissingPrebuilt = argv.includes("--allow-missing-prebuilt");
   const unknown = argv.filter(
-    (arg) => !["--yes", "--prepare", "--skip-gates", "--allow-missing-prebuilt"].includes(arg),
+    (arg) =>
+      !["--yes", "--dry-run", "--prepare", "--skip-gates", "--allow-missing-prebuilt"].includes(
+        arg,
+      ),
   );
   if (unknown.length > 0) throw new Error(`TN_RELEASE_UNKNOWN_FLAG: ${unknown.join(", ")}`);
   // A `--yes` release that did not ask to publish ahead of its prebuilt payload produces that
@@ -374,6 +412,7 @@ async function main(argv: readonly string[]): Promise<void> {
     allowCurrentPublishSetPins: true,
     allowMissingPrebuilt: prebuiltAcknowledged,
     repo: REPO,
+    ...lockOptions,
   });
   process.stdout.write(`\n${formatPublishReport(report)}`);
   if (report.exitCode !== 0)
@@ -416,6 +455,7 @@ async function main(argv: readonly string[]): Promise<void> {
       allowCurrentPublishSetPins: true,
       allowMissingPrebuilt: prebuiltAcknowledged,
       repo: REPO,
+      ...lockOptions,
     });
     process.stdout.write(
       `\nPost-build publish preflight:\n${formatPublishReport(postBuildReport)}`,
@@ -437,6 +477,14 @@ async function main(argv: readonly string[]): Promise<void> {
   const packed = await mkdtemp(path.join(os.tmpdir(), "threenative-release-pack-"));
   try {
     const tarballs = packReleaseSet(packages, packed);
+    // `--dry-run` stops at the pack: the upgrade proof needs the registry `latest` and a browser
+    // lane, which the npm-release workflow's dry run and the real release already carry.
+    if (dryRun) {
+      process.stdout.write(
+        `\nDry run packed ${Object.keys(tarballs).length} package(s). Nothing was published.\n`,
+      );
+      return;
+    }
     const upgrades = await proveUpgradeFromLatest(packages, tarballs);
     for (const [index, report] of upgrades.entries()) {
       const template = UPGRADE_PROOF_TEMPLATES[index] as string;

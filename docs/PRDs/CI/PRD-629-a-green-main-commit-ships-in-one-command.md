@@ -1,6 +1,6 @@
 # PRD-629 — A green main commit ships to npm in one command, in under an hour
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — code for all three phases is on the PR; AC-1, AC-2, AC-3, AC-4 (green CI on 21a5a84f9) and AC-7 wait on shared runs
 **Priority:** P1 — The 0.3.5 release (PRD-624) took more than 30 hours across six candidate commits; every open box below removes a step that failed or needed hand work during that release.
 **Complexity:** 6 (MEDIUM); risk override: none. Touches 6-10 release files (+2), crosses the npm and GitHub release boundary (+2), and drives the GitHub API (+1). It adds no new workflow file.
 **Owner:** release tooling
@@ -86,6 +86,25 @@ Risks:
 
 Each box sits under the phase that delivers it, so progress moves phase by phase.
 
+## Decisions
+
+- **2026-10-19, rehearsal consumer (owner delegated to the implementer).** `clean-consumer` keeps its
+  same-run asset server. A draft release has no anonymous download URL, and `install-prebuilt.mjs`
+  pins every lock URL to the real `runtime-native-v<version>` tag, so a consumer cannot install from
+  a `rehearsal-<run id>` draft. The rehearsal `publish` job instead downloads the draft's assets back
+  through the GitHub API and compares size and SHA-256 with the lock, and `npm-dry-run` reads its lock
+  from the draft.
+- **2026-10-19, main trigger.** `native-platforms.yml` gets `push: branches: [main]`. The existing
+  `ci.yml` call runs inside the CI run, whose workflow path is `ci.yml`, but the release-candidate gate
+  requires a run whose path is `native-platforms.yml`. A standalone push run takes the same full-plan
+  path as a dispatch.
+- **2026-10-19, `release:ship` is dry unless `--yes`.** Like `pnpm release`, the one command that
+  dispatches, tags and publishes needs `--yes`. `--dry-run` and no flag print the same plan.
+- **2026-10-19, request check.** `validateReleaseCandidate` validates the resolved candidate, not the
+  request. `release:ship` checks the request it builds with the gate's own `parseReleaseCandidateRequest`.
+- **2026-10-19, `release.ts --dry-run`** stops after packing the cohort. The upgrade proof needs the
+  registry `latest` and a browser lane, which the `npm release` workflow and the real release carry.
+
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
@@ -98,8 +117,8 @@ Each box sits under the phase that delivers it, so progress moves phase by phase
 ## Execution Phases
 
 #### Phase 1: The release proof runs every tag-only step
-**Status:** NOT STARTED
-**Files:** `.github/workflows/native-release.yml` (rehearsal mode for `publish`, `clean-consumer`, `finalize`, and the draft cleanup), `scripts/release.ts` (a `--dry-run` that packs against a given lock), and the workflow specs.
+**Status:** PARTIAL — rehearsal jobs, `release.ts --dry-run --lock` and specs landed; the shared run (AC-1, AC-2) is queued behind the 0.3.5 release
+**Files:** `.github/workflows/native-release.yml` (rehearsal mode for `publish`, `clean-consumer`, `finalize`, the `npm-dry-run` job and the `cleanup-rehearsal` job), `scripts/release.ts` (a `--dry-run` that packs against a given `--lock`), and the workflow specs.
 **Implementation:** Gate the rehearsal on the same condition as `gates` for non-tag events. Use the existing `generateReleaseManifest` with the real repository and a rehearsal tag. Delete the draft in an `always()` step.
 **Verification:** AC-1 and AC-2 on this PRD's PR, labeled `release-proof`. Then run all workflow specs locally.
 
@@ -107,20 +126,20 @@ Each box sits under the phase that delivers it, so progress moves phase by phase
 - [ ] AC-2 [shared]: The rehearsal catches the finding-1 defect. With `RELEASE_REPOSITORY` set back to `ThreeNativeHQ/threenative` on a scratch branch, the rehearsal `publish` job fails with the same error that tag run 39304823341 printed. proof: the scratch-branch run id, recorded in the PR body. The scratch branch is not merged. Evidence: pending.
 
 #### Phase 2: Main proof starts by itself, and downloads retry
-**Status:** NOT STARTED
-**Files:** `.github/workflows/native-platforms.yml` or `.github/workflows/ci.yml` (main-push trigger), the download steps in the existing workflows, and the `native-release.yml` concurrency group.
+**Status:** PARTIAL — trigger, retry wrapper and tag concurrency group landed; AC-3 needs the first main push after the merge
+**Files:** `.github/workflows/native-platforms.yml` (main-push trigger), `scripts/retry-download.sh` and the download steps that call it, and the `native-release.yml` concurrency group.
 **Implementation:** Choose a trigger that keeps the `CI_NATIVE` receipts valid (`scripts/ci-native-receipts.mjs`). Add a bounded retry around the network steps only.
 **Verification:** AC-6 locally, then AC-3 on the first main push after the merge.
 
-- [ ] AC-6 [local]: The wrapped download steps retry at most 3 times on a network failure, and a failing test command is not retried. proof: the workflow structure specs (`ci-structure.spec.ts`, `native-platform-workflow.test.mjs` and every workflow spec, as `workflow-edits-need-all-workflow-specs` requires). Evidence: pending.
+- [x] AC-6 [local]: The wrapped download steps retry at most 3 times on a network failure, and a failing test command is not retried. proof: the workflow structure specs (`ci-structure.spec.ts`, `native-platform-workflow.test.mjs` and every workflow spec, as `workflow-edits-need-all-workflow-specs` requires). Evidence: 2026-10-19, after `pnpm build`: 27 workflow spec files, 763 tests green, plus `native-platform-workflow.test.mjs` and `workflow-dependency-names.test.mjs` 47 green. `retry-download.spec.ts` runs the script: a command that fails twice passes on attempt 3, one that always fails stops after 3 attempts with its own exit status, and a spec rejects any retry wrapper on a vitest, playtest, budget or verify command. The existing inline `sdkmanager` loop in `native-platforms.yml` now uses the same script.
 - [ ] AC-3 [shared]: A main push starts `native-platforms` with no manual dispatch, and its native receipts validate. proof: the first main push after the merge, with the run id of the `native-platforms` run on that SHA. Evidence: pending.
 
 #### Phase 3: `pnpm release:ship`
-**Status:** NOT STARTED
-**Files:** `scripts/release.ts` (ship mode), `scripts/__tests__/release-ship.spec.ts`, and `package.json` (`release:ship` script).
+**Status:** PARTIAL — command and specs landed; AC-7 needs the next real release
+**Files:** `scripts/release.ts` (`ship` subcommand), `scripts/release-ship.ts`, `scripts/__tests__/release-ship.spec.ts`, and `package.json` (`release:ship` script).
 **Implementation:** Find the runs, build the request, dispatch release-candidate once, then create or move the tag, wait, publish and verify. Each step checks its state before it acts, so the command can resume.
 **Verification:** AC-4 and AC-5 locally. AC-7 on the next real release.
 
 - [ ] AC-4 [local]: `pnpm release:ship --dry-run --sha <green main sha>` finds both run ids, builds a candidate request that `validateReleaseCandidate` accepts, and prints the next step without dispatching. A second invocation prints the same plan. proof: `pnpm exec vitest run scripts/__tests__/release-ship.spec.ts` plus one real dry run against 21a5a84f9. Evidence: pending.
-- [ ] AC-5 [local]: `release:ship` refuses to move a tag that has a release or a draft, and refuses a second `release-candidate` dispatch for a SHA that already has a successful one. proof: `release-ship.spec.ts` cases with a mocked `gh`. Evidence: pending.
+- [x] AC-5 [local]: `release:ship` refuses to move a tag that has a release or a draft, and refuses a second `release-candidate` dispatch for a SHA that already has a successful one. proof: `release-ship.spec.ts` cases with a mocked `gh`. Evidence: 2026-10-19, `pnpm exec vitest run scripts/__tests__/release-ship.spec.ts` 14 tests green: a public release, a prerelease and a draft each refuse a tag move with `TN_SHIP_TAG_HAS_RELEASE` and no git call; a running tag run refuses with `TN_SHIP_TAG_RUN_ACTIVE`; a successful, in-flight or main-moved candidate refuses a dispatch; a pushed tag and a public release resume at the publish step only.
 - [ ] AC-7 [shared]: The next release (0.3.6 or later) goes from a green main SHA to `verify-registry-install` green with one `pnpm release:ship` invocation, no hand edits, and under 60 minutes of wall time after the main gates are green. proof: the command transcript and the tag run id in the PRD-624 successor or this PRD. Evidence: pending.
