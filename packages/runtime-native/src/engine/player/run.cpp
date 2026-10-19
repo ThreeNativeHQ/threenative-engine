@@ -659,6 +659,11 @@ struct Session {
     }();
     bool spans = gameSpan(-1, 0) == 1;
     uint64_t measuredFrames = 0, previousCrossings = 0, updateTicks = 0;
+    // Headless pacing: the last tick this loop drew, and whether it has drawn at all. A window's
+    // present paces the loop; without one the loop would submit thousands of frames a second and
+    // queue them ahead of the next readback faster than a software GPU executes them.
+    uint64_t lastRenderedTick = UINT64_MAX;
+    bool hasRendered = false;
     double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
     double updateMixerCpuMs = 0;
     uint64_t updateMixerCalls = 0;
@@ -944,6 +949,8 @@ int Session::initialize() {
             std::printf("[Playtest] %s\n", diagnostic.c_str());
         for (const std::string& diagnostic : renderer->diagnostics())
             std::printf("[Playtest] %s\n", diagnostic.c_str());
+        lastRenderedTick = tick();
+        hasRendered = true;
         if (presenter) {
             Presenter::Frame target;
             if (firstFrame) startupStage("first-acquire-begin");
@@ -1277,7 +1284,15 @@ int Session::step() {
     if (endpoint->automaticRenderHeld()) return viewFailed ? -1 : 1;
     if (!refreshView())
         return -1;
-    renderFrame();
+    // A window's swap/present paces this loop; headless there is no presentation, so draw once per
+    // simulation tick instead of as fast as the CPU can submit. Unpaced headless frames pile up in
+    // the queue ahead of the next render-target readback and make it wait behind all of them.
+    if (presenter || !hasRendered || tick() != lastRenderedTick) {
+        renderFrame();
+    } else {
+        renderer->poll();
+        events.drain();
+    }
     return viewFailed ? -1 : 1;
 }
 
