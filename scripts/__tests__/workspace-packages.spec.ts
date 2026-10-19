@@ -10,6 +10,9 @@ import {
 } from "../workspace-packages.js";
 
 const temporaryRoots: string[] = [];
+// The repo-wide AST scan takes about 12 s on a loaded host and passed 30 s on a tn-local runner
+// (main run 39217177505, attempt 3), so the tests that run it get a load margin.
+const SCAN_TIMEOUT_MS = 120_000;
 
 afterEach(async () => {
   await Promise.all(
@@ -65,39 +68,45 @@ describe("workspace package derivation", () => {
     expect(config).toContain("const tarball = files.find((file) => file.startsWith(prefix));");
   });
 
-  it("keeps scaffold smoke package inventory derived when a package is added or renamed", async () => {
-    const root = await fixtureRoot();
-    await writePackage(root, "new-package", "@threenative/new-package");
-    expect(workspacePackageArchives(root)).toContainEqual([
-      "@threenative/new-package",
-      "threenative-new-package-",
-    ]);
-    await rm(path.join(root, "new-package"), { force: true, recursive: true });
-    await writePackage(root, "renamed-package", "@threenative/renamed-package");
-    expect(workspacePackageArchives(root)).toContainEqual([
-      "@threenative/renamed-package",
-      "threenative-renamed-package-",
-    ]);
+  it(
+    "keeps scaffold smoke package inventory derived when a package is added or renamed",
+    async () => {
+      const root = await fixtureRoot();
+      await writePackage(root, "new-package", "@threenative/new-package");
+      expect(workspacePackageArchives(root)).toContainEqual([
+        "@threenative/new-package",
+        "threenative-new-package-",
+      ]);
+      await rm(path.join(root, "new-package"), { force: true, recursive: true });
+      await writePackage(root, "renamed-package", "@threenative/renamed-package");
+      expect(workspacePackageArchives(root)).toContainEqual([
+        "@threenative/renamed-package",
+        "threenative-renamed-package-",
+      ]);
 
-    const workflow = await readFile(path.join(process.cwd(), ".github/workflows/ci.yml"), "utf8");
-    const scaffoldAction = await readFile(
-      path.join(process.cwd(), ".github/actions/scaffold-from-tarballs/action.yml"),
-      "utf8",
-    );
-    const workspaceAction = await readFile(
-      path.join(process.cwd(), ".github/actions/workspace-dist/action.yml"),
-      "utf8",
-    );
-    expect(workflow).toContain("uses: ./.github/actions/workspace-dist");
-    expect(workspaceAction).toContain("scripts/workspace-packages.ts --archives");
-    expect(workspaceAction).toContain("while IFS=$'\\t' read -r package_name _");
-    expect(workspaceAction).toContain('pnpm --filter "$package_name"');
-    expect(workflow).toContain("uses: ./.github/actions/scaffold-from-tarballs");
-    expect(scaffoldAction).toContain('find "$TN_SCAFFOLD_ARCHIVES" -name "${archive_prefix}*.tgz"');
-    // The L1 scan still inspects the workflow; these assertions follow its composite action
-    // to keep the package/archive stream tied to the derivation helper.
-    expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
-  }, 30_000);
+      const workflow = await readFile(path.join(process.cwd(), ".github/workflows/ci.yml"), "utf8");
+      const scaffoldAction = await readFile(
+        path.join(process.cwd(), ".github/actions/scaffold-from-tarballs/action.yml"),
+        "utf8",
+      );
+      const workspaceAction = await readFile(
+        path.join(process.cwd(), ".github/actions/workspace-dist/action.yml"),
+        "utf8",
+      );
+      expect(workflow).toContain("uses: ./.github/actions/workspace-dist");
+      expect(workspaceAction).toContain("scripts/workspace-packages.ts --archives");
+      expect(workspaceAction).toContain("while IFS=$'\\t' read -r package_name _");
+      expect(workspaceAction).toContain('pnpm --filter "$package_name"');
+      expect(workflow).toContain("uses: ./.github/actions/scaffold-from-tarballs");
+      expect(scaffoldAction).toContain(
+        'find "$TN_SCAFFOLD_ARCHIVES" -name "${archive_prefix}*.tgz"',
+      );
+      // The L1 scan still inspects the workflow; these assertions follow its composite action
+      // to keep the package/archive stream tied to the derivation helper.
+      expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
+    },
+    SCAN_TIMEOUT_MS,
+  );
 
   it("detects a literal multi-package enumeration at a reverted call site", async () => {
     const root = await fixtureRoot();
@@ -145,9 +154,13 @@ describe("workspace package derivation", () => {
     expect(error).toContain("derive package names with workspace-packages.ts");
   });
 
-  it("keeps the checked-in call sites on derived package lists", async () => {
-    expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
-  }, 30_000);
+  it(
+    "keeps the checked-in call sites on derived package lists",
+    async () => {
+      expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
+    },
+    SCAN_TIMEOUT_MS,
+  );
 
   it("detects repeated literal package commands in a workflow inventory", async () => {
     const root = await fixtureRoot();
@@ -305,14 +318,18 @@ describe("workspace package derivation", () => {
     ]);
   });
 
-  it("keeps checked-in workflow package inventories on the derived stream", async () => {
-    expect(findLiteralPackageEnumerationViolations(process.cwd())).not.toContain(
-      ".github/workflows/native-platforms.yml",
-    );
-    const workflow = await readFile(
-      path.join(process.cwd(), ".github/workflows/native-platforms.yml"),
-      "utf8",
-    );
-    expect(workflow).toContain("scripts/workspace-packages.ts --archives");
-  }, 30_000);
+  it(
+    "keeps checked-in workflow package inventories on the derived stream",
+    async () => {
+      expect(findLiteralPackageEnumerationViolations(process.cwd())).not.toContain(
+        ".github/workflows/native-platforms.yml",
+      );
+      const workflow = await readFile(
+        path.join(process.cwd(), ".github/workflows/native-platforms.yml"),
+        "utf8",
+      );
+      expect(workflow).toContain("scripts/workspace-packages.ts --archives");
+    },
+    SCAN_TIMEOUT_MS,
+  );
 });
