@@ -479,6 +479,15 @@ public:
      */
     virtual void throwException(const char* message) = 0;
 
+    /**
+     * Throw a JavaScript TypeError. WebGPU argument validation throws this on the web, so a binding that
+     * refuses an argument by name uses it. An engine without a native TypeError (JSC here) falls back
+     * to a thrown message that starts with "TypeError: ".
+     */
+    virtual void throwTypeError(const char* message) {
+        throwException((std::string("TypeError: ") + message).c_str());
+    }
+
     // ========================================================================
     // Private Data
     // ========================================================================

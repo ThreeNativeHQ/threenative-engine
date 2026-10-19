@@ -489,6 +489,8 @@ type RendererInstance = IStorageBufferSource & {
   resolveTimestampsAsync?: (type?: string) => Promise<number | undefined>;
   /** Three answers an `antialias` request with a sample count; 0 means one sample per pixel. */
   samples?: number;
+  /** Whether the backend owns resizable render targets for retained sub-rectangle rendering. */
+  supportsRetainedTargetSubrect?: boolean;
   domElement: HTMLCanvasElement;
   init?: () => Promise<void>;
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
@@ -557,6 +559,54 @@ export function observeCanvasResize(canvas: HTMLCanvasElement, resize: () => voi
   if (typeof globalThis.addEventListener !== "function") return () => undefined;
   globalThis.addEventListener("resize", resize);
   return () => globalThis.removeEventListener("resize", resize);
+}
+
+/**
+ * Runs one covered render through Three's asynchronous pipeline path.
+ *
+ * `compileAsync` is the only stock Three entry that hands `PipelineCache.getForRender` a promise
+ * list, which is what switches a device create to `createRenderPipelineAsync`. A normal `render()`
+ * passes none and therefore creates every missing pipeline synchronously, on the calling thread.
+ * The warm-up is a real render because only an output pipeline reaches the post and reflection
+ * passes, so it cannot be replaced by `compileAsync`; this lends that render the same promise list
+ * through the cache's own seam. A draw whose pipeline is still pending is skipped by
+ * `PipelineCache.isReady` — the pending/skip path `compileAsync` already relies on — and the
+ * warm-up awaits the whole list before the first visible frame. The frame is invisible behind the
+ * startup cover, so a skipped draw costs nothing.
+ *
+ * Returns `undefined` on a renderer without that cache or without async device creation, which
+ * keeps the previous synchronous covered render as the fallback.
+ *
+ * @internal Exported for the warm-up contract; not part of the public renderer API.
+ */
+export function beginAsyncPipelines(
+  raw: unknown,
+): { readonly restore: () => void; readonly settled: () => Promise<void> } | undefined {
+  if (!isObject(raw)) return undefined;
+  const pipelines = raw._pipelines;
+  if (!isObject(pipelines) || typeof pipelines.getForRender !== "function") return undefined;
+  const device = isObject(raw.backend) ? raw.backend.device : undefined;
+  if (!isObject(device) || typeof device.createRenderPipelineAsync !== "function") return undefined;
+  const original = pipelines.getForRender as (...args: unknown[]) => unknown;
+  const pending: Promise<unknown>[] = [];
+  pipelines.getForRender = function (this: unknown, ...args: unknown[]): unknown {
+    const next = [...args];
+    if (next.length < 2 || next[1] === undefined || next[1] === null) next[1] = pending;
+    return original.apply(this, next);
+  };
+  let restored = false;
+  return {
+    restore: () => {
+      if (restored) return;
+      restored = true;
+      pipelines.getForRender = original;
+    },
+    settled: async () => {
+      // A failed async creation resolves through Three's own error path and never rejects here;
+      // settle every ticket so one refusal cannot hide the compiles that did land.
+      await Promise.all(pending.map((ticket) => Promise.resolve(ticket).catch(() => undefined)));
+    },
+  };
 }
 
 function wrapRenderer(
@@ -756,12 +806,15 @@ function wrapRenderer(
         }),
     get warmUpWorldPass() {
       if (outputPipeline === undefined) return undefined;
-      return (scene: Object3D, camera: Camera, targetScene?: Object3D): void => {
+      return (scene: Object3D, camera: Camera, targetScene?: Object3D): void | Promise<void> => {
         const outputRoot = targetScene ?? scene;
         const scoped = targetScene !== undefined && targetScene !== scene;
         const previousPassScene = outputPass?.scene;
         const previousPassCamera = outputPass?.camera;
         let restoreWorldPass: (() => void) | undefined;
+        let asyncPipelines:
+          | { readonly restore: () => void; readonly settled: () => Promise<void> }
+          | undefined;
         const warmRenderer = raw as RendererInstance &
           ThreeRenderer & {
             contextNode?: unknown;
@@ -821,9 +874,11 @@ function wrapRenderer(
             raw.setRenderTarget(warmOutputTarget);
           } else bindSurface();
           setOutputPipelineRoot(outputPass, outputRoot, camera);
+          asyncPipelines = beginAsyncPipelines(raw);
           outputPipeline?.render();
         } finally {
           renderingFrame -= 1;
+          asyncPipelines?.restore();
           if (outputPass !== undefined) {
             outputPass.scene = previousPassScene as Object3D;
             outputPass.camera = previousPassCamera as Camera;
@@ -857,6 +912,10 @@ function wrapRenderer(
           scene.matrix.copy(originalMatrix);
           scene.matrixWorld.copy(originalMatrixWorld);
         }
+        // Every pipeline this covered render requested now exists in the renderer's caches, so the
+        // first visible frame finds them instead of compiling them synchronously. A renderer with
+        // no async cache still returns synchronously, exactly as before.
+        return asyncPipelines?.settled();
       };
     },
     gpuFrameMs: () => gpuFrameSample()?.ms,
@@ -950,7 +1009,11 @@ function wrapRenderer(
       drawingBufferHeight: applied.height,
       drawingBufferWidth: applied.width,
       resolutionScale: state.resolutionScale,
-      ...(state.resolutionSubrect?.active === true ? { resolutionSubrect: true } : {}),
+      ...(raw.supportsRetainedTargetSubrect === false
+        ? { resolutionSubrect: false }
+        : state.resolutionSubrect?.active === true
+          ? { resolutionSubrect: true }
+          : {}),
       // Three reports 0 for a single sample per pixel; a sample count of zero would describe no
       // image at all.
       sampleCount: resolveSampleCount(raw),
@@ -1317,7 +1380,9 @@ function wrapRenderer(
         renderingFrame -= 1;
       }
     },
-    createResolutionSubrect: () => new ResolutionSubrect(),
+    ...(raw.supportsRetainedTargetSubrect === false
+      ? {}
+      : { createResolutionSubrect: () => new ResolutionSubrect() }),
     setOutputNode: (node, worldPass, options) => {
       if (kind !== "webgpu")
         throw new Error(`setOutputNode is unavailable on the ${kind} renderer.`);
@@ -1477,9 +1542,30 @@ function addResizeHandling(
   state: ISurfaceState,
   pixelRatio: number,
 ): { resize: () => void; stop: () => void } {
+  // The last layout size read and the drawing buffer set from it. A canvas with no CSS size lays
+  // out at its drawing buffer, so the buffer set here comes back as the next layout size: that echo
+  // is not a new layout, and scaling it again compounds (Midway's canvas fell to 3x3).
+  let layout: readonly [number, number] | undefined;
+  let applied: readonly [number, number] | undefined;
   const resize = () => {
-    const [width, height] =
+    let [width, height] =
       source?.readSize(renderer.domElement) ?? readCanvasSize(renderer.domElement);
+    if (
+      layout !== undefined &&
+      applied !== undefined &&
+      width === applied[0] &&
+      height === applied[1]
+    ) {
+      [width, height] = layout;
+      // The echo proves the canvas has no size of its own, so the page would show it at its buffer:
+      // shrunk under a scale below 1 (Midway fell to 1088x612), doubled at ratio 2. Pin it.
+      const style = (renderer.domElement as { style?: CSSStyleDeclaration }).style;
+      if (style !== undefined) {
+        style.width = `${width}px`;
+        style.height = `${height}px`;
+      }
+    }
+    layout = [width, height];
     // Recorded as it is applied rather than read back off the canvas: the canvas dimensions are
     // the host's to define and on native they have been the physical surface, which is exactly
     // the number this scale exists to stop a game from paying by hand.
@@ -1487,6 +1573,7 @@ function addResizeHandling(
     const scale = subrect?.active ? 1 : state.resolutionScale;
     const physicalWidth = Math.max(1, Math.round(width * pixelRatio * scale));
     const physicalHeight = Math.max(1, Math.round(height * pixelRatio * scale));
+    applied = [physicalWidth, physicalHeight];
     const surface = renderer.surface();
     if (
       surface.drawingBufferWidth !== physicalWidth ||
@@ -1742,11 +1829,23 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   }
 
   if (renderer === undefined) {
-    const raw = (
-      options.webgl2Factory
-        ? options.webgl2Factory(canvas, rendererParameters)
-        : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters })
-    ) as RendererInstance;
+    let raw: RendererInstance;
+    try {
+      raw = (
+        options.webgl2Factory
+          ? options.webgl2Factory(canvas, rendererParameters)
+          : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters })
+      ) as RendererInstance;
+    } catch (error) {
+      // No WebGPU adapter and no WebGL fallback is a boot failure the player must read. The native
+      // engine binds `WebGLRenderer` to a facade that refuses on use, and reporting that refusal
+      // verbatim would show an internal "uncatalogued" code; a browser with no context throws
+      // three's own message. Neither belongs in front of a player, so both become one named failure.
+      throw new Error(
+        "TN_NO_RENDERER: WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.",
+        { cause: error },
+      );
+    }
     const alphaAntialiasing = arm(raw);
     const pipelineCensus = createRendererPipelineCensus(raw, "webgl2", options);
     installDrawHook(raw, alphaAntialiasing);

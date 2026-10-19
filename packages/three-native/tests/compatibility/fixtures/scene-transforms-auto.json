@@ -1,0 +1,420 @@
+{
+  "name": "scene-transforms-auto",
+  "adaptedFrom": "three@0.185.1 test/unit/src/core/Object3D.tests.js \u2014 matrixAutoUpdate on: the local matrix is composed from position/quaternion/scale by updateMatrix, and updateMatrixWorld multiplies down the tree",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "root",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "root",
+      "path": "position.x",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "root",
+      "path": "position.y",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "root",
+      "path": "position.z",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "root",
+      "path": "scale.x",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "root",
+      "path": "scale.y",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "root",
+      "path": "scale.z",
+      "value": 0.5
+    },
+    {
+      "op": "new",
+      "id": "rootSpin",
+      "class": "Euler",
+      "args": [0.3, 0.9, -0.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "setRotationFromEuler",
+      "args": [
+        {
+          "ref": "rootSpin"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "child",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "child",
+      "path": "position.y",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "child",
+      "path": "scale.z",
+      "value": 2
+    },
+    {
+      "op": "new",
+      "id": "childSpin",
+      "class": "Euler",
+      "args": [-0.5, 0.2, 1.1, "ZYX"]
+    },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "setRotationFromEuler",
+      "args": [
+        {
+          "ref": "childSpin"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "grandchild",
+      "class": "Group",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "grandchild",
+      "path": "position.x",
+      "value": -4
+    },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "add",
+      "args": [
+        {
+          "ref": "grandchild"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "add",
+      "args": [
+        {
+          "ref": "child"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "updateMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "root",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "worldPosition",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "getWorldPosition",
+      "args": [
+        {
+          "ref": "worldPosition"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "worldQuaternion",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "grandchild",
+      "method": "getWorldQuaternion",
+      "args": [
+        {
+          "ref": "worldQuaternion"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "worldScale",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "getWorldScale",
+      "args": [
+        {
+          "ref": "worldScale"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "worldDirection",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "getWorldDirection",
+      "args": [
+        {
+          "ref": "worldDirection"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "localPoint",
+      "class": "Vector3",
+      "args": [1, 1, 1]
+    },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "localToWorld",
+      "args": [
+        {
+          "ref": "localPoint"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "child",
+      "method": "worldToLocal",
+      "args": [
+        {
+          "ref": "localPoint"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "axisZ",
+      "class": "Vector3",
+      "args": [0, 0, 1]
+    },
+    {
+      "op": "new",
+      "id": "axisX",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "rotated",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "rotated",
+      "path": "position.y",
+      "value": 2
+    },
+    {
+      "op": "call",
+      "id": "rotated",
+      "method": "rotateY",
+      "args": [0.85]
+    },
+    {
+      "op": "call",
+      "id": "rotated",
+      "method": "rotateOnWorldAxis",
+      "args": [
+        {
+          "ref": "axisZ"
+        },
+        0.4
+      ]
+    },
+    {
+      "op": "call",
+      "id": "rotated",
+      "method": "translateY",
+      "args": [0.5]
+    },
+    {
+      "op": "call",
+      "id": "rotated",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "call",
+      "id": "rotated",
+      "method": "rotateOnAxis",
+      "args": [
+        {
+          "ref": "axisX"
+        },
+        0.25
+      ]
+    },
+    {
+      "op": "call",
+      "id": "rotated",
+      "method": "translateOnAxis",
+      "args": [
+        {
+          "ref": "axisX"
+        },
+        -2
+      ]
+    },
+    {
+      "op": "call",
+      "id": "rotated",
+      "method": "updateMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "rotated",
+      "method": "applyQuaternion",
+      "args": [
+        {
+          "ref": "worldQuaternion"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "appliedMatrix",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "appliedMatrix",
+      "method": "makeTranslation",
+      "args": [5, -6, 7]
+    },
+    {
+      "op": "call",
+      "id": "rotated",
+      "method": "applyMatrix4",
+      "args": [
+        {
+          "ref": "appliedMatrix"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "root",
+      "path": "matrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "root",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "child",
+      "path": "matrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "child",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "grandchild",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "child",
+      "path": "rotation.order",
+      "kind": "string"
+    },
+    {
+      "id": "worldPosition",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "worldQuaternion",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "worldScale",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "worldDirection",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "worldDirection",
+      "method": "length",
+      "kind": "number"
+    },
+    {
+      "id": "localPoint",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "rotated",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "rotated",
+      "path": "quaternion.w",
+      "kind": "number"
+    }
+  ]
+}

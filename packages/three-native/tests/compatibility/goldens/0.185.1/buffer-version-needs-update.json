@@ -1,0 +1,32 @@
+{
+  "name": "buffer-version-needs-update",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 src/core/BufferAttribute.js — `needsUpdate = true` bumps `version` once per set and leaves `updateRanges` alone",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "fresh",
+      "kind": "number",
+      "path": "version",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 1,
+      "id": "bumped",
+      "kind": "number",
+      "path": "version",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 2,
+      "id": "bumped",
+      "kind": "json",
+      "path": "updateRanges",
+      "value": "s:%5B%7B%22count%22%3A2%2C%22start%22%3A1%7D%5D",
+      "decimal": "[{\"count\":2,\"start\":1}]"
+    }
+  ]
+}

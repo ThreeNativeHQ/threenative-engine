@@ -2476,3 +2476,422 @@ index ff8ee2dbace2816105aa7152891c04f2333f33e8..036202ae74ee01f73ca25113e8d4e2ef
  		this._samplerCache.clear();
  
  	}
+diff --git a/src/nodes/pmrem/PMREMNode.js b/src/nodes/pmrem/PMREMNode.js
+index fc65e547aab918c28a4fa1c615e3cc4f7e8e169f..c4c33cf3060d8c75398000589ed4e3f9a52ec285 100644
+--- a/src/nodes/pmrem/PMREMNode.js
++++ b/src/nodes/pmrem/PMREMNode.js
+@@ -11,6 +11,31 @@ import PMREMGenerator from '../../renderers/common/extras/PMREMGenerator.js';
+ import { materialEnvRotation } from '../accessors/MaterialProperties.js';
+ 
+ const _cache = new WeakMap();
++const _pending = new WeakMap();
++const _failed = new WeakMap();
++
++function _listenForDispose( texture, cache ) {
++
++	if ( cache.has( texture ) ) return;
++
++	const onDispose = () => {
++
++		texture.removeEventListener( 'dispose', onDispose );
++
++		const pmrem = cache.get( texture );
++
++		if ( pmrem !== undefined ) {
++
++			pmrem.dispose();
++			cache.delete( texture );
++
++		}
++
++	};
++
++	texture.addEventListener( 'dispose', onDispose );
++
++}
+ 
+ /**
+  * Generates the cubeUV size based on the given image height.
+@@ -43,6 +68,14 @@ function _generateCubeUVSize( imageHeight ) {
+ function _getPMREMFromTexture( texture, renderer, generator ) {
+ 
+ 	const cache = _getCache( renderer );
++	const pending = _pending.get( renderer );
++
++	if ( pending && pending.textures.has( texture ) ) {
++
++		const prepared = cache.get( texture );
++		return prepared !== undefined && prepared.pmremVersion === texture.pmremVersion ? prepared.texture : null;
++
++	}
+ 
+ 	let cacheTexture = cache.get( texture );
+ 
+@@ -51,6 +84,25 @@ function _getPMREMFromTexture( texture, renderer, generator ) {
+ 	if ( pmremVersion !== texture.pmremVersion ) {
+ 
+ 		const image = texture.image;
++		const fence = renderer.backend && renderer.backend.device && renderer.backend.device.queue;
++
++		if ( fence && typeof fence.onSubmittedWorkDone === 'function' ) {
++
++			// A queue-fenced backend never bakes synchronously: all GGX passes in one submission can hang the GPU process.
++			const version = texture.pmremVersion;
++
++			if ( _failed.get( texture ) === version ) return null;
++
++			PMREMNode.prepareTextureAsync( renderer, texture ).catch( ( error ) => {
++
++				_failed.set( texture, version );
++				console.error( error );
++
++			} );
++
++			return null;
++
++		}
+ 
+ 		if ( texture.isCubeTexture ) {
+ 
+@@ -81,28 +133,7 @@ function _getPMREMFromTexture( texture, renderer, generator ) {
+ 
+ 		cacheTexture.pmremVersion = texture.pmremVersion;
+ 
+-		// add dispose event listener for new PMREMs
+-
+-		if ( cache.has( texture ) === false ) {
+-
+-			const onDispose = () => {
+-
+-				texture.removeEventListener( 'dispose', onDispose );
+-
+-				const pmrem = cache.get( texture );
+-
+-				if ( pmrem !== undefined ) {
+-
+-					pmrem.dispose();
+-					cache.delete( texture );
+-
+-				}
+-
+-			};
+-
+-			texture.addEventListener( 'dispose', onDispose );
+-
+-		}
++		_listenForDispose( texture, cache );
+ 
+ 		//
+ 
+@@ -157,6 +188,96 @@ class PMREMNode extends TempNode {
+ 
+ 	}
+ 
++	static async prepareTextureAsync( renderer, texture ) {
++
++		if ( texture.isPMREMTexture === true || texture.mapping === CubeUVReflectionMapping ) return true;
++
++		if ( texture.isCubeTexture ? ! isCubeMapReady( texture.image ) : ! isEquirectangularMapReady( texture.image ) ) return false;
++
++		const cache = _getCache( renderer );
++		const cached = cache.get( texture );
++
++		if ( cached !== undefined && cached.pmremVersion === texture.pmremVersion ) return true;
++
++		let rendererPending = _pending.get( renderer );
++
++		if ( rendererPending === undefined ) {
++
++			rendererPending = { textures: new WeakMap(), queue: Promise.resolve() };
++			_pending.set( renderer, rendererPending );
++
++		}
++
++		const existing = rendererPending.textures.get( texture );
++		if ( existing !== undefined ) {
++
++			return existing.version === texture.pmremVersion
++				? existing.promise
++				: existing.promise.then( () => PMREMNode.prepareTextureAsync( renderer, texture ) );
++
++		}
++
++		const version = texture.pmremVersion;
++		let disposed = false;
++		const onDispose = () => { disposed = true; };
++		texture.addEventListener( 'dispose', onDispose );
++		const preparation = rendererPending.queue.catch( () => {} ).then( async () => {
++
++			let generator;
++
++			try {
++
++				if ( disposed || version !== texture.pmremVersion ) return false;
++
++				const current = cache.get( texture );
++				if ( current !== undefined && current.pmremVersion === version ) return true;
++
++				generator = new PMREMGenerator( renderer );
++
++				const generated = texture.isCubeTexture
++					? await generator.fromCubemapAsync( texture )
++					: await generator.fromEquirectangularAsync( texture );
++
++				if ( disposed || version !== texture.pmremVersion ) {
++
++					generated.dispose();
++					return false;
++
++				}
++
++				const previous = cache.get( texture );
++				generated.pmremVersion = version;
++				_listenForDispose( texture, cache );
++				cache.set( texture, generated );
++
++				if ( previous !== undefined && previous !== generated ) previous.dispose();
++
++				return true;
++
++			} finally {
++
++				texture.removeEventListener( 'dispose', onDispose );
++				generator && generator.dispose();
++
++			}
++
++		} );
++
++		rendererPending.textures.set( texture, { version, promise: preparation } );
++		rendererPending.queue = preparation;
++
++		try {
++
++			return await preparation;
++
++		} finally {
++
++			if ( rendererPending.textures.get( texture ).promise === preparation ) rendererPending.textures.delete( texture );
++
++		}
++
++	}
++
+ 	/**
+ 	 * Constructs a new function overloading node.
+ 	 *
+@@ -343,7 +464,7 @@ class PMREMNode extends TempNode {
+ 		// PMREMGenerator renders into a render target with inverted Y, so its output needs the Y
+ 		// flip on sampling. Externally authored PMREMs follow the standard convention and don't.
+ 
+-		uvNode = this._pmrem.isRenderTargetTexture
++		uvNode = this._texture.value.isRenderTargetTexture
+ 			? materialEnvRotation.mul( vec3( uvNode.x, uvNode.y.negate(), uvNode.z ) )
+ 			: materialEnvRotation.mul( uvNode );
+ 
+diff --git a/src/renderers/common/extras/PMREMGenerator.js b/src/renderers/common/extras/PMREMGenerator.js
+index 27df07dd99b46ac85a69f3249d9934334ff10dae..ace19db76fab3f08ed4d581d1e272066a24c34aa 100644
+--- a/src/renderers/common/extras/PMREMGenerator.js
++++ b/src/renderers/common/extras/PMREMGenerator.js
+@@ -239,11 +239,11 @@ class PMREMGenerator {
+ 	 */
+ 	async fromEquirectangularAsync( equirectangular, renderTarget = null ) {
+ 
+-		warnOnce( 'PMREMGenerator: ".fromEquirectangularAsync()" is deprecated. Use "await renderer.init()" instead.' ); // @deprecated r181
+-
+ 		await this._renderer.init();
+ 
+-		return this._fromTexture( equirectangular, renderTarget );
++		if ( this._renderer.backend.isWebGPUBackend !== true ) return this._fromTexture( equirectangular, renderTarget );
++
++		return this._fromTextureAsync( equirectangular, renderTarget );
+ 
+ 	}
+ 
+@@ -283,11 +283,11 @@ class PMREMGenerator {
+ 	 */
+ 	async fromCubemapAsync( cubemap, renderTarget = null ) {
+ 
+-		warnOnce( 'PMREMGenerator: ".fromCubemapAsync()" is deprecated. Use "await renderer.init()" instead.' ); // @deprecated r181
+-
+ 		await this._renderer.init();
+ 
+-		return this._fromTexture( cubemap, renderTarget );
++		if ( this._renderer.backend.isWebGPUBackend !== true ) return this._fromTexture( cubemap, renderTarget );
++
++		return this._fromTextureAsync( cubemap, renderTarget );
+ 
+ 	}
+ 
+@@ -409,6 +409,171 @@ class PMREMGenerator {
+ 
+ 	}
+ 
++	async _fromTextureAsync( texture, renderTarget ) {
++
++		this._setSizeFromTexture( texture );
++
++		const cubeUVRenderTarget = renderTarget || this._allocateTarget( false );
++		let complete = false;
++
++		try {
++
++			this._init( cubeUVRenderTarget );
++			// One fence covers as much queued work as the heaviest single face (the first GGX filter pass).
++			this._fenceBudget = this._sizeLods[ 1 ] * this._sizeLods[ 1 ] * GGX_SAMPLES;
++			this._fencePending = 0;
++			await this._textureToCubeUVAsync( texture, cubeUVRenderTarget );
++			await this._applyPMREMAsync( cubeUVRenderTarget );
++			// Publication follows completed GPU work, including the faces the last fence did not cover.
++			await this._renderer.backend.device.queue.onSubmittedWorkDone();
++			complete = true;
++			return cubeUVRenderTarget;
++
++		} finally {
++
++			cubeUVRenderTarget.scissorTest = false;
++			this._setViewport( cubeUVRenderTarget, 0, 0, cubeUVRenderTarget.width, cubeUVRenderTarget.height );
++			if ( complete === false && renderTarget === null ) cubeUVRenderTarget.dispose();
++
++		}
++
++	}
++
++	async _renderFacesAsync( mesh, target, x, y, width, height, autoClear = this._renderer.autoClear ) {
++
++		const renderer = this._renderer;
++		const queue = renderer.backend && renderer.backend.device && renderer.backend.device.queue;
++
++		if ( queue === undefined || typeof queue.onSubmittedWorkDone !== 'function' ) {
++
++			throw new Error( 'THREE.PMREMGenerator: asynchronous PMREM requires a queue completion fence.' );
++
++		}
++
++		const { start, count } = mesh.geometry.drawRange;
++		const uniforms = _uniformsMap.get( mesh.material );
++		const faceCost = ( width / 3 ) * ( height / 2 ) * ( uniforms !== undefined && mesh.material === this._ggxMaterial && uniforms.roughness.value > 0 ? GGX_SAMPLES : 1 );
++		const budget = this._fenceBudget || 0;
++
++		try {
++
++			for ( let face = 0; face < 6; face ++ ) {
++
++				if ( this._fencePending > 0 && this._fencePending + faceCost > budget ) {
++
++					await queue.onSubmittedWorkDone();
++					this._fencePending = 0;
++
++				}
++
++				const oldTarget = renderer.getRenderTarget();
++				const oldActiveCubeFace = renderer.getActiveCubeFace();
++				const oldActiveMipmapLevel = renderer.getActiveMipmapLevel();
++				const oldMRT = renderer.getMRT();
++				const oldAutoClear = renderer.autoClear;
++
++				try {
++
++					renderer.autoClear = face === 0 ? autoClear : false;
++					mesh.geometry.setDrawRange( face * 6, 6 );
++					this._setViewport( target, x, y, width, height );
++					renderer.setMRT( null );
++					renderer.setRenderTarget( target );
++					renderer.render( mesh, _flatCamera );
++
++				} finally {
++
++					mesh.geometry.setDrawRange( start, count );
++					renderer.autoClear = oldAutoClear;
++					renderer.setMRT( oldMRT );
++					renderer.setRenderTarget( oldTarget, oldActiveCubeFace, oldActiveMipmapLevel );
++
++				}
++
++				this._fencePending = ( this._fencePending || 0 ) + faceCost;
++
++				if ( this._fencePending + faceCost > budget ) {
++
++					await queue.onSubmittedWorkDone();
++					this._fencePending = 0;
++
++				}
++
++			}
++
++		} finally {
++
++			mesh.geometry.setDrawRange( start, count );
++
++		}
++
++	}
++
++	async _textureToCubeUVAsync( texture, cubeUVRenderTarget ) {
++
++		const isCubeTexture = ( texture.mapping === CubeReflectionMapping || texture.mapping === CubeRefractionMapping );
++
++		if ( isCubeTexture ) {
++
++			if ( this._cubemapMaterial === null ) this._cubemapMaterial = _getCubemapMaterial( texture );
++
++		} else {
++
++			if ( this._equirectMaterial === null ) this._equirectMaterial = _getEquirectMaterial( texture );
++
++		}
++
++		const material = isCubeTexture ? this._cubemapMaterial : this._equirectMaterial;
++		material.fragmentNode.value = texture;
++
++		const mesh = this._lodMeshes[ 0 ];
++		mesh.material = material;
++
++		const size = this._cubeSize;
++		await this._renderFacesAsync( mesh, cubeUVRenderTarget, 0, 0, 3 * size, 2 * size );
++
++	}
++
++	async _applyPMREMAsync( cubeUVRenderTarget ) {
++
++		for ( let lodOut = 1; lodOut < this._lodMeshes.length; lodOut ++ ) {
++
++			await this._applyGGXFilterAsync( cubeUVRenderTarget, lodOut - 1, lodOut );
++
++		}
++
++	}
++
++	async _applyGGXFilterAsync( cubeUVRenderTarget, lodIn, lodOut ) {
++
++		const pingPongRenderTarget = this._pingPongRenderTarget;
++		const ggxMaterial = this._ggxMaterial;
++		const ggxMesh = this._lodMeshes[ lodOut ];
++		ggxMesh.material = ggxMaterial;
++		const ggxUniforms = _uniformsMap.get( ggxMaterial );
++		const targetRoughness = lodOut / ( this._lodMeshes.length - 1 );
++		const sourceRoughness = lodIn / ( this._lodMeshes.length - 1 );
++		const incrementalRoughness = Math.sqrt( targetRoughness * targetRoughness - sourceRoughness * sourceRoughness );
++		const adjustedRoughness = incrementalRoughness * ( 0.0 + targetRoughness * 1.25 );
++		const { _lodMax } = this;
++		const outputSize = this._sizeLods[ lodOut ];
++		const x = 3 * outputSize * ( lodOut > _lodMax - LOD_MIN ? lodOut - _lodMax + LOD_MIN : 0 );
++		const y = 4 * ( this._cubeSize - outputSize );
++
++		cubeUVRenderTarget.texture.frame = ( cubeUVRenderTarget.texture.frame || 0 ) + 1;
++		ggxUniforms.envMap.value = cubeUVRenderTarget.texture;
++		ggxUniforms.roughness.value = adjustedRoughness;
++		ggxUniforms.mipInt.value = _lodMax - lodIn;
++		await this._renderFacesAsync( ggxMesh, pingPongRenderTarget, x, y, 3 * outputSize, 2 * outputSize, false );
++
++		pingPongRenderTarget.texture.frame = ( pingPongRenderTarget.texture.frame || 0 ) + 1;
++		ggxUniforms.envMap.value = pingPongRenderTarget.texture;
++		ggxUniforms.roughness.value = 0.0;
++		ggxUniforms.mipInt.value = _lodMax - lodOut;
++		await this._renderFacesAsync( ggxMesh, cubeUVRenderTarget, x, y, 3 * outputSize, 2 * outputSize, false );
++
++	}
++
+ 	_allocateTarget( depthBuffer ) {
+ 
+ 		const width = 3 * Math.max( this._cubeSize, 16 * 7 );

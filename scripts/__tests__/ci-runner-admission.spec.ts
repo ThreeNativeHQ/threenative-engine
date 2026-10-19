@@ -152,6 +152,27 @@ it("keeps a plan-required instance with an unroutable matrix leg out of the sele
   expect(selectInstances(plan, {})).toEqual([]);
 });
 
+it("selects ci:native-engine exactly once when the plan requires it, and omits it otherwise", () => {
+  const plan = {
+    jobs: { "native-engine": { required: true }, typecheck: { required: true } },
+    unitMatrix: { shard: [] },
+    goldenMatrix: { template: [] },
+    templateMatrix: { template: [] },
+  };
+  const ids = selectInstances(plan, {});
+  expect(ids).toContain("ci:native-engine");
+  expect(ids.filter((id: string) => id === "ci:native-engine")).toHaveLength(1);
+  expect(
+    selectInstances(
+      { ...plan, jobs: { "native-engine": { required: false }, typecheck: { required: true } } },
+      {},
+    ),
+  ).not.toContain("ci:native-engine");
+  expect(selectInstances({ ...plan, jobs: { typecheck: { required: true } } }, {})).not.toContain(
+    "ci:native-engine",
+  );
+});
+
 it("never emits a golden-path leg the inventory does not carry", () => {
   // A `template` selection runs golden-path against the changed kit, which may be neither of the
   // inventory's starter/platformer legs. That leg stays hosted rather than becoming an invalid id.

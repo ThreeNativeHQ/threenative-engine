@@ -1,0 +1,216 @@
+{
+  "name": "tsl-storage-instances",
+  "adaptedFrom": "original \u2014 PRD-513: a TSL compute pass writes 10,000 instance positions (a 100 x 100 grid with a sine wave) into a storage buffer, and the following draw places each instance of an InstancedMesh at its entry through the material's positionNode",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 200]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.x",
+      "value": 24.75
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 26
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 72
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [24.75, 0, 22]
+    },
+    {
+      "op": "new",
+      "id": "sun",
+      "class": "DirectionalLight",
+      "args": [16777215, 2.5]
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.x",
+      "value": -10
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.y",
+      "value": 20
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.z",
+      "value": 8
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [13426943, 3351057, 0.6]
+    },
+    {
+      "op": "new",
+      "id": "boxGeometry",
+      "class": "BoxGeometry",
+      "args": [0.3, 0.3, 0.3]
+    },
+    {
+      "op": "new",
+      "id": "material",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "color.r",
+      "value": 0.85
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "color.g",
+      "value": 0.55
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "color.b",
+      "value": 0.25
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "roughness",
+      "value": 0.6
+    },
+    {
+      "op": "new",
+      "id": "grid",
+      "class": "InstancedMesh",
+      "args": [
+        {
+          "ref": "boxGeometry"
+        },
+        {
+          "ref": "material"
+        },
+        10000
+      ]
+    },
+    {
+      "op": "set",
+      "id": "grid",
+      "path": "frustumCulled",
+      "value": false
+    },
+    {
+      "op": "tsl",
+      "id": "material",
+      "program": "storage-instances"
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "grid"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sun"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  }
+}

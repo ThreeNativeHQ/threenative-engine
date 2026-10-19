@@ -14,6 +14,14 @@ inputs:
   template:
     description: create-threenative template name.
     required: true
+  engine:
+    description: >-
+      Set to `threejs` to name the Three.js engine override in the scaffolded config. Leave empty for the
+      default engine. A job that verifies the Three.js host's packaged executable (the release
+      container, the installer, the production profile) needs it, because the default builds the
+      V8 engine player instead.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -42,3 +50,11 @@ runs:
         done < "$TN_SCAFFOLD_SPECS"
         node packages/create-threenative/dist/index.js "$TN_SCAFFOLD_TARGET" \
           --template "$TN_SCAFFOLD_TEMPLATE" --no-install "${package_args[@]}"
+    - if: inputs.engine == 'threejs'
+      shell: bash
+      env:
+        TN_SCAFFOLD_TARGET: ${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        node --input-type=module -e 'import { pinThreejsDesktopHost } from "./packages/runtime-native/scripts/profile-production.mjs"; await pinThreejsDesktopHost(process.env.TN_SCAFFOLD_TARGET);'
+        grep -q 'engine: "threejs"' "$TN_SCAFFOLD_TARGET/threenative.config.ts"

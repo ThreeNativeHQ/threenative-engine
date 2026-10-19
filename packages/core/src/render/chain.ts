@@ -1,5 +1,4 @@
 import type { Texture } from "three";
-import { velocity as velocityAccessor } from "three/tsl";
 import type { MRTNode, Node } from "three/webgpu";
 
 import type { IFrameBudgetWindow } from "../frame-budget.js";
@@ -10,8 +9,8 @@ import type {
   RendererKind,
 } from "../renderer.js";
 import type { IResolutionSubrect, IResolutionTextureView } from "./resolution-subrect.js";
-import { VELOCITY_OUTPUT_NAME, velocityTexture, withVelocityContext } from "./velocity.js";
-import type { IVelocityRenderPass } from "./velocity.js";
+import { VELOCITY_OUTPUT_NAME, mrtVelocity } from "./velocity.js";
+import type { IVelocityProvision, IVelocityRenderPass } from "./velocity.js";
 
 /** The marker shared by render-chain logs, playtests, and native diagnostics. */
 export const RENDER_CHAIN_MARKER = "TN_RENDER_CHAIN";
@@ -100,6 +99,12 @@ const VELOCITY_STAGES = new Set<RenderChainStageName>([
 export interface IRenderChainVelocityRequest {
   /** The scene pass that owns the shared velocity output. */
   pass?: IVelocityRenderPass;
+  /**
+   * Optional: how the chain builds the velocity output on `pass` and hands it through the composed
+   * graph. Defaults to core's own {@link mrtVelocity}, so a web game never names it; a host whose
+   * scene pass owns the output differently passes its own.
+   */
+  provision?: IVelocityProvision;
   /** Treat the renderer's MRT velocity output as provisioned. */
   mrt?: boolean;
   /** Treat objects carrying `userData.useVelocity === true` as provisioned. */
@@ -370,6 +375,7 @@ export class RenderChain {
       requiredVelocity,
     );
     let velocityNode: Node | undefined;
+    let attachVelocity: IVelocityProvision["attach"] | undefined;
     const originalMrt = this.#requestVelocity.pass?.getMRT();
     this.#lastMeasurementFrame = undefined;
     this.#reportedMeasurement = false;
@@ -429,7 +435,9 @@ export class RenderChain {
         ) {
           const pass = this.#requestVelocity.pass;
           const priorTextures = [...(pass.renderTarget?.textures ?? [])];
-          velocityNode = velocityTexture(pass);
+          const provision = this.#requestVelocity.provision ?? mrtVelocity();
+          velocityNode = provision.texture(pass);
+          attachVelocity = provision.attach;
           this.#ownedVelocityPass = pass;
           this.#ownedVelocityMrt = originalMrt;
           if (originalMrt?.has(VELOCITY_OUTPUT_NAME) !== true)
@@ -465,10 +473,10 @@ export class RenderChain {
     );
     // Temporal nodes jitter the scene-side velocity node (TRAANode calls setProjectionMatrix on
     // it); the pass texture is what a stage samples, so it stays on the build context only.
-    if (velocityNode !== undefined && hasActiveVelocityStage)
+    if (velocityNode !== undefined && attachVelocity !== undefined && hasActiveVelocityStage)
       // TRAANode uses context.velocity to set the unjittered projection, not to sample MRT.
       // The sampled texture already travels to the factory via context.velocityNode.
-      node = withVelocityContext(node, velocityAccessor);
+      node = attachVelocity(node, velocityNode);
 
     if (stages.length > 0) {
       try {

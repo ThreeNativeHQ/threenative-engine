@@ -589,6 +589,13 @@ export class CellModels {
   get loadModel(): ((url: string) => Promise<Object3D>) | undefined {
     return this.#loadModel;
   }
+
+  cloneAssets(): { readonly assets: IAssetLoader; readonly ownsAssets: boolean } {
+    return {
+      assets: this.#ownsLoader ? createAssetLoader() : this.#loader,
+      ownsAssets: this.#ownsLoader,
+    };
+  }
   get loadsInFlight(): number {
     return this.#limiter.inFlight;
   }

@@ -1,0 +1,55 @@
+{
+  "name": "math-core-vector3-angles",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector3.tests.js — the sine, cosine and atan2 forms",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "v04",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff695b01248f6ce,n:c004680e4e632266,n:3fd01def758f9838",
+      "decimal": "1.41154486792168, -2.550808536911336, 0.25182711105879063"
+    },
+    {
+      "index": 1,
+      "id": "v05",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe295439c624b08,n:40209fd1385decef,n:c01a9b4f1c56a9b4",
+      "decimal": "0.5807207159399193, 8.312143098321455, -6.651668970860943"
+    },
+    {
+      "index": 2,
+      "id": "v06",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd999999999999a,n:bfeccccccccccccd,n:3fd0000000000000",
+      "decimal": "0.4, -0.9, 0.25"
+    },
+    {
+      "index": 3,
+      "id": "v07",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bff9dfe4ff4341f2,n:3ffd447e77ea6967,n:3fe131e35cd73da1",
+      "decimal": "-1.6171617480468936, 1.8292221721845523, 0.5373398602768483"
+    },
+    {
+      "index": 4,
+      "id": "v08",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ffb43fb1c6f72d0,n:bff4000000000000,n:3ffd447e77ea6967",
+      "decimal": "1.7040969000583353, -1.25, 1.8292221721845523"
+    },
+    {
+      "index": 5,
+      "id": "r10",
+      "kind": "number",
+      "value": "n:3ffcb765a1611a35",
+      "decimal": "1.7947746566657206"
+    }
+  ]
+}

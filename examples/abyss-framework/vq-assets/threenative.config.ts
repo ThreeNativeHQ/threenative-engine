@@ -1,6 +1,9 @@
 import type { IThreeNativeConfig } from "@threenative/core";
 
 export default {
+  // This fixture proves the Three.js host's QuickJS asset fallback: it packages the appended-game
+  // executable and runs it. The default engine builds the V8 engine player directory instead.
+  engine: "threejs",
   app: { id: "com.threenative.vq01", name: "VQ-01 native assets", version: "1.0.0", build: 1 },
   assets: {
     source: ".generated/assets",

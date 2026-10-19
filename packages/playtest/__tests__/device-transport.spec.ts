@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   androidMailboxPaths,
@@ -217,17 +217,22 @@ test("mailbox operations honor the configured runner timeout", async () => {
 });
 
 test("mailbox operations honor a longer per-call timeout for slow advances", async () => {
+  vi.useFakeTimers();
   const paths = androidMailboxPaths("com.example.game", "/slow-device-files");
   const mailbox = new FakeMailbox(paths, 30);
   const transport = new DeviceMailboxTransport(mailbox, paths, 20);
   const timedTransport: IDevicePlaytestTransport = transport;
-  await transport.start();
   try {
+    await transport.start();
     await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
     await expect(transport.waitForBridge(100)).resolves.toBe(true);
-    await expect(timedTransport.call("advance", 60, 50)).resolves.toEqual({ ok: true });
+    const call = timedTransport.call("advance", 60, 50);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(40);
+    await expect(call).resolves.toEqual({ ok: true });
   } finally {
     await transport.close();
+    vi.useRealTimers();
   }
 });
 

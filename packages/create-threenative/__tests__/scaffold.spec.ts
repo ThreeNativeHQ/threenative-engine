@@ -249,22 +249,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // only the copied patch changed in all thirteen trees.
   // PRD-619: all kits name interpolation; starter adds the live-clock motion proof.
   // Measured through createProject on the combined develop + PR483 merge tree.
-  "action-rpg": "b61a857a6d1c4537143aafbc5eaadbe72a2218d60eeb909ff47ace4b348b2405",
-  minimal: "bf344cf152e4ae18cd5f9492c6c381e3f6cab48bd48908989965f1c82e6fc127",
-  platformer: "9b7c70abb4f891f103f613939e9f3dd748cb641bc05d6e180e599446a8792d46",
-  puzzle: "d0d57879470f51e00e722d67717da4c3ab5a88aacc4653bab8d4c82a3105266a",
-  racing: "2b5e6d02eda1857d733046f20f83a235f97ca4c8157f9892fb74bfc5ada10e7b",
-  rain: "34034faa249af5c0a2b8dbff7bfb73a00928ce6a3d9d2b13c489fa082c030a2f",
-  rts: "d3f9eb89fca064ea3f046e43562b2d648b223e89d485bf8ebebfd8fc0312d164",
-  runner: "becabb18b8f5b31bb22871a27ba40686607316780f0d8dcb52a39b900e9881ad",
+  // Re-measured 2026-10-18 through all thirteen createProject trees after merging develop and regenerating the combined Three patch.
+  "action-rpg": "5f33323efd7260d6ddd3526c2bfe1426a3a9f9bf028aa1e18bf69710b284ab18",
+  minimal: "aab749628f3ec2811c9423353af28c5f289fb6d939e5c68728c365fda287f05e",
+  platformer: "b1044e0d5ab6db8b614cb4b3b6d46f93788e47f17d62a02ec5da34d552e349c4",
+  puzzle: "26ebde51a92d6ee1bc618336e1462acfdcd4676d1a749e9529d965d4cc7f9b5d",
+  racing: "36ba1cedfa6c4b13b5853881f6c3e869d3608991d415593d52fbc2982923e1e1",
+  rain: "83f07293c82210b35eadc76eb9999f06366fc00cd59ffb3472daf908d2c12e38",
+  rts: "361bc55e7608b2a071ce2a2ee3c8ad180e78244c5ad179761fffce0c5529cb7b",
+  runner: "539f42125d6f8b3ffd6f467fea7810fd0cf46e6863174740c9756cae30e88210",
 
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "fdbccdf5af22811535eb598cbe827580e839309547cd3df4839dae2ed5e717db",
-  shooter: "c4e931fec87b35c5a172f29666a6f312a1b0d9d0dd7b75b6ba1e6af28e28eccf",
-  snow: "5be9022fbd3e9a1e8d814581b2d06bd531a40108104c96e152da1307d8fb684a",
+  sailing: "949e71b4c3a3990ffce0eaeb835ce4a3b786a86a3b4879dfb14c7b58bccc1df9",
+  shooter: "277e9258e6d9c8b0dff76d0f412f04f5024ccf8c76831bc4fa2ac5ba8d706d88",
+  snow: "87a5c76122fcc9e3275ae05b047a09836c3c0362a5abff9fe81d04afa7b24d9d",
   // Merged input heading, quaternion facing and progress import; measured through actual scaffold.
-  starter: "2abca3118462d3a80f380938763b51293c590a71d7afaba184dee70574b62242",
-  "tower-defense": "3cd95d3c8b9ec9bd487d600278742cfc41fe0741d2533f838a65497ea37136f5",
+  starter: "ccd4dbf88a86ced37310206856635a31b3cd9f6468482b081bffa77595463e4d",
+  "tower-defense": "d00f7cd94843b326f451729be2a97fba2af72a6964a2abab2d7a851af897aff2",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -363,6 +364,7 @@ const STARTER_PATHS = [
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
+  "src/render/qualityPolicy.ts",
   "src/render/worldEnvironment.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
@@ -1102,6 +1104,15 @@ describe("create-threenative", () => {
       const result = await createProject(
         { install: false, target: "minimal-bundle", template: "minimal" },
         root,
+      );
+      // This build checks core's bundle, not an engine: it names the legacy engine so it needs no Wasm module.
+      const configPath = path.join(result.target, "threenative.config.ts");
+      await writeFile(
+        configPath,
+        (await readFile(configPath, "utf8")).replace(
+          "const config: IThreeNativeConfig = {",
+          'const config: IThreeNativeConfig = {\n  engine: "threejs",',
+        ),
       );
       const scope = path.join(result.target, "node_modules", "@threenative");
       await mkdir(scope, { recursive: true });

@@ -36,6 +36,12 @@
         "component": "normaliseFactor",
         "entity": "player",
         "lte": 0.99
+      },
+      {
+        "allowTrivial": "The gap is held near zero by the sun target's world matrix; the target sits at the origin, tens of metres from the car, until a scene traversal refreshes it.",
+        "component": "targetGap",
+        "entity": "sun",
+        "lte": 1.5
       }
     ],
     "movement": {

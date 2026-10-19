@@ -1495,6 +1495,8 @@ function setManualLodLevel(lod: LOD, level: number): void {
  * @example const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });
  */
 export class TerrainTiles extends Object3D implements IComputeDriven {
+  readonly #options: IWorldTilesOptions;
+  #snapshotChildren: Object3D[] = [];
   readonly residentTileBudget: number;
   readonly residentByteBudget: number;
   readonly skirtDepth: number;
@@ -1605,6 +1607,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   constructor(options: IWorldTilesOptions) {
     super();
+    this.#options = { ...options };
     this.#jobs = createTerrainJobRunner();
     this.tileSize = positive(options.tileSize, "tileSize");
     this.tileResolution = integerAtLeast(options.tileResolution, 3, "tileResolution");
@@ -1698,6 +1701,24 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     }
     if (this.#validate) this.#recordSeamDiagnostics();
     this.frustumCulled = true;
+  }
+
+  /** Fresh residency and colliders; retain the visible tree until follow() regenerates it. */
+  override clone(recursive = true): this {
+    const copy = new TerrainTiles(this.#options).copy(this, false);
+    const streamed = new Set<Object3D>([
+      ...this.#snapshotChildren,
+      ...[...this.#resident.values()].map((tile) => tile.lod),
+      ...[...this.#stitches.values()].map((bridge) => bridge.mesh),
+      ...[...this.#blocks.values()].map((block) => block.mesh),
+    ]);
+    if (recursive)
+      for (const child of this.children) {
+        const clonedChild = child.clone();
+        copy.add(clonedChild);
+        if (streamed.has(child)) copy.#snapshotChildren.push(clonedChild);
+      }
+    return copy as this;
   }
 
   get released(): boolean {
@@ -1867,6 +1888,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     view?: IWorldTilesLodView,
   ): void {
     if (this.#released) throw new Error("TerrainTiles cannot follow after release.");
+    for (const child of this.#snapshotChildren) this.remove(child);
+    this.#snapshotChildren.length = 0;
     // This pass starts owing nothing; a refusal below sets the flag that owes the next one, so
     // `deferredAdmissions` is exactly "the last pass did not get everything it wanted".
     this.#deferredAdmissions = 0;

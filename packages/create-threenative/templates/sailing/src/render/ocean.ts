@@ -13,7 +13,11 @@
 //
 // A spectral ocean is cascaded wave spectra inverse-transformed on the GPU every frame, which is
 // what real water is, and a standard node material puts it back under the scene's own lights.
-import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";
+import {
+  type ISpectralOceanHeight,
+  type ISpectralOceanOptions,
+  SpectralOcean,
+} from "@threenative/core";
 import {
   BufferGeometry,
   DataTexture,
@@ -113,55 +117,7 @@ export const SEA = {
   windSpeed: 6,
 } satisfies ISpectralOceanOptions;
 
-/**
- * How fast the sea's dominant waves travel, and which way they run.
- *
- * A spectral ocean has no closed-form height, so the CPU copy a hull floats on is always some
- * frames behind the field the GPU is drawing — the API says so, and reports the age. This is what
- * a reader needs to *use* that age: deep-water waves travel, so the field at time `t + d` is very
- * nearly the field at time `t` shifted downwind by `speed * d`. Sampling that far **upwind** of a
- * point therefore reads what the water there is about to be doing.
- *
- * The peak angular frequency is the Pierson-Moskowitz one, `0.855 g / U`, and a deep-water wave's
- * phase speed is `g / w`. Both come straight out of `SEA` above, so retuning the wind retunes
- * this with it.
- */
-const PEAK_ANGULAR_FREQUENCY = (0.855 * SEA.gravity) / SEA.windSpeed;
-export const SWELL = {
-  /** Metres per second. */
-  speed: SEA.gravity / PEAK_ANGULAR_FREQUENCY,
-  x: Math.cos(SEA.windDirection),
-  z: Math.sin(SEA.windDirection),
-} as const;
-
-/**
- * The most wave-time any reader will extrapolate over, in seconds. See `surfaceHeight`.
- *
- * The lag being corrected for is a few frames in a real session and an order of magnitude worse
- * inside a playtest, where the fixed step runs far faster than wall-clock and a copy in flight
- * covers a hundred ticks. Correcting the first is what a floating thing needs; chasing the second
- * would sample far upwind, where a spectral field has already decorrelated and the "prediction" is
- * just a different wave.
- *
- * It is also short because the lead is measured in wavelengths, not in seconds. This sea state's
- * dominant wavelength is 13 m, so a quarter of a second is 1.75 m upwind — an eighth of a wave, and
- * the height comes back half a metre from the truth, which floats the drawn hull on water that is
- * not being drawn. An eighth of a second is 0.9 m, or a fifteenth of a wave: worth correcting, and
- * small enough not to invent a wave.
- */
-const MAX_LEAD_SECONDS = 0.12;
-
-/**
- * The sea's height at a world point, corrected for the age of the copy it came from.
- *
- * This is the call anything that floats should use, rather than `sampleHeight` raw: a hull, a
- * buoy or a bit of flotsam put straight onto the returned number rides water the renderer stopped
- * drawing several frames ago, and the tell is a hull that cuts down through a crest and then hangs
- * over the following trough.
- *
- * `undefined` before the first copy lands, exactly as `sampleHeight` is, so a caller still has to
- * decide what an unknown sea level means for it.
- */
+/** Predict this point's current height from its measured local vertical velocity. */
 export function surfaceHeight(
   ocean: SpectralOcean,
   x: number,
@@ -170,9 +126,71 @@ export function surfaceHeight(
 ): number | undefined {
   const probe = ocean.sampleHeight(x, z);
   if (probe === undefined) return undefined;
-  const lead = Math.min(MAX_LEAD_SECONDS, Math.max(0, probe.staleFrames) * deltaTime);
-  const run = SWELL.speed * lead;
-  return ocean.sampleHeight(x - SWELL.x * run, z - SWELL.z * run)?.height ?? probe.height;
+  const lead = Math.max(0, probe.staleFrames) * deltaTime;
+  return probe.height + probe.verticalVelocity * lead;
+}
+
+/**
+ * A new asynchronous copy corrects the predicted height and velocity. Carry that innovation
+ * continuously to the new prediction over its measured copy interval, rather than teleporting
+ * the hull or damping the wave itself. Each ship owns its history; attitude probes stay raw.
+ */
+export function createHeightReconciler() {
+  let previous:
+    | { height: number; velocity: number; copy: number; time: number; step: number }
+    | undefined;
+  let curve: { start: number; duration: number; height: number; velocity: number } | undefined;
+  const correction = (time: number) => {
+    if (curve === undefined || time >= curve.start + curve.duration)
+      return { height: 0, velocity: 0 };
+    const t = Math.max(0, (time - curve.start) / curve.duration);
+    return {
+      height:
+        (2 * t ** 3 - 3 * t ** 2 + 1) * curve.height +
+        (t ** 3 - 2 * t ** 2 + t) * curve.duration * curve.velocity,
+      velocity:
+        ((6 * t ** 2 - 6 * t) * curve.height) / curve.duration +
+        (3 * t ** 2 - 4 * t + 1) * curve.velocity,
+    };
+  };
+  return (sample: ISpectralOceanHeight, frame: number, step: number) => {
+    if (
+      ![frame, step, sample.height, sample.verticalVelocity, sample.staleFrames].every(
+        Number.isFinite,
+      ) ||
+      frame < 0 ||
+      step <= 0 ||
+      sample.staleFrames < 0
+    )
+      throw new Error("Invalid sailing height prediction clock or sample.");
+    const time = frame * step;
+    const copy = (frame - sample.staleFrames) * step;
+    const height = sample.height + sample.verticalVelocity * (time - copy);
+    if (
+      previous !== undefined &&
+      (time < previous.time || step !== previous.step || copy < previous.copy)
+    ) {
+      previous = undefined;
+      curve = undefined;
+    }
+    if (previous !== undefined && copy !== previous.copy) {
+      const carried = correction(time);
+      curve = {
+        start: time,
+        duration: copy - previous.copy,
+        height:
+          previous.height + previous.velocity * (time - previous.copy) + carried.height - height,
+        velocity: previous.velocity + carried.velocity - sample.verticalVelocity,
+      };
+    }
+    previous = { height: sample.height, velocity: sample.verticalVelocity, copy, time, step };
+    const carried = correction(time);
+    return {
+      height: height + carried.height,
+      verticalVelocity: sample.verticalVelocity + carried.velocity,
+      correction: carried.height,
+    };
+  };
 }
 
 /**

@@ -1,0 +1,119 @@
+{
+  "name": "geometry-cylinder",
+  "adaptedFrom": "three@0.185.1 src/geometries/CylinderGeometry.js — closed, open-ended and a partial-theta cylinder",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "closed",
+      "class": "CylinderGeometry",
+      "args": [1, 1, 2, 6, 1]
+    },
+    {
+      "op": "new",
+      "id": "open",
+      "class": "CylinderGeometry",
+      "args": [2, 0.5, 3, 8, 2, true]
+    },
+    {
+      "op": "new",
+      "id": "sweep",
+      "class": "CylinderGeometry",
+      "args": [1.5, 0.75, 2.5, 6, 2, false, 0.5, 4]
+    }
+  ],
+  "observe": [
+    {
+      "id": "closed",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "closed",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "closed",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "closed",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "closed",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "closed",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "open",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "open",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "open",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "open",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "open",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "open",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "sweep",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "sweep",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "sweep",
+      "path": "parameters",
+      "kind": "json"
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+{
+  "name": "sky-equirect",
+  "adaptedFrom": "original \u2014 starter setupSky: sRGB equirect background/environment, intensity 2.5, sharp cubemap, PMREM fill, rotated asymmetric sky. Red control: clear backgroundTexture (sky black); clear environment (both spheres black).",
+  "tolerance": {
+    "abs": 1e-12
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [55, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.x",
+      "value": 0.7
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 6
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "geom",
+      "class": "SphereGeometry",
+      "args": [1, 32, 24]
+    },
+    {
+      "op": "new",
+      "id": "m0",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "m0",
+      "path": "metalness",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "m0",
+      "path": "roughness",
+      "value": 0.8
+    },
+    {
+      "op": "new",
+      "id": "s0",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geom"
+        },
+        {
+          "ref": "m0"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "s0",
+      "path": "position.x",
+      "value": -1.15
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "s0"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m1",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "m1",
+      "path": "metalness",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "m1",
+      "path": "roughness",
+      "value": 0.3
+    },
+    {
+      "op": "new",
+      "id": "s1",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geom"
+        },
+        {
+          "ref": "m1"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "s1",
+      "path": "position.x",
+      "value": 1.15
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "s1"
+        }
+      ]
+    },
+    {
+      "op": "tsl",
+      "id": "scene",
+      "program": "sky-equirect"
+    }
+  ],
+  "observe": [
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  }
+}

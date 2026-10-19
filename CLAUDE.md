@@ -49,7 +49,7 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 2. **Kill switch.** An abstraction costing more code than plain Three.js is deleted; `scripts/count-loc.ts` scores every repetition.
 3. **Never own the look.** Geometry, material, colour, texture, curve and timing come from the game; it must be able to change the appearance completely without editing package code. `GPUParticles3D` is the shape.
 4. **Borrow vocabulary**: Godot for nodes (the only node source), Three.js for rendering, Rapier for physics, Tailwind for UI, in camelCase. **A package exists only when it carries a dependency the others must not inherit.**
-5. **Closed, outranking rule 1**: an IR, a scene format, an editor, a preset/genre system, a code-first ECS, a bespoke CLI vocabulary. **Web-only is unfinished**: a helper admitted for being unportable ships native proof (a conformance case or a `--target` playtest) in the same commit, and no result claims a platform it did not run on. Contract: `packages/runtime-native/AGENTS.md`.
+5. **Closed, outranking rule 1**: an authored IR, a second renderer, a scene format, an editor, a preset/genre system, a code-first ECS, a bespoke CLI vocabulary. **Web-only is unfinished**: a helper admitted for being unportable ships native proof (a conformance case or a `--target` playtest) in the same commit, and no result claims a platform it did not run on. Contract: `packages/runtime-native/AGENTS.md`. **One exception, opt-in**: the owned C++ engine (renderer plus internal shader IR) behind the Three.js API; it is the default engine for web and desktop since 2026-10-15, and `engine: "threejs"` is the named override (`docs/architecture/NATIVE-ENGINE-DECISION.md`).
 
 ## Commands
 

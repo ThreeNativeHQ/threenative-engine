@@ -11,22 +11,26 @@ targets could not be built and are named below.
 | `src/audio/` | 1471 | 1301 | 88.44% |
 | `src/canvas/` | 1334 | 1110 | 83.21% |
 | `src/cli/` | 1690 | 1242 | 73.49% |
+| `src/engine/` | 36130 | 29912 | 82.79% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2793 | 2216 | 79.34% |
-| `src/platform/` | 1465 | 1008 | 68.81% |
+| `src/js/` | 2835 | 2227 | 78.55% |
+| `src/platform/` | 1507 | 1047 | 69.48% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
-| `src/runtime.cpp` | 2442 | 1896 | 77.64% |
+| `src/runtime.cpp` | 2408 | 1865 | 77.45% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9888 | 7589 | 76.75% |
-| `src/webtransport/` | 1391 | 1078 | 77.50% |
-| `src/workers/` | 615 | 524 | 85.20% |
-| **TOTAL** | **24861** | **19494** | **78.41%** |
 
-Source digest: `sha256:6bafd3b378aa0598581614ba4bc7e5c79509f9c7dd717dff6dff709bdfe0d6a3`
+| `src/webgpu/` | 10040 | 7707 | 76.76% |
+| `src/webtransport/` | 1391 | 1078 | 77.50% |
+
+| `src/workers/` | 615 | 527 | 85.69% |
+| **TOTAL** | **61193** | **49546** | **80.97%** |
+
+
+Source digest: `sha256:2e51b30f064c30e28ebf9312c6de690bd7d135afa268b3f1a56426b6afce6fff`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -38,23 +42,31 @@ change requires this opt-in command to refresh the record.
 | `src/audio/` | 83.44% |
 | `src/canvas/` | 78.21% |
 | `src/cli/` | 68.49% |
+| `src/engine/` | 82.22% |
 | `src/fs/` | 75.43% |
 | `src/http/` | 86.95% |
 | `src/js/` | 74.50% |
-| `src/platform/` | 63.81% |
+| `src/platform/` | 64.48% |
 | `src/raytracing/` | 81.55% |
 | `src/runtime.cpp` | 73.28% |
 | `src/screenshot_gate.cpp` | 88.89% |
 | `src/storage/` | 86.54% |
 | `src/utils/` | 0.00% |
 | `src/vfs/` | 76.59% |
-| `src/webgpu/` | 71.87% |
+| `src/webgpu/` | 71.88% |
 | `src/webtransport/` | 72.50% |
 | `src/workers/` | 80.69% |
 
 ## Not compiled in this configuration
 
+- `src/adapters/v8/adapter.cpp`
+- `src/adapters/v8/host_main.cpp`
+- `src/adapters/v8/math_bridge.cpp`
+- `src/adapters/v8/tsl.cpp`
 - `src/debug/debug_server.cpp`
+- `src/engine/player/v8_main.cpp`
+- `src/engine/wasm/web_host.cpp`
+- `src/engine/world/physics_sync.cpp`
 - `src/gltf/gltf_loader.cpp`
 - `src/js/jsc_engine.mm`
 - `src/js/quickjs_engine.cpp`

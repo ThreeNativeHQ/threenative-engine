@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { checkCapabilityManifest } from "./build-capability-manifest.js";
@@ -23,6 +23,7 @@ const execFileAsync = promisify(execFile);
 const LIMITS = {
   frameworkLoc: 15_000,
   nativeRuntimeLoc: 100_000,
+  webEngineBytes: 4_194_304,
 } as const;
 
 const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
@@ -84,6 +85,7 @@ export type BudgetReport = {
   frameworkLoc: number;
   frameworkLocByPackage: FrameworkPackageLoc[];
   nativeRuntimeLoc: number;
+  webEngineBytes: number | null;
   prdFiles: number;
   templates: { name: string; loc: number }[];
   textureBytes: TextureByteBudget | null;
@@ -330,6 +332,14 @@ export async function measureNativeCensusAreas(root: string): Promise<INativeCen
 }
 
 export async function collectBudgets(root: string): Promise<BudgetReport> {
+  const webEngineBytes = await stat(
+    path.join(root, NATIVE_RUNTIME_PACKAGE, "build", "web", "tn-native-engine-web.wasm"),
+  )
+    .then((file) => file.size)
+    .catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
   const packageEntries = await readdir(path.join(root, "packages"), { withFileTypes: true }).catch(
     () => [],
   );
@@ -387,6 +397,7 @@ export async function collectBudgets(root: string): Promise<BudgetReport> {
       left.name.localeCompare(right.name),
     ),
     nativeRuntimeLoc: await countLines(nativeRuntimeFiles),
+    webEngineBytes,
     templates,
     textureBytes: await templateTextureBytes(root),
     vendoredExternalMcp: await vendoredExternalMcp(root),
@@ -430,6 +441,11 @@ export function budgetTriggers(report: BudgetReport): string[] {
 
 export function budgetErrors(report: BudgetReport): string[] {
   const errors: string[] = [];
+  if (report.webEngineBytes !== null && report.webEngineBytes > LIMITS.webEngineBytes) {
+    errors.push(
+      `TN_WEB_ENGINE_OVER_BUDGET: measured ${report.webEngineBytes} bytes, allowed ${LIMITS.webEngineBytes} bytes`,
+    );
+  }
   if (report.vendoredExternalMcp.length > 0) {
     errors.push(
       `Authoring MCP source (${[...EXTERNAL_MCPS].join(", ")}) must stay external and only @threenative/core may depend on it: ${report.vendoredExternalMcp.join(", ")} claims one.`,
@@ -650,6 +666,11 @@ if (
 ) {
   enforceBudgets(process.cwd())
     .then(async (report) => {
+      console.log(
+        report.webEngineBytes === null
+          ? "web engine size budget skipped: Wasm engine is not built"
+          : `web engine size budget ok: ${report.webEngineBytes}/${LIMITS.webEngineBytes} bytes`,
+      );
       for (const trigger of budgetTriggers(report)) console.warn(`budgets trigger: ${trigger}`);
       for (const drift of await nativeCensusDrift(process.cwd())) console.warn(drift);
       const textureLine =

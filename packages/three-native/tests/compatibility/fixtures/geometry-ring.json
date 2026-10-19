@@ -1,0 +1,83 @@
+{
+  "name": "geometry-ring",
+  "adaptedFrom": "three@0.185.1 src/geometries/RingGeometry.js — a coarse ring and a segmented partial ring",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "coarse",
+      "class": "RingGeometry",
+      "args": [0.5, 1, 8, 1]
+    },
+    {
+      "op": "new",
+      "id": "segmented",
+      "class": "RingGeometry",
+      "args": [1, 2, 6, 2, 0.5, 4]
+    }
+  ],
+  "observe": [
+    {
+      "id": "coarse",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "coarse",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "segmented",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "segmented",
+      "path": "groups",
+      "kind": "json"
+    },
+    {
+      "id": "segmented",
+      "path": "parameters",
+      "kind": "json"
+    }
+  ]
+}

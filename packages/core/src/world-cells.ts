@@ -413,7 +413,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #velocityZ = 0;
   #lastSample: { readonly x: number; readonly z: number; readonly t: number } | undefined;
   readonly #ring: number;
-  readonly #terrain: TerrainTiles | undefined;
+  #terrain: TerrainTiles | undefined;
   readonly #hasColliders: boolean;
   readonly #lodHysteresis: number;
   readonly #placementLevels: Uint32Array | undefined;
@@ -579,6 +579,13 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #impostorState: CellImpostors;
   readonly #models: CellModels;
 
+  /** What `clone` rebuilds from: the load's resolved options, shared read-only data included. */
+  readonly #init: IWorldCellsInit;
+  /** Children the streaming itself added (terrain, chunks, batches, bundles); the rest are authored. */
+  readonly #streamed = new WeakSet<Object3D>();
+  /** A clone's copies of its source's streamed children, kept until the first update replaces them. */
+  #snapshotChildren: Object3D[] = [];
+
   private constructor(init: IWorldCellsInit) {
     super();
     this.#onPublication = init.onPublication;
@@ -607,6 +614,7 @@ export class WorldCells extends Group implements IComputeDriven {
       wideShape: (asset, level, part, fallback) =>
         this.#render.wideShape(asset, level, part, fallback),
     });
+    this.#init = { ...init };
     this.#budgets = {
       bytes: positiveInteger(init.budgets.bytes, "budgets.bytes"),
       instances: positiveInteger(init.budgets.instances, "budgets.instances"),
@@ -806,7 +814,7 @@ export class WorldCells extends Group implements IComputeDriven {
         awaitDraw: (shared) => this.#prewarm.awaitDraw(shared),
         carryPrewarm: (old, next) => this.#prewarm.carryPrewarm(old, next),
         add: (object) => {
-          this.add(object);
+          this.#stream(object);
         },
         isParent: (object) => object.parent === this,
         isBundleHome: (shared) => shared.mesh.parent === this.#bundleHome(shared),
@@ -843,7 +851,7 @@ export class WorldCells extends Group implements IComputeDriven {
         sourceBytes: () => this.#bytes + this.#impostorState.farBytes,
         load: (path, wanted) => this.#models.load(path, wanted),
         cellLive: (cell, generation) => this.#cellLive(cell, generation),
-        add: (object) => this.add(object),
+        add: (object) => this.#stream(object),
         intersectsObject: (mesh) => this.#render.intersectsObject(mesh),
         gpuSceneOn: () => this.#render.gpuOn,
         asset: (id) => this.#models.asset(this.#canonical(id)),
@@ -947,7 +955,7 @@ export class WorldCells extends Group implements IComputeDriven {
           hlodBytes: this.#chunks.bytes,
         }),
         add: (object) => {
-          this.add(object);
+          this.#stream(object);
         },
         remove: (object) => {
           this.remove(object);
@@ -999,7 +1007,7 @@ export class WorldCells extends Group implements IComputeDriven {
       tileResolution: init.terrain?.tileResolution ?? DEFAULT_TILE_RESOLUTION,
       tileSize: init.terrain?.tileSize ?? this.#cellSize,
     });
-    this.add(this.#terrain);
+    this.#stream(this.#terrain);
   }
 
   static async load(options: IWorldCellsLoadOptions): Promise<WorldCells> {
@@ -1157,6 +1165,38 @@ export class WorldCells extends Group implements IComputeDriven {
     });
   }
 
+  /** Adds what the streaming owns, so `clone` can tell it from what the game added. */
+  #stream(child: Object3D): void {
+    this.#streamed.add(child);
+    this.add(child);
+  }
+
+  /** Fresh streaming state; the visible snapshot is replaced on the first update. Owned caches are independent. */
+  override clone(recursive = true): this {
+    const copy = new WorldCells({
+      ...this.#init,
+      ...this.#models.cloneAssets(),
+    }).copy(this, false);
+    if (recursive) {
+      // The copy built its own terrain; the source's clone (its visible tiles) takes its place.
+      const fresh = copy.#terrain;
+      if (fresh !== undefined) {
+        copy.remove(fresh);
+        fresh.detach();
+      }
+      for (const child of this.children) {
+        const clonedChild = child.clone();
+        copy.add(clonedChild);
+        if (child === this.#terrain) copy.#terrain = clonedChild as TerrainTiles;
+        if (this.#streamed.has(child)) {
+          copy.#streamed.add(clonedChild);
+          if (child !== this.#terrain) copy.#snapshotChildren.push(clonedChild);
+        }
+      }
+    }
+    return copy as this;
+  }
+
   get released(): boolean {
     return this.#released;
   }
@@ -1214,6 +1254,8 @@ export class WorldCells extends Group implements IComputeDriven {
   update(renderer?: IRendererLike, camera?: Camera): void {
     if (this.#released) return;
     this.#render.updateLodEye(this.#follow.position.x, this.#followY(), this.#follow.position.z);
+    for (const child of this.#snapshotChildren) this.remove(child);
+    this.#snapshotChildren.length = 0;
     // Kept for the chunk warm-up below: a chunk is loaded asynchronously and compiled when it
     // arrives, which can be a frame or a loading screen after the frame that gave us these.
     if (renderer !== undefined) this.#chunks.renderer = renderer;
@@ -2508,6 +2550,7 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
+
    * `TN_WORLD_CELL_FAILURE`, one line per refused world load: which stage refused (`asset`, `chunk`
    * or `attach`), the asset id or cell key it refused for, the paths it was reading, and the error
    * behind it. A counted failure alone says a world lost something; this says which world load and

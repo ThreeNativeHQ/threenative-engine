@@ -8,6 +8,8 @@ import path from "node:path";
 import { FOX_RELATIVE_PATH, FOX_SHA256 } from "../../examples/engine-load-test/src/ladder.js";
 import type { IWorkloadAxes } from "../../examples/engine-load-test/src/workload.js";
 
+import { HostCpuRecorder, procCpuSource, withHostCpu } from "./host-cpu.js";
+
 const BEGIN = "ENGINE_LOAD_TEST_JSON_BEGIN";
 const END = "ENGINE_LOAD_TEST_JSON_END";
 
@@ -25,10 +27,15 @@ export interface IDesktopLadder {
   width: number;
 }
 
+/** The display every desktop arm runs on; "" means each arm provisions its own Xvfb. One resolver, so a pair never splits across displays. */
+export function benchDisplay(env: NodeJS.ProcessEnv = process.env): string {
+  return env.TN_BENCH_DISPLAY ?? env.DISPLAY ?? "";
+}
+
 // The native host talks to X11 and this machine's session is Wayland, so the run is wrapped in a
 // virtual X server. `SDL_VIDEODRIVER=x11` is required as well: with `WAYLAND_DISPLAY` still set,
 // SDL picks Wayland, the host reports "X11 display not available", and the arm never starts.
-function x11Environment(): NodeJS.ProcessEnv {
+export function x11Environment(): NodeJS.ProcessEnv {
   const { WAYLAND_DISPLAY: _dropped, ...rest } = process.env;
   return { ...rest, SDL_VIDEODRIVER: "x11" };
 }
@@ -111,10 +118,25 @@ function killAllLiveGroups(signal: NodeJS.Signals): void {
 export async function runCapturing(
   command: string,
   args: readonly string[],
-  options: { cwd: string; env?: NodeJS.ProcessEnv; timeoutMs?: number },
+  options: {
+    cwd: string;
+    env?: NodeJS.ProcessEnv;
+    /** Every complete output line, as it arrives: the runner's hook for reading the host's CPU time at a marker. */
+    onLine?: (line: string) => void;
+    /** The new process group's id, once the child exists. */
+    onStart?: (group: number) => void;
+    timeoutMs?: number;
+  },
 ): Promise<unknown> {
   installExitHook();
   const output: string[] = [];
+  const partial = { stdout: "", stderr: "" };
+  const lines = (stream: "stdout" | "stderr", chunk: unknown): void => {
+    if (options.onLine === undefined) return;
+    const parts = (partial[stream] + String(chunk)).split("\n");
+    partial[stream] = parts.pop() ?? "";
+    for (const line of parts) options.onLine(line);
+  };
   const code = await new Promise<number>((resolve, reject) => {
     // Its own process group: the desktop arms run behind `xvfb-run`, so signalling the child only
     // reaches the wrapper and leaves the host it spawned running. The group reaches both.
@@ -124,7 +146,10 @@ export async function runCapturing(
       env: options.env ?? process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    if (child.pid !== undefined) liveGroups.add(child.pid);
+    if (child.pid !== undefined) {
+      liveGroups.add(child.pid);
+      options.onStart?.(child.pid);
+    }
     const stop = (): void => killProcessGroup(child.pid);
     // The report is complete at the END marker, so that is what this waits for — not process exit.
     // The native desktop host currently spins instead of exiting once its script finishes (it
@@ -160,15 +185,23 @@ export async function runCapturing(
               ),
             options.timeoutMs,
           );
-    const collect = (chunk: unknown): void => {
+    const collect = (chunk: unknown, stream: "stdout" | "stderr"): void => {
+      lines(stream, chunk);
       output.push(String(chunk));
+      // The page's own failure line: the owned player keeps running after its script throws, so waiting for
+      // the timeout would turn a named error into a ten-minute hang.
+      const failure = /ENGINE_LOAD_TEST_FAILED (.*)/u.exec(String(chunk));
+      if (failure !== null) {
+        fail(new Error(`TN_BENCH_PAGE_FAILED: ${failure[1]}`));
+        return;
+      }
       if (!settled && output.join("").includes(END)) {
         // Let the host print whatever trails the marker, then take the process down.
         setTimeout(() => finish(0), 1_000);
       }
     };
-    child.stdout?.on("data", collect);
-    child.stderr?.on("data", collect);
+    child.stdout?.on("data", (chunk) => collect(chunk, "stdout"));
+    child.stderr?.on("data", (chunk) => collect(chunk, "stderr"));
     child.once("error", (error) =>
       fail(new Error(`TN_BENCH_DESKTOP_SPAWN:${command} (${error.message})`)),
     );
@@ -205,7 +238,7 @@ export async function runCapturing(
  * rather than as a count mismatch in the report half an hour later. Returns undefined when no
  * ladder rung was asked for, so an L-only run never needs the asset to exist.
  */
-function resolveFoxAsset(repoRoot: string, modes: string): string | undefined {
+export function resolveFoxAsset(repoRoot: string, modes: string): string | undefined {
   // Any realistic rung resolves it: R1 and R2 build nothing, but the runner cannot know that the
   // ladder's own factory will not be constructed for them, and a missing file must be reported
   // here rather than as a rung that failed to draw characters.
@@ -236,6 +269,14 @@ export function desktopTimeoutMs(options: IDesktopLadder): number {
     options.ladder.split(",").length * options.modes.split(",").length * options.repeats;
   // Budget half a second per frame at the top rung; the arm reports long before this fires.
   return Math.max(600_000, cells * options.frames * 500);
+}
+
+/**
+ * Per-frame thread CPU is opt-in (`TN_BENCH_ENGINE_METRICS=1`, which `--pair` sets): each host then prints one
+ * `TN_PLAYER_FRAME` line per frame with `cpuFrameCpuMs` and `presentCpuMs`, on the same clock in both arms.
+ */
+export function metricsEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return env.TN_BENCH_ENGINE_METRICS === "1" ? { TN_PLAYER_METRICS: "1" } : {};
 }
 
 export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): Promise<unknown> {
@@ -290,24 +331,43 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
   // arms are not comparable: pinned to a 60 Hz display ThreeNative reads 16.6 ms at every rung and
   // its real cost is unknowable. The host refuses to fall back to FIFO, so this fails loudly.
   if (process.env.TN_BENCH_VSYNC !== "on") hostArgs.push("--no-vsync");
+  // The runner reads the host's CPU at the page's window markers (`host-cpu.ts`).
+  let source: ReturnType<typeof procCpuSource> | undefined;
+  const recorder = new HostCpuRecorder({ read: () => source?.read() });
+  const metrics = metricsEnvironment(process.env);
+  const capture = {
+    cwd: repoRoot,
+    onLine: (line: string) => recorder.line(line),
+    onStart: (group: number) => {
+      source = procCpuSource(group, binary);
+    },
+    timeoutMs: desktopTimeoutMs(options),
+  };
   // Use Godot's display by default. A caller may explicitly select another display; with no
   // display at all, the headless lane still provisions Xvfb below.
-  const display = process.env.TN_BENCH_DISPLAY ?? process.env.DISPLAY;
-  if (display !== undefined && display.length > 0) {
-    return runCapturing(binary, hostArgs, {
-      cwd: repoRoot,
-      env: { ...x11Environment(), DISPLAY: display },
-      timeoutMs: desktopTimeoutMs(options),
-    });
+  const display = benchDisplay();
+  if (display.length > 0) {
+    return withHostCpu(
+      await runCapturing(binary, hostArgs, {
+        ...capture,
+        env: { ...x11Environment(), ...metrics, DISPLAY: display },
+      }),
+      recorder,
+      metrics.TN_PLAYER_METRICS === "1",
+    );
   }
-  return runCapturing(
-    "xvfb-run",
-    ["-a", "-s", `-screen 0 ${options.width}x${options.height + 180}x24`, binary, ...hostArgs],
-    {
-      cwd: repoRoot,
-      env: x11Environment(),
-      timeoutMs: desktopTimeoutMs(options),
-    },
+  // `scripts/xvfb.sh`, never `xvfb-run`: the wrapper's cleanup kill can replace the run's own status.
+  return withHostCpu(
+    await runCapturing("sh", [path.join(repoRoot, "scripts/xvfb.sh"), binary, ...hostArgs], {
+      ...capture,
+      env: {
+        ...x11Environment(),
+        ...metrics,
+        TN_XVFB_SCREEN: `${options.width}x${options.height + 180}x24`,
+      },
+    }),
+    recorder,
+    metrics.TN_PLAYER_METRICS === "1",
   );
 }
 

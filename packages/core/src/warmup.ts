@@ -1,6 +1,8 @@
-import type { Camera, Object3D } from "three";
+import type { Camera, Object3D, Texture } from "three";
+import { pmremTexture } from "three/tsl";
 
 import type { IPipelineCensus } from "./pipeline-census.js";
+import { STARTUP_HOLD_BUDGET_MS } from "./startup-readiness.js";
 
 /**
  * Compiles a scene's pipelines before the first frame, in slices, yielding between them.
@@ -78,8 +80,18 @@ export interface IWarmUpOptions {
    * How long the whole warm-up may take before it stops and lets the game start. Default 15000 ms.
    *
    * The launch must never be *worse* for having tried to optimize it.
+   *
+   * It bounds compilation only, and starts once the scene's environment is prepared: a
+   * full-quality PMREM bake is lighting the first frame needs, not compile work, and on a software
+   * adapter it alone outlasts this budget (about 20 s on 3-CPU SwiftShader).
    */
   readonly budgetMs?: number;
+  /**
+   * How long the scene environment's PMREM preparation may take before warm-up gives up on it and
+   * compiles anyway. Default `STARTUP_HOLD_BUDGET_MS` (45000 ms), the startup bound for a game's own
+   * launch work.
+   */
+  readonly environmentBudgetMs?: number;
   /**
    * How the scene is handed to the renderer. Default `"scene"`.
    *
@@ -228,11 +240,76 @@ export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
   computeAsync?: (node: unknown) => Promise<void>;
   pipelineCensus?: () => IPipelineCensus;
-  /** Performs one covered output-pipeline render without marking first present. */
-  warmUpWorldPass?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => void;
+  /**
+   * Performs one covered output-pipeline render without marking first present.
+   *
+   * May settle later than it returns: a renderer whose pipeline creation is asynchronous
+   * (Three's `createRenderPipelineAsync` with its pending/skip draw check) starts the work here
+   * and resolves once every requested pipeline exists, so the warm-up can wait instead of
+   * compiling on the main thread.
+   */
+  warmUpWorldPass?: (
+    scene: Object3D,
+    camera: Camera,
+    targetScene?: Object3D,
+  ) => void | Promise<void>;
   /** The renderer's own render path, used to build every pass's pipelines once. */
   render?: (scene: Object3D, camera: Camera) => void;
   raw?: unknown;
+}
+
+/** The patched static on PMREMNode, reached through a node instance because the native catalog binds no PMREMNode class. */
+interface IPMREMNodeClass {
+  prepareTextureAsync?(renderer: unknown, texture: Texture): Promise<boolean>;
+}
+
+/** The native engine's facade bakes the environment itself; warm-up draws the held scene until it is done. */
+interface INativeEnvironmentPreparer {
+  prepareEnvironmentAsync(scene: Object3D, camera: Camera, deadlineMs: number): Promise<boolean>;
+}
+
+function nativeEnvironmentPreparer(raw: unknown): INativeEnvironmentPreparer | undefined {
+  return typeof (raw as Partial<INativeEnvironmentPreparer> | null)?.prepareEnvironmentAsync ===
+    "function"
+    ? (raw as INativeEnvironmentPreparer)
+    : undefined;
+}
+
+function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Object3D): boolean {
+  const environment = (scene as Object3D & { environment?: Texture }).environment;
+  if (environment?.isTexture !== true) return false;
+
+  const raw = renderer.raw;
+  if (typeof raw !== "object" || raw === null) return false;
+  if (nativeEnvironmentPreparer(raw) !== undefined) return true;
+  const backend = (raw as { backend?: { isWebGPUBackend?: boolean } }).backend;
+  return backend?.isWebGPUBackend === true;
+}
+
+async function prepareSceneEnvironment(
+  renderer: IWarmUpRenderer,
+  scene: Object3D,
+  camera: Camera,
+  deadlineMs: number,
+): Promise<boolean> {
+  const environment = (scene as Object3D & { environment?: Texture }).environment;
+  if (environment?.isTexture !== true) return true;
+
+  const raw = renderer.raw;
+  if (typeof raw !== "object" || raw === null) return true;
+  const native = nativeEnvironmentPreparer(raw);
+  if (native !== undefined) return native.prepareEnvironmentAsync(scene, camera, deadlineMs);
+  const backend = (raw as { backend?: { isWebGPUBackend?: boolean } }).backend;
+  if (backend?.isWebGPUBackend !== true) return true;
+
+  const PMREMNode = pmremTexture(environment).constructor as IPMREMNodeClass;
+  const prepare = PMREMNode.prepareTextureAsync;
+  if (typeof prepare !== "function") {
+    throw new Error(
+      "TN_PMREM_ASYNC_PREPARER_UNAVAILABLE: patched Three.js has no PMREM cache preparer.",
+    );
+  }
+  return prepare.call(PMREMNode, raw, environment);
 }
 
 const DEFAULT_SLICE_SIZE = 24;
@@ -743,14 +820,14 @@ function hasReflector(scene: Object3D): boolean {
  * Returns `undefined` when the renderer exposes no `render`, so a stub renderer is skipped rather
  * than reported as a pass render that did nothing.
  */
-function renderWarmPasses(
+async function renderWarmPasses(
   renderer: IWarmUpRenderer,
   scene: Object3D,
   camera: Camera,
   enabled: boolean,
   includeHidden: boolean,
   targetScene?: Object3D,
-): IWarmPassRender | undefined {
+): Promise<IWarmPassRender | undefined> {
   const coveredWorldPass = renderer.warmUpWorldPass;
   const render =
     coveredWorldPass === undefined
@@ -821,7 +898,7 @@ function renderWarmPasses(
     if (sceneVisible === false) (scene as IWarmVisibilityHost).visible = true;
     if (raw !== undefined) raw.autoClear = false;
     if (shadowMap !== undefined) shadowMap.needsUpdate = true;
-    render();
+    await render();
   } finally {
     if (raw !== undefined) {
       if (hadOwnAutoClear) raw.autoClear = autoClear;
@@ -874,9 +951,11 @@ export async function warmUpScene(
   }
   const compileTimeoutMs = options.compileTimeoutMs ?? DEFAULT_COMPILE_TIMEOUT_MS;
   const budgetMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
+  const environmentBudgetMs = options.environmentBudgetMs ?? STARTUP_HOLD_BUDGET_MS;
   for (const [name, value] of [
     ["compileTimeoutMs", compileTimeoutMs],
     ["budgetMs", budgetMs],
+    ["environmentBudgetMs", environmentBudgetMs],
   ] as const) {
     if (!Number.isFinite(value) || value <= 0) {
       throw new Error(
@@ -886,7 +965,34 @@ export async function warmUpScene(
   }
   const now = (): number => globalThis.performance?.now() ?? Date.now();
   const yieldFrame = options.yieldFrame ?? yieldToHost;
-  const startedAt = now();
+  const environmentDeadline = now() + environmentBudgetMs;
+  // The compile budget's clock; it restarts once the environment is prepared (see `budgetMs`).
+  let startedAt = now();
+  let environmentPreparationStarted = false;
+  let environmentPrepared = false;
+  let environmentPreparation: Promise<void> | undefined;
+  const ensureEnvironmentPreparation = (
+    targetScene: Object3D = options.targetScene ?? scene,
+  ): Promise<void> | undefined => {
+    if (!sceneNeedsEnvironmentPreparation(renderer, targetScene)) return undefined;
+    if (environmentPreparation === undefined) {
+      environmentPreparationStarted = true;
+      environmentPreparation = prepareSceneEnvironment(
+        renderer,
+        targetScene,
+        camera,
+        environmentDeadline,
+      ).then((prepared) => {
+        environmentPrepared = prepared;
+        if (!prepared) {
+          throw new Error(
+            "TN_PMREM_PREPARATION_INCOMPLETE: the scene environment was not prepared.",
+          );
+        }
+      });
+    }
+    return environmentPreparation;
+  };
   const computeNodes = options.computeNodes ?? [];
   const renderables = collectRenderables(scene);
   const candidates = renderables.length;
@@ -894,12 +1000,55 @@ export async function warmUpScene(
   const cacheIdentity = warmUpCacheIdentity(options.cache);
   let cacheStatus = readWarmUpCache(cacheIdentity, candidates, computeNodes.length);
 
+  // Lighting first, on its own budget: every compile below waits on this same preparation, so a
+  // bake that outlasts the compile budget must not spend it. Settled or given up, the compile
+  // budget starts now.
+  const upfront = ensureEnvironmentPreparation();
+  if (upfront !== undefined) {
+    if (!(await withinDeadline(environmentDeadline, upfront, yieldFrame, now))) {
+      // Every compile would wait on this same preparation, so none is started.
+      return reconcileWarmUpObservation({
+        compiled: 0,
+        pipelines: candidates,
+        candidates,
+        attempted: 0,
+        observed: observePipelineCensus(censusBefore, readPipelineCensus(renderer)),
+        slices: 0,
+        elapsedMs: now() - startedAt,
+        unsupported: false,
+        abandoned: 1,
+        timedOut: now() >= environmentDeadline,
+        cache: cacheStatus,
+      });
+    }
+    startedAt = now();
+  }
+
   // A hit means the previous complete warm-up gave the platform a chance to populate its own
   // persistent driver cache. WebGPU has no portable serialized pipeline to restore, so the marker
   // only skips the redundant compile walk; a changed game-owned key is a deliberate invalidation.
   if (cacheStatus === "hit" && typeof renderer.compileAsync === "function") {
     const computeSupported = computeNodes.length === 0 || computeAsyncOf(renderer) !== undefined;
     if (computeSupported) {
+      const preparation = ensureEnvironmentPreparation();
+      if (
+        preparation !== undefined &&
+        !(await withinDeadline(startedAt + budgetMs, preparation, yieldFrame, now))
+      ) {
+        return reconcileWarmUpObservation({
+          compiled: 0,
+          pipelines: candidates,
+          candidates,
+          attempted: 0,
+          observed: observePipelineCensus(censusBefore, readPipelineCensus(renderer)),
+          slices: 0,
+          elapsedMs: now() - startedAt,
+          unsupported: false,
+          abandoned: 1,
+          timedOut: now() >= startedAt + budgetMs,
+          cache: "hit",
+        });
+      }
       const report: IWarmUpReport = {
         compiled: 0,
         pipelines: candidates,
@@ -959,23 +1108,43 @@ export async function warmUpScene(
   let attempted = 0;
   const pendingCompiles: Promise<void>[] = [];
   const invokeCompile = (object: Object3D, targetScene?: Object3D): Promise<void> => {
-    attempted += 1;
-    try {
-      return compileAsync(object, camera, targetScene);
-    } catch (error) {
-      return Promise.reject(error);
-    }
+    const compileDeadline =
+      (options.granularity ?? "scene") === "scene"
+        ? startedAt + budgetMs
+        : Math.min(startedAt + budgetMs, now() + compileTimeoutMs);
+    const preparation = ensureEnvironmentPreparation(targetScene ?? scene);
+    const compile = (): Promise<void> => {
+      if (now() >= compileDeadline) {
+        return Promise.reject(
+          new Error("TN_WARMUP_COMPILE_DEADLINE: PMREM preparation consumed this compile slice."),
+        );
+      }
+      attempted += 1;
+      try {
+        return compileAsync(object, camera, targetScene);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    };
+    return preparation === undefined ? compile() : preparation.then(compile);
   };
   const invokeSceneCompile = (): Promise<void> => {
+    const compile = invokeCompile(scene, options.targetScene);
     // Stock Three compileAsync has no render-depth input, so an output pipeline's covered render
     // is the only path that can build the world graph against the target the first frame draws.
-    if (renderer.warmUpWorldPass !== undefined) {
-      const pass = renderWarmPassesOnce();
-      return pass === undefined
-        ? Promise.reject(passError ?? new Error("covered world warm render did not settle"))
-        : Promise.resolve();
-    }
-    return invokeCompile(scene, options.targetScene);
+    // Its own compile path is still worth running first: it builds every pipeline it can reach
+    // asynchronously and yields while it does, so the covered render that follows finds them in
+    // the cache. A compile failure here is not fatal: the covered render is the fallback, and the
+    // first frame that needs a pipeline will try again where the error belongs.
+    if (renderer.warmUpWorldPass === undefined) return compile;
+    return compile
+      .catch(() => undefined)
+      .then(async () => {
+        const pass = await renderWarmPassesOnce();
+        if (pass === undefined) {
+          throw passError ?? new Error("covered world warm render did not settle");
+        }
+      });
   };
 
   let gpuDrainSettled = true;
@@ -1033,12 +1202,13 @@ export async function warmUpScene(
   let passResult: IWarmPassRender | undefined;
   let passRendered = false;
   let passError: unknown;
-  const renderWarmPassesOnce = (): IWarmPassRender | undefined => {
+  const renderWarmPassesOnce = async (): Promise<IWarmPassRender | undefined> => {
     if (passRendered) return passResult;
     passRendered = true;
+    if (environmentPreparationStarted && !environmentPrepared) return undefined;
     if (now() >= startedAt + budgetMs) return undefined;
     try {
-      passResult = renderWarmPasses(
+      passResult = await renderWarmPasses(
         renderer,
         scene,
         camera,
@@ -1090,7 +1260,7 @@ export async function warmUpScene(
           ? await compileWithinDeadline(deadline, invokeSceneCompile(), yieldFrame, now)
           : false;
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-      renderWarmPassesOnce();
+      await renderWarmPassesOnce();
       await settleGpu();
       return finish(
         withPasses({
@@ -1113,7 +1283,7 @@ export async function warmUpScene(
         ? await compileWithinDeadline(startedAt + budgetMs, invokeSceneCompile(), yieldFrame, now)
         : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
-    renderWarmPassesOnce();
+    await renderWarmPassesOnce();
     await settleGpu();
     return finish(
       withPasses(
@@ -1195,7 +1365,12 @@ export async function warmUpScene(
     }
   }
 
-  renderWarmPassesOnce();
+  // The covered pass can now settle asynchronously too (the post/reflection pipelines it requests
+  // are compiled by the device). Bound it by the same budget as every other compile here; the
+  // render-only fallback stays a direct call so it costs no extra frame. The pass is always
+  // issued, as before; past the budget only the wait is skipped, and its compiles keep landing.
+  if (renderer.warmUpWorldPass === undefined) await renderWarmPassesOnce();
+  else await withinDeadline(startedAt + budgetMs, renderWarmPassesOnce(), yieldFrame, now);
   await settleGpu();
   const report: IWarmUpReport = {
     compiled,

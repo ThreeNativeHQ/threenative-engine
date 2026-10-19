@@ -41,7 +41,7 @@ it("the real Game keeps world callbacks progressing during a height hold with it
         },
         sampleHeight: () => {
           samples += 1;
-          return height === undefined ? undefined : { height, staleFrames: 0 };
+          return height === undefined ? undefined : { height, staleFrames: 0, verticalVelocity: 0 };
         },
       });
       return undefined;

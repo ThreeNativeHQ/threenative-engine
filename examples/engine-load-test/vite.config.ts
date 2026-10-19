@@ -1,9 +1,18 @@
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { defineConfig } from "vite";
+import { type Plugin, defineConfig } from "vite";
+import { createWebEnginePlugin } from "../../packages/create-threenative/src/web-engine.ts";
 
 // The native arm is one import-free ESM file, the same contract `examples/native-smoke` asserts.
 // The ladder is compiled in rather than read from a query string: a native host has no URL.
 const native = process.env.TN_BENCH_TARGET === "native";
+// The `tn-engine-web` arm (PRD-573 slice 7): the same page as `tn-web`, with every `three` import bound
+// to the Wasm engine (`packages/runtime-native/build/web`) instead of upstream three.
+const webEngine = process.env.TN_BENCH_TARGET === "web-engine";
+const WASM_ENGINE = resolve(
+  import.meta.dirname,
+  "../../packages/runtime-native/build/web/tn-native-engine-web.mjs",
+);
 
 /**
  * PRD-464 R3's character, as a URL the arm fetches rather than as bytes inlined in the bundle.
@@ -26,6 +35,21 @@ const DEFAULT_FOX = resolve(
 function foxUrl(): string {
   const file = process.env.TN_BENCH_FOX ?? DEFAULT_FOX;
   return native ? `file://${file}` : `/@fs${file}`;
+}
+
+/** A production web build has no `/@fs/`, so it ships the pinned Fox beside the page when it exists. */
+const SERVED_FOX = "bench-assets/Fox.glb";
+function servedFox(): Plugin {
+  const file = process.env.TN_BENCH_FOX ?? DEFAULT_FOX;
+  return {
+    name: "engine-load-test-served-fox",
+    apply: "build",
+    config: () => ({ define: { __TN_BENCH_FOX_URL__: JSON.stringify(`/${SERVED_FOX}`) } }),
+    generateBundle() {
+      if (existsSync(file))
+        this.emitFile({ type: "asset", fileName: SERVED_FOX, source: readFileSync(file) });
+    },
+  };
 }
 
 function integers(name: string, fallback: number[]): number[] {
@@ -75,6 +99,12 @@ function axesEnvironment(): Record<string, string | undefined> {
 }
 
 export default defineConfig({
+  plugins: native
+    ? []
+    : [
+        servedFox(),
+        ...(webEngine ? [createWebEnginePlugin({ engine: "threenative", wasm: WASM_ENGINE })] : []),
+      ],
   build: native
     ? {
         lib: {
@@ -88,21 +118,27 @@ export default defineConfig({
         rollupOptions: { output: { codeSplitting: false } },
         target: "es2022",
       }
-    : {
-        rollupOptions: {
-          input: {
-            loadTest: resolve(import.meta.dirname, "index.html"),
-            // The plain-Three control is a second entry on the same build, so both arms are served
-            // from one `dist` out of one `vite build` and differ only in their module graph.
-            plain: resolve(import.meta.dirname, "plain.html"),
-            projectionConformance: resolve(import.meta.dirname, "projection-conformance.html"),
+    : webEngine
+      ? {
+          outDir: "dist-engine",
+          rollupOptions: { input: { loadTest: resolve(import.meta.dirname, "index.html") } },
+        }
+      : {
+          rollupOptions: {
+            input: {
+              loadTest: resolve(import.meta.dirname, "index.html"),
+              // The plain-Three control is a second entry on the same build, so both arms are served
+              // from one `dist` out of one `vite build` and differ only in their module graph.
+              plain: resolve(import.meta.dirname, "plain.html"),
+              projectionConformance: resolve(import.meta.dirname, "projection-conformance.html"),
+            },
           },
         },
-      },
   define: {
     // The native host has no `navigator`, so the target is stamped at build time. `--arm` on the
     // collector never sets it: the arm a report claims comes from the binary that ran.
     __TN_PLATFORM__: JSON.stringify(process.env.TN_BENCH_PLATFORM ?? "desktop"),
+    __TN_WEB_ARM__: JSON.stringify(webEngine ? "tn-engine-web" : "tn-web"),
     __TN_BENCH_FOX_URL__: JSON.stringify(foxUrl()),
     __TN_BENCH_CONFIG__: JSON.stringify({
       animate: process.env.TN_BENCH_ANIMATE !== "off",
@@ -118,6 +154,8 @@ export default defineConfig({
       frames: integer("TN_BENCH_FRAMES", 600),
       ladder: integers("TN_BENCH_LADDER", [256, 1024, 4096, 16384]),
       modes: modes(),
+      // Per-frame phase telemetry (`src/phases.ts`), on for a `--pair` run and off for a shipped build.
+      phases: process.env.TN_BENCH_PHASES === "1",
       repeats: integer("TN_BENCH_REPEATS", 3),
       // Stated by the operator, the same way `refreshHz` is: the native host has no URL to carry
       // `--source-sha` in, so without this a desktop report cannot name the build that produced it,

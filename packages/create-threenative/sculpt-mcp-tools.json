@@ -1,6 +1,6 @@
 {
-  "comment": "The sculpt MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.2.1 installed from the published npm tarball into a clean directory; that run also served 31 technique-safe grimoire resources. `inputSchemas` and `descriptions` come from that same response. `recommended` is the complete ordered authoring loop documented by every template. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`. The recorded surface serves 12 tools.",
-  "version": "0.2.1",
+  "comment": "The sculpt MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.2.2 installed from the published npm tarball into a clean directory; that run also served 31 technique-safe grimoire resources. `inputSchemas` and `descriptions` come from that same response. `recommended` is the complete ordered authoring loop documented by every template. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`. The recorded surface serves 12 tools.",
+  "version": "0.2.2",
   "profile": null,
   "recommended": [
     "sculpt_plan",

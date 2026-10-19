@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { validateEventPlan } from "./ci-change-scope.mjs";
+import { NATIVE_ENGINE_PATHS, validateEventPlan } from "./ci-change-scope.mjs";
 
 const WORKFLOW = ".github/workflows/integration.yml";
 const SELECTOR = "scripts/ci-integration-scope.mjs";
@@ -266,6 +266,7 @@ export function integrationSelection({ files, before, after }) {
     if (files.includes(SELECTOR)) return all("shared selector changed");
     const lanes = new Set();
     for (const file of files) {
+      if (NATIVE_ENGINE_PATHS.some((pattern) => pattern.test(file))) continue;
       const dependency = dependencyLanes(file, current);
       if (
         dependency === PACKAGE_LANES &&

@@ -1,0 +1,148 @@
+{
+  "name": "math-core-vector3-angles",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector3.tests.js \u2014 the sine, cosine and atan2 forms",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "e01",
+      "class": "Euler",
+      "args": [0.4, -0.9, 0.25, "ZXY"]
+    },
+    {
+      "op": "new",
+      "id": "axis02",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "new",
+      "id": "a03",
+      "class": "Vector3",
+      "args": [2, 3, 4]
+    },
+    {
+      "op": "new",
+      "id": "v04",
+      "class": "Vector3",
+      "args": [1.5, -2.5, 0.25]
+    },
+    {
+      "op": "call",
+      "id": "v04",
+      "method": "applyEuler",
+      "args": [
+        {
+          "ref": "e01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v05",
+      "class": "Vector3",
+      "args": [1.5, -2.5, 0.25]
+    },
+    {
+      "op": "call",
+      "id": "v05",
+      "method": "applyAxisAngle",
+      "args": [
+        {
+          "ref": "axis02"
+        },
+        0.75
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v06",
+      "class": "Vector3",
+      "args": [1.5, -2.5, 0.25]
+    },
+    {
+      "op": "call",
+      "id": "v06",
+      "method": "setFromEuler",
+      "args": [
+        {
+          "ref": "e01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v07",
+      "class": "Vector3",
+      "args": [1.5, -2.5, 0.25]
+    },
+    {
+      "op": "call",
+      "id": "v07",
+      "method": "setFromSphericalCoords",
+      "args": [2.5, 0.75, -1.25]
+    },
+    {
+      "op": "new",
+      "id": "v08",
+      "class": "Vector3",
+      "args": [1.5, -2.5, 0.25]
+    },
+    {
+      "op": "call",
+      "id": "v08",
+      "method": "setFromCylindricalCoords",
+      "args": [2.5, 0.75, -1.25]
+    },
+    {
+      "op": "new",
+      "id": "v09",
+      "class": "Vector3",
+      "args": [1.5, -2.5, 0.25]
+    },
+    {
+      "op": "call",
+      "id": "v09",
+      "method": "angleTo",
+      "args": [
+        {
+          "ref": "a03"
+        }
+      ],
+      "result": "r10"
+    }
+  ],
+  "observe": [
+    {
+      "id": "v04",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v05",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v06",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v07",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v08",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r10",
+      "kind": "number"
+    }
+  ]
+}

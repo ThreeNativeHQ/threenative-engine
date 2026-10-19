@@ -71,7 +71,7 @@ export function playtest<
       // let the two disagree — a frozen loop reported as the wall clock publishes a frame rate for a
       // game that was not playing. The deterministic answer is therefore stated rather than derived,
       // and stays `undefined` only when there is no tick producer to be fixed-step about.
-      const clockMode: PlaytestClockMode | undefined =
+      let clockMode: PlaytestClockMode | undefined =
         requestedPlaytestClockMode() ?? (runtime === undefined ? undefined : "fixed-step");
       const wallClock = clockMode === "wall-clock";
       const replayRuntime: IPlaytestWorldObservation["runtime"] =
@@ -84,7 +84,13 @@ export function playtest<
               rapier: runtime.rapier ?? null,
               step: runtime.step,
             };
-      const installation = installThreePlaytestBridge({
+      const clockRuntime = runtime as
+        | (IGamePluginRuntime & {
+            _setClockMode?: (mode: "fixed-step" | "wall-clock") => void;
+          })
+        | undefined;
+      const liveAdvance = runtime === undefined ? undefined : wallClockAdvance(runtime);
+      const bridgeOptions: Parameters<typeof installThreePlaytestBridge>[0] = {
         camera: ctx.camera,
         ...(clockMode === undefined ? {} : { clockMode }),
         entities: () => bridgeEntities(ctx),
@@ -94,12 +100,20 @@ export function playtest<
         ...(runtime === undefined
           ? {}
           : {
-              fixedStep: wallClock ? wallClockAdvance(runtime) : runtime.fixedStep,
+              fixedStep: (ticks, options) =>
+                clockMode === "wall-clock" && liveAdvance !== undefined
+                  ? liveAdvance(ticks)
+                  : runtime.fixedStep(ticks, options),
               tick: runtime.tick,
             }),
         ...(runtime?.runtimeDiagnosticsSeries === undefined
           ? {}
           : { runtimeDiagnosticsSeries: runtime.runtimeDiagnosticsSeries }),
+        // A driven native loop presents nothing between ticks; the render-only operation lets a
+        // desktop screenshot draw the standing world without spending a simulation step.
+        ...(runtime?.renderCurrent === undefined
+          ? {}
+          : { renderCurrent: () => runtime.renderCurrent?.() }),
         ...(options.events === undefined ? {} : { events: options.events }),
         gameplay: () => gameplayObservations(ctx, contactHistory, seed, replayRuntime, watcher),
         gameplayChannels: () => gameplayChannels(ctx),
@@ -119,7 +133,7 @@ export function playtest<
                 velocity: { ...observation.velocity },
               };
         },
-        resources: stateResources(ctx),
+        resources: stateResources(ctx, runtime),
         scene: ctx.scene,
         // A runner advances ticks far faster than a launch completes, and compute dispatch and
         // the first world present are both held behind an opaque loading layer. Published so the
@@ -137,7 +151,28 @@ export function playtest<
             ? {}
             : { timeline: runtime.startupTimeline() }),
         }),
-      });
+      };
+      const installation = installThreePlaytestBridge(bridgeOptions);
+      let clockDisposed = false;
+      const clockControl = {
+        _clockEpoch: 0,
+        _setClockMode: (mode: unknown) => {
+          if (clockDisposed) throw new Error("Playtest clock is disposed.");
+          if (mode !== "fixed-step" && mode !== "wall-clock")
+            throw new Error("Unknown clock mode.");
+          clockRuntime?._setClockMode?.(mode);
+          if (mode !== clockMode) clockControl._clockEpoch += 1;
+          clockMode = mode;
+          bridgeOptions.clockMode = mode;
+          return { mode, tick: runtime?.tick(), epoch: clockControl._clockEpoch };
+        },
+      };
+      if (clockRuntime?._setClockMode !== undefined) {
+        Object.assign(installation.bridge, { _setClockMode: clockControl._setClockMode });
+        Object.defineProperty(installation.bridge, "_clockEpoch", {
+          get: () => clockControl._clockEpoch,
+        });
+      }
       const pipelineCensus = runtime?.pipelineCensus;
       if (runtime !== undefined && pipelineCensus !== undefined) {
         disposePipelineCensus = runtime.observations.contribute({
@@ -183,6 +218,9 @@ export function playtest<
       dispose = installation.dispose;
       attached = holdUntilAttached(installation.bridge, options, () => startSceneEntered);
       const cleanup = () => {
+        if (!clockDisposed && clockRuntime?._setClockMode !== undefined)
+          clockControl._setClockMode("fixed-step");
+        clockDisposed = true;
         disposePipelineCensus?.();
         disposePipelineCensus = undefined;
         disposeGeometryCapture?.();
@@ -364,8 +402,9 @@ function holdUntilAttached(
     if (applySetup !== undefined) {
       bridge.applySetup = async (request) => {
         try {
-          await applySetup(request);
+          const confirmation = await applySetup(request);
           release();
+          return confirmation;
         } catch (error) {
           fail(error);
           throw error;
@@ -739,6 +778,7 @@ function componentObservations(
 
 function stateResources<TState extends Record<string, unknown>, TPhysics>(
   ctx: ICtx<TState, TPhysics>,
+  runtime: IGamePluginRuntime | undefined,
 ) {
   return {
     read: () => {
@@ -758,6 +798,9 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
         // console log: a game whose manifest never loaded runs on the uncompiled source directory
         // and looks healthy, and without this nothing observable says so.
         ["assets", assetResolutions(ctx.assets)],
+        ...(runtime?.frameCounts === undefined
+          ? []
+          : [["__threenativeFrameCounts", runtime.frameCounts()]]),
       ]);
     },
   };

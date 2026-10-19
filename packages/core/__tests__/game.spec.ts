@@ -15,7 +15,11 @@ import { MeshBasicNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { type IGamePlatformSource, defineGame } from "../src/game.js";
 import { InputMap } from "../src/input.js";
-import { onLaunchFailure, resetLaunchFailures } from "../src/launch-diagnostics.js";
+import {
+  type ILaunchFailure,
+  onLaunchFailure,
+  resetLaunchFailures,
+} from "../src/launch-diagnostics.js";
 import type { IRenderPerformanceSample } from "../src/loop.js";
 import { VirtualShadowNode } from "../src/render/virtual-shadow.js";
 import { type ICtx, Scene } from "../src/scene.js";
@@ -140,10 +144,16 @@ describe("IGame", () => {
         } else {
           await expect(game.start()).rejects.toThrow(message);
         }
-        await vi.waitFor(() =>
-          expect(failure).toHaveBeenCalledWith({ kind: "load-failed", message }),
+        const expectedFailure = transition
+          ? {
+              kind: "scene-load-failed",
+              message: `Scene 'world' failed to load: ${message}`,
+            }
+          : { kind: "load-failed", message };
+        await vi.waitFor(() => expect(failure).toHaveBeenCalledWith(expectedFailure));
+        expect(consoleError).toHaveBeenCalledWith(
+          `${transition ? "TN_SCENE_LOAD_FAILED" : "TN_STARTUP_FAILED"}: ${expectedFailure.message}`,
         );
-        expect(consoleError).toHaveBeenCalledWith(`TN_STARTUP_FAILED: ${message}`);
       } finally {
         game.stop();
         off();
@@ -173,7 +183,11 @@ describe("IGame", () => {
         start: "test",
       });
       try {
-        await expect(game.start()).rejects.toBe(boom);
+        // Boot names the failure (TN_NO_RENDERER) and keeps the renderer's own error as its cause.
+        await expect(game.start()).rejects.toMatchObject({
+          cause: boom,
+          message: expect.stringContaining("TN_NO_RENDERER"),
+        });
         if (host) {
           expect((globalThis as Record<string, unknown>).__tnUiGameReceive).toBeUndefined();
         } else {
@@ -1503,9 +1517,20 @@ describe("IGame", () => {
       expect(renderHooks).toBe(3);
       const series = diagnostics?.() ?? [];
       // The frame budget ships on by default, so every sample carries its phase split; the
-      // render-metric fields below are what this test is about.
+      // render-metric fields below are what this test is about. `sequence` and `completedAtMs` are the
+      // presentation completion every sample now carries (PRD-610 AC-19).
       expect(series.every((sample) => sample.phases !== undefined)).toBe(true);
-      expect(series.map(({ passes: _passes, phases: _phases, ...sample }) => sample)).toEqual([
+      expect(
+        series.map(
+          ({
+            completedAtMs: _completedAtMs,
+            passes: _passes,
+            phases: _phases,
+            sequence: _sequence,
+            ...sample
+          }) => sample,
+        ),
+      ).toEqual([
         { drawCalls: 4, frameMs: 16, triangles: 32 },
         { drawCalls: 4, frameMs: 16, triangles: 32 },
         { drawCalls: 3, frameMs: 16, triangles: 30 },
@@ -2241,6 +2266,74 @@ describe("IGame", () => {
       start: "test",
     });
     await expect(invalid.start()).rejects.toThrow("frame function");
+  });
+
+  it("reports a scene whose load() rejects by name instead of stalling the launch", async () => {
+    resetLaunchFailures();
+    const failures: ILaunchFailure[] = [];
+    const off = onLaunchFailure((failure) => failures.push(failure));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    class Boot extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        void ctx.goto("play");
+      }
+    }
+
+    class Play extends Scene {
+      override load(): Promise<void> {
+        return Promise.reject(new Error("TN_TEST_LOAD: the model refused"));
+      }
+    }
+
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { boot: Boot, play: Play },
+      start: "boot",
+    });
+    await game.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    off();
+    errors.mockRestore();
+    game.stop();
+    expect(failures).toEqual([
+      {
+        kind: "scene-load-failed",
+        message: "Scene 'play' failed to load: TN_TEST_LOAD: the model refused",
+      },
+    ]);
+  });
+
+  it("reports a start scene whose enter() throws, even when start() is not awaited", async () => {
+    resetLaunchFailures();
+    const failures: ILaunchFailure[] = [];
+    const off = onLaunchFailure((failure) => failures.push(failure));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    class Broken extends Scene {
+      static override readonly initialState = {};
+
+      override enter(): void {
+        throw new Error("TN_TEST_ENTER: the renderer has no shadowMap");
+      }
+    }
+
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { broken: Broken },
+      start: "broken",
+    });
+    await expect(game.start()).rejects.toThrow("TN_TEST_ENTER");
+    off();
+    errors.mockRestore();
+    expect(failures).toEqual([
+      {
+        kind: "start-failed",
+        message: "The game failed to start: TN_TEST_ENTER: the renderer has no shadowMap",
+      },
+    ]);
   });
 
   it("preserves the destination frame when enter navigates synchronously", async () => {

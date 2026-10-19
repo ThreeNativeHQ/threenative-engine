@@ -37,6 +37,7 @@ const INVENTORY = Object.freeze({
     strata: Object.freeze([null]),
     "golden-path-template": Object.freeze(["starter", "platformer"]),
     "template-nonvisual": Object.freeze(TEMPLATE_NAMES),
+    "native-engine": Object.freeze([null]),
   }),
   integration: Object.freeze(
     Object.fromEntries(
@@ -196,6 +197,7 @@ export function selectInstances(plan, integrationLanes = {}) {
     for (const template of plan?.templateMatrix?.template ?? [])
       if (INVENTORY.ci["template-nonvisual"].includes(template))
         ids.push(`ci:template-nonvisual:${template}`);
+  if (job["native-engine"]?.required) ids.push("ci:native-engine");
   if (job.integration?.required)
     for (const lane of Object.keys(INVENTORY.integration))
       if (integrationLanes[lane] === true) ids.push(`integration:${lane}`);

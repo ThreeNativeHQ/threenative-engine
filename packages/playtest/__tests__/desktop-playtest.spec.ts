@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -8,6 +9,8 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
   PLAYTEST_PROTOCOL_LIMITS,
   PLAYTEST_PROTOCOL_VERSION,
+  evaluateRichPlaytestAssertions,
+  type IPlaytestScenario,
   type IPlaytestBridgeV1,
   type IPlaytestObservationSnapshot,
   type JsonValue,
@@ -15,11 +18,12 @@ import {
 import { assertCaptureNotBlank } from "../src/capture.js";
 import { exitCodeForReport, runConfiguredPlaytest } from "../src/runner/cli.js";
 import { parseStandalonePlaytestArgs, type IStandalonePlaytestConfig } from "../src/runner/config.js";
-import { DesktopPlaytestDriver, LocalDeviceMailbox } from "../src/runner/desktop.js";
+import { DesktopPlaytestDriver, LocalDeviceMailbox, desktopConsoleType } from "../src/runner/desktop.js";
 import { runDesktopPlaytest } from "../src/runner/desktopRunner.js";
 import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import { normalizedRuntimeDiagnostics } from "../src/runner/observationSampling.js";
 import type { IDevicePlaytestDriver } from "../src/runner/androidRunner.js";
+import type { IPlaytestReport } from "../src/report.js";
 import { connectDevicePlaytestBridge, type IDeviceBridgeInstallation } from "../src/three/device.js";
 
 beforeEach(() => {
@@ -183,6 +187,34 @@ test.each([
     await expect.poll(() => driver.isAlive()).toBe(false);
     // Both newline-delimited and trailing partial output retain the complete observation.
     expect(await driver.captureConsole()).toEqual([{ text, type }, { text, type }]);
+  } finally {
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test.skipIf(process.platform === "win32").each(["already-exited", "signal-stopped"])("desktop stop drains delayed child stdout after %s", async (mode) => {
+  const root = await makeTempDir("playtest-desktop-close-");
+  const driver = new DesktopPlaytestDriver({
+    executable: process.execPath,
+    mailboxRoot: root,
+    args: ["-e", `
+      const { spawn } = require("node:child_process");
+      const finish = () => {
+        spawn(process.execPath, ["-e", 'setTimeout(() => process.stdout.write("TN_JS_CPU_PROFILE_TOTAL:10"), 250)'],
+          { stdio: ["ignore", 1, 2] }).unref();
+        process.exit(0);
+      };
+      if (${JSON.stringify(mode)} === "already-exited") finish();
+      else { process.on("SIGTERM", finish); setInterval(() => {}, 1000); console.log("ready"); }
+    `],
+  });
+  try {
+    await driver.prepare("unused");
+    if (mode === "already-exited") await expect.poll(() => driver.isAlive()).toBe(false);
+    else await expect.poll(async () => (await driver.captureConsole()).some((entry) => entry.text === "ready")).toBe(true);
+    await driver.stop();
+    expect(await driver.captureConsole()).toContainEqual({ text: "TN_JS_CPU_PROFILE_TOTAL:10", type: "log" });
   } finally {
     await driver.stop();
     await rm(root, { force: true, recursive: true });
@@ -487,6 +519,23 @@ test("desktop playtest surfaces a driver cleanup failure", async () => {
     .rejects.toThrow("desktop stop failed");
 });
 
+test("desktop playtest keeps the primary screenshot failure visible when cleanup also fails", async () => {
+  // The legacy desktop capture throws before cleanup; the driver's stop then fails too. Both errors
+  // must survive, and the primary native-screenshot message must not be hidden by the constant
+  // cleanup message (a reader that sees only "cleanup failed" is sent to the wrong layer).
+  const screenshotError = new Error(
+    "TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE: request timed out; request file consumed",
+  );
+  const stopError = new Error("desktop stop failed");
+  const thrown = await runDesktopScenario(2, { screenshotError, stopError }).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(thrown).toBeInstanceOf(AggregateError);
+  expect((thrown as Error).message).toContain(screenshotError.message);
+  expect((thrown as AggregateError).errors).toEqual([screenshotError, stopError]);
+});
+
 test.skipIf(process.platform === "win32")("desktop runner surfaces mailbox cleanup failures", async () => {
   await expect(runDesktopScenario(2, { mailboxFile: true })).rejects.toThrow(/ENOTDIR|not a directory/u);
 });
@@ -578,6 +627,26 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout fails clos
   }
 });
 
+test("desktop console artifacts retain profiler output emitted during shutdown", async () => {
+  const projectPath = await makeTempDir("playtest-desktop-shutdown-console-");
+  const console = [{ text: "game ready", type: "log" }];
+  const profile = { text: "TN_JS_CPU_PROFILE_TOTAL:10", type: "log" };
+  try {
+    await runDesktopScenario(2, {
+      projectPath,
+      console,
+      onDriver(driver) {
+        const stop = driver.stop.bind(driver);
+        driver.stop = async () => { await stop(); console.push(profile); };
+      },
+    });
+    expect(JSON.parse(await readFile(join(projectPath, "artifacts", "console.json"), "utf8"))).toEqual([...console]);
+    expect(console).toContainEqual(profile);
+  } finally {
+    await rm(projectPath, { force: true, recursive: true });
+  }
+});
+
 test("a failed desktop screenshot still leaves the host console in the artifact directory", async () => {
   // A screenshot that never arrives reports its own tail, but the timing and error lines printed
   // before it were thrown away with the host — TN_FRAME_NOT_PRESENTED with nothing to explain it.
@@ -609,12 +678,14 @@ test.skipIf(process.platform === "win32")("desktop screenshot outlives the unpic
   await writeFile(executable, `#!/usr/bin/env node
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import { env } from "node:process";
+await new Promise(resolve => setTimeout(resolve, 300));
 const request = \`\${env.TN_PLAYTEST_MAILBOX_ROOT}/tn-playtest-screenshot-request.txt\`;
 setInterval(() => {
   if (!existsSync(request)) return;
   unlinkSync(request);
   setTimeout(() => writeFileSync(env.TN_PLAYTEST_CAPTURE, Buffer.from("${nonBlankPngBase64()}", "base64")), 800);
 }, 5);
+console.log("fixture ready");
 `);
   await chmod(executable, 0o755);
   const driver = new DesktopPlaytestDriver({
@@ -625,6 +696,8 @@ setInterval(() => {
   });
   try {
     await driver.prepare("unused");
+    await expect.poll(async () => (await driver.captureConsole()).some((entry) => entry.text === "fixture ready"))
+      .toBe(true);
     await driver.screenshot(join(root, "capture.png"));
   } finally {
     await driver.stop();
@@ -678,6 +751,7 @@ interface IDesktopScenarioOptions {
   events?: string[];
   network?: JsonValue;
   assertNetwork?: boolean;
+  completion?: { valid: boolean; calls: { method: string; argument: unknown }[] };
   console?: { text: string; type: string }[];
   mailboxFile?: boolean;
   onDriver?: (driver: FakeDesktopDriver) => void;
@@ -712,9 +786,9 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
     steps: [{
       holdFrames: 3,
       press: "KeyW",
-      release: true,
+      release: options.completion === undefined,
       ...(options.screenshotError === undefined ? {} : { screenshot: "frame" }),
-    }],
+    }, ...(options.completion === undefined ? [] : [{ kind: "wait", label: "completion-pose", waitTicks: 1000, release: false }])],
     subject: "player",
     target: "desktop",
     viewport: { height: 360, width: 640 },
@@ -764,6 +838,18 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
       pointer: () => undefined,
     },
   };
+  const transport = new DeviceBridgeTransport(endpoint);
+  if (options.completion !== undefined) {
+    const original = transport.call.bind(transport);
+    transport.call = async <T>(method: string, argument?: unknown): Promise<T> => {
+      options.completion!.calls.push({ method, argument });
+      if (method === "_setClockMode") return { mode: argument, tick: 3, epoch: 1 } as T;
+      if (method === "_presentationCompletions") return { clock: { mode: "wall-clock" }, epoch: 1, valid: options.completion!.valid,
+        dropped: 0, source: "present-return", timebase: "steady-clock-ms",
+        samples: Array.from({ length: 351 }, (_, i) => ({ sequence: i + 1, completedAtMs: i * 20 })) } as T;
+      return original<T>(method, argument);
+    };
+  }
   try {
     if (options.signalBeforeStart) queueMicrotask(() => process.emit("SIGINT"));
     const report = await runDesktopPlaytest({
@@ -779,7 +865,7 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
       url: "http://127.0.0.1:5173",
     }, {
       driver,
-      transport: new DeviceBridgeTransport(endpoint),
+      transport,
       ...(mailboxRoot === undefined ? {} : { mailboxRoot }),
     });
     return { driver, report };
@@ -1061,3 +1147,223 @@ test.each([null, { requests: -1, entries: [] }, { requests: 1, entries: [{ url: 
     await expect(runDesktopScenario(2, { assertNetwork: true, network })).rejects.toThrow(/NETWORK.*UNOBSERVED/u);
   },
 );
+test("desktop completion opt-in follows deterministic prefix, restores controls and reports separate cadence", async () => {
+  const saved = { ...process.env };
+  process.env.TN_PLAYTEST_COMPLETION_WINDOW_LABEL = "completion-pose";
+  process.env.TN_PLAYER_VSYNC = "0";
+  process.env.TN_PLAYTEST_HOST_DISPLAY = "1";
+  process.env.DISPLAY = ":synthetic-driver";
+  const calls: { method: string; argument: unknown }[] = [];
+  try {
+    const { report, driver } = await runDesktopScenario(2, { completion: { valid: true, calls } });
+    expect(report.pass).toBe(true);
+    expect(report.clock).toBe("wall-clock");
+    expect(report.acquisition?.cpuWindows).toBeUndefined();
+    expect(report.acquisition?.completionWindow).toMatchObject({ intervalCount: 250, durationMs: 5000, completionIntervalP50Ms: 20,
+      provenance: { qualified: false, nativeVsync: "0", requestedDisplay: ":synthetic-driver" },
+      setupSnapshot: { clock: { mode: "fixed-step", tick: 3 } } });
+    expect(calls.filter(call => call.method === "advance").map(call => call.argument)).toEqual([3]);
+    expect(calls.filter(call => call.method === "_setClockMode").map(call => call.argument)).toEqual(["wall-clock", "fixed-step"]);
+    expect(calls).toContainEqual({ method: "input.keyUp", argument: { key: "KeyW" } });
+    expect(await driver.isAlive()).toBe(false);
+  } finally {
+    for (const key of ["TN_PLAYTEST_COMPLETION_WINDOW_LABEL", "TN_PLAYER_VSYNC", "TN_PLAYTEST_HOST_DISPLAY", "DISPLAY"]) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+  }
+});
+
+
+test.each([
+  {},
+  { noConsoleErrors: false, noRuntimeDiagnostics: false, consoleErrorsOptOutReason: "Known console noise", runtimeDiagnosticsOptOutReason: "Known runtime noise" },
+])("V8 frame failures on stdout fail the verdict despite diagnostic opt-outs %j", (policy) => {
+  const failure = "[Playtest] TN_V8_FRAME_FAILED: TypeError: attribute.updateRanges.push is not a function";
+  const entries = [{ text: failure, type: desktopConsoleType("stdout", failure) }];
+  const diagnostics = normalizedRuntimeDiagnostics(undefined, undefined as never, entries);
+  expect(diagnostics.recentRuntimeErrors).toEqual([{ text: failure, type: "error" }]);
+  const report: IPlaytestReport = {
+    diagnostics: [], distance: 0, entity: "player", expectMoved: false, frames: 1,
+    observations: { console: entries, hud: {}, network: [], resources: {}, runtimeDiagnostics: diagnostics },
+    target: "desktop", trivialityOptOuts: [],
+  };
+  const scenario = {
+    assert: { diagnostics: policy }, name: "frame-failure", schemaVersion: 1,
+    steps: [], subject: "player", target: "desktop",
+    viewport: { height: 360, width: 640 }, warmupFrames: 0,
+  } as IPlaytestScenario;
+  const result = evaluateRichPlaytestAssertions({ report, scenario });
+  expect(result.assertions).toContainEqual(expect.objectContaining({ id: "diagnostics", pass: false }));
+  expect(exitCodeForReport({
+    assertionResults: result.assertions, diagnostics: result.diagnostics,
+    pass: result.assertions.every((assertion) => assertion.pass),
+  })).toBe(1);
+});
+
+test.skipIf(process.platform === "win32")("desktop screenshot services render-only only after the host consumed the request", async () => {
+  // A driven native loop presents nothing between ticks, so the host's capture needs the game to
+  // draw one render-only frame. The host must have consumed the request first (the copy flag
+  // exists only then), so the driver invokes the render-only operation after it sees the request
+  // file gone — never before, and never when the bridge offered no operation.
+  const root = await makeTempDir("playtest-desktop-render-only-");
+  const executable = join(root, "native-render-only.mjs");
+  const screenshotPath = join(root, "capture.png");
+  const requestPath = join(root, "tn-playtest-screenshot-request.txt");
+  const markerPath = join(root, "render-only-requested.txt");
+  await writeFile(executable, `#!/usr/bin/env node
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const root = process.env.TN_PLAYTEST_MAILBOX_ROOT;
+const request = join(root, "tn-playtest-screenshot-request.txt");
+const marker = join(root, "render-only-requested.txt");
+const bytes = Buffer.from(${JSON.stringify(nonBlankPngBase64())}, "base64");
+let consumed = false;
+let target = "";
+let deadline = 0;
+let wrote = false;
+setInterval(() => {
+  if (!consumed && existsSync(request)) {
+    target = readFileSync(request, "utf8");
+    unlinkSync(request);
+    consumed = true;
+    deadline = Date.now() + 500;
+  }
+  if (consumed && !wrote && (existsSync(marker) || Date.now() >= deadline)) {
+    writeFileSync(join(root, "desktop-fixture-render-order.txt"), existsSync(marker) ? "after-render" : "before-render");
+    writeFileSync(target, bytes);
+    wrote = true;
+  }
+}, 5);
+`);
+  await chmod(executable, 0o755);
+  const driver = new DesktopPlaytestDriver({ executable, mailboxRoot: root, screenshotTimeoutMs: 2_000 });
+  const calls: string[] = [];
+  try {
+    await driver.prepare("unused");
+    await driver.screenshot(screenshotPath, async () => {
+      calls.push(existsSync(requestPath) ? "request-present" : "request-consumed");
+      await writeFile(markerPath, "render");
+    });
+    expect(calls).toEqual(["request-consumed"]);
+    expect(await readFile(join(root, "desktop-fixture-render-order.txt"), "utf8")).toBe("after-render");
+    assertCaptureNotBlank(await readFile(screenshotPath), screenshotPath);
+  } finally {
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test.skipIf(process.platform === "win32")("desktop counted capture draws a render-only frame through the bridge", async () => {
+  // End to end: the runner sees `runtime.renderOnly`, hands it to the driver, and the driver asks
+  // the game for one render-only frame only after the host consumed the request. The fake host is
+  // a driven native loop — it never presents on its own, so the png exists only when the bridge's
+  // render-only operation arrived. A broken chain falls back to a late png and fails the marker.
+  const projectPath = await makeTempDir("playtest-desktop-render-only-runner-");
+  const mailboxRoot = join(projectPath, "mailbox");
+  const artifactDirectory = join(projectPath, "artifacts");
+  const executable = join(projectPath, "native-render-only.mjs");
+  const scenarioPath = join(projectPath, "scenario.json");
+  await writeFile(scenarioPath, JSON.stringify({
+    artifacts: { screenshots: "after" },
+    assert: { movement: { entity: "player", minDistance: 2 } },
+    name: "desktop-render-only",
+    schemaVersion: 1,
+    steps: [{ holdFrames: 3, press: "KeyW", release: true }],
+    subject: "player",
+    target: "desktop",
+    viewport: { height: 360, width: 640 },
+    warmupFrames: 0,
+  }));
+  await writeFile(executable, `#!/usr/bin/env node
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const root = process.env.TN_PLAYTEST_MAILBOX_ROOT;
+if (typeof root !== "string") process.exit(2);
+const requestPath = join(root, "tn-playtest-request.json");
+const responsePath = join(root, "tn-playtest-response.json");
+const screenshotRequestPath = join(root, "tn-playtest-screenshot-request.txt");
+const bytes = Buffer.from(${JSON.stringify(nonBlankPngBase64())}, "base64");
+let held = false;
+let x = 0;
+let tick = 0;
+let shotTarget = null;
+let shotConsumedAt = 0;
+let shotWrote = false;
+function respond(response) {
+  const temporary = responsePath + ".tmp";
+  writeFileSync(temporary, JSON.stringify(response));
+  renameSync(temporary, responsePath);
+}
+respond({ id: "ready", result: null });
+function poll() {
+  if (existsSync(screenshotRequestPath)) {
+    shotTarget = readFileSync(screenshotRequestPath, "utf8");
+    unlinkSync(screenshotRequestPath);
+    shotConsumedAt = Date.now();
+  }
+  if (shotTarget !== null && !shotWrote && Date.now() - shotConsumedAt > 1500) {
+    writeFileSync(shotTarget, bytes);
+    shotWrote = true;
+  }
+  if (!existsSync(requestPath)) return;
+  const request = JSON.parse(readFileSync(requestPath, "utf8"));
+  unlinkSync(requestPath);
+  let result = null;
+  if (request.method === "describe") {
+    result = {
+      capabilities: ["entity.observe", "runtime.diagnostics", "runtime.fixedStep", "runtime.network", "runtime.renderOnly"],
+      limits: { maxEntitiesPerSample: 100, maxEventsPerDrain: 1000, maxPayloadBytes: 1000000, operationTimeoutMs: 5000 },
+      name: "desktop-render-only-fixture",
+      protocolVersion: 1,
+    };
+  } else if (request.method === "ready") {
+    result = { ready: true };
+  } else if (request.method === "advance") {
+    tick += request.argument;
+    if (held) x += request.argument;
+    result = { clock: { mode: "fixed-step", tick }, ticks: request.argument };
+  } else if (request.method === "sample") {
+    result = {
+      clock: { mode: "fixed-step", tick },
+      diagnostics: [],
+      network: { requests: 0, entries: [] },
+      entities: [{ id: "player", transform: { position: [x, 0, 0] }, visible: true }],
+      resources: {},
+    };
+  } else if (request.method === "renderOnly") {
+    writeFileSync(join(root, "desktop-fixture-render-only.txt"), "received");
+    if (shotTarget !== null && !shotWrote) {
+      writeFileSync(shotTarget, bytes);
+      shotWrote = true;
+    }
+  } else if (request.method === "input.keyDown") {
+    held = true;
+  } else if (request.method === "input.keyUp") {
+    held = false;
+  }
+  respond({ id: request.id, result });
+}
+setInterval(poll, 5);
+`);
+  await chmod(executable, 0o755);
+  try {
+    const report = await runDesktopPlaytest({
+      artifactDirectory,
+      desktop: { executable },
+      endpoint: "http://127.0.0.1:41777/playtest",
+      headless: true,
+      projectPath,
+      scenarioPath,
+      target: "desktop",
+      timeoutMs: 2_000,
+      trace: false,
+      url: "http://127.0.0.1:5173",
+    }, { mailboxRoot });
+    expect(report.pass).toBe(true);
+    expect(await readFile(join(mailboxRoot, "desktop-fixture-render-only.txt"), "utf8")).toBe("received");
+    const after = join(artifactDirectory, "after.png");
+    assertCaptureNotBlank(await readFile(after), after);
+  } finally {
+    await rm(projectPath, { force: true, recursive: true });
+  }
+});

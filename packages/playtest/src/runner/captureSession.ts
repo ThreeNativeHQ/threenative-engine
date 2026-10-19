@@ -11,6 +11,7 @@ import type { IProvidedDisplay } from "./captureEnvironment.js";
 import { withPerformanceBudget } from "./buildReport.js";
 import type { ICaptureLease } from "./captureLock.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
+import { UNHANDLED_REJECTION_PREFIX, type IRunnerConsoleEntry } from "./shared.js";
 import { readCaptureProvenance } from "./observationSampling.js";
 import { acquireRunnerCaptureLock, provideRunDisplay } from "./runner-support.js";
 import { assertManagedUrlAvailable, findFreePort, startManagedServer, stopManagedServer, waitForUrl, withPort } from "./server.js";
@@ -19,6 +20,12 @@ import { waitFrames } from "./steps.js";
 
 export interface IBrowserCaptureSession {
   readonly bridge: IPlaytestBridgeClient;
+  /** Console errors collected from page creation through the custom capture callback. */
+  readonly errors: readonly string[];
+  /** Complete console and page-error observations from page creation onward. */
+  readonly consoleEntries: readonly IRunnerConsoleEntry[];
+  /** Failed network requests from page creation onward. */
+  readonly networkEntries: readonly { method: string; url: string }[];
   readonly page: Page;
   readonly provenance: IPlaytestCaptureProvenance;
   readonly signal: AbortSignal;
@@ -131,14 +138,47 @@ export async function withBrowserCapture<T>(
     const ownedContext = context;
     page = await stage("page creation", () => ownedContext.newPage());
     const activePage = page;
-    await stage("runner handshake marker", () => activePage.addInitScript(() => {
+    const errors: string[] = [];
+    const consoleEntries: IRunnerConsoleEntry[] = [];
+    const networkEntries: Array<{ method: string; url: string }> = [];
+    activePage.on("console", (entry) => {
+      const text = entry.text();
+      const unhandledRejection = text.startsWith(UNHANDLED_REJECTION_PREFIX);
+      const observed: IRunnerConsoleEntry = {
+        source: unhandledRejection ? "unhandled-rejection" : "browser-console",
+        text: unhandledRejection ? text.slice(UNHANDLED_REJECTION_PREFIX.length) : text,
+        type: entry.type(),
+      };
+      consoleEntries.push(observed);
+      if (["assert", "error", "pageerror"].includes(observed.type)) errors.push(observed.text);
+    });
+    activePage.on("pageerror", (error) => {
+      const text = error.stack || error.message;
+      errors.push(text);
+      consoleEntries.push({ source: "page-error", text, type: "pageerror" });
+    });
+    activePage.on("requestfailed", (request) => {
+      networkEntries.push({ method: request.method(), url: request.url() });
+    });
+    await stage("runner handshake marker", () => activePage.addInitScript((unhandledPrefix: string) => {
       Object.assign(globalThis, { __THREENATIVE_PLAYTEST_RUNNER_EXPECTED__: true });
-    }));
+      window.addEventListener("unhandledrejection", (event) => {
+        const reason = event.reason instanceof Error
+          ? event.reason.stack || event.reason.message
+          : String(event.reason);
+        console.error(`${unhandledPrefix}${reason}`);
+      });
+    }, UNHANDLED_REJECTION_PREFIX));
     // Boot/bridge work gets the existing startup allowance, not a screenshot-sized budget.
     const startupBudget = Math.min(2_147_483_647, PLAYTEST_STARTUP_READY_TIMEOUT_MS + active.timeoutMs);
     const bridge = await stage("navigation and bridge handshake", () => openRunnerPage(activePage, active, scenario, undefined), startupBudget);
     if (bridge === undefined || !bridge.description.capabilities.includes("runtime.startup")) {
-      throw new Error("TN_CAPTURE_SESSION_READINESS_REQUIRED: the page must report runtime.startup");
+      throw new Error(`TN_CAPTURE_SESSION_READINESS_REQUIRED: the page must report runtime.startup; observations=${JSON.stringify({
+        capabilities: bridge?.description.capabilities ?? null,
+        errors,
+        consoleEntries,
+        networkEntries,
+      })}`);
     }
     await stage("warmup", () => waitFrames(activePage, scenario.warmupFrames), startupBudget);
     const startup = await stage("engine startup readiness", () => waitForStartupReady({
@@ -161,8 +201,11 @@ export async function withBrowserCapture<T>(
       softwareAllowed: active.allowSoftwareAdapter === true,
       timingEvidence: "not-qualified",
     }, null, 2)}\n`);
-    return await stage("custom capture callback", () => capture({
+    const captureSession: IBrowserCaptureSession = {
       bridge,
+      get errors() { return Object.freeze([...errors]); },
+      get consoleEntries() { return Object.freeze([...consoleEntries]); },
+      get networkEntries() { return Object.freeze([...networkEntries]); },
       page: activePage,
       provenance,
       signal: controller.signal,
@@ -178,7 +221,8 @@ export async function withBrowserCapture<T>(
           return destination;
         });
       },
-    }));
+    };
+    return await stage("custom capture callback", () => capture(captureSession));
   } finally {
     controller.abort(new Error("TN_CAPTURE_SESSION_CLOSED"));
     signal?.removeEventListener("abort", abort);

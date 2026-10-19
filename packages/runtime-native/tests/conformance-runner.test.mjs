@@ -69,7 +69,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const runner = join(root, "conformance/run-conformance.mjs");
 const SDL3_AAR = `SDL3-${SDL3_ANDROID_VERSION}.aar`;
 
-function run(args, env = {}) {
+function run(args, env = {}, timeout = 120_000) {
   return spawnSync(process.execPath, [runner, ...args], {
     cwd: root,
     encoding: "utf8",
@@ -81,7 +81,7 @@ function run(args, env = {}) {
       ...process.env,
       ...env,
     },
-    timeout: 120_000,
+    timeout,
   });
 }
 
@@ -551,7 +551,7 @@ test("dry run validates and bundles implemented rows without a browser or native
       FIREFOX_BIN: join(dir, "missing-firefox"),
       TN_RUNTIME: join(dir, "missing-runtime"),
       MYSTRAL_BIN: "",
-    });
+    }, 240_000);
 
     assert.equal(proc.status, 0, proc.stderr || proc.stdout);
     const report = JSON.parse(readFileSync(out, "utf8"));
@@ -1133,6 +1133,15 @@ test("uniform captures fail closed even when reference and candidate bytes match
     width: 2,
     height: 1,
   });
+
+  // An RGB reference carries no alpha: a candidate's alpha cannot differ from it, its colour can.
+  const rgbReference = PNG.sync.write(uniform, { colorType: 2 });
+  const transparent = new PNG({ width: 2, height: 1 });
+  transparent.data.set([12, 34, 56, 0, 13, 34, 56, 255]);
+  assert.equal(compareCaptures(rgbReference, PNG.sync.write(transparent)).pixelMismatchRatio, 0);
+  assert.equal(compareCaptures(visiblePng, PNG.sync.write(transparent)).pixelMismatchRatio, 0.5);
+  transparent.data.set([12, 34, 57, 0], 0);
+  assert.equal(compareCaptures(rgbReference, PNG.sync.write(transparent)).pixelMismatchRatio, 0.5);
 });
 
 test("screen-space glyph raster fails closed on missing pixels and drifting bounds", () => {
@@ -1317,6 +1326,62 @@ test("parity lanes restore workspace imports before conformance bundling", () =>
     assert.ok(build >= 0, `${name} must restore or build its workspace imports`);
     assert.ok(capture > build, `${name} must have workspace imports before conformance bundling`);
     assert.doesNotMatch(section, /pnpm tsx scripts\/workspace-packages\.ts build/u);
+  }
+});
+
+test("the emulator final logcat dump retains full output and diagnoses its exact failure", () => {
+  const workflow = readFileSync(join(root, "../../.github/workflows/native-platforms.yml"), "utf8");
+  const script = workflowBlockScalars(workflow, "script").find((value) => value.includes("run-conformance.mjs"));
+  const dump = script?.match(/(?:if )?adb (?:-s emulator-5554 )?logcat -d[\s\S]*$/u)?.[0];
+  assert.ok(dump, "the final emulator log dump must remain inside the live emulator action");
+  const temp = makeTempDirSync("tn-final-emulator-log-");
+  try {
+    const fullDump = "device-output\n".repeat(8192);
+    writeFileSync(join(temp, "dump"), fullDump);
+    writeFileSync(join(temp, "state"), "device-state\n".repeat(1024));
+    writeFileSync(join(temp, "adb"), `#!/bin/sh
+printf '%s\n' "$*" >> "$CALLS"
+case "$*" in
+  *"logcat -d") cat "$DUMP"; exit "$LOGCAT_EXIT" ;;
+  "-s emulator-5554 get-state"|"devices -l") cat "$STATE" ;;
+  *) exit 99 ;;
+esac
+`);
+    chmodSync(join(temp, "adb"), 0o755);
+    for (const conformanceStatus of [0, 2, 1]) {
+      for (const logcatExit of [37, 0]) {
+        writeFileSync(join(temp, "calls"), "");
+        const result = spawnSync("sh", ["-c", `status=$CONFORMANCE_STATUS; ${dump}`], {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${temp}${delimiter}${process.env.PATH}`,
+            RUNNER_TEMP: temp,
+            CONFORMANCE_STATUS: String(conformanceStatus),
+            LOGCAT_EXIT: String(logcatExit),
+            CALLS: join(temp, "calls"),
+            DUMP: join(temp, "dump"),
+            STATE: join(temp, "state"),
+          },
+        });
+        assert.equal(result.status, conformanceStatus === 1 ? 1 : 0);
+        assert.equal(readFileSync(join(temp, "emulator-logcat.txt"), "utf8"), fullDump);
+        const stderr = readFileSync(join(temp, "emulator-logcat.err"), "utf8");
+        const calls = readFileSync(join(temp, "calls"), "utf8").trim().split("\n");
+        if (logcatExit === 37) {
+          assert.match(stderr, /TN_ADB_LOGCAT_FAILED exitCode=37/u);
+          assert.ok(Buffer.byteLength(stderr) <= Buffer.byteLength("TN_ADB_LOGCAT_FAILED exitCode=37\n") + 2048);
+          assert.match(stderr, /get-state/u);
+          assert.match(stderr, /devices -l/u);
+          assert.deepEqual(calls, ["-s emulator-5554 logcat -d", "-s emulator-5554 get-state", "devices -l"]);
+        } else {
+          assert.equal(stderr, "");
+          assert.deepEqual(calls, ["-s emulator-5554 logcat -d"]);
+        }
+      }
+    }
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
   }
 });
 

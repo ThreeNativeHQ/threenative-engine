@@ -1,6 +1,16 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { BufferAttribute, BufferGeometry, Group, Matrix4, Mesh, MeshBasicMaterial } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import {
+  type IBrowserRuntime,
+  type IRegistryDump,
+  defineBrowserClasses,
+} from "../../three-native/src/browser-backend.js";
+import { type ITslRuntime, defineTsl } from "../../three-native/src/browser-tsl.js";
+import { loadCatalog } from "../../three-native/src/catalog.js";
+import { defineTypeFlags } from "../../three-native/src/object-surface.js";
 import type { IRendererLike } from "../src/renderer.js";
 import {
   SoftBody3D,
@@ -73,6 +83,99 @@ function renderer(dispatched: unknown[]): IRendererLike {
 }
 
 describe("SoftBody3D cloth", () => {
+  it("lets SoftBody3D clone a browser node material and install its cloth position node", async () => {
+    const catalog = loadCatalog(fileURLToPath(new URL("../../../", import.meta.url)));
+    const registry = JSON.parse(
+      readFileSync(new URL("../../three-native/api/native-registry.json", import.meta.url), "utf8"),
+    ) as IRegistryDump;
+    const types = new Map<string, number>();
+    let serial = 0;
+    const runtime: IBrowserRuntime = {
+      typeId(name) {
+        if (!types.has(name)) types.set(name, types.size + 1);
+        return types.get(name) as number;
+      },
+      construct: (name) => ({ key: `${name}:0:${++serial}:1`, type: types.get(name) ?? 0 }),
+      invoke: () => null,
+      get: () => 0,
+      set() {},
+      release() {},
+      setCallback() {},
+    };
+    const arrays = new Map<string, Float32Array>();
+    const sizes = new Map<string, number>();
+    const construct = runtime.construct;
+    runtime.construct = (name, args) => {
+      const ref = construct(name, args);
+      if (Array.isArray(args[0])) {
+        arrays.set(ref.key, new Float32Array(args[0] as number[]));
+        sizes.set(ref.key, Number(args[1]));
+      }
+      return ref;
+    };
+    runtime.invoke = (self, method) =>
+      method === "clone" ? runtime.construct(self.key.split(":")[0] as string, []) : null;
+    const get = runtime.get;
+    runtime.get = (ref, property) => {
+      if (property === "count")
+        return (arrays.get(ref.key)?.length ?? 0) / (sizes.get(ref.key) ?? 1);
+      if (property === "itemSize") return sizes.get(ref.key) ?? 1;
+      return get(ref, property);
+    };
+    runtime.attributeArray = (ref) => arrays.get(ref.key) as never;
+    runtime.attributeWrite = (ref, array) => void arrays.set(ref.key, array as Float32Array);
+    let node = 0;
+    const set = vi.fn();
+    const tslRuntime: ITslRuntime = {
+      call: () => ++node,
+      release() {},
+      set,
+      setUniform() {},
+      setPost() {},
+      effectParameter: () => 0,
+      compute() {},
+      readStorage: async () => new ArrayBuffer(0),
+      deleteStorage() {},
+    };
+    const { classes } = defineBrowserClasses(registry, { ...runtime, tsl: tslRuntime }, catalog);
+    defineTypeFlags(classes);
+    const tsl = defineTsl(tslRuntime, classes as never).exports;
+    vi.doMock("three/tsl", () => tsl);
+    vi.resetModules();
+    try {
+      const { SoftBody3D } = await import("../../core/src/softbody.js");
+      const geometry = new BufferGeometry().setAttribute(
+        "position",
+        new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3),
+      );
+      const material = new (classes.MeshBasicNodeMaterial as new () => object)();
+      const cloth = new SoftBody3D(new Mesh(geometry, material as never), {
+        pinned: [0],
+        stiffness: 35,
+        damping: 1.8,
+        gravity: [0, -9.81, 0],
+        wind: [1, 0, 0],
+      });
+      expect(cloth.material).not.toBe(material);
+      expect(cloth.uniqueVertexCount).toBe(3);
+      expect(set).toHaveBeenCalledWith(expect.any(Object), "positionNode", expect.any(Number));
+      const plain = new (classes.MeshBasicMaterial as new () => object)();
+      expect(
+        () =>
+          new SoftBody3D(new Mesh(geometry, plain as never), {
+            pinned: [0],
+            stiffness: 35,
+            damping: 1.8,
+            gravity: [0, -9.81, 0],
+            wind: [1, 0, 0],
+          }),
+      ).toThrow(/node material/u);
+    } finally {
+      vi.doUnmock("three/tsl");
+      vi.resetModules();
+    }
+  });
+
   it("compacts WGSL-padded vec3 readback and rejects every other shape", () => {
     expect(compactClothVec3Readback(new Float32Array([1, 2, 3, 99, 4, 5, 6, 99]), 2)).toEqual(
       new Float32Array([1, 2, 3, 4, 5, 6]),

@@ -81,6 +81,7 @@ export async function runTemplatePlaytests(
     const target = path.join(root, template);
     let testError: string | undefined;
     let smokeError: string | undefined;
+    let liveMotionError: string | undefined;
     try {
       await create({ install: true, packageSources, target, template });
       try {
@@ -116,7 +117,30 @@ export async function runTemplatePlaytests(
         await rm(smokeScenario, { force: true });
       }
 
-      const errors = [testError, smokeError].filter(
+      if (template === "sailing") {
+        try {
+          await execute(
+            "pnpm",
+            [
+              "exec",
+              "threenative-playtest",
+              "--scenario",
+              "playtests/live/render-motion.playtest.json",
+              "--live-clock",
+              "--browser-recipe",
+              "webgpu",
+              "--headed",
+              "--server-command",
+              "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
+            ],
+            target,
+          );
+        } catch (error) {
+          liveMotionError = errorDetail(error);
+        }
+      }
+
+      const errors = [testError, smokeError, liveMotionError].filter(
         (error): error is string => error !== undefined,
       );
       if (errors.length === 0) {

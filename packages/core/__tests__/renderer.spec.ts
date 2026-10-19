@@ -4,7 +4,7 @@ import { NodeFrame, NodeUpdateType, RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { defineGame } from "../src/game.js";
 import { RenderChain } from "../src/render/chain.js";
-import { createRenderer, prewarm } from "../src/renderer.js";
+import { beginAsyncPipelines, createRenderer, prewarm } from "../src/renderer.js";
 import { RESOLUTION_SCALER, ResolutionScaler } from "../src/resolution-scaler.js";
 import { Scene as GameScene, type ICtx } from "../src/scene.js";
 
@@ -980,6 +980,45 @@ describe("createRenderer", () => {
     }
   });
 
+  it("reports a named boot failure when neither WebGPU nor the WebGL fallback can start", async () => {
+    // The native (Wasm) engine binds `WebGLRenderer` to a facade that refuses on use, so the
+    // fallback throws "TN_NATIVE_UNCATALOGUED_WEBGLRENDERER" instead of a WebGL context error. The
+    // player must read a named, human message — never that internal facade code.
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const refusal = (): never => {
+      throw new Error(
+        "TN_NATIVE_UNCATALOGUED_WEBGLRENDERER: WebGLRenderer is not available on the Wasm engine.",
+      );
+    };
+    try {
+      await expect(
+        createRenderer({
+          canvas,
+          preferWebGPU: true,
+          webgl2Factory: refusal,
+          webgpuFactory: () => {
+            throw new Error("no adapter");
+          },
+        }),
+      ).rejects.toThrow(/^TN_NO_RENDERER: WebGPU is not available on this device/u);
+      await expect(
+        createRenderer({
+          canvas,
+          preferWebGPU: true,
+          webgl2Factory: refusal,
+          webgpuFactory: () => {
+            throw new Error("no adapter");
+          },
+        }),
+      ).rejects.not.toThrow(/UNCATALOGUED|Wasm engine/u);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("should use an explicit resolution scale while keeping CSS size unchanged", async () => {
     const canvas = testCanvas();
     const sizes: Array<[number, number]> = [];
@@ -1879,5 +1918,55 @@ describe("uploadTextures", () => {
       renderer.dispose();
       gpu.restore();
     }
+  });
+});
+
+describe("beginAsyncPipelines", () => {
+  it("turns the covered render's pipeline creates into pending tickets and settles them", async () => {
+    const events: string[] = [];
+    let release: (() => void) | undefined;
+    const pipelines = {
+      getForRender(_object: unknown, promises?: Promise<unknown>[] | null): void {
+        if (promises === undefined || promises === null) {
+          events.push("sync");
+          return;
+        }
+        events.push("async");
+        promises.push(
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+        );
+      },
+    };
+    const raw = {
+      _pipelines: pipelines,
+      backend: { device: { createRenderPipelineAsync: () => Promise.resolve() } },
+    };
+    const gate = beginAsyncPipelines(raw);
+    if (gate === undefined) throw new Error("the fake renderer exposes an async pipeline cache");
+
+    pipelines.getForRender({}, null);
+    expect(events).toEqual(["async"]);
+
+    let settled = false;
+    const waiting = gate.settled().then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    release?.();
+    await waiting;
+    expect(settled).toBe(true);
+
+    gate.restore();
+    pipelines.getForRender({}, null);
+    expect(events).toEqual(["async", "sync"]);
+  });
+
+  it("does nothing on a renderer without async device creation", () => {
+    expect(beginAsyncPipelines({})).toBeUndefined();
+    expect(beginAsyncPipelines({ _pipelines: { getForRender: () => undefined } })).toBeUndefined();
   });
 });

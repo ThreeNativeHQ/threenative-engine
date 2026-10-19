@@ -1,0 +1,120 @@
+{
+  "name": "materials-props-lambert",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — MeshLambertMaterial's members: lit-render's colour, plus emissive and emissiveIntensity",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "fresh",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshLambertMaterial",
+      "decimal": "MeshLambertMaterial"
+    },
+    {
+      "index": 1,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 2,
+      "id": "fresh",
+      "kind": "number",
+      "path": "emissive.r",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 3,
+      "id": "fresh",
+      "kind": "number",
+      "path": "emissive.g",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 4,
+      "id": "fresh",
+      "kind": "number",
+      "path": "emissive.b",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 5,
+      "id": "fresh",
+      "kind": "number",
+      "path": "emissiveIntensity",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 6,
+      "id": "m",
+      "kind": "string",
+      "path": "type",
+      "value": "s:MeshLambertMaterial",
+      "decimal": "MeshLambertMaterial"
+    },
+    {
+      "index": 7,
+      "id": "m",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3fe999999999999a",
+      "decimal": "0.8"
+    },
+    {
+      "index": 8,
+      "id": "m",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3fd6666666666666",
+      "decimal": "0.35"
+    },
+    {
+      "index": 9,
+      "id": "m",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3fc999999999999a",
+      "decimal": "0.2"
+    },
+    {
+      "index": 10,
+      "id": "m",
+      "kind": "number",
+      "path": "emissive.r",
+      "value": "n:3fb999999999999a",
+      "decimal": "0.1"
+    },
+    {
+      "index": 11,
+      "id": "m",
+      "kind": "number",
+      "path": "emissive.g",
+      "value": "n:3fa999999999999a",
+      "decimal": "0.05"
+    },
+    {
+      "index": 12,
+      "id": "m",
+      "kind": "number",
+      "path": "emissive.b",
+      "value": "n:3f947ae147ae147b",
+      "decimal": "0.02"
+    },
+    {
+      "index": 13,
+      "id": "m",
+      "kind": "number",
+      "path": "emissiveIntensity",
+      "value": "n:3fe0000000000000",
+      "decimal": "0.5"
+    }
+  ]
+}

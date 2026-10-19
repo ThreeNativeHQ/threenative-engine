@@ -46,7 +46,7 @@ const BROWSER_CAPABILITIES = [
 /** The only seam between assertion orchestration and an application bridge. */
 export interface IBridgeTransport {
   readonly capabilities: readonly string[];
-  call<T>(method: string, argument?: unknown, timeoutMs?: number): Promise<T>;
+  call<T>(method: string, argument?: unknown, timeoutMs?: number, options?: unknown): Promise<T>;
   close(): Promise<void>;
   waitForBridge(timeoutMs: number): Promise<boolean>;
 }
@@ -84,7 +84,8 @@ export class PlaytestBridgeError extends Error {
 }
 
 export interface IPlaytestBridgeClient {
-  advance(ticks: number): Promise<void>;
+  /** `render: true` draws a world frame per tick; the default advances without drawing. Browser bridges only. */
+  advance(ticks: number, options?: { render?: boolean }): Promise<void>;
   applySetup(request: IPlaytestSetupRequest): Promise<void>;
   close(): Promise<void>;
   drainEvents(limit?: number): Promise<import("../protocol.js").JsonValue[]>;
@@ -93,6 +94,8 @@ export interface IPlaytestBridgeClient {
   setupApplication?: IPlaytestSetupApplication;
   /** Re-reads the bridge's readiness, including startup progress when it reports any. */
   readiness(): Promise<IPlaytestBridgeReady>;
+  /** Draws the current world once without advancing it. Requires `runtime.renderOnly`. */
+  renderOnly(): Promise<void>;
   sample(request: IPlaytestSampleRequest): Promise<IPlaytestObservationSnapshot>;
 }
 
@@ -104,8 +107,8 @@ export class PlaywrightTransport implements IBridgeTransport {
     private readonly operationTimeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
   ) {}
 
-  async call<T>(method: string, argument?: unknown, timeoutMs?: number): Promise<T> {
-    return bridgeCall<T>(this.page, method, argument, timeoutMs ?? this.operationTimeoutMs);
+  async call<T>(method: string, argument?: unknown, timeoutMs?: number, options?: unknown): Promise<T> {
+    return bridgeCall<T>(this.page, method, argument, timeoutMs ?? this.operationTimeoutMs, options);
   }
 
   async close(): Promise<void> {}
@@ -228,9 +231,9 @@ export async function connectPlaytestBridgeTransport(
     ));
   }
   return {
-    advance: async (ticks) => {
+    advance: async (ticks, options) => {
       // Scaled by the work requested, not fixed. See PLAYTEST_ADVANCE_TICK_BUDGET_MS.
-      await transport.call("advance", ticks, advanceTimeoutMs(ticks));
+      await transport.call("advance", ticks, advanceTimeoutMs(ticks), options);
     },
     applySetup: async (request) => {
       assertBoundedPayload(request);
@@ -246,6 +249,9 @@ export async function connectPlaytestBridgeTransport(
     description,
     ...(setupApplication === undefined ? {} : { setupApplication }),
     readiness: () => transport.call<IPlaytestBridgeReady>("ready"),
+    renderOnly: async () => {
+      await transport.call("renderOnly");
+    },
     sample: async (request) => {
       assertBoundedPayload(request);
       const snapshot = await transport.call<IPlaytestObservationSnapshot>("sample", request);
@@ -361,20 +367,21 @@ async function bridgeCall<T = void>(
   method: string,
   argument?: unknown,
   timeoutMs: number = PLAYTEST_PROTOCOL_LIMITS.operationTimeoutMs,
+  options?: unknown,
 ): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       page.evaluate(
-        async ({ argument, globalName, method }) => {
+        async ({ argument, globalName, method, options }) => {
           const bridge = (globalThis as Record<string, unknown>)[globalName] as Record<string, unknown> | undefined;
           const operation = bridge?.[method];
           if (typeof operation !== "function") {
             throw new Error(`Bridge operation '${method}' is unavailable.`);
           }
-          return operation.call(bridge, argument);
+          return operation.call(bridge, argument, options);
         },
-        { argument, globalName: PLAYTEST_BRIDGE_GLOBAL, method },
+        { argument, globalName: PLAYTEST_BRIDGE_GLOBAL, method, options },
       ) as Promise<T>,
       new Promise<T>((_resolve, reject) => {
         timeout = setTimeout(() => reject(new PlaytestBridgeError(playtestDiagnostic(

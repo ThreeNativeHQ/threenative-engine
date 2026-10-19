@@ -1,7 +1,10 @@
 // Generated for you. Framing is a game-owned decision.
 import type { PerspectiveCamera } from "three";
 
+const followedCameras = new WeakSet<PerspectiveCamera>();
+
 export function setupCamera(camera: PerspectiveCamera): void {
+  followedCameras.delete(camera);
   camera.fov = 52;
   camera.near = 0.1;
   // Past the sea's own reach (`SURFACE.reach`). The far plane is what says where the world ends,
@@ -65,10 +68,15 @@ export function followShip(
   const wantX = target.x - forwardX * CHASE.astern + starboardX * CHASE.starboard;
   const wantZ = target.z - forwardZ * CHASE.astern + starboardZ * CHASE.starboard;
   const wantY = target.y + CHASE.height;
-  const blend = Math.min(1, Math.max(0, deltaTime) * 3.6);
-  camera.position.x += (wantX - camera.position.x) * blend;
-  camera.position.y += (wantY - camera.position.y) * blend;
-  camera.position.z += (wantZ - camera.position.z) * blend;
+  if (followedCameras.has(camera)) {
+    const blend = Math.min(1, Math.max(0, deltaTime) * 3.6);
+    camera.position.x += (wantX - camera.position.x) * blend;
+    camera.position.y += (wantY - camera.position.y) * blend;
+    camera.position.z += (wantZ - camera.position.z) * blend;
+  } else {
+    camera.position.set(wantX, wantY, wantZ);
+    followedCameras.add(camera);
+  }
   // Never below the sea it is looking at.
   //
   // The height offset is measured from the ship, and the ship is in a trough about half the time

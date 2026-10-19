@@ -1,4 +1,5 @@
 import { type QualityTier, resolveQualityTier } from "./quality.js";
+import { resolveQualityPolicy } from "./qualityPolicy.js";
 
 const QUALITY_TIERS: readonly QualityTier[] = ["low", "medium", "high"];
 
@@ -11,6 +12,8 @@ export interface IQualityWindow {
   readonly frame: { readonly p95: number };
   readonly gpuMs?: number;
   readonly gpuAgeFrames?: number;
+  /** A completed window's own GPU work, read when the fresh sample is unavailable or stale. */
+  readonly gpu?: { readonly samples: number; readonly p50: number };
   readonly surface?: { readonly compiling?: boolean };
 }
 
@@ -18,7 +21,7 @@ export interface IQualityDecision {
   readonly tier: QualityTier;
   readonly source: "auto" | "pinned";
   readonly changed: boolean;
-  readonly meter: "gpu" | "presented";
+  readonly meter: "gpu" | "presented" | "work";
   readonly fallback?: "gpu-unavailable" | "gpu-invalid" | "gpu-age-unavailable" | "gpu-stale";
   readonly reason: string;
   readonly budgetMs: number;
@@ -52,43 +55,7 @@ export function createAdaptiveQuality(
   } = {},
   options: IAdaptiveQualityOptions = {},
 ) {
-  const policy = {
-    targetFps: 60,
-    overloadedWindows: 2,
-    healthyWindows: 5,
-    headroom: 0.2,
-    presentationTolerance: 0.05,
-    cooldownMs: 5000,
-    startupWindows: 1,
-    minFrames: 30,
-    maxGpuAgeFrames: 4,
-    ...options,
-  };
-  for (const key of ["targetFps", "overloadedWindows", "healthyWindows", "minFrames"] as const) {
-    if (!Number.isFinite(policy[key]) || policy[key] <= 0)
-      throw new Error(`quality ${key} must be positive.`);
-  }
-  for (const key of ["cooldownMs", "startupWindows", "maxGpuAgeFrames"] as const) {
-    if (!Number.isFinite(policy[key]) || policy[key] < 0)
-      throw new Error(`quality ${key} must be non-negative.`);
-  }
-  for (const key of [
-    "overloadedWindows",
-    "healthyWindows",
-    "startupWindows",
-    "minFrames",
-    "maxGpuAgeFrames",
-  ] as const) {
-    if (!Number.isInteger(policy[key])) throw new Error(`quality ${key} must be an integer.`);
-  }
-  if (!Number.isFinite(policy.headroom) || policy.headroom <= 0 || policy.headroom >= 1)
-    throw new Error("quality headroom must be between zero and one.");
-  if (
-    !Number.isFinite(policy.presentationTolerance) ||
-    policy.presentationTolerance < 0 ||
-    policy.presentationTolerance >= 1
-  )
-    throw new Error("quality presentationTolerance must be between zero and one.");
+  const policy = resolveQualityPolicy(options);
   const now = options.now ?? (() => performance.now());
   const ready = options.ready ?? (() => true);
   let tier = resolveQualityTier(request);
@@ -119,7 +86,23 @@ export function createAdaptiveQuality(
               : age > policy.maxGpuAgeFrames
                 ? "gpu-stale"
                 : undefined;
-      const costMs = fallback === undefined ? (gpu as number) : window.presented.p95;
+      const series = window.gpu;
+      // Completed GPU work keeps stale resolve timing from mistaking host gaps for load.
+      const workP50 =
+        fallback !== undefined &&
+        series !== undefined &&
+        Number.isInteger(series.samples) &&
+        series.samples >= 4 &&
+        Number.isFinite(series.p50) &&
+        series.p50 > 0
+          ? series.p50
+          : undefined;
+      const costMs =
+        fallback === undefined
+          ? (gpu as number)
+          : workP50 !== undefined
+            ? Math.max(window.frame.p95, workP50)
+            : window.presented.p95;
       // Presented intervals include vsync jitter, so fallback overload gets a small tolerance.
       const overloadBudgetMs =
         fallback === undefined ? budgetMs : budgetMs * (1 + policy.presentationTolerance);
@@ -136,7 +119,7 @@ export function createAdaptiveQuality(
         reason,
         budgetMs,
         overloadBudgetMs,
-        meter: fallback === undefined ? "gpu" : "presented",
+        meter: fallback === undefined ? "gpu" : workP50 !== undefined ? "work" : "presented",
         ...reportFields,
       });
       let skip: string | undefined;

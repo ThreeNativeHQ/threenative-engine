@@ -431,6 +431,7 @@ interface ITestWindow {
   readonly frame: { readonly p95: number };
   readonly gpuMs?: number;
   readonly gpuAgeFrames?: number;
+  readonly gpu?: { readonly samples: number; readonly p50: number };
   readonly surface?: { readonly compiling?: boolean };
 }
 
@@ -693,6 +694,65 @@ describe("starter adaptive quality", () => {
     const laterWindows = feed(policy, 4, 3, fallback);
     expect(laterWindows.tier).toBe("high");
     expect(laterWindows.changed).toBe(false);
+  });
+
+  it("should keep high on the completed GPU series when a stale age hides fresh work behind a host gap", async () => {
+    const { createAdaptiveQuality, formatQualityAdaptation } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality(
+      { mobile: false },
+      { maxGpuAgeFrames: 4, startupWindows: 0 },
+    );
+    const window = {
+      frame: { p95: 3.7 },
+      gpu: { p50: 16.61, samples: 37 },
+      gpuAgeFrames: 10,
+      gpuMs: 15.48,
+      presented: { p95: 54.7 },
+    };
+    const decision = feed(policy, 1, 3, window);
+    expect(decision.meter).toBe("work");
+    expect(decision.costMs).toBeCloseTo(16.61, 5);
+    expect(decision.tier).toBe("high");
+    expect(decision.reason).toBe("steady");
+    expect(formatQualityAdaptation(decision)).toContain("meter=work");
+  });
+
+  it("should still downgrade on a stale window whose completed GPU series is over budget", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality(
+      { mobile: false },
+      { maxGpuAgeFrames: 4, startupWindows: 0 },
+    );
+    const decision = feed(policy, 1, 2, {
+      frame: { p95: 3.7 },
+      gpu: { p50: 39, samples: 37 },
+      gpuAgeFrames: 10,
+      gpuMs: 39,
+      presented: { p95: 16.7 },
+    });
+    expect(decision.meter).toBe("work");
+    expect(decision.costMs).toBeCloseTo(39, 5);
+    expect(decision.tier).toBe("medium");
+    expect(decision.reason).toBe("overloaded");
+  });
+
+  it("should downgrade when the completed GPU series is cheap but the own CPU frame is over budget", async () => {
+    const { createAdaptiveQuality } = await loadAdaptive("starter");
+    const policy = createAdaptiveQuality(
+      { mobile: false },
+      { maxGpuAgeFrames: 4, startupWindows: 0 },
+    );
+    const decision = feed(policy, 1, 2, {
+      frame: { p95: 30 },
+      gpu: { p50: 10, samples: 37 },
+      gpuAgeFrames: 10,
+      gpuMs: 10,
+      presented: { p95: 16.7 },
+    });
+    expect(decision.meter).toBe("work");
+    expect(decision.costMs).toBeCloseTo(30, 5);
+    expect(decision.tier).toBe("medium");
+    expect(decision.reason).toBe("overloaded");
   });
 
   it("should still step down on a fresh GPU sample above the strict budget", async () => {

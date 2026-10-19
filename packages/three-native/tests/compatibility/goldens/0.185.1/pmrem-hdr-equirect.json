@@ -1,0 +1,35 @@
+{
+  "name": "pmrem-hdr-equirect",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — what HDRLoader hands three for Midway's sky: a 64x32 HalfFloatType RGBA DataTexture (linear, a sun patch at 24, far above 1) with HDRLoader's settings (flipY, linear filters, no mipmaps) and EquirectangularReflectionMapping as scene.background and scene.environment, PMREM-filtered onto a smooth and a rough metal sphere. parseHDR's decode is proved texel for texel against three's HDRLoader in addons.spec.ts",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "env",
+      "kind": "number",
+      "path": "mapping",
+      "value": "n:4072f00000000000",
+      "decimal": "303"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:10c9aa8ab9d95e5784170384c6746b34d5c14f75617a4a5d8cef41b9e7c5efbb",
+      "decimal": "10c9aa8ab9d95e5784170384c6746b34d5c14f75617a4a5d8cef41b9e7c5efbb"
+    }
+  ],
+  "render": {
+    "png": "pmrem-hdr-equirect.png",
+    "pngSha256": "10c9aa8ab9d95e5784170384c6746b34d5c14f75617a4a5d8cef41b9e7c5efbb",
+    "width": 256,
+    "height": 128,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

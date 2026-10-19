@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "name": "wasm-engine-renderer",
+  "target": "web",
+  "subject": "wasm-renderer",
+  "viewport": {
+    "width": 640,
+    "height": 360
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "rendered",
+      "waitTicks": 30
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "error",
+        "equals": "",
+        "allowTrivial": "The page reports its own failure here."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "software",
+        "equals": false,
+        "allowTrivial": "The engine's own adapter is hardware, never SwiftShader."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "refusal",
+        "equals": "TN_NATIVE_RENDERER_STATE: toneMapping 5.000000",
+        "allowTrivial": "Set once before the first frame; the engine names the tone mapping it refused."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "frames",
+        "gte": 30
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "targetHalf",
+        "equals": "Uint16Array:13312,14336,14848,15360",
+        "allowTrivial": "PRD-551: three's DataUtils.toHalfFloat of 0.25, 0.5, 0.75, 1, read back from a HalfFloat target."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "targetBytes",
+        "equals": "Uint8Array:64,128,191,255",
+        "allowTrivial": "PRD-551: the same colour from an UnsignedByte target."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "instancedStrip",
+        "equals": "255,0,0,255,0,255,0,255,0,0,255,255,1,4,8,255",
+        "allowTrivial": "PRD-545: an InstancedBufferGeometry draws instanceCount 3 of 4 instances, each tinted by its own TSL attribute(); the fourth (white) column keeps the clear colour 0x102030 in linear bytes."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "instanceColorSet",
+        "equals": "255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255|255,0,0,255,0,255,0,255,0,0,255,255,0,0,0,255",
+        "allowTrivial": "PRD-545: InstancedMesh draws white, then a new instanceColor attribute assigned after that frame colours the next one red, green, blue, black."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "volumeStrip",
+        "equals": "0,255,0,255,80,255,0,255,160,255,0,255,240,255,0,255",
+        "allowTrivial": "PRD-546: texture3D samples slice 1 of a nearest-filtered 4x1x2 Data3DTexture: (80x, 255, 0) per column."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "steadyCompiles",
+        "equals": 0,
+        "allowTrivial": "A steady frame compiles no pipeline; -1 means frame 10 never drew."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "steadyTextKeys",
+        "equals": 0,
+        "allowTrivial": "Every pipeline lookup after warm-up hits the id cache (the wasm32 hash once missed every one)."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "steadyBindGroups",
+        "equals": 0,
+        "allowTrivial": "A steady frame creates no bind group."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "steadyGraphKeys",
+        "equals": 0,
+        "allowTrivial": "A steady frame serializes no TSL graph key."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "steadyPrograms",
+        "equals": 0,
+        "allowTrivial": "A steady frame builds no program."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "draws",
+        "gte": 1,
+        "allowTrivial": "ready() resolves after the first engine frame, so the draw count holds from the first sample."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "triangles",
+        "gte": 24,
+        "allowTrivial": "ready() resolves after the first engine frame; two boxes of 12 triangles plus the output pass."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "renderUpdates",
+        "gte": 30
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "finished",
+        "equals": 1
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "trackAudit",
+        "equals": "box/position 1 refused",
+        "allowTrivial": "Set once before the first frame: one path binds, the missing node is reported."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 120,
+          "y": 80,
+          "width": 400,
+          "height": 200,
+          "minNonblankPixelRatio": 0.2
+        }
+      }
+    ]
+  }
+}

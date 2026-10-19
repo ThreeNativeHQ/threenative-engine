@@ -12,8 +12,21 @@
  * asked for when they report a launch that hung); this owns the noticing and the wording.
  */
 
-/** What failed: stalled progress, a rejected scene load, or a lost GPU device. */
-export type LaunchFailureKind = "stalled" | "device-lost" | "load-failed";
+/** What failed: startup progress, a rejected scene load/start, or a lost GPU device. */
+export type LaunchFailureKind =
+  | "stalled"
+  | "device-lost"
+  | "load-failed"
+  | "scene-load-failed"
+  | "start-failed";
+
+const MARKERS: Readonly<Record<LaunchFailureKind, string>> = {
+  stalled: "TN_STARTUP_STALLED",
+  "device-lost": "TN_DEVICE_LOST",
+  "load-failed": "TN_STARTUP_FAILED",
+  "scene-load-failed": "TN_SCENE_LOAD_FAILED",
+  "start-failed": "TN_START_FAILED",
+};
 
 export interface ILaunchFailure {
   readonly kind: LaunchFailureKind;
@@ -44,14 +57,16 @@ export function resetLaunchFailures(): void {
 
 export function reportLaunchFailure(failure: ILaunchFailure): void {
   if (reported.has(failure.kind)) return;
+  // A launch that failed to start or load stops making progress too; that stall is not news.
+  if (
+    failure.kind === "stalled" &&
+    (reported.has("load-failed") ||
+      reported.has("scene-load-failed") ||
+      reported.has("start-failed"))
+  )
+    return;
   reported.add(failure.kind);
-  const marker =
-    failure.kind === "stalled"
-      ? "TN_STARTUP_STALLED"
-      : failure.kind === "load-failed"
-        ? "TN_STARTUP_FAILED"
-        : "TN_DEVICE_LOST";
-  console.error(`${marker}: ${failure.message}`);
+  console.error(`${MARKERS[failure.kind]}: ${failure.message}`);
   for (const listener of listeners) listener(failure);
 }
 

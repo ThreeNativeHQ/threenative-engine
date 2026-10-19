@@ -292,6 +292,11 @@ export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, s
       /(generator: "@threenative\/terrain )[^"]+(")/u,
       `$1${terrainVersion}$2`,
     ],
+    [
+      path.join(repo, "examples/abyss-framework/playtests/replay.playtest.json"),
+      /("core": ")[^"]+(")/u,
+      `$1${coreVersion}$2`,
+    ],
   ];
   let changed = 0;
   for (const [file, pattern, replacement] of sourceUpdates) {

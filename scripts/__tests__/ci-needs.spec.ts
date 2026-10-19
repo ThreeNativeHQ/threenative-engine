@@ -173,6 +173,18 @@ describe("ci needs graph", () => {
   });
 });
 
+describe("native-engine job", () => {
+  it("should wait only on the scope decision and be reported by the verdict and the summary", async () => {
+    const jobs = ciJobGraph(await ci());
+    const engine = jobs.find((job) => job.name === "native-engine");
+    expect(engine?.needs).toEqual(["scope"]);
+    for (const name of ["ci-required", "run-summary"]) {
+      expect(jobs.find((job) => job.name === name)?.needs, name).toContain("native-engine");
+    }
+    expect(ciNeedsFindings(jobs)).toEqual([]);
+  });
+});
+
 describe("ci run summary", () => {
   it("should depend on every job it claims to report on", async () => {
     // The guard against the summary itself going quiet: a job added to ci.yml without being added

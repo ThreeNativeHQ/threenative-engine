@@ -1,0 +1,484 @@
+{
+  "name": "math-core-quaternion",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Quaternion.tests.js \u2014 every public method that does not evaluate a sine or a cosine",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "a01",
+      "class": "Quaternion",
+      "args": [0.5, 0.5, 0.5, 0.5]
+    },
+    {
+      "op": "new",
+      "id": "b02",
+      "class": "Quaternion",
+      "args": [-0.5, -0.5, 0.5, 0.5]
+    },
+    {
+      "op": "new",
+      "id": "m03",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "e04",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "m03",
+      "method": "makeRotationFromEuler",
+      "args": [
+        {
+          "ref": "e04"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "u05",
+      "class": "Vector3",
+      "args": [1, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "vv06",
+      "class": "Vector3",
+      "args": [0, 1, 0]
+    },
+    {
+      "op": "new",
+      "id": "q07",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "new",
+      "id": "q08",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q08",
+      "method": "identity",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "q09",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q09",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "q09",
+      "method": "clone",
+      "args": [],
+      "result": "r10"
+    },
+    {
+      "op": "new",
+      "id": "q11",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q11",
+      "method": "invert",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "q12",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q12",
+      "method": "conjugate",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "q13",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q13",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "q14",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q14",
+      "method": "setFromRotationMatrix",
+      "args": [
+        {
+          "ref": "m03"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q15",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q15",
+      "method": "setFromUnitVectors",
+      "args": [
+        {
+          "ref": "u05"
+        },
+        {
+          "ref": "vv06"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q16",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q16",
+      "method": "multiply",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q17",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q17",
+      "method": "premultiply",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q18",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q18",
+      "method": "multiplyQuaternions",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        {
+          "ref": "b02"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q19",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q19",
+      "method": "slerp",
+      "args": [
+        {
+          "ref": "b02"
+        },
+        0.25
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q20",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q20",
+      "method": "slerpQuaternions",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        {
+          "ref": "b02"
+        },
+        0.75
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q21",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q21",
+      "method": "rotateTowards",
+      "args": [
+        {
+          "ref": "b02"
+        },
+        0.1
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q22",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q22",
+      "method": "dot",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r23"
+    },
+    {
+      "op": "new",
+      "id": "q24",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q24",
+      "method": "lengthSq",
+      "args": [],
+      "result": "r25"
+    },
+    {
+      "op": "new",
+      "id": "q26",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q26",
+      "method": "length",
+      "args": [],
+      "result": "r27"
+    },
+    {
+      "op": "new",
+      "id": "q28",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q28",
+      "method": "angleTo",
+      "args": [
+        {
+          "ref": "b02"
+        }
+      ],
+      "result": "r29"
+    },
+    {
+      "op": "new",
+      "id": "q30",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "q30",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r31"
+    },
+    {
+      "op": "new",
+      "id": "s32",
+      "class": "Quaternion",
+      "args": [0.183, 0.365, 0.548, 0.73]
+    },
+    {
+      "op": "call",
+      "id": "s32",
+      "method": "toArray",
+      "args": [],
+      "result": "arr1"
+    },
+    {
+      "op": "new",
+      "id": "q33",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "q33",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "arr1"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "q07",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q08",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q09",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r10",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q11",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q12",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q13",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q14",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q15",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q16",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q17",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q18",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q19",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q20",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q21",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r23",
+      "kind": "number"
+    },
+    {
+      "id": "r25",
+      "kind": "number"
+    },
+    {
+      "id": "r27",
+      "kind": "number"
+    },
+    {
+      "id": "r29",
+      "kind": "number"
+    },
+    {
+      "id": "r31",
+      "kind": "boolean"
+    },
+    {
+      "id": "arr1",
+      "kind": "numbers"
+    },
+    {
+      "id": "q33",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}
