@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { PMREMNode } from "three/webgpu";
 
 import { type IWarmUpProgress, warmUpComputeNodes, warmUpScene } from "../src/warmup.js";
 
@@ -55,6 +56,73 @@ const run = (renderer: any, scene: any, options: any = {}) =>
   warmUpScene(renderer, scene, {} as never, { granularity: "object", ...options });
 
 describe("scene warm-up", () => {
+  test("prepares the environment on the raw renderer before compilation and the covered pass", async () => {
+    const raw = {
+      backend: { isWebGPUBackend: true },
+      shadowMap: { enabled: true, needsUpdate: false },
+      autoClear: true,
+      getRenderTarget: () => null,
+    };
+    const environment = { isTexture: true };
+    const scene = sceneOf(1);
+    (scene as IFakeObject & { environment?: unknown }).environment = environment;
+    Object.assign(scene.children[0] as IFakeObject, { isLight: true, castShadow: true });
+    const events: string[] = [];
+    const node = PMREMNode as unknown as {
+      prepareTextureAsync(renderer: unknown, texture: unknown): Promise<boolean>;
+    };
+    const prepare = vi.spyOn(node, "prepareTextureAsync").mockImplementation(async (renderer, texture) => {
+      expect(renderer).toBe(raw);
+      expect(texture).toBe(environment);
+      events.push("prepare");
+      return true;
+    });
+    const renderer = {
+      raw,
+      compileAsync: async () => {
+        events.push("compile");
+      },
+      render: () => events.push("render"),
+    };
+
+    try {
+      const report = await warmUpScene(renderer, scene as never, {} as never, {
+        yieldFrame: () => Promise.resolve(),
+      });
+      expect(events).toEqual(["prepare", "compile", "render"]);
+      expect(report.passes).toEqual(["main", "shadow"]);
+    } finally {
+      prepare.mockRestore();
+    }
+  });
+
+  test("does not compile or render when an async environment preparation is incomplete", async () => {
+    const raw = { backend: { isWebGPUBackend: true } };
+    const environment = { isTexture: true };
+    const scene = sceneOf(1);
+    (scene as IFakeObject & { environment?: unknown }).environment = environment;
+    const node = PMREMNode as unknown as {
+      prepareTextureAsync(renderer: unknown, texture: unknown): Promise<boolean>;
+    };
+    const prepare = vi.spyOn(node, "prepareTextureAsync").mockResolvedValue(false);
+    const compileAsync = vi.fn(async () => undefined);
+    const render = vi.fn();
+
+    try {
+      const report = await warmUpScene(
+        { raw, compileAsync, render },
+        scene as never,
+        {} as never,
+        { yieldFrame: () => Promise.resolve() },
+      );
+      expect(compileAsync).not.toHaveBeenCalled();
+      expect(render).not.toHaveBeenCalled();
+      expect(report.abandoned).toBeGreaterThan(0);
+    } finally {
+      prepare.mockRestore();
+    }
+  });
+
   test("should compile every renderable and yield a frame between slices", async () => {
     const renderer = fakeRenderer();
     const yields = vi.fn(() => Promise.resolve());

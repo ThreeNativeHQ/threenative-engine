@@ -1,4 +1,5 @@
-import type { Camera, Object3D } from "three";
+import type { Camera, Object3D, Texture } from "three";
+import { PMREMNode } from "three/webgpu";
 
 import type { IPipelineCensus } from "./pipeline-census.js";
 
@@ -216,6 +217,26 @@ export interface IWarmUpRenderer {
   /** The renderer's own render path, used to build every pass's pipelines once. */
   render?: (scene: Object3D, camera: Camera) => void;
   raw?: unknown;
+}
+
+type IPMREMNodeAsyncPreparer = typeof PMREMNode & {
+  prepareTextureAsync(renderer: unknown, texture: Texture): Promise<boolean>;
+};
+
+async function prepareSceneEnvironment(renderer: IWarmUpRenderer, scene: Object3D): Promise<boolean> {
+  const environment = (scene as Object3D & { environment?: Texture }).environment;
+  if (environment?.isTexture !== true) return true;
+
+  const raw = renderer.raw;
+  if (typeof raw !== "object" || raw === null) return true;
+  const backend = (raw as { backend?: { isWebGPUBackend?: boolean } }).backend;
+  if (backend?.isWebGPUBackend !== true) return true;
+
+  const prepare = (PMREMNode as IPMREMNodeAsyncPreparer).prepareTextureAsync;
+  if (typeof prepare !== "function") {
+    throw new Error("TN_PMREM_ASYNC_PREPARER_UNAVAILABLE: patched Three.js has no PMREM cache preparer.");
+  }
+  return prepare.call(PMREMNode, raw, environment);
 }
 
 const DEFAULT_SLICE_SIZE = 24;
@@ -919,13 +940,22 @@ export async function warmUpScene(
   }
   const compileAsync = renderer.compileAsync.bind(renderer);
   let attempted = 0;
-  const invokeCompile = (object: Object3D, targetScene?: Object3D): Promise<void> => {
-    attempted += 1;
-    try {
-      return compileAsync(object, camera, targetScene);
-    } catch (error) {
-      return Promise.reject(error);
+  let environmentPreparationStarted = false;
+  let environmentPrepared = false;
+  let environmentPreparation: Promise<void> | undefined;
+  const invokeCompile = async (object: Object3D, targetScene?: Object3D): Promise<void> => {
+    if (environmentPreparation === undefined) {
+      environmentPreparationStarted = true;
+      environmentPreparation = prepareSceneEnvironment(renderer, scene).then((prepared) => {
+        environmentPrepared = prepared;
+        if (!prepared) {
+          throw new Error("TN_PMREM_PREPARATION_INCOMPLETE: the scene environment was not prepared.");
+        }
+      });
     }
+    await environmentPreparation;
+    attempted += 1;
+    await compileAsync(object, camera, targetScene);
   };
 
   const finish = (report: IWarmUpReport): IWarmUpReport => {
@@ -952,6 +982,7 @@ export async function warmUpScene(
   const renderWarmPassesOnce = (): IWarmPassRender | undefined => {
     if (passRendered) return passResult;
     passRendered = true;
+    if (environmentPreparationStarted && !environmentPrepared) return undefined;
     if (now() >= startedAt + budgetMs) return undefined;
     try {
       passResult = renderWarmPasses(
