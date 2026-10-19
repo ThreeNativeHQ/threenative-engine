@@ -2,7 +2,10 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
-const MAX_ATTEMPTS = 5;
+// Eight reads back off for about two minutes in total, which still fits the 5-minute receipt jobs.
+// Five (15 s of waits) lost four finished jobs' receipts to one GitHub Actions incident on main run
+// 39275851944; the read still fails closed.
+const MAX_ATTEMPTS = 8;
 
 export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_INTEGRATION") {
   if (
@@ -36,7 +39,7 @@ export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_
         /HTTP (?:401|403|404|429)\b/iu.test(stderr)
       )
         throw error;
-      // Retry only the same read endpoint after 1, 2, 4, 8 seconds; no stale page, receipt or permission fallback.
+      // Retry only the same read endpoint after 1, 2, 4 ... 64 seconds; no stale page, receipt or permission fallback.
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000 * 2 ** attempt);
       continue;
     }
