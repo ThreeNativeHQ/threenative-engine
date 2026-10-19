@@ -476,6 +476,10 @@ it("drains representative multi-part canopy cell admission without thousands of 
       ),
     ]),
   );
+  // The admission budget is wall time, so a loaded runner admitted less per frame and left a
+  // backlog after 128 frames. A clock that advances 0.01 ms per read makes the bound count work.
+  let clockMs = 0;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => (clockMs += 0.01));
   const streamed = await createStreamedProps({
     placements,
     parts,
@@ -496,6 +500,7 @@ it("drains representative multi-part canopy cell admission without thousands of 
     expect(streamed.meshes.reduce((n, m) => n + m.count, 0)).toBe(placements.length * 2);
   } finally {
     streamed.dispose();
+    clock.mockRestore();
   }
 });
 
