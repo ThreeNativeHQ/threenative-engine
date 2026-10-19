@@ -243,7 +243,7 @@ export function selectionPlan(
           },
         ];
       }
-// The engine job is the one lane a full board owes only conditionally: when the diff reaches the
+      // The engine job is the one lane a full board owes only conditionally: when the diff reaches the
       // engine tree, or when the run qualifies a whole candidate. Every other full diff reads as before.
       const required =
         name === "native-engine"

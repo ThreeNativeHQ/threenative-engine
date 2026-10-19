@@ -6,7 +6,6 @@
 // proof is AC-1's run on a built host, which this file's shape keeps honest.
 
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";

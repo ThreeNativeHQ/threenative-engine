@@ -148,7 +148,7 @@ describe("scene warm-up", () => {
     expect(readiness.ready).toBe(false);
     expect(compileCalls).toBe(1);
   }, 10_000);
-test("should prepare the scene PMREM on the raw renderer before the covered world pass", async () => {
+  test("should prepare the scene PMREM on the raw renderer before the covered world pass", async () => {
     const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
     const environment = { isTexture: true } as never;
     const raw = { backend: { isWebGPUBackend: true } };

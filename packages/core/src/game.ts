@@ -21,7 +21,12 @@ import {
 } from "./geometry-capture.js";
 import { type ContextMenuPolicy, type InputBindings, InputMap } from "./input.js";
 import { PhysicsInterpolation } from "./interpolation.js";
-import { reportLaunchFailure, reportSceneLoadFailure, watchDeviceLoss, watchStartupStall } from "./launch-diagnostics.js";
+import {
+  reportLaunchFailure,
+  reportSceneLoadFailure,
+  watchDeviceLoss,
+  watchStartupStall,
+} from "./launch-diagnostics.js";
 import {
   FixedStepLoop,
   type IAfterPhysicsPhase,
