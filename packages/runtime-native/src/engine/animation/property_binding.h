@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "engine/scene/camera.h"
+#include "engine/foundation/prefetch.h"
 #include "engine/scene/material.h"
 #include "engine/scene/object3d.h"
 
@@ -94,18 +95,18 @@ class PropertyBinding {
      */
     void prefetchNode() const {
         if (raw_ == nullptr) return;
-        __builtin_prefetch(reinterpret_cast<const char*>(raw_) - 16, 1, 3); // the shared_ptr count the write checks
-        __builtin_prefetch(raw_, 1, 3);
-        __builtin_prefetch(&raw_->matrixWorldNeedsUpdate, 1, 3);
+        TN_PREFETCH(reinterpret_cast<const char*>(raw_) - 16, 1, 3); // the shared_ptr count the write checks
+        TN_PREFETCH(raw_, 1, 3);
+        TN_PREFETCH(&raw_->matrixWorldNeedsUpdate, 1, 3);
     }
     void prefetchColumns() const {
         if (raw_ == nullptr) return;
         switch (target_) {
-        case Target::Position: __builtin_prefetch(&raw_->position, 1, 3); break;
-        case Target::Scale: __builtin_prefetch(&raw_->scale, 1, 3); break;
+        case Target::Position: TN_PREFETCH(&raw_->position, 1, 3); break;
+        case Target::Scale: TN_PREFETCH(&raw_->scale, 1, 3); break;
         case Target::Quaternion:
-            __builtin_prefetch(&raw_->quaternion, 1, 3);
-            __builtin_prefetch(&raw_->rotation, 1, 3);
+            TN_PREFETCH(&raw_->quaternion, 1, 3);
+            TN_PREFETCH(&raw_->rotation, 1, 3);
             break;
         default: break;
         }
