@@ -187,9 +187,9 @@ test('the default checksum lock URL is tied to the installed package version', (
   ).version;
   assert.equal(
     releaseManifestUrl(),
-    `https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v${version}/prebuilt-lock.json`,
+    `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/runtime-native-v${version}/prebuilt-lock.json`,
   );
-  assert.equal(RELEASE_REPOSITORY, 'ThreeNativeHQ/threenative');
+  assert.equal(RELEASE_REPOSITORY, 'ThreeNativeHQ/threenative-engine');
   assert.match(releaseManifestUrl(), /\/runtime-native-v\d+\.\d+\.\d+\//u);
 });
 
@@ -938,7 +938,7 @@ test('a candidate rejects wrong version, missing provenance, malformed metadata 
     [(lock) => { lock.schemaVersion = 2; }, /schema/u],
     [(lock) => { lock.artifacts['android-x86_64-v8-snapshot'].sha256 = 'bad'; }, /android-x86_64-v8-snapshot/u],
     [(lock) => { lock.artifacts['android-arm64-v8a-runtime-v8'].size = 0; }, /android-arm64-v8a-runtime-v8/u],
-    [(lock) => { lock.artifacts['linux-x64'].url = 'https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v999.0.0/threenative-runtime-linux-x64'; }, /linux-x64/u],
+    [(lock) => { lock.artifacts['linux-x64'].url = 'https://github.com/ThreeNativeHQ/threenative-engine/releases/download/runtime-native-v999.0.0/threenative-runtime-linux-x64'; }, /linux-x64/u],
   ];
   for (const [mutate, expected] of mutations) {
     const manifest = candidateLock(candidateArtifacts());
