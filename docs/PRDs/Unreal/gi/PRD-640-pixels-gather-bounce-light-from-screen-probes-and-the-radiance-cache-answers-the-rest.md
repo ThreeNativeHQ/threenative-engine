@@ -121,10 +121,10 @@ overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-scr
 ## Execution Phases
 
 #### Phase 1: How far the per-pixel path gets
-**Status:** IN PROGRESS (1/2)
+**Status:** DONE (gate verdict: FAIL, the per-pixel path is 6-10x Unreal's cost)
 **Files:** `scripts/unreal-look/scaffold/render/worldEnvironment.ts` (measurement only)
 - [x] Per-region L7 error of `ssgi` plus the radiance cache, against Unreal Epic, is recorded under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi:cornell --layer L7` at `cd6e484bc` — cornell table recorded 2026-10-20; `sunlit-room` follows PRD-638 Phase 2.
-- [ ] Unreal's screen probe gather GPU time and ours at 1920 × 1080 on the RTX 2080 are recorded, and the gate verdict with them. proof: `r.ProfileGPU` log from the Unreal capture, and `node packages/playtest/dist/runner/cli.js perf`.
+- [x] Unreal's screen probe gather GPU time and ours at 1920 × 1080 on the RTX 2080 are recorded, and the gate verdict with them. proof: `TN_UE_RESOLUTION=1920x1080 TN_UE_PROFILE_FRAME=40 pnpm unreal-look:capture --engine unreal --scene gi:cornell --variants L7-Epic` (`ProfileGPU` in `Saved/Logs`), and the frame budget's `gpuMs` with `?ssgi=0` and `?ssgi=1` — FAIL, recorded under `## Decisions` 2026-10-20.
 
 #### Phase 2: Screen probes
 **Status:** NOT STARTED
@@ -167,3 +167,12 @@ overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-scr
   darker (88). A 0.5 m cache cell brought cornell Floor to 146 but corner Floor to 85, left the slot and Box_Short
   as they were, and took the bake from 17 s to 126 s. The open gaps (Box_Short facing the open front, and the narrow
   slot between the tall box and the red wall) need directional radiance for a missed ray: Phase 2.
+- **2026-10-20, GI session: the per-pixel gather fails the cost gate.** RTX 2080 (Turing), cornell pose, 1920 × 1080.
+  Unreal `LumenScreenProbeGather`: 3.09, 4.56 and 5.79 ms in the three `ProfileGPU` frames that drew the scene.
+  Movie Render Queue raises Lumen to its cinematic settings while it renders (`DownsampleFactor` 16 → 8,
+  `TracingOctahedronResolution` 8 → 16, both in the log), so real-time Epic costs less than this. These are also
+  the settings the reference frames are captured at. Ours, from the frame budget's `gpuMs` over 8 to 9 windows of
+  about 100 frames: 9.4 ms mean with `?ssgi=0` and 41 ms with `?ssgi=1` (`high`: 3 slices × 4 rays × 16 steps at
+  half resolution, a full cache read per pixel, two denoises). The gather adds about 31 ms, 6 to 10 times Unreal's.
+  The per-pixel path is therefore a calibration tool, not a shipping tier. Phase 2's probes (one per 16 × 16
+  pixels) are the cost fix as well as the quality fix.
