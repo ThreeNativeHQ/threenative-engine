@@ -29,6 +29,7 @@ import {
   sunTransmittance,
   temperatureColour,
 } from "./atmosphere.js";
+import { bakeCloudRadiance } from "./clouds.js";
 import { skyRadiance } from "./giCache.js";
 import { HEIGHT_FOG, type HeightFogParams, heightFogNode } from "./heightFog.js";
 
@@ -148,10 +149,11 @@ function voidSky(sky: Texture, fog: Color): Texture | undefined {
 }
 
 /** The atmosphere for the current `SUN_DIRECTION`, in scene radiance, as an 8-bit equirect canvas. */
-function atmosphereSky(): Texture | undefined {
+function atmosphereSky(clouds = false): Texture | undefined {
   if (typeof OffscreenCanvas === "undefined") return undefined;
   const [w, h] = [SKY_WIDTH, SKY_WIDTH / 2];
   const radiance = bakeSkyRadiance(SUN_DIRECTION, w, h);
+  if (clouds) bakeCloudRadiance(radiance, SUN_DIRECTION, w, h);
   const tint = temperatureColour(SUN_KELVIN);
   // The world-space light cache gathers this same sky, unclipped, in the sun's units.
   const scale = [0, 1, 2].map((c) => (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN) as [number, number, number];
@@ -191,8 +193,14 @@ function tintSun(): void {
  * `fogged` false (Unreal's layers below L3) keeps the sky as it is: with no fog, Unreal's void
  * below the horizon is dark, not the fog band.
  */
-export function setupSky(scene: Scene, photo: Texture, software = false, fogged = true): void {
-  const sky = atmosphereSky() ?? photo;
+export function setupSky(
+  scene: Scene,
+  photo: Texture,
+  software = false,
+  fogged = true,
+  clouds = false,
+): void {
+  const sky = atmosphereSky(clouds) ?? photo;
   tintSun();
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
