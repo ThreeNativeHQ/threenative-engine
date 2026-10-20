@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import eslintComments from "@eslint-community/eslint-plugin-eslint-comments";
-import type { Linter } from "eslint";
-import reactHooks from "eslint-plugin-react-hooks";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
+import type { Linter } from "eslint";
+import reactHooks from "eslint-plugin-react-hooks";
 import { hotCallbackAllocation } from "./hotCallbackAllocation.js";
 
 export interface IQualityOptions {
@@ -47,7 +47,7 @@ export function qualityConfig({ root }: IQualityOptions): Linter.Config[] {
         "no-debugger": "error",
         "no-dupe-keys": "error",
         "no-unreachable": "error",
-        "@typescript-eslint/no-floating-promises": ["error", { ignoreVoid: false }],
+        "@typescript-eslint/no-floating-promises": ["error", { ignoreVoid: true }],
         "@typescript-eslint/no-misused-promises": "error",
         "@typescript-eslint/no-unused-vars": [
           "error",

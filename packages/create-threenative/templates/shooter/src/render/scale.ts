@@ -1,14 +1,3 @@
-// The one place a real-world size is declared.
-//
-// One metre is one metre. Everything that builds or measures a physical object imports
-// from here, so the game renders at the right size. A model that arrives in centimetres is
-// normalised on load — never accommodated by tuning a literal beside it.
-//
-// This file is why the 2.68 m soldier, the 1.19 m AK and the 1.43 m viewmodel cannot
-// come back: there is no second place to write a size.
-
-import type { Object3D } from "three";
-
 /** Real-world sizes, in metres. */
 export const scale = {
   /** Adult soldier, boots to head-top. */

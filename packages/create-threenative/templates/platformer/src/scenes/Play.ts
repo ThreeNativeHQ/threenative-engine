@@ -1,5 +1,4 @@
 import {
-  type ICtx,
   InstancedBatch,
   Scene,
   type SceneFrame,

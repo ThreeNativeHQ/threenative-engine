@@ -10,6 +10,24 @@ type FunctionNode =
   | ESTree.FunctionDeclaration
   | ESTree.FunctionExpression;
 
+function importedName(
+  specifier: ESTree.ImportDeclaration["specifiers"][number],
+): string | undefined {
+  if (specifier.type !== "ImportSpecifier") return undefined;
+  return specifier.imported.type === "Identifier" ? specifier.imported.name : undefined;
+}
+
+function isBeforeRenderCall(parent: ESTree.Node, node: FunctionNode): boolean {
+  if (parent.type !== "CallExpression" || parent.arguments[0] !== node) return false;
+  const callee = parent.callee;
+  return (
+    callee.type === "MemberExpression" &&
+    !callee.computed &&
+    callee.property.type === "Identifier" &&
+    callee.property.name === "beforeRender"
+  );
+}
+
 /** Warns on a Three.js math constructor that runs directly inside a per-frame callback: a
  * `Scene` `update`/`render` method or a function registered with `ctx.beforeRender`. It is
  * syntactic on purpose. A callback hidden behind a helper is outside its coverage. */
@@ -29,33 +47,17 @@ export const hotCallbackAllocation: Rule.RuleModule = {
     const frames: Array<string | undefined> = [];
 
     const frameName = (node: FunctionNode): string | undefined => {
-      const parent = (node as Rule.Node).parent;
+      const parent = (node as Rule.Node).parent as Rule.Node;
       if (
         parent.type === "MethodDefinition" &&
         !parent.static &&
         parent.key.type === "Identifier"
       ) {
-        const owner = parent.parent.parent;
-        const base = (owner as ESTree.Class).superClass;
-        if (
-          FRAME_METHODS.has(parent.key.name) &&
-          base?.type === "Identifier" &&
-          sceneLocals.has(base.name)
-        ) {
-          return `Scene.${parent.key.name}`;
-        }
+        const base = (parent.parent?.parent as ESTree.Class | undefined)?.superClass;
+        const isSceneBase = base?.type === "Identifier" && sceneLocals.has(base.name);
+        if (isSceneBase && FRAME_METHODS.has(parent.key.name)) return `Scene.${parent.key.name}`;
       }
-      if (
-        parent.type === "CallExpression" &&
-        parent.arguments[0] === node &&
-        parent.callee.type === "MemberExpression" &&
-        !parent.callee.computed &&
-        parent.callee.property.type === "Identifier" &&
-        parent.callee.property.name === "beforeRender"
-      ) {
-        return "ctx.beforeRender";
-      }
-      return undefined;
+      return isBeforeRenderCall(parent, node) ? "ctx.beforeRender" : undefined;
     };
     const enter = (node: FunctionNode): void => {
       frames.push(frameName(node));
@@ -64,30 +66,35 @@ export const hotCallbackAllocation: Rule.RuleModule = {
       frames.pop();
     };
 
+    const registerImport = (
+      source: string,
+      specifier: ESTree.ImportDeclaration["specifiers"][number],
+    ): void => {
+      const name = importedName(specifier);
+      if (source === "@threenative/core") {
+        if (name === "Scene") sceneLocals.add(specifier.local.name);
+      } else if (THREE_MODULES.has(source)) {
+        if (specifier.type === "ImportNamespaceSpecifier")
+          threeNamespaces.add(specifier.local.name);
+        else if (name !== undefined && MATH_CLASSES.has(name)) mathLocals.add(specifier.local.name);
+      }
+    };
+
+    const mathClassName = (callee: ESTree.Expression | ESTree.Super): string | undefined => {
+      if (callee.type === "Identifier")
+        return mathLocals.has(callee.name) ? callee.name : undefined;
+      if (callee.type !== "MemberExpression" || callee.computed) return undefined;
+      const { object, property } = callee;
+      const fromNamespace = object.type === "Identifier" && threeNamespaces.has(object.name);
+      return fromNamespace && property.type === "Identifier" && MATH_CLASSES.has(property.name)
+        ? property.name
+        : undefined;
+    };
+
     return {
       ImportDeclaration(node) {
-        const source = String(node.source.value);
-        for (const specifier of node.specifiers) {
-          if (source === "@threenative/core") {
-            if (
-              specifier.type === "ImportSpecifier" &&
-              specifier.imported.type === "Identifier" &&
-              specifier.imported.name === "Scene"
-            ) {
-              sceneLocals.add(specifier.local.name);
-            }
-          } else if (THREE_MODULES.has(source)) {
-            if (specifier.type === "ImportNamespaceSpecifier")
-              threeNamespaces.add(specifier.local.name);
-            else if (
-              specifier.type === "ImportSpecifier" &&
-              specifier.imported.type === "Identifier" &&
-              MATH_CLASSES.has(specifier.imported.name)
-            ) {
-              mathLocals.add(specifier.local.name);
-            }
-          }
-        }
+        for (const specifier of node.specifiers)
+          registerImport(String(node.source.value), specifier);
       },
       ArrowFunctionExpression: enter,
       "ArrowFunctionExpression:exit": leave,
@@ -97,22 +104,10 @@ export const hotCallbackAllocation: Rule.RuleModule = {
       "FunctionExpression:exit": leave,
       NewExpression(node) {
         const where = frames[frames.length - 1];
-        if (where === undefined) return;
-        const callee = node.callee;
-        let name: string | undefined;
-        if (callee.type === "Identifier" && mathLocals.has(callee.name)) name = callee.name;
-        else if (
-          callee.type === "MemberExpression" &&
-          !callee.computed &&
-          callee.object.type === "Identifier" &&
-          threeNamespaces.has(callee.object.name) &&
-          callee.property.type === "Identifier" &&
-          MATH_CLASSES.has(callee.property.name)
-        ) {
-          name = callee.property.name;
-        }
-        if (name !== undefined)
+        const name = where === undefined ? undefined : mathClassName(node.callee);
+        if (where !== undefined && name !== undefined) {
           context.report({ node, messageId: "allocation", data: { name, where } });
+        }
       },
     };
   },

@@ -14,9 +14,7 @@ import {
   CylinderGeometry,
   MathUtils,
   MeshBasicMaterial,
-  Mesh as MeshClass,
   PlaneGeometry,
-  PointLight as PointLightClass,
   Vector3,
 } from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";

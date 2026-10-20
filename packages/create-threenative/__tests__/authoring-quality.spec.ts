@@ -67,12 +67,13 @@ describe("generated-game quality config", () => {
     expect(ok.messages).toEqual([]);
   });
 
-  it("does not accept bare void as rejection handling", async () => {
-    const r = await lint(
-      "a.ts",
-      "async function load(): Promise<void> {}\nexport function start(): void { void load(); }\n",
+  it("accepts an explicit `void` and still rejects the bare call", async () => {
+    const source = (call: string) =>
+      `async function load(): Promise<void> {}\nexport function start(): void { ${call} }\n`;
+    expect((await lint("a.ts", source("void load();"))).messages).toEqual([]);
+    expect(rules(await lint("a.ts", source("load();")))).toContain(
+      "@typescript-eslint/no-floating-promises",
     );
-    expect(rules(r)).toContain("@typescript-eslint/no-floating-promises");
   });
 
   it("rejects an async callback given to a synchronous slot", async () => {

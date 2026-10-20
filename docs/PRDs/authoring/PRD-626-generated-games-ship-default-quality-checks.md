@@ -1,14 +1,14 @@
 # PRD-626 — Generated games ship default quality checks
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Priority:** P2 — AC-1–3 add a default authoring gate that catches code mistakes before generated games accumulate them.
 **Complexity:** 5 (MEDIUM)
 **Owner:** ThreeNative maintainers / implementing agent
 **Depends on:** None
 **Progress:** 0%
 
-Proposal only. No lint configuration, rule, dependency, template or CI change is implemented by
-this document. All implementation and acceptance evidence below is pending.
+Implementation is in progress on one PR. Boxes below are ticked only with the result beside them;
+see **Decisions** for the places where implementation revised the proposal.
 
 ## Context and current behavior
 
@@ -112,7 +112,7 @@ in CI; do not apply blanket `--max-warnings 0` to heuristic findings.
 | Family | Default and bounded behavior | Consumer example / limit |
 |---|---|---|
 | Basic correctness | Error: undefined names where the compiler does not own them, unreachable code, duplicate keys, debugger; TS-aware unused bindings/imports. Permit deliberately unused parameters named `_...`, not arbitrary unused locals. | An unused imported constructor fails with a rule/location; type-only imports and intentionally unused interface callback parameters do not manufacture errors. |
-| Async misuse | Error: `@typescript-eslint/no-floating-promises`, `@typescript-eslint/no-misused-promises`; use `ignoreVoid: false` so bare `void task()` is not presented as rejection handling. | `ctx.assets.model(...)` discarded in a typed fixture fails; awaited/returned Promise and explicit `.catch(handler)` pass. Async callbacks supplied to synchronous lifecycle contracts fail; valid async load hooks pass. Unknown/any types are a documented coverage limit, not guaranteed detection. |
+| Async misuse | Error: `@typescript-eslint/no-floating-promises`, `@typescript-eslint/no-misused-promises`; `ignoreVoid: true` (revised, see Decisions): a bare call fails and an explicit `void` is accepted. | `ctx.assets.model(...)` discarded in a typed fixture fails; awaited/returned Promise and explicit `.catch(handler)` pass. Async callbacks supplied to synchronous lifecycle contracts fail; valid async load hooks pass. Unknown/any types are a documented coverage limit, not guaranteed detection. |
 | React hooks | Error: standard `react-hooks/rules-of-hooks` and `react-hooks/exhaustive-deps`, applied only to TSX/UI where React is installed. | Conditional hooks and a missing captured dependency fail; a valid ref/effect cleanup passes. `minimal` must neither install React nor resolve a React-only plugin unconditionally. No React Three Fiber-specific rules for vanilla Three.js. |
 | Hot callback allocation | Warning: at most one new ESLint rule for directly evident allocation in known frame callbacks. | Import-resolved Three.js math constructors (`Vector2`, `Vector3`, `Quaternion`, `Matrix4`) directly inside `Scene.update`, `Scene.render` or a directly registered `ctx.beforeRender` callback warn. Recognize imported aliases/namespaces; do not flag unrelated same-named classes. Explain reuse/measurement, not “this leaks” or “FPS will improve”. |
 | Lifetime and portability | Existing runtime/build checks plus concise installed guidance, not a new static ownership/target engine. | Resource disposal, event/subscription/timer teardown and async cancellation require an explicit owner; borrowed/shared assets must not be blindly disposed. Target build validators retain their existing severity. |
@@ -163,8 +163,8 @@ walker are outside scope. Tooling runs on the host Node process, never in the ow
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local; actor: implementing agent]: A tarball-scaffolded starter rejects a seeded typed async mistake through its own proposed `pnpm check`, naming file, rule and nonzero exit, then passes after repair without rewriting source. proof: extend `packages/create-threenative/__tests__/scaffold.spec.ts` consumer process integration and run `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts` after build/pack prerequisites — Evidence: pending.
-- [ ] AC-2 [local; actor: implementing agent]: A representative generated project's actual ESLint invocation reports the hot-callback fixture as advisory and exits successfully with no errors; its initialization/non-scene counterexamples report no hot-callback finding. proof: proposed collected `packages/create-threenative/__tests__/authoring-quality.spec.ts`, run with `pnpm exec vitest run packages/create-threenative/__tests__/authoring-quality.spec.ts` — Evidence: pending.
+- [x] AC-1 [local; actor: implementing agent]: A tarball-scaffolded starter rejects a seeded typed async mistake through its own proposed `pnpm check`, naming file, rule and nonzero exit, then passes after repair without rewriting source. proof: extend `packages/create-threenative/__tests__/scaffold.spec.ts` consumer process integration and run `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts` after build/pack prerequisites — Evidence: a packed-tarball starter (`pnpm check` after install) exits 0 pristine; with a seeded `src/seed.ts` calling an async `loadModel()` unawaited it exits 1 naming `src/seed.ts:6:3` and `@typescript-eslint/no-floating-promises`; awaiting it exits 0, source untouched otherwise. Run 2026-10-20 with the scratch harness (pack, scaffold with `--*-package`, `pnpm install`, `pnpm check`); the config-level pair is `authoring-quality.spec.ts` (10/10), not `scaffold.spec.ts`, because a packed install does not belong in the unit suite.
+- [x] AC-2 [local; actor: implementing agent]: A representative generated project's actual ESLint invocation reports the hot-callback fixture as advisory and exits successfully with no errors; its initialization/non-scene counterexamples report no hot-callback finding. proof: proposed collected `packages/create-threenative/__tests__/authoring-quality.spec.ts`, run with `pnpm exec vitest run packages/create-threenative/__tests__/authoring-quality.spec.ts` — Evidence: `pnpm exec vitest run packages/create-threenative/__tests__/authoring-quality.spec.ts` 10/10 (alias, namespace, `ctx.beforeRender`, startup, deferred-function and non-scene counterexamples). In a packed starter, `pnpm lint` on a `Scene` whose `update()` calls `new Vector3()` prints one `threenative/hot-callback-allocation` warning and exits 0.
 - [ ] AC-3 [shared; actor: PR author triggers existing GitHub Actions `ci.yml`]: Every shipped template's packed consumer executes the proposed static gate with installed dependencies, with pristine sources passing. proof: extend existing `template-nonvisual` scaffold/install/typecheck step to call `pnpm check`; exhaustive template matrix on a full qualification run, attach matching run URL and per-template results — Evidence: pending. Selected-template PR runs alone cannot close this all-template claim.
 
 ## Integration Ledger
@@ -179,7 +179,7 @@ walker are outside scope. Tooling runs on the host Node process, never in the ow
 
 ### Phase 1: A generated project has an executable ecosystem gate
 
-**Status:** NOT STARTED
+**Status:** DONE locally
 **Files:** `packages/create-threenative/package.json`, `tsup.config.ts`, proposed lightweight
 quality config export; `templates/*/package.json` and thin configs;
 `__tests__/scaffold.spec.ts` and existing publication/build specs.
@@ -189,12 +189,12 @@ include `minimal`, `starter` and a representative non-physics kit in consumer fi
 `catalog:`, `workspace:`, absolute worktree paths or undeclared transitive tool dependencies in
 rendered manifests/config imports. Extend existing `STARTER_PATHS` for added config files.
 
-- [ ] P1.1 [local; actor: implementing agent]: Packed consumers resolve the proposed quality export and required ecosystem binaries using a supported analyzer/compiler pairing. proof: extend `__tests__/publication.spec.ts`, `__tests__/build.spec.ts`, `__tests__/scaffold.spec.ts`; run `pnpm exec vitest run packages/create-threenative/__tests__/publication.spec.ts packages/create-threenative/__tests__/build.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts` after build — Evidence: pending.
-- [ ] P1.2 [local; actor: implementing agent]: The generated aggregate static gate enforces the declared error/format policy independently of browser and native tooling. proof: AC-1's process harness additionally covers missing config/tool, zero matched source, unused binding, formatting drift, valid TSX/type-only imports and minimal without React — Evidence: pending.
+- [x] P1.1 [local; actor: implementing agent]: Packed consumers resolve the proposed quality export and required ecosystem binaries using a supported analyzer/compiler pairing. proof: extend `__tests__/publication.spec.ts`, `__tests__/build.spec.ts`, `__tests__/scaffold.spec.ts`; run `pnpm exec vitest run packages/create-threenative/__tests__/publication.spec.ts packages/create-threenative/__tests__/build.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts` after build — Evidence: `pnpm exec vitest run` on publication, build, scaffold and authoring-quality specs: 4 files, 156 tests passed. All 13 templates scaffolded from the packed tarballs, installed, and `pnpm typecheck`, `pnpm lint` and `pnpm format:check` exit 0 (TypeScript 7.0.2 `tsc`, typed ESLint on the bundled TypeScript 6.0.2 API; see Decisions).
+- [x] P1.2 [local; actor: implementing agent]: The generated aggregate static gate enforces the declared error/format policy independently of browser and native tooling. proof: AC-1's process harness additionally covers missing config/tool, zero matched source, unused binding, formatting drift, valid TSX/type-only imports and minimal without React — Evidence: packed `minimal` (no `react` declared): pristine `pnpm check` 0; missing `eslint.config.js` 2; missing eslint binary 1; empty `src/` 2 ("No files matching"); unused binding 1 naming `no-unused-vars`; formatting drift 1 from `biome format`; type-only import 0. Valid TSX and the React pair are in `authoring-quality.spec.ts`.
 
 ### Phase 2: Bounded diagnostics give safe remediation
 
-**Status:** NOT STARTED
+**Status:** DONE locally
 **Files:** proposed installed quality rule/config module, proposed collected
 `__tests__/authoring-quality.spec.ts`, installed `agent-docs/references/performance-basics.md`,
 existing template instruction lines and mirrors as needed.
@@ -203,11 +203,11 @@ warning. Lifecycle guidance points to existing runtime observations and resource
 No copied template-specific render-tier policy, custom scanner, default mass suppressions or unsafe
 fixer. Consumer tests run the public config, not only ESLint RuleTester against a private helper.
 
-- [ ] P2.1 [local; actor: implementing agent]: The installed default config enforces the declared diagnostic and scoped-suppression policy on representative TS/TSX game edits. proof: proposed `pnpm exec vitest run packages/create-threenative/__tests__/authoring-quality.spec.ts` covers AC-2 plus Promise/React pairs, alias/namespace math imports, lifecycle exclusions, empty/unused suppressions and unchanged authored bytes — Evidence: pending.
+- [x] P2.1 [local; actor: implementing agent]: The installed default config enforces the declared diagnostic and scoped-suppression policy on representative TS/TSX game edits. proof: proposed `pnpm exec vitest run packages/create-threenative/__tests__/authoring-quality.spec.ts` covers AC-2 plus Promise/React pairs, alias/namespace math imports, lifecycle exclusions, empty/unused suppressions and unchanged authored bytes — Evidence: `authoring-quality.spec.ts` 10/10: floating Promise and repair, bare call versus `void`, async callback in a sync slot, unused binding versus `_` and type-only imports, empty and unused suppressions, hooks with and without React, alias and namespace math imports, lifecycle exclusions, authored bytes unchanged.
 
 ### Phase 3: The packed path runs the gate by default without scaffold bloat
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — P3.1 done; P3.2 and AC-3 wait for the CI run
 **Files:** generated `test` scripts and concise instructions; existing
 `.github/workflows/ci.yml`, `scripts/verify-golden-path.ts`, existing scaffold/publication tests,
 `__tests__/template-runtime-cost.spec.ts`, `__tests__/world-environment-lifetime.spec.ts` as needed.
@@ -218,8 +218,35 @@ parent `node_modules`; do not promise an empty package cache can install offline
 SDK/GPU/browser must not block static checks. A supported host runs the tooling; unsupported game
 targets continue to fail their owning build validator. No new workflow or target-qualification claim.
 
-- [ ] P3.1 [local; actor: implementing agent]: Standalone packed consumer checks require no network or workspace fallback after dependencies are installed. proof: extend the existing packed scaffold harness behind `__tests__/scaffold.spec.ts` to invoke check under network denial, assert file/line limits and record latency/dependency delta for starter/minimal; run the Phase 1 focused command — Evidence: pending.
+- [x] P3.1 [local; actor: implementing agent]: Standalone packed consumer checks require no network or workspace fallback after dependencies are installed. proof: extend the existing packed scaffold harness behind `__tests__/scaffold.spec.ts` to invoke check under network denial, assert file/line limits and record latency/dependency delta for starter/minimal; run the Phase 1 focused command — Evidence: `unshare -rn pnpm check` (own network namespace) exits 0 in a standalone packed install outside the workspace: `minimal` 10.7 s cold and 10.7 s repeat, `starter` 14.8 s and 14.2 s, measured at host load average 37 on 12 cores, so the 15 s and 10 s CI-runner budget is not yet verified (typecheck 1.5 to 2.7 s, lint 10.5 to 14.7 s, format 0.6 s). Added dependencies, estimated from the lockfile closure: about 112 packages and 90 MB (TypeScript 6 API, ESLint and plugins, Biome). The source and file limits are covered by the scaffold spec.
 - [ ] P3.2 [shared; actor: PR author triggers existing GitHub Actions `ci.yml`]: The aggregate gate is reached before existing generated game-test/build CI flows without replacing measured game regression evidence. proof: `template-nonvisual` for AC-3 plus existing `golden-path` packed consumer run; focused `ci-structure.spec.ts` asserts caller order, while existing template allocation/lifetime specs retain their observations — Evidence: pending.
+
+## Decisions
+
+- **TypeScript pairing (2026-10-20, implementing agent).** The game keeps `typescript` 7.0.2 and its
+  `tsc`. Typed ESLint runs on the TypeScript 6.0.2 compiler API (`@typescript/typescript6`, inside
+  typescript-eslint's `<6.1.0` range) that `create-threenative` already depends on. typescript-eslint,
+  its parser and its plugin are **bundled into `create-threenative/quality`** (`dist/quality.js`) with
+  `typescript` external, so the bundled code resolves `typescript` from `create-threenative`'s own
+  dependency. Evidence: installed side by side, pnpm resolved the parser's `typescript` peer to the
+  game's 7.0.2 in a full scaffold lockfile even though a minimal repro resolved it to 6.0.2, and npm
+  hoisting would do the same. Bundling does not depend on the package manager's peer resolution.
+- **Biome 1.9.4 for games (2026-10-20).** Biome 2.5.15 formats object-type destructuring differently
+  and fails `format` on five shipped templates (puzzle, sailing, snow, starter, tower-defense); the
+  repository's own gate is Biome 1.9.4 and would reformat any 2.x fix back. Games pin 1.9.4, so the
+  pristine templates pass without reformatting. Moving both to 2.x is a separate change.
+- **`ignoreVoid: true` (2026-10-20).** The proposal required `false`. The pristine templates use
+  `void ctx.goto(...)`, `void ctx.tween(...)` and similar 45 times as the deliberate fire-and-forget
+  idiom, and rewriting them changes how a failed scene load surfaces, which needs per-site runtime
+  proof. A bare floating call and an async callback in a synchronous slot still fail. Revisit with the
+  engine's rejection-reporting contract.
+- **Two root files shared by all templates (2026-10-20).** `eslint.config.js` and `biome.json` live
+  once in `template-assets/quality/` and `createProject` copies them, instead of 13 copies.
+- **React follows the manifest (2026-10-20).** The hook rules are added when the project declares
+  `react`. Resolving the package also finds pnpm's hoisted copy and would enable them in `minimal`.
+- **CI step renamed (2026-10-20).** `Typecheck pristine template` is now `Check pristine template`
+  and runs `pnpm check`, which runs the typecheck first. `scripts/ci-template-typecheck.mjs` and its
+  spec pin the new step text.
 
 ## Rollout and remaining risks
 
