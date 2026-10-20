@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
+import { curveShape, exposureCurve } from "./exposureCurve.js";
 import { floorEdges, linearLuminance, matchedWidths } from "./penumbra.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
 const coreRequire = createRequire(new URL("../../packages/core/package.json", import.meta.url));
@@ -530,6 +531,16 @@ export function runComparison(options: IOptions = {}) {
     threenativePx: number;
     ratio: number;
   }[] = [];
+  // `--metric curve`: the L8 frames of both arms, kept until the same cell's L9 is compared.
+  const curveBase = new Map<string, { unreal: Float64Array; other: Float64Array }>();
+  const curve: {
+    cell: string;
+    unreal: number[];
+    threenative: number[];
+    worst: number;
+    level: number;
+    shape: number;
+  }[] = [];
   const sheets = new Map<string, PNG>();
   for (const layer of layers)
     if (options.sheet)
@@ -671,6 +682,28 @@ export function runComparison(options: IOptions = {}) {
             threenativeP50: wholeB.p50,
             dEv: Math.log2(Math.max(wholeB.p50, 2 ** -20) / Math.max(wholeA.p50, 2 ** -20)),
           });
+        if (options.metric === "curve" && a) {
+          const pixels = a.width * a.height;
+          const frames = {
+            unreal: linearLuminance(a.data, pixels),
+            other: linearLuminance(b.data, pixels),
+          };
+          const before = curveBase.get(cell);
+          if (layer === "L8") curveBase.set(cell, frames);
+          else if (layer === "L9" && before) {
+            const u = exposureCurve(before.unreal, frames.unreal);
+            const t = exposureCurve(before.other, frames.other);
+            curve.push({
+              cell,
+              unreal: u,
+              threenative: t,
+              worst: Math.max(...u.map((value, i) => Math.abs((t[i] ?? 0) - value))),
+              // The scenes differ before local exposure (lighting, global exposure), so the offset
+              // between the two curves is a level and the remainder is the curve's shape.
+              ...curveShape(u, t),
+            });
+          }
+        }
         if (options.metric === "penumbra" && layer === "L5" && a) {
           // Shadow-edge width on the floor (PRD-634): rows where both arms hold an edge.
           const floor = required(base.regions.Floor);
@@ -739,6 +772,7 @@ export function runComparison(options: IOptions = {}) {
     exposure,
     noise,
     penumbra,
+    curve,
     maxNoise: noise.length
       ? Math.max(
           ...noise.map((r) => r.dP50),
@@ -829,6 +863,16 @@ export function main(args = process.argv.slice(2)): void {
     for (const r of report.exposure)
       console.log(
         `| ${r.layer} | ${r.cell} | ${r.unrealP50} | ${r.threenativeP50} | ${show(r.dEv)} |`,
+      );
+  }
+  if (report.curve.length) {
+    console.log(
+      "\n| cell | UE log2(L9/L8) by L8 brightness, dark to bright | TN | worst difference (stops) | level offset | worst shape difference |\n|---|---|---|---:|---:|---:|",
+    );
+    const list = (values: number[]) => values.map((v) => show(v)).join(" ");
+    for (const r of report.curve)
+      console.log(
+        `| ${r.cell} | ${list(r.unreal)} | ${list(r.threenative)} | ${show(r.worst)} | ${show(r.level)} | ${show(r.shape)} |`,
       );
   }
   if (report.penumbra.length) {
