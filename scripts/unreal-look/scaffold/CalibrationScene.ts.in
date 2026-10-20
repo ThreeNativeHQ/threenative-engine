@@ -7,7 +7,10 @@
 import { type ICtx, Scene, type SceneFrame, sourceRadiusShadowFilter } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import {
+  BackSide,
   Color,
+  DoubleSide,
+  FrontSide,
   type Group,
   Mesh,
   MeshBasicMaterial,
@@ -54,7 +57,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
 
   override async load(ctx: GameCtx): Promise<void> {
     if (DATA === undefined) throw new Error(`TN_CALIBRATION_SCENE_UNKNOWN: ${NAME}`);
-    const model = await ctx.assets.model<{ scene: Group }>(`unreal-reference/gi/${NAME}/scene.glb`);
+    const model = await ctx.assets.model<{ scene: Group }>(
+      // A family scene `shadow:<name>` lives in its family folder (PRD-649).
+      `unreal-reference/gi/${NAME.replace(":", "/")}/scene.glb`,
+    );
     this.#model = model.scene;
   }
 
@@ -102,9 +108,15 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // Casters and receivers do nothing until the renderer runs a shadow pass (scaffold lighting.ts does
       // this for the reference scene, which this scene does not use).
       (ctx.renderer.raw as unknown as { shadowMap: { enabled: boolean } }).shadowMap.enabled = shadows;
+      // Casters keep three's derived shadowSide (back faces of a front-sided material). With a hard
+      // filter those leak a bright line at a box's far foot (native_engine_contact_shadow_foot); the
+      // lamps' source-radius filter closes it, and front faces instead add acne on the grazing walls
+      // (cornell L6, 2026-10-20). Diagnosis knob: shadowSide=front|back|double|three.
+      const side = { front: FrontSide, back: BackSide, double: DoubleSide }[params.get("shadowSide") ?? "three"];
       for (const mesh of meshes) {
         mesh.castShadow = shadows;
         mesh.receiveShadow = shadows;
+        if (side !== undefined) for (const m of [mesh.material].flat()) m.shadowSide = side;
       }
       const lights: PointLight[] = [];
       for (const light of DATA.lights) {
@@ -120,6 +132,13 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         point.name = light.name;
         point.position.fromArray(light.position);
         point.castShadow = shadows && light.castShadows;
+        // Unreal's lamp shadow has no near plane: three's 0.5 m default clipped cornell's shade, 0.3 m
+        // from the lamp. Diagnosis knobs: shadowNear, shadowMap (texels), shadowBias, shadowNormalBias.
+        point.shadow.camera.near = Number(params.get("shadowNear") ?? 0.02);
+        const mapSize = Number(params.get("shadowMap") ?? point.shadow.mapSize.x);
+        point.shadow.mapSize.set(mapSize, mapSize);
+        point.shadow.bias = Number(params.get("shadowBias") ?? point.shadow.bias);
+        point.shadow.normalBias = Number(params.get("shadowNormalBias") ?? point.shadow.normalBias);
         scene.add(point);
         lights.push(point);
         if ((light.sourceRadiusM ?? 0) > 0) {
