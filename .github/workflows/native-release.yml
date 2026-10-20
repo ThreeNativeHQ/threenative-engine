@@ -1805,6 +1805,10 @@ jobs:
     if: ${{ !cancelled() && github.ref_type != 'tag' && needs.publish.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      # A draft release is invisible to a token that cannot write to the repository, and the
+      # rehearsal lock lives on a draft. The job runs the same label-gated code `publish` runs.
+      contents: write
     steps:
       # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
