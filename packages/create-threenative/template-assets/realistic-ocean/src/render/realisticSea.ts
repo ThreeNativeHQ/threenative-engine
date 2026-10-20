@@ -99,7 +99,7 @@ export const SEA = {
 /** The whitecaps' memory. */
 export const FOAM = {
   /** Seconds for a patch of foam to halve. */
-  halfLife: 4,
+  halfLife: 3,
   /** Jacobian below which water is breaking. */
   threshold: 0.8,
   gain: 4,
@@ -363,7 +363,16 @@ export function createRealisticWaterMesh(
   );
   const foamBlend = smoothstep(float(60), float(220), distance);
   const fresh = saturate(float(FOAM.threshold).sub(jacobian).mul(FOAM.gain));
-  const cover = max(mix(nearFoam, farFoam, foamBlend), fresh.mul(oneMinus(foamBlend)));
+  // Breaking water is on the crests: foam from the grids is gated to the part of the surface above
+  // the mean level, so it sits on tops of waves instead of lying in troughs as confetti.
+  const crestGate = smoothstep(
+    float((state.waveHeight ?? 1) * -0.05),
+    float((state.waveHeight ?? 1) * 0.12),
+    positionWorld.y,
+  );
+  const cover = max(mix(nearFoam, farFoam, foamBlend), fresh.mul(oneMinus(foamBlend))).mul(
+    crestGate,
+  );
   const pattern = Fn(() => {
     const p = vec2(restX, restZ);
     const a = mx_noise_float(vec3(p.mul(0.9), seaTime.mul(0.05)));
