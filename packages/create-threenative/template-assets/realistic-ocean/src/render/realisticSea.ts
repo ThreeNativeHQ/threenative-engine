@@ -60,12 +60,12 @@ import {
  * whole thing so the sea is as tall as you say it is, whatever the grid resolution.
  */
 export const SEA_STATE: ISeaState = {
-  wind: { speed: 9, direction: 0.55, fetch: 60_000, peakEnhancement: 3.3 },
-  swell: { height: 0.7, direction: -0.3, peakFrequency: 0.62, spreading: 16 },
+  wind: { speed: 11, direction: 0.55, fetch: 80_000, peakEnhancement: 3.3 },
+  swell: { height: 1.0, direction: -0.3, peakFrequency: 0.62, spreading: 16 },
   gravity: 9.81,
   surfaceTension: 7.4e-5,
   shortWaveCut: 0.04,
-  waveHeight: 1.15,
+  waveHeight: 1.6,
 };
 
 /**
@@ -82,7 +82,7 @@ export const SEA = {
   resolution: 128,
   // Horizontal displacement scale. Above zero sharpens crests, which is also what folds them into
   // whitecaps, so it is the foam's input as much as the shape's.
-  choppiness: 1.15,
+  choppiness: 1.3,
   seed: 20_261_020,
   // 128 across a 256 m patch is one height every two metres. See `SEA_CASCADES`.
   readbackResolution: 128,
@@ -101,7 +101,7 @@ export const FOAM = {
   /** Seconds for a patch of foam to halve. */
   halfLife: 4,
   /** Jacobian below which water is breaking. */
-  threshold: 0.78,
+  threshold: 0.8,
   gain: 4,
   /** Foam grids ride on these cascades, finest first. The second is the coarse, far one. */
   cascades: [1, 0] as readonly number[],
@@ -109,13 +109,13 @@ export const FOAM = {
 
 /** Looks: colours are linear RGB, sizes are metres. */
 export const LOOK = {
-  deep: 0x0a3a4a,
-  shallow: 0x1b6f7a,
+  deep: 0x082f45,
+  shallow: 0x1d5f7c,
   foam: 0xe6eef0,
   /** Light coming through a thin backlit crest. */
   subsurface: 0x2f9a78,
   /** Radiance of the sun for the crest glow only. The scene's own light lights everything else. */
-  sunRadiance: [3.2, 2.9, 2.4] as readonly [number, number, number],
+  sunRadiance: [6, 5.4, 4.4] as readonly [number, number, number],
   /** Fraction of the mirrored hull and marks that shows. A render target is written linear. */
   mirrorGain: 0.55,
   /** Image-based reflection scale on the standard material. */
@@ -422,7 +422,7 @@ export function createRealisticWaterMesh(
     const crest = saturate(height.sub(reference.mul(0.05)).div(reference.mul(0.8)));
     const toSun = max(dot(sunDirection, toEye.negate()), 0);
     const thin = pow(saturate(float(0.5).sub(dot(sunDirection, normalWorld).mul(0.5))), 3);
-    const glow = crest.mul(crest).mul(pow(toSun, 4)).mul(thin).mul(distance.div(-600).exp());
+    const glow = crest.mul(crest).mul(pow(toSun, 2)).mul(thin).mul(distance.div(-600).exp());
     const tint = new Color(LOOK.subsurface);
     const subsurface = vec3(tint.r, tint.g, tint.b)
       .mul(sunRadiance)

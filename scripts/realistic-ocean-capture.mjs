@@ -1,4 +1,4 @@
-// Capture the PRD-648 comparison frames, headed, on a real GPU. Three arms, the same three views:
+// Capture the PRD-648 comparison frames, headed, on a real GPU. Three arms, the same four views:
 //   incumbent  the sailing kit's own sea (served build of sailing-incumbent)
 //   realistic  the same kit with the opt-in bundle adopted (sailing-realistic)
 //   upstream   Noniv/web-ocean's ocean.html at the pinned commit, as its README poses them
@@ -27,7 +27,7 @@ const runs = Number(option("runs", "2"));
 const width = Number(option("width", "1280"));
 const height = Number(option("height", "720"));
 const hide = option("hide", "");
-const wanted = option("poses", "low,oblique,elevated").split(",");
+const wanted = option("poses", "low,oblique,elevated,sunpath").split(",");
 
 // web-ocean's README views: 2.4 m looking toward the sun, 75 degrees off it at 2.4 m, 30 m up
 // looking toward the sun. `yaw` is degrees from the sun's bearing; pitch is degrees, down negative.
@@ -35,6 +35,8 @@ const POSES = {
   low: { x: 0, y: 2.4, z: 0, yaw: 0, pitch: 4 },
   oblique: { x: 0, y: 2.4, z: 0, yaw: 75, pitch: 4 },
   elevated: { x: 0, y: 30, z: 0, yaw: 0, pitch: -10 },
+  // Aimed where the sailing sky's sun (48 degrees up) reflects: the glitter path and backlit crests.
+  sunpath: { x: 0, y: 2.4, z: 0, yaw: 0, pitch: -40 },
 };
 // web-ocean's own camera is `x,y,z,yawDeg,pitchDeg`, yaw measured from +Z; its default sun is
 // near yaw 0. Passed through unchanged, so the frames are the ones its README documents.
@@ -42,6 +44,8 @@ const UPSTREAM = {
   low: "0,2.4,0,0,3",
   oblique: "0,2.4,0,75,3",
   elevated: "0,30,0,0,-10",
+  // web-ocean's own low sun is already on the horizon in its low view.
+  sunpath: "0,2.4,0,0,-3",
 };
 
 mkdirSync(out, { recursive: true });
