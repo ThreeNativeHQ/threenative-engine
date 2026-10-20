@@ -31,7 +31,7 @@ import {
 } from "./atmosphere.js";
 import { bakeCloudRadiance } from "./clouds.js";
 import { skyRadiance } from "./giCache.js";
-import { createGpuSky } from "./gpuSky.js";
+import { atmosphereFogColour, createGpuSky } from "./gpuSky.js";
 import { HEIGHT_FOG, type HeightFogParams, heightFogNode } from "./heightFog.js";
 
 /**
@@ -39,7 +39,7 @@ import { HEIGHT_FOG, type HeightFogParams, heightFogNode } from "./heightFog.js"
  * pulled the photograph's ambient toward Unreal's void band; the atmosphere bake needs none.
  */
 /** Draw the sky with gpuSky.ts (Unreal LUT atmosphere and clouds) instead of the CPU bake. */
-const GPU_SKY = false;
+const GPU_SKY = true;
 
 const AMBIENT_SCALE = new Color(1, 1, 1);
 
@@ -157,10 +157,15 @@ function atmosphereSky(clouds = false): Texture | undefined {
   if (typeof OffscreenCanvas === "undefined") return undefined;
   const [w, h] = [SKY_WIDTH, SKY_WIDTH / 2];
   const radiance = bakeSkyRadiance(SUN_DIRECTION, w, h);
+  const clearRadiance = { data: radiance.slice(), width: w, height: h };
   if (clouds) bakeCloudRadiance(radiance, SUN_DIRECTION, w, h);
   const tint = temperatureColour(SUN_KELVIN);
   // The world-space light cache gathers this same sky, unclipped, in the sun's units.
-  const scale = [0, 1, 2].map((c) => (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN) as [number, number, number];
+  const scale = [0, 1, 2].map((c) => (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN) as [
+    number,
+    number,
+    number,
+  ];
   skyRadiance.current = { data: radiance, width: w, height: h, scale };
   const canvas = new OffscreenCanvas(w, h);
   const context = canvas.getContext("2d");
@@ -177,6 +182,7 @@ function atmosphereSky(clouds = false): Texture | undefined {
   const texture = new CanvasTexture(canvas as unknown as HTMLCanvasElement);
   texture.mapping = EquirectangularReflectionMapping;
   texture.colorSpace = SRGBColorSpace;
+  texture.userData.clearRadiance = clearRadiance;
   return texture;
 }
 
@@ -210,7 +216,9 @@ export function setupSky(
   tintSun();
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
-  const ambient = skyAmbient(sky);
+  const ambient = sky.userData.clearRadiance
+    ? atmosphereFogColour(sky.userData.clearRadiance)
+    : skyAmbient(sky);
   const fogColor = (ambient ?? new Color(0xacb1c1)).multiply(AMBIENT_SCALE);
   scene.background = (ambient === undefined || !fogged ? undefined : voidSky(sky, fogColor)) ?? sky;
   scene.backgroundNode = gpu?.node.backgroundNode ?? null;

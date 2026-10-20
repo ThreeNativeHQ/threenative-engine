@@ -17,6 +17,29 @@ export const CLOUD_BOTTOM_KM = 5;
 export const CLOUD_TOP_KM = 15;
 const CAMERA = PLANET + CAMERA_KM;
 export const EXTINCTION = 3; // per km; the inaccessible simple material's density is an approximation
+// Metres per lattice cell, not per 32-cell texture: the weather repeats only after 192 km.
+// Weather x vertical gradient, then shape octaves and edge erosion; inferred from L9, not uassets.
+export const CLOUD_MODEL = {
+  weatherMetres: 6000,
+  shapeMetres: 3000,
+  shapeFloor: 0.45,
+  coverageCarve: 0.35,
+  densityGain: 5,
+  shapeWeights: [0.65, 0.25, 0.1],
+  erosionMetres: 600,
+  erosionStrength: 0.12,
+  coverageStart: 0.43,
+  coverageWidth: 0.22,
+  baseRamp: 0.035,
+  topStart: 0.12,
+  topRamp: 0.3,
+  viewStepMetres: 300,
+  minViewSteps: 32,
+  maxViewSteps: 192,
+  lightSteps: 6,
+  horizonFadeStartKm: 40,
+  horizonFadeEndKm: 180,
+} as const;
 const clamp = (v: number): number => Math.max(0, Math.min(1, v));
 const smooth = (v: number): number => {
   const t = clamp(v);
@@ -55,10 +78,28 @@ export function cloudDensityField(seed = 631): (x: number, y: number, z: number)
     const altitude = Math.hypot(x, y, z) - PLANET;
     if (altitude <= CLOUD_BOTTOM_KM || altitude >= CLOUD_TOP_KM) return 0;
     const h = (altitude - CLOUD_BOTTOM_KM) / (CLOUD_TOP_KM - CLOUD_BOTTOM_KM);
-    const profile = smooth(h / 0.08) * (1 - smooth((h - 0.2) / 0.55));
-    const broad = noise(x / 2, altitude / 3, z / 2);
-    const detail = noise(x / 0.35, altitude / 0.7, z / 0.35);
-    return clamp((broad - 0.47 - 0.18 * (1 - detail)) * 5) * profile;
+    const m = CLOUD_MODEL;
+    const profile = smooth(h / m.baseRamp) * (1 - smooth((h - m.topStart) / m.topRamp));
+    const coverage = smooth(
+      (noise((x * 1000) / m.weatherMetres, 0, (z * 1000) / m.weatherMetres) - m.coverageStart) /
+        m.coverageWidth,
+    );
+    let shape = 0;
+    for (let i = 0; i < m.shapeWeights.length; i++) {
+      const frequency = (1000 * 2 ** i) / m.shapeMetres;
+      shape += noise(x * frequency, altitude * frequency, z * frequency) * (m.shapeWeights[i] ?? 0);
+    }
+    const erosion = noise(
+      (x * 1000) / m.erosionMetres,
+      (altitude * 1000) / m.erosionMetres,
+      (z * 1000) / m.erosionMetres,
+    );
+    return (
+      clamp(
+        (shape * profile - m.shapeFloor - (1 - coverage) * m.coverageCarve) * m.densityGain -
+          (1 - erosion) * m.erosionStrength,
+      ) * profile
+    );
   };
 }
 
@@ -111,7 +152,17 @@ export function bakeCloudRadiance(
     const entry = sphereExit(CAMERA, dy, PLANET + CLOUD_BOTTOM_KM);
     if (entry > 350) continue;
     const length = Math.min(50, sphereExit(CAMERA, dy, PLANET + CLOUD_TOP_KM) - entry);
-    const dt = length / 32;
+    const steps = Math.min(
+      CLOUD_MODEL.maxViewSteps,
+      Math.max(CLOUD_MODEL.minViewSteps, Math.ceil((length * 1000) / CLOUD_MODEL.viewStepMetres)),
+    );
+    const dt = length / steps;
+    const fade =
+      1 -
+      smooth(
+        (entry - CLOUD_MODEL.horizonFadeStartKm) /
+          (CLOUD_MODEL.horizonFadeEndKm - CLOUD_MODEL.horizonFadeStartKm),
+      );
     // shortcut: integrate the clear-air column to layer entry, not per cloud sample; upgrade for airborne cameras.
     const airDepth = [0, 0, 0];
     for (let i = 0; i < 8; i += 1) {
@@ -133,12 +184,12 @@ export function bakeCloudRadiance(
       const phase = 0.8 * hg(cosine, 0.65) + 0.2 * hg(cosine, -0.2);
       let through = 1;
       const light = [0, 0, 0];
-      for (let i = 0; i < 32 && through > 0.005; i += 1) {
+      for (let i = 0; i < steps && through > 0.005; i += 1) {
         const t = entry + (i + 0.5) * dt;
         const px = dx * t;
         const py = CAMERA + dy * t;
         const pz = dz * t;
-        const extinction = density(px, py, pz) * EXTINCTION;
+        const extinction = density(px, py, pz) * EXTINCTION * fade;
         if (extinction === 0) continue;
         const r = Math.hypot(px, py, pz);
         const shadowLength = Math.min(
@@ -146,9 +197,9 @@ export function bakeCloudRadiance(
           sphereExit(r, (px * sun.x + py * sun.y + pz * sun.z) / r, PLANET + CLOUD_TOP_KM),
         );
         let shadowDepth = 0;
-        for (let j = 0; j < 6; j += 1) {
-          const s = shadowLength * ((j + 0.5) / 6) ** 2;
-          const ds = (shadowLength * (2 * j + 1)) / 36;
+        for (let j = 0; j < CLOUD_MODEL.lightSteps; j += 1) {
+          const s = shadowLength * ((j + 0.5) / CLOUD_MODEL.lightSteps) ** 2;
+          const ds = (shadowLength * (2 * j + 1)) / CLOUD_MODEL.lightSteps ** 2;
           shadowDepth += density(px + sun.x * s, py + sun.y * s, pz + sun.z * s) * EXTINCTION * ds;
         }
         const stepT = cloudTransmittance(extinction * dt);

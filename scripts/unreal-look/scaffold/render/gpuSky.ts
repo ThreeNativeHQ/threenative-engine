@@ -62,6 +62,7 @@ import {
 } from "./atmosphere.js";
 import {
   CLOUD_BOTTOM_KM,
+  CLOUD_MODEL,
   CLOUD_TOP_KM,
   EXTINCTION,
   bakeCloudRadiance,
@@ -75,7 +76,10 @@ export const GPU_SKY_SIZES = {
   sky: [192, 108],
   clouds: [1024, 512],
 } as const;
-export const GPU_CLOUD_STEPS = { view: 16, light: 4 } as const;
+export const GPU_CLOUD_STEPS = {
+  view: CLOUD_MODEL.maxViewSteps,
+  light: CLOUD_MODEL.lightSteps,
+} as const;
 const R0 = BOTTOM_KM + CAMERA_KM;
 const HORIZON = Math.acos(-Math.sqrt(R0 * R0 - BOTTOM_KM * BOTTOM_KM) / R0);
 const SUN_RADIUS = (0.7357000112533569 * Math.PI) / 360;
@@ -226,10 +230,33 @@ function cloudNoise() {
     density: (p: Direction) => {
       const altitude = p.length().sub(BOTTOM_KM);
       const h = altitude.sub(CLOUD_BOTTOM_KM).div(CLOUD_TOP_KM - CLOUD_BOTTOM_KM);
-      const profile = smooth(h.div(0.08)).mul(float(1).sub(smooth(h.sub(0.2).div(0.55))));
-      const broad = noise(vec3(p.x.div(2), altitude.div(3), p.z.div(2)));
-      const detail = noise(vec3(p.x.div(0.35), altitude.div(0.7), p.z.div(0.35)));
-      return clamp(broad.sub(0.47).sub(float(1).sub(detail).mul(0.18)).mul(5), 0, 1).mul(profile);
+      const m = CLOUD_MODEL;
+      const profile = smooth(h.div(m.baseRamp)).mul(
+        float(1).sub(smooth(h.sub(m.topStart).div(m.topRamp))),
+      );
+      const coverage = smooth(
+        noise(vec3(p.x.mul(1000 / m.weatherMetres), 0, p.z.mul(1000 / m.weatherMetres)))
+          .sub(m.coverageStart)
+          .div(m.coverageWidth),
+      );
+      let shape: Scalar = float(0);
+      for (let i = 0; i < m.shapeWeights.length; i++) {
+        const frequency = (1000 * 2 ** i) / m.shapeMetres;
+        shape = shape.add(
+          noise(vec3(p.x, altitude, p.z).mul(frequency)).mul(m.shapeWeights[i] ?? 0),
+        );
+      }
+      const erosion = noise(vec3(p.x, altitude, p.z).mul(1000 / m.erosionMetres));
+      return clamp(
+        shape
+          .mul(profile)
+          .sub(m.shapeFloor)
+          .sub(float(1).sub(coverage).mul(m.coverageCarve))
+          .mul(m.densityGain)
+          .sub(float(1).sub(erosion).mul(m.erosionStrength)),
+        0,
+        1,
+      ).mul(profile);
     },
   };
 }
@@ -425,10 +452,23 @@ export class GpuSkyNode extends TempNode<"vec3"> {
           const cloudThrough = float(1).toVar();
           const entry = exit(float(R0), d.y, BOTTOM_KM + CLOUD_BOTTOM_KM);
           If(d.y.greaterThan(0).and(entry.lessThanEqual(350)), () => {
-            const dt = exit(float(R0), d.y, BOTTOM_KM + CLOUD_TOP_KM)
+            const length = exit(float(R0), d.y, BOTTOM_KM + CLOUD_TOP_KM)
               .sub(entry)
-              .min(50)
-              .div(GPU_CLOUD_STEPS.view);
+              .min(50);
+            const steps = clamp(
+              length.mul(1000 / CLOUD_MODEL.viewStepMetres).ceil(),
+              CLOUD_MODEL.minViewSteps,
+              GPU_CLOUD_STEPS.view,
+            );
+            const dt = length.div(steps);
+            const fadeT = clamp(
+              entry
+                .sub(CLOUD_MODEL.horizonFadeStartKm)
+                .div(CLOUD_MODEL.horizonFadeEndKm - CLOUD_MODEL.horizonFadeStartKm),
+              0,
+              1,
+            );
+            const fade = float(1).sub(fadeT.mul(fadeT).mul(float(3).sub(fadeT.mul(2))));
             const through = float(1).toVar();
             const light = vec3(0).toVar();
             const phase = gpuHg(d.dot(this.sun), 0.65)
@@ -451,9 +491,9 @@ export class GpuSkyNode extends TempNode<"vec3"> {
               );
             });
             Loop(GPU_CLOUD_STEPS.view, ({ i }) => {
-              If(through.greaterThan(0.005), () => {
+              If(float(i).lessThan(steps).and(through.greaterThan(0.005)), () => {
                 const p = vec3(0, R0, 0).add(d.mul(entry.add(float(i).add(0.5).mul(dt))));
-                const extinction = this.#noise.density(p).mul(EXTINCTION);
+                const extinction = this.#noise.density(p).mul(EXTINCTION).mul(fade);
                 If(extinction.greaterThan(0), () => {
                   const rr = p.length();
                   const shadowLength = exit(
@@ -604,6 +644,37 @@ export class GpuSkyNode extends TempNode<"vec3"> {
   }
 }
 
+/** Cloudless upper-hemisphere mean for height fog, in scene-linear radiance.
+ * Model: ~/UnrealEngine-5.8.3/Engine/Shaders/Private/HeightFogCommon.ush and
+ * Source/Runtime/Engine/Private/Components/ExponentialHeightFogComponent.cpp.
+ */
+export function atmosphereFogColour(clear: {
+  data: Float32Array;
+  width: number;
+  height: number;
+}): Color {
+  const { data, width, height } = clear;
+  const sum = [0, 0, 0];
+  let weights = 0;
+  for (let y = 0; y < height / 2; y++) {
+    const theta = ((y + 0.5) / height) * PI;
+    const weight = Math.sin(theta) * Math.cos(theta);
+    for (let x = 0; x < width; x++) {
+      for (let c = 0; c < 3; c++)
+        sum[c] = (sum[c] ?? 0) + (data[(y * width + x) * 3 + c] ?? 0) * weight;
+      weights += weight;
+    }
+  }
+  const tint = temperatureColour(SUN_KELVIN);
+  return new Color(
+    ...(sum.map((v, c) => (v / weights) * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN) as [
+      number,
+      number,
+      number,
+    ]),
+  );
+}
+
 /** CPU pixels are still needed by the owned PMREM and the world-space GI ray cache.
  * Renderer::beginEnvironment rejects GPU-only textures (renderer.cpp: decoded RGBA pixels).
  * At 64x32 this avoids the full 256x128 bake; both paths use the same radiometric scale.
@@ -625,6 +696,7 @@ export function createGpuSky(
     const start = performance.now();
     const data = bakeSkyRadiance(sun, w, h);
     const clear = data.slice();
+    environment.userData.clearRadiance = { data: clear, width: w, height: h };
     if (clouds) bakeCloudRadiance(data, sun, w, h);
     const scale = temperatureColour(SUN_KELVIN).map((v) => v * SUN_ILLUMINANCE * SKY_TO_SUN) as [
       number,

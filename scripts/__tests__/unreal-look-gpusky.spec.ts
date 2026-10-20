@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
@@ -23,7 +24,15 @@ const {
 const { float } = await import(tslPath);
 // The overlay is generated consumer source, excluded from the root TypeScript project.
 const overlayPath = "../unreal-look/scaffold/render/gpuSky.js";
-const { GpuSkyNode, gpuHg, gpuMedium, skyAnglesToUv, skyUvToAngles } = await import(overlayPath);
+const {
+  atmosphereFogColour,
+  createGpuSky,
+  GpuSkyNode,
+  gpuHg,
+  gpuMedium,
+  skyAnglesToUv,
+  skyUvToAngles,
+} = await import(overlayPath);
 
 // Evaluate the actual scalar/vector TSL expressions on the CPU, independently of their WGSL emitter.
 function evaluate(node: unknown): number[] {
@@ -151,6 +160,60 @@ describe("GPU Unreal sky", () => {
       vi.restoreAllMocks();
     }
     expect(() => sky.updateBefore(frame)).toThrow("disposed");
+  });
+
+  it("keeps CPU and GPU environment fog colours independent of clouds", async () => {
+    // CPU environment writes need only an ImageData canvas; no browser or GPU.
+    class Canvas {
+      pixels = new Uint8ClampedArray(0);
+      constructor(
+        readonly width: number,
+        readonly height: number,
+      ) {}
+      getContext() {
+        return {
+          createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+          putImageData: (image: { data: Uint8ClampedArray }) => {
+            this.pixels = image.data;
+          },
+        };
+      }
+    }
+    vi.stubGlobal("OffscreenCanvas", Canvas);
+    try {
+      // sky.ts is an overlay: its heightFog.js arrives only when a starter is scaffolded.
+      const source = readFileSync(
+        new URL("../unreal-look/scaffold/render/sky.ts", import.meta.url),
+        "utf8",
+      );
+      expect(source.indexOf("data: radiance.slice()")).toBeLessThan(
+        source.indexOf("if (clouds) bakeCloudRadiance"),
+      );
+      expect(source).toContain("texture.userData.clearRadiance = clearRadiance");
+      expect(source).toContain("atmosphereFogColour(sky.userData.clearRadiance)");
+      for (const degrees of [60, 15]) {
+        const elevation = (degrees * Math.PI) / 180;
+        const sun = new Vector3(Math.cos(elevation), Math.sin(elevation), 0);
+        const a = createGpuSky(new Scene(), sun, true, false);
+        const b = createGpuSky(new Scene(), sun, true, true);
+        try {
+          expect(a).toBeDefined();
+          expect(b).toBeDefined();
+          const clearFog = atmosphereFogColour(a?.environment.userData.clearRadiance);
+          const cloudyFog = atmosphereFogColour(b?.environment.userData.clearRadiance);
+          expect(cloudyFog.toArray()).toEqual(clearFog.toArray());
+          expect(clearFog.b).toBeGreaterThan(clearFog.r * 2);
+          expect(b?.environment.image.pixels).not.toEqual(a?.environment.image.pixels);
+        } finally {
+          a?.node.dispose();
+          b?.node.dispose();
+          a?.environment.dispose();
+          b?.environment.dispose();
+        }
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("round-trips zenith and sun-relative longitude, including the grazing view", () => {

@@ -26,6 +26,25 @@ describe("Unreal reference CPU clouds", () => {
     expect(peak).toBeGreaterThan(0.1);
   });
 
+  it("keeps the horizontal density correlation length between 1.2 and 5 km", () => {
+    const density = cloudDensityField();
+    const samples = Array.from({ length: 1600 }, (_, i) => density(i * 0.1 - 80, 6366, 7));
+    const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
+    const variance = samples.reduce((a, b) => a + (b - mean) ** 2, 0) / samples.length;
+    let length = 0;
+    for (let lag = 1; lag < 100; lag++) {
+      const correlation =
+        samples.slice(lag).reduce((sum, v, i) => sum + (v - mean) * ((samples[i] ?? 0) - mean), 0) /
+        ((samples.length - lag) * variance);
+      if (correlation < 0.5) {
+        length = lag * 100;
+        break;
+      }
+    }
+    expect(length).toBeGreaterThanOrEqual(1200);
+    expect(length).toBeLessThanOrEqual(5000);
+  });
+
   it("keeps Beer–Lambert transmission bounded and monotonic", () => {
     let previous = 1;
     for (const depth of [-1, 0, 0.1, 1, 10, 1000]) {
