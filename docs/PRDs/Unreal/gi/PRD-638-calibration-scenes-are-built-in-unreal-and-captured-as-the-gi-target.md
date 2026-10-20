@@ -108,7 +108,7 @@ content or `.uasset` is committed, and the frames are renders of our scenes.
 
 - [ ] AC-1 [local]: From a clean checkout plus `UE_ROOT`, one command authors, exports and captures `cornell` and `sunlit-room` with no manual editor step, and reads the GI level of each cell back from the log. proof: `pnpm unreal-look:capture --engine unreal --scene gi:cornell,gi:sunlit-room --check-cvars` exit 0, cell count checked against the pose list — Evidence: pending.
 - [ ] AC-2 [local]: `reference-stats.json` holds the Unreal statistics of every registered scene, so `compare.ts` and the PRD-647 scoreboard run without Unreal. proof: `pnpm unreal-look:compare --scene gi --write-stats` — Evidence: pending.
-- [ ] AC-3 [local]: A scene whose `scene.json` and `scene.glb` disagree on an actor (missing mesh, unknown light class, a property without a unit) fails the export, naming the actor. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-scene-export.spec.ts` — Evidence: pending.
+- [x] AC-3 [local]: A scene whose `scene.json` and `scene.glb` disagree on an actor (missing mesh, unknown light class, a property without a unit) fails the export, naming the actor. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-scene-export.spec.ts` — Evidence: 10/10 pass (2026-10-20); the live export also failed closed once on `Lamp: intensity has no unit` before the enum fix.
 
 ## Integration Ledger
 
@@ -121,10 +121,10 @@ content or `.uasset` is committed, and the frames are renders of our scenes.
 ## Execution Phases
 
 #### Phase 1: The pipeline proves itself on `cornell`
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `tools/unreal-reference/gi/scenes.json` (new), `tools/unreal-reference/gi/cornell/scene.py` (new), `tools/unreal-reference/gi/export.py` (new), `tools/unreal-reference/build_level.py`, `scripts/unreal-look/capture.ts`, `scripts/__tests__/unreal-look-scene-export.spec.ts` (new)
-- [ ] `cornell` authors, exports `scene.glb` and `scene.json`, and captures every cell. proof: `pnpm unreal-look:capture --engine unreal --scene gi:cornell --check-cvars`.
-- [ ] Lumen has converged: frames 90 and 180 of each Epic cell differ by less than the PRD-631 noise floor in every region, and the noise floor of the scene is recorded under `## Decisions`. proof: `pnpm unreal-look:capture --engine unreal --scene gi:cornell --warm-up 90,180` and `pnpm unreal-look:compare --scene gi:cornell --unreal-vs-unreal`.
+- [x] `cornell` authors, exports `scene.glb` and `scene.json`, and captures every cell. proof: `pnpm unreal-look:capture --engine unreal --scene gi:cornell --check-cvars`. Result 2026-10-20: `--check-cvars` 18 checked, 0 missing; build and export validation pass; 20 frames (L1, L7-Low/Medium/Epic, L7-Epic-indirect, L7-Epic-scene, L9-Epic, ID, L7-Epic@180, @180#2) each logged `readback ok`.
+- [x] Lumen has converged: frames 90 and 180 of each Epic cell differ by less than the PRD-631 noise floor in every region, and the noise floor of the scene is recorded under `## Decisions`. Result 2026-10-20: 12 regions over 2 poses PASS, largest change 0.79% (Box_Tall) against the 1% limit; noise floor 0.18%. proof: `pnpm unreal-look:capture --engine unreal --scene gi:cornell --warm-up 90,180` and `pnpm unreal-look:compare --scene gi:cornell --unreal-vs-unreal`.
 
 #### Phase 2: `sunlit-room`
 **Status:** NOT STARTED
@@ -149,3 +149,10 @@ content or `.uasset` is committed, and the frames are renders of our scenes.
 - 2026-10-20 (PRD authoring): the target is Unreal's Lumen frame, not a path-traced ground truth. The
   owner's goal is the Unreal look. Unreal's path tracer can be added as a diagnosis column later if a
   judge needs to know whether Lumen itself is wrong in a cell.
+- 2026-10-20 (Phase 1 measurement): `cornell` noise floor is 0.18% (largest run-to-run EV50 change of
+  two Unreal runs at 180 warm-up frames); 90 warm-up frames already converge (largest 90-vs-180 change
+  0.79%), so 90 stays the default. Exposure is manual EV100 5: a surface of L nits reads L x 2^-EV100
+  in the EXR (measured as an exact 4x step from EV100 3 to 5).
+- 2026-10-20 (Phase 1 measurement): region IDs use the unlit glTF proxy. The lit proxy adds Substrate's
+  rough specular albedo with lighting off (a 0 channel arrived as 112); the unlit proxy encodes once
+  more (linear 128 arrives as 222), which `compare.ts` accepts.
