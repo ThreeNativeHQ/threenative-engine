@@ -4,7 +4,13 @@ import { fileURLToPath } from "node:url";
 
 // Explicit opt-in source installation, not a new threenative CLI command or runtime dependency.
 const source = fileURLToPath(new URL("./src/", import.meta.url));
-const destination = path.resolve(process.argv[2] ?? process.cwd(), "src");
+const root = path.resolve(process.argv[2] ?? process.cwd());
+const destination = path.join(root, "src");
+try {
+  await lstat(path.join(root, "package.json"));
+} catch {
+  throw new Error(`${root} has no package.json: run this from a game's root or pass its path.`);
+}
 const files = [];
 const directories = [""];
 async function walk(directory, prefix = "") {

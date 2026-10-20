@@ -7,6 +7,8 @@ FFT, `WaterSurface3D` mirror and compute lifecycle. It does not embed web-ocean'
 device, canvas or render loop, and it changes no shipping default: the sailing kit's sea, `WaveField`,
 Clearwater and coastal water are untouched.
 
+**Requirements:** `@threenative/core` with the `SpectralOcean` `energy` and `capillaryWavenumber` options (an older core ignores them and builds a plain Phillips sea without an error), and `engine: "threejs"` in `threenative.config.ts`: the sailing kit pins it because the owned engine does not bind `vertexIndex` yet, and every run listed in PRD-648 used that engine.
+
 **Qualification:** see PRD-648 for what was executed and where. Nothing here claims a platform that
 did not run.
 
@@ -46,7 +48,7 @@ registration would dispatch the simulation twice. Keep `sea.mesh` an untransform
 
 ## Swap it into the sailing kit
 
-Four edits to `src/scenes/Sailing.ts`: import `createRealisticSea`, `createRealisticMaps` and
+Five edits to `src/scenes/Sailing.ts`: import `createRealisticSea`, `createRealisticMaps` and
 `createRealisticWaterMesh` from `../render/realisticSea.js`, then replace
 
 ```ts
@@ -63,7 +65,7 @@ const sea = createRealisticWaterMesh(ocean, maps, new WaterSurface3D(SEA_MIRROR)
 sea.setSun([SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z]);
 ```
 
-`scripts/realistic-ocean-consumer.ts` in the engine repository applies exactly these edits to a fresh
+`scripts/realistic-ocean-consumer.ts` in the engine repository applies these edits, including the `#sea` field type and the removed `createOcean` and `createWaterMesh` imports, to a fresh
 scaffold, and reverses them byte for byte.
 
 ## What it adds to a plain spectral sea

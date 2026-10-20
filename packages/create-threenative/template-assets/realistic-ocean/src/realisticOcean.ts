@@ -67,10 +67,17 @@ export function createRealisticOcean(ctx: OceanContext, input: IRealisticOceanOp
             maxThickness: 24,
             reflection: { resolutionScale: 0.5, layers: 1 << layer },
           });
-    const surface = createRealisticWaterMesh(ocean, maps, mirror, {
-      software: ctx.renderer.softwareAdapter !== undefined,
-      state,
-    });
+    let surface: ReturnType<typeof createRealisticWaterMesh>;
+    try {
+      surface = createRealisticWaterMesh(ocean, maps, mirror, {
+        software: ctx.renderer.softwareAdapter !== undefined,
+        state,
+      });
+    } catch (error) {
+      // No surface took the mirror, so nothing else will release its render target.
+      mirror?.dispose();
+      throw error;
+    }
     // The surface disposes the mirror it was given, so that is not deferred separately.
     scope.defer(() => surface.dispose());
     scope.defer(() => surface.mesh.removeFromParent());

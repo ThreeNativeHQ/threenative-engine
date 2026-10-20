@@ -14,6 +14,7 @@ const sailing = path.resolve("packages/create-threenative/templates/sailing/src"
 async function game() {
   const target = await makeTempDir("realistic-consumer-");
   await cp(sailing, path.join(target, "src"), { recursive: true });
+  await writeFile(path.join(target, "package.json"), "{}\n");
   return target;
 }
 

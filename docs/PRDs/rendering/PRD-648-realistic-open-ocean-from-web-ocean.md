@@ -1,6 +1,6 @@
 # PRD-648 - A realistic open ocean without a second water stack
 
-**Status:** PROPOSED - draft proposal only; no implementation or runtime qualification yet.
+**Status:** IN PROGRESS - implemented and qualified on browser and native desktop (legacy host); P2.1, P3.2 and AC-1 are open. See the phase results below.
 **Priority:** P2 - Improve open-ocean appearance while preserving the installed water mechanisms and sailing behavior.
 **Owner:** ThreeNative maintainers
 **Depends on:** Existing SpectralOcean, WaterSurface3D and source-bundle installation contracts. [PRD-491](../open-world/PRD-491-water-and-atmosphere-run-native.md) owns missing native conformance for those mechanisms and gates native qualification, not initial source work.

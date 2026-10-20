@@ -9,6 +9,7 @@ const run = promisify(execFile);
 const bundle = path.resolve("packages/create-threenative/template-assets/realistic-ocean");
 it("installs source and license, then refuses to overwrite an edited game", async () => {
   const target = await makeTempDir("realistic-ocean-install-");
+  await writeFile(path.join(target, "package.json"), "{}\n");
   try {
     await run(process.execPath, [path.join(bundle, "install.mjs"), target]);
     expect(await readFile(path.join(target, "src/realisticOcean.ts"), "utf8")).toContain(
@@ -34,6 +35,7 @@ it.each(["src", "src/render"])(
   "refuses a %s directory symlink before writing",
   async (relative) => {
     const target = await makeTempDir("realistic-ocean-link-");
+    await writeFile(path.join(target, "package.json"), "{}\n");
     const external = await makeTempDir("realistic-ocean-external-");
     try {
       const link = path.join(target, relative);
@@ -56,6 +58,7 @@ it.each(["src", "src/render"])(
 
 it("rejects dangling directory links without leaving a partial installation", async () => {
   const target = await makeTempDir("realistic-ocean-dangling-");
+  await writeFile(path.join(target, "package.json"), "{}\n");
   try {
     const src = path.join(target, "src");
     await mkdir(src);
@@ -64,7 +67,7 @@ it("rejects dangling directory links without leaving a partial installation", as
       run(process.execPath, [path.join(bundle, "install.mjs"), target]),
     ).rejects.toThrow();
     expect(await readdir(src)).toEqual(["render"]);
-    expect(await readdir(target)).toEqual(["src"]);
+    expect((await readdir(target)).sort()).toEqual(["package.json", "src"]);
   } finally {
     await rm(target, { recursive: true, force: true });
   }
@@ -72,6 +75,7 @@ it("rejects dangling directory links without leaving a partial installation", as
 
 it("preflights a late filename collision before copying any source", async () => {
   const target = await makeTempDir("realistic-ocean-collision-");
+  await writeFile(path.join(target, "package.json"), "{}\n");
   try {
     const render = path.join(target, "src/render");
     await mkdir(render, { recursive: true });
@@ -84,6 +88,18 @@ it("preflights a late filename collision before copying any source", async () =>
     expect(await readFile(path.join(render, "realisticSea.ts"), "utf8")).toBe(
       "// game-owned edits\n",
     );
+  } finally {
+    await rm(target, { recursive: true, force: true });
+  }
+});
+
+it("refuses a directory that is not a game before writing anything", async () => {
+  const target = await makeTempDir("realistic-ocean-nogame-");
+  try {
+    await expect(run(process.execPath, [path.join(bundle, "install.mjs"), target])).rejects.toThrow(
+      "has no package.json",
+    );
+    await expect(lstat(path.join(target, "src"))).rejects.toThrow();
   } finally {
     await rm(target, { recursive: true, force: true });
   }
