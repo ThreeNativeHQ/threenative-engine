@@ -141,6 +141,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         });
         if (gi === undefined)
           unsupported.push({ actor: NAME, property: "GI", reason: "the GI cache did not bake" });
+        // Diagnosis: ?direct=0 switches the lights off after the bake, so the frame holds the indirect
+        // light alone (Unreal's L7-Epic-indirect, r.Lumen.Visualize.IndirectDiffuse 1, is its pair).
+        if (params.get("direct") === "0") for (const l of lights) l.intensity = 0;
       }
       // The template's `high` chain with the L9-only stages off, as Reference.ts runs below L9.
       // Exposure is the scene's fixed EV100: Unreal's manual exposure, 0.18 / 2^EV100.
