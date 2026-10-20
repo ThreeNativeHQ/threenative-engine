@@ -52,7 +52,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./quality": {
+      "types": "./dist/quality.d.ts",
+      "import": "./dist/quality.js"
+    }
   },
   "publishConfig": {
     "access": "public"
@@ -73,7 +77,10 @@
     "ktx2-encoder": "0.6.0",
     "meshoptimizer": "1.1.1",
     "three": "catalog:",
-    "@jridgewell/trace-mapping": "catalog:"
+    "@jridgewell/trace-mapping": "catalog:",
+    "@eslint-community/eslint-plugin-eslint-comments": "catalog:",
+    "eslint-plugin-react-hooks": "catalog:",
+    "typescript": "catalog:"
   },
   "devDependencies": {
     "@gltf-transform/core": "catalog:",
@@ -86,10 +93,12 @@
     "publint": "0.3.22",
     "threenative-blender-mcp": "workspace:*",
     "tsup": "8.5.1",
-    "typescript": "catalog:",
     "vite": "catalog:",
     "@typescript/native": "catalog:",
-    "@typescript/typescript6": "catalog:"
+    "@typescript/typescript6": "catalog:",
+    "eslint": "catalog:",
+    "@typescript-eslint/parser": "catalog:",
+    "@typescript-eslint/eslint-plugin": "catalog:"
   },
   "peerDependencies": {
     "@threenative/assets": ">=0.3.7 <0.4.0"
