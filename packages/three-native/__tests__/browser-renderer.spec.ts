@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type IBrowserRuntime,
   type IRegistryDump,
+  TSL_NODE,
   defineBrowserClasses,
 } from "../src/browser-backend.js";
 import { type WebEngineModule, defineWebRenderer } from "../src/browser-renderer.js";
@@ -30,6 +31,7 @@ function host(
   secondary?: Parameters<typeof defineWebRenderer>[4],
   renderTarget: (...args: number[]) => number = () => 0,
   before?: Parameters<typeof defineWebRenderer>[2],
+  tsl?: ITslRuntime,
   poll: () => number = () => 1,
 ) {
   const types = new Map<string, number>();
@@ -67,7 +69,7 @@ function host(
     _tnw_web_frame: frame,
     _tnw_web_renderer_state: state,
   } as unknown as WebEngineModule;
-  const Renderer = defineWebRenderer(module, classes.Color as never, before, undefined, secondary);
+  const Renderer = defineWebRenderer(module, classes.Color as never, before, tsl, secondary);
   const canvas = { width: 300, height: 150, style: {}, setAttribute: () => undefined };
   const scene = new (classes.Scene as new () => object)();
   const camera = new (classes.PerspectiveCamera as new () => object)();
@@ -246,6 +248,7 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
       undefined,
       render,
       secondary,
+      undefined,
       undefined,
       undefined,
       () => hostState,
@@ -545,5 +548,51 @@ describe("Wasm TempNode render lifecycle", () => {
     node.dispose();
     renderer.render(scene, camera);
     expect(update).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("custom tone mapping", () => {
+  it("refuses mode 5 precisely until a curve is registered", async () => {
+    const { Renderer, canvas, scene, camera } = host();
+    const renderer = new Renderer({ canvas }) as {
+      toneMapping: number;
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.toneMapping = 5;
+    expect(() => renderer.render(scene, camera)).toThrow("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING");
+  });
+
+  it("installs the registered TSL curve before rendering mode 5", async () => {
+    let id = 0;
+    const runtime = {
+      call: vi.fn(() => ++id),
+      release: vi.fn(),
+      setToneMapping: vi.fn(),
+    } as unknown as ITslRuntime;
+    const { Renderer, canvas, scene, camera, state } = host(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      runtime,
+    );
+    const renderer = new Renderer({ canvas }) as {
+      library: ReturnType<typeof import("../src/tone-mapping.js").defineToneMappingLibrary>;
+      toneMapping: number;
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    const curve = vi.fn((color: { mul(value: number): { [TSL_NODE]: number } }) => color.mul(0.25));
+    renderer.library.addToneMapping(curve, 5);
+    expect(renderer.library.getToneMappingFunction(5)).toBe(curve);
+    renderer.toneMapping = 5;
+    await renderer.init();
+    renderer.render(scene, camera);
+    expect(curve).toHaveBeenCalledTimes(1);
+    expect(runtime.setToneMapping).toHaveBeenCalledWith(curve.mock.results[0]?.value[TSL_NODE]);
+    expect(state.mock.calls.at(-1)?.[0]).toBe(5);
   });
 });

@@ -180,7 +180,7 @@ public:
             const Value& tone = field(record, "value");
             if (tone.isNumber()) {
                 const double t = tone.number();
-                if (t != 0 && t != 1 && t != 2 && t != 3 && t != 4 && t != 6 && t != 7)
+                if (t != 0 && t != 1 && t != 2 && t != 3 && t != 4 && t != 5 && t != 6 && t != 7)
                     return fail("TN_TSL_UNSUPPORTED: RenderOutputNode toneMapping " + std::to_string(t));
                 n->bits = static_cast<uint64_t>(t) + 1;
             }
@@ -255,10 +255,10 @@ private:
 };
 } // namespace
 
-PostNode serializedPost(Node root, std::optional<ToneMapping> toneMapping, bool srgb) {
-    return {key(root), [root, toneMapping, srgb](Program& p, uint32_t, ExprId coordinate) {
-        tsl::Build scope(p); return lower(root, p, {{"uv", coordinate}}, toneMapping, srgb);
-    }, postPasses(root, toneMapping, srgb), uniforms(root), uniformNodes(root), !root || root->kind != Kind::PipelineOutput || root->bits != 0};
+PostNode serializedPost(Node root, std::optional<ToneMapping> toneMapping, bool srgb, Node custom) {
+    return {key(root), [root, toneMapping, srgb, custom](Program& p, uint32_t, ExprId coordinate) {
+        tsl::Build scope(p); return lower(root, p, {{"uv", coordinate}}, toneMapping, srgb, custom);
+    }, postPasses(root, toneMapping, srgb, custom), uniforms(root), uniformNodes(root), !root || root->kind != Kind::PipelineOutput || root->bits != 0};
 }
 
 Graph importSerialized(std::string_view source, std::vector<std::string>& errors) {

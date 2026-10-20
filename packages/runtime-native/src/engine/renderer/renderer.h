@@ -269,6 +269,7 @@ struct OutputState {
     std::optional<shader::ToneMapping> toneMapping;  // empty: NoToneMapping
     double toneMappingExposure = 1;
     bool srgb = true;  // false: LinearSRGBColorSpace
+    shader::graph::Node customToneMapping;
 };
 
 /**
@@ -277,7 +278,7 @@ struct OutputState {
  * does not implement; a value is never mapped to a neighbour. Shared by the V8 player and the web host.
  */
 std::optional<OutputState> outputStateOf(double toneMapping, double exposure, const std::string& colorSpace,
-                                         std::string& refusal);
+                                         std::string& refusal, shader::graph::Node custom = {});
 
 /**
  * The native renderer's draw core (PRD-514): standard-material meshes into a linear RGBA16Float
@@ -850,7 +851,9 @@ private:
     const PostEffects* postTextureOwner(const std::string& name) const;
     WGPUTextureView postTextureView(const std::string& name) const;
     uint64_t postViewsStamp() const;
+    void collectPostSources();
     GraphTextures postTextures_;
+    std::vector<shader::graph::Node> postTextureNodes_;
     struct RttTarget {
         std::string name;
         std::shared_ptr<shader::graph::RttState> state;

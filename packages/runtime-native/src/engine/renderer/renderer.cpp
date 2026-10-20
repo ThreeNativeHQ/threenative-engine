@@ -831,12 +831,16 @@ void Renderer::releaseOutputGroup() {
 }
 
 std::optional<OutputState> outputStateOf(double toneMapping, double exposure, const std::string& colorSpace,
-                                         std::string& refusal) {
+                                         std::string& refusal, shader::graph::Node custom) {
     // three's constants: NoToneMapping 0, Linear 1, Reinhard 2, Cineon 3, ACESFilmic 4, AgX 6, Neutral 7.
     static const std::map<double, std::optional<shader::ToneMapping>> mappings{
         {0, std::nullopt}, {1, shader::ToneMapping::Linear}, {2, shader::ToneMapping::Reinhard},
         {3, shader::ToneMapping::Cineon}, {4, shader::ToneMapping::ACESFilmic}, {6, shader::ToneMapping::AgX},
-        {7, shader::ToneMapping::Neutral}};
+        {7, shader::ToneMapping::Neutral}, {5, shader::ToneMapping::Custom}};
+    if (toneMapping == 5 && !custom) {
+        refusal = "TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: register a TSL tone-mapping function before using mode 5";
+        return std::nullopt;
+    }
     const auto tone = mappings.find(toneMapping);
     if (tone == mappings.end()) {
         refusal = "toneMapping " + std::to_string(toneMapping);
@@ -850,22 +854,23 @@ std::optional<OutputState> outputStateOf(double toneMapping, double exposure, co
         refusal = "outputColorSpace " + colorSpace;
         return std::nullopt;
     }
-    return OutputState{tone->second, exposure, colorSpace == "srgb"};
+    return OutputState{tone->second, exposure, colorSpace == "srgb", custom};
 }
 
 void Renderer::setOutput(const OutputState& output) {
-    const bool programChanged = outputVertex_.wgsl.code.empty() || output.toneMapping != output_.toneMapping || output.srgb != output_.srgb;
+    const bool programChanged = outputVertex_.wgsl.code.empty() || output.toneMapping != output_.toneMapping || output.srgb != output_.srgb || output.customToneMapping != output_.customToneMapping;
     output_ = output;
     if (!programChanged) return;
     if (postGraph_) {
-        post_ = std::make_shared<shader::PostNode>(shader::graph::serializedPost(postGraph_, output.toneMapping, output.srgb));
+        post_ = std::make_shared<shader::PostNode>(shader::graph::serializedPost(postGraph_, output.toneMapping, output.srgb, output.customToneMapping));
         postEffects_ = post_->passes.empty() ? nullptr : std::make_unique<PostEffects>(device_, queue_, post_->passes);
         if (postEffects_ && width_ && height_) postEffects_->resize(width_, height_);
     }
-    const shader::OutputPrograms programs = shader::buildOutput(output.toneMapping, output.srgb, post_.get());
+    const shader::OutputPrograms programs = shader::buildOutput(output.toneMapping, output.srgb, post_.get(), true, output.customToneMapping);
     outputVertex_ = shader::buildStage(programs.vertex, 0);
     outputFragment_ = shader::buildStage(programs.fragment, 0);
     if (!outputVertex_.wgsl.ok() || !outputFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: output program");
+    collectPostSources();
     releaseOutputGroup();  // its layout belongs to the previous program
     // An explicit layout: the output program declares the scene binding even when a post graph
     // never samples it, and an automatic layout would drop it and refuse the bind group.
@@ -905,6 +910,7 @@ void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
     auto effects = post && !post->passes.empty() ? std::make_unique<PostEffects>(device_,queue_,post->passes) : nullptr;
     postEffects_.reset();
     postTextures_.clear();
+    postTextureNodes_.clear();
     postTextureVersions_.clear();
     postTextureViews_.clear();
     postUniforms_ = post ? post->uniforms : std::map<std::string,std::vector<double>>{};
@@ -918,11 +924,18 @@ void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
 
 void Renderer::setPostGraph(shader::graph::Node root) {
     const auto temporal = shader::graph::traaEffect(root);
-    setPostNode(root ? std::make_shared<shader::PostNode>(shader::graph::serializedPost(root, output_.toneMapping, output_.srgb)) : nullptr);
+    setPostNode(root ? std::make_shared<shader::PostNode>(shader::graph::serializedPost(root, output_.toneMapping, output_.srgb, output_.customToneMapping)) : nullptr);
     postGraph_ = root;
     if (temporal && temporal != liveTraa_) setTraa(TraaOptions{});
     if (!temporal && liveTraa_) { traa_.reset(); releaseOutputGroup(); }
     liveTraa_ = temporal;
+    collectPostSources();
+}
+
+void Renderer::collectPostSources() {
+    postTextures_.clear();
+    postTextureNodes_.clear();
+    rttTargets_.clear();
     std::unordered_set<const shader::graph::NodeData*> seen;
     const std::function<void(shader::graph::Node)> collect = [&](shader::graph::Node node) {
         if (!node || !seen.insert(node.get()).second) return;
@@ -931,15 +944,16 @@ void Renderer::setPostGraph(shader::graph::Node root) {
                          [&](const auto& target) { return target.name == node->name; }))
             rttTargets_.push_back({node->name, node->rtt, node->rtt->material ? node->rtt->material->version() : 0,
                                    node->rtt->material.get()});
-        if (node->kind == shader::graph::Kind::Texture && node->object)
-            postTextures_.emplace_back(node->name, static_cast<const Texture*>(node->object.get()));
+        if (node->kind == shader::graph::Kind::Texture && node->textureObject())
+            { postTextures_.emplace_back(node->name, static_cast<const Texture*>(node->textureObject().get())); postTextureNodes_.push_back(node); }
         if (node->rtt && node->rtt->material)
             for (const auto& graph : node->rtt->material->nodes.graphs())
                 collect(graph);
         for (const auto* list : {&node->args, &node->body, &node->otherwise})
             for (const auto& child : *list) collect(child);
     };
-    collect(root);
+    collect(postGraph_);
+    collect(output_.customToneMapping);
 }
 
 void Renderer::setPostInput(const std::string& name, WGPUTextureView view) {
@@ -2142,8 +2156,8 @@ void Renderer::flushDeferred(const void* key) {
 }
 
 bool Renderer::postSamples(const void* key) const {
-    return std::any_of(postTextures_.begin(), postTextures_.end(),
-                       [&](const auto& texture) { return texture.second->renderTarget.lock().get() == key; });
+    return std::any_of(postTextureNodes_.begin(), postTextureNodes_.end(),
+                       [&](const auto& node) { return static_cast<const Texture*>(node->textureObject().get())->renderTarget.lock().get() == key; });
 }
 
 void Renderer::recordDeferred(bool sampled) {
@@ -3070,6 +3084,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     // The post graph's textures are read after the plan; a render target's view that moves there would drop
     // the groups chosen below, so it moves here. A shadow draw's vertex group follows for the same reason.
+    for (size_t i = 0; i < postTextureNodes_.size(); ++i) {
+        const auto* source = static_cast<const Texture*>(postTextureNodes_[i]->textureObject().get());
+        if (source != postTextures_[i].second) releaseOutputGroup();
+        postTextures_[i].second = source;
+    }
     for (const auto& texture : postTextures_) materialTexture(*texture.second);
     for (ShadowPass& pass : shadowPasses)
         for (Planned& draw : pass.draws) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
@@ -3220,6 +3239,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_);
     if (post_)
         for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
+    for (const auto& node : shader::graph::uniformNodes(output_.customToneMapping)) postUniforms_[node->name] = node->values;
     for (const auto& field : outputFragment_.uniforms) {
         constexpr std::string_view prefix = "authoredLightShadowMatrix";
         if (field.name.starts_with(prefix)) {

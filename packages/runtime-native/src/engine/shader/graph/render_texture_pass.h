@@ -5,7 +5,7 @@
 #include "engine/scene/material.h"
 
 namespace tn::engine::shader::graph {
-inline PostPass renderTexturePass(Node node, std::optional<ToneMapping> toneMapping = std::nullopt, bool srgb = false) {
+inline PostPass renderTexturePass(Node node, std::optional<ToneMapping> toneMapping = std::nullopt, bool srgb = false, Node custom = {}) {
     PostPass pass; pass.output = node->name; pass.resolutionScale = node->scale;
     pass.floorSize = true; pass.autoUpdate = node->bits != 1;
     pass.width = node->width; pass.height = node->height; pass.package.name = node->name;
@@ -13,9 +13,9 @@ inline PostPass renderTexturePass(Node node, std::optional<ToneMapping> toneMapp
     if (material)
         pass.visible = material->visible;
     const auto source = material && material->nodes.fragmentNode ? material->nodes.fragmentNode : node->args[0];
-    const PostNode post{key(source), [source, toneMapping, srgb](Program& p, uint32_t, ExprId coordinate) {
+    const PostNode post{key(source), [source, toneMapping, srgb, custom](Program& p, uint32_t, ExprId coordinate) {
                             tsl::Build scope(p);
-                            return lower(source, p, {{"uv", coordinate}}, toneMapping, srgb);
+                            return lower(source, p, {{"uv", coordinate}}, toneMapping, srgb, custom);
                         }};
     if (node->rtt) {
         pass.rtt = node->rtt;
@@ -56,6 +56,10 @@ inline PostPass renderTexturePass(Node node, std::optional<ToneMapping> toneMapp
         if (binding.kind == BindingKind::Texture) pass.reads[binding.name.substr(2)] = binding.name.substr(2);
     pass.uniforms = uniforms(source);
     pass.live = uniformNodes(source);
+    const auto customUniforms = uniforms(custom);
+    pass.uniforms.insert(customUniforms.begin(), customUniforms.end());
+    const auto customLive = uniformNodes(custom);
+    pass.live.insert(pass.live.end(), customLive.begin(), customLive.end());
     auto vertex = buildStage(programs.vertex, 1);
     for (const auto& binding : vertex.bindings)
         if (binding.kind == BindingKind::Texture)

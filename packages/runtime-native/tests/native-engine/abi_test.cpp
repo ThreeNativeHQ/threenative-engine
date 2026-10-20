@@ -927,6 +927,26 @@ void tsl_call() {
     CHECK(tn_tsl_call(ctx, "vec4", nullptr, opaque, 2, &lit, &d.value) == TN_OK);
     CHECK(tn_tsl_set(ctx, material, "colorNode", lit, &d.value) == TN_OK);
     CHECK(tn_tsl_compile(material, nullptr, &d.value) == TN_OK);
+    {
+        namespace g = tn::engine::shader::graph;
+        uint64_t serial = 0;
+        auto first = std::make_shared<tn::engine::Texture>();
+        auto second = std::make_shared<tn::engine::Texture>();
+        // Render-target textures are sampleable without CPU pixels.
+        auto target = tn::engine::RenderTarget::make(1, 1, 1009);
+        first = target->texture;
+        auto target2 = tn::engine::RenderTarget::make(1, 1, 1009);
+        second = target2->texture;
+        const auto texture = tn::abi::tslCall("texture", nullptr, {tn::abi::TslArg::objectOf("Texture", first)}, serial);
+        const auto other = tn::abi::tslCall("texture", nullptr, {tn::abi::TslArg::objectOf("Texture", first)}, serial);
+        auto copy = std::make_shared<g::NodeData>(*texture);
+        const auto key = g::key(texture);
+        const auto receiver = tn::abi::TslArg::of(texture);
+        CHECK(tn::abi::tslCall("textureValue", &receiver, {tn::abi::TslArg::objectOf("Texture", second)}, serial) == texture);
+        CHECK(texture->textureObject() == second && copy->textureObject() == second);
+        CHECK(other->textureObject() == first && other->name != texture->name);
+        CHECK(g::key(texture) == key);
+    }
     // A material is no texture, and a released handle is no object.
     const tn_tsl_arg_t wrong[3] = {handleArg(material), nodeArg(direction), number(0.5)};
     CHECK(tn_tsl_call(ctx, "pmremTexture", nullptr, wrong, 3, &unknown, &d.value) != TN_OK && unknown == 0);
@@ -1921,9 +1941,13 @@ void authored_output() {
     CHECK(!bloomPost.passes.empty());
     CHECK(bloomPost.passes.front().package.variants.at(0).stages[1].wgsl.code.find("pow(") != std::string::npos);
     bool refused = false;
-    try { tn::abi::tslCall("renderOutput", nullptr,
-        {TslArg::of(scene), TslArg::of(5.0), TslArg::of(std::string("srgb"))}, serial); }
-    catch (const std::exception& error) { refused = std::string(error.what()).find("renderOutput") != std::string::npos; }
+    try {
+        const auto custom = tn::abi::tslCall("renderOutput", nullptr,
+            {TslArg::of(scene), TslArg::of(5.0), TslArg::of(std::string("srgb"))}, serial);
+        const auto missing = g::serializedPost(custom);
+        tn::engine::shader::buildOutput(std::nullopt, false, &missing, false);
+    }
+    catch (const std::exception& error) { refused = std::string(error.what()).find("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING") != std::string::npos; }
     CHECK(refused);
 }
 

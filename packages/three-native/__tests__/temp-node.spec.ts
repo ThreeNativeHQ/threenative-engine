@@ -163,14 +163,18 @@ describe("Wasm exposure boolean uniform", () => {
 });
 
 describe("Wasm mutable texture boundary", () => {
-  it("refuses retargeting rather than silently sampling the old texture", () => {
-    const { exports } = facade();
+  it("preserves the previous value when the engine refuses an invalid replacement", () => {
+    const { exports, runtime } = facade();
     const texture = exports.texture as (value: unknown) => { value: unknown };
     const source = { name: "output" };
     const node = texture(source);
     expect(node.value).toBe(source);
+    vi.mocked(runtime.call).mockImplementationOnce(() => {
+      throw new Error("TN_NATIVE_TEXTURE_VALUE_TYPE: expected an engine Texture");
+    });
     expect(() => {
-      node.value = { name: "other" };
-    }).toThrow("TN_NATIVE_TEXTURE_VALUE_UNSUPPORTED");
+      node.value = {};
+    }).toThrow("TN_NATIVE_TEXTURE_VALUE_TYPE");
+    expect(node.value).toBe(source);
   });
 });

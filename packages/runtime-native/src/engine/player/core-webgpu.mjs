@@ -4,6 +4,7 @@ import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 import { PassNode, StorageBufferAttribute, StorageInstancedBufferAttribute, syncUniforms, updateSecondaryPasses } from "./core-tsl.mjs";
 import { readStorageBytes } from "../../../../three-native/src/storage.ts";
 import { GAME_SPANS } from "../../../../core/src/profiling/Spans.ts";
+import { defineToneMappingLibrary } from "../../../../three-native/src/tone-mapping.ts";
 import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
 import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
 import { defineQuadMesh } from "../../../../three-native/src/quad-mesh.ts";
@@ -29,6 +30,7 @@ class NativeBackend {
 
 function drawTarget(renderer, target, root, camera, deferred) {
   syncUniforms();
+  renderer.library.apply(renderer.toneMapping);
   globalThis.tn.setRendererState(renderer);  // the target clears to the renderer's current clear colour
   if (deferred) globalThis.tn.renderTarget(target, root, camera, true);
   else globalThis.tn.renderTarget(target, root, camera);
@@ -62,6 +64,11 @@ export class WebGPURenderer {
   };
   // WebGPURenderer's defaults; the player applies them before each frame it draws.
   shadowMap = new ShadowMap();
+  __customToneMapping = null;
+  library = defineToneMappingLibrary(
+    () => [globalThis.tsl.toneMappingColor(), globalThis.tsl.uniform(1).setName("toneMappingExposure")],
+    (node) => { this.__customToneMapping = node; },
+  );
   toneMapping = 0;
   toneMappingExposure = 1;
   outputColorSpace = "srgb";
@@ -97,11 +104,13 @@ export class WebGPURenderer {
     try {
       globalThis.tn.scene = scene;
       globalThis.tn.camera = camera;
+      this.library.apply(this.toneMapping);
       globalThis.tn.setRendererState(this);
     } finally { globalThis.__tnGameSpan?.(GAME_SPANS.publish, 1); }
   }
   compileAsync(root, camera, scene) {
     syncUniforms();
+    this.library.apply(this.toneMapping);
     globalThis.tn.setRendererState(this);
     return globalThis.tn.compileAsync(root, camera, scene);
   }
@@ -147,6 +156,7 @@ export class RenderPipeline {
     try {
     drawSecondaryPasses(this.renderer);
     syncUniforms();
+    this.renderer.library.apply(this.renderer.toneMapping);
     globalThis.tn.setRendererState(this.renderer);
     if (this._source !== this.outputNode) {
       this._source = this.outputNode;

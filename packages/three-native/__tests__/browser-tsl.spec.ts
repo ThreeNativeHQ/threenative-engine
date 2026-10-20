@@ -111,3 +111,21 @@ describe("Wasm TSL fog", () => {
     expect(runtime.call).toHaveBeenCalledWith("vec4", null, expect.any(Array));
   });
 });
+
+describe("mutable texture values", () => {
+  it("retains the graph node and rebinds its replacement texture", () => {
+    const { runtime } = setup();
+    const { exports } = defineTsl(runtime);
+    const texture = exports.texture as (value: unknown) => { value: unknown; [TSL_NODE]: number };
+    const first = { name: "first" };
+    const second = { name: "second" };
+    const sampled = texture(first);
+    const id = sampled[TSL_NODE];
+    sampled.value = second;
+    expect(sampled.value).toBe(second);
+    expect(sampled[TSL_NODE]).toBe(id);
+    expect(runtime.call).toHaveBeenLastCalledWith("textureValue", id, [
+      { kind: "named", text: "second" },
+    ]);
+  });
+});

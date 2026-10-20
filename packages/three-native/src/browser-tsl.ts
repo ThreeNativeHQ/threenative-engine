@@ -38,6 +38,7 @@ export interface ITslRuntime {
   effectParameter(node: number, name: string, value?: number): number;
   /** three's RenderPipeline: the post graph the web host draws between scene and output, or none. */
   setPost(node: number | null): void;
+  setToneMapping?(node: number | null): void;
   /** three's `renderer.compute(node)`: queues the kernel; it runs ahead of the next draw or read. */
   compute(node: number): void;
   /** `renderer.getArrayBufferAsync(attribute)`: the storage buffer's bytes after every queued kernel. */
@@ -48,6 +49,7 @@ export interface ITslRuntime {
 
 /** Module functions the shared table answers (engine/abi/tsl_call.cpp). */
 const FUNCTIONS = [
+  "toneMappingColor",
   "float",
   "int",
   "uint",
@@ -323,12 +325,16 @@ export function defineTsl(
     // and textureLoad also takes a texture node.
     if (
       index === 0 &&
-      name === "texture" &&
+      (name === "texture" || name === "textureValue") &&
       typeof value === "object" &&
       engineRef(value) !== undefined
     )
       return { kind: "handle", ref: engineRef(value) as IEngineRef };
-    if (index === 0 && (name === "texture" || name === "textureLoad") && typeof value === "object")
+    if (
+      index === 0 &&
+      (name === "texture" || name === "textureLoad" || name === "textureValue") &&
+      typeof value === "object"
+    )
       return { kind: "named", text: String((value as { name?: unknown } | null)?.name ?? "") };
     // A three value is the engine's (`mesh.position`) or JS's own (`new Vector3()`).
     if (typeof value === "object" && value !== null) {
@@ -447,15 +453,15 @@ export function defineTsl(
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
   exports.nodeObject = (value: unknown) =>
     isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
-  exports.texture = (value: unknown, ...args: unknown[]) => {
+  exports.texture = (initial: unknown, ...args: unknown[]) => {
+    let value = initial;
     const node = wrap(call("texture", null, [value, ...args]));
     return Object.defineProperty(node, "value", {
       get: () => value,
       set: (next: unknown) => {
-        if (next !== value)
-          throw new Error(
-            "TN_NATIVE_TEXTURE_VALUE_UNSUPPORTED: retargeting an existing texture node requires a native texture-binding ABI",
-          );
+        if (next === value) return;
+        runtime.release(call("textureValue", node[TSL_NODE], [next]));
+        value = next;
       },
     });
   };

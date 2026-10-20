@@ -1653,7 +1653,14 @@ function tslOf(
       setPost: (node) =>
         h.scoped(() => {
           if (setPost === undefined) throw new Error("TN_WASM_POST: this module has no web host");
-          if (setPost(context, nodeOf(node)) !== 0) throw new Error("TN_WASM_POST: refused");
+          if (setPost(context, nodeOf(node), 0) !== 0) throw new Error("TN_WASM_POST: refused");
+        }),
+      setToneMapping: (node) =>
+        h.scoped(() => {
+          if (setPost === undefined)
+            throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: no web output binding");
+          if (setPost(context, nodeOf(node), 1) !== 0)
+            throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_INVALID: refused output node");
         }),
       // PRD-620: renderer.compute and storage reads over the product web host.
       compute: (node) =>

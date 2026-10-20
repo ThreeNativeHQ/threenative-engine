@@ -79,6 +79,10 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     const auto lhs = [&] { return method ? input(*receiver) : arg(0); };
     const auto rhs = [&] { return arg(method ? 0 : 1); };
 
+    if (!method && name == "toneMappingColor") {
+        arity(0);
+        return g::varying("tnToneMappingColor", Type::vec(3));
+    }
     if (!method && name == "lightShadowMatrix") {
         arity(1);
         if (args[0].kind != TslArg::Kind::Object || !args[0].object ||
@@ -289,7 +293,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const size_t offset = method ? 0 : 1;
         if (args.size() > offset && args[offset].kind != TslArg::Kind::Other) {
             const double tone = number(args[offset]);
-            if (tone != 0 && tone != 1 && tone != 2 && tone != 3 && tone != 4 && tone != 6 && tone != 7)
+            if (tone != 0 && tone != 1 && tone != 2 && tone != 3 && tone != 4 && tone != 5 && tone != 6 && tone != 7)
                 throw std::runtime_error("renderOutput: unsupported toneMapping " + std::to_string(tone));
             node->bits = static_cast<uint64_t>(tone) + 1;
         }
@@ -329,7 +333,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (name == "lut3D") {
         arity(4);
         const auto input = arg(0), lut = arg(1);
-        if (lut->kind != g::Kind::Texture || !lut->object)
+        if (lut->kind != g::Kind::Texture || !lut->textureObject())
             throw std::runtime_error("lut3D requires texture3D(engineTexture)");
         const double size = number(args[2]);
         if (size < 2 || size != std::floor(size)) throw std::runtime_error("lut3D size must be an integer >= 2");
@@ -520,9 +524,9 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         auto node = std::make_shared<g::NodeData>();
         node->kind = g::Kind::TextureLoad; node->name = label; node->type = Type::vec(4);
         if (args[0].kind == TslArg::Kind::Node && args[0].node) {
-            node->object = args[0].node->object; node->bits = args[0].node->bits;
+            node->textureBinding = args[0].node->textureBinding; node->object = args[0].node->object; node->bits = args[0].node->bits;
             // Retain the target producer and the texture owner as graph dependencies.
-            if (node->object || args[0].node->kind == g::Kind::RenderTexture) node->otherwise = {args[0].node};
+            if (node->textureObject() || args[0].node->kind == g::Kind::RenderTexture) node->otherwise = {args[0].node};
         }
         node->args = {arg(1)};
         if (args.size() == 3) node->args.push_back(arg(2));
@@ -564,6 +568,19 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(2);
         return g::attribute(text(args[0]), type(text(args[1])));
     }
+    if (name == "textureValue") {
+        arity(1);
+        if (!method || !receiver->node || receiver->node->kind != g::Kind::Texture || !receiver->node->textureBinding)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: expected an object texture node");
+        if (args[0].kind != TslArg::Kind::Object || !args[0].object || args[0].cls.find("Texture") == std::string::npos)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: expected an engine Texture");
+        const auto next = std::static_pointer_cast<const engine::Texture>(args[0].object);
+        const auto previous = std::static_pointer_cast<const engine::Texture>(receiver->node->textureObject());
+        if (next->depthTexture != previous->depthTexture || next->volume != previous->volume)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: replacement must preserve texture dimension and sample type");
+        receiver->node->textureBinding->object = args[0].object;
+        return receiver->node;
+    }
     if (name == "texture") {
         // three's texture(value, uvNode = uv()): the uv is optional.
         if (args.size() != 1) arity(2);
@@ -576,7 +593,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
                 throw std::runtime_error("texture needs an engine Texture");
             const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
             if (source->sampleable())
-                return g::objectTexture(args[0].object, "nodeMap" + std::to_string(source->ident.value()), uvInput());
+                return g::objectTexture(args[0].object, "nodeMap" + std::to_string(++serial), uvInput());
             if (source->name.empty()) throw std::runtime_error("texture needs a name");
             return g::texture(source->name, uvInput());
         }
@@ -595,7 +612,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
         if (!source->sampleable()) throw std::runtime_error("texture3D needs a Data3DTexture with texels");
         const auto half = [] { return g::float_(0.5); };
-        auto node = g::objectTexture(args[0].object, "nodeMap" + std::to_string(source->ident.value()),
+        auto node = g::objectTexture(args[0].object, "nodeMap" + std::to_string(++serial),
                                      args.size() > 1 ? arg(1) : g::vec3({half(), half(), half()}));
         if (args.size() == 3) {
             auto level = std::make_shared<g::NodeData>(*node);

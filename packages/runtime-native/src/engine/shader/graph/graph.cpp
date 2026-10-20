@@ -64,8 +64,8 @@ std::shared_ptr<NodeData> makeJoin(uint8_t lanes, std::initializer_list<Node> pa
 class Lowerer {
 public:
     explicit Lowerer(Program& program, const std::unordered_map<std::string, ExprId>& inputs,
-                     std::optional<ToneMapping> toneMapping, bool srgb)
-        : program_(program), inputs_(inputs), toneMapping_(toneMapping), srgb_(srgb) {}
+                     std::optional<ToneMapping> toneMapping, bool srgb, Node custom)
+        : custom_(custom), program_(program), inputs_(inputs), toneMapping_(toneMapping), srgb_(srgb) {}
 
     ExprId expression(Node node);
     void statements(const std::vector<Node>& list);
@@ -81,6 +81,7 @@ private:
     /** A storage element's index: a float (the JS number 0) is the whole number it holds, as three builds it as uint. */
     ExprId index(const Node& element);
 
+    Node custom_;
     Program& program_;
     const std::unordered_map<std::string, ExprId>& inputs_;
     std::unordered_map<const NodeData*, ExprId> exprs_, effects_;
@@ -138,7 +139,7 @@ std::vector<ExprId> Lowerer::aggregate(Node node) {
     if (const auto found = aggregates_.find(node.get()); found != aggregates_.end()) return found->second;
     std::vector<ExprId> values;
     if (node->kind == Kind::Call) {
-        Lowerer invocation(program_, inputs_, toneMapping_, srgb_);
+        Lowerer invocation(program_, inputs_, toneMapping_, srgb_, custom_);
         invocation.vars_ = vars_; invocation.loopIndex_ = loopIndex_;
         values = invocation.aggregate(node->args.at(0));
     } else if (node->kind == Kind::Struct) {
@@ -201,10 +202,10 @@ ExprId Lowerer::emit(Node node) {
             if (d.bits) {
                 static const std::map<uint64_t, std::optional<ToneMapping>> mappings{
                     {1, std::nullopt}, {2, ToneMapping::Linear}, {3, ToneMapping::Reinhard},
-                    {4, ToneMapping::Cineon}, {5, ToneMapping::ACESFilmic}, {7, ToneMapping::AgX}, {8, ToneMapping::Neutral}};
+                    {4, ToneMapping::Cineon}, {5, ToneMapping::ACESFilmic}, {6, ToneMapping::Custom}, {7, ToneMapping::AgX}, {8, ToneMapping::Neutral}};
                 tone = mappings.at(d.bits);
             }
-            return renderOutput(program_, expression(d.args[0]), tone, d.name.empty() ? srgb_ : d.name == "srgb");
+            return renderOutput(program_, expression(d.args[0]), tone, d.name.empty() ? srgb_ : d.name == "srgb", custom_);
         }
         case Kind::Body: {
             const auto lowered = bodyScope_.find(node.get());
@@ -223,7 +224,7 @@ ExprId Lowerer::emit(Node node) {
             return program_.load(returnVar_);
         }
         case Kind::Call: {
-            Lowerer invocation(program_, inputs_, toneMapping_, srgb_);
+            Lowerer invocation(program_, inputs_, toneMapping_, srgb_, custom_);
             invocation.vars_ = vars_; invocation.loopIndex_ = loopIndex_;
             invocation.returnType_ = d.type;
             invocation.doneVar_ = program_.var(Type::boolean(), program_.constant(false));
@@ -605,7 +606,7 @@ Node objectTexture(std::shared_ptr<const void> texture, std::string name, Node u
     data->kind = Kind::Texture;
     data->name = std::move(name);
     data->bits = std::static_pointer_cast<const tn::engine::Texture>(texture)->depthTexture ? 1 : 0;
-    data->object = std::move(texture);
+    data->textureBinding = std::make_shared<TextureBinding>(TextureBinding{std::move(texture)});
     data->args = {std::move(uvs)};
     return data;
 }
@@ -838,22 +839,22 @@ Node Block::node() const {
 }
 
 ExprId lower(const Graph& graph, Program& program, const std::unordered_map<std::string, ExprId>& inputs,
-             std::optional<ToneMapping> toneMapping, bool srgb) {
+             std::optional<ToneMapping> toneMapping, bool srgb, Node custom) {
     if (!graph) return kInvalid;
-    Lowerer lowerer(program, inputs, toneMapping, srgb);
+    Lowerer lowerer(program, inputs, toneMapping, srgb, custom);
     return lowerer.expression(graph);
 }
 
 struct Lowering::Impl {
     std::unordered_map<std::string, ExprId> inputs;
     Lowerer lowerer;
-    Impl(Program& program, std::unordered_map<std::string, ExprId> in, std::optional<ToneMapping> tone, bool srgb)
-        : inputs(std::move(in)), lowerer(program, inputs, tone, srgb) {}
+    Impl(Program& program, std::unordered_map<std::string, ExprId> in, std::optional<ToneMapping> tone, bool srgb, Node custom)
+        : inputs(std::move(in)), lowerer(program, inputs, tone, srgb, custom) {}
 };
 
 Lowering::Lowering(Program& program, std::unordered_map<std::string, ExprId> inputs,
-                   std::optional<ToneMapping> toneMapping, bool srgb)
-    : impl_(std::make_unique<Impl>(program, std::move(inputs), toneMapping, srgb)) {}
+                   std::optional<ToneMapping> toneMapping, bool srgb, Node custom)
+    : impl_(std::make_unique<Impl>(program, std::move(inputs), toneMapping, srgb, custom)) {}
 Lowering::~Lowering() = default;
 ExprId Lowering::lower(const Graph& graph) { return graph ? impl_->lowerer.expression(graph) : kInvalid; }
 

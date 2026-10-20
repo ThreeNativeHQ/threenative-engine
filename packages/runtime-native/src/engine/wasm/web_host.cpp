@@ -44,12 +44,14 @@ WGPUTextureFormat surfaceFormat = WGPUTextureFormat_Undefined;
 EventQueue events;
 std::unique_ptr<Renderer> renderer;
 RenderDatabase database;
+tn::engine::shader::graph::Node customToneMapping;
 tn::engine::shader::graph::Node pendingPost;  // a RenderPipeline set before the device was ready
 ComputeQueue computeQueue;  // PRD-620: renderer.compute kernels and storage reads, run in call order
 // three's renderer settings the game last set (WebGPURenderer's defaults until it does), applied
 // before the next frame, as the V8 player's setRendererState does.
 OutputState output{std::nullopt, 1, true};
 bool outputChanged = true;
+bool postChanged = false;
 bool shadowMap = false;
 int shadowMapType = 1;  // PCFShadowMap
 uint32_t sampleCount = 1;  // three's samples: 1 or 4x MSAA
@@ -97,6 +99,8 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
     renderer->setGpuTimer(true);
     configureWebSurface();
+    renderer->setOutput(output);
+    outputChanged = false;
     if (pendingPost) renderer->setPostGraph(pendingPost);
     state = Ready;
 }
@@ -218,6 +222,10 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     flushCompute();
     if (outputChanged) renderer->setOutput(output);
     outputChanged = false;
+    // RenderPipeline installs its graph before the facade submits renderer settings. Compile only
+    // now, when an explicit renderOutput(..., 5) can see the registered curve on its first frame.
+    if (postChanged) renderer->setPostGraph(pendingPost);
+    postChanged = false;
     database.shadowMapEnabled = shadowMap;
     database.shadowMapType = shadowMapType;
     // A refusal the renderer throws (an unported feature, a refused binding) is this frame's named
@@ -400,7 +408,7 @@ extern "C" int tnw_web_delete_storage(const tn_handle_t* attributeHandle) {
 extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const char* colorSpace, int shadowEnabled,
                                       double shadowType, double samples) {
     std::string refusal;
-    const auto next = outputStateOf(toneMapping, exposure, colorSpace, refusal);
+    const auto next = outputStateOf(toneMapping, exposure, colorSpace, refusal, customToneMapping);
     // PCFShadowMap and PCFSoftShadowMap are the filters the engine draws (PCFShadowFilter, PCFSoftShadowFilter).
     if (next && shadowType != 1 && shadowType != 2) refusal = "shadowMap.type must be PCFShadowMap or PCFSoftShadowMap";
     if (samples != 1 && samples != 4) refusal = "samples must be 1 or 4";
@@ -409,7 +417,7 @@ extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const
         return 1;
     }
     if (next->toneMapping != output.toneMapping || next->toneMappingExposure != output.toneMappingExposure ||
-        next->srgb != output.srgb) {
+        next->srgb != output.srgb || next->customToneMapping != output.customToneMapping) {
         output = *next;
         outputChanged = true;
     }
@@ -424,17 +432,18 @@ extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const
  * `context`, or none (null). The same graph again is a no-op, as RenderPipeline.render() hands it
  * every frame (PRD-540; the V8 player's setPostGraph).
  */
-extern "C" int tnw_web_set_post(tn_context_t* context, const uint64_t* node) {
+extern "C" int tnw_web_set_post(tn_context_t* context, const uint64_t* node, int toneMapping) {
     static shader::graph::Node current;
     shader::graph::Node graph;
     if (node != nullptr) {
         graph = tn::abi::tslNode(context, *node);
         if (!graph) return fail("TN_WASM_POST: not a TSL node of this context");
     }
+    if (toneMapping) { customToneMapping = graph; return 0; }
     if (graph == current) return 0;
     current = graph;
-    if (state == Ready && renderer) renderer->setPostGraph(graph);
-    else pendingPost = graph;
+    pendingPost = graph;
+    postChanged = true;
     return 0;
 }
 

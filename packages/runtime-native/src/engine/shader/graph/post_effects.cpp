@@ -471,7 +471,7 @@ std::shared_ptr<const PostEffect> traaEffect(Node root) {
     return result;
 }
 
-std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMapping, bool srgb) {
+std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMapping, bool srgb, Node custom) {
     std::vector<PostPass> passes;
     std::unordered_set<const NodeData*> seen;
     // A target is rendered once however it is sampled: a sample at another coordinate is a copy of
@@ -487,7 +487,7 @@ std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMappi
             for (const auto& graph : n->rtt->material->nodes.graphs())
                 visit(graph);
         if (n->kind == Kind::RenderTexture && targets.insert(n->name).second)
-            passes.push_back(renderTexturePass(n, toneMapping, srgb));
+            passes.push_back(renderTexturePass(n, toneMapping, srgb, custom));
         if (!n->post)
             return;
         const auto& effect = *n->post;
@@ -497,7 +497,7 @@ std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMappi
                               weights = effect.output + "_weights";
             const PostNode post{key(effect.inputs[0]), [&](Program& p, uint32_t, ExprId coordinate) {
                                     tsl::Build scope(p);
-                                    return lower(effect.inputs[0], p, {{"uv", coordinate}, {"screenUV", coordinate}}, toneMapping, srgb);
+                                    return lower(effect.inputs[0], p, {{"uv", coordinate}, {"screenUV", coordinate}}, toneMapping, srgb, custom);
                                 }};
             auto programs = buildOutput(std::nullopt, false, &post, false);
             PostPass material;
@@ -512,6 +512,10 @@ std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMappi
                     material.reads[binding.name.substr(2)] = binding.name.substr(2);
             material.uniforms = uniforms(effect.inputs[0]);
             material.live = uniformNodes(effect.inputs[0]);
+            const auto customUniforms = uniforms(custom);
+            material.uniforms.insert(customUniforms.begin(), customUniforms.end());
+            const auto customLive = uniformNodes(custom);
+            material.live.insert(material.live.end(), customLive.begin(), customLive.end());
             material.package.variants.push_back({0, {buildStage(programs.vertex), std::move(fragment)}});
             passes.push_back(std::move(material));
             passes.push_back(rawPass(effect, edges, kSmaaEdges, {{"input", input}}));

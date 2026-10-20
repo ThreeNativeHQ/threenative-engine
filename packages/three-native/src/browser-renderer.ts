@@ -5,12 +5,13 @@
  * engine did. What it does not implement throws its diagnostic rather than doing nothing.
  */
 import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
-import { type ITslRuntime, isTslNode } from "./browser-tsl.js";
+import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { PassDraw } from "./pass-node.js";
 import { defineRenderTargets } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
 import { readStorageBytes } from "./storage.js";
 import type { INodeFrame } from "./temp-node.js";
+import { defineToneMappingLibrary } from "./tone-mapping.js";
 
 /** The product host's exports beside the catalog ABI (all numbers: pointers, sizes, status). */
 type HostCall =
@@ -141,6 +142,24 @@ export function defineWebRenderer(
     /** three's WebGPURenderer: `antialias` is 4x MSAA, `samples` 0 or 1 is none; the engine draws 1 or 4. */
     readonly samples: number;
     autoClear = true;
+    readonly library = defineToneMappingLibrary(
+      () => {
+        if (!tsl) throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: no TSL runtime");
+        const { exports } = defineTsl(tsl);
+        const color = (exports.toneMappingColor as () => unknown)();
+        const exposure = (exports.uniform as (value: number) => { setName(name: string): unknown })(
+          1,
+        ).setName("toneMappingExposure");
+        return [color, exposure];
+      },
+      (node) => {
+        if (!isTslNode(node))
+          throw new TypeError("TN_NATIVE_CUSTOM_TONEMAPPING_TYPE: expected a TSL vec3 node");
+        if (!tsl?.setToneMapping)
+          throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: no output binding");
+        tsl.setToneMapping(node[TSL_NODE]);
+      },
+    );
     toneMapping = 0;
     toneMappingExposure = 1;
     outputColorSpace = "srgb";
@@ -216,6 +235,7 @@ export function defineWebRenderer(
         } else {
           // The disposed renderer's post graph must not outlive its game.
           tsl?.setPost(null);
+          tsl?.setToneMapping?.(null);
         }
         for (;;) {
           const state = module._tnw_web_poll();
@@ -351,6 +371,7 @@ export function defineWebRenderer(
     /** three's output and shadow settings, handed to the engine when they change. */
     #applyState(): void {
       const { toneMapping, toneMappingExposure, outputColorSpace, shadowMap, samples } = this;
+      this.library.apply(toneMapping);
       const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}|${samples}`;
       if (key === this.#state) return;
       const space = string(String(outputColorSpace));

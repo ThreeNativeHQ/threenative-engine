@@ -31,6 +31,7 @@ namespace {
 struct GraphFind {
     const Texture* texture = nullptr;
     std::shared_ptr<const void> reflector;
+    std::vector<shader::graph::Node> textureNodes;
     std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples, by binding
     std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads, by binding
 };
@@ -45,11 +46,11 @@ GraphFind findGraphSources(const Material& material) {
             if (found.texture && found.texture != texture)
                 throw std::runtime_error("TN_NATIVE_PMREM_UNSUPPORTED: one material samples two pmremTexture sources");
             found.texture = texture;
-        } else if (node->kind == shader::graph::Kind::Texture && node->object) {
-            const auto* texture = static_cast<const Texture*>(node->object.get());
+        } else if (node->kind == shader::graph::Kind::Texture && node->textureObject()) {
+            const auto* texture = static_cast<const Texture*>(node->textureObject().get());
             if (std::none_of(found.textures.begin(), found.textures.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))
-                found.textures.emplace_back(node->name, texture);
+                { found.textures.emplace_back(node->name, texture); found.textureNodes.push_back(node); }
         } else if (node->kind == shader::graph::Kind::StorageElement && node->object) {
             if (std::none_of(found.storages.begin(), found.storages.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))
@@ -545,8 +546,10 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
         if (diagnostic.enabled) ++diagnostic.graphRebuilds;
         GraphFind found = findGraphSources(material);
         cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector),
-                              std::move(found.textures), std::move(found.storages)};
+                              std::move(found.textures), std::move(found.textureNodes), std::move(found.storages)};
     }
+    for (size_t i = 0; i < cached.textureNodes.size(); ++i)
+        cached.textures[i].second = static_cast<const Texture*>(cached.textureNodes[i]->textureObject().get());
     return cached;
 }
 

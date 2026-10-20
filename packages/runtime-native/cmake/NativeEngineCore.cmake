@@ -646,8 +646,10 @@ add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp src/engin
 tn_native_engine_target(tn_engine_bindings)
 target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation tn_engine_scene tn_engine_animation)
 if(EMSCRIPTEN)
-    # Bindings report an unsupported member by exception and the ABI catches it at the boundary;
-    # engine algorithms never throw. Both sides need Wasm exception handling.
+    # Bindings and graph lowering report refusals by exception; the ABI/host catches them.
+    # Both sides need Wasm exception handling.
+    target_compile_options(tn_engine_shader PUBLIC -fwasm-exceptions)
+    target_link_options(tn_engine_shader PUBLIC -fwasm-exceptions)
     target_compile_options(tn_engine_bindings PUBLIC -fwasm-exceptions)
     target_link_options(tn_engine_bindings PUBLIC -fwasm-exceptions)
 endif()

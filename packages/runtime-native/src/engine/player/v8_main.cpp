@@ -520,15 +520,20 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
         return;
     v8::String::Utf8Value space(isolate, colorSpace);
     std::string refusal;
+    shader::graph::Node custom;
+    v8::Local<v8::Value> customValue;
+    if (!settings->Get(ctx, v8str(isolate, "__customToneMapping")).ToLocal(&customValue)) return;
+    if (!customValue->IsNullOrUndefined() && !game.adapter_->tsl().unwrap(customValue, custom))
+        return refuse("TN_NATIVE_CUSTOM_TONEMAPPING_TYPE: expected a TSL node");
     const auto state = outputStateOf(mapping.As<v8::Number>()->Value(), exposure.As<v8::Number>()->Value(),
-                                     std::string(*space, space.length()), refusal);
+                                     std::string(*space, space.length()), refusal, custom);
     if (!state) return refuse(refusal);
     // PCFShadowMap and PCFSoftShadowMap are the filters the engine draws (PCFShadowFilter, PCFSoftShadowFilter).
     if (!enabled->IsBoolean() || !type->IsNumber() || (type.As<v8::Number>()->Value() != 1 && type.As<v8::Number>()->Value() != 2))
         return refuse("shadowMap.enabled must be a boolean and shadowMap.type PCFShadowMap or PCFSoftShadowMap");
     const OutputState output = *state;
     if (output.toneMapping != game.output_.toneMapping || output.toneMappingExposure != game.output_.toneMappingExposure ||
-        output.srgb != game.output_.srgb) {
+        output.srgb != game.output_.srgb || output.customToneMapping != game.output_.customToneMapping) {
         game.output_ = output;
         game.outputChanged_ = true;
     }
@@ -896,7 +901,11 @@ void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
     const auto apply = [&](shader::graph::Node value) {
         if (value == game.post_) return;  // RenderPipeline.render() hands the same graph every frame
         game.idleRenderer();
-        if (game.renderer_) game.renderer_->setPostGraph(value);
+        if (game.renderer_) {
+            if (game.outputChanged_) game.renderer_->setOutput(game.output_);
+            game.outputChanged_ = false;
+            game.renderer_->setPostGraph(value);
+        }
         game.post_ = std::move(value);
     };
     if (info.Length() == 1 && info[0]->IsNull()) { apply({}); return; }
@@ -921,6 +930,8 @@ void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
 void V8Game::initialize(Renderer& renderer) {
     renderer_ = &renderer;
+    renderer.setOutput(output_);
+    outputChanged_ = false;
     if (post_) renderer.setPostGraph(post_);
     pollCompilations();
 }
