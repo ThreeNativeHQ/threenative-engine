@@ -31,6 +31,7 @@ import {
 } from "./atmosphere.js";
 import { bakeCloudRadiance } from "./clouds.js";
 import { skyRadiance } from "./giCache.js";
+import { createGpuSky } from "./gpuSky.js";
 import { HEIGHT_FOG, type HeightFogParams, heightFogNode } from "./heightFog.js";
 
 /**
@@ -200,14 +201,16 @@ export function setupSky(
   fogged = true,
   clouds = false,
 ): void {
-  const sky = atmosphereSky(clouds) ?? photo;
+  const gpu = software ? undefined : createGpuSky(scene, SUN_DIRECTION, fogged, clouds);
+  const sky = gpu?.environment ?? atmosphereSky(clouds) ?? photo;
   tintSun();
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
   const ambient = skyAmbient(sky);
   const fogColor = (ambient ?? new Color(0xacb1c1)).multiply(AMBIENT_SCALE);
   scene.background = (ambient === undefined || !fogged ? undefined : voidSky(sky, fogColor)) ?? sky;
-  scene.backgroundIntensity = SKY_RANGE;
+  scene.backgroundNode = gpu?.node.backgroundNode ?? null;
+  scene.backgroundIntensity = gpu === undefined ? SKY_RANGE : 1;
   // The environment keeps the unpainted photograph: the light from below is the sky's, not the fog's.
   if (!software) {
     scene.environment = sky;

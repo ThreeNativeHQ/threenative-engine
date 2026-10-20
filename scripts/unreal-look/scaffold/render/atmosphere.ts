@@ -23,15 +23,15 @@
 export type Rgb = readonly [number, number, number];
 type Vec3 = readonly [number, number, number];
 
-const BOTTOM_KM = 6360;
-const TOP_KM = 6420;
-const RAYLEIGH: Rgb = [0.005802, 0.013558, 0.0331]; // per km at sea level
-const MIE_SCATTER = 0.003996;
-const MIE_ABSORB = 0.000444;
-const OZONE: Rgb = [0.00065, 0.001881, 0.000085];
-const MIE_G = 0.8;
-const GROUND_ALBEDO = 0.4; // 170/255 sRGB, linear
-const CAMERA_KM = 0.06; // the reference floor sits 60 m above the planet top
+export const BOTTOM_KM = 6360;
+export const TOP_KM = 6420;
+export const RAYLEIGH: Rgb = [0.005802, 0.013558, 0.0331]; // per km at sea level
+export const MIE_SCATTER = 0.003996;
+export const MIE_ABSORB = 0.000444;
+export const OZONE: Rgb = [0.00065, 0.001881, 0.000085];
+export const MIE_G = 0.8;
+export const GROUND_ALBEDO = 0.4; // 170/255 sRGB, linear
+export const CAMERA_KM = 0.06; // the reference floor sits 60 m above the planet top
 const FOUR_PI = 4 * Math.PI;
 
 const rayleighPhase = (c: number): number => (3 / (16 * Math.PI)) * (1 + c * c);
@@ -46,7 +46,7 @@ interface IMedium {
   ext: Rgb;
 }
 
-function medium(h: number): IMedium {
+export function medium(h: number): IMedium {
   const ray = Math.exp(-h / 8);
   const mie = Math.exp(-h / 1.2);
   const ozone = Math.max(0, Math.min(1, h < 25 ? h / 15 - 2 / 3 : -h / 15 + 8 / 3));

@@ -2,13 +2,21 @@
 // VolumetricCloudCommon.ush (volume transport, dual HG, scattering octaves, aerial perspective);
 // Engine/Source/Runtime/Engine/Private/Components/VolumetricCloudComponent.cpp (km defaults).
 // Independent CPU implementation; material coverage/scale are inferred from the L9 reference PNGs.
-import { type Rgb, sunTransmittance } from "./atmosphere.js";
+import {
+  BOTTOM_KM,
+  CAMERA_KM,
+  MIE_ABSORB,
+  MIE_SCATTER,
+  RAYLEIGH,
+  type Rgb,
+  sunTransmittance,
+} from "./atmosphere.js";
 
-const PLANET = 6360;
+const PLANET = BOTTOM_KM;
 export const CLOUD_BOTTOM_KM = 5;
 export const CLOUD_TOP_KM = 15;
-const CAMERA = PLANET + 0.06;
-const EXTINCTION = 3; // per km; the inaccessible simple material's density is an approximation
+const CAMERA = PLANET + CAMERA_KM;
+export const EXTINCTION = 3; // per km; the inaccessible simple material's density is an approximation
 const clamp = (v: number): number => Math.max(0, Math.min(1, v));
 const smooth = (v: number): number => {
   const t = clamp(v);
@@ -16,13 +24,18 @@ const smooth = (v: number): number => {
 };
 
 /** Seeded periodic value noise: a 32-cell lattice, smoothly interpolated on all three axes. */
-export function cloudDensityField(seed = 631): (x: number, y: number, z: number) => number {
+export function cloudNoiseLattice(seed = 631): Float32Array {
   const lattice = new Float32Array(32 ** 3);
   let state = seed | 0;
   for (let i = 0; i < lattice.length; i += 1) {
     state = (Math.imul(state, 1664525) + 1013904223) | 0;
     lattice[i] = (state >>> 0) / 4294967296;
   }
+  return lattice;
+}
+
+export function cloudDensityField(seed = 631): (x: number, y: number, z: number) => number {
+  const lattice = cloudNoiseLattice(seed);
   const at = (x: number, y: number, z: number): number =>
     lattice[((z & 31) * 32 + (y & 31)) * 32 + (x & 31)] ?? 0;
   const noise = (x: number, y: number, z: number): number => {
@@ -107,8 +120,8 @@ export function bakeCloudRadiance(
       for (let c = 0; c < 3; c += 1)
         airDepth[c] =
           (airDepth[c] ?? 0) +
-          ((([0.005802, 0.013558, 0.0331][c] ?? 0) * Math.exp(-h / 8) +
-            0.00444 * Math.exp(-h / 1.2)) *
+          (((RAYLEIGH[c as 0 | 1 | 2] ?? 0) * Math.exp(-h / 8) +
+            (MIE_SCATTER + MIE_ABSORB) * Math.exp(-h / 1.2)) *
             entry) /
             8;
     }
