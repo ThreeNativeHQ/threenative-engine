@@ -105,6 +105,34 @@ Each box sits under the phase that delivers it, so progress moves phase by phase
 - **2026-10-19, `release.ts --dry-run`** stops after packing the cohort. The upgrade proof needs the
   registry `latest` and a browser lane, which the `npm release` workflow and the real release carry.
 
+## Speed comparison: current flow against this flow
+
+Baseline: the last, successful attempt of the 0.3.5 release on 2026-10-19 (UTC). Every number is a
+run duration read from GitHub. "New" columns are filled only from runs that executed the new flow.
+
+| Segment | Current flow (0.3.5, measured) | New flow | Measured new |
+|---|---|---|---|
+| Main CI (run 39310175297) | 119 min | unchanged | |
+| `native-platforms` on the same SHA (run 39310220017) | 48 min, started by hand 18 s after CI | starts by itself on the main push, in parallel with CI | AC-3 |
+| CI green to candidate dispatched | about 1 min of typing: SHA, run ids in 3 places | `release:ship` reads the runs | AC-7 |
+| `release-candidate` run (39304236813) | 2 min | unchanged | |
+| Candidate to tag pushed | about 4 min of hand work | `release:ship` | AC-7 |
+| Tag run (39327476745) | 45 min, 31 of them the Windows build | unchanged here, 12 min with PRD-630 | AC-7, PRD-630 AC-5 |
+| CI green to public GitHub release | **51 min** (21:20 to 22:11) | about 50 min | AC-7 |
+| npm publish and `verify-registry-install` | not measured | unchanged | AC-7 |
+
+What this says, without rounding it up:
+
+- **The happy path does not get faster from this PRD alone.** The tag run is 45 of the 51 minutes and
+  this PRD does not touch it. The saving PRD-630 targets is the 31-minute Windows build.
+- **The gain here is on the failure path and in human latency.** The 0.3.5 release took more than 30
+  hours across six candidates because defects (the wrong `RELEASE_REPOSITORY`, three red desktop
+  builds, a moved tag) appeared only on tag day. Each cost a new commit and a restart of a chain of
+  about 3 hours. The rehearsal moves these defects to the pull request. The `native-platforms` run no
+  longer waits for a person.
+- **Target after PRD-629 and PRD-630:** CI green to public release of about 20 minutes, plus the npm
+  step. That is a projection, not a result, until AC-7 and PRD-630 AC-5 are measured.
+
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
