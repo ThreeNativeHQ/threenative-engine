@@ -47,6 +47,7 @@ import {
   texture3D,
   uniform,
   uv,
+  vec2,
   vec3,
   vec4,
   viewportLinearDepth,
@@ -90,6 +91,10 @@ const probe = {
   instanceColorSet: "",
   /** PRD-546: texture3D reads slice 1 of a 4x1x2 Data3DTexture across a 4x1 strip. */
   volumeStrip: "",
+  /** A QuadMesh whose material the engine refuses, drawn into a target: the draw throws, once, by name. */
+  targetRefusal: "",
+  /** Draw calls the world scene submits after that refusal; -1 until measured, 0 while the host stays dead. */
+  drawsAfterTargetRefusal: -1,
 };
 const started = performance.now();
 
@@ -353,6 +358,23 @@ try {
   const volumeScene = new Scene();
   volumeScene.add(volumeQuad);
   probe.volumeStrip = await drawStrip(volumeScene);
+  // A refused offscreen draw fails that draw and leaves the host running: the world still draws after it.
+  // vec2 of a vec3 and a float is four components, a graph the engine refuses to lower.
+  const unlowerable = new MeshBasicNodeMaterial();
+  unlowerable.colorNode = vec4(vec2(vec3(1, 0, 0), 1), 0, 1);
+  renderer.setRenderTarget(halfTarget);
+  try {
+    new QuadMesh(unlowerable).render(renderer);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    probe.targetRefusal = message.includes("components for 2") ? "refused: components for 2" : message;
+  }
+  renderer.setRenderTarget(null);
+  for (let attempt = 0; attempt < 60 && probe.drawsAfterTargetRefusal <= 0; attempt++) {
+    renderer.render(scene, camera);
+    probe.drawsAfterTargetRefusal = (renderer.info.render as { frameCalls: number }).frameCalls;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
   // Midway's renderer settings: they reach the engine before each frame, as on the V8 player.
   renderer.toneMapping = 5;
   try {

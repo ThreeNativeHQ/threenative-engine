@@ -73,6 +73,19 @@ int fail(const std::string& message) {
     return 1;
 }
 
+/**
+ * A refusal that fails one call and leaves the host running (a render target's draw): tnw_web_error names it, once,
+ * and tnw_web_poll still answers Ready, so the renderer keeps drawing. A Failed host keeps its first message.
+ */
+int refuse(const std::string& message) {
+    if (state != Failed) failure = message;
+    // Once per distinct refusal, on the console as a frame's refused program is: the throw each call raises
+    // reaches the page's caller, which may catch it.
+    static std::set<std::string> reported;
+    if (reported.insert(message).second) std::fprintf(stderr, "TN_RENDERER: %s\n", message.c_str());
+    return 1;
+}
+
 /** Runs the queued kernels and readbacks ahead of whatever draws or reads next; a refusal prints by name. */
 void flushCompute() {
     if (state != Ready || !renderer || computeQueue.empty()) return;
@@ -274,7 +287,7 @@ extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_h
         return fail("TN_WASM_RENDER_TARGET: target, root or camera handle invalid");
     flushCompute();  // a material in the target may read what a queued kernel writes
     const auto refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, deferred != 0);
-    if (!refused.empty()) return fail(refused.front());
+    if (!refused.empty()) return refuse(refused.front());
     return 0;
 }
 
