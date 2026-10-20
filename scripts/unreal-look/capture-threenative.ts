@@ -120,7 +120,7 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
   );
 }
 
-async function scaffold(work: string, reuse: boolean, baseline: boolean): Promise<string> {
+export async function scaffold(work: string, reuse: boolean, baseline: boolean): Promise<string> {
   const target = path.join(work, "starter");
   if (reuse && existsSync(path.join(target, "node_modules"))) {
     // The look lives in src/render/; re-copy it (and public/) so a template edit reaches the
@@ -144,7 +144,7 @@ async function scaffold(work: string, reuse: boolean, baseline: boolean): Promis
   return target;
 }
 
-function freePort(): Promise<number> {
+export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const probe = createServer();
     probe.once("error", reject);
@@ -159,7 +159,7 @@ function freePort(): Promise<number> {
   });
 }
 
-async function waitForServer(url: string, server: ChildProcess): Promise<void> {
+export async function waitForServer(url: string, server: ChildProcess): Promise<void> {
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
     if (server.exitCode !== null) throw new Error(`dev server exited ${server.exitCode}`);
@@ -173,7 +173,7 @@ async function waitForServer(url: string, server: ChildProcess): Promise<void> {
   throw new Error(`TN_UNREAL_LOOK_SERVER: ${url} not ready in 120 s`);
 }
 
-const HIDE_UI = `body * { visibility: hidden !important; }
+export const HIDE_UI = `body * { visibility: hidden !important; }
 [data-threenative-canvas], [data-threenative-canvas] * { visibility: visible !important; }`;
 
 export async function captureThreeNative(options: IThreeNativeCaptureOptions): Promise<number> {
