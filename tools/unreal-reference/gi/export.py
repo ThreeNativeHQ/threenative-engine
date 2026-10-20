@@ -28,6 +28,9 @@ import unreal
 GI = os.path.dirname(os.path.abspath(__file__))
 REGISTRY = json.load(open(os.path.join(GI, "scenes.json")))
 PROXY = "/GLTFExporter/Materials/Proxy/M_GLTF_Default"
+# Region IDs are unlit: with lighting off, the lit proxy still adds its rough specular albedo, so a
+# 0 channel arrives as 112 in the ID frame (Unreal 5.8.3, Substrate).
+UNLIT_PROXY = "/GLTFExporter/Materials/Proxy/M_GLTF_Unlit"
 # Region-ID colours, sRGB8, given out in box order. Black is the background ("Sky" in compare.ts).
 ID_COLORS = [
     [255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 0], [255, 0, 255], [0, 255, 255],
@@ -50,9 +53,9 @@ def root(name):
 
 
 # --- build -------------------------------------------------------------------
-def material(ref, folder, name, values):
+def material(ref, folder, name, values, proxy=PROXY):
     mi = ref.asset_tools.create_asset(name, folder, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
-    mel.set_material_instance_parent(mi, unreal.load_asset(PROXY))
+    mel.set_material_instance_parent(mi, unreal.load_asset(proxy))
     r, g, b = values["baseColor"]
     mel.set_material_instance_vector_parameter_value(mi, "Base Color Factor", unreal.LinearColor(r, g, b, 1.0))
     mel.set_material_instance_scalar_parameter_value(mi, "Roughness Factor", values["roughness"])
@@ -152,7 +155,7 @@ def build(ref, name):
     regions = {box["name"]: ID_COLORS[i] for i, box in enumerate(scene["boxes"])}
     # Linear base colour id/255: Unreal display-encodes it, and compare.ts accepts both forms.
     ids = {
-        b: material(ref, f"{base}/Materials", f"MI_ID_{b}", {"baseColor": [c / 255.0 for c in rgb], "roughness": 1.0, "metallic": 0.0})
+        b: material(ref, f"{base}/Materials", f"MI_ID_{b}", {"baseColor": [c / 255.0 for c in rgb], "roughness": 1.0, "metallic": 0.0}, UNLIT_PROXY)
         for b, rgb in regions.items()
     }
     meshes = {box["name"]: box_mesh(f"{base}/Meshes", box) for box in scene["boxes"]}
