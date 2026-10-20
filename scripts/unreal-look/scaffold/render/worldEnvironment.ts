@@ -732,7 +732,7 @@ export class WorldEnvironment {
         : undefined;
     const exposed =
       exposure === undefined
-        ? colour.mul(options.exposure)
+        ? applyExposure(colour, float(options.exposure))
         : applyExposure(
             colour,
             localExposure === undefined

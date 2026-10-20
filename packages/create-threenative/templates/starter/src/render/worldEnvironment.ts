@@ -698,7 +698,7 @@ export class WorldEnvironment {
       : undefined;
     const exposed =
       exposure === undefined
-        ? colour.mul(options.exposure)
+        ? applyExposure(colour, float(options.exposure))
         : applyExposure(colour, exposure.exposureNode);
     let released = false;
     const releaseGraph = (): void => {
