@@ -11916,6 +11916,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "aoNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13262,6 +13271,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "aoNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13833,6 +13851,15 @@
         {
           "name": "colorWrite",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "aoNode",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {

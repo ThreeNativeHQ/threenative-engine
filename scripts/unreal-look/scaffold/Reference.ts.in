@@ -28,6 +28,7 @@ import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset } from "../render/quality.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
+import { installSkyOcclusion } from "../render/skyOcclusion.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { Play } from "./Play.js";
@@ -144,6 +145,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       }
     }
 
+    // PRD-635: the sky light is occluded by what stands above a surface (render/skyOcclusion.ts).
+    if (TUNED && level >= 2) installSkyOcclusion(ctx, model);
     const target = new Vector3();
     (window as unknown as { __tnRef: unknown }).__tnRef = {
       layer: LAYER,

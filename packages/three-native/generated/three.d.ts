@@ -1502,6 +1502,7 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 fragmentNode: Node | null;
 colorWrite: boolean;
+aoNode: Node | null;
 
   clone(): this;
 
@@ -1649,6 +1650,7 @@ bumpMap: Texture | null;
 fragmentNode: Node | null;
 flatShading: boolean;
 colorWrite: boolean;
+aoNode: Node | null;
 
   clone(): this;
 
@@ -1760,6 +1762,7 @@ vertexNode: Node | null;
 depthNode: Node | null;
 visible: boolean;
 colorWrite: boolean;
+aoNode: Node | null;
 
   clone(): this;
 

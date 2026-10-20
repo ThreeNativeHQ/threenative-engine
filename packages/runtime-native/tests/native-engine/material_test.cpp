@@ -211,6 +211,21 @@ void surfacePrefix() {
     CHECK(fragment.uniforms.empty() || fragment.uniforms[0].name != "metalness");
 }
 
+// NodeMaterial.aoNode darkens indirect light: the node's uniform enters the standard fragment, the slot is part of the
+// program key, and a material without it compiles to a program that never mentions it.
+void aoNode() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    VertexVariant occluded;
+    occluded.nodes.aoNode = g::uniform("nodeAo", Type::f32(), {0.25f});
+    CHECK(plain.key() != occluded.key());
+    const auto without = WgslEmitter::emit(buildStandard(StandardMaterial{}, plain).fragment, 1);
+    const auto with = WgslEmitter::emit(buildStandard(StandardMaterial{}, occluded).fragment, 1);
+    CHECK(without.ok() && with.ok());
+    CHECK(without.code.find("f_nodeAo") == std::string::npos);
+    CHECK(with.code.find("f_nodeAo") != std::string::npos);
+}
+
 void nodes() {
     namespace g = tn::engine::shader::graph;
     VertexVariant variant;
@@ -274,6 +289,7 @@ void nodes() {
 void builds() {
     nodes();
     surfacePrefix();
+    aoNode();
     VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;
     CHECK(storage.key() != VertexVariant{}.key());
     for (int kind = 0; kind < 5; ++kind) {

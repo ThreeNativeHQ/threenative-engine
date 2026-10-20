@@ -207,7 +207,9 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
         if (
           message.type() === "error" ||
           message.type() === "warning" ||
-          /^TN_(INDIRECT_LIGHT|PROBE_VOLUME|NATIVE_|RENDER_CHAIN|SSR|SSGI|AUTO_EXPOSURE|VIRTUAL_SHADOW)/.test(message.text())
+          /^TN_(INDIRECT_LIGHT|PROBE_VOLUME|NATIVE_|RENDER_CHAIN|SSR|SSGI|SKY_OCCLUSION|AUTO_EXPOSURE|VIRTUAL_SHADOW)/.test(
+            message.text(),
+          )
         )
           console.info(`page: ${message.text().slice(0, 1500)}`);
       });

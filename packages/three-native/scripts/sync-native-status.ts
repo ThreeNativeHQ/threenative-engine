@@ -219,10 +219,12 @@ const UNDECLARED_FIELDS: Record<string, string> = {
   "MeshBasicNodeMaterial.emissiveNode": "Node | null",
   "MeshBasicNodeMaterial.roughnessNode": "Node | null",
   "MeshBasicNodeMaterial.metalnessNode": "Node | null",
+  "MeshBasicNodeMaterial.aoNode": "Node | null",
   "Sprite.morphTargetInfluences": "number[]",
   "SpriteNodeMaterial.emissiveNode": "Node | null",
   "SpriteNodeMaterial.roughnessNode": "Node | null",
   "SpriteNodeMaterial.metalnessNode": "Node | null",
+  "SpriteNodeMaterial.aoNode": "Node | null",
 };
 
 /** A `__` member is engine-internal (a back end calls it, as `__walk`); three's surface never has it. */

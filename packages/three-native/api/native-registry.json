@@ -4505,6 +4505,7 @@
       "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
+        "aoNode",
         "blending",
         "color.b",
         "color.g",
@@ -4540,6 +4541,7 @@
       ],
       "setters": [
         "alphaTest",
+        "aoNode",
         "blending",
         "color",
         "color.b",
@@ -4976,6 +4978,7 @@
       "getters": [
         "alphaTest",
         "aoMapIntensity",
+        "aoNode",
         "blending",
         "bumpScale",
         "color.b",
@@ -5022,6 +5025,7 @@
         "alphaTest",
         "aoMap",
         "aoMapIntensity",
+        "aoNode",
         "blending",
         "bumpMap",
         "bumpScale",
@@ -5095,6 +5099,7 @@
       "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
+        "aoNode",
         "blending",
         "colorNode",
         "colorWrite",
@@ -5124,6 +5129,7 @@
       ],
       "setters": [
         "alphaTest",
+        "aoNode",
         "blending",
         "colorNode",
         "colorWrite",
@@ -7729,6 +7735,7 @@
       "methods": ["clone", "copy", "dispose"],
       "getters": [
         "alphaTest",
+        "aoNode",
         "blending",
         "color.b",
         "color.g",
@@ -7768,6 +7775,7 @@
       ],
       "setters": [
         "alphaTest",
+        "aoNode",
         "blending",
         "color",
         "color.b",

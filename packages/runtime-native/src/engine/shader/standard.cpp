@@ -1175,10 +1175,14 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // LightsNode: (directDiffuse + indirectDiffuse) + (directSpecular + indirectSpecular),
     // then NodeMaterial adds emissive. Do not regroup the f32 sum by light source.
     ExprId totalIndirectDiffuse = environmentDiffuse == kInvalid ? indirectDiffuse : f.add(indirectDiffuse, environmentDiffuse);
-    if (variant.reads(kAoMap)) {
-        // MaterialNode.AO, then PhysicalLightingModel.ambientOcclusion: indirect diffuse times the
-        // occlusion, indirect specular times its roughness-shaped specular occlusion.
-        const ExprId ao = f.add(f.mul(f.sub(f.swizzle(pbrTexel(f, variant, kAoMap), "x"), t.f(1)), f.uniform("aoMapIntensity", Type::f32())), t.f(1));
+    if (variant.reads(kAoMap) || variant.nodes.aoNode) {
+        // MaterialNode.AO (the aoMap, times material.aoNode as NodeMaterial.setupAmbientOcclusion has it), then
+        // PhysicalLightingModel.ambientOcclusion: indirect diffuse times the occlusion, indirect specular times
+        // its roughness-shaped specular occlusion. Direct light never sees it.
+        ExprId ao = t.f(1);
+        if (variant.reads(kAoMap))
+            ao = f.add(f.mul(f.sub(f.swizzle(pbrTexel(f, variant, kAoMap), "x"), t.f(1)), f.uniform("aoMapIntensity", Type::f32())), t.f(1));
+        if (variant.nodes.aoNode) ao = f.mul(ao, slotValue(f, slots, variant.nodes.aoNode, Type::f32(), kInvalid));
         totalIndirectDiffuse = f.mul(totalIndirectDiffuse, ao);
         if (clearcoatSpecularIndirect != kInvalid) clearcoatSpecularIndirect = f.mul(clearcoatSpecularIndirect, ao);
         if (environmentSpecular != kInvalid) {
