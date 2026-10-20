@@ -839,7 +839,12 @@ export function emitterLight(
     const x = sqrt(max(float(1).div(sin2).sub(1), 1e-6));
     const y = clamp(x.negate().mul(cos.div(sin)), -1, 1);
     const s = sin.mul(sqrt(max(float(1).sub(y.mul(y)), 0)));
-    const clipped = cos.mul(acos(y)).sub(x.mul(s)).mul(sin2).add(atan(s.div(x))).div(Math.PI);
+    const clipped = cos
+      .mul(acos(y))
+      .sub(x.mul(s))
+      .mul(sin2)
+      .add(atan(s.div(x)))
+      .div(Math.PI);
     const share = select(cos.mul(cos).greaterThan(sin2), sin2.mul(max(cos, 0)), max(clipped, 0));
     const light = vec3(e.radiance[0] ?? 0, e.radiance[1] ?? 0, e.radiance[2] ?? 0).mul(share);
     sum = sum === undefined ? light : sum.add(light);
