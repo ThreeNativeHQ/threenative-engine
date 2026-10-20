@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <optional>
 #include <map>
 
 // three@0.185.1's Material and the five mesh materials, as the properties the native renderer
@@ -86,6 +87,7 @@ public:
     bool polygonOffset = false;
     double polygonOffsetFactor = 0, polygonOffsetUnits = 0;
     Side side = Side::Front;
+    std::optional<Side> shadowSide;  // three's material.shadowSide: the faces a shadow pass draws; null derives it
     Blending blending = Blending::Normal;
     bool visible = true;
     bool toneMapped = true;

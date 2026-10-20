@@ -2145,6 +2145,22 @@
       "symbol": "isWeb"
     },
     {
+      "aliases": ["SourceRadius, PCSS, soft lamp shadow"],
+      "constraints": [
+        "sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only"
+      ],
+      "example": "lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lampPenumbraTangent( sourceRadius: number, blockerDistance: number, receiverDistance: number, ): number { … }",
+      "situations": ["soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does"],
+      "summary": "Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.",
+      "supersedes": [],
+      "symbol": "lampPenumbraTangent"
+    },
+    {
       "aliases": [],
       "constraints": [
         "results are written to each item's own index and never appended, so a positional lookup finds the same asset on every load",
@@ -3180,6 +3196,22 @@
       "summary": "Source-angle blocker search and variable-radius PCF on three's shadow map.",
       "supersedes": [],
       "symbol": "sourceAngleShadowFilter"
+    },
+    {
+      "aliases": ["SourceRadius, PCSS, soft lamp shadow"],
+      "constraints": [
+        "sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only"
+      ],
+      "example": "lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function sourceRadiusShadowFilter( { … }",
+      "situations": ["soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does"],
+      "summary": "Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.",
+      "supersedes": [],
+      "symbol": "sourceRadiusShadowFilter"
     },
     {
       "aliases": [],

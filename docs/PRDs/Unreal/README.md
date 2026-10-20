@@ -8,6 +8,7 @@ moved here by topic, and each one was re-checked against the 5.8.3 source.**
 | --- | --- |
 | [`look/`](look/) | The Unreal default look, measured against a real Unreal render and turned on layer by layer |
 | [`gi/`](gi/) | Lumen-style global illumination: the GI reference scene, gathers, surface cache, temporal stability, reflections, tiers |
+| [`shadows/`](shadows/) | Virtual-shadow-map parity past the sun penumbra: shadow calibration scenes, lamp shadows, leaf shadows, shadow tiers |
 | [`rendering/`](rendering/) | Atmosphere, clouds, shadows, virtualized geometry, the radiance cache probes (PRD-603 to PRD-605) |
 | [`performance/`](performance/) | Resolution scale, temporal reconstruction, tile memory, texture residency |
 | [`open-world/`](open-world/) | Terrain LOD, streaming transitions, world partition |
@@ -268,6 +269,60 @@ PRD-459, PRD-486 and PRD-493 cite Unreal only in passing, so they stay in their 
 | [PRD-493](../open-world/PRD-493-terrain-layers-past-sixteen-textures.md) | Cross-reference to PRD-567 |
 | [PRD-316](vfx/PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md) | Culling and budget points that PRD-569 must respect |
 | [PRD-486](../open-world/PRD-486-characters-get-a-lod-chain.md) | Per-LOD required bones and posed-bounds culling |
+
+## Shadows: the virtual shadow map set (filed 2026-10-20)
+
+What a fresh Unreal 5.8.3 project runs, from the source: virtual shadow maps for the sun and every
+lamp, shadow-map ray tracing (8 rays × 4 samples at Epic), mesh distance fields generated, contact
+shadows off, capsule shadows off, and ray-traced shadows and MegaLights off
+(`tools/unreal-reference/Config/DefaultEngine.ini`; `Engine/Config/BaseScalability.ini:240-265`).
+ThreeNative already ships the directional half: `VirtualShadowNode` clip levels with a page cache,
+mover maps and partial redraw (PRD-538, PRD-572), and the source-angle filter of
+[PRD-634](look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md).
+This set covers the rest of the default look.
+
+**Calibration comes first (owner, 2026-10-20).** Each shadow PRD is judged on Unreal-authored
+calibration scenes, recreated in ThreeNative, until parity, with the sheets on the PR. One scene
+holds the features of several PRDs. [PRD-649](shadows/PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md)
+adds a `shadow:` family to the GI pipeline (PRD-638, PRD-646, PRD-647) and does not copy it.
+
+| Part | PRD | Outcome | Waits on |
+| --- | --- | --- | --- |
+| Calibration scenes | [PRD-649](shadows/PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) | `penumbra-lab`, `lamp-room`, `horizon` and the shared `foliage` scene, judged at L5 | PRD-638 Phase 1, PRD-646 Phase 2, PRD-647 |
+| Sun penumbra and reach | [PRD-634](look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) | Sun shadows reach the horizon and soften with the caster gap | PRD-649 for its stability runs |
+| Lamp shadows | [PRD-650](shadows/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) | A lamp's shadow is as sharp as the pixels it covers, cached, and softened by `sourceRadius` | PRD-649 Phase 2 |
+| Leaf shadows | [PRD-651](shadows/PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md) | Leaf cards cast leaf shadows on the owned engine, and sway near the camera | PRD-649 Phase 2; PRD-488 for wind |
+| Tiers | [PRD-652](shadows/PRD-652-the-shadow-tier-follows-unreal-shadow-quality-levels.md) | `low`, `medium`, `high` follow Unreal Low, Medium, Epic | PRD-649 Phase 3, PRD-634, PRD-650 |
+| Page cost | [PRD-457](rendering/PRD-457-virtual-shadows-scale-by-measurement.md) | Sparse pages only where measured cheaper | — |
+
+```mermaid
+flowchart LR
+  P638[PRD-638/646/647 calibration pipeline] --> P649[PRD-649 shadow scenes]
+  P649 --> P634[PRD-634 sun penumbra]
+  P649 --> P650[PRD-650 lamp shadows]
+  P649 --> P651[PRD-651 leaf shadows]
+  P488[PRD-488 wind] --> P651
+  P634 --> P652[PRD-652 shadow tiers]
+  P650 --> P652
+```
+
+Order: PRD-649 Phase 1, then PRD-651 Phase 1 (an engine bug on the default engine, and the scene is
+not needed for its red-green test), then PRD-650 and the rest of PRD-651 in parallel, then PRD-652.
+
+**Not filed, with the reason (2026-10-20):**
+
+- **Screen-space contact shadows:** declined in PRD-561, and off in a fresh Unreal project (light
+  length 0). The SMRT screen ray (`r.Shadow.Virtual.ScreenRayLength` 0.015) is a different thing: PRD-649
+  measures it by ablation, and PRD-634 owns it if it shows.
+- **Distance-field far shadows:** the source does not settle whether they render beside the virtual
+  shadow clipmap. PRD-649 measures it by ablation on `horizon`. A PRD follows only if they show,
+  and then it traces `GPUSceneBVH`, as the GI set does.
+- **A shadow denoiser:** Unreal has none for virtual shadows. Its SMRT noise is resolved by temporal
+  reconstruction ([PRD-539](performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md)).
+  The `walk` and `sunturn` runs show whether ThreeNative needs more.
+- **Capsule shadows, ray-traced shadows, MegaLights, translucent coloured shadows, area-light
+  shadows:** all off in a fresh Unreal project, so they are not the default look. Each waits for a
+  game that asks. Hardware ray tracing starts in [PRD-645](gi/PRD-645-a-desktop-gpu-with-ray-tracing-traces-gi-rays-in-hardware.md).
 
 ## Already shipped, or declined — do not file again
 

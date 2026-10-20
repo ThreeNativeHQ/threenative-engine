@@ -651,9 +651,17 @@ uint32_t Program::textureDepth(std::string_view name, bool cube) {
     return static_cast<uint32_t>(textures_.size() - 1);
 }
 
+uint32_t Program::textureDepthCubeValues(std::string_view name) {
+    for (std::size_t i = 0; i < textures_.size(); ++i)
+        if (textures_[i] == name && textureKinds_[i] == TextureKind::DepthCubeValues) return static_cast<uint32_t>(i);
+    textures_.emplace_back(name);
+    textureKinds_.push_back(TextureKind::DepthCubeValues);
+    return static_cast<uint32_t>(textures_.size() - 1);
+}
+
 ExprId Program::sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Where where) {
     if (uv == kInvalid || reference == kInvalid) return kInvalid;
-    if (texture >= textures_.size() || (textureKinds_[texture] == TextureKind::Float2d || textureKinds_[texture] == TextureKind::Float3d || textureKinds_[texture] == TextureKind::FloatCube))
+    if (texture >= textures_.size() || (textureKinds_[texture] != TextureKind::Depth2d && textureKinds_[texture] != TextureKind::DepthCube))
         return fail("sampleCompare", "no such depth texture", where);
     const Type coordinate = textureKinds_[texture] == TextureKind::DepthCube ? Type::vec(3) : Type::vec(2);
     if (exprs_[uv].type != coordinate)
@@ -686,6 +694,11 @@ ExprId Program::sample(uint32_t texture, ExprId uv, Where where) {
 
 ExprId Program::sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where where) {
     if (uv == kInvalid || level == kInvalid) return kInvalid;
+    if (texture < textures_.size() && textureKinds_[texture] == TextureKind::DepthCubeValues) {
+        if (exprs_[uv].type != Type::vec(3) || exprs_[level].type != Type::i32())
+            return fail("sampleLevel " + textures_[texture], "a depth cube reads a vec3 direction at an i32 level", where);
+        return pure(Expr{Op::SampleLevel, Type::f32(), {uv, level}, 2, texture});
+    }
     if (texture >= textures_.size() || (textureKinds_[texture] != TextureKind::Float2d && textureKinds_[texture] != TextureKind::Float3d && textureKinds_[texture] != TextureKind::FloatCube))
         return fail("sampleLevel", "no such texture", where);
     if (exprs_[uv].type != ((textureKinds_[texture] == TextureKind::Float3d || textureKinds_[texture] == TextureKind::FloatCube) ? Type::vec(3) : Type::vec(2)))

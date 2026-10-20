@@ -819,6 +819,106 @@ static ExprId pointShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId po
     return f.call("mix", {t.f(1), shadow, f.uniform(at + "ShadowIntensity", Type::f32())});
 }
 
+// sourceRadiusShadowFilter on a lamp (PRD-650): a spot light's 2D map or a point light's cube. A blocker
+// search over the cone from the receiver to the lamp's disk, then a compare filter whose radius, in
+// tangent units (offset over distance), is sourceRadius * (1 / blocker - 1 / receiver), at least half
+// a texel; sourceRadius 0 is one hard tap. Distances are the map's view depths. The fixed Vogel disk
+// matches core's TSL filter. `ShadowSourceRadius` = {sourceRadius, tanHalfFov, blockers, samples}.
+static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld,
+                                   bool cube) {
+    const std::string at = "light" + std::to_string(index);
+    const ExprId soft = f.uniform(at + "ShadowSourceRadius", Type::vec(4));
+    const ExprId radius = f.swizzle(soft, "x"), tanHalf = f.swizzle(soft, "y");
+    const ExprId blockers = f.swizzle(soft, "z"), samples = f.swizzle(soft, "w");
+    const ExprId near = f.uniform(at + "ShadowNear", Type::f32()), far = f.uniform(at + "ShadowFar", Type::f32());
+    const ExprId mapSize = f.swizzle(f.uniform(at + "ShadowMapSize", Type::vec(2)), "x");
+    const ExprId bias = f.uniform(at + "ShadowBias", Type::f32());
+    const auto distance = [&](ExprId depth) {  // a [0, 1] perspective depth back to its view depth
+        return f.div(f.mul(near, far), f.sub(far, f.mul(depth, f.sub(far, near))));
+    };
+    const ExprId world = f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
+    const ExprId shadowPosition =
+        f.mul(f.uniform(at + "ShadowMatrix", Type::mat(4, 4)), f.construct(Type::vec(4), {world, t.f(1)}));
+    const std::string name = (cube ? "shadowCube" : "shadow") + std::to_string(index);
+    const uint32_t map = f.textureDepth(name, cube);
+    ExprId receiver, reference, texel;
+    std::vector<ExprId> outside;  // conditions under which the receiver is outside the map: unshadowed
+    ExprId direction = kInvalid, tangent = kInvalid, bitangent = kInvalid, uv = kInvalid, uvPerTangent = kInvalid;
+    uint32_t values = map;
+    if (cube) {
+        // PointShadowNode's reference depth and tap plane (pointShadowFactor); a cube face spans 90 degrees.
+        values = f.textureDepthCubeValues(name + "values");
+        const ExprId position = f.swizzle(shadowPosition, "xyz");
+        const ExprId absolute = f.call("abs", {position});
+        receiver = f.call("max", {f.call("max", {f.swizzle(absolute, "x"), f.swizzle(absolute, "y")}), f.swizzle(absolute, "z")});
+        const ExprId negated = f.neg(receiver);
+        reference = f.add(f.div(f.mul(f.add(near, negated), far), f.mul(f.sub(far, near), negated)), bias);
+        direction = f.call("normalize", {position});
+        const ExprId absDir = f.call("abs", {direction});
+        const ExprId axis = f.select(f.less(f.swizzle(absDir, "z"), f.swizzle(absDir, "x")),
+                                     f.construct(Type::vec(3), {t.f(0), t.f(1), t.f(0)}),
+                                     f.construct(Type::vec(3), {t.f(1), t.f(0), t.f(0)}));
+        tangent = f.call("normalize", {f.call("cross", {direction, axis})});
+        bitangent = f.call("cross", {direction, tangent});
+        texel = f.div(t.f(2), mapSize);
+        outside = {f.less(far, receiver), f.less(receiver, near)};
+    } else {
+        const ExprId projected = f.div(f.swizzle(shadowPosition, "xyz"), f.swizzle(shadowPosition, "w"));
+        uv = f.construct(Type::vec(2), {f.swizzle(projected, "x"), t.oneMinus(f.swizzle(projected, "y"))});
+        receiver = distance(f.swizzle(projected, "z"));
+        reference = f.add(f.swizzle(projected, "z"), bias);
+        uvPerTangent = f.div(t.f(0.5f), tanHalf);
+        texel = f.div(f.mul(tanHalf, t.f(2)), mapSize);
+        const ExprId low = f.call("min", {f.swizzle(uv, "x"), f.swizzle(uv, "y")});
+        const ExprId high = f.call("max", {f.call("max", {f.swizzle(uv, "x"), f.swizzle(uv, "y")}), f.swizzle(projected, "z")});
+        outside = {f.less(low, t.f(0)), f.less(t.f(1), high)};
+    }
+    // A tap `offset` tangent units from the receiver: a cube direction (y negated, WebGPU) or a map uv.
+    const auto tapAt = [&](ExprId offset) {
+        if (!cube) return f.add(uv, f.mul(offset, uvPerTangent));
+        const ExprId sample = f.add(direction, f.add(f.mul(tangent, f.swizzle(offset, "x")), f.mul(bitangent, f.swizzle(offset, "y"))));
+        return f.construct(Type::vec(3), {f.swizzle(sample, "x"), f.neg(f.swizzle(sample, "y")), f.swizzle(sample, "z")});
+    };
+    const auto storedDepth = [&](ExprId offset) {
+        const ExprId tap = tapAt(offset);
+        if (cube) return f.sampleLevel(values, tap, f.constant(int32_t(0)));
+        const ExprId pixel = f.call("clamp", {f.call("floor", {f.mul(tap, mapSize)}), f.construct(Type::vec(2), {t.f(0)}),
+                                              f.construct(Type::vec(2), {f.sub(mapSize, t.f(1))})});
+        return f.textureLoad(map, f.construct(Type::vec(2, Type::Scalar::I32), {pixel}), f.constant(int32_t(0)));
+    };
+    const auto disk = [&](ExprId i, ExprId count) {
+        const ExprId n = f.construct(Type::f32(), {i});
+        const ExprId r = f.call("sqrt", {f.div(f.add(n, t.f(0.5f)), count)});
+        const ExprId angle = f.mul(n, t.f(2.399963229728653f));
+        return f.mul(f.construct(Type::vec(2), {f.call("cos", {angle}), f.call("sin", {angle})}), r);
+    };
+    // ponytail: the search cone is cut at the near plane and at 0.5 tangent (27 degrees); a lamp with a
+    // tiny near plane and a wide disk would need a hierarchical search.
+    const ExprId search = f.call("min", {t.f(0.5f), f.mul(radius, f.sub(f.div(t.f(1), near), f.div(t.f(1), receiver)))});
+    const VarId blockerSum = f.var(Type::f32(), t.f(0)), blockerCount = f.var(Type::f32(), t.f(0));
+    f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
+        const ExprId depth = storedDepth(f.mul(disk(i, blockers), search));
+        f.If(f.less(depth, reference), [&] {
+            f.assign(blockerSum, f.add(f.load(blockerSum), depth));
+            f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
+        });
+    });
+    const VarId visibility = f.var(Type::f32(), t.f(1));
+    f.If(f.less(t.f(0), f.load(blockerCount)), [&] {
+        const ExprId blocker = distance(f.div(f.load(blockerSum), f.load(blockerCount)));
+        const ExprId spread = f.mul(radius, f.call("max", {t.f(0), f.sub(f.div(t.f(1), blocker), f.div(t.f(1), receiver))}));
+        const ExprId penumbra = f.select(f.less(t.f(0), radius), f.call("max", {f.mul(texel, t.f(0.5f)), spread}), t.f(0));
+        const VarId sum = f.var(Type::f32(), t.f(0));
+        f.Loop(f.construct(Type::i32(), {samples}), [&](ExprId i) {
+            f.assign(sum, f.add(f.load(sum), f.sampleCompare(map, tapAt(f.mul(disk(i, samples), penumbra)), reference)));
+        });
+        f.assign(visibility, f.div(f.load(sum), samples));
+    });
+    ExprId shadow = f.load(visibility);
+    for (const ExprId out : outside) shadow = f.select(out, t.f(1), shadow);
+    return f.call("mix", {t.f(1), shadow, f.uniform(at + "ShadowIntensity", Type::f32())});
+}
+
 // VirtualShadowNode's stock PCF filter and coarse-to-fine guarded blending. Physical pages
 // replace only the texture addressing; all coordinates and filter operations remain level-local.
 static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int levels,
@@ -1001,6 +1101,10 @@ static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprI
     if (kind >= '1' && kind <= '8') {
         color = f.mul(color, virtualShadowFactor(f, t, index, kind - '0', positionWorld, normalWorld));
         kind = 'd';
+    }
+    if (kind == 'Q' || kind == 'R') {  // a lamp with sourceRadiusShadowFilter: 'Q' point, 'R' spot
+        color = f.mul(color, lampSoftShadowFactor(f, t, index, positionWorld, normalWorld, kind == 'Q'));
+        kind = kind == 'Q' ? 'p' : 's';
     }
     if (kind >= 'A' && kind <= 'Z') {
         const ExprId shadow = kind == 'P' ? pointShadowFactor(f, t, index, positionWorld, normalWorld)
@@ -1496,6 +1600,19 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha)));
     outputDepthNode(f, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
+    return out;
+}
+
+StandardPrograms buildMaskedDepth(const VertexVariant& variant) {
+    StandardPrograms out = buildBasic(variant);
+    out.fragment = Program{Stage::Fragment};
+    Program& f = out.fragment;
+    const ExprId texel = mapTexel(f, variant);
+    ExprId alpha = f.swizzle(f.uniform("diffuse", Type::vec(4)), "w");
+    if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
+    // The stage needs an output; a depth-only pipeline has no colour target, so it is never written.
+    f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha)}));
+    out.vertex.linkVaryings(out.fragment);
     return out;
 }
 
