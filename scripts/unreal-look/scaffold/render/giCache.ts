@@ -37,7 +37,19 @@ import {
   RGBAFormat,
   Vector3,
 } from "three";
-import { clamp, float, max, normalWorld, positionWorld, texture3D, uniform, vec3 } from "three/tsl";
+import {
+  cameraPosition,
+  clamp,
+  float,
+  max,
+  mix,
+  normalWorld,
+  positionWorld,
+  reflect,
+  texture3D,
+  uniform,
+  vec3,
+} from "three/tsl";
 import { MeshStandardNodeMaterial, type Node } from "three/webgpu";
 
 /** What the bake needs of the game's context: the scene ray query (`ICtx.raycast`). */
@@ -89,6 +101,9 @@ export interface IGiReport {
 const CELL = 1;
 const MAX_POINTS = 24000;
 /** Rays every probe shoots, and the extra rays a probe that is mostly enclosed shoots. */
+/** An element that exists by construction (a fixed-length array indexed by a loop over its length). */
+const nth = <T>(list: readonly T[], index: number): T => list[index] as T;
+
 const BASE_RAYS = 96;
 const EXTRA_RAYS = 144;
 /** A probe is enclosed when this share of its base rays hit something within ENCLOSED_DISTANCE metres. */
@@ -388,9 +403,9 @@ function linkMasks(
     ] as const;
     let mask = 0;
     for (let a = 0; a < 3; a += 1) {
-      if ([x, y, z][a] === [fine.nx, fine.ny, fine.nz][a]! - 1) continue;
+      if ([x, y, z][a] === ([fine.nx, fine.ny, fine.nz][a] ?? 1) - 1) continue;
       const along = axes[a] as readonly [number, number, number];
-      const middle = [0, 1, 2].map((c) => at[c]! + along[c]! * fine.cell * 0.5) as [
+      const middle = [0, 1, 2].map((c) => (at[c] ?? 0) + (along[c] ?? 0) * fine.cell * 0.5) as [
         number,
         number,
         number,
@@ -466,6 +481,7 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
   return (
     position: Node<"vec3">,
     normal: Node<"vec3">,
+    reflection?: Node<"vec3">,
   ): { irradiance: Node<"vec3">; visibility: Node<"float"> } => {
     // A node of its own per reader (a material, a post pass), over the one texture.
     const volumeNode = texture3D(cache);
@@ -485,13 +501,22 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
       clamp(at.z, 0.5, grid.nz - 0.5).sub(0.5),
     ];
     const lower = [ax.floor(), ay.floor(), az.floor()];
-    const fraction = [ax.sub(lower[0]!), ay.sub(lower[1]!), az.sub(lower[2]!)];
+    const fraction = [ax.sub(nth(lower, 0)), ay.sub(nth(lower, 1)), az.sub(nth(lower, 2))];
     const nearest = fraction.map((f) => f.greaterThan(0.5).select(float(1), float(0)));
     const squares = [n.x.mul(n.x), n.y.mul(n.y), n.z.mul(n.z)];
     const faceIndex = [
       n.x.lessThan(0).select(float(1), float(0)),
       n.y.lessThan(0).select(float(3), float(2)),
       n.z.lessThan(0).select(float(5), float(4)),
+    ];
+    // The environment share is read along the reflection when there is one (a floor that looks at a doorway sees
+    // the sky there, whatever its normal sees), through the same three faces of the ambient cube.
+    const r = reflection ?? n;
+    const squaresR = [r.x.mul(r.x), r.y.mul(r.y), r.z.mul(r.z)];
+    const faceIndexR = [
+      r.x.lessThan(0).select(float(1), float(0)),
+      r.y.lessThan(0).select(float(3), float(2)),
+      r.z.lessThan(0).select(float(5), float(4)),
     ];
 
     type Taps = { colour: Node<"vec3">; mask: Node<"float">; sky: Node<"float"> };
@@ -500,26 +525,42 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
       const known = taps.get(corner);
       if (known !== undefined) return known;
       const [tx, ty, tz] = [0, 1, 2].map((a) =>
-        clamp(lower[a]!.add((corner >> a) & 1), 0, (dims[a] ?? 1) - 1),
+        clamp(nth(lower, a).add((corner >> a) & 1), 0, (dims[a] ?? 1) - 1),
       );
-      const u = tx!.add(0.5).div(grid.nx);
-      const v = ty!.add(0.5).div(grid.ny);
+      const u = (tx as Node<"float">).add(0.5).div(grid.nx);
+      const v = (ty as Node<"float">).add(0.5).div(grid.ny);
       let colour: Node<"vec3"> | undefined;
       let mask: Node<"float"> | undefined;
       let visible: Node<"float"> | undefined;
       for (let axis = 0; axis < 3; axis += 1) {
-        const w = faceIndex[axis]!.mul(grid.nz)
-          .add(tz!)
+        const w = nth(faceIndex, axis)
+          .mul(grid.nz)
+          .add(tz as Node<"float">)
           .add(0.5)
           .div(grid.nz * 6);
         const texel = volumeNode.sample(vec3(u, v, w));
-        const weighted = texel.rgb.mul(squares[axis]!);
+        const weighted = texel.rgb.mul(nth(squares, axis));
         colour = colour === undefined ? weighted : colour.add(weighted);
         // alpha = link mask + 8 x sky steps (see `volume`).
         const steps = texel.a.add(0.25).div(8).floor();
-        const share = steps.div(SKY_STEPS).mul(squares[axis]!);
-        visible = visible === undefined ? share : visible.add(share);
         mask ??= texel.a.sub(steps.mul(8));
+        const along =
+          reflection === undefined
+            ? texel
+            : volumeNode.sample(
+                vec3(
+                  u,
+                  v,
+                  nth(faceIndexR, axis)
+                    .mul(grid.nz)
+                    .add(tz as Node<"float">)
+                    .add(0.5)
+                    .div(grid.nz * 6),
+                ),
+              );
+        const shareSteps = along.a.add(0.25).div(8).floor();
+        const share = shareSteps.div(SKY_STEPS).mul(nth(squaresR, axis));
+        visible = visible === undefined ? share : visible.add(share);
       }
       const result = {
         colour: colour as Node<"vec3">,
@@ -536,7 +577,7 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
       corner = 0,
     ): Node<"float"> => {
       if (axis === 3) return tap(corner).mask;
-      const bit = bits[axis]!;
+      const bit = nth(bits, axis);
       if (typeof bit === "number") return maskAt(bits, axis + 1, corner | (bit << axis));
       return maskAt(bits, axis + 1, corner)
         .mul(float(1).sub(bit))
@@ -558,12 +599,14 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
       let weight: Node<"float"> = float(1);
       for (let a = 0; a < 3; a += 1) {
         const c = (corner >> a) & 1;
-        weight = weight.mul(c ? fraction[a]! : float(1).sub(fraction[a]!));
+        weight = weight.mul(c ? nth(fraction, a) : float(1).sub(nth(fraction, a)));
         // The step along axis a from the nearest texel: earlier axes already moved to this corner, later ones not yet.
-        const bits = [0, 1, 2].map((k) => (k < a ? (corner >> k) & 1 : k === a ? 0 : nearest[k]!));
+        const bits = [0, 1, 2].map((k) =>
+          k < a ? (corner >> k) & 1 : k === a ? 0 : nth(nearest, k),
+        );
         const step = open(maskAt(bits), a);
         // Differs from the nearest texel along a: nearest bit != c. A texel that does not differ takes no step.
-        const differs = c ? float(1).sub(nearest[a]!) : nearest[a]!;
+        const differs = c ? float(1).sub(nth(nearest, a)) : nth(nearest, a);
         weight = weight.mul(float(1).sub(differs).add(differs.mul(step)));
       }
       const t = tap(corner);
@@ -723,20 +766,13 @@ function environmentShare(
         (ray.normal[i * 3 + 1] ?? 0) > 0.99 &&
         Math.abs((ray.point[i * 3 + 1] ?? 0) - grid.origin.y) < 0.05
       ) {
-        const at = [
-          Math.floor(((ray.point[i * 3] ?? 0) - grid.origin.x) / grid.cell),
-          Math.floor(((ray.point[i * 3 + 1] ?? 0) + 0.25 * grid.cell - grid.origin.y) / grid.cell),
-          Math.floor(((ray.point[i * 3 + 2] ?? 0) - grid.origin.z) / grid.cell),
-        ];
-        if (
-          at[0]! >= 0 &&
-          at[0]! < grid.nx &&
-          at[1]! >= 0 &&
-          at[1]! < grid.ny &&
-          at[2]! >= 0 &&
-          at[2]! < grid.nz
-        )
-          see = skyShare[(at[0]! + grid.nx * (at[1]! + grid.ny * at[2]!)) * 6 + 2] ?? 0;
+        const ix = Math.floor(((ray.point[i * 3] ?? 0) - grid.origin.x) / grid.cell);
+        const iy = Math.floor(
+          ((ray.point[i * 3 + 1] ?? 0) + 0.25 * grid.cell - grid.origin.y) / grid.cell,
+        );
+        const iz = Math.floor(((ray.point[i * 3 + 2] ?? 0) - grid.origin.z) / grid.cell);
+        if (ix >= 0 && ix < grid.nx && iy >= 0 && iy < grid.ny && iz >= 0 && iz < grid.nz)
+          see = skyShare[(ix + grid.nx * (iy + grid.ny * iz)) * 6 + 2] ?? 0;
       }
       const [dx, dy, dz] = [
         ray.direction[i * 3] ?? 0,
@@ -851,7 +887,7 @@ export function installGi(
     const radiance = [m.emissive.r, m.emissive.g, m.emissive.b].map(
       (v) => v * (m.emissiveIntensity ?? 1),
     );
-    if (radiance[0]! + radiance[1]! + radiance[2]! <= 0) return;
+    if ((radiance[0] ?? 0) + (radiance[1] ?? 0) + (radiance[2] ?? 0) <= 0) return;
     // The tight sphere: a loader may have set one from the bounding box, which is sqrt(3) too large for a sphere.
     mesh.geometry.computeBoundingSphere();
     const bound = mesh.geometry.boundingSphere;
@@ -1118,16 +1154,30 @@ export function installGi(
   giCache.field = { grid: fine.grid, values: fine.values, sky: fine.sky };
   const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky);
   giCache.irradiance = (position, normal) => read(position, normal).irradiance;
-  const lit = read(positionWorld, normalWorld.normalize());
-  // The sky share of the hemisphere is the material's occlusion: it dims the environment's specular, which the
-  // engine applies to the indirect specular only (aoNode also scales the indirect diffuse, so the diffuse reads the
-  // cache divided by it: the product is the cache itself).
-  const visibility = max(lit.visibility, 0.05);
-  const node = lit.irradiance.div(visibility);
+  const normal = normalWorld.normalize();
+  const incident = positionWorld.sub(cameraPosition).normalize();
+  /**
+   * What a material reads: the cache, and the environment's share along its reflection (the lobe leans toward the
+   * normal as the surface roughens, as the engine's own reflection vector does). The share is the material's
+   * occlusion: it dims the environment's specular, which the engine applies to the indirect specular only (aoNode
+   * also scales the indirect diffuse, so the diffuse reads the cache divided by it: the product is the cache).
+   */
+  const reads = new Map<number, { node: Node<"vec3">; visibility: Node<"float"> }>();
+  const readFor = (roughness: number) => {
+    const known = reads.get(roughness);
+    if (known !== undefined) return known;
+    const lobe = mix(reflect(incident, normal), normal, roughness ** 3).normalize();
+    const lit = read(positionWorld, normal, lobe);
+    const visibility = max(lit.visibility, 0.05);
+    const made = { node: lit.irradiance.div(visibility), visibility };
+    reads.set(roughness, made);
+    return made;
+  };
   root.traverse((object) => {
     const mesh = object as Mesh;
     if (!(mesh as { isMesh?: boolean }).isMesh) return;
     const source = mesh.material as MeshStandardMaterial;
+    const { node, visibility } = readFor(source.roughness);
     const material = new MeshStandardNodeMaterial();
     material.color.copy(source.color);
     material.roughness = source.roughness;

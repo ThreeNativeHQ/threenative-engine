@@ -57,11 +57,11 @@ import {
 } from "three/tsl";
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
-import { cacheFallback } from "./giCache.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
+import { cacheFallback } from "./giCache.js";
 import { LocalExposureNode } from "./localExposure.js";
-import { UnrealBloomNode } from "./unrealBloom.js";
 import { installFilmicToneMapping } from "./tonemap.js";
+import { UnrealBloomNode } from "./unrealBloom.js";
 
 /** Lumen reflections stop at this roughness, fading to nothing over the length below it. */
 const REFLECTION_CUTOFF = 0.4;
@@ -714,11 +714,11 @@ export class WorldEnvironment {
     const normal = (): ReturnType<typeof scenePass.getTextureNode> => textureNode("normal");
     const metal = (): ReturnType<typeof scenePass.getTextureNode> => textureNode("metalness");
     const rough = (): ReturnType<typeof scenePass.getTextureNode> => textureNode("roughness");
+    const albedo = (): ReturnType<typeof scenePass.getTextureNode> => textureNode("diffuseColor");
     // Every stage here is perspective-camera maths — view-space reconstruction from depth,
     // and a projection matrix inverse. The scene's camera is the one the pass rendered with.
     const view = camera as PerspectiveCamera;
 
-    const albedo = (): ReturnType<typeof scenePass.getTextureNode> => textureNode("diffuseColor");
     const base = target.baseColour?.(scenePass) ?? scenePass.getTextureNode("output");
     const colour = convertToTexture(base);
     sample(colour);
@@ -835,7 +835,10 @@ export class WorldEnvironment {
           releaseAo = () => {};
         },
         build: (input) => {
-          const contact = ao(subrectTexture(depth()), subrectTexture(normal()), view);
+          // No normal input: GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
+          // smooth vertex normal against a faceted depth (a 32-sided capsule) read as one dark stripe per facet and a
+          // stair-step band under the cap; the denoiser, GTAO scale and radius did not change them.
+          const contact = ao(subrectTexture(depth()), null as never, view);
           contact.radius.value = options.gtaoRadius;
           contact.scale.value = options.gtaoScale;
           contact.samples.value = options.gtaoSamples;

@@ -81,12 +81,13 @@ export const wgslFn = defineWgslFn(globalThis.tsl.wgslFunction);
 
 export function texture(value, ...args) {
   const node = globalThis.tsl.texture(value, ...args);
+  let current = value;
   return Object.defineProperty(node, "value", {
-    get: () => value,
+    get: () => current,
     set: (next) => {
-      if (next === value) return;
+      if (next === current) return;
       node.textureValue(next);
-      value = next;
+      current = next;
     },
   });
 }
