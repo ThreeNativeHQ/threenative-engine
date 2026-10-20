@@ -11,6 +11,7 @@ import {
   SphereGeometry,
   Vector3,
 } from "three";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { giCache, installGi, skyRadiance } from "../unreal-look/scaffold/render/giCache.js";
 
@@ -176,6 +177,41 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       expect(bake(true).total).toBeLessThan(bake(false).total);
     });
   });
+
+  it("a texel just under a 0.2 m roof reads the room, not the sky above the roof (sunlit-room)", () => {
+    const data = JSON.parse(
+      readFileSync("tools/unreal-reference/gi/sunlit-room/scene.json", "utf8"),
+    ) as {
+      meshes: {
+        size: [number, number, number];
+        position: [number, number, number];
+        material: { baseColor: [number, number, number] };
+      }[];
+    };
+    const room = new Group();
+    for (const m of data.meshes) {
+      const mesh = new Mesh(
+        new BoxGeometry(...m.size),
+        new MeshStandardMaterial({ color: new Color(...m.material.baseColor) }),
+      );
+      mesh.position.set(...m.position);
+      room.add(mesh);
+    }
+    room.updateMatrixWorld(true);
+    skyRadiance.current = {
+      data: new Float32Array(6).fill(1),
+      width: 2,
+      height: 1,
+      scale: [1, 1, 1],
+    };
+    installGi(rayContext(room), room, { bounces: 1, sun: noSun });
+    // The roof's underside is at y 3.0. The fine texel centred 0.15 m below it saw the sky through it (-x share 0.46);
+    // the texel a row lower sees almost none (0.01).
+    const underRoof = texelAt(new Vector3(1.75, 2.85, -3));
+    const below = texelAt(new Vector3(1.75, 2.35, -3));
+    expect(underRoof.share[1]).toBeLessThan(0.1);
+    expect(underRoof.share[1]).toBeLessThan((below.share[1] ?? 0) + 0.05);
+  }, 120_000);
 
   it("returns undefined with no sky, no sun and no lights", () => {
     skyRadiance.current = undefined;

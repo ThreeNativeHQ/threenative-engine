@@ -183,6 +183,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           // Unreal's SSAO at L6 (r.AmbientOcclusionRadius 40 cm); Lumen's short-range AO is thinner from L7.
           ...(level < 7 ? { gtaoRadius: 0.35 } : {}),
           vignetteAmount: 0,
+          // The same ablation switches as L9, for attributing a GI fault below it.
+          ...Object.assign({}, ...[...OFF].map((name) => STAGE_OFF[name] ?? {})),
         });
         this.#dispose = world.apply(ctx.renderer, scene, camera, { godraysLight: key }).dispose;
       }

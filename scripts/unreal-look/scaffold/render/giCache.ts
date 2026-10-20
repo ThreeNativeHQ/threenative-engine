@@ -246,9 +246,12 @@ const cornerWeight = new Float64Array(8);
 /**
  * The probes around `point` and their weights, written to `cornerProbe` / `cornerWeight`: the usual
  * trilinear weights, zero for a probe that sits inside a solid and for one the strongest valid probe
- * cannot reach along clear segments (a wall between them), renormalised.
+ * cannot reach along clear segments (a wall between them), renormalised. With `sees`, the strongest probe must also
+ * be visible from the point where a wall cuts the cell: a texel 0.15 m under a 0.2 m roof otherwise started from the
+ * probe above the roof (weight 0.75 against 0.25), read the sky (share 0.46 against 0.01 a row lower) and lit a
+ * band along every ceiling of the sunlit room.
  */
-function weightsAt(field: IField, point: Vector3): void {
+function weightsAt(field: IField, point: Vector3, sees?: (probe: number) => boolean): void {
   const { grid } = field;
   const dims = [grid.nx, grid.ny, grid.nz];
   const f = [
@@ -265,12 +268,22 @@ function weightsAt(field: IField, point: Vector3): void {
     coordinate(corner, 0) + grid.nx * (coordinate(corner, 1) + grid.ny * coordinate(corner, 2));
   let best = -1;
   let bestWeight = -1;
+  let cut = false;
   for (let corner = 0; corner < 8; corner += 1) {
     let w = 1;
     for (let a = 0; a < 3; a += 1) w *= (corner >> a) & 1 ? (t[a] ?? 0) : 1 - (t[a] ?? 0);
     cornerProbe[corner] = probeOf(corner);
     cornerWeight[corner] = w;
+    if (field.valid[probeOf(corner)] !== 1) cut = true;
+    for (let a = 0; a < 3; a += 1)
+      if (!((corner >> a) & 1) && field.links[probeOf(corner) * 3 + a] !== 1) cut = true;
     if (field.valid[probeOf(corner)] === 1 && w > bestWeight) [best, bestWeight] = [corner, w];
+  }
+  if (cut && sees !== undefined && best >= 0 && !sees(probeOf(best))) {
+    const order = [0, 1, 2, 3, 4, 5, 6, 7]
+      .filter((c) => c !== best && field.valid[probeOf(c)] === 1)
+      .sort((a, b) => (cornerWeight[b] ?? 0) - (cornerWeight[a] ?? 0));
+    best = order.find((c) => sees(probeOf(c))) ?? best;
   }
   // Every probe around is inside a solid: nothing to choose between, keep the plain weights.
   if (best < 0) return;
@@ -320,7 +333,10 @@ function readField(field: IField, point: Vector3, normal: Vector3, out: number[]
 }
 
 /** The field at twice the resolution, every texel read across walls from the coarse probes. */
-function resample(field: IField): { grid: IGrid; values: Float32Array; sky: Float32Array } {
+function resample(
+  field: IField,
+  sees?: (point: Vector3, probe: number) => boolean,
+): { grid: IGrid; values: Float32Array; sky: Float32Array } {
   const { grid } = field;
   const fine: IGrid = {
     origin: grid.origin,
@@ -343,7 +359,7 @@ function resample(field: IField): { grid: IGrid; values: Float32Array; sky: Floa
       fine.origin.y + (y + 0.5) * fine.cell,
       fine.origin.z + (z + 0.5) * fine.cell,
     );
-    weightsAt(field, point);
+    weightsAt(field, point, sees === undefined ? undefined : (probe) => sees(point, probe));
     for (let i = 0; i < 8; i += 1) {
       const w = cornerWeight[i] ?? 0;
       if (w === 0) continue;
@@ -1295,7 +1311,22 @@ export function installGi(
     if (floor !== undefined) paintGround(root, floor);
   }
   const environment = environmentShare(grid, ray, first, end, skyShare);
-  const fine = resample({ grid, values, links, valid, sky: environment });
+  const toProbe = new Vector3();
+  const fine = resample({ grid, values, links, valid, sky: environment }, (point, probe) => {
+    toProbe.set(
+      grid.origin.x + ((probe % grid.nx) + 0.5) * grid.cell,
+      grid.origin.y + ((Math.floor(probe / grid.nx) % grid.ny) + 0.5) * grid.cell,
+      grid.origin.z + (Math.floor(probe / (grid.nx * grid.ny)) + 0.5) * grid.cell,
+    );
+    toProbe.sub(point);
+    const d = toProbe.length();
+    traced += 1;
+    return (
+      d < 1e-4 ||
+      ctx.raycast({ origin: point, direction: toProbe.divideScalar(d), far: d, targets: root }) ===
+        undefined
+    );
+  });
   const cut = linkMasks({ grid, values, links, valid }, fine.grid, ctx, root);
   traced += cut.rays;
   giCache.field = { grid: fine.grid, values: fine.values, sky: fine.sky };
