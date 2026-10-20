@@ -1398,6 +1398,29 @@ if (runtime.tsl !== undefined) {
   ao.radius.value = 0.5;
   check(ao.radius?.value === 0.5, "ao radius updated value");
 
+  // 8a. Object3D lookups walk the subtree in three's order
+  {
+    const holder = new Scene();
+    const first = new Mesh(new BoxGeometry(1, 1, 1));
+    const second = new Mesh(new BoxGeometry(1, 1, 1));
+    first.name = "first";
+    second.name = "second";
+    holder.add(first, second);
+    check(
+      holder.getObjectByProperty("visible", true) === holder,
+      "getObjectByProperty finds the first match, the root before its children",
+    );
+    check(holder.getObjectByName("second") === second, "getObjectByName finds a named child");
+    check(
+      holder.getObjectsByProperty("visible", true).length === 3,
+      "getObjectsByProperty finds every match",
+    );
+    check(
+      holder.getObjectByProperty("name", "none") === undefined,
+      "getObjectByProperty answers undefined for none",
+    );
+  }
+
   // 8b. screen-space reflections are authored over the engine TSL: the graph builds (Loop, If, Break,
   // bisection and the projection-column maths) and publishes the SSR uniforms of three.
   const reflections = defineScreenSpaceReflections(tsl as never)(

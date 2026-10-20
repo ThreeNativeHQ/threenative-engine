@@ -237,6 +237,10 @@ export const LANGUAGE_MEMBERS = [
   "traverse",
   "traverseVisible",
   "traverseAncestors",
+  "getObjectsByProperty",
+  "getObjectByProperty",
+  "getObjectByName",
+  "getObjectById",
   "raycast",
 ] as const;
 
@@ -287,6 +291,34 @@ function defineTraversal(
     },
   };
   for (const [name, value] of Object.entries(methods))
+    Object.defineProperty(prototype, name, { configurable: true, writable: true, value });
+  // three's lookups, written over `traverse` as three writes them: the first match in walk order.
+  const lookups: Record<string, (this: object, ...args: never[]) => unknown> = {
+    getObjectsByProperty(this: object, name: string, value: unknown, result: object[] = []) {
+      (this as { traverse(c: TraverseCallback): void }).traverse((object) => {
+        if ((object as Record<string, unknown>)[name] === value) result.push(object);
+      });
+      return result;
+    },
+    getObjectByProperty(this: object, name: string, value: unknown) {
+      return (
+        this as { getObjectsByProperty(n: string, v: unknown): object[] }
+      ).getObjectsByProperty(name, value)[0];
+    },
+    getObjectByName(this: object, name: string) {
+      return (this as { getObjectByProperty(n: string, v: unknown): object }).getObjectByProperty(
+        "name",
+        name,
+      );
+    },
+    getObjectById(this: object, id: number) {
+      return (this as { getObjectByProperty(n: string, v: unknown): object }).getObjectByProperty(
+        "id",
+        id,
+      );
+    },
+  };
+  for (const [name, value] of Object.entries(lookups))
     Object.defineProperty(prototype, name, { configurable: true, writable: true, value });
   // three's Object3D.raycast(raycaster, intersects): push this object's own hits, no recursion. The engine
   // answers them through Raycaster.intersectObject (the object's native raycast; a Group answers none).
