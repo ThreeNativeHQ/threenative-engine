@@ -1,0 +1,298 @@
+// Generated for you: ordinary Three.js; ThreeNative does not read this file. Delete or rewrite
+// it freely.
+//
+// A filmic tone curve with the parameters and the defaults of a fresh Unreal Engine 5 project:
+// slope 0.88, toe 0.55, shoulder 0.26, black clip 0, white clip 0.04 (Unreal 5.8.3,
+// `Engine/Source/Runtime/Engine/Private/Scene.cpp:440-448`). Written from the published shape,
+// not from Unreal code: each channel, in the ACEScg (AP1) primaries, follows a straight line in
+// log10 space through mid grey (0.18 in, 0.18 out), and two sigmoids replace the line below the
+// toe and above the shoulder. A small desaturation before and after keeps saturated highlights
+// from shifting hue, as the ACES reference rendering does.
+//
+// `worldEnvironment.ts` installs it as three's `CustomToneMapping` when `tonemapMode` is
+// `"filmic"`. `"aces"` stays available as the named override. `filmicToneMap()` is the same
+// curve on plain numbers, so a test or a capture script can apply it to a scene-linear image.
+import { CustomToneMapping, Matrix3 } from "three";
+import { clamp, dot, exp, log, max, mix, step, vec3 } from "three/tsl";
+import type { Node } from "three/webgpu";
+
+export interface IFilmicCurve {
+  readonly slope: number;
+  readonly toe: number;
+  readonly shoulder: number;
+  readonly blackClip: number;
+  readonly whiteClip: number;
+  readonly blueCorrection: number;
+}
+
+/** Unreal 5.8.3 project defaults. Change these numbers to change the curve. */
+export const FILMIC_CURVE: IFilmicCurve = {
+  slope: 0.88,
+  toe: 0.55,
+  shoulder: 0.26,
+  blackClip: 0,
+  whiteClip: 0.04,
+  blueCorrection: 0.6,
+};
+
+type Vec3 = readonly [number, number, number];
+type Mat3 = readonly [number, number, number, number, number, number, number, number, number];
+
+// Linear sRGB (D65) <-> ACEScg (AP1, D60) with a Bradford adaptation, row-major.
+const SRGB_TO_AP1: Mat3 = [
+  0.6130974024, 0.3395231462, 0.0473794514, 0.0701937225, 0.9163538791, 0.0134523985, 0.0206155929,
+  0.1095697729, 0.8698146342,
+];
+const AP1_TO_SRGB: Mat3 = [
+  1.7050509927, -0.6217921207, -0.083258872, -0.1302564175, 1.1408047366, -0.0105483191,
+  -0.0240033568, -0.1289689761, 1.1529723329,
+];
+// Standard published ACES AP0 -> AP1 matrix (both D60), row-major.
+const AP0_TO_AP1 = new Matrix3().set(
+  1.4514393161,
+  -0.2365107469,
+  -0.2149285693,
+  -0.0765537734,
+  1.1762296998,
+  -0.0996759264,
+  0.0083161484,
+  -0.0060324498,
+  0.9977163014,
+);
+// ACES LMT Blue Light Artifact Fix, (c) Academy of Motion Picture Arts and Sciences, ACES licence
+// ampas/aces-dev v1.3.1, transforms/ctl/lmt/LMT.Academy.BlueLightArtifactFix.ctl.
+// Transposed from CTL's row-vector matrix for M*v here.
+/*
+# License Terms for Academy Color Encoding System Components #
+
+Academy Color Encoding System (ACES) software and tools are provided by the
+Academy under the following terms and conditions: A worldwide, royalty-free,
+non-exclusive right to copy, modify, create derivatives, and use, in source and
+binary forms, is hereby granted, subject to acceptance of this license.
+
+Copyright © 2015 Academy of Motion Picture Arts and Sciences (A.M.P.A.S.).
+Portions contributed by others as indicated. All rights reserved.
+
+Performance of any of the aforementioned acts indicates acceptance to be bound
+by the following terms and conditions:
+
+* Copies of source code, in whole or in part, must retain the above copyright
+notice, this list of conditions and the Disclaimer of Warranty.
+
+* Use in binary form must retain the above copyright notice, this list of
+conditions and the Disclaimer of Warranty in the documentation and/or other
+materials provided with the distribution.
+
+* Nothing in this license shall be deemed to grant any rights to trademarks,
+copyrights, patents, trade secrets or any other intellectual property of
+A.M.P.A.S. or any contributors, except as expressly stated herein.
+
+* Neither the name "A.M.P.A.S." nor the name of any other contributors to this
+software may be used to endorse or promote products derivative of or based on
+this software without express prior written permission of A.M.P.A.S. or the
+contributors, as appropriate.
+
+This license shall be construed pursuant to the laws of the State of
+California, and any disputes related thereto shall be subject to the
+jurisdiction of the courts therein.
+
+Disclaimer of Warranty: THIS SOFTWARE IS PROVIDED BY A.M.P.A.S. AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+NON-INFRINGEMENT ARE DISCLAIMED. IN NO EVENT SHALL A.M.P.A.S., OR ANY
+CONTRIBUTORS OR DISTRIBUTORS, BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, RESITUTIONARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+WITHOUT LIMITING THE GENERALITY OF THE FOREGOING, THE ACADEMY SPECIFICALLY
+DISCLAIMS ANY REPRESENTATIONS OR WARRANTIES WHATSOEVER RELATED TO PATENT OR
+OTHER INTELLECTUAL PROPERTY RIGHTS IN THE ACADEMY COLOR ENCODING SYSTEM, OR
+APPLICATIONS THEREOF, HELD BY PARTIES OTHER THAN A.M.P.A.S.,WHETHER DISCLOSED OR
+UNDISCLOSED.
+*/
+const blueAP0 = new Matrix3().set(
+  0.9404372683,
+  -0.0183068787,
+  0.0778696104,
+  0.0083786969,
+  0.8286599939,
+  0.1629613092,
+  0.0005471261,
+  -0.0008833746,
+  1.0003362486,
+);
+const blueAP1 = AP0_TO_AP1.clone().multiply(blueAP0).multiply(AP0_TO_AP1.clone().invert());
+// Transpose only for serialization: Matrix3 stores columns, apply()/multiply() consume rows.
+export const BLUE_CORRECTION_AP1 = blueAP1.clone().transpose().toArray() as unknown as Mat3;
+export const BLUE_CORRECTION_INVERSE_AP1 = blueAP1
+  .clone()
+  .invert()
+  .transpose()
+  .toArray() as unknown as Mat3;
+
+const AP1_LUMA: Vec3 = [0.2722287168, 0.6740817658, 0.0536895174];
+const PRE_SATURATION = 0.96;
+const POST_SATURATION = 0.93;
+const MID_GREY = 0.18;
+const LOG10 = Math.log(10);
+
+/** The constants the curve needs, derived once from its shape parameters. */
+function curveMatches(c: IFilmicCurve): {
+  toeScale: number;
+  shoulderScale: number;
+  toeMatch: number;
+  shoulderMatch: number;
+  straightMatch: number;
+} {
+  const toeScale = 1 + c.blackClip - c.toe;
+  const shoulderScale = 1 + c.whiteClip - c.shoulder;
+  const logMid = Math.log10(MID_GREY);
+  let toeMatch: number;
+  if (c.toe > 0.8) {
+    // A toe this long never reaches the straight segment through mid grey from below.
+    toeMatch = (1 - c.toe - MID_GREY) / c.slope + logMid;
+  } else {
+    const bt = (MID_GREY + c.blackClip) / toeScale - 1;
+    toeMatch = logMid - 0.5 * Math.log((1 + bt) / (1 - bt)) * (toeScale / c.slope);
+  }
+  const straightMatch = (1 - c.toe) / c.slope - toeMatch;
+  const shoulderMatch = c.shoulder / c.slope - straightMatch;
+  return { toeScale, shoulderScale, toeMatch, shoulderMatch, straightMatch };
+}
+
+function smooth(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
+/** One AP1 channel through the curve. Input is scene-linear, output is display-linear. */
+export function filmicCurve(value: number, c: IFilmicCurve = FILMIC_CURVE): number {
+  const m = curveMatches(c);
+  const logValue = Math.log10(Math.max(value, 1e-10));
+  const straight = c.slope * (logValue + m.straightMatch);
+  const toe =
+    logValue < m.toeMatch
+      ? -c.blackClip +
+        (2 * m.toeScale) / (1 + Math.exp((-2 * c.slope * (logValue - m.toeMatch)) / m.toeScale))
+      : straight;
+  const shoulder =
+    logValue > m.shoulderMatch
+      ? 1 +
+        c.whiteClip -
+        (2 * m.shoulderScale) /
+          (1 + Math.exp((2 * c.slope * (logValue - m.shoulderMatch)) / m.shoulderScale))
+      : straight;
+  let t = Math.min(1, Math.max(0, (logValue - m.toeMatch) / (m.shoulderMatch - m.toeMatch)));
+  if (m.shoulderMatch < m.toeMatch) t = 1 - t;
+  return toe + (shoulder - toe) * smooth(t);
+}
+
+function multiply(m: Mat3, v: Vec3): [number, number, number] {
+  return [
+    m[0] * v[0] + m[1] * v[1] + m[2] * v[2],
+    m[3] * v[0] + m[4] * v[1] + m[5] * v[2],
+    m[6] * v[0] + m[7] * v[1] + m[8] * v[2],
+  ];
+}
+
+function correctBlue(v: Vec3, matrix: Mat3, amount: number): [number, number, number] {
+  const corrected = multiply(matrix, v);
+  return [
+    v[0] + (corrected[0] - v[0]) * amount,
+    v[1] + (corrected[1] - v[1]) * amount,
+    v[2] + (corrected[2] - v[2]) * amount,
+  ];
+}
+
+function saturate(v: Vec3, amount: number): [number, number, number] {
+  const y = v[0] * AP1_LUMA[0] + v[1] * AP1_LUMA[1] + v[2] * AP1_LUMA[2];
+  return [y + (v[0] - y) * amount, y + (v[1] - y) * amount, y + (v[2] - y) * amount];
+}
+
+/** Scene-linear sRGB in, display-linear sRGB out (before the sRGB transfer), on plain numbers. */
+export function filmicToneMap(
+  rgb: readonly [number, number, number],
+  exposure = 1,
+  c: IFilmicCurve = FILMIC_CURVE,
+): [number, number, number] {
+  const [r, g, b] = rgb.map((v) => Math.max(0, v * exposure)) as unknown as Vec3;
+  let ap1 = multiply(SRGB_TO_AP1, [r, g, b]);
+  // Order: Engine/Shaders/Private/PostProcessCombineLUTs.usf and TonemapCommon.ush.
+  if (c.blueCorrection !== 0) ap1 = correctBlue(ap1, BLUE_CORRECTION_AP1, c.blueCorrection);
+  const pre = saturate(ap1, PRE_SATURATION);
+  const toned = saturate(
+    [filmicCurve(pre[0], c), filmicCurve(pre[1], c), filmicCurve(pre[2], c)],
+    POST_SATURATION,
+  );
+  const restored =
+    c.blueCorrection === 0
+      ? toned
+      : correctBlue(toned, BLUE_CORRECTION_INVERSE_AP1, c.blueCorrection);
+  const [x, y, z] = multiply(AP1_TO_SRGB, restored);
+  const unit = (v: number): number => Math.min(1, Math.max(0, v));
+  return [unit(x), unit(y), unit(z)];
+}
+
+/** The same curve as a TSL tone-mapping function, `(color, exposure) => color`. */
+export function filmicToneMappingNode(
+  c: IFilmicCurve = FILMIC_CURVE,
+): (color: Node<"vec3">, exposure: Node<"float">) => Node<"vec3"> {
+  const m = curveMatches(c);
+  // One dot product per row: no row- or column-major convention to get wrong.
+  const apply = (m: Mat3, v: Node<"vec3">) =>
+    vec3(
+      dot(vec3(m[0], m[1], m[2]), v),
+      dot(vec3(m[3], m[4], m[5]), v),
+      dot(vec3(m[6], m[7], m[8]), v),
+    );
+  const luma = vec3(...AP1_LUMA);
+  return (color, exposure) => {
+    let ap1: Node<"vec3"> = apply(SRGB_TO_AP1, max(color.mul(exposure), vec3(0)));
+    if (c.blueCorrection !== 0) ap1 = mix(ap1, apply(BLUE_CORRECTION_AP1, ap1), c.blueCorrection);
+    const pre = mix(vec3(dot(ap1, luma)), ap1, PRE_SATURATION);
+    const logValue = log(max(pre, vec3(1e-10))).div(LOG10);
+    const straight = logValue.add(m.straightMatch).mul(c.slope);
+    const toeCurve = vec3(-c.blackClip).add(
+      vec3(2 * m.toeScale).div(
+        exp(logValue.sub(m.toeMatch).mul((-2 * c.slope) / m.toeScale)).add(1),
+      ),
+    );
+    const shoulderCurve = vec3(1 + c.whiteClip).sub(
+      vec3(2 * m.shoulderScale).div(
+        exp(logValue.sub(m.shoulderMatch).mul((2 * c.slope) / m.shoulderScale)).add(1),
+      ),
+    );
+    // Per channel: the sigmoid below the toe match, the line above it; and the mirror for the
+    // shoulder. step() is the vector form of the comparison; mix() takes only a scalar weight.
+    const blend = (a: Node<"vec3">, b: Node<"vec3">, w: Node<"vec3">) => a.add(b.sub(a).mul(w));
+    const toe = blend(toeCurve, straight, step(vec3(m.toeMatch), logValue));
+    const shoulder = blend(straight, shoulderCurve, step(vec3(m.shoulderMatch), logValue));
+    const linear = clamp(logValue.sub(m.toeMatch).div(m.shoulderMatch - m.toeMatch), 0, 1);
+    const t = m.shoulderMatch < m.toeMatch ? linear.oneMinus() : linear;
+    const toned = blend(toe, shoulder, t.mul(t).mul(t.mul(-2).add(3)));
+    const post = mix(vec3(dot(toned, luma)), toned, POST_SATURATION);
+    const restored =
+      c.blueCorrection === 0
+        ? post
+        : mix(post, apply(BLUE_CORRECTION_INVERSE_AP1, post), c.blueCorrection);
+    return clamp(apply(AP1_TO_SRGB, restored), 0, 1);
+  };
+}
+
+/**
+ * Registers the curve with a WebGPU renderer and returns the tone-mapping constant to assign.
+ * A renderer without a node library (the WebGL fallback) keeps ACES and says so.
+ */
+export function installFilmicToneMapping(
+  raw: unknown,
+  c: IFilmicCurve = FILMIC_CURVE,
+): number | undefined {
+  const library = (raw as { library?: { addToneMapping?(node: unknown, mode: number): void } })
+    .library;
+  if (library?.addToneMapping === undefined) return undefined;
+  library.addToneMapping(filmicToneMappingNode(c), CustomToneMapping);
+  return CustomToneMapping;
+}

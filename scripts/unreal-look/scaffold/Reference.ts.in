@@ -85,7 +85,11 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           object.receiveShadow = true;
         }
       });
-      if (TUNED) key.shadow.filterNode = sourceAngleShadowFilter({ sourceAngleRad: SUN_SOURCE_ANGLE_RAD });
+      // three's WebGPU ShadowNode reads `shadow.filterNode`; its types do not declare it yet.
+      if (TUNED)
+        (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
+          sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
+        });
       if (level >= 2) {
         setupSky(scene, sky, ctx.renderer.softwareAdapter !== undefined);
         if (level < 3) {
