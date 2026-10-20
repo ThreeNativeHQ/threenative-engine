@@ -370,7 +370,9 @@ test('primary CI invokes the native lane on pull requests and pushes', () => {
   const native = readFileSync('../../.github/workflows/native-platforms.yml', 'utf8');
   const nativeTriggers = native.slice(native.indexOf('\non:'), native.indexOf('concurrency:'));
   assert.match(nativeTriggers, /workflow_call:/u);
-  assert.doesNotMatch(nativeTriggers, /(?:pull_request|push|schedule):/u);
+  assert.doesNotMatch(nativeTriggers, /(?:pull_request|schedule):/u);
+  // A push to main starts the run the release-candidate gate needs (PRD-629); no other branch does.
+  assert.match(nativeTriggers, /push:\s*\n\s*branches:\s*\[main\]/u);
 });
 
 test('native workflow verifies a freshly scaffolded starter on Linux', () => {

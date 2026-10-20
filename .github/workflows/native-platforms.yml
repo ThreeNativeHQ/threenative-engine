@@ -11,7 +11,15 @@ name: Native platform evidence
 #
 # This file is a reusable workflow called by ci.yml, where the `native-platforms` job is a required
 # member of the primary board. Manual dispatch remains available for an isolated platform run.
+#
+# PRD-629: a push to main also starts it on its own. The release candidate needs a standalone run of
+# this file on the candidate commit (its parity and provenance reports), and the manual
+# `gh workflow run native-platforms.yml --ref main` that used to start it gave a new run id on every
+# re-dispatch. A standalone push run has no caller plan, so it takes the same full-coverage path as a
+# dispatch.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       ios_only:
@@ -169,7 +177,7 @@ jobs:
       # only saver either way. The other two consumers are restore-only.
       - uses: ./.github/actions/workspace-dist
         with:
-          save-bundles: ${{ github.event_name == 'workflow_dispatch' }}
+          save-bundles: ${{ inputs.selection_plan == '' }}
       - uses: ./.github/actions/playwright-chromium
       - name: Capture commit-keyed browser reference
         run: |
@@ -225,7 +233,7 @@ jobs:
       - name: Install and select the pinned Android NDK
         run: |
           set -euo pipefail
-          sdkmanager "ndk;28.2.13676358"
+          sh scripts/retry-download.sh sdkmanager "ndk;28.2.13676358"
           echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
       - id: v8
         uses: ./.github/actions/android-v8-source
@@ -343,8 +351,8 @@ jobs:
       - name: Install the pinned Linux arm64 V8 compiler
         if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --allow-downgrades clang-18=1:18.1.3-1ubuntu1 lld-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 libclang-rt-18-dev=1:18.1.3-1 ninja-build build-essential python3 git pkg-config libglib2.0-dev
+          sh scripts/retry-download.sh sudo apt-get update
+          sh scripts/retry-download.sh sudo apt-get install -y --allow-downgrades clang-18=1:18.1.3-1ubuntu1 lld-18=1:18.1.3-1ubuntu1 llvm-18=1:18.1.3-1ubuntu1 libclang-rt-18-dev=1:18.1.3-1 ninja-build build-essential python3 git pkg-config libglib2.0-dev
           pkg-config --modversion glib-2.0 gmodule-2.0 gobject-2.0 gthread-2.0
           # The adjacent Linux runtime config links libatomic when using the system C++ library.
           printf 'int main() { return 0; }\n' | /usr/lib/llvm-18/bin/clang++ -x c++ - -latomic -o "$RUNNER_TEMP/v8-linux-link-preflight"
@@ -667,12 +675,7 @@ jobs:
           # The NDK zip is a large download, and one corrupted transfer ("Error reading Zip content
           # from a SeekableByteChannel") failed this 27-minute job before the emulator was reached.
           # Retry the download; a third failure still fails the step.
-          for attempt in 1 2 3; do
-            sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358" && break
-            [ "$attempt" -lt 3 ] || exit 1
-            echo "sdkmanager failed on attempt $attempt; retrying" >&2
-            sleep 15
-          done
+          sh scripts/retry-download.sh sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358"
           export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
           # build-native-physics.mjs cross-compiles the Rust physics crate for both ABIs
@@ -1178,7 +1181,7 @@ jobs:
             packages/runtime-native/artifacts/conformance/web "downloaded web reference"
       - name: Install Linux desktop build dependencies and ccache
         run: >-
-          sudo apt-get update && sudo apt-get install -y
+          sh scripts/retry-download.sh sudo apt-get update && sh scripts/retry-download.sh sudo apt-get install -y
           ccache
           libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
@@ -2193,7 +2196,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install Linux desktop build dependencies
         run: >-
-          sudo apt-get update && sudo apt-get install -y
+          sh scripts/retry-download.sh sudo apt-get update && sh scripts/retry-download.sh sudo apt-get install -y
           ccache
           libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
