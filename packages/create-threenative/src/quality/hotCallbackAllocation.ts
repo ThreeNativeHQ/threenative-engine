@@ -59,8 +59,8 @@ export const hotCallbackAllocation: Rule.RuleModule = {
       }
       return isBeforeRenderCall(parent, node) ? "ctx.beforeRender" : undefined;
     };
-    const enter = (node: FunctionNode): void => {
-      frames.push(frameName(node));
+    const enter = (node: Rule.Node): void => {
+      frames.push(frameName(node as FunctionNode));
     };
     const leave = (): void => {
       frames.pop();
@@ -91,29 +91,22 @@ export const hotCallbackAllocation: Rule.RuleModule = {
         : undefined;
     };
 
-    return {
-      // biome-ignore lint/style/useNamingConvention: ESLint visitor keys are AST node type names
-      ImportDeclaration(node) {
-        for (const specifier of node.specifiers)
-          registerImport(String(node.source.value), specifier);
-      },
-      // biome-ignore lint/style/useNamingConvention: ESLint visitor keys are AST node type names
-      ArrowFunctionExpression: enter,
-      "ArrowFunctionExpression:exit": leave,
-      // biome-ignore lint/style/useNamingConvention: ESLint visitor keys are AST node type names
-      FunctionDeclaration: enter,
-      "FunctionDeclaration:exit": leave,
-      // biome-ignore lint/style/useNamingConvention: ESLint visitor keys are AST node type names
-      FunctionExpression: enter,
-      "FunctionExpression:exit": leave,
-      // biome-ignore lint/style/useNamingConvention: ESLint visitor keys are AST node type names
-      NewExpression(node) {
-        const where = frames[frames.length - 1];
-        const name = where === undefined ? undefined : mathClassName(node.callee);
-        if (where !== undefined && name !== undefined) {
-          context.report({ node, messageId: "allocation", data: { name, where } });
-        }
-      },
+    // ESLint selects visitors by AST node type name, so the keys cannot be camelCase.
+    const visitor: Rule.RuleListener = {};
+    visitor.ImportDeclaration = (node) => {
+      for (const specifier of node.specifiers) registerImport(String(node.source.value), specifier);
     };
+    for (const type of ["ArrowFunctionExpression", "FunctionDeclaration", "FunctionExpression"]) {
+      visitor[type] = enter;
+      visitor[`${type}:exit`] = leave;
+    }
+    visitor.NewExpression = (node) => {
+      const where = frames[frames.length - 1];
+      const name = where === undefined ? undefined : mathClassName(node.callee);
+      if (where !== undefined && name !== undefined) {
+        context.report({ node, messageId: "allocation", data: { name, where } });
+      }
+    };
+    return visitor;
   },
 };

@@ -81,7 +81,7 @@ export function integrationEvidence(
         status: "completed",
         conclusion: "success",
         steps: [
-          { name: "Typecheck pristine template", status: "completed", conclusion: "success" },
+          { name: "Check pristine template", status: "completed", conclusion: "success" },
         ],
       }))
     : [];

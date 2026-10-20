@@ -12,6 +12,10 @@ export interface IQualityOptions {
   readonly root: string;
 }
 
+type Plugin = NonNullable<Linter.Config["plugins"]>[string];
+// The plugins ship their own rule typings, which differ from ESLint's flat-config `Plugin`.
+const asPlugin = (plugin: object): Plugin => plugin as Plugin;
+
 const SOURCE = ["src/**/*.ts", "src/**/*.tsx"];
 
 /** React is optional per template, so the hook rules follow what the project declares. Resolving
@@ -40,7 +44,7 @@ export function qualityConfig({ root }: IQualityOptions): Linter.Config[] {
       linterOptions: { reportUnusedDisableDirectives: "error" },
       plugins: {
         "@eslint-community/eslint-comments": eslintComments,
-        "@typescript-eslint": tsPlugin as unknown as NonNullable<Linter.Config["plugins"]>[string],
+        "@typescript-eslint": asPlugin(tsPlugin),
         threenative: tnPlugin,
       },
       rules: {
@@ -62,7 +66,7 @@ export function qualityConfig({ root }: IQualityOptions): Linter.Config[] {
     config.push({
       files: ["src/**/*.tsx"],
       plugins: {
-        "react-hooks": reactHooks as unknown as NonNullable<Linter.Config["plugins"]>[string],
+        "react-hooks": asPlugin(reactHooks),
       },
       rules: { "react-hooks/exhaustive-deps": "error", "react-hooks/rules-of-hooks": "error" },
     });

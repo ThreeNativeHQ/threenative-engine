@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ESLint } from "eslint";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { qualityConfig } from "../src/quality/index.js";
 
 let root: string;
@@ -20,8 +20,8 @@ const FILES = {
   }),
 };
 
-beforeAll(() => {
-  root = mkdtempSync(path.join(tmpdir(), "tn-quality-"));
+beforeAll(async () => {
+  root = await makeTempDir("tn-quality-");
   mkdirSync(path.join(root, "src"));
   for (const [name, text] of Object.entries(FILES)) writeFileSync(path.join(root, name), text);
   writeFileSync(path.join(root, "package.json"), '{"type":"module"}');
