@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-651 — Leaves cast leaf shadows that sway near the camera
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P1 — no box is ticked: on the owned engine, which is the default, an alpha-tested leaf card casts a solid rectangle, because the native shadow depth program discards nothing; tree shadows also stand still in the wind, and a back-lit leaf darkens through normal bias.
 **Complexity:** 6 (MEDIUM) — 1–5 files per phase in the native engine and core (+2), the native engine and the browser are separate build boundaries (+2), swaying casters change what the shadow cache may keep (+2); risk override: none
 **Owner:** João
@@ -76,10 +76,10 @@ from the game. The engine only makes the shadow follow them.
 ## Execution Phases
 
 #### Phase 1: A leaf casts a leaf
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — native masked caster done; browser `alphaTestNode` cut and native parity open
 **Files:** `packages/runtime-native/src/engine/renderer/renderer.cpp`, `packages/runtime-native/src/engine/shader/standard.cpp`, native engine tests, `packages/runtime-native/conformance/registry.json`, `packages/core/src/render/world-impostor-surface.ts`
-- [ ] A 50%-cut leaf card casts a shadow with 50% ± 5% coverage of the card's projected area on the native engine. proof: red-green native engine test `native_engine_masked_shadow` (red first on the empty fragment stage).
-- [ ] A `DoubleSide` card casts from its back face. proof: the same test.
+- [x] A 50%-cut leaf card casts a shadow with 50% ± 5% coverage of the card's projected area on the native engine. proof: red-green native engine test `native_engine_masked_shadow` (red first on the empty fragment stage). — 2026-10-20 (b98c06d40): red 1.000 coverage on the fragment-less depth program, green 0.500 after the masked depth program; tn-engine ctest 431/434, the three reds unrelated (perf timing at load 32, a known-red label, a load flake that passes alone).
+- [x] A `DoubleSide` card casts from its back face. proof: the same test. — 2026-10-20 (b98c06d40): the card faces the light; `DoubleSide` shades 0.500, `FrontSide` 0.000 (three's shadowSide draws only its back faces).
 - [ ] Browser and native match on the masked caster. proof: `pnpm parity --target desktop --only-tests masked-shadow-caster`.
 
 #### Phase 2: Wind reaches the near shadow
