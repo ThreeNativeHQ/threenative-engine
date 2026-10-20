@@ -1,0 +1,348 @@
+{
+  "name": "material-pbr-maps",
+  "adaptedFrom": "original \u2014 a MeshStandardMaterial with one packed ORM data texture as roughnessMap (g), metalnessMap (b) and aoMap (r, aoMapIntensity 0.7), and a repeated emissiveMap, under a hemisphere and a directional light",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 300,
+    "height": 200,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.05, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [45, 1.5, 0.1, 50]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "Color",
+      "args": [0.6, 0.7, 1.0]
+    },
+    {
+      "op": "new",
+      "id": "ground",
+      "class": "Color",
+      "args": [0.3, 0.2, 0.1]
+    },
+    {
+      "op": "new",
+      "id": "hemi",
+      "class": "HemisphereLight",
+      "args": [
+        {
+          "ref": "sky"
+        },
+        {
+          "ref": "ground"
+        },
+        1.5
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "hemi"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "sun",
+      "class": "DirectionalLight",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.x",
+      "value": 1.5
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.y",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "position.z",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "sun",
+      "path": "intensity",
+      "value": 2
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sun"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "orm",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [
+            40, 30, 255, 255, 65, 30, 195, 255, 90, 30, 135, 255, 115, 30, 75, 255, 140, 30, 255,
+            255, 165, 30, 195, 255, 190, 30, 135, 255, 215, 30, 75, 255, 40, 58, 195, 255, 65, 58,
+            135, 255, 90, 58, 75, 255, 115, 58, 255, 255, 140, 58, 195, 255, 165, 58, 135, 255, 190,
+            58, 75, 255, 215, 58, 255, 255, 40, 86, 135, 255, 65, 86, 75, 255, 90, 86, 255, 255,
+            115, 86, 195, 255, 140, 86, 135, 255, 165, 86, 75, 255, 190, 86, 255, 255, 215, 86, 195,
+            255, 40, 114, 75, 255, 65, 114, 255, 255, 90, 114, 195, 255, 115, 114, 135, 255, 140,
+            114, 75, 255, 165, 114, 255, 255, 190, 114, 195, 255, 215, 114, 135, 255, 40, 142, 255,
+            255, 65, 142, 195, 255, 90, 142, 135, 255, 115, 142, 75, 255, 140, 142, 255, 255, 165,
+            142, 195, 255, 190, 142, 135, 255, 215, 142, 75, 255, 40, 170, 195, 255, 65, 170, 135,
+            255, 90, 170, 75, 255, 115, 170, 255, 255, 140, 170, 195, 255, 165, 170, 135, 255, 190,
+            170, 75, 255, 215, 170, 255, 255, 40, 198, 135, 255, 65, 198, 75, 255, 90, 198, 255,
+            255, 115, 198, 195, 255, 140, 198, 135, 255, 165, 198, 75, 255, 190, 198, 255, 255, 215,
+            198, 195, 255, 40, 226, 75, 255, 65, 226, 255, 255, 90, 226, 195, 255, 115, 226, 135,
+            255, 140, 226, 75, 255, 165, 226, 255, 255, 190, 226, 195, 255, 215, 226, 135, 255
+          ],
+          "type": "Uint8Array"
+        },
+        8,
+        8,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "orm",
+      "path": "magFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "orm",
+      "path": "minFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "orm",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "glow",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [
+            255, 0, 60, 255, 0, 0, 60, 255, 0, 0, 60, 255, 255, 0, 60, 255, 0, 0, 60, 255, 0, 120,
+            60, 255, 255, 120, 60, 255, 0, 120, 60, 255, 0, 0, 60, 255, 0, 0, 60, 255, 255, 0, 60,
+            255, 0, 0, 60, 255, 0, 0, 60, 255, 255, 120, 60, 255, 0, 120, 60, 255, 0, 120, 60, 255,
+            0, 0, 60, 255, 255, 0, 60, 255, 0, 0, 60, 255, 0, 0, 60, 255, 255, 0, 60, 255, 0, 120,
+            60, 255, 0, 120, 60, 255, 255, 120, 60, 255, 255, 0, 60, 255, 0, 0, 60, 255, 0, 0, 60,
+            255, 255, 0, 60, 255, 0, 0, 60, 255, 0, 120, 60, 255, 255, 120, 60, 255, 0, 120, 60,
+            255, 0, 0, 60, 255, 0, 0, 60, 255, 255, 0, 60, 255, 0, 0, 60, 255, 0, 0, 60, 255, 255,
+            120, 60, 255, 0, 120, 60, 255, 0, 120, 60, 255, 0, 0, 60, 255, 255, 0, 60, 255, 0, 0,
+            60, 255, 0, 0, 60, 255, 255, 0, 60, 255, 0, 120, 60, 255, 0, 120, 60, 255, 255, 120, 60,
+            255, 255, 0, 60, 255, 0, 0, 60, 255, 0, 0, 60, 255, 255, 0, 60, 255, 0, 0, 60, 255, 0,
+            120, 60, 255, 255, 120, 60, 255, 0, 120, 60, 255, 0, 0, 60, 255, 0, 0, 60, 255, 255, 0,
+            60, 255, 0, 0, 60, 255, 0, 0, 60, 255, 255, 120, 60, 255, 0, 120, 60, 255, 0, 120, 60,
+            255
+          ],
+          "type": "Uint8Array"
+        },
+        8,
+        8,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "glow",
+      "path": "magFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "glow",
+      "path": "minFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "glow",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "glow",
+      "path": "repeat.x",
+      "value": 2
+    },
+    {
+      "op": "new",
+      "id": "glowColor",
+      "class": "Color",
+      "args": [1, 0.6, 0.2]
+    },
+    {
+      "op": "new",
+      "id": "panel",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "roughness",
+      "value": 0.9
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "metalness",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "roughnessMap",
+      "value": {
+        "ref": "orm"
+      }
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "metalnessMap",
+      "value": {
+        "ref": "orm"
+      }
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "aoMap",
+      "value": {
+        "ref": "orm"
+      }
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "aoMapIntensity",
+      "value": 0.7
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "emissive",
+      "value": {
+        "ref": "glowColor"
+      }
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "emissiveIntensity",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "panel",
+      "path": "emissiveMap",
+      "value": {
+        "ref": "glow"
+      }
+    },
+    {
+      "op": "new",
+      "id": "plate",
+      "class": "PlaneGeometry",
+      "args": [3, 2]
+    },
+    {
+      "op": "new",
+      "id": "mesh",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "plate"
+        },
+        {
+          "ref": "panel"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "mesh"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

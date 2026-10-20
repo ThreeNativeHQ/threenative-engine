@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "name": "wasm-engine-compute",
+  "target": "web",
+  "subject": "wasm-compute",
+  "viewport": {
+    "width": 320,
+    "height": 180
+  },
+  "warmupFrames": 1,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "computed",
+      "waitTicks": 120
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "error",
+        "equals": "",
+        "allowTrivial": "The page reports its own failure here."
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "done",
+        "equals": true
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "fill",
+        "equals": "256:1,4,766:true"
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "vec3",
+        "equals": "11,22,33,0,14,25,36,0"
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "words",
+        "equals": "307,308,309"
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "atomics",
+        "equals": "334,1000|334,1000|334,1000|334,1000"
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "uniform",
+        "equals": "0,7,14,21"
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "renderRead",
+        "equals": "64,128,191,255"
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "disposeReuse",
+        "equals": "32,128,223,255",
+        "allowTrivial": "The same cached material draws a disposed-then-reseeded storage attribute."
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "disposeRender",
+        "equals": "128,64,32,255",
+        "allowTrivial": "The rebuilt scene draws after teardown disposed a storage attribute a cached program still binds."
+      },
+      {
+        "entity": "wasm-compute",
+        "component": "probe",
+        "path": "vertexRead",
+        "equals": "255,255,255,255,0,0,0,0"
+      }
+    ]
+  }
+}

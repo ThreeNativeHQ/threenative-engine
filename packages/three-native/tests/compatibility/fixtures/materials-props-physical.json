@@ -1,0 +1,249 @@
+{
+  "name": "materials-props-physical",
+  "adaptedFrom": "original — MeshPhysicalMaterial: ior, specularIntensity, specularColor and the physical feature numbers, matching materials-physical",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "fresh",
+      "class": "MeshPhysicalMaterial",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m",
+      "class": "MeshPhysicalMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.r",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.g",
+      "value": 0.35
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "color.b",
+      "value": 0.2
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "roughness",
+      "value": 0.35
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "metalness",
+      "value": 0.1
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "ior",
+      "value": 1.8
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "specularIntensity",
+      "value": 0.7
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "specularColor.r",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "specularColor.g",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "specularColor.b",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "clearcoat",
+      "value": 0.4
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "sheen",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "transmission",
+      "value": 0.2
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "iridescence",
+      "value": 0.6
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "anisotropy",
+      "value": 0.3
+    },
+    {
+      "op": "set",
+      "id": "m",
+      "path": "dispersion",
+      "value": 0.1
+    }
+  ],
+  "observe": [
+    {
+      "id": "fresh",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "fresh",
+      "path": "ior",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "specularIntensity",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "specularColor.r",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "specularColor.g",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "specularColor.b",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "roughness",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "metalness",
+      "kind": "number"
+    },
+    {
+      "id": "fresh",
+      "path": "clearcoat",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "type",
+      "kind": "string"
+    },
+    {
+      "id": "m",
+      "path": "color.r",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "color.g",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "color.b",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "roughness",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "metalness",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "ior",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "specularIntensity",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "specularColor.r",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "specularColor.g",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "specularColor.b",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "clearcoat",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "sheen",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "transmission",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "iridescence",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "anisotropy",
+      "kind": "number"
+    },
+    {
+      "id": "m",
+      "path": "dispersion",
+      "kind": "number"
+    }
+  ]
+}

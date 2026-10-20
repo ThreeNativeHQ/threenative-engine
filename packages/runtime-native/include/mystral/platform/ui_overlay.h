@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 
+struct SDL_Window;
+
 namespace mystral {
 namespace platform {
 
@@ -63,6 +65,16 @@ void setUiOverlayAttached(bool attached);
  * game that asked for the web renderer with an opaque rectangle over its scene.
  */
 bool attachDesktopUiOverlay(const std::string& uiRoot);
+
+/**
+ * The game window a desktop overlay attaches to and measures: the legacy host's window module and
+ * the native-engine player (PRD-554) each name their own, so this seam links without either.
+ */
+void setUiOverlayWindow(SDL_Window* window);
+/** Releases the keys the UI owns when an overlay detaches; the host that routes keys installs it. */
+void setUiOverlayKeyboardReset(void (*reset)());
+/** Applies a page's `tn:hit-regions` frame (true), or returns false for any other frame. */
+bool applyUiHitRegionsFrame(const std::string& frame);
 
 /**
  * Bring up the CSS UI backend over the game window, serving the built UI from `uiRoot`.

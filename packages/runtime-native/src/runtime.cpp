@@ -824,7 +824,8 @@ public:
             bindingsState_ = nullptr;
             return false;
         }
-        webgpu_->setBindingsState(bindingsState_);
+        frameCapture_ = webgpu::makeFrameCaptureSource(bindingsState_);
+        webgpu_->setFrameCaptureSource(frameCapture_.get());
 
         // In no-SDL mode, set the offscreen texture for headless rendering
         if (config_.noSdl) {
@@ -965,7 +966,8 @@ public:
         }
 
         if (bindingsState_) {
-            if (webgpu_) webgpu_->setBindingsState(nullptr);
+            if (webgpu_) webgpu_->setFrameCaptureSource(nullptr);
+            frameCapture_.reset();
             webgpu::destroyBindingsState(bindingsState_);
             bindingsState_ = nullptr;
         }
@@ -1110,7 +1112,14 @@ private:
 
     // A screenshot the mailbox asked for, waiting for its requested frame to be captured.
     std::string pendingScreenshotPath_;
-    int pendingScreenshotTicks_ = 0;
+    std::chrono::steady_clock::time_point pendingScreenshotStartedAt_{};
+
+    // How long the host waits for the requested present before giving up. This replaced a count of
+    // host poll iterations: in a driven frame loop the host spins so fast that 120 iterations
+    // expired in about a millisecond — before the runner could see its request was consumed and ask
+    // the game for its render-only frame. A wall-clock budget matches the ~120 frames a normal
+    // presenting loop would spend, and does not depend on how fast the loop spins.
+    static constexpr auto kScreenshotCaptureBudget = std::chrono::seconds(2);
 
     void processPlaytestScreenshotRequest() {
         const char* configuredRoot = std::getenv("TN_PLAYTEST_MAILBOX_ROOT");
@@ -1139,15 +1148,17 @@ private:
             const std::string screenshotPath = contents.str();
             if (screenshotPath.empty() || screenshotPath.size() > 4096) return;
             pendingScreenshotPath_ = screenshotPath;
-            pendingScreenshotTicks_ = 0;
+            pendingScreenshotStartedAt_ = std::chrono::steady_clock::now();
         }
 
-        // The capture lands at a present boundary after the request below; poll briefly rather
-        // than failing on the first not-yet-captured tick. Bounded so a dead surface errors once,
-        // like the single-shot failure this replaced.
+        // The capture lands at a present boundary after the request below; poll rather than failing
+        // on the first not-yet-captured tick. A driven loop presents nothing on its own, so the
+        // runner asks the game for one render-only frame once it sees this request consumed; the
+        // budget is wall-clock so that wait fits inside it whatever the loop's spin rate. Bounded
+        // so a dead surface errors once, like the single-shot failure this replaced.
         if (!webgpu_->isFrameScreenshotReady()) {
             webgpu_->requestFrameScreenshot();
-            if (++pendingScreenshotTicks_ > 120) {
+            if (std::chrono::steady_clock::now() - pendingScreenshotStartedAt_ > kScreenshotCaptureBudget) {
                 std::cerr << "[Playtest] Native screenshot request failed: " << pendingScreenshotPath_ << std::endl;
                 pendingScreenshotPath_.clear();
             }
@@ -2767,49 +2778,7 @@ private:
      * platform. Fail closed: a malformed publication leaves the previous rectangles in place and
      * every later click is decided against rectangles that no longer exist, so it is named.
      */
-    bool applyUiHitRegions(const std::string& frame) {
-        if (frame.find("\"tn:hit-regions\"") == std::string::npos) return false;
-        // The registry emits each rectangle as x, y, width, height and nothing else lives in this
-        // frame, so reading the four keys in order is the whole parse. Named keys rather than
-        // "every number after a colon": a payload that grows a field would otherwise silently
-        // shift every rectangle by one.
-        static constexpr const char* kKeys[] = {"\"x\":", "\"y\":", "\"width\":", "\"height\":"};
-        std::vector<float> regions;
-        size_t cursor = 0;
-        while (true) {
-            float rectangle[4];
-            size_t next = cursor;
-            bool complete = true;
-            for (size_t index = 0; index < 4; ++index) {
-                const size_t found = frame.find(kKeys[index], next);
-                if (found == std::string::npos) {
-                    complete = false;
-                    break;
-                }
-                const size_t value = found + std::strlen(kKeys[index]);
-                char* end = nullptr;
-                rectangle[index] = std::strtof(frame.c_str() + value, &end);
-                if (end == frame.c_str() + value) {
-                    complete = false;
-                    break;
-                }
-                next = static_cast<size_t>(end - frame.c_str());
-            }
-            if (!complete) break;
-            regions.insert(regions.end(), std::begin(rectangle), std::end(rectangle));
-            cursor = next;
-        }
-        platform::setUiHitRegions(regions);
-        // The rectangles themselves, not just the count: a hit that lands in the wrong place is a
-        // layout or coordinate question, and only the published rectangles can answer it.
-        std::cout << "TN_UI_HIT_REGIONS:{\"count\":" << regions.size() / 4 << ",\"regions\":[";
-        for (size_t index = 0; index < regions.size(); ++index) {
-            if (index > 0) std::cout << ",";
-            std::cout << regions[index];
-        }
-        std::cout << "]}" << std::endl;
-        return true;
-    }
+    bool applyUiHitRegions(const std::string& frame) { return platform::applyUiHitRegionsFrame(frame); }
 
     void drainUiMessages() {
         if (!jsEngine_) return;
@@ -3081,6 +3050,7 @@ private:
 
     std::unique_ptr<webgpu::Context> webgpu_;
     webgpu::BindingsState* bindingsState_ = nullptr;
+    std::unique_ptr<host::IFrameCaptureSource> frameCapture_;
     std::unique_ptr<js::Engine> jsEngine_;
     std::unique_ptr<js::ModuleSystem> moduleSystem_;
     std::unordered_set<int> activeWorkerIds_;

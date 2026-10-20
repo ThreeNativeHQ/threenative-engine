@@ -71,6 +71,13 @@ const scenario = join(exampleRoot, "playtests", "ui-frame-desktop.playtest.json"
 const UI_PAGE_COLOR = 0x7fffd4;
 const UI_PAGE_COLOR_MIN_PIXELS = 1024;
 /**
+ * Per-channel slack when matching the page colour. The overlay reads the page from WebKit's
+ * compositor frames, and the plate it adds to make every frame whole (alpha 1/255, see
+ * `COMPOSITOR_STYLE` in `ui-overlay/src/offscreen.rs`) darkens each opaque page pixel by one level:
+ * `#7fffd4` arrives as `#7efed3`. One level is not visible, and the colour is still the page's.
+ */
+const UI_PAGE_COLOR_TOLERANCE = 2;
+/**
  * PRD-393 AC-6's bound: the composite costs <= 2.0 ms/frame at p95 on a 1280x720 frame. Reused
  * rather than restated, and asserted against the phase the run itself reported — a p95 with no
  * samples behind it fails instead of comparing zero to a ceiling.
@@ -284,7 +291,11 @@ function inspectPagePixels(path, color = UI_PAGE_COLOR, minPixels = UI_PAGE_COLO
   const blue = color & 0xff;
   let matched = 0;
   for (let index = 0; index < png.data.length; index += 4) {
-    if (png.data[index] === red && png.data[index + 1] === green && png.data[index + 2] === blue) {
+    if (
+      Math.abs(png.data[index] - red) <= UI_PAGE_COLOR_TOLERANCE &&
+      Math.abs(png.data[index + 1] - green) <= UI_PAGE_COLOR_TOLERANCE &&
+      Math.abs(png.data[index + 2] - blue) <= UI_PAGE_COLOR_TOLERANCE
+    ) {
       matched += 1;
     }
   }

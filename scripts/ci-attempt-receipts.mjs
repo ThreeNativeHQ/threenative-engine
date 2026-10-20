@@ -2,9 +2,22 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
-const MAX_ATTEMPTS = 5;
+// Eight reads back off for about two minutes in total, which still fits the 5-minute receipt jobs.
+// Five (15 s of waits) lost four finished jobs' receipts to one GitHub Actions incident on main run
+// 39275851944; the read still fails closed.
+const MAX_ATTEMPTS = 8;
 
-export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_INTEGRATION") {
+/**
+ * `settledNames` are jobs the caller already depends on, so they have finished. During a GitHub
+ * Actions incident the endpoint served one as `queued` eight minutes after it completed (main run
+ * 39281372838), so a listing that shows any of them unfinished is read again; the last read is
+ * returned as it is, and the caller's own check still fails closed on it.
+ */
+export function readAttemptJobs(
+  { repository, runId, runAttempt },
+  prefix = "CI_INTEGRATION",
+  settledNames = [],
+) {
   if (
     !/^[\w.-]+\/[\w.-]+$/u.test(repository ?? "") ||
     !/^[1-9]\d*$/u.test(runId ?? "") ||
@@ -36,7 +49,7 @@ export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_
         /HTTP (?:401|403|404|429)\b/iu.test(stderr)
       )
         throw error;
-      // Retry only the same read endpoint after 1, 2, 4, 8 seconds; no stale page, receipt or permission fallback.
+      // Retry only the same read endpoint after 1, 2, 4 ... 64 seconds; no stale page, receipt or permission fallback.
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000 * 2 ** attempt);
       continue;
     }
@@ -59,6 +72,13 @@ export function readAttemptJobs({ repository, runId, runAttempt }, prefix = "CI_
       new Set(listing.jobs.map((job) => job.id)).size !== listing.jobs.length
     )
       throw new Error(`${prefix}_API_INCOMPLETE: truncated job listing`);
+    if (
+      attempt < MAX_ATTEMPTS - 1 &&
+      listing.jobs.some((job) => settledNames.includes(job.name) && job.status !== "completed")
+    ) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000 * 2 ** attempt);
+      continue;
+    }
     return listing;
   }
 }

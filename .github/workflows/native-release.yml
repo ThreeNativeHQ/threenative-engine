@@ -416,6 +416,9 @@ jobs:
             executable: mystral
             asset: threenative-runtime-linux-x64
             tools_asset: threenative-tools-linux-x64
+            player: tn-native-engine-player-v8
+            player_asset: threenative-engine-player-linux-x64
+            player_ui: "ON"
           - key: darwin-arm64
             published: false
             runner: macos-15
@@ -423,6 +426,9 @@ jobs:
             executable: mystral
             asset: threenative-runtime-darwin-arm64
             tools_asset: threenative-tools-darwin-arm64
+            player: tn-native-engine-player-v8
+            player_asset: threenative-engine-player-darwin-arm64
+            player_ui: "OFF"
           - key: win32-x64
             published: true
             runner: windows-2025
@@ -430,6 +436,9 @@ jobs:
             executable: mystral.exe
             asset: threenative-runtime-win32-x64.exe
             tools_asset: threenative-tools-win32-x64.exe
+            player: tn-native-engine-player-v8.exe
+            player_asset: threenative-engine-player-win32-x64.exe
+            player_ui: "OFF"
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
@@ -482,9 +491,21 @@ jobs:
           set "CXX=cl"
           set "VCPKG_ROOT=%VCPKG_INSTALLATION_ROOT%"
           where cl
-          pnpm --filter @threenative/runtime-native native:build
+          rem `pnpm` is a batch file: without `call`, cmd hands the script to it and never returns, so
+          rem the engine player below was never configured or built (release run 39247695392).
+          call pnpm --filter @threenative/runtime-native native:build || exit /b 1
+          cd packages/runtime-native
+          cmake --preset ${{ matrix.preset }} -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=${{ matrix.player_ui }}
+          rem `-k 0` reports every MSVC error in one run; this is the only MSVC build of the engine.
+          cmake --build build/tn-engine-ui --config Release --target tn-native-engine-player-v8 -- -k 0
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Build Release engine player
+        if: runner.os != 'Windows'
+        working-directory: packages/runtime-native
+        run: |
+          cmake --preset ${{ matrix.preset }} -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=${{ matrix.player_ui }}
+          cmake --build build/tn-engine-ui --config Release --target tn-native-engine-player-v8
       # `VsDevCmd.bat` configures the process it runs in, and a `cmd` step's environment dies with
       # the step. So this ran without INCLUDE, LIB or a usable `cl`, and the first thing inside it
       # that *configures* a build directory — the physics contract lane — got "the C compiler is
@@ -517,6 +538,8 @@ jobs:
           ASSET_NAME: ${{ matrix.asset }}
           EXECUTABLE_NAME: ${{ matrix.executable }}
           PRESET: ${{ matrix.preset }}
+          PLAYER_NAME: ${{ matrix.player }}
+          PLAYER_ASSET_NAME: ${{ matrix.player_asset }}
           TOOLS_ASSET_NAME: ${{ matrix.tools_asset }}
         run: |
           node --input-type=module <<'NODE'
@@ -527,6 +550,10 @@ jobs:
           // (`src/cli/tool_dispatch.cpp:52`). It is a published release asset in its own right, so a
           // consumer that installed only the runtime can no longer reach `build tool helper is
           // missing` / exit 127 on `threenative build --target desktop`.
+          const playerSource = join("packages", "runtime-native", "build", "tn-engine-ui", process.env.PLAYER_NAME);
+          const playerOutput = join("release", process.env.PLAYER_ASSET_NAME);
+          copyFileSync(playerSource, playerOutput);
+          if (statSync(playerOutput).size === 0) throw new Error(`${playerOutput} is empty.`);
           const toolsName = process.env.EXECUTABLE_NAME.replace(/^mystral/u, "mystral-tools");
           const stage = [
             [process.env.EXECUTABLE_NAME, process.env.ASSET_NAME],
@@ -550,6 +577,7 @@ jobs:
           path: |
             release/${{ matrix.asset }}
             release/${{ matrix.tools_asset }}
+            release/${{ matrix.player_asset }}
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         if: always()
@@ -895,6 +923,7 @@ jobs:
           # A real Linux consumer needs it too, so it belongs inside the proof, not around it.
           sudo apt-get install -y mesa-vulkan-drivers libwebkit2gtk-4.1-0
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/native-engine-wasm
       - name: Pack the exact scaffold consumer packages
         run: |
           mkdir -p "$RUNNER_TEMP/packages"
@@ -904,6 +933,8 @@ jobs:
             pnpm --filter "$package_name" --if-present run build
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
+      - name: Verify packed default-engine desktop and web consumer
+        run: nice -n 19 pnpm tsx scripts/verify-one-template-desktop.ts platformer --archives "$RUNNER_TEMP/packages"
       - name: Scaffold from local tarballs
         uses: ./.github/actions/scaffold-from-tarballs
         with:
@@ -911,6 +942,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-consumer-proof
           template: minimal
+          # This job proves the released Three.js host (`mystral`). The default-engine consumer has its own step.
+          engine: threejs
       - name: Prepare the scaffolded consumer proof
         run: |
           target="$RUNNER_TEMP/threenative-consumer-proof"
@@ -1255,10 +1288,15 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-ios-release-consumer
           template: minimal
+          # The iOS release proof builds the released Three.js host without a native compiler.
+          engine: threejs
       - name: Install the exact iOS consumer packages
         run: |
           target="$RUNNER_TEMP/threenative-ios-release-consumer"
           cp examples/native-smoke/src/game.ts "$target/src/game.ts"
+          # The entry's own siblings: `game.ts` alone fails with UNRESOLVED_IMPORT for these two (PRD-637).
+          cp examples/native-smoke/src/networking-game.ts examples/native-smoke/src/worker-proof.ts \
+            "$target/src/"
           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
           cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \
             "$target/physics-parity.scenario.json"
@@ -1463,6 +1501,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-consumer-proof
           template: minimal
+          # This job proves the released Three.js host (`mystral`). The default-engine consumer has its own step.
+          engine: threejs
       - name: Prepare the scaffolded consumer proof
         run: |
           target="$RUNNER_TEMP/threenative-consumer-proof"

@@ -1,0 +1,51 @@
+{
+  "name": "textures-data-canvas-mips",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a 32x32 canvas (a 4-pixel checker with a red border) as a CanvasTexture with three's defaults (flipped, linear, generated mips): minified on a grazing floor, where the mip chain shows, and upright, where flipY shows",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "tex",
+      "kind": "boolean",
+      "path": "generateMipmaps",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 1,
+      "id": "tex",
+      "kind": "number",
+      "path": "minFilter",
+      "value": "n:408f800000000000",
+      "decimal": "1008"
+    },
+    {
+      "index": 2,
+      "id": "tex",
+      "kind": "boolean",
+      "path": "flipY",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 3,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:b1980806cf4d52a3c9c8498f57ca4170009e8a73a2ecb3543c883f501771ce03",
+      "decimal": "b1980806cf4d52a3c9c8498f57ca4170009e8a73a2ecb3543c883f501771ce03"
+    }
+  ],
+  "render": {
+    "png": "textures-data-canvas-mips.png",
+    "pngSha256": "b1980806cf4d52a3c9c8498f57ca4170009e8a73a2ecb3543c883f501771ce03",
+    "width": 320,
+    "height": 160,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

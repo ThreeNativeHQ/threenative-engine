@@ -1,0 +1,27 @@
+{
+  "name": "textures-anisotropy",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — two checkerboard floors (texels 240 and 16, so every mip level is an exact average) at a grazing angle, mipmapped and trilinear, one with anisotropy 16 and one with 1 (three's WebGPU sampler takes maxAnisotropy only when every filter is linear)",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:a13a79022d5513003a04288cb7a92b76473481d611afc646088693e24416b067",
+      "decimal": "a13a79022d5513003a04288cb7a92b76473481d611afc646088693e24416b067"
+    }
+  ],
+  "render": {
+    "png": "textures-anisotropy.png",
+    "pngSha256": "a13a79022d5513003a04288cb7a92b76473481d611afc646088693e24416b067",
+    "width": 320,
+    "height": 160,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

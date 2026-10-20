@@ -752,6 +752,10 @@ jobs:
           # 16 KB qualification from an ordinary one afterwards, and PRD-221 turns on exactly that
           # distinction. Captured on the same folded line for the same reason as the logcat dump:
           # `android-emulator-runner` destroys the emulator when `script` returns.
+          # A SwiftShader emulator can drop to "offline" right after a long conformance run, after
+          # every row passed; `adb reconnect offline` plus a bounded wait-for-device lets the dump
+          # read the buffer it would otherwise lose. A device that stays gone still records
+          # TN_ADB_LOGCAT_FAILED below.
           script: >-
             adb shell getconf PAGE_SIZE > "$RUNNER_TEMP/android-page-size.txt" 2>
             "$RUNNER_TEMP/android-page-size.err" || echo TN_ADB_PAGE_SIZE_FAILED >>
@@ -759,9 +763,15 @@ jobs:
             packages/runtime-native/conformance/run-conformance.mjs --target android
             --device emulator-5554 --reference artifacts/conformance/web
             --out artifacts/conformance/android; status=$?; echo "$status" >
-            "$RUNNER_TEMP/conformance-status.txt"; adb logcat -d >
-            "$RUNNER_TEMP/emulator-logcat.txt" 2> "$RUNNER_TEMP/emulator-logcat.err" || echo
-            TN_ADB_LOGCAT_FAILED >> "$RUNNER_TEMP/emulator-logcat.err";
+            "$RUNNER_TEMP/conformance-status.txt"; adb reconnect offline >/dev/null 2>&1;
+            timeout 60 adb -s emulator-5554 wait-for-device >/dev/null 2>&1; if adb -s
+            emulator-5554 logcat -d >
+            "$RUNNER_TEMP/emulator-logcat.txt" 2> "$RUNNER_TEMP/emulator-logcat.err"; then
+            :; else logcat_status=$?; printf 'TN_ADB_LOGCAT_FAILED exitCode=%s\n'
+            "$logcat_status" >> "$RUNNER_TEMP/emulator-logcat.err";
+            { printf 'get-state:\n'; adb -s emulator-5554 get-state 2>&1 | head -c 960;
+            printf '\ndevices -l:\n'; adb devices -l 2>&1 | head -c 960; } |
+            head -c 2048 >> "$RUNNER_TEMP/emulator-logcat.err"; fi;
             test "$status" -eq 0 -o "$status" -eq 2
       - name: Verify the observed Android page size
         if: always()
@@ -1492,6 +1502,10 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-starter-native
           template: starter
+          # This job verifies the Three.js host's packaged executable: the overlay markers, the
+          # release container, the installer and the signing proof. A config with no `engine`
+          # builds the V8 engine player directory instead, so the `threejs` override is named here.
+          engine: threejs
       - name: Build and verify the starter's WebView HUD
         shell: bash
         run: |
@@ -2210,6 +2224,8 @@ jobs:
           specs-file: ${{ runner.temp }}/threenative-package-specs
           target: ${{ runner.temp }}/threenative-starter-native
           template: starter
+          # The Three.js host's `test:native` proof below; the default engine has its own step.
+          engine: threejs
       - name: Build and verify the scaffolded starter
         run: |
           target="$RUNNER_TEMP/threenative-starter-native"
@@ -2222,6 +2238,43 @@ jobs:
           TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS=30000 \
           TN_PLAYTEST_ALLOW_SOFTWARE=1 \
             pnpm --dir "$target" test:native
+      # The default engine on desktop: the scaffold sets no `engine`, so `threenative build --target
+      # desktop` packages the V8 engine player with the game bundled on the engine's own three. An
+      # installed runtime-native fetches that player from the release at install time, and this job
+      # installs with --ignore-scripts, so it builds the player and names it the way a checkout
+      # build does (`THREENATIVE_ENGINE_PLAYER`). No release ships a linux-arm64 player, so the
+      # arm64 row keeps to the `threejs` host proof above.
+      - name: Scaffold the starter on the default engine
+        if: matrix.platform == 'linux-x64'
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/threenative-packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-starter-default
+          template: starter
+      - name: Build the engine player
+        if: matrix.platform == 'linux-x64'
+        working-directory: packages/runtime-native
+        run: |
+          set -euo pipefail
+          cmake --preset tn-linux -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON
+          cmake --build build/tn-engine-ui --target tn-native-engine-player-v8 --parallel "$(nproc)"
+      - name: Build the default-engine starter for desktop and boot its player
+        if: matrix.platform == 'linux-x64'
+        env:
+          THREENATIVE_ENGINE_PLAYER: ${{ github.workspace }}/packages/runtime-native/build/tn-engine-ui/tn-native-engine-player-v8
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-starter-default"
+          ! grep -q 'engine:' "$target/threenative.config.ts"
+          pnpm --dir "$target" install --ignore-scripts
+          pnpm --dir "$target" build:desktop
+          artifact=$(dirname "$(find "$target/dist-native" -name tn-native-engine-player-v8 -print -quit)")
+          for entry in tn-native-engine-player-v8 game.js native/assets.tnpk; do
+            test -s "$artifact/$entry" || { echo "TN_STARTER_ENGINE_ARTIFACT_MISSING: $entry"; exit 1; }
+          done
+          sh scripts/xvfb.sh "$artifact/tn-native-engine-player-v8" "$artifact/game.js" --check-game 2>&1 | tee "$RUNNER_TEMP/starter-default-boot.log"
+          grep -q 'TN_PLAYER_V8_GAME_CHECK: engine=native gameRuntime=v8 startup=passed' "$RUNNER_TEMP/starter-default-boot.log"
       - name: Compare paired starter JS frame duration on Linux ARM64
         if: matrix.platform == 'linux-arm64'
         shell: bash
@@ -2237,7 +2290,8 @@ jobs:
           # (including Canvas2D and the web UI library) stays in the same CMake cache.
           cp "$runtime/build/tn-linux/mystral" "$runtime/build/tn-linux/mystral-v8"
           cp "$runtime/build/tn-linux/CMakeCache.txt" "$evidence/v8-CMakeCache.txt"
-          mapfile -t feature_flags < <(sed -n 's/^\(TN_ENABLE_[^:]*\):[^=]*=\(.*\)$/-D\1=\2/p' "$evidence/v8-CMakeCache.txt")
+          # The physics library too: the tn-linux preset names the x86_64 build, and this runner is arm64.
+          mapfile -t feature_flags < <(sed -n 's/^\(TN_ENABLE_[^:]*\|THREENATIVE_PHYSICS_LIBRARY\):[^=]*=\(.*\)$/-D\1=\2/p' "$evidence/v8-CMakeCache.txt")
           restore_v8() {
             cp "$runtime/build/tn-linux/mystral-v8" "$runtime/build/tn-linux/mystral"
             cmake --preset tn-linux -S "$runtime" -DMYSTRAL_USE_V8=ON -DMYSTRAL_USE_QUICKJS=OFF \

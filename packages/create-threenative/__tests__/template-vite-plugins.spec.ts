@@ -101,7 +101,7 @@ describe("template vite configs", () => {
       if (!source.includes('import config from "./threenative.config.js";')) {
         unconfigured.push(`${template}: config import`);
       }
-      if (!source.includes("watchAssets({ config: config.assets,")) {
+      if (!/watchAssets\(\{\s*config:\s*config\.assets,/.test(source)) {
         unconfigured.push(`${template}: watch config`);
       }
     }

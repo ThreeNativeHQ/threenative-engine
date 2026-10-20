@@ -189,11 +189,16 @@ const BUG_REPORT_SKILL_PATHS = [
 // Three patch. Restoring the previous patch recovers every prior fingerprint.
 // Recomputed from clean committed c22e5ba8d for the independently reviewed bounded-upload
 // package patch embedded by every scaffold. No template, capability or appearance change.
+// Recomputed 2026-10-15 for the native engine default (PRD-573): every template AGENTS.md/CLAUDE.md pair gains
+// an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
+// Recomputed 2026-10-18 through all thirteen actual createProject trees after release-cohort preparation and Sailing motion repair.
+// Re-measured all 13 trees for the SMAA mip0 patch; restoring only copied patch bytes recovers every prior hash.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // PR489: all thirteen createProject trees change only by the four-line AA dispose closure;
-  // removing that closure from each generated tree recovers its previous fingerprint.
-  // PRD-564: measured all thirteen trees after retained-target sampling changes in
-  // worldEnvironment.ts and starter's grade/grain support declarations.
+  // PRD-637 0.3.6 cohort: the template pins moved, so all thirteen trees were re-measured by this test.
+  // PRD-637: every tree gains the npm `@vitejs/devtools` override, and `starter` also moves (grade
+  // table reused across a restart, two more restarts in production-readiness). Measured by this test.
+  // Recomputed 2026-10-17 for the engine rename ("native" -> "threenative", "legacy" -> "threejs"):
+  // every template's AGENTS/CLAUDE engine section and the pinned configs. Measured by this test.
   // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
@@ -255,24 +260,32 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // createProject on the merged tree.
   // PRD-566/569/609 merge: measured all thirteen trees; action-rpg carries emitParticle bursts and onCull instructions.
   // Recomputed 2026-10-13: the onCull paragraph in action-rpg AGENTS.md folded to one line to meet the 100-line budget.
-  // 2026-10-17 merged develop (PRD-619 interpolation) into PRD-564: all thirteen trees re-measured through
-  // createProject on the merged tree.
-  // Merged develop 1d056cec3 into PRD-564: AA disposal and the PR486 Three patch ship, so all thirteen
-  // trees are measured through createProject on this combined worktree, not either side's value.
-  "action-rpg": "c0d6de48044320e84ea2ac7d4ed6f1ee34d1666fd823838905d82cbd92814941",
-  minimal: "4b8c75461d05cb51e20e37eef98b2c183707c7132c622e84f27572dd32048ecc",
-  platformer: "5282196f894fd75bef78d5d6e080ff1a3107ba53256f79b866fcd0c25510faae",
-  puzzle: "232c78732cffa1669622b57b8221e4e6df30d1b54140428525548b4d91f5403b",
-  racing: "af591cad4364cdbde7652a51ca7ef07935468a66e87bb726be8dec0c8cdb01a8",
-  rain: "6c473543a655ae1eae01b78318bc84a449cffe4b811144060c22e6832a9937de",
-  rts: "b2bccad5648a665c4812fba8292c1267b4b47b5c8fff921e72b78aa8db504f2e",
-  runner: "876d1c68e80cb566be6093c0b608e1ec0c5d8c02cb6468b1b5995fd523bb1b95",
-  // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "9bff33bf989975f4b9b05ba468bb293bcbacad832f4ef509566754461a7d5632",
-  shooter: "8f771c884a980d620e3c79f411b8e8d3b2cfe0ab9a2871052443fff4ac55dd19",
-  snow: "dbabd0e6406e8e074063bdb985018664ffd0ee915c7237976f403dca81269afe",
-  starter: "f40897f30b8b1ebd890c5a559e965606a52c50663ac29b76fc24fdab544219e3",
-  "tower-defense": "69ee2732bfe738a454f7df7d0803715645aceb36fbbc1594fb417867e5412944",
+  // PRD-565: only the copied canonical Three patch changes; substituting its parent bytes
+  // recovers all thirteen prior hashes. Measured through the actual createProject tree test.
+  // Recomputed 2026-10-15: puzzle drops its legacy pin and its Engine paragraph (PRD-617); the other twelve are unchanged.
+  // Recomputed 2026-10-15 through createProject after recovery: all kits now share the decoder-aware asset watch.
+  // Recomputed 2026-10-18: a queue-fenced renderer prepares PMREMNode textures asynchronously; only the patch bytes move.
+  // Recomputed 2026-10-18: the Three patch groups async PMREM face fences by GPU cost; only the patch bytes move, so all thirteen trees change.
+  // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
+  // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
+  // boot-failure text both engines now show, so only puzzle's tree moves.
+  "action-rpg": "be8ab8f13dd28ee3086274521ab1fb7c2cc148f692fc8894b1ef3b494132fe0f",
+  minimal: "136a29554bb1010c8d46cf2407706535ea98b6b668c5539ce128360b50ffc889",
+  platformer: "315fbe53bc456c8542d409b256a77d4efcd9124624ea82b0462083301d67af54",
+  puzzle: "687ff478e9dc530fe597e3791c1b714c604c510688bf35e4a834d2399380ad87",
+  racing: "c1551a049f2dfc5bea418436085cd82f4778b39eaafc92a3d9e62121191940bd",
+  rain: "5e89648da3d89c9c9b60f1423f778494fff950420dbe8d401d0e59196c634362",
+  rts: "99d5d0cc45a7131250bd581aabb42aa1131d5a090b95861be3c16e8eaff449ea",
+  runner: "cba600e53a0242809a6bc1262a6fac066e9a9c4125867250c761ed0bc3c1f6ea",
+  // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
+  sailing: "3981069bd2ff997ff34862f77fb7e885b46b94df88be7aafab5ed147b0dea17a",
+  shooter: "abc85ff36707c7d5dd833637940de8afc6f283f32d978c72575b9c092998d01a",
+  snow: "a93e8c2b0fe28c9722f299db89c9c542348587764d9b2fb1011b35e786b2a3ac",
+  // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
+  // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
+  // to stay under the 200-line render-file cap; only starter's tree moves.
+  starter: "b3fd8ba960c712e8c2eab62f400f6f0b64aef62e485b1b67f9dbc6438382e935",
+  "tower-defense": "af7db885838a0dc6276e9a5e2ccf2225c5adf1a0c3edb1c694dd55e98015655c",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -371,6 +384,7 @@ const STARTER_PATHS = [
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
+  "src/render/qualityPolicy.ts",
   "src/render/worldEnvironment.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
@@ -1092,6 +1106,15 @@ describe("create-threenative", () => {
         { install: false, target: "minimal-bundle", template: "minimal" },
         root,
       );
+      // This build checks core's bundle, not an engine: it names the legacy engine so it needs no Wasm module.
+      const configPath = path.join(result.target, "threenative.config.ts");
+      await writeFile(
+        configPath,
+        (await readFile(configPath, "utf8")).replace(
+          "const config: IThreeNativeConfig = {",
+          'const config: IThreeNativeConfig = {\n  engine: "threejs",',
+        ),
+      );
       const scope = path.join(result.target, "node_modules", "@threenative");
       await mkdir(scope, { recursive: true });
       await symlink(path.resolve("packages/core"), path.join(scope, "core"), "dir");
@@ -1407,6 +1430,20 @@ describe("create-threenative", () => {
       ) as { overrides?: Record<string, string>; pnpm?: { overrides?: Record<string, string> } };
       expect(manifest.overrides?.sharp, `${template} npm override`).toBe(">=0.35.4");
       expect(manifest.pnpm?.overrides?.sharp, `${template} pnpm override`).toBe(">=0.35.4");
+    }
+  });
+
+  it("keeps Vite's optional devtools peer off the npm 10 crash (PRD-637)", async () => {
+    // `vite@8.2.0+` lists `@vitejs/devtools@^0.4.0` as an optional peer, and 0.4.2+ peers back on
+    // the devtools packages. npm 10 (the npm in Node 20 LTS) dies on that peer set with
+    // `Cannot read properties of null (reading 'edgesOut')`, so a fresh scaffold could not install.
+    // The pin names the last devtools release whose only peer is vite.
+    for (const template of ALL_TEMPLATES) {
+      const manifest = JSON.parse(
+        await readFile(path.join(TEMPLATE_ROOT, template, "package.json"), "utf8"),
+      ) as { devDependencies?: Record<string, string>; overrides?: Record<string, string> };
+      if (manifest.devDependencies?.vite === undefined) continue;
+      expect(manifest.overrides?.["@vitejs/devtools"], `${template} npm override`).toBe("0.4.1");
     }
   });
 

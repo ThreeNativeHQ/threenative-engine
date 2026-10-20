@@ -9,6 +9,59 @@ import {
 import { FRAME_PASS_KINDS, type IRenderPassSample } from "../src/render-pass-budget.js";
 
 describe("FixedStepLoop", () => {
+  it("rebases negotiated clock transitions and rearms a driven loop exactly once", () => {
+    const callbacks = new Map<number, (time: number) => void>();
+    let handle = 0;
+    let now = 0;
+    const loop = new FixedStepLoop({
+      collectMetrics: true,
+      now: () => now,
+      onUpdate: () => undefined,
+      requestFrame: (callback) => {
+        callbacks.set(++handle, callback);
+        return handle;
+      },
+      cancelFrame: (id) => {
+        callbacks.delete(id);
+      },
+    });
+    const pump = (time: number): void => {
+      now = time;
+      const entry = callbacks.entries().next().value;
+      expect(entry).toBeDefined();
+      if (entry === undefined) return;
+      callbacks.delete(entry[0]);
+      entry[1](time);
+    };
+    loop.start(0);
+    loop.advance(2, { render: true });
+    const priorSequence = loop.runtimeDiagnosticsSeries().at(-1)?.sequence ?? 0;
+    expect(callbacks.size).toBe(0);
+    loop._setClockMode("wall-clock");
+    expect(callbacks.size).toBe(1);
+    expect(loop.runtimeDiagnosticsSeries()).toEqual([]);
+    pump(100_000);
+    expect(loop.tick()).toBe(2);
+    pump(100_020);
+    expect(loop.tick()).toBe(3);
+    expect(loop.runtimeDiagnosticsSeries().at(-1)?.sequence).toBeGreaterThan(priorSequence);
+    const retained = loop.runtimeDiagnosticsSeries();
+    expect(retained.at(-1)?.completedAtMs).toBe(100_020);
+    loop._setClockMode("wall-clock");
+    expect(loop.runtimeDiagnosticsSeries()).toEqual(retained);
+    expect(callbacks.size).toBe(1);
+    expect(() => loop._setClockMode("invalid" as "fixed-step")).toThrow(/clock mode/iu);
+    expect(loop.clockFrozen).toBe(false);
+    loop._setClockMode("fixed-step");
+    pump(200_000);
+    expect(loop.tick()).toBe(3);
+    loop.advance(2, { render: true });
+    expect(loop.tick()).toBe(5);
+    loop.stop();
+    loop._setClockMode("wall-clock");
+    expect(callbacks.size).toBe(0);
+  });
+
   it("should reject a maxSteps that can never run an update", () => {
     // A maxSteps of zero (or negative, or NaN) made the catch-up while-loop run
     // zero updates every frame, forever: the game rendered but never simulated,
@@ -106,10 +159,15 @@ describe("FixedStepLoop", () => {
   });
 
   it("should record frame timing and renderer metrics after each rendered frame", () => {
+    let clock = 0;
     const loop = new FixedStepLoop({
+      now: () => clock,
       // The collector itself under test — a diagnostics consumer's view.
       collectMetrics: true,
-      onRender: () => ({ drawCalls: 3, triangles: 24 }),
+      onRender: () => {
+        clock += 1;
+        return { drawCalls: 3, triangles: 24 };
+      },
       onUpdate: () => undefined,
     });
 
@@ -118,8 +176,8 @@ describe("FixedStepLoop", () => {
     loop.stepFrame(32);
 
     expect(loop.runtimeDiagnosticsSeries()).toEqual([
-      { drawCalls: 3, frameMs: 16, triangles: 24 },
-      { drawCalls: 3, frameMs: 16, triangles: 24 },
+      { completedAtMs: 2, sequence: 2, drawCalls: 3, frameMs: 16, triangles: 24 },
+      { completedAtMs: 3, sequence: 3, drawCalls: 3, frameMs: 16, triangles: 24 },
     ]);
   });
 
@@ -175,6 +233,69 @@ describe("FixedStepLoop", () => {
     expect(loop.advance(3)).toBe(3);
     expect(updates).toBe(3);
     expect(loop.tick()).toBe(3);
+  });
+
+  it("meters each driven update inside its render frame", () => {
+    let clock = 0;
+    const events: string[] = [];
+    const budget = new FrameBudget({ report: () => undefined });
+    const loop = new FixedStepLoop({
+      budget,
+      now: () => clock,
+      onBeginFrame: () => {
+        events.push("begin");
+      },
+      onUpdate: () => {
+        events.push("update");
+        clock += 2;
+      },
+      onRender: () => {
+        events.push("render");
+        clock += 3;
+        return undefined;
+      },
+      onFrame: () => {
+        events.push("end");
+      },
+    });
+    loop.start(0);
+    expect(loop.advance(4, { render: true })).toBe(4);
+    expect(events).toEqual(
+      Array.from({ length: 4 }, () => ["begin", "update", "render", "end"]).flat(),
+    );
+    expect(loop.tick()).toBe(4);
+    expect(budget.window().frames).toBe(4);
+    expect(budget.window().phases.update.p50).toBe(2);
+    expect(budget.window().frame.p50).toBe(5);
+    loop.stop();
+  });
+
+  it("keeps startup and host-owned automatic renders until full-frame driving begins", () => {
+    const callbacks: Array<(time: number) => void> = [];
+    let renders = 0;
+    let updates = 0;
+    const loop = new FixedStepLoop({
+      requestFrame: (callback) => callbacks.push(callback),
+      onUpdate: () => {
+        updates += 1;
+      },
+      onRender: () => {
+        renders += 1;
+        return undefined;
+      },
+    });
+    loop.freezeClock(0);
+    loop.setHeld(true);
+    loop.start(0);
+    callbacks.shift()?.(16);
+    expect({ updates, renders }).toEqual({ updates: 0, renders: 1 });
+    loop.setHeld(false);
+    loop.advance(1, { render: false });
+    expect({ updates, renders }).toEqual({ updates: 1, renders: 1 });
+    callbacks.shift()?.(32);
+    expect({ updates, renders }).toEqual({ updates: 1, renders: 2 });
+    expect(callbacks).toHaveLength(1);
+    loop.stop();
   });
 
   it("should ignore live frames after switching to the advanced clock", () => {
@@ -254,6 +375,19 @@ describe("FixedStepLoop", () => {
     expect(dts).toHaveLength(3);
     loop.stepFrame(66.6667);
     expect(dts).toHaveLength(3);
+  });
+
+  it("spends no settle after a counted step reached the loop first", () => {
+    // A host whose first live frame lands after the runner's first `advance(1)` (the Perry desktop
+    // host, after a 6.4 s first present) fired the settle inside that step: 61 ticks for 1.
+    const dts: number[] = [];
+    const loop = new FixedStepLoop({ onUpdate: (dt) => dts.push(dt) });
+    loop.freezeClock(60);
+    loop.start(0);
+    expect(loop.advance(1)).toBe(1);
+    loop.stepFrame(16.6667);
+    expect(dts).toHaveLength(1);
+    expect(loop.tick()).toBe(1);
   });
 
   it("settles nothing when the freeze is asked for no steps", () => {
@@ -407,6 +541,103 @@ describe("FixedStepLoop metrics collection", () => {
     });
     return { loop, state };
   }
+
+  it("records completion cadence including outer-loop delay without changing frameMs", () => {
+    let clock = 10;
+    const callbackMs: number[] = [];
+    const loop = new FixedStepLoop({
+      collectMetrics: true,
+      now: () => clock,
+      onUpdate: () => undefined,
+      onRender: () => {
+        clock += 2;
+        return undefined;
+      },
+      onFrame: (ms) => callbackMs.push(ms),
+    });
+    loop.stepFrame(0);
+    clock = 40;
+    loop.stepFrame(16);
+    clock = 90;
+    loop.stepFrame(32);
+    expect(callbackMs).toEqual([2, 2, 2]);
+    expect(loop.runtimeDiagnosticsSeries()).toEqual([
+      { frameMs: 16, sequence: 2, completedAtMs: 42 },
+      { frameMs: 16, sequence: 3, completedAtMs: 92 },
+    ]);
+  });
+
+  it("counts successful completions only and exposes collection gaps and clears", () => {
+    let clock = 0;
+    let fail = false;
+    const loop = new FixedStepLoop({
+      collectMetrics: true,
+      now: () => clock,
+      onUpdate: () => undefined,
+      onRender: () => {
+        clock += 1;
+        if (fail) throw new Error("render failed");
+        return undefined;
+      },
+    });
+    loop.start(0);
+    loop.stepFrame(0);
+    loop.advance(2, { render: false });
+    fail = true;
+    expect(() => loop.stepFrame(16)).toThrow("render failed");
+    expect(loop.runtimeDiagnosticsSeries()).toEqual([]);
+    fail = false;
+    loop.stepFrame(32);
+    expect(loop.runtimeDiagnosticsSeries()[0]?.sequence).toBe(2);
+    loop.setCollectMetrics(false);
+    loop.stepFrame(48);
+    loop.setCollectMetrics(true);
+    loop.stepFrame(64);
+    expect(loop.runtimeDiagnosticsSeries().map((s) => s.sequence)).toEqual([2, 4]);
+    loop.clearRuntimeDiagnostics();
+    loop.stepFrame(80);
+    expect(loop.runtimeDiagnosticsSeries().map((s) => s.sequence)).toEqual([5]);
+    loop.stop();
+  });
+
+  it("keeps absolute completion IDs through bounded retention and copied snapshots", () => {
+    let clock = 0;
+    const loop = new FixedStepLoop({
+      collectMetrics: true,
+      now: () => clock,
+      onUpdate: () => undefined,
+      onRender: () => {
+        clock += 1;
+        return undefined;
+      },
+    });
+    for (let frame = 1; frame <= 1_027; frame += 1) loop.stepFrame(frame * 16);
+    const series = loop.runtimeDiagnosticsSeries();
+    expect(series).toHaveLength(1_024);
+    expect(series[0]).toMatchObject({ sequence: 4, completedAtMs: 4 });
+    expect(series.at(-1)).toMatchObject({ sequence: 1_027, completedAtMs: 1_027 });
+    Object.assign(series[0] ?? {}, { sequence: -1, completedAtMs: -1 });
+    expect(loop.runtimeDiagnosticsSeries()[0]).toMatchObject({ sequence: 4, completedAtMs: 4 });
+  });
+
+  it("retains invalid completion intervals for later fail-closed consumption", () => {
+    let clock = 10;
+    const loop = new FixedStepLoop({
+      collectMetrics: true,
+      now: () => clock,
+      onUpdate: () => undefined,
+    });
+    loop.stepFrame(0);
+    loop.stepFrame(16);
+    clock = 5;
+    loop.stepFrame(32);
+    clock = Number.NaN;
+    loop.stepFrame(48);
+    const series = loop.runtimeDiagnosticsSeries();
+    expect(series.map((s) => s.sequence)).toEqual([2, 3, 4]);
+    expect(series.map((s) => s.completedAtMs)).toEqual([10, 5, Number.NaN]);
+    expect(series.map((s) => s.frameMs)).toEqual([16, 16, 16]);
+  });
 
   it("collects no samples by default - nothing reads them outside a diagnostics consumer", () => {
     const { loop } = makeLoop();
@@ -641,5 +872,103 @@ describe("terrain draw interval retention", () => {
     expect(entries).toHaveLength(1024);
     expect(entries[0]?.frame).toBe(2);
     expect(entries.at(-1)?.frame).toBe(1025);
+  });
+});
+
+describe("render-only frames", () => {
+  it("draws the standing world without advancing the simulation after the clock is driven", () => {
+    // A native deterministic screenshot arrives after the last `advance(render:true)`, when the
+    // automatic frame pump is off: nothing presents, so the copy never happens. The render-only
+    // operation draws once and must not move the tick, an update or a physics step — a screenshot
+    // that settles the world by a frame is a false observation.
+    let updates = 0;
+    let afterPhysics = 0;
+    let renders = 0;
+    const loop = new FixedStepLoop({
+      now: () => 0,
+      onUpdate: () => {
+        updates += 1;
+      },
+      onAfterPhysics: () => {
+        afterPhysics += 1;
+      },
+      onRender: () => {
+        renders += 1;
+        return undefined;
+      },
+    });
+    loop.start(0);
+    loop.advance(3, { render: true });
+    expect({ afterPhysics, renders, tick: loop.tick(), updates }).toEqual({
+      afterPhysics: 3,
+      renders: 3,
+      tick: 3,
+      updates: 3,
+    });
+
+    loop.renderCurrentFrame();
+
+    expect({ afterPhysics, renders, tick: loop.tick(), updates }).toEqual({
+      afterPhysics: 3,
+      renders: 4,
+      tick: 3,
+      updates: 3,
+    });
+    loop.stop();
+  });
+
+  it("keeps the frozen startup settle for the next ordinary frame, not the render-only frame", () => {
+    // The freeze's settle runs on the first *live* frame; a render-only screenshot taken before
+    // that frame must not spend it, or the capture would advance physics and the settle would be
+    // gone when the world genuinely starts.
+    let updates = 0;
+    let afterPhysics = 0;
+    let renders = 0;
+    const loop = new FixedStepLoop({
+      now: () => 0,
+      onUpdate: () => {
+        updates += 1;
+      },
+      onAfterPhysics: () => {
+        afterPhysics += 1;
+      },
+      onRender: () => {
+        renders += 1;
+        return undefined;
+      },
+    });
+    try {
+      loop.freezeClock(2);
+      loop.start(0);
+
+      loop.renderCurrentFrame();
+
+      expect({ afterPhysics, renders, tick: loop.tick(), updates }).toEqual({
+        afterPhysics: 0,
+        renders: 1,
+        tick: 0,
+        updates: 0,
+      });
+
+      loop.stepFrame(0);
+
+      expect({ afterPhysics, renders, tick: loop.tick(), updates }).toEqual({
+        afterPhysics: 2,
+        renders: 2,
+        tick: 2,
+        updates: 2,
+      });
+    } finally {
+      loop.stop();
+    }
+  });
+
+  it("refuses a render-only frame while the live clock is not frozen", () => {
+    // A live loop advances through its own frames; a render-only call that silently stepped it
+    // would be a simulation change wearing a screenshot's name.
+    const loop = new FixedStepLoop({ onUpdate: () => undefined });
+    loop.start(0);
+    expect(() => loop.renderCurrentFrame()).toThrow(/frozen/iu);
+    loop.stop();
   });
 });

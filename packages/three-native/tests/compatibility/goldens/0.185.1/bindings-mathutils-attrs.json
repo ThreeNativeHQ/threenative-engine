@@ -1,0 +1,91 @@
+{
+  "name": "bindings-mathutils-attrs",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — three's MathUtils functions the minimal template calls (Player, touch-controls) and Float32BufferAttribute's constructor and array",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "clampHigh",
+      "kind": "number",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 1,
+      "id": "clampLow",
+      "kind": "number",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 2,
+      "id": "lerpMid",
+      "kind": "number",
+      "value": "n:3fc0a3d70a3d70a4",
+      "decimal": "0.13"
+    },
+    {
+      "index": 3,
+      "id": "radians",
+      "kind": "number",
+      "value": "n:400921fb54442d18",
+      "decimal": "3.141592653589793"
+    },
+    {
+      "index": 4,
+      "id": "modulo",
+      "kind": "number",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 5,
+      "id": "uv",
+      "kind": "numbers",
+      "path": "array",
+      "value": "n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:3ff0000000000000,n:3ff0000000000000",
+      "decimal": "0, 0, 1, 0, 0, 1, 1, 1"
+    },
+    {
+      "index": 6,
+      "id": "uv",
+      "kind": "number",
+      "path": "itemSize",
+      "value": "n:4000000000000000",
+      "decimal": "2"
+    },
+    {
+      "index": 7,
+      "id": "uv",
+      "kind": "number",
+      "path": "count",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 8,
+      "id": "uv",
+      "kind": "boolean",
+      "path": "normalized",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 9,
+      "id": "gradient",
+      "kind": "numbers",
+      "path": "array",
+      "value": "n:3fb99999a0000000,n:3fc99999a0000000,n:3fd3333340000000,n:3fe6666660000000",
+      "decimal": "0.10000000149011612, 0.20000000298023224, 0.30000001192092896, 0.699999988079071"
+    },
+    {
+      "index": 10,
+      "id": "gradient",
+      "kind": "boolean",
+      "path": "normalized",
+      "value": "b:1",
+      "decimal": "true"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "name": "tsl-post-template-high",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — PRD-531 slice 4: the minimal template's high-tier chain: exposure 0.62, GTAO with denoise, bloom 0.22/0.6/1, vignette 0.22, SMAA, built live from the addon on the native side — tolerance: the engine's DenoiseNode WGSL port (PRD-526) lands within one 8-bit level of three's TSL output after its bilateral blend, measured deltaE 0.038 at most, so this frame allows one level and deltaE 0.04",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:805c7e7ba425a45b2630659bd1a80c0215a513b33350b39ec5802fb8afe67e35",
+      "decimal": "805c7e7ba425a45b2630659bd1a80c0215a513b33350b39ec5802fb8afe67e35"
+    }
+  ],
+  "render": {
+    "png": "tsl-post-template-high.png",
+    "pngSha256": "805c7e7ba425a45b2630659bd1a80c0215a513b33350b39ec5802fb8afe67e35",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

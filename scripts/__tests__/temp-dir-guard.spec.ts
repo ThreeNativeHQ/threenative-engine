@@ -107,6 +107,126 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/capture-asset-mcp-tools.ts",
     "The asset-MCP tool snapshot installs the pinned published package into a scratch root it pushes onto `scratch` and removes in finally, for the same reason as the Blender one above.",
   ],
+  [
+    "packages/runtime-native/tests/native-engine/post-normal-pass.ts",
+    "The CTest probe writes its fixture and readback under its caller's build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/flip-reference.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-async-bridge.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-batched-mesh.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-free-run.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-gc.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-geometry-utils.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-imports.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-render-target.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-textures.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-canvas-decal.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-canvas2d.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-compile-reentry.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-frame-per-present.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-real-input.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-thread-placement.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-ui-overlay.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-window-title.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/playtest/src/runner/linuxCpuWindow.ts",
+    "The CPU window collector removes its fixture directory in a finally block, and a killed run leaves only its own tagged directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-crossing-budget.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-host-projection.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/__tests__/starter-post-bundle.spec.ts",
+    "The bundler resolves packages from the package directory, so the staging directory sits inside it and the spec removes it in afterAll.",
+  ],
+  [
+    "packages/runtime-native/tests/distribution.test.mjs",
+    "The packed cohort tarballs outlive the test that asks for them, so the suite removes them in afterAll.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/compute-harness.mjs",
+    "The harness stages its bundle under the package's untracked build directory and removes it in a finally block.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-read-target-osr.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-tsl-values.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-ui-bridge.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-ui-input.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/template-post-packages.ts",
+    "The compiler CLI retains authored graphs, emitted modules and Tint outputs under its caller's build directory for diagnosis.",
+  ],
+  [
+    "packages/three-native/tests/compatibility/run-native.ts",
+    "The conformance CLI retains captured frames because failed pixel-comparison reports name their paths.",
+  ],
 ]);
 
 async function sourceFiles(directory: string): Promise<string[]> {

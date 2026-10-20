@@ -41,7 +41,7 @@ function implementedRows() {
 
 const RUNTIME_SCRIPT_HASHES = {
   'storage-polyfill.js': '7e03f256b0e11b5370bf86ccb5ae286be221080a1baa8339efe2aa570dd3c25d',
-  'fetch-polyfill.js': '352dbc282ed5f8f4f389d1ec79c18fc0d7e18dbdf5e79c6509515fabdee54cd2',
+  'fetch-polyfill.js': '9dfb919c054b54618e19d090eb27534f10fda57886889c18fd5e99864df54461',
   'streams-polyfill.js': 'b57569ac2079bc5864eb7c8aefef6b03321acad8b6f6364b3de714e2bee64d83',
   'url-worker-polyfill.js': 'fb709b56f527c82cc7ba4d2c3430a6f17c81e0550f736d145819b25463811af3',
   'create-element-setup.js': '3891c716e3e7b8801f45306b50c5c8c5990042276524fbaac745b157389d1bee',
@@ -49,7 +49,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'image-support-init.js': '1a674470d63a89e607d065c4b19794e28e87b955b292d63dbd2f974e94e1e6ee',
   'onload-trigger.js': '396a17433bcc18d6193b3167404ff51faecc1451b1b9dfaeb6a3473e86c6371a',
   'install-async-pipelines.js': 'd58fb3fb55d24743273ea79f9ec72303a79ec91b322969d705a9f4d11ce47024',
-  'image-bitmap-polyfill.js': '27cb7c4921a93dd953dc90807f26bdd4410c17445e44aba3488c133baec8de35',
+  'image-bitmap-polyfill.js': '504b53df4835acd12dc9f9c0527dabb24218e3f6d445f175939bb3d1285b04f1',
   'webtransport-polyfill.js': '7a25c702d467985f89f3b8a6d4a3c222307397c22b9b76ed5381defefd8e8d32',
   'webtransport-stub.js': '9b653430e429a8fad538151523a2c4346b0b9c52a201ec5e01314128b788081e',
   'audio-context-constructor.js': 'c3436f70b2597d2d953f780a3388c24b7e60fa3697796973d5002d0c378de227',
@@ -293,7 +293,8 @@ test('deprecated native GLTF and Draco paths fail closed before compilation', ()
   const runtime = read('src/runtime.cpp');
   assert.doesNotMatch(runtime, /setupGLTF|setupDraco|MYSTRAL_HAS_DRACO|__loadGLTF/u);
   const downloader = read('scripts/download-deps.mjs');
-  assert.doesNotMatch(downloader, /\bcgltf\b|\bdraco\b/u, 'deprecated native decoder dependencies must not be provisioned');
+  // cgltf is provisioned for the engine's own glTF loader (PRD-515), parsing only; the legacy host never links it.
+  assert.doesNotMatch(downloader, /\bdraco\b/u, 'deprecated native decoder dependencies must not be provisioned');
 });
 
 test('runtime JavaScript is byte-stable, embedded, and loaded by the bootstrap', () => {

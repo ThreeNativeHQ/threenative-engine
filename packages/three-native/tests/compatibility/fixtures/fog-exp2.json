@@ -1,0 +1,363 @@
+{
+  "name": "fog-exp2",
+  "adaptedFrom": "original \u2014 nodes/fog/Fog.js exp2 factor over -positionView.z before tone mapping, alpha retained, material.fog=false. Red control: force fogFactor to constant 0 (all three panels stay red).",
+  "tolerance": {
+    "abs": 1e-12
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "new",
+      "id": "fogColor",
+      "class": "Color",
+      "args": [0.05, 0.45, 0.9]
+    },
+    {
+      "op": "new",
+      "id": "fog",
+      "class": "FogExp2",
+      "args": [
+        {
+          "ref": "fogColor"
+        },
+        0.1
+      ]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "fog",
+      "value": {
+        "ref": "fog"
+      }
+    },
+    {
+      "op": "new",
+      "id": "bg",
+      "class": "Color",
+      "args": [0.02, 0.02, 0.02]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "bg"
+      }
+    },
+    {
+      "op": "new",
+      "id": "geom",
+      "class": "PlaneGeometry",
+      "args": [2, 2]
+    },
+    {
+      "op": "new",
+      "id": "m0",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "m0",
+      "path": "color.r",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "m0",
+      "path": "color.g",
+      "value": 0.1
+    },
+    {
+      "op": "set",
+      "id": "m0",
+      "path": "color.b",
+      "value": 0.04
+    },
+    {
+      "op": "new",
+      "id": "panel0",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geom"
+        },
+        {
+          "ref": "m0"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "panel0",
+      "path": "position.z",
+      "value": -5
+    },
+    {
+      "op": "set",
+      "id": "panel0",
+      "path": "position.x",
+      "value": -1.6
+    },
+    {
+      "op": "set",
+      "id": "panel0",
+      "path": "scale.x",
+      "value": 0.65
+    },
+    {
+      "op": "set",
+      "id": "panel0",
+      "path": "scale.y",
+      "value": 0.65
+    },
+    {
+      "op": "set",
+      "id": "panel0",
+      "path": "scale.z",
+      "value": 1
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "panel0"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m1",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "m1",
+      "path": "color.r",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "m1",
+      "path": "color.g",
+      "value": 0.1
+    },
+    {
+      "op": "set",
+      "id": "m1",
+      "path": "color.b",
+      "value": 0.04
+    },
+    {
+      "op": "new",
+      "id": "panel1",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geom"
+        },
+        {
+          "ref": "m1"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "panel1",
+      "path": "position.z",
+      "value": -10
+    },
+    {
+      "op": "set",
+      "id": "panel1",
+      "path": "position.x",
+      "value": 0.0
+    },
+    {
+      "op": "set",
+      "id": "panel1",
+      "path": "scale.x",
+      "value": 1.3
+    },
+    {
+      "op": "set",
+      "id": "panel1",
+      "path": "scale.y",
+      "value": 1.3
+    },
+    {
+      "op": "set",
+      "id": "panel1",
+      "path": "scale.z",
+      "value": 1
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "panel1"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m2",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "m2",
+      "path": "color.r",
+      "value": 0.8
+    },
+    {
+      "op": "set",
+      "id": "m2",
+      "path": "color.g",
+      "value": 0.1
+    },
+    {
+      "op": "set",
+      "id": "m2",
+      "path": "color.b",
+      "value": 0.04
+    },
+    {
+      "op": "new",
+      "id": "panel2",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geom"
+        },
+        {
+          "ref": "m2"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "panel2",
+      "path": "position.z",
+      "value": -16
+    },
+    {
+      "op": "set",
+      "id": "panel2",
+      "path": "position.x",
+      "value": 5.12
+    },
+    {
+      "op": "set",
+      "id": "panel2",
+      "path": "scale.x",
+      "value": 2.08
+    },
+    {
+      "op": "set",
+      "id": "panel2",
+      "path": "scale.y",
+      "value": 2.08
+    },
+    {
+      "op": "set",
+      "id": "panel2",
+      "path": "scale.z",
+      "value": 1
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "panel2"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "clearMaterial",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "clearMaterial",
+      "path": "fog",
+      "value": false
+    },
+    {
+      "op": "new",
+      "id": "clearPanel",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "geom"
+        },
+        {
+          "ref": "clearMaterial"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "clearPanel",
+      "path": "position.z",
+      "value": -10
+    },
+    {
+      "op": "set",
+      "id": "clearPanel",
+      "path": "position.y",
+      "value": -2
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "clearPanel"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  }
+}

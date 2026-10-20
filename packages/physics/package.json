@@ -1,6 +1,6 @@
 {
   "name": "@threenative/physics",
-  "version": "0.3.4",
+  "version": "0.3.6",
   "license": "MIT",
   "description": "Thin Rapier physics bindings for ThreeNative games.",
   "keywords": ["threenative", "three", "threejs", "physics", "rapier", "navigation", "gamedev"],
@@ -39,7 +39,7 @@
     "recast-navigation": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/core": ">=0.3.4 <0.4.0",
+    "@threenative/core": ">=0.3.6 <0.4.0",
     "three": ">=0.185.0 <0.186.0"
   },
   "scripts": {

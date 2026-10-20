@@ -1,6 +1,6 @@
 {
   "name": "threenative-blender-mcp",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "license": "MIT",
   "description": "Drives an installed Blender headlessly so a downloaded .fbx becomes a GLB a ThreeNative game loads. Ships no Blender.",
   "keywords": ["threenative", "mcp", "model-context-protocol", "blender", "fbx", "gltf", "agents"],

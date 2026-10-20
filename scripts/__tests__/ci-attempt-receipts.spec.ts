@@ -57,12 +57,12 @@ it.each([500, 502, 503, 504])(
     expect(execute.mock.calls[0]).toEqual(execute.mock.calls[1]);
   },
 );
-it("fails closed after five server failures without accepting partial pages", () => {
+it("fails closed after eight server failures without accepting partial pages", () => {
   execute.mockImplementation(() => {
     throw Object.assign(failure("gh: Server Error (HTTP 502)"), { stdout: complete });
   });
   expect(() => readAttemptJobs(identity)).toThrow("HTTP 502");
-  expect(execute).toHaveBeenCalledTimes(5);
+  expect(execute).toHaveBeenCalledTimes(8);
 });
 it("refetches every page when new jobs change the inventory during pagination", () => {
   execute.mockReturnValueOnce(
@@ -84,14 +84,14 @@ it("fails closed when every paginated inventory changes", () => {
     ]),
   );
   expect(() => readAttemptJobs(identity)).toThrow("API_INCOMPLETE");
-  expect(execute).toHaveBeenCalledTimes(5);
+  expect(execute).toHaveBeenCalledTimes(8);
 });
-it("fails closed after five connection failures without returning a receipt", () => {
+it("fails closed after eight connection failures without returning a receipt", () => {
   execute.mockImplementation(() => {
     throw failure("error connecting to api.github.com");
   });
   expect(() => readAttemptJobs(identity)).toThrow("error connecting");
-  expect(execute).toHaveBeenCalledTimes(5);
+  expect(execute).toHaveBeenCalledTimes(8);
 });
 it("resolves a valid one-page response after two connection failures", () => {
   execute.mockImplementationOnce(() => {
@@ -110,15 +110,15 @@ it("resolves a valid one-page response after two connection failures", () => {
   expect(execute.mock.calls[0]).toEqual(execute.mock.calls[2]);
   expect(vi.mocked(Atomics.wait).mock.calls.map((call) => call[3])).toEqual([1000, 2000]);
 });
-it("throws after five connection failures with four exponential backoffs", () => {
+it("throws after eight connection failures with seven exponential backoffs", () => {
   const error = failure("error connecting to api.github.com");
   execute.mockImplementation(() => {
     throw error;
   });
   expect(() => readAttemptJobs(identity)).toThrow(error);
-  expect(execute).toHaveBeenCalledTimes(5);
+  expect(execute).toHaveBeenCalledTimes(8);
   expect(vi.mocked(Atomics.wait).mock.calls.map((call) => call[3])).toEqual([
-    1000, 2000, 4000, 8000,
+    1000, 2000, 4000, 8000, 16000, 32000, 64000,
   ]);
 });
 it("throws on the first HTTP 403 failure without connection text", () => {
@@ -171,5 +171,44 @@ it("does not retry an interrupted request or use its partial output", () => {
     });
   });
   expect(() => readAttemptJobs(identity)).toThrow("error connecting");
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+it("rereads while a job the caller depends on still reads as unfinished", () => {
+  const stale = JSON.stringify([
+    { total_count: 1, jobs: [{ id: 10, name: "integration / animation", status: "queued" }] },
+  ]);
+  const settled = JSON.stringify([
+    {
+      total_count: 1,
+      jobs: [
+        { id: 10, name: "integration / animation", status: "completed", conclusion: "success" },
+      ],
+    },
+  ]);
+  execute.mockReturnValueOnce(stale).mockReturnValueOnce(settled);
+  expect(readAttemptJobs(identity, "CI_INTEGRATION", ["integration / animation"]).jobs).toEqual([
+    { id: 10, name: "integration / animation", status: "completed", conclusion: "success" },
+  ]);
+  expect(execute).toHaveBeenCalledTimes(2);
+});
+it("returns the last unfinished read so the caller's own check fails closed", () => {
+  const stale = JSON.stringify([
+    { total_count: 1, jobs: [{ id: 10, name: "integration / animation", status: "queued" }] },
+  ]);
+  execute.mockReturnValue(stale);
+  expect(readAttemptJobs(identity, "CI_INTEGRATION", ["integration / animation"]).jobs).toEqual([
+    { id: 10, name: "integration / animation", status: "queued" },
+  ]);
+  expect(execute).toHaveBeenCalledTimes(8);
+});
+it("does not wait on unfinished jobs the caller does not depend on", () => {
+  execute.mockReturnValue(
+    JSON.stringify([
+      { total_count: 1, jobs: [{ id: 10, name: "integration / tone", status: "in_progress" }] },
+    ]),
+  );
+  expect(
+    readAttemptJobs(identity, "CI_INTEGRATION", ["integration / animation"]).jobs,
+  ).toHaveLength(1);
   expect(execute).toHaveBeenCalledTimes(1);
 });

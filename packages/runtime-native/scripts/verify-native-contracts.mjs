@@ -148,7 +148,7 @@ export const executionContracts = {
     invocations: [
       {
         args: [],
-        passLine: "shader-module-metadata: wrapper=erase+release-once teardown=release-survivors",
+        passLine: "shader-module-metadata: wrapper=erase+release-once duplicate-wrapper-refs=release-each teardown=release-survivors",
       },
     ],
   },

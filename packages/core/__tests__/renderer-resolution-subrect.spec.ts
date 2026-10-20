@@ -7,6 +7,31 @@ import { ResolutionSubrect } from "../src/render/resolution-subrect.js";
 import { createRenderer } from "../src/renderer.js";
 
 describe("retained render targets", () => {
+  it("reserves a halving mip chain for the quantized viewport, so no scale near 1 outgrows it", () => {
+    // A bloom-style chain: each mip floors half of the one above. Height 653 gives 326, 163, 81, 40, 20,
+    // while the viewport at scale 1 quantizes to 656 and halves to 41 at mip 3.
+    const mips = [0, 1, 2, 3, 4].map(() => new RenderTarget(1, 1));
+    const node = {
+      setSize: (width: number, height: number) => {
+        mips.forEach((mip, level) => {
+          const divisor = 2 ** (level + 1);
+          mip.setSize(
+            Math.max(1, Math.floor(width / divisor)),
+            Math.max(1, Math.floor(height / divisor)),
+          );
+        });
+      },
+    };
+    const controller = new ResolutionSubrect();
+    controller.retain(node, mips);
+    controller.activate(1);
+    for (const scale of [1, 0.9923, 0.9]) {
+      controller.setScale(scale);
+      expect(() => node.setSize(1024, 653), `scale ${scale}`).not.toThrow();
+    }
+    controller.dispose();
+  });
+
   it("changes the active rectangle without disposing the allocation, and grows once", () => {
     const target = new RenderTarget(1, 1);
     const disposed = vi.fn();
@@ -190,6 +215,44 @@ it("owns subrect installations while keeping the full drawing buffer", async () 
     renderer.dispose();
     if (prior) Object.defineProperty(globalThis, "navigator", prior);
     else Reflect.deleteProperty(globalThis, "navigator");
+  }
+});
+
+it("falls back to surface resolution scaling when the backend owns only the frame surface", async () => {
+  const canvas = Object.assign(new EventTarget(), {
+    clientWidth: 320,
+    clientHeight: 180,
+    parentElement: null,
+  }) as unknown as HTMLCanvasElement;
+  const resize = vi.fn();
+  const renderer = await createRenderer({
+    canvas,
+    source: {
+      createCanvas: () => canvas,
+      hasWebGPU: () => true,
+      readSize: () => [canvas.clientWidth, canvas.clientHeight],
+      observeResize: () => () => undefined,
+    },
+    webgpuFactory: () => ({
+      domElement: canvas,
+      init: async () => undefined,
+      render: () => undefined,
+      setSize: resize,
+      supportsRetainedTargetSubrect: false,
+    }),
+  });
+  try {
+    expect(renderer.createResolutionSubrect).toBeUndefined();
+    renderer.setResolutionScale(0.5, "auto");
+    expect(resize).toHaveBeenLastCalledWith(160, 90, false);
+    expect(renderer.surface()).toMatchObject({
+      drawingBufferWidth: 160,
+      drawingBufferHeight: 90,
+      resolutionScale: 0.5,
+      resolutionSubrect: false,
+    });
+  } finally {
+    renderer.dispose();
   }
 });
 

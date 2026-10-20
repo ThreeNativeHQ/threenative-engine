@@ -33,11 +33,14 @@ describe("web branding adapter", () => {
     const plugin = createWebBrandPlugin();
     await plugin.configResolved({ root });
     const html =
-      plugin.transformIndexHtml(`<!doctype html><html><head><title>old</title></head><body>
+      plugin.transformIndexHtml(`<!doctype html><html><head><title>old</title><link rel="icon" href="data:," /><link rel="icon" href="/old.ico" /></head><body>
       <div data-threenative-launch><span data-threenative-launch-name>old</span></div>
     </body></html>`);
     expect(html).toContain("<title>Branded Quest</title>");
     expect(html).toContain('rel="icon" href="/icon.svg"');
+    expect(html.match(/rel="icon"/gu)).toHaveLength(1);
+    expect(html).not.toContain("/old.ico");
+    expect(html).not.toContain("data:,");
     expect(html).toContain('rel="manifest" href="/manifest.webmanifest"');
     expect(html).toContain("data-threenative-launch-name>Branded Quest");
 
@@ -53,5 +56,49 @@ describe("web branding adapter", () => {
       name: "Branded Quest",
       theme_color: "#123456",
     });
+  });
+  it("leaves upstream three alone in a native bundle, whose host is not a browser (PRD-637)", async () => {
+    const root = await makeTempDir("threenative-web-brand-native-");
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "native-bundle-game", type: "module" }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { app: { name: "Native Bundle" }, engine: "threenative" };\n',
+    );
+    const routed = async (): Promise<string | null> => {
+      const plugin = createWebBrandPlugin();
+      await plugin.configResolved({ root });
+      return plugin.resolveId("three");
+    };
+    // The browser build routes three to the Wasm engine, whose module awaits its Wasm at the top
+    // level. A native bundle is one script inside a non-async function, so that await fails to
+    // parse: `build:android` of a fresh starter died on it.
+    expect(await routed()).toBe("\0threenative:web-engine");
+    process.env.THREENATIVE_NATIVE_BUNDLE = "android";
+    try {
+      expect(await routed()).toBeNull();
+    } finally {
+      // biome-ignore lint/performance/noDelete: an unset variable is absent, not the string "undefined".
+      delete process.env.THREENATIVE_NATIVE_BUNDLE;
+    }
+  });
+  it("keeps an authored favicon when config has no replacement", async () => {
+    const root = await makeTempDir("threenative-web-brand-");
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "compute-probe", type: "module" }),
+    );
+    const plugin = createWebBrandPlugin();
+    await plugin.configResolved({ root });
+    const html = plugin.transformIndexHtml(
+      '<html><head><link rel="icon" href="data:," /></head><body></body></html>',
+    );
+    expect(html).toContain('<link rel="icon" href="data:," />');
+    expect(html.match(/rel="icon"/gu)).toHaveLength(1);
+    expect(html).toContain('rel="manifest" href="/manifest.webmanifest"');
   });
 });

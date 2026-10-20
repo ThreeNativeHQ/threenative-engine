@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "vitest";
 
-import { checkSourceList } from "../scripts/check-source-list.mjs";
+import { checkSourceList, readCmakeSource } from "../scripts/check-source-list.mjs";
 
 const root = join(import.meta.dirname, "..");
-const cmake = readFileSync(join(root, "CMakeLists.txt"), "utf8");
+const cmake = readCmakeSource(root);
 const sourceListScript = readFileSync(join(root, "scripts/check-source-list.mjs"), "utf8");
 
 test("every native C++ source is listed or explicitly excluded", () => {

@@ -1,0 +1,634 @@
+{
+  "name": "math-edges-nan-infinity",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/*.tests.js \u2014 NaN and Infinity propagate the way IEEE-754 and the reference's own expressions do",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "v01",
+      "class": "Vector3",
+      "args": [
+        {
+          "num": "Infinity"
+        },
+        {
+          "num": "-Infinity"
+        },
+        0
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v02",
+      "class": "Vector3",
+      "args": [
+        {
+          "num": "Infinity"
+        },
+        0,
+        0
+      ]
+    },
+    {
+      "op": "call",
+      "id": "v02",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "v03",
+      "class": "Vector3",
+      "args": [
+        {
+          "num": "Infinity"
+        },
+        0,
+        0
+      ]
+    },
+    {
+      "op": "call",
+      "id": "v03",
+      "method": "lengthSq",
+      "args": [],
+      "result": "r04"
+    },
+    {
+      "op": "call",
+      "id": "v03",
+      "method": "manhattanLength",
+      "args": [],
+      "result": "r05"
+    },
+    {
+      "op": "new",
+      "id": "v06",
+      "class": "Vector3",
+      "args": [
+        1,
+        {
+          "num": "NaN"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "w07",
+      "class": "Vector3",
+      "args": [1, 1, 1]
+    },
+    {
+      "op": "call",
+      "id": "v06",
+      "method": "dot",
+      "args": [
+        {
+          "ref": "w07"
+        }
+      ],
+      "result": "r08"
+    },
+    {
+      "op": "new",
+      "id": "v09",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "v09",
+      "method": "dot",
+      "args": [
+        {
+          "ref": "v09"
+        }
+      ],
+      "result": "r10"
+    },
+    {
+      "op": "new",
+      "id": "z11",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "v12",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "v12",
+      "method": "divide",
+      "args": [
+        {
+          "ref": "z11"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v13",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "v13",
+      "method": "divideScalar",
+      "args": [0]
+    },
+    {
+      "op": "new",
+      "id": "v14",
+      "class": "Vector3",
+      "args": [
+        {
+          "num": "Infinity"
+        },
+        0,
+        0
+      ]
+    },
+    {
+      "op": "call",
+      "id": "v14",
+      "method": "distanceTo",
+      "args": [
+        {
+          "ref": "z11"
+        }
+      ],
+      "result": "r15"
+    },
+    {
+      "op": "new",
+      "id": "v16",
+      "class": "Vector3",
+      "args": [1, 2, 3]
+    },
+    {
+      "op": "call",
+      "id": "v16",
+      "method": "clamp",
+      "args": [
+        {
+          "ref": "z11"
+        },
+        {
+          "ref": "z11"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v17",
+      "class": "Vector3",
+      "args": [
+        {
+          "num": "NaN"
+        },
+        2,
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "v17",
+      "method": "clampScalar",
+      "args": [0, 1]
+    },
+    {
+      "op": "new",
+      "id": "v18",
+      "class": "Vector2",
+      "args": [
+        {
+          "num": "Infinity"
+        },
+        {
+          "num": "-Infinity"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "v19",
+      "class": "Vector4",
+      "args": [
+        {
+          "num": "Infinity"
+        },
+        {
+          "num": "NaN"
+        },
+        {
+          "num": "-Infinity"
+        },
+        1
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m20",
+      "class": "Matrix4",
+      "args": [
+        {
+          "num": "Infinity"
+        },
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "m20",
+      "method": "determinant",
+      "args": [],
+      "result": "r21"
+    },
+    {
+      "op": "new",
+      "id": "m22",
+      "class": "Matrix4",
+      "args": [
+        {
+          "num": "Infinity"
+        },
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "m22",
+      "method": "invert",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m23",
+      "class": "Matrix4",
+      "args": [
+        {
+          "num": "NaN"
+        },
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "m23",
+      "method": "determinant",
+      "args": [],
+      "result": "r24"
+    },
+    {
+      "op": "new",
+      "id": "m25",
+      "class": "Matrix3",
+      "args": [
+        {
+          "num": "NaN"
+        },
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "m25",
+      "method": "determinant",
+      "args": [],
+      "result": "r26"
+    },
+    {
+      "op": "new",
+      "id": "m27",
+      "class": "Matrix3",
+      "args": [
+        {
+          "num": "NaN"
+        },
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "m27",
+      "method": "invert",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m28",
+      "class": "Matrix4",
+      "args": [
+        {
+          "num": "Infinity"
+        },
+        0,
+        0,
+        0,
+        0,
+        {
+          "num": "Infinity"
+        },
+        0,
+        0,
+        0,
+        0,
+        {
+          "num": "Infinity"
+        },
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "m28",
+      "method": "determinantAffine",
+      "args": [],
+      "result": "r29"
+    },
+    {
+      "op": "new",
+      "id": "q30",
+      "class": "Quaternion",
+      "args": [
+        {
+          "num": "NaN"
+        },
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "op": "call",
+      "id": "q30",
+      "method": "length",
+      "args": [],
+      "result": "r31"
+    },
+    {
+      "op": "call",
+      "id": "q30",
+      "method": "lengthSq",
+      "args": [],
+      "result": "r32"
+    },
+    {
+      "op": "new",
+      "id": "q33",
+      "class": "Quaternion",
+      "args": [
+        {
+          "num": "Infinity"
+        },
+        {
+          "num": "Infinity"
+        },
+        {
+          "num": "Infinity"
+        },
+        {
+          "num": "Infinity"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "q33",
+      "method": "normalize",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "q34",
+      "class": "Quaternion",
+      "args": [0.5, 0.5, 0.5, 0.5]
+    },
+    {
+      "op": "call",
+      "id": "q34",
+      "method": "angleTo",
+      "args": [
+        {
+          "ref": "q34"
+        }
+      ],
+      "result": "r35"
+    },
+    {
+      "op": "new",
+      "id": "q36",
+      "class": "Quaternion",
+      "args": [
+        {
+          "num": "NaN"
+        },
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    {
+      "op": "call",
+      "id": "q36",
+      "method": "dot",
+      "args": [
+        {
+          "ref": "q36"
+        }
+      ],
+      "result": "r37"
+    }
+  ],
+  "observe": [
+    {
+      "id": "v01",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v02",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v02",
+      "kind": "number",
+      "method": "length"
+    },
+    {
+      "id": "r04",
+      "kind": "number"
+    },
+    {
+      "id": "r05",
+      "kind": "number"
+    },
+    {
+      "id": "r08",
+      "kind": "number"
+    },
+    {
+      "id": "v06",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r10",
+      "kind": "number"
+    },
+    {
+      "id": "v12",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v13",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r15",
+      "kind": "number"
+    },
+    {
+      "id": "v16",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v17",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v18",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "v18",
+      "kind": "number",
+      "method": "length"
+    },
+    {
+      "id": "v19",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r21",
+      "kind": "number"
+    },
+    {
+      "id": "m22",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r24",
+      "kind": "number"
+    },
+    {
+      "id": "r26",
+      "kind": "number"
+    },
+    {
+      "id": "m27",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r29",
+      "kind": "number"
+    },
+    {
+      "id": "r31",
+      "kind": "number"
+    },
+    {
+      "id": "r32",
+      "kind": "number"
+    },
+    {
+      "id": "q33",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r35",
+      "kind": "number"
+    },
+    {
+      "id": "r37",
+      "kind": "number"
+    }
+  ]
+}

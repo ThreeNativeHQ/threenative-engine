@@ -486,6 +486,44 @@ it("retains every spatial intermediate target rather than only the scene pass", 
   }
 });
 
+it("sets up stock bloom at the macOS starter window without outgrowing its reserved mips", () => {
+  // The hosted macOS starter window is 1024x653, and the subrect runs at scale 1 there.
+  const controller = new ResolutionSubrect();
+  let effect: BloomNode | undefined;
+  const renderer: OutputRenderer = {
+    kind: "webgpu",
+    raw: {},
+    createResolutionSubrect: () => controller,
+    createRenderChain(options) {
+      const stage = options.stages?.find((entry) => entry.name === "bloom");
+      if (!stage) throw new Error("Missing bloom");
+      const graph = stage.build(options.input, { tier: "high" }) as Node;
+      graph.traverse((node) => {
+        if (node instanceof BloomNode) effect ??= node;
+      });
+      return {
+        applied: { stages: ["bloom"], dropped: [] },
+        dispose() {},
+      };
+    },
+  };
+  const graph = new WorldEnvironment({ bloomEnabled: true, screenSpaceAA: "disabled" }).apply(
+    renderer,
+    new Scene(),
+    new PerspectiveCamera(),
+  );
+  try {
+    if (!effect) throw new Error("Missing stock bloom");
+    controller.activate(1);
+    controller.setSize(1024, 653);
+    expect(() =>
+      effect?.setup({ getSharedContext: () => ({}) } as unknown as NodeBuilder),
+    ).not.toThrow();
+  } finally {
+    graph.dispose?.();
+  }
+});
+
 it("keeps lazy bloom mips valid at small viewports and releases retired bindings", () => {
   const controller = new ResolutionSubrect();
   let effect: BloomNode | undefined;
@@ -525,6 +563,7 @@ it("keeps lazy bloom mips valid at small viewports and releases retired bindings
     const retained = effect as unknown as {
       _renderTargetBright: import("three").RenderTarget;
       _renderTargetsHorizontal: import("three").RenderTarget[];
+      _renderTargetsVertical: import("three").RenderTarget[];
       _separableBlurMaterials: { invSize: { value: import("three").Vector2 } }[];
     };
     for (const target of retained._renderTargetsHorizontal) {
@@ -533,6 +572,12 @@ it("keeps lazy bloom mips valid at small viewports and releases retired bindings
     }
     for (const material of retained._separableBlurMaterials)
       expect(material.invSize.value.toArray().every(Number.isFinite)).toBe(true);
+    controller.setSize(960, 540);
+    controller.setScale(0.72);
+    expect(() => controller.setScale(1)).not.toThrow();
+    const lastMip = retained._renderTargetsVertical.at(-1);
+    expect(lastMip?.viewport.toArray().slice(2)).toEqual([30, 17]);
+    expect([lastMip?.width, lastMip?.height]).toEqual([32, 24]);
     stageDispose?.();
     expect(controller.textureView(retained._renderTargetBright.texture)).toBeUndefined();
     const resize = vi.spyOn(retained._renderTargetBright, "setSize");

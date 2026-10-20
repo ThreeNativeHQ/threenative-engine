@@ -125,6 +125,8 @@ inline void setupShaderModuleWGSL(WGPUShaderModuleDescriptor* desc,
 // Dawn uses newer WebGPU API naming
 // ============================================================================
 
+// Native window surfaces; the browser build (emdawnwebgpu) has a canvas and none of these.
+#if !defined(__EMSCRIPTEN__)
 // Surface descriptors - macOS Metal
 typedef WGPUSurfaceSourceMetalLayer WGPUSurfaceDescriptorFromMetalLayer_Compat;
 #define WGPUSType_SurfaceDescriptorFromMetalLayer_Compat WGPUSType_SurfaceSourceMetalLayer
@@ -144,6 +146,7 @@ typedef WGPUSurfaceSourceWaylandSurface WGPUSurfaceDescriptorFromWaylandSurface_
 // Surface descriptors - Android ANativeWindow
 typedef WGPUSurfaceSourceAndroidNativeWindow WGPUSurfaceDescriptorFromAndroidNativeWindow_Compat;
 #define WGPUSType_SurfaceDescriptorFromAndroidNativeWindow_Compat WGPUSType_SurfaceSourceAndroidNativeWindow
+#endif  // !__EMSCRIPTEN__
 
 // Dawn proc initialization - Dawn requires setting up procs before use
 #define WGPU_NEEDS_PROC_INIT 1

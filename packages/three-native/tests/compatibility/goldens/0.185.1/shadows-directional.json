@@ -1,0 +1,51 @@
+{
+  "name": "shadows-directional",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a directional light's PCF shadow map (bias, normalBias, a fitted orthographic shadow camera, 1024 map) on Standard, Lambert and Phong meshes; the box casts but does not receive, and a slab inside the sphere's shadow does neither",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "sun",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:c008000000000000,n:4014000000000000,n:c008000000000000,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, 5, -3, 1"
+    },
+    {
+      "index": 2,
+      "id": "sun",
+      "kind": "number",
+      "path": "shadow.bias",
+      "value": "n:bf40624dd2f1a9fc",
+      "decimal": "-0.0005"
+    },
+    {
+      "index": 3,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:a05df4b7e00c918b231fed55fd4b2ba56edec0520097f7e537e496de6a94a4ee",
+      "decimal": "a05df4b7e00c918b231fed55fd4b2ba56edec0520097f7e537e496de6a94a4ee"
+    }
+  ],
+  "render": {
+    "png": "shadows-directional.png",
+    "pngSha256": "a05df4b7e00c918b231fed55fd4b2ba56edec0520097f7e537e496de6a94a4ee",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

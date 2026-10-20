@@ -2015,14 +2015,14 @@ if (renderListValidationRequested()) console.log(formatValidationReport(report))
 
 ### `renderTrapAudit`
 
-`function` — Catch scene state that silently loses environment fill or ignores authored opacity. Printed once after `enter()` as `TN_ENVIRONMENT_TOO_SMALL` or `TN_OPACITY_IGNORED`, with the fix in the same console error line so playtest `noConsoleErrors` rejects it.
+`function` — Catch scene state that silently loses environment fill or ignores authored opacity. After `enter()` the game first applies the opacity convention: a drawn material with `opacity < 1` turns transparent and one `TN_OPACITY_TRANSPARENT` console warning names it (override: `alphaHash: true`, or `opacity: 1`). It then prints `TN_ENVIRONMENT_TOO_SMALL` as a console error with the fix, so playtest `noConsoleErrors` rejects it.
 
 ```ts
 export function renderTrapAudit(scene: Object3D & { … }
 ```
 
 - **Use when:** audit an equirectangular sky too narrow for three's WebGPU PMREM · find visible opaque materials whose authored opacity is ignored
-- **Constraints:** structural scene reads only, one visible-tree walk per entry, at most five material examples · it changes no scene state; environment and transparency remain the game's decisions
+- **Constraints:** structural scene reads only, one visible-tree walk per entry, at most five material examples · the audit itself changes no scene state; the game loop's opacity convention is the only writer
 
 ```ts
 renderTrapAudit(ctx.scene); // marker lines with the fixes, or an empty array
@@ -4049,7 +4049,7 @@ const adb = discoverAdb(process.env);
 `function` — Execute scenario steps, assertions, and evidence capture.
 
 ```ts
-export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, "advance">, ticks: number, ): Promise<void> { … }
+export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, "advance">, ticks: number, render = false, ): Promise<void> { … }
 ```
 
 - **Use when:** run a complete browser or device playtest · capture diagnostics and screenshots from a managed server
@@ -4224,6 +4224,21 @@ export function decideDisplayStrategy(input: IDisplayDecisionInput): IDisplayStr
 import { decideDisplayStrategy } from "@threenative/playtest/runner";
 const lane = decideDisplayStrategy({ env: process.env, platform: "linux" });
 if (lane.kind === "private-xvfb") throw new Error("refuse to judge this frame rate");
+```
+
+### `desktopConsoleType`
+
+`function` — Drive a local desktop playtest mailbox.
+
+```ts
+export function desktopConsoleType(stream: "stderr" | "stdout", line: string): string { … }
+```
+
+- **Use when:** run a desktop target through the playtest protocol · exchange observations with a native desktop host
+- **Constraints:** the mailbox lifecycle must be disposed after the run
+
+```ts
+const driver = new DesktopPlaytestDriver(options);
 ```
 
 ### `DesktopPlaytestDriver`

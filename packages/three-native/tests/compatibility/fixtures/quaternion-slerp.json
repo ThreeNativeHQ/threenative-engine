@@ -1,0 +1,56 @@
+{
+  "name": "quaternion-slerp",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Quaternion.tests.js — slerp between two normalized quaternions, plus normalize",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "fromEuler", "class": "Euler", "args": [0.2, -0.5, 0.9, "ZXY"] },
+    { "op": "new", "id": "a", "class": "Quaternion", "args": [] },
+    { "op": "call", "id": "a", "method": "setFromEuler", "args": [{ "ref": "fromEuler" }] },
+    { "op": "new", "id": "toEuler", "class": "Euler", "args": [1.2, 0.4, -0.7, "XYZ"] },
+    { "op": "new", "id": "b", "class": "Quaternion", "args": [] },
+    { "op": "call", "id": "b", "method": "setFromEuler", "args": [{ "ref": "toEuler" }] },
+    { "op": "new", "id": "quarter", "class": "Quaternion", "args": [] },
+    {
+      "op": "call",
+      "id": "quarter",
+      "method": "slerpQuaternions",
+      "args": [{ "ref": "a" }, { "ref": "b" }, 0.25]
+    },
+    { "op": "new", "id": "midpoint", "class": "Quaternion", "args": [] },
+    {
+      "op": "call",
+      "id": "midpoint",
+      "method": "slerpQuaternions",
+      "args": [{ "ref": "a" }, { "ref": "b" }, 0.5]
+    },
+    { "op": "new", "id": "endpoint", "class": "Quaternion", "args": [] },
+    {
+      "op": "call",
+      "id": "endpoint",
+      "method": "slerpQuaternions",
+      "args": [{ "ref": "a" }, { "ref": "b" }, 1]
+    },
+    { "op": "new", "id": "loose", "class": "Quaternion", "args": [2, 0, 0, 0] },
+    { "op": "call", "id": "loose", "method": "normalize", "args": [] },
+    { "op": "new", "id": "flipped", "class": "Quaternion", "args": [] },
+    {
+      "op": "call",
+      "id": "flipped",
+      "method": "slerpQuaternions",
+      "args": [{ "ref": "a" }, { "ref": "b" }, 0.75]
+    },
+    { "op": "call", "id": "flipped", "method": "conjugate", "args": [] },
+    { "op": "set", "id": "flipped", "path": "y", "value": { "num": "-0" } }
+  ],
+  "observe": [
+    { "id": "a", "method": "toArray", "kind": "numbers" },
+    { "id": "b", "method": "toArray", "kind": "numbers" },
+    { "id": "quarter", "method": "toArray", "kind": "numbers" },
+    { "id": "quarter", "method": "length", "kind": "number" },
+    { "id": "midpoint", "method": "toArray", "kind": "numbers" },
+    { "id": "endpoint", "method": "toArray", "kind": "numbers" },
+    { "id": "loose", "method": "toArray", "kind": "numbers" },
+    { "id": "flipped", "method": "toArray", "kind": "numbers" },
+    { "id": "flipped", "path": "y", "kind": "number" }
+  ]
+}

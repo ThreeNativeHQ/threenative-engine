@@ -1,0 +1,438 @@
+{
+  "name": "textures-data-filters",
+  "adaptedFrom": "original \u2014 a four-colour 2x2 DataTexture magnified under NearestFilter and under LinearFilter, and an 8x8 checker in 2x2 blocks minified on a grazing floor under LinearMipmapLinearFilter with generated mips (every mip level is an exact average)",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 160,
+    "toneMapping": "none",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.2, 0.25, 0.35]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 2.0, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 4
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "nearestTex",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [220, 40, 40, 255, 40, 200, 60, 255, 40, 80, 220, 255, 230, 210, 40, 255],
+          "type": "Uint8Array"
+        },
+        2,
+        2,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "nearestTex",
+      "path": "colorSpace",
+      "value": "srgb"
+    },
+    {
+      "op": "set",
+      "id": "nearestTex",
+      "path": "magFilter",
+      "value": 1003
+    },
+    {
+      "op": "set",
+      "id": "nearestTex",
+      "path": "minFilter",
+      "value": 1003
+    },
+    {
+      "op": "set",
+      "id": "nearestTex",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "nearestMat",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "nearestMat",
+      "path": "map",
+      "value": {
+        "ref": "nearestTex"
+      }
+    },
+    {
+      "op": "new",
+      "id": "nearestGeo",
+      "class": "PlaneGeometry",
+      "args": [1.2, 1.2]
+    },
+    {
+      "op": "new",
+      "id": "nearest",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "nearestGeo"
+        },
+        {
+          "ref": "nearestMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "nearest",
+      "path": "position.x",
+      "value": -1.6
+    },
+    {
+      "op": "set",
+      "id": "nearest",
+      "path": "position.y",
+      "value": 0.4
+    },
+    {
+      "op": "set",
+      "id": "nearest",
+      "path": "position.z",
+      "value": 0
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "nearest"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "linearTex",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [220, 40, 40, 255, 40, 200, 60, 255, 40, 80, 220, 255, 230, 210, 40, 255],
+          "type": "Uint8Array"
+        },
+        2,
+        2,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "linearTex",
+      "path": "colorSpace",
+      "value": "srgb"
+    },
+    {
+      "op": "set",
+      "id": "linearTex",
+      "path": "magFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "linearTex",
+      "path": "minFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "linearTex",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "linearMat",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "linearMat",
+      "path": "map",
+      "value": {
+        "ref": "linearTex"
+      }
+    },
+    {
+      "op": "new",
+      "id": "linearGeo",
+      "class": "PlaneGeometry",
+      "args": [1.2, 1.2]
+    },
+    {
+      "op": "new",
+      "id": "linear",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "linearGeo"
+        },
+        {
+          "ref": "linearMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "linear",
+      "path": "position.x",
+      "value": 0
+    },
+    {
+      "op": "set",
+      "id": "linear",
+      "path": "position.y",
+      "value": 0.4
+    },
+    {
+      "op": "set",
+      "id": "linear",
+      "path": "position.z",
+      "value": 0
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "linear"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "mipTex",
+      "class": "DataTexture",
+      "args": [
+        {
+          "array": [
+            240, 240, 240, 255, 240, 240, 240, 255, 16, 16, 16, 255, 16, 16, 16, 255, 240, 240, 240,
+            255, 240, 240, 240, 255, 16, 16, 16, 255, 16, 16, 16, 255, 240, 240, 240, 255, 240, 240,
+            240, 255, 16, 16, 16, 255, 16, 16, 16, 255, 240, 240, 240, 255, 240, 240, 240, 255, 16,
+            16, 16, 255, 16, 16, 16, 255, 16, 16, 16, 255, 16, 16, 16, 255, 240, 240, 240, 255, 240,
+            240, 240, 255, 16, 16, 16, 255, 16, 16, 16, 255, 240, 240, 240, 255, 240, 240, 240, 255,
+            16, 16, 16, 255, 16, 16, 16, 255, 240, 240, 240, 255, 240, 240, 240, 255, 16, 16, 16,
+            255, 16, 16, 16, 255, 240, 240, 240, 255, 240, 240, 240, 255, 240, 240, 240, 255, 240,
+            240, 240, 255, 16, 16, 16, 255, 16, 16, 16, 255, 240, 240, 240, 255, 240, 240, 240, 255,
+            16, 16, 16, 255, 16, 16, 16, 255, 240, 240, 240, 255, 240, 240, 240, 255, 16, 16, 16,
+            255, 16, 16, 16, 255, 240, 240, 240, 255, 240, 240, 240, 255, 16, 16, 16, 255, 16, 16,
+            16, 255, 16, 16, 16, 255, 16, 16, 16, 255, 240, 240, 240, 255, 240, 240, 240, 255, 16,
+            16, 16, 255, 16, 16, 16, 255, 240, 240, 240, 255, 240, 240, 240, 255, 16, 16, 16, 255,
+            16, 16, 16, 255, 240, 240, 240, 255, 240, 240, 240, 255, 16, 16, 16, 255, 16, 16, 16,
+            255, 240, 240, 240, 255, 240, 240, 240, 255
+          ],
+          "type": "Uint8Array"
+        },
+        8,
+        8,
+        1023,
+        1009
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mipTex",
+      "path": "wrapS",
+      "value": 1000
+    },
+    {
+      "op": "set",
+      "id": "mipTex",
+      "path": "wrapT",
+      "value": 1000
+    },
+    {
+      "op": "set",
+      "id": "mipTex",
+      "path": "magFilter",
+      "value": 1006
+    },
+    {
+      "op": "set",
+      "id": "mipTex",
+      "path": "minFilter",
+      "value": 1008
+    },
+    {
+      "op": "set",
+      "id": "mipTex",
+      "path": "generateMipmaps",
+      "value": true
+    },
+    {
+      "op": "set",
+      "id": "mipTex",
+      "path": "repeat.x",
+      "value": 6
+    },
+    {
+      "op": "set",
+      "id": "mipTex",
+      "path": "repeat.y",
+      "value": 30
+    },
+    {
+      "op": "set",
+      "id": "mipTex",
+      "path": "needsUpdate",
+      "value": true
+    },
+    {
+      "op": "new",
+      "id": "mipMat",
+      "class": "MeshBasicMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "mipMat",
+      "path": "map",
+      "value": {
+        "ref": "mipTex"
+      }
+    },
+    {
+      "op": "new",
+      "id": "mipGeo",
+      "class": "PlaneGeometry",
+      "args": [1.4, 20]
+    },
+    {
+      "op": "new",
+      "id": "mip",
+      "class": "Mesh",
+      "args": [
+        {
+          "ref": "mipGeo"
+        },
+        {
+          "ref": "mipMat"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "mip",
+      "path": "position.x",
+      "value": 1.6
+    },
+    {
+      "op": "set",
+      "id": "mip",
+      "path": "position.y",
+      "value": -1.0
+    },
+    {
+      "op": "set",
+      "id": "mip",
+      "path": "position.z",
+      "value": -8
+    },
+    {
+      "op": "set",
+      "id": "mip",
+      "path": "rotation.x",
+      "value": -1.5707963267948966
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "mip"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "nearestTex",
+      "path": "magFilter",
+      "kind": "number"
+    },
+    {
+      "id": "linearTex",
+      "path": "magFilter",
+      "kind": "number"
+    },
+    {
+      "id": "mipTex",
+      "path": "minFilter",
+      "kind": "number"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

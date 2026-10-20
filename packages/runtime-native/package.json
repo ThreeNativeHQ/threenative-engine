@@ -1,6 +1,6 @@
 {
   "name": "@threenative/runtime-native",
-  "version": "0.3.4",
+  "version": "0.3.6",
   "description": "ThreeNative-owned native host for desktop and Android",
   "keywords": [
     "threenative",
@@ -27,6 +27,8 @@
   },
   "type": "module",
   "files": [
+    "build/web/tn-native-engine-web.mjs",
+    "build/web/tn-native-engine-web.wasm",
     "LICENSE",
     "NOTICE",
     "README.md",
@@ -65,7 +67,10 @@
     "scripts/verify-starter-desktop-base.mjs",
     "scripts/verify-starter-desktop.mjs",
     "scripts/verify-windows-installer.mjs",
-    "scripts/xvfb.sh"
+    "scripts/xvfb.sh",
+    "scripts/package-engine-desktop.mjs",
+    "scripts/bundle-native-engine.mjs",
+    "src/engine/player/*.mjs"
   ],
   "scripts": {
     "deps:download": "node scripts/download-deps.mjs",
@@ -97,12 +102,16 @@
     "@dimforge/rapier3d-compat": "catalog:",
     "@threenative/playtest": "workspace:*",
     "@types/three": "0.185.3",
-    "esbuild": "catalog:",
     "publint": "catalog:",
     "three": "catalog:",
     "vitest": "catalog:"
   },
   "dependencies": {
-    "pngjs": "catalog:"
+    "pngjs": "catalog:",
+    "@threenative/core": "workspace:*",
+    "@threenative/assets": "workspace:*",
+    "@threenative/three-native": "workspace:*",
+    "esbuild": "catalog:",
+    "typescript": "catalog:"
   }
 }

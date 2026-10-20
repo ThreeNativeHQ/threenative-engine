@@ -362,6 +362,13 @@ export interface IFrameBudgetWindow {
    */
   readonly gpuStale: number;
   /**
+   * Frames in the window the renderer declined to draw (the Wasm web engine holds at most two drawn
+   * frames on the GPU). Their render phase is near zero, so `phases.render` over the window reads
+   * cheaper than the frames that were drawn; divide by `frames - renderSkips` for a drawn frame's cost.
+   * Absent, not zero, when the renderer drew every frame.
+   */
+  readonly renderSkips?: number;
+  /**
    * The window mean of `gpu`, when present. The scalar the resolution scaler reads.
    *
    * It is the same number as `gpu.mean`; a single field keeps the scaler and the perf report on
@@ -656,6 +663,8 @@ export class FrameBudget {
   #gpuUnframed = false;
   #gpuStaleThisFrame = false;
   #gpuStaleInWindow = 0;
+  #renderSkippedThisFrame = false;
+  #renderSkipsInWindow = 0;
   #open = false;
   #frameStart = 0;
   #simulationEnd: number | undefined;
@@ -786,6 +795,7 @@ export class FrameBudget {
     this.#gpuThisFrame = undefined;
     this.#gpuFrameThisFrame = undefined;
     this.#gpuStaleThisFrame = false;
+    this.#renderSkippedThisFrame = false;
     this.#gpuBucketThisFrame = {};
     this.#gpuShadowPassesThisFrame = undefined;
     this.#hostGap = this.#lastFrameEnd === undefined ? 0 : Math.max(0, nowMs - this.#lastFrameEnd);
@@ -840,6 +850,12 @@ export class FrameBudget {
   addRender(ms: number): void {
     if (!this.#open) throw new Error("FrameBudget.addRender called outside a frame.");
     this.#renderMs += ms;
+  }
+
+  /** The renderer returned without drawing this frame; counted once per frame in the window's `renderSkips`. */
+  addRenderSkip(): void {
+    if (!this.#open) throw new Error("FrameBudget.addRenderSkip called outside a frame.");
+    this.#renderSkippedThisFrame = true;
   }
 
   addOverlay(ms: number): void {
@@ -1064,6 +1080,7 @@ export class FrameBudget {
     this.#gpuShadowPassesThisFrame = undefined;
     this.#gpuBucketThisFrame = {};
     if (this.#gpuStaleThisFrame) this.#gpuStaleInWindow += 1;
+    if (this.#renderSkippedThisFrame) this.#renderSkipsInWindow += 1;
     for (const pass of this.#passesThisFrame) {
       this.#passDrawRings[pass.kind].push(pass.draws);
       this.#passTriangleRings[pass.kind].push(pass.triangles);
@@ -1234,6 +1251,7 @@ export class FrameBudget {
       // and the perf record, which want a single number.
       ...(gpu === undefined ? {} : { gpu }),
       gpuStale: this.#gpuStaleInWindow,
+      ...(this.#renderSkipsInWindow > 0 ? { renderSkips: this.#renderSkipsInWindow } : {}),
       ...(gpu === undefined ? {} : { gpuMs: gpu.mean }),
       ...(gpu === undefined || this.#gpuUnframed
         ? {}
@@ -1328,6 +1346,7 @@ export class FrameBudget {
     this.#jsAllocBytes.reset();
     this.#simulationTick = undefined;
     this.#gpuStaleInWindow = 0;
+    this.#renderSkipsInWindow = 0;
     for (const phase of FRAME_BUDGET_PHASES) this.#phaseRings[phase].reset();
     for (const kind of FRAME_PASS_KINDS) {
       this.#passDrawRings[kind].reset();

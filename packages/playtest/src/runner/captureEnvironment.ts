@@ -284,7 +284,9 @@ async function startCompositor(
   return { child, name: choice.name };
 }
 
-const XVFB_DISPLAY_TIMEOUT_MS = 10_000;
+// Xvfb start is process launch, not a game boot race: on a loaded CI runner it passed 10 s
+// (main run 39226537203), and the wait still fails closed.
+const XVFB_DISPLAY_TIMEOUT_MS = 30_000;
 
 /**
  * Xvfb with `-displayfd` picks a free display itself and writes the number to file descriptor

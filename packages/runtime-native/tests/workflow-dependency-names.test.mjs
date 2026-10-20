@@ -17,6 +17,12 @@ function knownDependencies() {
   for (const match of source.slice(start).matchAll(/^ {2}['"]?([\w.-]+)['"]?:\s*\{/gmu))
     names.add(match[1]);
   assert.ok(names.size > 5, `expected several dependencies, parsed ${names.size}`);
+  // Some implemented `--only` names are not DEPS entries: `gradle-wrapper` (one checksummed file)
+  // and `skia-android` (a bounded source build) live in the allowlist and run through an explicit
+  // `depName === '...'` branch. Accept such a name only when that branch exists, so a name nothing
+  // implements still fails.
+  for (const match of source.matchAll(/if\s*\(\s*depName\s*===\s*['"]([\w.-]+)['"]\s*\)/gu))
+    names.add(match[1]);
   return names;
 }
 

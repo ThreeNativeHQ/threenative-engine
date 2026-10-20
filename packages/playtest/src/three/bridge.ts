@@ -55,7 +55,13 @@ export interface IThreePlaytestBridgeOptions {
    */
   diagnostics?: () => JsonValue[];
   entities?: readonly IThreePlaytestEntity[] | (() => readonly IThreePlaytestEntity[]);
-  fixedStep?: (ticks: number) => Promise<number | void> | number | void;
+  fixedStep?: (ticks: number, options?: { render?: boolean }) => Promise<number | void> | number | void;
+  /**
+   * Draw the current world once without advancing it, for a capture taken while the loop is driven
+   * and presents nothing between ticks. Optional: a bridge without it advertises no
+   * `runtime.renderOnly`, and a capture that needs a render-only frame is never sent one.
+   */
+  renderCurrent?: () => Promise<number | void> | number | void;
   gameplay?: () => IPlaytestGameplayObservation;
   gameplayChannels?: () => readonly ("runtime.contacts" | "runtime.tags" | "runtime.transitions" | "runtime.world")[];
   runtimeDiagnosticsSeries?: () => readonly IPlaytestRuntimeDiagnosticsSample[];
@@ -114,6 +120,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(options.physics === undefined ? [] : ["runtime.physics"]),
     ...(options.runtimeDiagnosticsSeries === undefined ? [] : ["runtime.performance"]),
     ...(options.renderChain === undefined ? [] : ["runtime.renderChain"]),
+    ...(options.renderCurrent === undefined ? [] : ["runtime.renderOnly"]),
     ...(options.startup === undefined ? [] : ["runtime.startup"]),
     ...(options.gameplayChannels?.().includes("runtime.contacts") === true ? ["runtime.contacts"] : []),
     ...(options.gameplayChannels?.().includes("runtime.tags") === true ? ["runtime.tags"] : []),
@@ -124,10 +131,10 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     ...(options.fixedStep === undefined
       ? {}
       : {
-          advance: async (ticks) => {
+          advance: async (ticks, advanceOptions) => {
             if (!Number.isInteger(ticks) || ticks <= 0) throw new Error("advance ticks must be a positive integer.");
             const startTick = options.tick!();
-            await options.fixedStep!(ticks);
+            await options.fixedStep!(ticks, advanceOptions);
             const tick = options.tick!();
             const advanced = tick - startTick;
             // A fixed-step producer is asked for a count and must deliver exactly that count. A
@@ -153,6 +160,13 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
             const events = options.events!();
             assertJsonSafe(events);
             return events.slice(0, Math.min(limit, PLAYTEST_PROTOCOL_LIMITS.maxEventsPerDrain));
+          },
+        }),
+    ...(options.renderCurrent === undefined
+      ? {}
+      : {
+          renderOnly: async (): Promise<number | void> => {
+            await options.renderCurrent!();
           },
         }),
     describe: () => ({

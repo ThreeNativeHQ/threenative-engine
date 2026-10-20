@@ -140,12 +140,26 @@ function geometryLane(geometry: BufferGeometry | undefined): number {
   return lane;
 }
 
+/**
+ * A host whose objects live outside the script engine can hash what the scan reads from them (the
+ * walk order, visibility, and each mesh's geometry, material, flags, render order and layers) in
+ * one call instead of one read per field per object. three has no such method.
+ */
+function hostStamp(source: Scene): number | undefined {
+  const stamp = (source as { __tnStructureStamp?: () => number }).__tnStructureStamp;
+  return typeof stamp === "function" ? stamp.call(source) : undefined;
+}
+
 export class ProjectionStability {
   /** Every node the last scan visited, in visit order: add, remove and reparent all move one. */
   readonly #nodes: Array<Object3D | undefined> = [];
   #nodeCount = 0;
   readonly #watched: Array<IWatchedRenderable | undefined> = [];
   #watchedCount = 0;
+  /** The renderables behind `#watched`, same order, for the checks a host stamp cannot cover. */
+  readonly #watchedObjects: Array<Object3D | undefined> = [];
+  /** The host's structure stamp when the last scan was recorded; undefined where there is none. */
+  #stamp: number | undefined;
   readonly #materials: IWatchedMaterial[] = [];
   readonly #geometries: IWatchedGeometry[] = [];
   readonly #materialSet = new Set<Material>();
@@ -193,8 +207,9 @@ export class ProjectionStability {
     let depth = 0;
     let visited = 0;
     let watched = 0;
-    for (let index = source.children.length - 1; index >= 0; index -= 1) {
-      stack[depth] = source.children[index] as Object3D;
+    const roots = source.children;
+    for (let index = roots.length - 1; index >= 0; index -= 1) {
+      stack[depth] = roots[index] as Object3D;
       stackVisible[depth] = true;
       depth += 1;
     }
@@ -224,6 +239,7 @@ export class ProjectionStability {
           };
           this.#watched[watched] = watch;
         }
+        this.#watchedObjects[watched] = object;
         watch.geometry = geometry;
         watch.material = material;
         watch.customDepthMaterial = candidate.customDepthMaterial;
@@ -260,8 +276,11 @@ export class ProjectionStability {
       }
     }
     for (let index = depth; index < stack.length; index += 1) stack[index] = undefined;
-    for (let index = watched; index < this.#watched.length; index += 1)
+    for (let index = watched; index < this.#watched.length; index += 1) {
       this.#watched[index] = undefined;
+      this.#watchedObjects[index] = undefined;
+    }
+    this.#stamp = hostStamp(source);
     this.#nodeCount = visited;
     this.#watchedCount = watched;
     for (let index = 0; index < scan.exactLaneCount; index += 1) {
@@ -289,14 +308,19 @@ export class ProjectionStability {
       if (watched.lane !== geometryLane(watched.geometry)) return false;
       if (watched.version !== geometryVersionSum(watched.geometry)) return false;
     }
+    // A host that can hash everything the engine owns answers in one call. The walk below is for a
+    // host that cannot, and for any mismatch, since only the walk says whether a mismatch matters.
+    if (this.#stamp !== undefined && hostStamp(source) === this.#stamp && this.#scriptStateHolds())
+      return true;
     const stack = this.#stack;
     const stackVisible = this.#stackVisible;
     const nodes = this.#nodes;
     let depth = 0;
     let visited = 0;
     let watched = 0;
-    for (let index = source.children.length - 1; index >= 0; index -= 1) {
-      stack[depth] = source.children[index] as Object3D;
+    const roots = source.children;
+    for (let index = roots.length - 1; index >= 0; index -= 1) {
+      stack[depth] = roots[index] as Object3D;
       stackVisible[depth] = true;
       depth += 1;
     }
@@ -346,10 +370,29 @@ export class ProjectionStability {
     return visited === this.#nodeCount && watched === this.#watchedCount;
   }
 
+  /** The scan inputs that live on the script object rather than in the engine: no stamp sees them. */
+  #scriptStateHolds(): boolean {
+    for (let index = 0; index < this.#watchedCount; index += 1) {
+      const watch = this.#watched[index] as IWatchedRenderable;
+      const candidate = this.#watchedObjects[index] as ProjectionCandidate;
+      if (
+        watch.customDepthMaterial !== candidate.customDepthMaterial ||
+        watch.customDistanceMaterial !== candidate.customDistanceMaterial ||
+        hasRenderHook(candidate) !== ((watch.kind & KIND_HOOK) !== 0)
+      )
+        return false;
+    }
+    return true;
+  }
+
   /** Forgets the recorded structure, releasing the game objects it was holding. */
   clear(): void {
     for (let index = 0; index < this.#nodeCount; index += 1) this.#nodes[index] = undefined;
-    for (let index = 0; index < this.#watchedCount; index += 1) this.#watched[index] = undefined;
+    for (let index = 0; index < this.#watchedCount; index += 1) {
+      this.#watched[index] = undefined;
+      this.#watchedObjects[index] = undefined;
+    }
+    this.#stamp = undefined;
     for (let index = 0; index < this.#exactCount; index += 1) {
       this.#exactObjects[index] = undefined;
       const entry = this.#exact[index];

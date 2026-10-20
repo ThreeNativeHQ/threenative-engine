@@ -1,0 +1,257 @@
+{
+  "name": "materials-instance-color-attribute",
+  "adaptedFrom": "original — InstancedMesh.instanceColor assigned as the game's own InstancedBufferAttribute (Midway's tracers), not grown by setColorAt: two lit crates tinted red and blue",
+  "tolerance": {
+    "abs": 0
+  },
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "background",
+      "class": "Color",
+      "args": [0.05, 0.06, 0.08]
+    },
+    {
+      "op": "set",
+      "id": "scene",
+      "path": "background",
+      "value": {
+        "ref": "background"
+      }
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [60, 1.3333333333333333, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 1.4
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 3.2
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "light",
+      "class": "DirectionalLight",
+      "args": [16777215, 3]
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.x",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.y",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "light",
+      "path": "position.z",
+      "value": 1
+    },
+    {
+      "op": "new",
+      "id": "sky",
+      "class": "HemisphereLight",
+      "args": [11189137, 2236962, 0.6]
+    },
+    {
+      "op": "new",
+      "id": "box",
+      "class": "BoxGeometry",
+      "args": [0.8, 0.8, 0.8]
+    },
+    {
+      "op": "new",
+      "id": "boxMaterial",
+      "class": "MeshStandardMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "boxMaterial",
+      "path": "roughness",
+      "value": 0.5
+    },
+    {
+      "op": "new",
+      "id": "crates",
+      "class": "InstancedMesh",
+      "args": [
+        {
+          "ref": "box"
+        },
+        {
+          "ref": "boxMaterial"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "left",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "left",
+      "method": "makeTranslation",
+      "args": [-0.7, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "crates",
+      "method": "setMatrixAt",
+      "args": [
+        0,
+        {
+          "ref": "left"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "right",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "right",
+      "method": "makeTranslation",
+      "args": [0.7, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "crates",
+      "method": "setMatrixAt",
+      "args": [
+        1,
+        {
+          "ref": "right"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "tints",
+      "class": "InstancedBufferAttribute",
+      "args": [
+        {
+          "array": [1, 0.3, 0.2, 0.2, 0.5, 1],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "set",
+      "id": "crates",
+      "path": "instanceColor",
+      "value": {
+        "ref": "tints"
+      }
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "crates"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "light"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "sky"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "camera",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "light",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ]
+}

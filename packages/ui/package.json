@@ -1,6 +1,6 @@
 {
   "name": "@threenative/ui",
-  "version": "0.3.4",
+  "version": "0.3.6",
   "license": "MIT",
   "description": "React bindings for mounting a ThreeNative game and reading throttled state.",
   "keywords": ["threenative", "react", "tailwind", "hud", "three", "threejs", "gamedev"],
@@ -30,7 +30,7 @@
   },
   "sideEffects": false,
   "peerDependencies": {
-    "@threenative/core": ">=0.3.4 <0.4.0",
+    "@threenative/core": ">=0.3.6 <0.4.0",
     "react": ">=19.2.0 <20",
     "react-dom": ">=19.2.0 <20"
   },

@@ -1,0 +1,14 @@
+{
+  "name": "arrays-iteration",
+  "adaptedFrom": "three@0.185.1 BufferAttribute.array — the typed array exposes its length, its count and every element in order",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "box", "class": "BoxGeometry", "args": [2, 2, 2] },
+    { "op": "call", "id": "box", "method": "getAttribute", "args": ["position"], "result": "p" }
+  ],
+  "observe": [
+    { "id": "p", "path": "array", "kind": "numbers" },
+    { "id": "p", "path": "array.length", "kind": "number" },
+    { "id": "p", "path": "count", "kind": "number" }
+  ]
+}

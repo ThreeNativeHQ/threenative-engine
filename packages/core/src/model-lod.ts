@@ -98,11 +98,15 @@ export function projectedLodError(
  * through {@link biasedLodDistance}, and the GPU scene mirrors it as a uniform, so a placement at
  * one distance crosses the same switch wherever the level is decided. `1` is exactly as authored.
  */
-let lodBiasValue = 1;
+// Unsplit package entries must share the control loop's bias, just like the chain registry.
+const LOD_BIAS_KEY = Symbol.for("threenative.lodBias");
+const lodBiasHost = globalThis as Record<symbol, unknown>;
+const lodBiasState = (lodBiasHost[LOD_BIAS_KEY] as { value: number } | undefined) ?? { value: 1 };
+lodBiasHost[LOD_BIAS_KEY] = lodBiasState;
 
 /** The multiplier every LOD selection path scales camera distance by. */
 export function lodBias(): number {
-  return lodBiasValue;
+  return lodBiasState.value;
 }
 
 /**
@@ -110,7 +114,7 @@ export function lodBias(): number {
  * authored, so it is refused rather than applied; a non-finite value is no reading and resets to 1.
  */
 export function setLodBias(bias: number): void {
-  lodBiasValue = Number.isFinite(bias) && bias >= 1 ? bias : 1;
+  lodBiasState.value = Number.isFinite(bias) && bias >= 1 ? bias : 1;
 }
 
 /**
@@ -119,7 +123,7 @@ export function setLodBias(bias: number): void {
  * only coarsen selection, never refine it below the level the chain would show unaided.
  */
 export function biasedLodDistance(distance: number): number {
-  return distance * lodBiasValue;
+  return distance * lodBiasState.value;
 }
 
 const nearest = new Vector3();
@@ -146,7 +150,7 @@ export function conservativeViewDepth(
 export function worldSphere(
   local: Sphere,
   object: Object3D,
-  out: Sphere = local.clone(),
+  out: Sphere = new Sphere().copy(local), // the engine's Sphere binds no clone
   matrix: Matrix4 = object.matrixWorld,
 ): Sphere {
   out.center.copy(local.center).applyMatrix4(matrix);
@@ -383,7 +387,8 @@ class ModelLod {
     const index = selectLodLevel(
       this.#chain.errors,
       this.#current,
-      this.#policy.maxPixelError,
+      this.#policy.maxPixelError /
+        Math.max(this.#mesh.matrixWorld.getMaxScaleOnAxis(), Number.EPSILON),
       this.#policy.hysteresis,
       [view],
     );
@@ -421,7 +426,8 @@ class ModelLod {
     const index = selectLodLevel(
       errors,
       this.#current,
-      this.#policy.maxPixelError,
+      this.#policy.maxPixelError /
+        Math.max(container.matrixWorld.getMaxScaleOnAxis(), Number.EPSILON),
       this.#policy.hysteresis,
       [view],
     );
@@ -894,14 +900,28 @@ function controllerFor(mesh: Mesh): IModelLodController | undefined {
  */
 export class DiscreteLodPlugin {
   readonly name = TN_DISCRETE_LOD;
+  readonly #failClosed: boolean;
   #parser: IParserLike | undefined;
   readonly #pending = new Map<Mesh, IPendingLevels>();
   readonly #rungs: { readonly def: IJoinedRungDef; readonly prototype: Object3D }[] = [];
   /** A temporary holder for far-mesh prototypes, so widening reaches their joined geometry. */
   #holder: Group | undefined;
 
+  /**
+   * `failClosed` rejects the load with the same named error the log line carries, for a loader that
+   * has no other way to tell a game its chain was dropped (the Wasm engine's, PRD-617).
+   */
+  constructor(options: { readonly failClosed?: boolean } = {}) {
+    this.#failClosed = options.failClosed === true;
+  }
+
   setParser(parser: IParserLike): void {
     this.#parser = parser;
+  }
+
+  #invalid(message: string): void {
+    if (this.#failClosed) throw new Error(message);
+    console.error(message);
   }
 
   async afterRoot(result: { scene?: Object3D }): Promise<void> {
@@ -920,7 +940,7 @@ export class DiscreteLodPlugin {
         this.#pending.set(mesh, await readPendingLevels(parser, def));
       } catch (error) {
         // LOD0 is intact and is what a game must still get; the file is the defect, not the game.
-        console.error(
+        this.#invalid(
           `TN_DISCRETE_LOD_INVALID: '${mesh.name || "unnamed"}' keeps full detail: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
@@ -930,14 +950,14 @@ export class DiscreteLodPlugin {
     if (!Array.isArray(joined) || joined.length === 0) return;
     for (const value of joined) {
       if (!isJoinedRungDef(value)) {
-        console.error(
+        this.#invalid(
           "TN_DISCRETE_LOD_JOIN_INVALID: a joined rung record is malformed; its primitives keep full detail.",
         );
         continue;
       }
       const farIndex = (parser.json.meshes ?? []).findIndex((mesh) => mesh.name === value.mesh);
       if (farIndex < 0) {
-        console.error(
+        this.#invalid(
           `TN_DISCRETE_LOD_JOIN_INVALID: '${value.mesh}' is not one of the file's meshes; its primitives keep full detail.`,
         );
         continue;
@@ -987,7 +1007,7 @@ export class DiscreteLodPlugin {
       const baseTriangles = base.index?.count ?? base.getAttribute("position")?.count ?? 0;
       if (Math.floor(baseTriangles / 3) !== pending.lod0Triangles) {
         // The file's LOD0 no longer matches the payload that was baked against it; keep full detail.
-        console.error(
+        this.#invalid(
           `TN_DISCRETE_LOD_INVALID: '${mesh.name || "unnamed"}' keeps full detail: LOD0 triangles do not match the baked chain.`,
         );
         continue;

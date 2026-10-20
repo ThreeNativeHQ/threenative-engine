@@ -4,7 +4,7 @@
 Created 2026-10-03, after #390 merged.
 
 **Goal.** Two outcomes:
-- (A) Machinefall `?scene=map-walk` **walks** at CPU and GPU p95 ≤ 8.3 ms on the RTX 2080 WebGPU adapter, with no visual loss. These are [PRD-478](PRD-478-open-world-frame-architecture.md)'s AC-1, AC-2 and AC-3.
+- (A) Machinefall `?scene=map-walk` **walks** at CPU and GPU p95 ≤ 8.3 ms on the RTX 2080 WebGPU adapter, with no visual loss. These are [PRD-478](../done/open-world/PRD-478-open-world-frame-architecture.md)'s AC-1, AC-2 and AC-3.
 - (B) A cold agent's Fab or Megascans game ships its assets at full quality through the default cook, with no hand-set knobs, and stays inside that frame budget.
 
 **Stop condition.** Every row below is ticked, or sits under an owner gate that is recorded as asked.
@@ -226,7 +226,7 @@ this host, so it is not attributed. The prewarm (`e580e76cb`) stays off this PR,
     invalidation before this mechanism is retried. Details in "Where we stand".
 - [ ] **A8 · [PRD-539](../Unreal/performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md): temporal reconstruction closes the GPU gap (successor of PRD-455).** After: A7. ⏱🌍👁
 - [ ] **A9 · PRD-478 acceptance.** After: A8. ⏱🌍👁
-  - Done when: AC-1, AC-2 and AC-3 are ticked on a quiet host 🙋, and PRD-478 is in `done/`.
+  - Done when: AC-1, AC-2 and AC-3 are ticked on a quiet host 🙋; then PRD-478 may move to `done/`.
 - [ ] **A10 · PRD-477 Phases 2–3 and AC-1: budgets and switches become engine decisions.** After: A9. ⏱🌍👁
 - [x] **A11 · [PRD-489](../done/PRD-489-gpu-scene-occlusion-culling.md) Phase 1 only: the occlusion go/no-go.** After: A9. ⏱
   - If it declines, record the decision and close the PRD. If it goes ahead, its Phases 2–3 become row A12. 🌍👁
