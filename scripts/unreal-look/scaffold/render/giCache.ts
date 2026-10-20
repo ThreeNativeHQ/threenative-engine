@@ -655,68 +655,72 @@ function irradianceAt(
       taps.set(corner, result);
       return result;
     };
-    /** The mask of the corner whose bits are fixed numbers or, for the nearest corner's bits, a 0/1 node. */
-    const maskAt = (
-      bits: readonly (number | Node<"float">)[],
-      axis = 0,
-      corner = 0,
-    ): Node<"float"> => {
-      if (axis === 3) return tap(corner).mask;
-      const bit = nth(bits, axis);
-      if (typeof bit === "number") return maskAt(bits, axis + 1, corner | (bit << axis));
-      return maskAt(bits, axis + 1, corner)
-        .mul(float(1).sub(bit))
-        .add(maskAt(bits, axis + 1, corner | (1 << axis)).mul(bit));
-    };
-    /** 1 when the link along `axis` from a texel with this mask is open. */
-    const open = (mask: Node<"float">, axis: number): Node<"float"> => {
-      const whole = mask
-        .add(0.25)
+    /** 1 when the link along `axis` from texel `corner` (its lower end) is open; each read once. */
+    const links = new Map<number, Node<"float">>();
+    const link = (corner: number, axis: number): Node<"float"> => {
+      const known = links.get(corner * 3 + axis);
+      if (known !== undefined) return known;
+      const whole = tap(corner)
+        .mask.add(0.25)
         .div(2 ** axis)
         .floor();
-      return whole.sub(whole.div(2).floor().mul(2)).lessThan(0.5).select(float(1), float(0));
+      const open = whole.sub(whole.div(2).floor().mul(2)).lessThan(0.5).select(float(1), float(0));
+      links.set(corner * 3 + axis, open);
+      return open;
     };
-
-    // The walk starts at the strongest texel outside a solid, as `weightsAt` does at bake time; only when all eight
-    // are solid does it fall back to the plain nearest one.
-    const trilinear = (corner: number): Node<"float"> =>
+    /** Trilinear weight of a corner; a solid texel holds an interpolation through the solid, so next to none. */
+    const weightOf = (corner: number): Node<"float"> =>
       [0, 1, 2].reduce<Node<"float">>(
         (w, a) => w.mul((corner >> a) & 1 ? nth(fraction, a) : float(1).sub(nth(fraction, a))),
-        float(1),
+        float(1).sub(tap(corner).solid.mul(0.999)),
       );
-    let bestScore: Node<"float"> = trilinear(0).sub(tap(0).solid.mul(2));
-    let nearest: Node<"float">[] = [float(0), float(0), float(0)];
-    for (let corner = 1; corner < 8; corner += 1) {
-      const score = trilinear(corner).sub(tap(corner).solid.mul(2));
-      const better = score.greaterThan(bestScore);
-      nearest = nearest.map((bit, a) => better.select(float((corner >> a) & 1), bit));
-      bestScore = better.select(score, bestScore);
-    }
+
+    // Every texel starts a walk, the one `weightsAt` takes at bake time from its strongest probe: a corner counts when
+    // the links from the start to it, axis by axis, are open. The walks blend by the start's weight to the fourth
+    // power, so the read stays continuous where the strongest texel changes: one start alone left a hard seam on an
+    // open floor wherever a wall cut the link between the two texels either side of a cell's middle.
     let sum: Node<"vec3"> | undefined;
-    let total: Node<"float"> | undefined;
     let skySum: Node<"float"> | undefined;
-    for (let corner = 0; corner < 8; corner += 1) {
-      let weight: Node<"float"> = float(1);
-      for (let a = 0; a < 3; a += 1) {
-        const c = (corner >> a) & 1;
-        weight = weight.mul(c ? nth(fraction, a) : float(1).sub(nth(fraction, a)));
-        // The step along axis a from the nearest texel: earlier axes already moved to this corner, later ones not yet.
-        const bits = [0, 1, 2].map((k) =>
-          k < a ? (corner >> k) & 1 : k === a ? 0 : nth(nearest, k),
-        );
-        const step = open(maskAt(bits), a);
-        // Differs from the nearest texel along a: nearest bit != c. A texel that does not differ takes no step.
-        const differs = c ? float(1).sub(nth(nearest, a)) : nth(nearest, a);
-        weight = weight.mul(float(1).sub(differs).add(differs.mul(step)));
+    let total: Node<"float"> | undefined;
+    for (let start = 0; start < 8; start += 1) {
+      let walkSum: Node<"vec3"> | undefined;
+      let walkSky: Node<"float"> | undefined;
+      let walkTotal: Node<"float"> | undefined;
+      for (let corner = 0; corner < 8; corner += 1) {
+        let weight = weightOf(corner);
+        for (let a = 0; a < 3; a += 1) {
+          if (((corner >> a) & 1) === ((start >> a) & 1)) continue;
+          // The step along a: earlier axes already moved to this corner, later ones not yet; the link is the lower texel's.
+          const lower = [0, 1, 2].reduce(
+            (index, k) =>
+              index | ((k < a ? (corner >> k) & 1 : k === a ? 0 : (start >> k) & 1) << k),
+            0,
+          );
+          weight = weight.mul(link(lower, a));
+        }
+        const t = tap(corner);
+        walkSum = walkSum === undefined ? t.colour.mul(weight) : walkSum.add(t.colour.mul(weight));
+        walkSky = walkSky === undefined ? t.sky.mul(weight) : walkSky.add(t.sky.mul(weight));
+        walkTotal = walkTotal === undefined ? weight : walkTotal.add(weight);
       }
-      const t = tap(corner);
-      // A solid texel holds an interpolation through the solid: next to nothing, unless every texel is solid.
-      weight = weight.mul(float(1).sub(t.solid.mul(0.999)));
-      sum = sum === undefined ? t.colour.mul(weight) : sum.add(t.colour.mul(weight));
-      skySum = skySum === undefined ? t.sky.mul(weight) : skySum.add(t.sky.mul(weight));
-      total = total === undefined ? weight : total.add(weight);
+      const own = weightOf(start);
+      const share = own
+        .mul(own)
+        .mul(own)
+        .mul(own)
+        .div(max(walkTotal as Node<"float">, 1e-20));
+      sum =
+        sum === undefined
+          ? (walkSum as Node<"vec3">).mul(share)
+          : sum.add((walkSum as Node<"vec3">).mul(share));
+      skySum =
+        skySum === undefined
+          ? (walkSky as Node<"float">).mul(share)
+          : skySum.add((walkSky as Node<"float">).mul(share));
+      const pow4 = own.mul(own).mul(own).mul(own);
+      total = total === undefined ? pow4 : total.add(pow4);
     }
-    const whole = max(total as Node<"float">, 1e-5);
+    const whole = max(total as Node<"float">, 1e-30);
     return {
       irradiance: (sum as Node<"vec3">).div(whole),
       visibility: (skySum as Node<"float">).div(whole),
