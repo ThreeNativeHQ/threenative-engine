@@ -92,16 +92,21 @@ export const hotCallbackAllocation: Rule.RuleModule = {
     };
 
     return {
+      // biome-ignore lint/style/useNamingConvention: ESLint visitor keys are AST node type names
       ImportDeclaration(node) {
         for (const specifier of node.specifiers)
           registerImport(String(node.source.value), specifier);
       },
+      // biome-ignore lint/style/useNamingConvention: ESLint visitor keys are AST node type names
       ArrowFunctionExpression: enter,
       "ArrowFunctionExpression:exit": leave,
+      // biome-ignore lint/style/useNamingConvention: ESLint visitor keys are AST node type names
       FunctionDeclaration: enter,
       "FunctionDeclaration:exit": leave,
+      // biome-ignore lint/style/useNamingConvention: ESLint visitor keys are AST node type names
       FunctionExpression: enter,
       "FunctionExpression:exit": leave,
+      // biome-ignore lint/style/useNamingConvention: ESLint visitor keys are AST node type names
       NewExpression(node) {
         const where = frames[frames.length - 1];
         const name = where === undefined ? undefined : mathClassName(node.callee);
