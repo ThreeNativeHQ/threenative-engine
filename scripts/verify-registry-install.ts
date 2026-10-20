@@ -1044,9 +1044,19 @@ function verifyNativeFrames(project: string, runner: CommandRunner): string {
   if (!fs.existsSync(reportPath))
     throw new Error(`Native verifier produced no 300 frames report at ${reportPath}.`);
   const report = JSON.parse(fs.readFileSync(reportPath, "utf8")) as {
+    assertions?: unknown;
     frames?: unknown;
+    gate?: unknown;
     pass?: unknown;
   };
+  // The engine player has no frame counter to read: its gate is the playtest run (PRD-637).
+  if (report.gate === "consumer-playtest") {
+    if (report.pass !== true || typeof report.assertions !== "number" || report.assertions < 1)
+      throw new Error(
+        `Native playtest gate did not pass: pass=${String(report.pass)}, assertions=${String(report.assertions)}.`,
+      );
+    return `${output}\nVerified ${report.assertions} playtest assertions on the engine player.`;
+  }
   if (report.pass !== true || report.frames !== 300)
     throw new Error(
       `Native verifier did not prove 300 frames: pass=${String(report.pass)}, frames=${String(report.frames)}.`,

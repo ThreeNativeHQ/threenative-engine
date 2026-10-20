@@ -16,9 +16,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@threenative/core": "0.3.5",
-    "@threenative/physics": "0.3.5",
-    "@threenative/ui": "0.3.5",
+    "@threenative/core": "0.3.6",
+    "@threenative/physics": "0.3.6",
+    "@threenative/ui": "0.3.6",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-reconciler": "0.33.0",
@@ -26,13 +26,13 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
-    "@threenative/assets": "0.3.6",
-    "@threenative/playtest": "0.3.5",
+    "@threenative/assets": "0.3.7",
+    "@threenative/playtest": "0.3.6",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
     "@types/three": "0.185.3",
     "@vitejs/plugin-react": "6.0.5",
-    "create-threenative": "0.2.9",
+    "create-threenative": "0.2.10",
     "esbuild": "0.27.0",
     "playwright": "1.62.1",
     "tailwindcss": "4.3.3",
@@ -41,10 +41,11 @@
     "@gltf-transform/cli": "4.4.2"
   },
   "optionalDependencies": {
-    "@threenative/runtime-native": "0.3.5"
+    "@threenative/runtime-native": "0.3.6"
   },
   "overrides": {
-    "sharp": ">=0.35.4"
+    "sharp": ">=0.35.4",
+    "@vitejs/devtools": "0.4.1"
   },
   "pnpm": {
     "overrides": {
