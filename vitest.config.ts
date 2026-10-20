@@ -1,7 +1,26 @@
 import os from "node:os";
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 
+const root = import.meta.dirname;
+
 export default defineConfig({
+  plugins: [
+    {
+      // Root scripts and the harness overlays under scripts/ import `three`, which only the packages install.
+      // Resolve it from core, the way scripts/unreal-look/compare.ts does.
+      name: "scripts-resolve-three-from-core",
+      enforce: "pre",
+      async resolveId(source, importer, options) {
+        if (!/^three(\/|$)/.test(source) || !importer?.startsWith(path.join(root, "scripts/")))
+          return null;
+        return this.resolve(source, path.join(root, "packages/core/package.json"), {
+          ...options,
+          skipSelf: true,
+        });
+      },
+    },
+  ],
   test: {
     environment: "node",
     include: [
