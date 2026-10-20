@@ -623,7 +623,8 @@ it("scales a fixed exposure into light only, never into the alpha the output tra
     while (n?.isVarNode) n = n.node as typeof n;
     return n;
   };
-  const isExposure = (node: unknown) => (unwrap(node) as { value?: unknown } | null)?.value === 0.25;
+  const isExposure = (node: unknown) =>
+    (unwrap(node) as { value?: unknown } | null)?.value === 0.25;
   const exposed = products.filter((p) => isExposure(p.aNode) || isExposure(p.bNode));
   expect(exposed).toHaveLength(1);
   const [product] = exposed as [{ aNode: unknown; bNode: unknown }];
