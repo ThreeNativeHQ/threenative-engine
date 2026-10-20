@@ -34,9 +34,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "source"
-      ],
+      "required": ["source"],
       "type": "object"
     },
     "blender_convert": {
@@ -51,10 +49,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "source",
-        "out"
-      ],
+      "required": ["source", "out"],
       "type": "object"
     },
     "blender_recipes": {
@@ -91,11 +86,7 @@
           "type": "number"
         }
       },
-      "required": [
-        "source",
-        "out",
-        "cell"
-      ],
+      "required": ["source", "out", "cell"],
       "type": "object"
     },
     "blender_run_python": {
@@ -114,9 +105,7 @@
           "type": "number"
         }
       },
-      "required": [
-        "script"
-      ],
+      "required": ["script"],
       "type": "object"
     }
   },
