@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
 import { curveShape, exposureCurve } from "./exposureCurve.js";
+import { compareGi } from "./gi.js";
 import { floorEdges, linearLuminance, matchedWidths } from "./penumbra.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
 const coreRequire = createRequire(new URL("../../packages/core/package.json", import.meta.url));
@@ -235,7 +236,7 @@ export function deriveMasks(base: IMasks, l5: IImage): IMasks {
     }
   return { ...base, regions: { ...base.regions, ShadowedFloor: shadow, LitFloor: lit } };
 }
-function measure(image: IImage, mask: Mask, exr?: IImage): IStats {
+export function measure(image: IImage, mask: Mask, exr?: IImage): IStats {
   if (mask.length !== image.width * image.height) fail("SIZE_MISMATCH", "image and mask differ");
   if (exr) dimensions(image, exr);
   const display: number[] = [];
@@ -829,6 +830,10 @@ export function parseArgs(args: string[]): IOptions {
   return options;
 }
 export function main(args = process.argv.slice(2)): void {
+  if (args.includes("--scene")) {
+    process.exitCode = compareGi(args);
+    return;
+  }
   const report = runComparison(parseArgs(args));
   const show = (v: number | null) => (v === null ? "—" : Number(v.toPrecision(4)).toString());
   const verdict = (v: boolean | null) => (v === null ? "—" : v ? "PASS" : "FAIL");

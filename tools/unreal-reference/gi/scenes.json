@@ -1,0 +1,50 @@
+{
+  "note": "PRD-638 GI calibration scenes. Each scene folder holds scene.py (authored in Unreal), and the exported scene.glb and scene.json. A variant is one Movie Render Queue run per pose. GI quality follows BaseScalability.ini on 5.8.3: @0 Lumen GI off, @1 irradiance field gather, @3 screen probe gather. expect is read back from the editor log for every job.",
+  "resolution": [1280, 720],
+  "scenes": [{ "name": "cornell", "owner": "PRD-638", "poses": ["cornell", "corner"] }],
+  "variants": [
+    {
+      "name": "L7-Low",
+      "layer": "L7",
+      "cvars": { "sg.GlobalIlluminationQuality": 0 },
+      "expect": { "r.Lumen.DiffuseIndirect.Allow": 0 },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L7-Medium",
+      "layer": "L7",
+      "cvars": { "sg.GlobalIlluminationQuality": 1 },
+      "expect": { "r.Lumen.DiffuseIndirect.Allow": 1, "r.Lumen.FinalGatherMethod": 0 },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L7-Epic",
+      "layer": "L7",
+      "cvars": { "sg.GlobalIlluminationQuality": 3 },
+      "expect": { "r.Lumen.DiffuseIndirect.Allow": 1, "r.Lumen.FinalGatherMethod": 1 },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L7-Epic-indirect",
+      "layer": "L7",
+      "cvars": { "sg.GlobalIlluminationQuality": 3, "r.Lumen.Visualize.IndirectDiffuse": 1 },
+      "expect": { "r.Lumen.DiffuseIndirect.Allow": 1, "r.Lumen.Visualize.IndirectDiffuse": 1 },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L7-Epic-scene",
+      "layer": "L7",
+      "cvars": { "sg.GlobalIlluminationQuality": 3, "r.Lumen.Visualize": 3 },
+      "expect": { "r.Lumen.DiffuseIndirect.Allow": 1, "r.Lumen.Visualize": 3 },
+      "kinds": ["png"]
+    },
+    {
+      "name": "L9-Epic",
+      "layer": "L9",
+      "cvars": { "sg.GlobalIlluminationQuality": 3 },
+      "expect": { "r.Lumen.DiffuseIndirect.Allow": 1, "r.Lumen.FinalGatherMethod": 1 },
+      "kinds": ["png", "exr"]
+    },
+    { "name": "ID", "layer": "L0", "level": "id", "cvars": {}, "expect": {}, "kinds": ["png"] }
+  ]
+}

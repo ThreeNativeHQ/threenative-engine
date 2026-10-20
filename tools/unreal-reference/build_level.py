@@ -193,8 +193,8 @@ def build_level(name, sun, meshes):
     return [describe(a) for a in lighting]
 
 
-def build_cameras():
-    for pose in POSES["poses"]:
+def build_cameras(poses=POSES["poses"], root=ROOT):
+    for pose in poses:
         camera = actor_subsystem.spawn_actor_from_class(
             unreal.CameraActor, to_unreal(pose["position"]), look_rotation(pose["position"], pose["target"])
         )
@@ -205,7 +205,7 @@ def build_cameras():
         component.set_editor_property("aspect_ratio", width / height)
         component.set_editor_property("constrain_aspect_ratio", False)
         sequence = asset_tools.create_asset(
-            "Seq_" + pose["name"], ROOT + "/Sequences", unreal.LevelSequence, unreal.LevelSequenceFactoryNew()
+            "Seq_" + pose["name"], root + "/Sequences", unreal.LevelSequence, unreal.LevelSequenceFactoryNew()
         )
         sequence.set_display_rate(unreal.FrameRate(30, 1))
         sequence.set_playback_start(0)
@@ -284,14 +284,14 @@ def cells():
             yield id_layer, {"name": "id"}, pose
 
 
-def add_job(queue, layer, sun, pose, kind):
+def add_job(queue, name, level, sequence, out_dir, cvars, show_flags, kind, warm_up, print_cvars=()):
     job = queue.allocate_new_job(unreal.MoviePipelineExecutorJob)
-    job.map = unreal.SoftObjectPath(f"{ROOT}/Ref_{sun['name']}")
-    job.sequence = unreal.SoftObjectPath(f"{ROOT}/Sequences/Seq_{pose['name']}")
-    job.job_name = f"ID_{pose['name']}" if layer["name"] == "ID" else f"{layer['name']}_{sun['name']}_{pose['name']}"
+    job.map = unreal.SoftObjectPath(level)
+    job.sequence = unreal.SoftObjectPath(sequence)
+    job.job_name = name
     config = job.get_configuration()
     output = config.find_or_add_setting_by_class(unreal.MoviePipelineOutputSetting)
-    output.output_directory = unreal.DirectoryPath(os.path.join(OUT, layer["name"]))
+    output.output_directory = unreal.DirectoryPath(out_dir)
     output.file_name_format = "{job_name}"
     width, height = POSES["resolution"]
     output.output_resolution = unreal.IntPoint(width, height)
@@ -306,27 +306,28 @@ def add_job(queue, layer, sun, pose, kind):
     aa = config.find_or_add_setting_by_class(unreal.MoviePipelineAntiAliasingSetting)
     aa.override_anti_aliasing = False
     aa.render_warm_up_frames = True
-    # Lumen, the virtual shadow maps and TSR settle in about 2 s; eye adaptation
-    # (L9) needs about 10 s of game time at 1 stop/s darkening.
     aa.engine_warm_up_count = 30
-    aa.render_warm_up_count = 300 if layer["cvars"].get("r.DefaultFeature.AutoExposure") else 90
-    cvars = config.find_or_add_setting_by_class(unreal.MoviePipelineConsoleVariableSetting)
-    for name, value in layer["cvars"].items():
-        cvars.add_or_update_console_variable(name, float(value))
-    for name, value in layer["showFlags"].items():
-        cvars.add_or_update_console_variable("ShowFlag." + name, float(value))
+    aa.render_warm_up_count = warm_up
+    setting = config.find_or_add_setting_by_class(unreal.MoviePipelineConsoleVariableSetting)
+    for cvar, value in cvars.items():
+        setting.add_or_update_console_variable(cvar, float(value))
+    for flag, value in show_flags.items():
+        setting.add_or_update_console_variable("ShowFlag." + flag, float(value))
+    # Start commands run after the job's console variables are set: a bare name prints its value
+    # to the log, which is how the caller proves the setting reached the render.
+    if print_cvars:
+        setting.start_console_commands = list(print_cvars)
 
 
-def capture():
+def queue():
     subsystem = unreal.get_editor_subsystem(unreal.MoviePipelineQueueSubsystem)
-    queue = subsystem.get_queue()
-    queue.delete_all_jobs()
-    count = 0
-    for layer, sun, pose in cells():
-        for kind in ("png",) if layer["name"] == "ID" else ("png", "exr"):
-            add_job(queue, layer, sun, pose, kind)
-            count += 1
-    log(f"capture queued={count}")
+    q = subsystem.get_queue()
+    q.delete_all_jobs()
+    return q
+
+
+def render():
+    subsystem = unreal.get_editor_subsystem(unreal.MoviePipelineQueueSubsystem)
     # Module-level references: the executor and its callbacks must outlive this function, or
     # Python collects them and the editor never quits after the last job.
     global EXECUTOR, TICK
@@ -349,10 +350,52 @@ def capture():
     TICK = unreal.register_slate_post_tick_callback(tick)
 
 
+def capture():
+    q = queue()
+    count = 0
+    for layer, sun, pose in cells():
+        name = f"ID_{pose['name']}" if layer["name"] == "ID" else f"{layer['name']}_{sun['name']}_{pose['name']}"
+        # Lumen, the virtual shadow maps and TSR settle in about 2 s; eye adaptation
+        # (L9) needs about 10 s of game time at 1 stop/s darkening.
+        warm_up = 300 if layer["cvars"].get("r.DefaultFeature.AutoExposure") else 90
+        for kind in ("png",) if layer["name"] == "ID" else ("png", "exr"):
+            add_job(
+                q, name, f"{ROOT}/Ref_{sun['name']}", f"{ROOT}/Sequences/Seq_{pose['name']}",
+                os.path.join(OUT, layer["name"]), layer["cvars"], layer["showFlags"], kind, warm_up,
+            )
+            count += 1
+    log(f"capture queued={count}")
+    render()
+
+
+def run_gi(scene):
+    """PRD-638: a GI calibration scene from gi/<scene>/scene.py (see gi/export.py)."""
+    import importlib.util
+    import types
+
+    spec = importlib.util.spec_from_file_location("tn_gi_export", os.path.join(HERE, "gi", "export.py"))
+    gi = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gi)
+    ref = types.SimpleNamespace(
+        log=log, to_unreal=to_unreal, add_job=add_job, queue=queue, render=render,
+        build_cameras=build_cameras, asset_tools=asset_tools, level_subsystem=level_subsystem,
+        actor_subsystem=actor_subsystem, LAYERS=LAYERS,
+    )
+    if MODE == "build":
+        gi.build(ref, scene)
+        quit_editor(0)
+    elif MODE == "capture":
+        gi.capture(ref, scene, OUT)
+    else:
+        raise ValueError("unknown TN_UE_MODE for a GI scene " + MODE)
+
+
 # --- entry -------------------------------------------------------------------
 os.makedirs(OUT, exist_ok=True)
 try:
-    if MODE == "check-cvars":
+    if os.environ.get("TN_UE_SCENE"):
+        run_gi(os.environ["TN_UE_SCENE"])
+    elif MODE == "check-cvars":
         quit_editor(check_cvars())
     elif MODE == "build":
         build()
