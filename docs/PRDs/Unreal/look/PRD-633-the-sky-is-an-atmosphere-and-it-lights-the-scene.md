@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-633 — The sky is an atmosphere, and it lights the scene
 
-**Status:** NOT STARTED
-**Priority:** P2 — no box is ticked: every template's sky and ambient light come from a fixed photograph, so the sun cannot move and the sky never tints the scene the way Unreal's default level does.
+**Status:** PARTIAL
+**Priority:** P2 — shipped templates remain unchanged: every template's sky and ambient light come from a fixed photograph, so the sun cannot move and the sky never tints the scene the way Unreal's default level does.
 **Complexity:** 6 (MEDIUM) — template sky source in 13 templates (+2), a core sky-capture mechanism with an amortized refresh (+2), native proof of the LUT sky and the capture (+2); risk override: none
 **Owner:** João
 **Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L2 row) and [PRD-632](PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) (lux and EV100: an atmosphere sky in nits cannot be compared at a hand-set exposure). Uses the LUTs that [PRD-248](../../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) shipped. [PRD-562](../rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md) adds the aerial perspective on top.
@@ -80,13 +80,15 @@ sun colour all change together. That coupling is a large part of the Unreal look
 ## Execution Phases
 
 #### Phase 1: The sky capture
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/core/src/render/sky-capture.ts` (new), `packages/core/__tests__/sky-capture.spec.ts`
-- [ ] The capture refreshes after a sun move larger than its threshold, not before, and spreads one refresh over the configured frames. proof: `pnpm exec vitest run packages/core/__tests__/sky-capture.spec.ts`.
+- [x] The capture refreshes after a sun move larger than its threshold, not before, and spreads one refresh over the configured frames. proof: `pnpm exec vitest run packages/core/__tests__/sky-capture.spec.ts` — 2026-10-19: 12 GPU-free tests pass (exit 0), including invalid options, PMREM target reuse, renderer-state restoration/retry, lower-hemisphere mask and idempotent disposal.
 - [ ] The captured environment of a fixed sky matches a direct PMREM of the same sky within tolerance. proof: `pnpm exec vitest run packages/core/__tests__/sky-capture.spec.ts`.
+  GPU equivalence, visual judging, native and moving-sun performance remain unverified; these unit tests stub PMREM and do not establish pixel equivalence.
 
 #### Phase 2: The starter matches L2
-**Status:** NOT STARTED
+**Status:** PARTIAL — harness overlay only; shipped templates unchanged.
+`scripts/unreal-look/scaffold/render/sky.ts` preserves the starter exports and fog, uses Atmosphere radiance, SkyCapture environment and transmittance-tinted sun without changing intensity. Core typecheck and Biome pass. Starter `npx --no-install tsc --noEmit -p .` passes in `/tmp/sky-capture-starter-eseo8qtr`, copied from the cached starter with its installed dependencies plus current SkyCapture source (cache is outside writable roots). The template import guard scans template roots only, so core imports remain confined to the harness overlay. Atmosphere has no separate Mie absorption parameter: the overlay supplies extinction 0.003996 + 0.000444; separate scattering/absorption remains a limitation.
 **Files:** `packages/create-threenative/templates/starter/src/render/{sky,lighting,heightFog}.ts`
 - [ ] The starter draws the atmosphere sky with Unreal's coefficients, a sun disk and a transmittance-tinted sun, and AC-1 passes. proof: `pnpm unreal-look:compare --layer L2`.
 - [ ] The starter's `low` tier uses a sky-view LUT with no capture refresh, and the template gate passes. proof: `pnpm test:templates` (starter).

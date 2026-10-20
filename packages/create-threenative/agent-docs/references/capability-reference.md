@@ -1794,6 +1794,21 @@ export class PathFollow3D { … }
 const follower = new PathFollow3D({ points: patrolPoints, loop: true, speed: 3 });
 ```
 
+### `penumbraUv`
+
+`function` — Convert world-space caster gap to a shadow UV radius, floored at one texel.
+
+```ts
+export function penumbraUv( gapMetres: number, sourceAngleRad: number, frustumWidthMetres: number, mapSize: number, ): number { … }
+```
+
+- **Use when:** measure a source-angle shadow's filter radius without a GPU
+- **Constraints:** inputs must be finite and non-negative; sizes must be positive and angle < PI/2 radians
+
+```ts
+const radius = penumbraUv(10, angle, 40, 2048);
+```
+
 ### `PipelineCensus`
 
 `class` — Read the renderer's bounded, versioned pipeline capture in a diagnostic or playtest tool.
@@ -2326,6 +2341,36 @@ import { skeletonBones } from "@threenative/core";
 const bones = skeletonBones(character);
 ```
 
+### `SkyCapture`
+
+`class` — Capture game-owned sky radiance into a sun-triggered, frame-budgeted environment map.
+
+```ts
+export class SkyCapture { … }
+```
+
+- **Use when:** light a scene from a procedural sky when its sun moves
+- **Constraints:** use an initialized WebGPURenderer; the game supplies the sky and assigns the texture · call update once per frame on an initialized WebGPURenderer; assign texture after it returns true · sky nodes use a world-space view direction; keep supplied sky resources alive until dispose
+
+```ts
+const capture = new SkyCapture(renderer, skyNode); if (capture.update(sun)) scene.environment = capture.texture;
+```
+
+### `SkyCaptureSchedule`
+
+`class` — Capture game-owned sky radiance into a sun-triggered, frame-budgeted environment map.
+
+```ts
+export class SkyCaptureSchedule { … }
+```
+
+- **Use when:** light a scene from a procedural sky when its sun moves
+- **Constraints:** use an initialized WebGPURenderer; the game supplies the sky and assigns the texture
+
+```ts
+const capture = new SkyCapture(renderer, skyNode); if (capture.update(sun)) scene.environment = capture.texture;
+```
+
 ### `snapRefreshRate`
 
 `function` — Read what frame rate a game gets when its config does not say, and why. `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather than the 60 every template used to ship, and an explicit number still wins with `0` still uncapping. The engine calls this itself; a game calls it when it needs the same number for its own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source on every window.
@@ -2400,6 +2445,21 @@ export function solarPositionAt( date: Date | string, latitude: number, longitud
 
 ```ts
 const sun = solarPositionAt(new Date(), 49.28, -123.12);
+```
+
+### `sourceAngleShadowFilter`
+
+`function` — Source-angle blocker search and variable-radius PCF on three's shadow map.
+
+```ts
+export function sourceAngleShadowFilter( { … }
+```
+
+- **Use when:** soften a directional shadow as the caster-receiver gap grows
+- **Constraints:** sourceAngleRad is required, in radians in [0, PI/2); orthographic depth shadows only, not VSM
+
+```ts
+sun.shadow.filterNode = sourceAngleShadowFilter({ sourceAngleRad: angle });
 ```
 
 ### `spanNow`

@@ -225,6 +225,15 @@ export type {
   ISolarPositionInput,
 } from "./atmosphere/index.js";
 /**
+ * Capture game-owned sky radiance into a sun-triggered, frame-budgeted environment map.
+ * @situation light a scene from a procedural sky when its sun moves
+ * @constraint use an initialized WebGPURenderer; the game supplies the sky and assigns the texture
+ * @example const capture = new SkyCapture(renderer, skyNode); if (capture.update(sun)) scene.environment = capture.texture;
+ */
+export { SkyCapture, SkyCaptureSchedule } from "./render/sky-capture.js";
+export type { ISkyCaptureOptions } from "./render/sky-capture.js";
+
+/**
  * Register game-owned IComputeDriven objects with the shared compute lifetime.
  * @situation use IComputeDriven for a cloth, fluid, boid, or other GPU simulation
  * @situation run a cloth or fluid simulation with ordered GPU passes
@@ -899,6 +908,21 @@ export {
   VirtualShadowNode,
 } from "./render/virtual-shadow.js";
 export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
+/**
+ * Source-angle blocker search and variable-radius PCF on three's shadow map.
+ * @situation soften a directional shadow as the caster-receiver gap grows
+ * @constraint sourceAngleRad is required, in radians in [0, PI/2); orthographic depth shadows only, not VSM
+ * @example sun.shadow.filterNode = sourceAngleShadowFilter({ sourceAngleRad: angle });
+ */
+export { sourceAngleShadowFilter } from "./render/soft-shadow.js";
+/**
+ * Convert world-space caster gap to a shadow UV radius, floored at one texel.
+ * @situation measure a source-angle shadow's filter radius without a GPU
+ * @constraint inputs must be finite and non-negative; sizes must be positive and angle < PI/2 radians
+ * @example const radius = penumbraUv(10, angle, 40, 2048);
+ */
+export { penumbraUv } from "./render/soft-shadow.js";
+export type { ISourceAngleShadowInputs, ISourceAngleShadowOptions } from "./render/soft-shadow.js";
 /**
  * An outdoor daylight rig: physical sky, one sun with open-world shadows that follow the eye,
  * hemisphere fill, sky-coloured haze and the AgX tone curve. Every value is the game's.

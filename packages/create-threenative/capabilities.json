@@ -2366,6 +2366,22 @@
     {
       "aliases": [],
       "constraints": [
+        "inputs must be finite and non-negative; sizes must be positive and angle < PI/2 radians"
+      ],
+      "example": "const radius = penumbraUv(10, angle, 40, 2048);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function penumbraUv( gapMetres: number, sourceAngleRad: number, frustumWidthMetres: number, mapSize: number, ): number { … }",
+      "situations": ["measure a source-angle shadow's filter radius without a GPU"],
+      "summary": "Convert world-space caster gap to a shadow UV radius, floored at one texel.",
+      "supersedes": [],
+      "symbol": "penumbraUv"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the capture is bounded and incomplete when the backend cannot expose an observation"
       ],
       "example": "const capture = game.runtime.pipelineCensus?.();\n// The game normally reaches this through `runtime.pipelineCensus`; direct construction exists\n// for renderer adapters and contract tests, not for gameplay.",
@@ -3021,6 +3037,40 @@
     {
       "aliases": [],
       "constraints": [
+        "use an initialized WebGPURenderer; the game supplies the sky and assigns the texture",
+        "call update once per frame on an initialized WebGPURenderer; assign texture after it returns true",
+        "sky nodes use a world-space view direction; keep supplied sky resources alive until dispose"
+      ],
+      "example": "const capture = new SkyCapture(renderer, skyNode); if (capture.update(sun)) scene.environment = capture.texture;",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class SkyCapture { … }",
+      "situations": ["light a scene from a procedural sky when its sun moves"],
+      "summary": "Capture game-owned sky radiance into a sun-triggered, frame-budgeted environment map.",
+      "supersedes": [],
+      "symbol": "SkyCapture"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "use an initialized WebGPURenderer; the game supplies the sky and assigns the texture"
+      ],
+      "example": "const capture = new SkyCapture(renderer, skyNode); if (capture.update(sun)) scene.environment = capture.texture;",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class SkyCaptureSchedule { … }",
+      "situations": ["light a scene from a procedural sky when its sun moves"],
+      "summary": "Capture game-owned sky radiance into a sun-triggered, frame-budgeted environment map.",
+      "supersedes": [],
+      "symbol": "SkyCaptureSchedule"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "pass the measured display rate when you have one; without it the answer is the 60 fallback and says so"
       ],
       "example": "resolveTargetFps(config, getPlatform()).targetFps;",
@@ -3114,6 +3164,22 @@
       "summary": "Calculate solar elevation and azimuth for one UTC date.",
       "supersedes": [],
       "symbol": "solarPositionAt"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "sourceAngleRad is required, in radians in [0, PI/2); orthographic depth shadows only, not VSM"
+      ],
+      "example": "sun.shadow.filterNode = sourceAngleShadowFilter({ sourceAngleRad: angle });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function sourceAngleShadowFilter( { … }",
+      "situations": ["soften a directional shadow as the caster-receiver gap grows"],
+      "summary": "Source-angle blocker search and variable-radius PCF on three's shadow map.",
+      "supersedes": [],
+      "symbol": "sourceAngleShadowFilter"
     },
     {
       "aliases": [],

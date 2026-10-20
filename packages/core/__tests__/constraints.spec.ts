@@ -98,6 +98,12 @@ describe("core constraints", () => {
           // appearance inputs without constructing or choosing any visual output.
           file !== "pipeline-census.ts" &&
           file !== "render/probe-volume.ts" &&
+          // PRD-633 captures the game's sky; its only authored surface masks the lower hemisphere
+          // with black when requested. It supplies no sky, scattering coefficient or lighting look.
+          file !== "render/sky-capture.ts" &&
+          // PRD-634 widens three's shadow filter by gap × tan(angle); the angle and every light,
+          // map size and shadow camera come from the game. It decides no edge width of its own.
+          file !== "render/soft-shadow.ts" &&
           // The virtual shadow attaches to a light and renders depth through three's own
           // ShadowNode; it creates no material, light, colour or filter of its own.
           file !== "render/virtual-shadow.ts" &&

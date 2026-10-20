@@ -221,9 +221,12 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
               options.cells.has(`${sun.name}/${pose.name}`),
           );
           if (wanted.length === 0) continue;
-          await page.goto(`${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}`, {
-            waitUntil: "domcontentloaded",
-          });
+          await page.goto(
+            `${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}`,
+            {
+              waitUntil: "domcontentloaded",
+            },
+          );
           await page.addStyleTag({ content: HIDE_UI });
           await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 120_000 });
           await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 30_000 });
