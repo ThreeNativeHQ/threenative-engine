@@ -1,0 +1,490 @@
+// Generated for you. The realistic sea's tuning and its entire look live in these files, and
+// ThreeNative does not read them. `SpectralOcean` runs the simulation and draws nothing; this file
+// is the mesh, the material, the colours and the shading decisions, and every number in it is yours
+// to change: the spectrum in `realisticSpectrum.ts`, the foam's memory in `realisticSeaMaps.ts`.
+//
+// What it adds to a plain spectral sea, each one adapted from web-ocean (MIT, Copyright (c) 2026
+// Maksymilian Dendura; see REALISTIC-OCEAN-LICENSE.txt):
+//  - a fetch-limited JONSWAP wind sea plus an independently directed swell, scaled to a target
+//    significant wave height, with capillary dispersion at the short end;
+//  - three cascades, so one frame holds a swell, a chop and a skin of ripples at once;
+//  - slope-moment filtering: the slope a pixel is too far away to resolve is not thrown away, it is
+//    spent as roughness, so the sun's glitter path widens with distance instead of vanishing or
+//    shimmering;
+//  - whitecaps that persist and age, from the Jacobian of the horizontal displacement;
+//  - light coming through backlit crests.
+//
+// It composes with the scene it is in. Light, shadow, image-based reflection, fog and tone mapping
+// are the scene's own: this is a standard node material, not a second lighting model.
+import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";
+import { BufferGeometry, Color, Float32BufferAttribute, Mesh, Vector2, Vector3 } from "three";
+import {
+  Fn,
+  abs,
+  cameraPosition,
+  color,
+  dot,
+  float,
+  instancedArray,
+  max,
+  mix,
+  mx_noise_float,
+  normalWorld,
+  oneMinus,
+  positionGeometry,
+  positionLocal,
+  positionWorld,
+  pow,
+  saturate,
+  smoothstep,
+  transformNormalToView,
+  uniform,
+  vec2,
+  vec3,
+} from "three/tsl";
+import type { Node, StorageBufferNode } from "three/webgpu";
+import { MeshStandardNodeMaterial } from "three/webgpu";
+import { SeaMaps, sampleBilinear, sampleBilinearFloat } from "./realisticSeaMaps.js";
+import {
+  type ISeaState,
+  capillaryCrossover,
+  seaEnergy,
+  slopeVarianceTable,
+} from "./realisticSpectrum.js";
+
+/**
+ * The sea state. Every number is this game's.
+ *
+ * `wind.fetch` and `wind.speed` set how long and how tall the wind sea is; `swell` is a second,
+ * straighter-crested train that does not care where the wind is blowing; `waveHeight` scales the
+ * whole thing so the sea is as tall as you say it is, whatever the grid resolution.
+ */
+export const SEA_STATE: ISeaState = {
+  wind: { speed: 9, direction: 0.55, fetch: 60_000, peakEnhancement: 3.3 },
+  swell: { height: 0.7, direction: -0.3, peakFrequency: 0.62, spreading: 16 },
+  gravity: 9.81,
+  surfaceTension: 7.4e-5,
+  shortWaveCut: 0.04,
+  waveHeight: 1.15,
+};
+
+/**
+ * The cascades, largest patch first. Each one carries only the wavelengths the next-larger patch
+ * cannot resolve, so no wave is counted twice. 256 / 48 / 9 metres on a 128 grid resolves from a
+ * 4 m swell down to a 14 cm ripple. The first patch also sets the spacing of the CPU height copy
+ * (`readbackResolution` over this), which is why it is not larger: a ship cannot float on a grid
+ * coarser than it is long.
+ */
+export const SEA_CASCADES = [{ patchSize: 256 }, { patchSize: 48 }, { patchSize: 9 }] as const;
+
+export const SEA = {
+  cascades: SEA_CASCADES,
+  resolution: 128,
+  // Horizontal displacement scale. Above zero sharpens crests, which is also what folds them into
+  // whitecaps, so it is the foam's input as much as the shape's.
+  choppiness: 1.15,
+  seed: 20_261_020,
+  // 128 across a 256 m patch is one height every two metres. See `SEA_CASCADES`.
+  readbackResolution: 128,
+  readbackEveryFrames: 3,
+  gravity: SEA_STATE.gravity,
+  windSpeed: SEA_STATE.wind.speed,
+  windDirection: SEA_STATE.wind.direction,
+  // Ignored while `energy` is set, and required by the option list: there are no defaults.
+  amplitude: 1,
+  directionality: 1,
+  smallWaveCutoff: SEA_STATE.shortWaveCut,
+} satisfies Omit<ISpectralOceanOptions, "energy" | "capillaryWavenumber">;
+
+/** The whitecaps' memory. */
+export const FOAM = {
+  /** Seconds for a patch of foam to halve. */
+  halfLife: 4,
+  /** Jacobian below which water is breaking. */
+  threshold: 0.78,
+  gain: 4,
+  /** Foam grids ride on these cascades, finest first. The second is the coarse, far one. */
+  cascades: [1, 0] as readonly number[],
+} as const;
+
+/** Looks: colours are linear RGB, sizes are metres. */
+export const LOOK = {
+  deep: 0x0a3a4a,
+  shallow: 0x1b6f7a,
+  foam: 0xe6eef0,
+  /** Light coming through a thin backlit crest. */
+  subsurface: 0x2f9a78,
+  /** Radiance of the sun for the crest glow only. The scene's own light lights everything else. */
+  sunRadiance: [3.2, 2.9, 2.4] as readonly [number, number, number],
+  /** Fraction of the mirrored hull and marks that shows. A render target is written linear. */
+  mirrorGain: 0.55,
+  /** Image-based reflection scale on the standard material. */
+  environmentIntensity: 0.55,
+  /** The glitter path never narrows past this roughness, however flat the resolved water. */
+  roughnessFloor: 0.06,
+  /** Where the sea stops being a skin of ripples and becomes sub-pixel slope, in metres of pixel. */
+  slopeTable: { count: 64, nearest: 0.02, farthest: 400 },
+} as const;
+
+/** The disc's geometry: rings of quads whose spacing grows with radius, centred on the ship. */
+export const SURFACE = { segments: 160, rings: 96, inner: 1.5, reach: 6_000 } as const;
+
+/** How far astern a wake reaches, how fast it opens and how wide it is at the transom. */
+export const WAKE = { length: 26, spread: 0.21, waist: 0.5 } as const;
+/** The ring of broken water at a hull's waterline, as half its length and beam in metres. */
+export const HULL_WASH = { halfBeam: 0.62, halfLength: 2.35 } as const;
+
+/**
+ * The one thing the material asks of a planar mirror. Structural, so the type is not an import.
+ * Pass `undefined` to the surface for none; the image-based sky reflection stays.
+ */
+export interface ISeaMirror {
+  reflectionAt(offset?: Node<"vec2">): Node<"vec3">;
+  dispose(): void;
+}
+
+export interface IRealisticWaterSurface {
+  readonly mesh: Mesh;
+  /** Move the drawn sea to follow a position, keeping the waves anchored to the world. */
+  follow(x: number, z: number): void;
+  /** The sea's own clock, in seconds. */
+  advance(elapsed: number): void;
+  /** Where a hull is, which way it points and how hard it pushes water aside (0..1). */
+  wake(x: number, z: number, forwardX: number, forwardZ: number, strength: number): void;
+  /** Direction toward the sun (any length) and the radiance the crest glow uses. */
+  setSun(
+    direction: readonly [number, number, number],
+    radiance?: readonly [number, number, number],
+  ): void;
+  /** Forget every whitecap, for a teleport or a restart. */
+  reset(): void;
+  dispose(): void;
+}
+
+/** The simulation. Hand it to `ctx.add` and it runs; it draws nothing. */
+export function createRealisticSea(state: ISeaState = SEA_STATE): SpectralOcean {
+  const patchSizes = SEA.cascades.map((cascade) => cascade.patchSize);
+  return new SpectralOcean({
+    ...SEA,
+    cascades: SEA.cascades,
+    windSpeed: state.wind.speed,
+    windDirection: state.wind.direction,
+    gravity: state.gravity,
+    smallWaveCutoff: state.shortWaveCut,
+    energy: seaEnergy(state, SEA.resolution, patchSizes),
+    capillaryWavenumber: capillaryCrossover(state.gravity, state.surfaceTension),
+  });
+}
+
+/** The derivative and foam grids the material reads. Add it to the scene after the sea. */
+export function createRealisticMaps(ocean: SpectralOcean): SeaMaps {
+  return new SeaMaps(ocean, {
+    foamHalfLife: FOAM.halfLife,
+    foamThreshold: FOAM.threshold,
+    foamGain: FOAM.gain,
+    foamCascades: FOAM.cascades,
+  });
+}
+
+/** The logarithmic disc, in the sea patch's own space: one vertex at the centre, then the rings. */
+function seaDisc(): BufferGeometry {
+  const { inner, reach, rings, segments } = SURFACE;
+  const growth = Math.log(1 + reach / inner) / rings;
+  const positions: number[] = [0, 0, 0];
+  const indices: number[] = [];
+  for (let ring = 0; ring < rings; ring += 1) {
+    const radius = inner * (Math.exp((ring + 1) * growth) - 1);
+    for (let step = 0; step < segments; step += 1) {
+      const angle = (step / segments) * Math.PI * 2;
+      positions.push(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+    }
+  }
+  for (let step = 0; step < segments; step += 1) {
+    indices.push(0, 1 + ((step + 1) % segments), 1 + step);
+  }
+  for (let ring = 1; ring < rings; ring += 1) {
+    for (let step = 0; step < segments; step += 1) {
+      const near = 1 + (ring - 1) * segments + step;
+      const nearNext = 1 + (ring - 1) * segments + ((step + 1) % segments);
+      const far = 1 + ring * segments + step;
+      const farNext = 1 + ring * segments + ((step + 1) % segments);
+      indices.push(near, farNext, far, near, nearNext, farNext);
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+export interface IRealisticWaterOptions {
+  /** A CPU rasteriser cannot draw the full graph fast enough for the height copy to land. */
+  readonly software?: boolean;
+  /** The spectrum the sea was built from, so the slope table matches it. Defaults to `SEA_STATE`. */
+  readonly state?: ISeaState;
+}
+
+export function createRealisticWaterMesh(
+  ocean: SpectralOcean,
+  maps: SeaMaps,
+  mirror: ISeaMirror | undefined,
+  options: IRealisticWaterOptions = {},
+): IRealisticWaterSurface {
+  const cheap = options.software === true;
+  const state = options.state ?? SEA_STATE;
+  const geometry = seaDisc();
+  const size = ocean.resolution;
+  const cascadeCount = ocean.cascades.length;
+  const patch = (c: number) => ocean.cascadePatchSize(c);
+  const texel = (c: number) => patch(c) / size;
+
+  const seaOrigin = uniform(new Vector2());
+  const seaTime = uniform(0);
+  const shipOrigin = uniform(new Vector2());
+  const shipForward = uniform(new Vector2(0, -1));
+  const wakeStrength = uniform(0);
+  const sunDirection = uniform(new Vector3(0.4, 0.8, 0.3).normalize());
+  const sunRadiance = uniform(new Vector3(...LOOK.sunRadiance));
+
+  // The glitter table: the slope carried by everything a pixel is too far away to resolve.
+  const table = slopeVarianceTable(
+    seaEnergy(
+      state,
+      size,
+      ocean.cascades.map((_, c) => patch(c)),
+    ),
+    LOOK.slopeTable,
+  );
+  const tableBuffer = instancedArray(table, "float") as StorageBufferNode<"float">;
+
+  const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.2 });
+  material.envMapIntensity = LOOK.environmentIntensity;
+
+  // The rest position of this fragment, straight from the disc's own attribute. `positionLocal` is
+  // overwritten by `positionNode`, so reading it in the fragment would hand back the displaced one.
+  const rest = vec2(
+    positionGeometry.x.add(seaOrigin.x),
+    positionGeometry.z.add(seaOrigin.y),
+  ).toVarying();
+  const restX = rest.x;
+  const restZ = rest.y;
+
+  // Geometry: the cascades the mesh can resolve. The finest is a few centimetres tall and only
+  // matters beside the hull, so it fades out with distance rather than aliasing across the disc.
+  const eye = cameraPosition.sub(positionWorld);
+  const distance = eye.length();
+  const rangeToRest = cameraPosition.sub(vec3(restX, 0, restZ)).length();
+  const displacementAt = (c: number, weight: Node<"float">) =>
+    sampleBilinear(ocean.cascadeDisplacement(c), size, patch(c), restX, restZ).xyz.mul(weight);
+  let offset = displacementAt(0, float(1));
+  for (let c = 1; c < cascadeCount; c += 1) {
+    const fade =
+      c === cascadeCount - 1 ? oneMinus(smoothstep(float(8), float(28), rangeToRest)) : float(1);
+    offset = offset.add(displacementAt(c, fade));
+  }
+  material.positionNode = positionLocal.add(offset);
+
+  const footprint = positionWorld.dFdx().length().max(positionWorld.dFdy().length());
+
+  // What a pixel can resolve: each cascade contributes its slope while the pixel is finer than the
+  // cascade's own texel, and is faded out above that. The fade is not a loss: the table below hands
+  // the same variance back as roughness.
+  const surface = Fn(() => {
+    const slope = vec2(0, 0).toVar();
+    const jxx = float(0).toVar();
+    const jzz = float(0).toVar();
+    const jxz = float(0).toVar();
+    for (let c = 0; c < cascadeCount; c += 1) {
+      const weight = oneMinus(smoothstep(float(texel(c) * 0.5), float(texel(c) * 2), footprint));
+      const read = sampleBilinear(maps.slope(c), size, patch(c), restX, restZ).mul(weight);
+      slope.addAssign(read.xy);
+      jxx.addAssign(read.z);
+      jzz.addAssign(read.w);
+      jxz.addAssign(sampleBilinear(maps.shear(c), size, patch(c), restX, restZ).x.mul(weight));
+    }
+    const jx = max(jxx.add(1), 0.15);
+    const jz = max(jzz.add(1), 0.15);
+    const jacobian = jxx.add(1).mul(jzz.add(1)).sub(jxz.mul(jxz));
+    return vec3(slope.x.div(jx), slope.y.div(jz), jacobian);
+  })().toVar();
+
+  const worldSlope = vec2(surface.x, surface.y);
+  const jacobian = surface.z;
+
+  if (!cheap) {
+    material.normalNode = transformNormalToView(
+      vec3(worldSlope.x.negate(), 1, worldSlope.y.negate()).normalize(),
+    );
+  }
+
+  // The unresolved slope, as roughness. `alpha = sqrt(mean-square slope)`, and three's roughness is
+  // `sqrt(alpha)`, so the fourth root of the table entry.
+  const tableIndex = footprint
+    .max(LOOK.slopeTable.nearest)
+    .div(LOOK.slopeTable.nearest)
+    .log()
+    .div(Math.log(LOOK.slopeTable.farthest / LOOK.slopeTable.nearest))
+    .clamp(0, 1)
+    .mul(LOOK.slopeTable.count - 1);
+  const lower = tableIndex.floor();
+  const unresolved = mix(
+    tableBuffer.element(lower.toUint()),
+    tableBuffer.element(
+      lower
+        .add(1)
+        .min(LOOK.slopeTable.count - 1)
+        .toUint(),
+    ),
+    tableIndex.sub(lower),
+  );
+
+  // Foam: persistent grids, near (fine) and far (coarse), thresholded by a tearing pattern so it is
+  // patches with water between them rather than a decal.
+  const nearFoam = sampleBilinearFloat(
+    maps.foam(0),
+    size,
+    patch(FOAM.cascades[0] as number),
+    restX,
+    restZ,
+  );
+  const farFoam = sampleBilinearFloat(
+    maps.foam(1),
+    size,
+    patch(FOAM.cascades[1] as number),
+    restX,
+    restZ,
+  );
+  const foamBlend = smoothstep(float(60), float(220), distance);
+  const fresh = saturate(float(FOAM.threshold).sub(jacobian).mul(FOAM.gain));
+  const cover = max(mix(nearFoam, farFoam, foamBlend), fresh.mul(oneMinus(foamBlend)));
+  const pattern = Fn(() => {
+    const p = vec2(restX, restZ);
+    const a = mx_noise_float(vec3(p.mul(0.9), seaTime.mul(0.05)));
+    const b = mx_noise_float(vec3(p.mul(2.7), seaTime.mul(0.08)));
+    const c = mx_noise_float(vec3(p.mul(8.1), 0));
+    return a.mul(0.5).add(b.mul(0.3)).add(c.mul(0.2)).mul(0.5).add(0.5);
+  })();
+  const edge = pattern.fwidth().add(0.03);
+  const soft = float(0.05).add(oneMinus(saturate(cover)).mul(0.14));
+  const whitecap = smoothstep(
+    oneMinus(cover).sub(edge).sub(soft),
+    oneMinus(cover).add(edge).add(soft),
+    pattern,
+  )
+    .mul(smoothstep(float(0), float(0.5), cover))
+    .clamp(0, 1);
+
+  // The wake, computed rather than drawn: the surface knows its own world position, so it can be
+  // told where a hull is and work out whether it is standing in its wake. Everything is in the
+  // hull's frame, so the wedge is a comparison rather than a rotation.
+  const toShip = vec2(positionWorld.x.sub(shipOrigin.x), positionWorld.z.sub(shipOrigin.y));
+  const starboard = vec2(shipForward.y.negate(), shipForward.x);
+  const astern = dot(toShip, shipForward).negate();
+  const across = abs(dot(toShip, starboard));
+  const halfWidth = astern.mul(WAKE.spread).add(WAKE.waist);
+  const churn = smoothstep(halfWidth.mul(0.62), halfWidth.mul(0.12), across).mul(0.6);
+  const arms = smoothstep(halfWidth.mul(0.5), float(0), abs(across.sub(halfWidth)));
+  const reach = smoothstep(float(WAKE.length), float(0), astern);
+  const begins = smoothstep(float(-1.4), float(1.6), astern);
+  const tear = smoothstep(float(0.35), float(0.7), pattern);
+  const wake = max(churn, arms).mul(reach).mul(begins).mul(wakeStrength).mul(tear).mul(0.78);
+  const plan = vec2(astern.div(HULL_WASH.halfLength), across.div(HULL_WASH.halfBeam));
+  const wash = smoothstep(float(1.34), float(0.94), plan.length()).mul(
+    smoothstep(float(0.62), float(0.94), plan.length()),
+  );
+  const bow = smoothstep(float(-1.4), float(-2.5), astern)
+    .mul(smoothstep(float(-5), float(-3.5), astern))
+    .mul(smoothstep(float(1.3), float(0.2), across))
+    .mul(wakeStrength)
+    .mul(tear);
+  const broken = max(max(wake, bow), wash.mul(tear).mul(wakeStrength));
+  const foamMask = max(whitecap, broken);
+
+  // Colour by height, deep in the troughs and lit on the shoulders. These bands are metres of wave
+  // height, so they move with `waveHeight`.
+  const height = positionWorld.y;
+  const reference = float(state.waveHeight ?? 1);
+  const shade = smoothstep(reference.mul(-0.45), reference.mul(0.4), height);
+  const water = mix(color(LOOK.deep), color(LOOK.shallow), shade);
+  material.colorNode = cheap ? water : mix(water, color(LOOK.foam), foamMask.mul(0.95));
+
+  if (!cheap) {
+    // Light coming through a thin backlit crest: it needs a face turned away from the sun, a
+    // height near the surface and the eye on the far side, and it fades with distance.
+    const toEye = eye.normalize();
+    const crest = saturate(height.sub(reference.mul(0.05)).div(reference.mul(0.8)));
+    const toSun = max(dot(sunDirection, toEye.negate()), 0);
+    const thin = pow(saturate(float(0.5).sub(dot(sunDirection, normalWorld).mul(0.5))), 3);
+    const glow = crest.mul(crest).mul(pow(toSun, 4)).mul(thin).mul(distance.div(-600).exp());
+    const tint = new Color(LOOK.subsurface);
+    const subsurface = vec3(tint.r, tint.g, tint.b)
+      .mul(sunRadiance)
+      .mul(glow)
+      .mul(oneMinus(foamMask));
+
+    // The hull, the marks and the headland, in the water, sharp: the one thing a prefiltered
+    // environment cannot do. Fresnel decides how much, as it does for the sky.
+    const facing = saturate(dot(normalWorld, toEye));
+    const fresnel = pow(oneMinus(facing), float(5)).mul(0.97963).add(0.02037);
+    material.emissiveNode =
+      mirror === undefined
+        ? subsurface
+        : subsurface.add(
+            mirror
+              .reflectionAt(normalWorld.xz.mul(0.02))
+              .mul(LOOK.mirrorGain)
+              .mul(fresnel)
+              .mul(oneMinus(foamMask.mul(0.75))),
+          );
+  }
+
+  // Roughness is spent, not lost: the unresolved slope reappears here, and broken water is not a
+  // mirror either.
+  if (!cheap) {
+    const filtered = unresolved.max(0).sqrt().sqrt();
+    material.roughnessNode = max(max(filtered, float(LOOK.roughnessFloor)), foamMask.mul(0.9));
+  }
+
+  const mesh = new Mesh(geometry, material);
+  mesh.receiveShadow = true;
+  mesh.frustumCulled = false;
+  mesh.name = "realistic-sea-surface";
+
+  return {
+    mesh,
+    advance(elapsed: number): void {
+      seaTime.value = elapsed;
+      maps.advance(elapsed);
+    },
+    wake(x: number, z: number, forwardX: number, forwardZ: number, strength: number): void {
+      shipOrigin.value.set(x, z);
+      shipForward.value.set(forwardX, forwardZ);
+      wakeStrength.value = Math.max(0, Math.min(1, strength));
+    },
+    // Snapped to whole metres: following continuously would slide every vertex through the wave
+    // field by a fraction of its size each frame and the surface would crawl.
+    follow(x: number, z: number): void {
+      const snappedX = Math.round(x);
+      const snappedZ = Math.round(z);
+      mesh.position.set(snappedX, 0, snappedZ);
+      seaOrigin.value.set(snappedX, snappedZ);
+    },
+    setSun(direction, radiance): void {
+      const length = Math.hypot(direction[0], direction[1], direction[2]);
+      if (!(length > 0) || !Number.isFinite(length))
+        throw new Error("Realistic ocean sun direction must be a finite, non-zero vector.");
+      sunDirection.value.set(direction[0] / length, direction[1] / length, direction[2] / length);
+      if (radiance !== undefined) sunRadiance.value.set(...radiance);
+    },
+    reset(): void {
+      maps.reset();
+    },
+    dispose(): void {
+      mirror?.dispose();
+      geometry.dispose();
+      material.dispose();
+      tableBuffer.value.dispose();
+    },
+  };
+}
