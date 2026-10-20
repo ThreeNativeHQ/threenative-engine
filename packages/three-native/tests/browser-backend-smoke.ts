@@ -1427,7 +1427,15 @@ if (runtime.tsl !== undefined) {
     tsl.texture({ name: "colour" }, tsl.uv()),
     tsl.texture({ name: "depth" }, tsl.uv()),
     tsl.texture({ name: "normal" }, tsl.uv()),
-    { metalnessNode: tsl.float(1), roughnessNode: tsl.float(0.1), reflectNonMetals: true },
+    {
+      camera: {
+        near: 0.1,
+        projectionMatrix: { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, -1, 0, 0, -0.1, 0] },
+      },
+      metalnessNode: tsl.float(1),
+      roughnessNode: tsl.float(0.1),
+      reflectNonMetals: true,
+    },
   );
   check(typeof reflections[TSL_NODE] === "number", "ssr builds a render-texture node");
   check(reflections.maxDistance.value === 1, "ssr maxDistance defaults to three's 1");

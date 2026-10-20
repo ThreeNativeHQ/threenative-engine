@@ -33,9 +33,6 @@ export interface IScreenSpaceTsl {
     options: { start: TslNode; end: TslNode; type: string; condition: string },
     body: (indices: { i: TslNode }) => void,
   ) => void;
-  readonly cameraFar: TslNode;
-  readonly cameraNear: TslNode;
-  readonly cameraProjectionMatrix: TslNode;
   readonly clamp: (value: TslNode, low: TslNode, high: TslNode) => TslNode;
   readonly dot: (a: TslNode, b: TslNode) => TslNode;
   readonly float: (value: TslNode) => TslNode;
@@ -59,7 +56,20 @@ export interface IScreenSpaceTsl {
   readonly vec4: (...values: TslNode[]) => TslNode;
 }
 
+/** The perspective camera the frame draws with: the effect reads its projection each render. */
+export interface IScreenSpaceCamera {
+  readonly near: number;
+  readonly projectionMatrix: { readonly elements: readonly number[] };
+}
+
 export interface IScreenSpaceReflectionOptions {
+  /**
+   * The camera the scene pass draws with. A post effect is drawn through its own full-screen quad, so
+   * the engine's `cameraProjectionMatrix` there is the quad's orthographic camera, not the scene's:
+   * every view/screen mapping built on it is wrong and no ray ever hits (three's SSRNode reads the
+   * scene camera through a reference uniform for the same reason).
+   */
+  readonly camera: IScreenSpaceCamera;
   /** Per-pixel metalness. Missing means every surface is a dielectric. */
   readonly metalnessNode?: TslNode;
   /** Per-pixel roughness. Missing means every surface is a mirror. It blurs the sampled hit. */
@@ -81,10 +91,10 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
     colorNode: TslNode,
     depthNode: TslNode,
     normalNode: TslNode,
-    options: IScreenSpaceReflectionOptions = {},
+    options: IScreenSpaceReflectionOptions,
   ): TslNode {
     // Read here, not at definition: the camera inputs are lazy engine nodes.
-    const { Break, Fn, If, Loop, cameraNear, cameraProjectionMatrix, clamp, dot, float, int } = tsl;
+    const { Break, Fn, If, Loop, clamp, dot, float, int } = tsl;
     const { max, min, mix, normalize, reflect, rtt, smoothstep, uniform, uv, vec2, vec3, vec4 } =
       tsl;
     const maxDistance = uniform(1);
@@ -94,12 +104,22 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
     const roughness = options.roughnessNode ?? float(0);
     const metalness = options.metalnessNode ?? float(0);
 
-    // The projection matrix's columns carry everything a view <-> screen mapping needs of a
-    // perspective camera: P * e_k is column k. Depth is (A z + B) / -z, so z = -B / (depth + A).
-    const column0 = cameraProjectionMatrix.mul(vec4(1, 0, 0, 0));
-    const column1 = cameraProjectionMatrix.mul(vec4(0, 1, 0, 0));
-    const column2 = cameraProjectionMatrix.mul(vec4(0, 0, 1, 0));
-    const column3 = cameraProjectionMatrix.mul(vec4(0, 0, 0, 1));
+    // The projection terms a view <-> screen mapping of a perspective camera needs, read from the scene
+    // camera before every render: column k of P (P * e_k) is e[4k..4k+3] of its column-major elements.
+    // Depth is (A z + B) / -z, so z = -B / (depth + A).
+    const camera = options.camera;
+    if (camera?.projectionMatrix === undefined)
+      throw new TypeError(
+        "TN_NATIVE_SSR_CAMERA: ssr needs options.camera, the camera the scene pass draws with",
+      );
+    const live = (read: () => number): TslNode => uniform(read()).onRenderUpdate(read);
+    const term = (index: number): TslNode =>
+      live(() => camera.projectionMatrix.elements[index] ?? 0);
+    const cameraNear = live(() => camera.near);
+    const column0 = { x: term(0) };
+    const column1 = { y: term(5) };
+    const column2 = { x: term(8), y: term(9), z: term(10) };
+    const column3 = { z: term(14) };
     const viewZ = (depth: TslNode): TslNode => column3.z.negate().div(depth.add(column2.z));
     const viewPosition = (coordinate: TslNode, depth: TslNode): TslNode => {
       const z = viewZ(depth);
@@ -133,6 +153,11 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
         const hitCoordinate = vec2(0, 0).toVar();
         const hitDistance = float(-1).toVar();
         const previous = float(0).toVar();
+        // The sample before: a hit is a crossing from in front of the depth buffer to behind it, and the
+        // buffer's own depth change between the two samples is slack (a floor seen at a grazing angle drops
+        // away faster along the ray than any fixed thickness covers; a depth jump is an edge, not slack).
+        const previousBehind = float(-1).toVar();
+        const previousSceneZ = position.z.toVar();
         Loop({ start: int(0), end: int(STEPS), type: "int", condition: "<" }, ({ i }) => {
           const fraction = float(i).add(1).div(STEPS);
           const travelled = maxDistance.mul(fraction.mul(fraction));
@@ -153,13 +178,17 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
           );
           const sceneDepth = depthNode.sample(screen).r;
           // Positive: the ray is behind the surface the depth buffer holds at that pixel.
-          const behind = viewZ(sceneDepth).sub(point.z);
+          const sceneZ = viewZ(sceneDepth);
+          const behind = sceneZ.sub(point.z);
           const slice = travelled.sub(previous);
+          const drop = sceneZ.sub(previousSceneZ).abs();
+          const slack = drop.lessThan(sceneZ.abs().mul(0.15)).select(drop, float(0));
           If(
             sceneDepth
               .lessThan(1)
               .and(behind.greaterThan(0))
-              .and(behind.lessThan(thickness.add(slice.mul(direction.z.abs())))),
+              .and(previousBehind.lessThanEqual(0))
+              .and(behind.lessThan(thickness.add(slice.mul(direction.z.abs())).add(slack))),
             () => {
               // Bisect the slice [previous, travelled] to put the hit on the surface.
               const low = previous.toVar();
@@ -182,6 +211,8 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
             },
           );
           previous.assign(travelled);
+          previousBehind.assign(behind);
+          previousSceneZ.assign(sceneZ);
         });
 
         If(hitDistance.greaterThanEqual(0), () => {
