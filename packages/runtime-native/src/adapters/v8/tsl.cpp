@@ -319,6 +319,11 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(0); statement();
         return result(scoped(name.c_str(), nullptr, {}));
     }
+    if (name == "increment" || name == "decrement" || name == "incrementBefore" || name == "decrementBefore") {
+        arity(call.method ? 0 : 1); statement();
+        return result(scoped(name.c_str(), call.method ? &receiver : nullptr,
+            call.method ? std::vector<abi::TslArg>{} : std::vector<abi::TslArg>{abi::TslArg::of(arg(0))}));
+    }
     if (name == "toVar") {
         arity(0);
         return result(scoped("toVar", &receiver, {}));
@@ -582,7 +587,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "invoke",
                              "newStruct",
                              "get",
-                             "renderOutput"})
+                             "renderOutput", "radians", "degrees", "log", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "round", "reciprocal", "trunc", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "refract", "faceForward", "difference", "saturate", "transpose", "determinant", "inverse", "rand", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement"})
         node->Set(str(isolate_, name), function(context, name, true));
     // three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, read as xyzw lanes.
     const std::function<void(const char*, const std::string&, const std::string&)> swizzles =
@@ -610,7 +615,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "toneMappingColor", "ao", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform",
                              "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
-                             "atomicAdd", "atomicStore", "atomicLoad", "lightShadowMatrix", "wgslFunction", "texture3D", "getViewPosition", "transformNormalToView", "property"})
+                             "atomicAdd", "atomicStore", "atomicLoad", "lightShadowMatrix", "wgslFunction", "texture3D", "getViewPosition", "transformNormalToView", "property", "radians", "degrees", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "sign", "round", "reciprocal", "trunc", "transpose", "determinant", "inverse", "difference", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "cbrt", "saturate", "refract", "faceForward", "rand", "mixElement", "smoothstepElement", "stepElement", "faceforward", "inversesqrt", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement", "mat3", "mat4"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     for (auto& [name, node] : abi::tslConstants())

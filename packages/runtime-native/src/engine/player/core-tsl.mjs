@@ -90,3 +90,14 @@ export function texture(value, ...args) {
     },
   });
 }
+
+export const {
+  EPSILON, INFINITY, PI, PI2, TWO_PI, HALF_PI, radians,
+  degrees, inverseSqrt, ceil, sinh, cosh, tan, tanh,
+  asin, asinh, acos, acosh, atanh, sign, round,
+  reciprocal, trunc, transpose, determinant, inverse, difference, pow2,
+  pow3, pow4, transformNormalByViewMatrix, transformNormalByInverseViewMatrix, cbrt, refract, faceForward,
+  rand, mixElement, smoothstepElement, stepElement, faceforward, inversesqrt, notEqual,
+  xor, bitAnd, bitNot, bitOr, bitXor, shiftLeft, shiftRight,
+  incrementBefore, decrementBefore, increment, decrement, mat3, mat4,
+} = globalThis.tsl;

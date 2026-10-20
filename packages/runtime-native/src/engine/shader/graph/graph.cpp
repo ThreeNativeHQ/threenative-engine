@@ -325,7 +325,7 @@ ExprId Lowerer::emit(Node node) {
                                    (a.isScalar() || b.isScalar());
                 if (d.bits == 1 || widen) {
                     const auto target = a.rows >= b.rows ? a : b;
-                    for (auto& id : ids) if (program_.expr(id).type != target) id = program_.construct(target, {id});
+                    for (auto& id : ids) if (program_.expr(id).type != target) id = convert(id, target);
                 }
             }
             return program_.call(d.name, ids);

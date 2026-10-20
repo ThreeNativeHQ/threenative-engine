@@ -11,6 +11,7 @@
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/graph/post_effects.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <functional>
@@ -736,15 +737,6 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(0);
         return name == "normalGeometry" ? g::attribute("normal", Type::vec(3)) : g::attribute("tangent", Type::vec(4));
     }
-    // transformDirection(a, b): normalize((a * b).xyz), the non-matrix side widened to vec4(v, 0)
-    // (MathNode TRANSFORM_DIRECTION); `cameraViewMatrix.transformDirection(d)` is the method form.
-    if (name == "transformDirection") {
-        arity(method ? 1 : 2);
-        auto a = lhs(), b = rhs();
-        if (a->type.isMatrix()) b = g::vec4({b, g::float_(0)});
-        else a = g::vec4({a, g::float_(0)});
-        return g::normalize(g::swizzle(g::mul(a, b), "xyz"));
-    }
     // varying(node, name?): `node` computed in the vertex stage and interpolated to the fragment.
     if (name == "varying") {
         if (args.empty() || args.size() > 2) throw std::runtime_error("expected a node and an optional name");
@@ -832,6 +824,31 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // r185's mat2 (ConvertType): two column vectors; four plain numbers build a Matrix2, whose constructor is
     // row-major, so the columns are (a, c) and (b, d); four scalars with any node in them are WGSL's
     // column-major constructor.
+    if (!method && (name == "mat3" || name == "mat4")) {
+        const uint8_t n = name == "mat3" ? 3 : 4;
+        auto matrix = std::make_shared<g::NodeData>();
+        matrix->kind = g::Kind::Join; matrix->type = Type::mat(n, n);
+        if (args.empty()) {
+            for (size_t c = 0; c < n; ++c) {
+                auto column = std::make_shared<g::NodeData>(); column->kind = g::Kind::Join; column->type = Type::vec(n);
+                for (size_t r = 0; r < n; ++r) column->args.push_back(g::float_(r == c ? 1 : 0));
+                matrix->args.push_back(column);
+            }
+        } else if (args.size() == 1) {
+            auto converted = std::make_shared<g::NodeData>(); converted->kind = g::Kind::Convert;
+            converted->type = matrix->type; converted->args = {arg(0)};
+            return converted;
+        } else if (args.size() == n) { for (size_t i = 0; i < n; ++i) matrix->args.push_back(arg(i)); }
+        else if (args.size() == n * n) {
+            const bool numbers = std::all_of(args.begin(), args.end(), [](const TslArg& a) { return a.kind == TslArg::Kind::Number; });
+            for (size_t c = 0; c < n; ++c) {
+                auto column = std::make_shared<g::NodeData>(); column->kind = g::Kind::Join; column->type = Type::vec(n);
+                for (size_t r = 0; r < n; ++r) column->args.push_back(arg(numbers ? r * n + c : c * n + r));
+                matrix->args.push_back(column);
+            }
+        } else throw std::runtime_error("TN_NATIVE_TSL_TYPE: " + name + " requires columns or scalar components");
+        return matrix;
+    }
     if (name == "mat2") {
         if (args.size() != 2 && args.size() != 4) throw std::runtime_error("mat2 takes two columns or four scalars");
         if (args.size() == 2) return g::mat2({arg(0), arg(1)});
@@ -865,6 +882,31 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (method && name == "step") {
         arity(1);
         return g::step(arg(0), lhs());
+    }
+    // MathNode / OperatorNode names share one typed IR on Wasm, V8 and serialized graphs.
+    const auto math = [&](const std::string& operation, size_t operands) -> g::Node {
+        arity(operands - (method ? 1 : 0));
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Math;
+        node->name = operation;
+        if (method) node->args.push_back(lhs());
+        for (size_t i = 0; i < args.size(); ++i) node->args.push_back(arg(i));
+        return node;
+    };
+    for (const char* op : {"acos", "asin", "tan", "ceil", "round", "trunc", "inverseSqrt", "inversesqrt", "reciprocal", "radians", "degrees", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "saturate", "pow2", "pow3", "pow4", "transpose", "determinant", "inverse", "rand", "bitNot"})
+        if (name == op) return math(name, 1);
+    for (const char* op : {"difference", "transformDirection", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "xor", "bitAnd", "bitOr", "bitXor", "shiftLeft", "shiftRight", "stepElement"})
+        if (name == op) return math(name, 2);
+    for (const char* op : {"refract", "faceForward", "faceforward", "mixElement", "smoothstepElement"})
+        if (name == op) return math(name, 3);
+    if ((name == "add" || name == "sub" || name == "mul" || name == "div" || name == "min" || name == "max" ||
+         name == "and" || name == "or") && args.size() > (method ? 1u : 2u)) {
+        g::Node result = lhs();
+        for (size_t i = method ? 0 : 1; i < args.size(); ++i) {
+            const TslArg previous = TslArg::of(result);
+            result = tslCall(name, &previous, {args[i]}, serial);
+        }
+        return result;
     }
 #define BINARY(symbol)                                                                                                 \
     if (name == #symbol) {                                                                                             \
@@ -1053,7 +1095,10 @@ double tslEffectParameter(const g::Node& node, const std::string& name, const do
 }
 
 std::vector<std::pair<std::string, g::Node>> tslConstants() {
-    std::vector<std::pair<std::string, g::Node>> constants{{"positionLocal", g::positionLocal()},
+    std::vector<std::pair<std::string, g::Node>> constants{{"EPSILON", g::float_(1e-6)}, {"INFINITY", g::float_(1e6)},
+            {"PI", g::float_(3.141592653589793)}, {"PI2", g::float_(6.283185307179586)},
+            {"TWO_PI", g::float_(6.283185307179586)}, {"HALF_PI", g::float_(1.5707963267948966)},
+            {"positionLocal", g::positionLocal()},
             {"positionWorld", g::varying("positionWorld", Type::vec(3))},
             {"normalViewGeometry", g::varying("normalViewGeometry", Type::vec(3))},
             {"cameraViewMatrix", g::uniform("viewMatrix", Type::mat(4, 4))},
@@ -1151,6 +1196,25 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         node->kind = name == "atomicAdd" ? g::Kind::AtomicAdd : g::Kind::AtomicStore;
         node->type = name == "atomicAdd" ? target->type : Type{};
         node->args = {target, input(args[1])}; statements.push_back(node); out = node;
+        return true;
+    }
+    if (name == "increment" || name == "decrement" || name == "incrementBefore" || name == "decrementBefore") {
+        if (receiver) arity(0); else arity(1);
+        const TslArg target = receiver ? *receiver : args[0];
+        if (target.kind != TslArg::Kind::Node || !target.node ||
+            (target.node->kind != g::Kind::Var && target.node->kind != g::Kind::StorageElement))
+            throw std::runtime_error("TN_NATIVE_TSL_TYPE: " + name + " requires a variable or storage element");
+        const bool before = name.ends_with("Before");
+        g::Node previous;
+        if (!before) {
+            uint64_t serial = 0;
+            const TslArg snapshot = TslArg::of(tslCall("int", nullptr, {target}, serial));
+            call("toVar", &snapshot, {}, previous);
+        }
+        uint64_t serial = 0;
+        const TslArg value = TslArg::of(tslCall(name.starts_with("increment") ? "add" : "sub", &target, {TslArg::of(1.0)}, serial));
+        call("assign", &target, {value}, out);
+        if (!before) out = previous;
         return true;
     }
     if (name == "toVar") {

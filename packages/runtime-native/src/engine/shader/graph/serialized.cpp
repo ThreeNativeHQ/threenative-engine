@@ -155,9 +155,16 @@ public:
             else if (operation == "!=") result = equal(equal(args[0], args[1]), boolNode(false));
             else if (operation == "&&") result = select(args[0], args[1], boolNode(false));
             else if (operation == "||") result = select(args[0], boolNode(true), args[1]);
+            else if (operation == "&" || operation == "|" || operation == "^" || operation == "<<" || operation == ">>" || operation == "^^") {
+                auto n = std::make_shared<NodeData>(); n->kind = Kind::Math; n->args = args;
+                n->name = operation == "&" ? "bitAnd" : operation == "|" ? "bitOr" : operation == "^" ? "bitXor" : operation == "<<" ? "shiftLeft" : operation == ">>" ? "shiftRight" : "xor";
+                result = n;
+            }
             else if (operation == ">=" || operation == "<=") {
                 auto n = std::make_shared<NodeData>(); n->kind = Kind::Math; n->name = operation == ">=" ? "greaterEqual" : "lessEqual"; n->args = args; result = n;
             }
+        } else if (kind == "OperatorNode" && arity(1) && operation == "~") {
+            auto n = std::make_shared<NodeData>(); n->kind = Kind::Math; n->name = "bitNot"; n->args = args; result = n;
         } else if (kind == "OperatorNode" && arity(1) && operation == "!") result = equal(args[0], boolNode(false));
         else if (kind == "MathNode" && !args.empty()) {
             if ((operation == "mix" || operation == "clamp" || operation == "smoothstep") && !arity(3))
