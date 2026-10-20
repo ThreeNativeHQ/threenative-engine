@@ -236,3 +236,22 @@ because generated source belongs to the game.
 - 2026-10-19 capability search (root AGENTS.md rule 1): no installed capability converts EV100 or
   lux, or widens a shadow penumbra by source angle. `Atmosphere`, `directionalTransmittance` and
   `Daylight` exist in core and are the starting point for PRD-633.
+- 2026-10-19 (owner interview on PR #541): tune on upstream three.js first, then prove the owned
+  engine per layer with `pnpm parity`. "Match" means the same model: Unreal's units, values and
+  formulas (sun lux, EV100, curve parameters, atmosphere), inside per-layer thresholds, never
+  constants fitted to the four poses. Lighting layers compare scene-linear (the Unreal EXR); the
+  tone curve is checked by applying both curves to the same EXR. Templates take a tuned file only
+  after its layer passes; tuning lives in `scripts/unreal-look/scaffold/render/`. Every sheet
+  shows three.js before, three.js after and Unreal, with the engine named on each frame.
+- 2026-10-19 (gap ownership): a residual that no installed capability closes goes to a PRD. Read
+  the Unreal source for the algorithm and cite the path; never copy its code, shaders or comments.
+  Existing owners, checked before filing: dynamic off-screen GI —
+  [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md),
+  [PRD-604](../rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md),
+  [PRD-605](../rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md),
+  [PRD-VQ-09](../../rendering/PRD-VQ-09-incremental-diffuse-relighting.md); off-screen reflections —
+  [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md); native probes —
+  [PRD-525](../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md);
+  aerial perspective and clouds — [PRD-562](../rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md),
+  [PRD-VQ-08](../rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md). Installed now: `ssgi`, `ssr`,
+  `ProbeVolume` (static bake), `Atmosphere`. A new PRD is filed only for a residual none of these owns.

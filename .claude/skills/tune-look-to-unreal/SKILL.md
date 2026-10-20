@@ -61,6 +61,18 @@ flowchart LR
 8. **Ping** the owner with the `attention-ping` skill after each new pair is on the PR.
 9. **Tick** the PRD box with the numbers and the verdict, in the commit that carries the change.
 
+## Match the model, not the pixels
+
+- Take Unreal's values from `tools/unreal-reference/template-actors.json` (sun lux, sky light,
+  fog, atmosphere coefficients) and its formulas (EV100 exposure, the filmic curve parameters),
+  and feed them through `exposureFromEv100` and friends. Never fit a constant to the four poses.
+- Compare lighting layers scene-linear: Unreal writes an EXR with the tone curve off for every
+  cell. Test the tone curve alone by applying both curves to the same EXR.
+- A residual that no installed capability closes goes to a PRD. Search
+  `engine_search_capabilities`, then `docs/PRDs` (`rg --no-ignore`), before filing; PRD-631's
+  Decisions list the owners already found (GI, reflections, aerial perspective, clouds).
+- Engine order: tune on upstream three.js, then prove the owned engine with `pnpm parity`.
+
 ## When a layer matches: promote
 
 When the layer's thresholds in `tools/unreal-reference/thresholds.json` pass on every cell, copy
