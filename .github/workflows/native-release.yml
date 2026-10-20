@@ -1830,6 +1830,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/native-engine-wasm
       - run: node packages/runtime-native/scripts/download-deps.mjs --only gradle-wrapper
+      # The first preflight in `release.ts` reads a built tree: `pnpm release:prepare` builds it
+      # before a real release, and a fresh checkout has no `dist` to pack.
+      - run: pnpm build
       - name: Fetch the lock from the rehearsal release
         env:
           GH_TOKEN: ${{ github.token }}
