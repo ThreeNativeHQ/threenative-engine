@@ -2,7 +2,6 @@ import { Scene } from "three";
 import { vec3 } from "three/tsl";
 import { describe, expect, it, vi } from "vitest";
 import { createRealisticOcean } from "../template-assets/realistic-ocean/src/realisticOcean.js";
-import { SeaMaps } from "../template-assets/realistic-ocean/src/render/realisticSeaMaps.js";
 import {
   SEA,
   SEA_STATE,
@@ -10,6 +9,7 @@ import {
   createRealisticSea,
   createRealisticWaterMesh,
 } from "../template-assets/realistic-ocean/src/render/realisticSea.js";
+import { SeaMaps } from "../template-assets/realistic-ocean/src/render/realisticSeaMaps.js";
 
 // Real Three.js/engine nodes, not a fake shader API. This catches graph construction and lifecycle
 // errors; it does not compile WGSL or prove pixels without a WebGPU adapter.
