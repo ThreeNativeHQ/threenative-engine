@@ -33,11 +33,12 @@ import {
   type Mesh,
   type MeshStandardMaterial,
   type Object3D,
+  type PerspectiveCamera,
   RGBAFormat,
   Vector3,
 } from "three";
-import { clamp, float, normalWorld, positionWorld, texture3D, vec3 } from "three/tsl";
-import { MeshStandardNodeMaterial } from "three/webgpu";
+import { clamp, float, max, normalWorld, positionWorld, texture3D, uniform, vec3 } from "three/tsl";
+import { MeshStandardNodeMaterial, type Node } from "three/webgpu";
 
 /** What the bake needs of the game's context: the scene ray query (`ICtx.raycast`). */
 export interface IRayContext {
@@ -154,8 +155,12 @@ function random(seed: number): () => number {
   };
 }
 
-/** Equal solid angle per ray over the sphere, turned by a random rotation so no two probes share a pattern. */
-function sphereRays(count: number, next: () => number): Vector3[] {
+/**
+ * Equal solid angle per ray over the sphere, turned by a random rotation, as x, y, z triples. Plain numbers: on the
+ * owned engine every `Vector3` field read is a call into the Wasm module, and the bake reads each ray's direction
+ * for the sky, the six faces and the raycast.
+ */
+function sphereRays(count: number, next: () => number): Float64Array {
   // A uniform random unit quaternion (Shoemake).
   const [u1, u2, u3] = [next(), next(), next()];
   const [qx, qy, qz, qw] = [
@@ -164,7 +169,7 @@ function sphereRays(count: number, next: () => number): Vector3[] {
     Math.sqrt(u1) * Math.sin(2 * Math.PI * u3),
     Math.sqrt(u1) * Math.cos(2 * Math.PI * u3),
   ];
-  const rays: Vector3[] = [];
+  const rays = new Float64Array(count * 3);
   for (let k = 0; k < count; k += 1) {
     const y = 1 - ((k + 0.5) * 2) / count;
     const radius = Math.sqrt(1 - y * y);
@@ -176,21 +181,17 @@ function sphereRays(count: number, next: () => number): Vector3[] {
       2 * (qz * vx - qx * vz),
       2 * (qx * vy - qy * vx),
     ];
-    rays.push(
-      new Vector3(
-        vx + qw * tx + (qy * tz - qz * ty),
-        vy + qw * ty + (qz * tx - qx * tz),
-        vz + qw * tz + (qx * ty - qy * tx),
-      ),
-    );
+    rays[k * 3] = vx + qw * tx + (qy * tz - qz * ty);
+    rays[k * 3 + 1] = vy + qw * ty + (qz * tx - qx * tz);
+    rays[k * 3 + 2] = vz + qw * tz + (qx * ty - qy * tx);
   }
   return rays;
 }
 
 /** Bilinear read of the baked sky in a direction, in scene radiance. */
-function skyAt(sky: ISkyRadiance, d: Vector3, out: number[]): void {
-  const u = (Math.atan2(d.z, d.x) / (2 * Math.PI) + 0.5) * sky.width - 0.5;
-  const v = (Math.acos(Math.max(-1, Math.min(1, d.y))) / Math.PI) * sky.height - 0.5;
+function skyAt(sky: ISkyRadiance, dx: number, dy: number, dz: number, out: number[]): void {
+  const u = (Math.atan2(dz, dx) / (2 * Math.PI) + 0.5) * sky.width - 0.5;
+  const v = (Math.acos(Math.max(-1, Math.min(1, dy))) / Math.PI) * sky.height - 0.5;
   const [x0, y0] = [Math.floor(u), Math.floor(v)];
   const [fx, fy] = [u - x0, v - y0];
   for (let c = 0; c < 3; c += 1) {
@@ -323,6 +324,83 @@ function resample(field: IField): { grid: IGrid; values: Float32Array } {
 
 // --- the texture -----------------------------------------------------------------------------
 
+/**
+ * Per texel of the final grid, which of the links to its +x, +y and +z neighbours a wall cuts (bit 0, 1, 2).
+ * The reader blends texels itself and drops the ones a wall separates, because a hardware blend across a wall
+ * thinner than a texel (the 0.2 m roof) mixes the lit outside into the room. Most links lie inside open space
+ * where the coarse probes already say so; only the ones near a blocked or solid probe get a ray.
+ */
+function linkMasks(
+  field: IField,
+  fine: IGrid,
+  ctx: IRayContext,
+  root: Object3D,
+): { masks: Uint8Array; rays: number } {
+  const { grid } = field;
+  const masks = new Uint8Array(fine.nx * fine.ny * fine.nz);
+  const dims = [grid.nx, grid.ny, grid.nz];
+  const stride = [1, grid.nx, grid.nx * grid.ny];
+  const origin = new Vector3();
+  const direction = new Vector3();
+  const axes = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ] as const;
+  let rays = 0;
+  /** True when any probe around `point` is inside a solid or any link between them is cut. */
+  const unsure = (px: number, py: number, pz: number): boolean => {
+    const f = [
+      (px - grid.origin.x) / grid.cell - 0.5,
+      (py - grid.origin.y) / grid.cell - 0.5,
+      (pz - grid.origin.z) / grid.cell - 0.5,
+    ];
+    const lo = f.map((v, a) => Math.max(0, Math.min((dims[a] ?? 1) - 2, Math.floor(v))));
+    const base = (lo[0] ?? 0) + grid.nx * ((lo[1] ?? 0) + grid.ny * (lo[2] ?? 0));
+    for (let corner = 0; corner < 8; corner += 1) {
+      const probe =
+        base +
+        (corner & 1 ? (stride[0] ?? 1) : 0) +
+        (corner & 2 ? (stride[1] ?? 1) : 0) +
+        (corner & 4 ? (stride[2] ?? 1) : 0);
+      if (field.valid[probe] !== 1) return true;
+      for (let a = 0; a < 3; a += 1)
+        if (!((corner >> a) & 1) && field.links[probe * 3 + a] !== 1) return true;
+    }
+    return false;
+  };
+  for (let index = 0; index < masks.length; index += 1) {
+    const [x, y, z] = [
+      index % fine.nx,
+      Math.floor(index / fine.nx) % fine.ny,
+      Math.floor(index / (fine.nx * fine.ny)),
+    ];
+    const at = [
+      fine.origin.x + (x + 0.5) * fine.cell,
+      fine.origin.y + (y + 0.5) * fine.cell,
+      fine.origin.z + (z + 0.5) * fine.cell,
+    ] as const;
+    let mask = 0;
+    for (let a = 0; a < 3; a += 1) {
+      if ([x, y, z][a] === [fine.nx, fine.ny, fine.nz][a]! - 1) continue;
+      const along = axes[a] as readonly [number, number, number];
+      const middle = [0, 1, 2].map((c) => at[c]! + along[c]! * fine.cell * 0.5) as [
+        number,
+        number,
+        number,
+      ];
+      if (!unsure(...middle)) continue;
+      rays += 1;
+      origin.set(at[0], at[1], at[2]);
+      direction.set(along[0], along[1], along[2]);
+      const hit = ctx.raycast({ origin, direction, far: fine.cell, targets: root });
+      if (hit !== undefined && hit.distance < fine.cell) mask |= 1 << a;
+    }
+    masks[index] = mask;
+  }
+  return { masks, rays };
+}
+
 const halfView = new DataView(new ArrayBuffer(4));
 /** float32 to IEEE binary16 bits (round to nearest, subnormals flushed: irradiance is never that small). */
 function toHalf(value: number): number {
@@ -335,7 +413,7 @@ function toHalf(value: number): number {
   return sign | (exponent << 10) | ((bits >>> 13) & 0x3ff);
 }
 
-function volume(values: Float32Array, grid: IGrid): Data3DTexture {
+function volume(values: Float32Array, grid: IGrid, masks: Uint8Array): Data3DTexture {
   const slices = grid.nz * 6;
   const texels = new Uint16Array(grid.nx * grid.ny * slices * 4);
   for (let probe = 0; probe < grid.nx * grid.ny * grid.nz; probe += 1) {
@@ -348,7 +426,7 @@ function volume(values: Float32Array, grid: IGrid): Data3DTexture {
       const o = (x + grid.nx * (y + grid.ny * (face * grid.nz + z))) * 4;
       for (let c = 0; c < 3; c += 1)
         texels[o + c] = toHalf(values[(probe * 6 + face) * 3 + c] ?? 0);
-      texels[o + 3] = toHalf(1);
+      texels[o + 3] = toHalf(masks[probe] ?? 0);
     }
   }
   const texture = new Data3DTexture(texels, grid.nx, grid.ny, slices);
@@ -361,28 +439,220 @@ function volume(values: Float32Array, grid: IGrid): Data3DTexture {
   return texture;
 }
 
-/** The ambient-cube read as a TSL node over the surface's own world position and normal: E / pi. */
-function irradianceNode(values: Float32Array, grid: IGrid) {
-  const volumeNode = texture3D(volume(values, grid));
-  const n = normalWorld.normalize();
-  const at = positionWorld
-    .add(n.mul(grid.cell * 1.5))
-    .sub(grid.origin)
-    .div(grid.cell);
-  // Texel units, clamped to the texel centres so no sub-volume reads past its own slices.
-  const u = clamp(at.x, 0.5, grid.nx - 0.5).div(grid.nx);
-  const v = clamp(at.y, 0.5, grid.ny - 0.5).div(grid.ny);
-  const z = clamp(at.z, 0.5, grid.nz - 0.5);
-  const face = (axis: 0 | 1 | 2) => {
-    const component = axis === 0 ? n.x : axis === 1 ? n.y : n.z;
-    const index = component.lessThan(0).select(float(axis * 2 + 1), float(axis * 2));
-    const w = index
-      .mul(grid.nz)
-      .add(z)
-      .div(grid.nz * 6);
-    return volumeNode.sample(vec3(u, v, w)).rgb.mul(component.mul(component));
+/**
+ * The ambient-cube read as a TSL function of a world position and unit normal: E / pi. The eight texels around the
+ * read point are blended here (not by the hardware) with the weight of a texel set to zero when a wall cuts the way
+ * to it from the nearest texel, the walk `weightsAt` does at bake time, on the links `linkMasks` stored in alpha.
+ */
+function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array) {
+  const cache = volume(values, grid, masks);
+  const dims = [grid.nx, grid.ny, grid.nz] as const;
+  return (position: Node<"vec3">, normal: Node<"vec3">) => {
+    // A node of its own per reader (a material, a post pass), over the one texture.
+    const volumeNode = texture3D(cache);
+    const n = normal;
+    // Texel units: texel i's centre is at i + 0.5. Clamped to the centres so nothing reads past the grid.
+    const at = position
+      .add(n.mul(grid.cell * 1.5))
+      .sub(grid.origin)
+      .div(grid.cell);
+    const [ax, ay, az] = [
+      clamp(at.x, 0.5, grid.nx - 0.5).sub(0.5),
+      clamp(at.y, 0.5, grid.ny - 0.5).sub(0.5),
+      clamp(at.z, 0.5, grid.nz - 0.5).sub(0.5),
+    ];
+    const lower = [ax.floor(), ay.floor(), az.floor()];
+    const fraction = [ax.sub(lower[0]!), ay.sub(lower[1]!), az.sub(lower[2]!)];
+    const nearest = fraction.map((f) => f.greaterThan(0.5).select(float(1), float(0)));
+    const squares = [n.x.mul(n.x), n.y.mul(n.y), n.z.mul(n.z)];
+    const faceIndex = [
+      n.x.lessThan(0).select(float(1), float(0)),
+      n.y.lessThan(0).select(float(3), float(2)),
+      n.z.lessThan(0).select(float(5), float(4)),
+    ];
+
+    type Taps = { colour: Node<"vec3">; mask: Node<"float"> };
+    const taps = new Map<number, Taps>();
+    const tap = (corner: number): Taps => {
+      const known = taps.get(corner);
+      if (known !== undefined) return known;
+      const [tx, ty, tz] = [0, 1, 2].map((a) =>
+        clamp(lower[a]!.add((corner >> a) & 1), 0, (dims[a] ?? 1) - 1),
+      );
+      const u = tx!.add(0.5).div(grid.nx);
+      const v = ty!.add(0.5).div(grid.ny);
+      let colour: Node<"vec3"> | undefined;
+      let mask: Node<"float"> | undefined;
+      for (let axis = 0; axis < 3; axis += 1) {
+        const w = faceIndex[axis]!.mul(grid.nz)
+          .add(tz!)
+          .add(0.5)
+          .div(grid.nz * 6);
+        const texel = volumeNode.sample(vec3(u, v, w));
+        const weighted = texel.rgb.mul(squares[axis]!);
+        colour = colour === undefined ? weighted : colour.add(weighted);
+        mask ??= texel.a;
+      }
+      const result = { colour: colour as Node<"vec3">, mask: mask as Node<"float"> };
+      taps.set(corner, result);
+      return result;
+    };
+    /** The mask of the corner whose bits are fixed numbers or, for the nearest corner's bits, a 0/1 node. */
+    const maskAt = (
+      bits: readonly (number | Node<"float">)[],
+      axis = 0,
+      corner = 0,
+    ): Node<"float"> => {
+      if (axis === 3) return tap(corner).mask;
+      const bit = bits[axis]!;
+      if (typeof bit === "number") return maskAt(bits, axis + 1, corner | (bit << axis));
+      return maskAt(bits, axis + 1, corner)
+        .mul(float(1).sub(bit))
+        .add(maskAt(bits, axis + 1, corner | (1 << axis)).mul(bit));
+    };
+    /** 1 when the link along `axis` from a texel with this mask is open. */
+    const open = (mask: Node<"float">, axis: number): Node<"float"> => {
+      const whole = mask
+        .add(0.25)
+        .div(2 ** axis)
+        .floor();
+      return whole.sub(whole.div(2).floor().mul(2)).lessThan(0.5).select(float(1), float(0));
+    };
+
+    let sum: Node<"vec3"> | undefined;
+    let total: Node<"float"> | undefined;
+    for (let corner = 0; corner < 8; corner += 1) {
+      let weight: Node<"float"> = float(1);
+      for (let a = 0; a < 3; a += 1) {
+        const c = (corner >> a) & 1;
+        weight = weight.mul(c ? fraction[a]! : float(1).sub(fraction[a]!));
+        // The step along axis a from the nearest texel: earlier axes already moved to this corner, later ones not yet.
+        const bits = [0, 1, 2].map((k) => (k < a ? (corner >> k) & 1 : k === a ? 0 : nearest[k]!));
+        const step = open(maskAt(bits), a);
+        // Differs from the nearest texel along a: nearest bit != c. A texel that does not differ takes no step.
+        const differs = c ? float(1).sub(nearest[a]!) : nearest[a]!;
+        weight = weight.mul(float(1).sub(differs).add(differs.mul(step)));
+      }
+      const t = tap(corner);
+      sum = sum === undefined ? t.colour.mul(weight) : sum.add(t.colour.mul(weight));
+      total = total === undefined ? weight : total.add(weight);
+    }
+    return (sum as Node<"vec3">).div(max(total as Node<"float">, 1e-5));
   };
-  return face(0).add(face(1)).add(face(2));
+}
+
+/**
+ * The cache's read, registered when the bake finishes: a screen-space gather asks it what a ray that finds
+ * nothing on screen would have returned (the tier below its own), with the pixel's world position and normal.
+ */
+export const giCache: {
+  irradiance?: (position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">;
+} = {};
+
+/**
+ * The cache as the tier below a screen-space gather: a function of the pixel's view-space position and unit
+ * normal, reading the cache through the camera's world matrix (refreshed every render). Undefined before the bake.
+ */
+export function cacheFallback(
+  camera: PerspectiveCamera,
+): ((position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">) | undefined {
+  const read = giCache.irradiance;
+  if (read === undefined) return undefined;
+  const live = (index: number) =>
+    uniform(0).onRenderUpdate(() => camera.matrixWorld.elements[index] ?? 0);
+  const column = (a: number) => vec3(live(a), live(a + 1), live(a + 2));
+  const [right, up, back, at] = [column(0), column(4), column(8), column(12)];
+  const toWorld = (v: Node<"vec3">) => right.mul(v.x).add(up.mul(v.y)).add(back.mul(v.z));
+  return (position, normal) => read(toWorld(position).add(at), toWorld(normal).normalize());
+}
+
+/** What the bake's rays kept of each hit: enough to tell what a surface returns. */
+interface IRays {
+  readonly hit: Uint8Array;
+  readonly base: Float32Array;
+  readonly albedo: Float32Array;
+  readonly point: Float32Array;
+  readonly normal: Float32Array;
+}
+
+/**
+ * The radiance the open ground returns, in scene units: the mean over the rays of the unenclosed probes that
+ * hit a horizontal surface at the scene's lowest height (the sun it receives, and the cache's light times its
+ * albedo, as every other hit counts). Unreal's reflections trace the lit scene, so a mirror's lower half shows
+ * this ground; the sky's own radiance has none below the horizon (Unreal's sky pass draws no ground luminance).
+ */
+function groundRadiance(
+  field: IField,
+  ray: IRays,
+  first: Uint32Array,
+  end: Uint32Array,
+  floorY: number,
+): [number, number, number] | undefined {
+  const sum = [0, 0, 0];
+  const cached = [0, 0, 0];
+  const point = new Vector3();
+  const normal = new Vector3();
+  let count = 0;
+  for (let probe = 0; probe < first.length; probe += 1) {
+    if ((end[probe] ?? 0) - (first[probe] ?? 0) !== BASE_RAYS) continue;
+    for (let i = first[probe] ?? 0; i < (end[probe] ?? 0); i += 1) {
+      if (ray.hit[i] !== 1 || (ray.normal[i * 3 + 1] ?? 0) < 0.99) continue;
+      if (Math.abs((ray.point[i * 3 + 1] ?? 0) - floorY) > 0.05) continue;
+      point.set(ray.point[i * 3] ?? 0, ray.point[i * 3 + 1] ?? 0, ray.point[i * 3 + 2] ?? 0);
+      normal.set(0, 1, 0);
+      point.addScaledVector(normal, field.grid.cell * 0.75);
+      readField(field, point, normal, cached);
+      for (let c = 0; c < 3; c += 1)
+        sum[c] =
+          (sum[c] ?? 0) +
+          (ray.base[i * 3 + c] ?? 0) +
+          (ray.albedo[i * 3 + c] ?? 0) * (cached[c] ?? 0);
+      count += 1;
+    }
+  }
+  return count === 0
+    ? undefined
+    : [(sum[0] ?? 0) / count, (sum[1] ?? 0) / count, (sum[2] ?? 0) / count];
+}
+
+/**
+ * Paints the ground into the lower half of the scene's environment map, the one a mirror reflects: a ray that
+ * leaves the frame below the horizon met the lit floor in Unreal's reflections, not the sky's dark nadir. A
+ * 3 degree ramp above the horizon hands over from the sky. No-op when the environment is not a canvas.
+ */
+function paintGround(root: Object3D, radiance: readonly [number, number, number]): void {
+  let top: Object3D = root;
+  while (top.parent !== null) top = top.parent;
+  const scene = top as {
+    environment?: { image?: unknown; needsUpdate: boolean } | null;
+    environmentIntensity?: number;
+  };
+  const image = scene.environment?.image as OffscreenCanvas | undefined;
+  const context = image?.getContext?.("2d");
+  if (
+    image === undefined ||
+    context === undefined ||
+    context === null ||
+    scene.environment === null
+  )
+    return;
+  const range = scene.environmentIntensity ?? 1;
+  const encoded = radiance.map((v) => Math.round(255 * linearToSrgb(Math.min(1, v / range))));
+  const horizon = image.height / 2;
+  const ramp = (3 / 180) * image.height;
+  const gradient = context.createLinearGradient(0, horizon - ramp, 0, horizon + ramp);
+  gradient.addColorStop(0, `rgba(${encoded.join(",")},0)`);
+  gradient.addColorStop(1, `rgba(${encoded.join(",")},1)`);
+  context.fillStyle = gradient;
+  context.fillRect(0, horizon - ramp, image.width, ramp * 2);
+  context.fillStyle = `rgb(${encoded.join(",")})`;
+  context.fillRect(0, horizon + ramp, image.width, image.height - horizon - ramp);
+  (scene.environment as { needsUpdate: boolean }).needsUpdate = true;
+}
+
+/** sRGB encoding of a linear value in 0..1. */
+function linearToSrgb(v: number): number {
+  return v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
 }
 
 // --- the bake --------------------------------------------------------------------------------
@@ -431,20 +701,30 @@ export function installGi(
   let shadowRays = 0;
   let traced = 0;
   const origin = new Vector3();
-  const point = new Vector3();
-  const normal = new Vector3();
+  const direction = new Vector3();
+  const [sunX, sunY, sunZ] = [
+    options.sun.direction.x,
+    options.sun.direction.y,
+    options.sun.direction.z,
+  ];
   const colour = [0, 0, 0];
 
   /** What a surface point returns of the sun (albedo x sun x cos x visibility) plus its emission. */
-  const surface = (hit: Intersection, albedo: number[], emissive: number[]): number[] => {
-    const key = `${hit.object.id}|${Math.floor(point.x / SHADE_CELL)}|${Math.floor(point.y / SHADE_CELL)}|${Math.floor(point.z / SHADE_CELL)}|${Math.round(normal.x)}${Math.round(normal.y)}${Math.round(normal.z)}`;
+  const surface = (
+    object: Object3D,
+    [px, py, pz]: readonly [number, number, number],
+    [nx, ny, nz]: readonly [number, number, number],
+    albedo: number[],
+    emissive: number[],
+  ): number[] => {
+    const key = `${object.id}|${Math.floor(px / SHADE_CELL)}|${Math.floor(py / SHADE_CELL)}|${Math.floor(pz / SHADE_CELL)}|${Math.round(nx)}${Math.round(ny)}${Math.round(nz)}`;
     const cached = shaded.get(key);
     if (cached !== undefined) return cached;
-    const cosine = Math.max(0, normal.dot(options.sun.direction));
+    const cosine = Math.max(0, nx * sunX + ny * sunY + nz * sunZ);
     let visible = 0;
     if (cosine > 0) {
       shadowRays += 1;
-      origin.copy(normal).multiplyScalar(0.02).add(point);
+      origin.set(px + nx * 0.02, py + ny * 0.02, pz + nz * 0.02);
       visible =
         ctx.raycast({ origin, direction: options.sun.direction, far, targets: root }) === undefined
           ? 1
@@ -479,50 +759,87 @@ export function installGi(
       grid.origin.z + (Math.floor(probe / (grid.nx * grid.ny)) + 0.5) * grid.cell,
     );
 
+  /** Each object's world matrix as plain numbers (it does not change during the bake). */
+  const matrices = new Map<number, number[]>();
+  const matrixOf = (object: Object3D): number[] => {
+    const known = matrices.get(object.id);
+    if (known !== undefined) return known;
+    const elements = [...object.matrixWorld.elements];
+    matrices.set(object.id, elements);
+    return elements;
+  };
+  const hitAt: [number, number, number] = [0, 0, 0];
+  const hitNormal: [number, number, number] = [0, 0, 0];
+
   /** Traces a block of rays from a probe and stores what they find. Returns how many hit within ENCLOSED_DISTANCE. */
-  const trace = (probe: number, centre: Vector3, directions: Vector3[]): number => {
+  const trace = (probe: number, centre: Vector3, directions: Float64Array): number => {
     let near = 0;
-    for (const direction of directions) {
+    for (let k = 0; k < directions.length; k += 3) {
+      const [dx, dy, dz] = [directions[k] ?? 0, directions[k + 1] ?? 0, directions[k + 2] ?? 0];
       const i = used;
       used += 1;
       traced += 1;
-      ray.direction.set([direction.x, direction.y, direction.z], i * 3);
+      ray.direction[i * 3] = dx;
+      ray.direction[i * 3 + 1] = dy;
+      ray.direction[i * 3 + 2] = dz;
+      direction.set(dx, dy, dz);
       const hit = ctx.raycast({ origin: centre, direction, far, targets: root });
-      skyAt(sky, direction, colour);
+      skyAt(sky, dx, dy, dz, colour);
       ray.sky.set(colour, i * 3);
       if (hit === undefined) {
         ray.base.set(colour, i * 3);
         continue;
       }
       ray.hit[i] = 1;
-      ray.distance[i] = hit.distance;
-      if (hit.distance < ENCLOSED_DISTANCE) near += 1;
-      point.copy(hit.point);
+      const distance = hit.distance;
+      ray.distance[i] = distance;
+      if (distance < ENCLOSED_DISTANCE) near += 1;
+      const hitPoint = hit.point;
+      [hitAt[0], hitAt[1], hitAt[2]] = [hitPoint.x, hitPoint.y, hitPoint.z];
       const face = hit.face?.normal;
-      normal.copy(face ?? direction).transformDirection(hit.object.matrixWorld);
-      if (normal.dot(direction) > 0) {
-        normal.negate();
+      const m = matrixOf(hit.object);
+      // transformDirection: the upper 3x3 of the world matrix, normalised.
+      const [fx, fy, fz] =
+        face === undefined || face === null ? [dx, dy, dz] : [face.x, face.y, face.z];
+      let [nx, ny, nz] = [
+        (m[0] ?? 0) * fx + (m[4] ?? 0) * fy + (m[8] ?? 0) * fz,
+        (m[1] ?? 0) * fx + (m[5] ?? 0) * fy + (m[9] ?? 0) * fz,
+        (m[2] ?? 0) * fx + (m[6] ?? 0) * fy + (m[10] ?? 0) * fz,
+      ];
+      const length = Math.hypot(nx, ny, nz) || 1;
+      [nx, ny, nz] = [nx / length, ny / length, nz / length];
+      if (nx * dx + ny * dy + nz * dz > 0) {
+        [nx, ny, nz] = [-nx, -ny, -nz];
         if (face !== undefined && face !== null) backfaces[probe] = (backfaces[probe] ?? 0) + 1;
       }
+      [hitNormal[0], hitNormal[1], hitNormal[2]] = [nx, ny, nz];
       const { albedo, emissive } = dataOf(hit.object);
-      ray.base.set(options.bounces > 0 ? surface(hit, albedo, emissive) : [0, 0, 0], i * 3);
+      ray.base.set(
+        options.bounces > 0 ? surface(hit.object, hitAt, hitNormal, albedo, emissive) : [0, 0, 0],
+        i * 3,
+      );
       ray.albedo.set(albedo, i * 3);
-      ray.point.set([point.x, point.y, point.z], i * 3);
-      ray.normal.set([normal.x, normal.y, normal.z], i * 3);
+      ray.point.set(hitAt, i * 3);
+      ray.normal.set(hitNormal, i * 3);
     }
     return near;
   };
 
   const centre = new Vector3();
   let enclosedProbes = 0;
+  // Every probe shoots the same ray set. Rays that differ per probe put an independent sampling error in each
+  // probe, and a flat wall read through them shows it as a patchwork a probe cell wide; the same set makes
+  // neighbours err alike, so the error varies smoothly (Lumen's probes share one importance-sampled set too).
+  const next = random(1);
+  const baseRays = sphereRays(BASE_RAYS, next);
+  const extraRays = sphereRays(EXTRA_RAYS, next);
   for (let probe = 0; probe < probes; probe += 1) {
     centreOf(probe, centre);
-    const next = random(probe + 1);
     first[probe] = used;
-    const near = trace(probe, centre, sphereRays(BASE_RAYS, next));
+    const near = trace(probe, centre, baseRays);
     if (near > BASE_RAYS * ENCLOSED_SHARE && enclosedProbes < MAX_ENCLOSED) {
       enclosedProbes += 1;
-      trace(probe, centre, sphereRays(EXTRA_RAYS, next));
+      trace(probe, centre, extraRays);
     }
     end[probe] = used;
   }
@@ -557,6 +874,8 @@ export function installGi(
   // Gather: each pass sums what the rays carry into six faces per probe.
   const shadowing = options.skyShadowDistance !== undefined;
   const gather = (previous: IField | undefined): Float32Array => {
+    const point = new Vector3();
+    const normal = new Vector3();
     const out = new Float32Array(probes * 18);
     const cached = [0, 0, 0];
     const sum = new Float32Array(18);
@@ -614,8 +933,16 @@ export function installGi(
   for (let pass = 1; pass < options.bounces; pass += 1)
     values = gather({ grid, values, links, valid });
 
+  if (options.bounces > 0) {
+    const floor = groundRadiance({ grid, values, links, valid }, ray, first, end, grid.origin.y);
+    if (floor !== undefined) paintGround(root, floor);
+  }
   const fine = resample({ grid, values, links, valid });
-  const node = irradianceNode(fine.values, fine.grid);
+  const cut = linkMasks({ grid, values, links, valid }, fine.grid, ctx, root);
+  traced += cut.rays;
+  const read = irradianceAt(fine.values, fine.grid, cut.masks);
+  giCache.irradiance = read;
+  const node = read(positionWorld, normalWorld.normalize());
   root.traverse((object) => {
     const mesh = object as Mesh;
     if (!(mesh as { isMesh?: boolean }).isMesh) return;

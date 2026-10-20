@@ -40,6 +40,7 @@ import {
   clamp,
   color,
   convertToTexture,
+  diffuseColor,
   float,
   max,
   metalness,
@@ -56,6 +57,7 @@ import {
 } from "three/tsl";
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
+import { cacheFallback } from "./giCache.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
 import { LocalExposureNode } from "./localExposure.js";
 import { installFilmicToneMapping } from "./tonemap.js";
@@ -542,10 +544,11 @@ export class WorldEnvironment {
       // than to a branch every call site has to remember.
       authoredStageNames: options.authoredStageNames ?? [],
       authoredStages: options.authoredStages ?? (() => []),
-      ssgiEnabled: options.ssgiEnabled ?? false,
+      // Harness: Unreal's global illumination enters at ladder layer L7, so the capture's layer decides.
+      ssgiEnabled: options.ssgiEnabled ?? harnessLayer() >= 7,
       ssgiQuality: quality,
       ssgiIntensity: options.ssgiIntensity ?? 1,
-      ssgiRadius: options.ssgiRadius ?? 12,
+      ssgiRadius: options.ssgiRadius ?? 4,
       // Harness: Unreal's reflections enter at ladder layer L8, so the capture's layer decides.
       ssrEnabled: options.ssrEnabled ?? harnessLayer() >= 8,
       ssrMaxDistance: options.ssrMaxDistance ?? 30,
@@ -562,7 +565,7 @@ export class WorldEnvironment {
       gtaoScale: options.gtaoScale ?? 1,
       gtaoSamples: options.gtaoSamples ?? 16,
       gtaoResolutionScale: options.gtaoResolutionScale ?? 1,
-      ssgiResolutionScale: options.ssgiResolutionScale ?? 0.5,
+      ssgiResolutionScale: options.ssgiResolutionScale ?? 1,
       sharpenEnabled: options.sharpenEnabled ?? false,
       sharpenStrength: options.sharpenStrength ?? 0.2,
       vignetteAmount: options.vignetteAmount ?? 0,
@@ -676,7 +679,14 @@ export class WorldEnvironment {
     if (options.ssgiEnabled || options.ssrEnabled || options.gtaoEnabled) {
       // The normal target uses the material blend mode. Its alpha is zero, so a transparent card
       // keeps the opaque normal beneath it. GTAO then does not darken a square behind the card.
-      const sceneMrt = mrt({ output, normal: vec4(normalView, 0), metalness, roughness });
+      // The albedo target is what turns the gathered light into reflected light (the receiver's own colour).
+      const sceneMrt = mrt({
+        output,
+        normal: vec4(normalView, 0),
+        metalness,
+        roughness,
+        ...(options.ssgiEnabled ? { diffuseColor } : {}),
+      });
       sceneMrt.setBlendMode("normal", new BlendMode(MaterialBlending));
       scenePass.setMRT(sceneMrt);
     }
@@ -704,6 +714,7 @@ export class WorldEnvironment {
     // and a projection matrix inverse. The scene's camera is the one the pass rendered with.
     const view = camera as PerspectiveCamera;
 
+    const albedo = (): ReturnType<typeof scenePass.getTextureNode> => textureNode("diffuseColor");
     const base = target.baseColour?.(scenePass) ?? scenePass.getTextureNode("output");
     const colour = convertToTexture(base);
     sample(colour);
@@ -758,27 +769,37 @@ export class WorldEnvironment {
       stage({
         name: "ssgi",
         build: (input) => {
-          const gi = ssgi(input, depth(), normal(), view);
+          // The gather reads the lit frame at each ray's hit, so the frame is materialised once and reused.
+          const base = convertToTexture(input);
+          const wasmEngine = "engine" in (renderer.raw as unknown as { info: object }).info;
+          // Harness: on the owned engine the gather also answers for the tier below it (the world-space cache), so
+          // a ray that hits returns `hit - cache` and the two never add the same light twice (Lumen's tiering,
+          // Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp).
+          const fallback = wasmEngine ? cacheFallback(view) : undefined;
+          const gi = (ssgi as unknown as (...args: unknown[]) => ReturnType<typeof ssgi>)(
+            base,
+            depth(),
+            normal(),
+            wasmEngine ? { camera: view, fallback } : view,
+          );
           const tier = SSGI_QUALITY[options.ssgiQuality];
           gi.sliceCount.value = tier.sliceCount;
           gi.stepCount.value = tier.stepCount;
           gi.radius.value = options.ssgiRadius;
           // Gather at a fraction of the frame. See `ssgiResolutionScale` above for why this is a
-          // wrapper rather than a property: the node has no scale of its own, and `setSize` is the
-          // public seam the pass drives it through. `setSize` is present on the node and absent
-          // from its type declarations, so the seam is named here rather than cast away at the call
-          // site — if a future three release declares it, or gives the node a `resolutionScale`,
-          // this narrows to nothing and the wrapper can go. Guarded at one texel so a zero or a
-          // negative cannot ask for an empty target: a 0x0 gather returns black and reads as SSGI
-          // simply not working.
+          // wrapper rather than a property: the node has no scale of its own on upstream three, and
+          // `setSize` is the public seam the pass drives it through. The owned engine's node has a
+          // `resolutionScale` of its own.
           const ssgiScale = options.ssgiResolutionScale;
           const sizedGi = gi as unknown as {
             setSize?: (width: number, height: number) => void;
           };
           const fullGiSize = sizedGi.setSize?.bind(gi);
-          if (ssgiScale > 0 && ssgiScale < 1 && fullGiSize !== undefined) {
+          if (!wasmEngine && ssgiScale > 0 && ssgiScale < 1 && fullGiSize !== undefined) {
             sizedGi.setSize = (width: number, height: number): void => {
+            resolutionScale?: number;
               fullGiSize(
+          if (wasmEngine) sizedGi.resolutionScale = ssgiScale;
                 Math.max(1, Math.round(width * ssgiScale)),
                 Math.max(1, Math.round(height * ssgiScale)),
               );
@@ -790,14 +811,16 @@ export class WorldEnvironment {
           // zeroes green and blue and the entire scene renders monochrome red — take `.r`
           // for the scalar and `.rgb` for the colour.
           //
-          // No albedo buffer here, so the beauty pass stands in for it: occlusion darkens
-          // what is already lit, and the gathered indirect light is tinted by the surface it
-          // lands on. That is the standard approximation, and it is why a red wall tints a
-          // white floor at all. `ssgiIntensity` is the game's dial on that second term —
-          // gathered light is unbounded, and a small white room at 1.0 blows out.
+          // The gathered light is incident radiance (E / pi). The surface returns it times its own
+          // albedo, which the scene pass writes as the `diffuseColor` target, and a metal returns none
+          // of it as diffuse. `ssgiIntensity` is the game's dial on that term.
           const occlusion = giDenoise(gi.getAONode());
           const indirect = giDenoise(gi.getGINode());
-          return input.mul(occlusion.r).add(input.mul(indirect.rgb).mul(options.ssgiIntensity));
+          const reflected = albedo()
+            .rgb.mul(float(1).sub(metal().r))
+            .mul(indirect.rgb)
+            .mul(options.ssgiIntensity);
+          return base.mul(occlusion.r).add(vec4(reflected, 0));
         },
       }),
       stage({
