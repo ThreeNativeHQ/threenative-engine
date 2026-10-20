@@ -257,4 +257,9 @@ jobs:
       # Proves the registry path, which no other gate in this repository exercises: the sandbox,
       # the sweeps and verify-golden-path all resolve `file:` tarballs by design.
       - name: Install from the registry in a directory with no workspace above it
+        # The hosted runner has no GPU, and the starter's own `test` script refuses a software
+        # adapter. The playtest runner reads this acknowledgement for an unmodified project and still
+        # reports the adapter it got (PRD-637).
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: pnpm tsx scripts/verify-registry-install.ts

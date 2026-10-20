@@ -194,6 +194,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-10-18 through all thirteen actual createProject trees after release-cohort preparation and Sailing motion repair.
 // Re-measured all 13 trees for the SMAA mip0 patch; restoring only copied patch bytes recovers every prior hash.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-637: every tree gains the npm `@vitejs/devtools` override, and `starter` also moves (grade
+  // table reused across a restart, two more restarts in production-readiness). Measured by this test.
   // Recomputed 2026-10-17 for the engine rename ("native" -> "threenative", "legacy" -> "threejs"):
   // every template's AGENTS/CLAUDE engine section and the pinned configs. Measured by this test.
   // PRD-569 merge: measured all thirteen createProject trees; action-rpg retains onCull.
@@ -266,23 +268,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "fe5a4a777f4e221094d111166521f482eecbbe88473721fd0e11209aa90289ef",
-  minimal: "3605632fe648cd2e8f144cdcf86ced58a3b3dbb6698d1014f52b818905ad26f7",
-  platformer: "6a47f1b8e2f293dbc112177307faaa22e63a8ab68b0a3b7fbb6edffe02ba199a",
-  puzzle: "51f8cb08471b9eb42017c8e66a1dfe1d09ae91b885e5cf3f33aea6cf7431613e",
-  racing: "e72b20d0ace2c958a7713e558887fac9f928a7164effd2a261b8049ad047ebac",
-  rain: "74c1d142ae51b6ec1ff30bcd013c47aa740816dac4e52572e0f4031851a0bd16",
-  rts: "088fd5eb481190d8c21b8d36c8ec1ab24b4a4c8e55f4c17c24567312e2b8183c",
-  runner: "09a62f1c2c82a8a012ef1d6cd7e978680399089139430370c4cb20df9e68421f",
+  "action-rpg": "44677322a7d8fe447b98802c8e06058b9e1fa635ad582daf7be58bef05604d88",
+  minimal: "de79fb5887820b9a8674c7966893309f98fa1b3d3e7fc500833d8b0c95d78b59",
+  platformer: "3fc4a63745b0c40659bc815e83f8feb78d11044ac52ea51eda0a48ff1b7ac7a5",
+  puzzle: "6b4bb166fe78c9ccdb11d0fdd09fdb8a7083617ad7b32000cf9d347708e2e721",
+  racing: "1ae0d8dc4557373a9fd41200badfb8d74adea18060190f076de457e5eba4db39",
+  rain: "25a1db34cd2b5a007ab612ab08611b83575dbf51668f0b8c964006c9de5dec15",
+  rts: "8cba76c4109e6bfa98d8ad7353c93e26b31f0ff76005fee19496de2ac920fbcc",
+  runner: "0fbb9ca8bee1c2876b23577dc1e109d90417fc7451fcc01b3d9311992d737212",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "3b591f15aa6000de8720166be330427b81a4dd17af46d66653ee1821a2bd52fb",
-  shooter: "99985dd51b67ae0a40a4930a76ccc9d1031b40f07cfb83112a2ed93052aad66c",
-  snow: "ea34babbdd0b128070c4b75529245cabe7bb865d476d1aadf07749f2c5f20461",
+  sailing: "3ca53ed53690c24706156064c3bbd02b3a6ce507495ae3f07e27abdf4a14d670",
+  shooter: "2c78940435bace386ab9d02a22e0a550525fe2f69e53a1d1922cad018228c662",
+  snow: "860ee6c3e8ea95713b506ef72ebc60f972106eba83299d7bff91291f68560ec6",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "b73e9c2e115b9347ee8ea3dfcb768c622558eba0c171e115d4122ea14bca0704",
-  "tower-defense": "93eef51fb1b6238eba3674a98cafce9117a52ceac40e13e6b4de75618c1b0800",
+  starter: "2c0136cc9bf4fa4ac348d69d10b0ed49fd11b3041c13c1cf4b6f8c371943762e",
+  "tower-defense": "1909a79d53a780c0e4d4c4e87285cb1777d8240d47bb0bae6f66bab66a90647c",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -1427,6 +1429,20 @@ describe("create-threenative", () => {
       ) as { overrides?: Record<string, string>; pnpm?: { overrides?: Record<string, string> } };
       expect(manifest.overrides?.sharp, `${template} npm override`).toBe(">=0.35.4");
       expect(manifest.pnpm?.overrides?.sharp, `${template} pnpm override`).toBe(">=0.35.4");
+    }
+  });
+
+  it("keeps Vite's optional devtools peer off the npm 10 crash (PRD-637)", async () => {
+    // `vite@8.2.0+` lists `@vitejs/devtools@^0.4.0` as an optional peer, and 0.4.2+ peers back on
+    // the devtools packages. npm 10 (the npm in Node 20 LTS) dies on that peer set with
+    // `Cannot read properties of null (reading 'edgesOut')`, so a fresh scaffold could not install.
+    // The pin names the last devtools release whose only peer is vite.
+    for (const template of ALL_TEMPLATES) {
+      const manifest = JSON.parse(
+        await readFile(path.join(TEMPLATE_ROOT, template, "package.json"), "utf8"),
+      ) as { devDependencies?: Record<string, string>; overrides?: Record<string, string> };
+      if (manifest.devDependencies?.vite === undefined) continue;
+      expect(manifest.overrides?.["@vitejs/devtools"], `${template} npm override`).toBe("0.4.1");
     }
   });
 
