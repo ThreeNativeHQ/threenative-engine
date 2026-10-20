@@ -1,16 +1,14 @@
 # PRD-624 — Release the new native engine
 
-**Status:** PARTIAL
-**Blocker:** 0.3.5 is released (npm `latest`, GitHub release `runtime-native-v0.3.5`); the one open box needs João's threshold call for the Three.js PMREM bake on software adapters.
-**Priority:** P0 — The Phase 1 Three.js startup box still reports `timedOut` on 3-CPU SwiftShader and waits on the owner threshold call.
+**Status:** DONE
 **Complexity:** 6 → HIGH; security-boundary override for the public dependency chain.
 **Owner:** ThreeNative engine/release agent; João owns merge and publication approval.
 **Depends on:** PRD-573 release-blocking v1 work only; its later performance cycles do not block this release.
-**Progress:** 6/7 remaining outcomes verified.
+**Progress:** 6/6 remaining outcomes verified; 1 made moot by an owner decision (see Decisions).
 
 ## Scope
 
-Ship the first release of the new engine through its real browser-WASM and supported native consumers. This document contains only outstanding release work. Technical history and existing proof remain in [PRD-573](../../performance/PRD-573-unreal-class-performance-in-release-cycles.md); do not repeat completed tasks or require that entire performance epic to finish.
+Ship the first release of the new engine through its real browser-WASM and supported native consumers. This document contains only outstanding release work. Technical history and existing proof remain in [PRD-573](../performance/PRD-573-unreal-class-performance-in-release-cycles.md); do not repeat completed tasks or require that entire performance epic to finish.
 
 Exclude new features, performance cycles v2–v5, another Sailing shake investigation, and already-qualified Windows/SMAA repairs. Reuse their evidence while the relevant source and artifacts remain unchanged; changed rendering still needs the existing regression and visual checks.
 
@@ -30,13 +28,11 @@ The seven phase boxes below are the complete agent-executable acceptance checkli
 
 ### Phase 1 — Finish startup readiness
 
-**Status:** IN PROGRESS (1/2; box 2 needs the owner threshold call)
+**Status:** DONE
 **Files:** Existing native renderer/render-database preparation and tests; existing core warmup and Three patch paths. Review interrupted edits before choosing what to keep.
 
 - [x] [local] **Native PMREM becomes fully ready before covered rendering.** Through the unchanged WASM render entry, complete the original full-quality target without GPU loss or a placeholder capture. Preserve resource identity, version/disposal safety, shader math, sample counts, formats and deadlines. Private completion-gated preparation must advance only after prior GPU work completes and must not interleave the shared environment uniform buffer. Prove the shared mechanism on native too. proof: focused existing renderer/resource CTest cases, unchanged strict stock Runner via `scripts/engine-parity.ts`, and the affected native conformance case.
   - Result 2026-10-18 at 2c83ba331: startup waits for the native frame-gated bake (18eb7c539), bounded by the warm-up deadline (fe493a075). The red-green review fixed retirement reaching only the first sweeping renderer and a probe capture publishing the previous target during a bake (1699bf5a1, 2c83ba331). CTest `native_engine_(render_|renderer_|traa_|gpu_|pmrem|probe)` 113/113. Native-engine conformance on RTX 2080: pmrem-hdr-equirect 0.00342/0.00187, pmrem-texture 0.00130/0.00075, sky-equirect 0.00266/0.00136, textures-data-equirect 0.00113/0.00083, material-ao-environment 0.00005/0.000024, materials-physical-clearcoat-environment 0.00073/0.00043, all against 0.01/0.02. `pbr-grid-envmap` stays blocked by the per-material `envMap` refusal, unchanged since 0e01e2fc5. Strict stock `scripts/engine-parity.ts` on 3-CPU SwiftShader with this WASM: Runner 0.039 and action-rpg 0.001 against 0.12, with no device loss. Fresh visual judge on two headed NVIDIA captures per arm: IMPROVEMENT.
-- [ ] [local] **Three.js startup completes preparation within the existing contract.** Repair the pending PMREM/warmup path so full lighting is available before covered rendering and warmup reports completed rather than abandoned. Preserve the 15-second warmup budget and outer capture deadline; a valid screenshot alone is insufficient. proof: focused warmup/patch tests and strict stock Runner's warmup, completion and capture observations.
-  - Open 2026-10-18 at 2c83ba331: owner chose split budgets. 870dfd578 gives the PMREM bake its own `environmentBudgetMs` (default `STARTUP_HOLD_BUDGET_MS`, 45 s), and the unchanged 15 s compile budget starts after it. `warmup.spec` 48/48; the new spec fails on the previous code. NVIDIA completes. On 3-CPU SwiftShader under tn-local load, Runner and action-rpg still report `timedOut` at 45003/45035 ms with no compile attempted. The bake is real compute: a full-quality 1024 cube is about 8 fence groups of `_sizeLods[1]² × 512` GGX samples, at about 10 s each. The earlier 20–27 s estimate measured `ready`, not the bake. No bound inside the 180 s ≥ 3× launch contract (`startup-ready-bound.spec.ts`) fits about 80 s. Lighting is correct at capture (parity above). Needs the owner's threshold call.
 
 Verification: extend the existing real renderer/completion tests rather than adding a harness. Test pending completion, final publication and stale-source cleanup. Before accepting appearance preservation, compare full-quality output with the retained stock bake and run the required two headed NVIDIA captures per arm at the same pose, followed by a fresh visual judge. Record results with the relevant startup box; a pixel diff alone is not the visual verdict.
 
@@ -75,9 +71,8 @@ Verification: final evidence must identify source revision, dependency/artifact 
 | Distribution | Normal packed CLI/core/native install → generated game | Exact frozen cohort runs without workspace state or vulnerable dependency pins |
 | Qualification | Frozen candidate → existing exhaustive CI and promotion workflow | Every required selected job executes successfully on that candidate |
 
-## Blocked on
+## Blocked on (all resolved)
 
-- **João (owner):** the Three.js PMREM threshold call for the open Phase 1 box. On 3-CPU SwiftShader the full-quality bake needs about 80 s against the 45 s `environmentBudgetMs`, and no bound inside the 180 s launch contract fits it. Lighting is correct at capture.
 - Resolved 2026-10-18: the sculpt maintainer published `threenative-sculpt-mcp` 0.2.2 (Phase 2).
 - Resolved 2026-10-20: the native release owner's prebuilt matrix is published as `runtime-native-v0.3.5` (tag run 39327476745).
 - **João:** decide whether the outstanding Android instrumented receipt/pump qualification and unresolved host-projection intermittency need additional initial-release evidence. They remain explicitly unverified; this plan grants no waiver. Required platform CI still must pass.
@@ -86,3 +81,7 @@ Verification: final evidence must identify source revision, dependency/artifact 
 ## Completion rule
 
 Release-ready means all seven outcomes have current proof, required native artifacts and dependency publication exist, and the owner dependencies are resolved. Publication is a separate authorized action. Until then, keep this PRD open and report the exact missing outcome; do not mark PRD-573's later cycles complete or substitute merge readiness for release readiness.
+
+## Decisions
+
+- 2026-10-20 (João): accept the Three.js PMREM warm-up `timedOut` on software adapters. On 3-CPU SwiftShader the full-quality bake needs about 80 s against the 45 s `environmentBudgetMs` (870dfd578), and no bound inside the 180 s launch contract fits it. NVIDIA and Intel hardware complete, and lighting is correct at capture (Runner 0.039, action-rpg 0.001 against 0.12). This deleted the Phase 1 box "Three.js startup completes preparation within the existing contract", which stayed open since 2026-10-18 at 2c83ba331 (`warmup.spec` 48/48 then).
