@@ -104,6 +104,7 @@ plumbing every game repeats, so it belongs in core, with the values chosen in te
 **Files:** `packages/create-threenative/templates/*/src/render/`, `packages/runtime-native/conformance/scenes/shared/filmic-tonemap.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] The filmic curve renders on the desktop native engine within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests filmic-tonemap`.
 - [ ] All templates use filmic, EV100 and auto exposure, and the template gate passes. proof: `pnpm test:templates`.
+- [ ] Every affected template's `AGENTS.md` (and mirror) states the filmic curve, EV100 lux lighting and auto exposure, with `tonemapMode: "aces"` and fixed exposure as the overrides, so a new project's agent knows the default and how to override it. proof: `rg -l 'tonemapMode: "filmic"' packages/create-threenative/templates/*/AGENTS.md` lists every affected template, and `pnpm sync:agents --check` exits 0.
 
 ## Decisions
 

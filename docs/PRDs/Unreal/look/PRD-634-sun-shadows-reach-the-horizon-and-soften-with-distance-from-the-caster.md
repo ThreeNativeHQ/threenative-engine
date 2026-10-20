@@ -92,6 +92,7 @@ A capsule's feet stay sharp, and a shadow cast from 10 m up spreads to about 9 c
 **Files:** `packages/create-threenative/templates/*/src/render/lighting.ts`, `packages/create-threenative/templates/minimal/AGENTS.md` (and mirror)
 - [ ] All templates use the chosen method and the filter, and the template gate passes. proof: `pnpm test:templates`.
 - [ ] The `low` tier keeps one 2048² map with the filter, and the phone budget holds. proof: `pnpm test:templates` (starter, `low`).
+- [ ] Every affected template's `AGENTS.md` (and mirror) states the view-wide sun shadow and its `sourceAngle`, with the override that restores a fixed box, so a new project's agent knows the default and how to override it. proof: `rg -l 'sourceAngle' packages/create-threenative/templates/*/AGENTS.md` lists every affected template, and `pnpm sync:agents --check` exits 0.
 
 ## Decisions
 

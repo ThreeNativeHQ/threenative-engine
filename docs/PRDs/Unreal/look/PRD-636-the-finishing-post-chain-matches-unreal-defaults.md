@@ -80,6 +80,7 @@ plumbing it already owns (`packages/core/src/render/chain.ts`).
 - [ ] Local exposure and the new bloom render on the desktop native engine within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests local-exposure`.
 - [ ] Motion blur is on at desktop `high` and off on phones, and the template gate passes. proof: `pnpm test:templates`.
 - [ ] Every template defaults to the neutral grade and no grain, with the LUT kept as an option. proof: `pnpm test:templates`.
+- [ ] Every affected template's `AGENTS.md` (and mirror) states the Unreal-shaped bloom, vignette, local exposure, motion blur and neutral grade, with the LUT (`grade.cube`) and grain as the named options, so a new project's agent knows the default and how to override it. proof: `rg -l 'grade.cube' packages/create-threenative/templates/*/AGENTS.md` lists every affected template, and `pnpm sync:agents --check` exits 0.
 
 ## Decisions
 

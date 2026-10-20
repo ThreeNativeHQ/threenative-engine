@@ -79,6 +79,7 @@ so the surface BRDF itself needs no change.
 **Files:** `packages/create-threenative/templates/*/src/render/worldEnvironment.ts`, `packages/runtime-native/conformance/scenes/shared/ao-indirect-only.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] The native engine applies AO to indirect light only, within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests ao-indirect-only`.
 - [ ] The 10 GTAO templates use the new path, and the template gate passes. proof: `pnpm test:templates`.
+- [ ] Every affected template's `AGENTS.md` (and mirror) states AO on indirect light only, and how a game returns to the composite multiply, so a new project's agent knows the default and how to override it. proof: `rg -l 'builtinAOContext' packages/create-threenative/templates/*/AGENTS.md` lists every affected template, and `pnpm sync:agents --check` exits 0.
 
 ## Decisions
 
