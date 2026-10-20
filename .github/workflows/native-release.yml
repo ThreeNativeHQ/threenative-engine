@@ -969,7 +969,10 @@ jobs:
           const names = PUBLISHED_PREBUILT_KEYS.filter((key) => !key.startsWith("ios-"))
             .map((key) => [key, PREBUILT_ASSET_NAMES[key]]);
           const expected = names.map(([, name]) => name).sort();
-          if (JSON.stringify(readdirSync("release").sort()) !== JSON.stringify(expected)) {
+          // The simulator zip is in this download because a proof run builds it for the rehearsal
+          // `publish`. This lane does not install it, so it is not an extra.
+          const served = readdirSync("release").filter((name) => !name.startsWith("threenative-ios-"));
+          if (JSON.stringify(served.sort()) !== JSON.stringify(expected)) {
             throw new Error("Proof assets must contain every published non-iOS runtime from this run, and no extras.");
           }
           const artifacts = Object.fromEntries(names.map(([key, name]) => {

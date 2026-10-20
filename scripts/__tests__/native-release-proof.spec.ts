@@ -1002,6 +1002,13 @@ test("the same-run proof serves the published cohort, not every non-iOS key", ()
   );
 });
 
+test("the Linux proof lane ignores the simulator zip a proof run now downloads", () => {
+  // Run 39352029148: `build-ios-simulator` runs on proof runs (PRD-629), so `pattern: runtime-*`
+  // also collects its zip, and the "no extras" check failed a run whose staging was right.
+  const consumer = job("clean-consumer");
+  assert.match(consumer, /name\.startsWith\("threenative-ios-"\)/u);
+});
+
 test("the Windows consumer serves only the Windows row it installs", () => {
   // Run 34725179598: `build-android`'s V8 source build hit its 2h cap and uploaded nothing, so the
   // Windows lane died demanding Android assets it never needed and never depended on. It now serves
