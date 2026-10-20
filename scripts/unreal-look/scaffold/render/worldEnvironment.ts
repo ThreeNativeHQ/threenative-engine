@@ -60,6 +60,7 @@ import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { cacheFallback } from "./giCache.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
 import { LocalExposureNode } from "./localExposure.js";
+import { UnrealBloomNode } from "./unrealBloom.js";
 import { installFilmicToneMapping } from "./tonemap.js";
 
 /** Lumen reflections stop at this roughness, fading to nothing over the length below it. */
@@ -276,6 +277,8 @@ export interface IWorldEnvironmentOptions {
   readonly autoExposureEnabled?: boolean;
   /** Unreal's bilateral local exposure on top of the automatic exposure (harness overlay). */
   readonly localExposureEnabled?: boolean;
+  /** Unreal's standard bloom in place of the stock bloom stage (harness overlay). */
+  readonly unrealBloomEnabled?: boolean;
   /** Editable game policy; disabled application still measures when cost is opted in. */
   readonly exposurePolicy?: Readonly<IExposureSettings>;
 }
@@ -579,6 +582,7 @@ export class WorldEnvironment {
       exposure: options.exposure ?? 1,
       autoExposureEnabled: options.autoExposureEnabled ?? false,
       localExposureEnabled: options.localExposureEnabled ?? false,
+      unrealBloomEnabled: options.unrealBloomEnabled ?? false,
       exposurePolicy: options.exposurePolicy ?? exposureSettings,
     };
   }
@@ -975,13 +979,12 @@ export class WorldEnvironment {
         build: (input) => {
           const texture = subrectTexture(input);
           const colour = input;
-          const effect = bloom(
-            texture,
-            options.bloomStrength,
-            options.bloomRadius,
-            options.bloomThreshold,
-          );
-          if (resolutionSubrect) {
+          // Harness: Unreal's sum-of-Gaussians bloom instead of three's thresholded mip chain.
+          const unreal = options.unrealBloomEnabled ? new UnrealBloomNode(texture) : undefined;
+          const effect =
+            unreal ??
+            bloom(texture, options.bloomStrength, options.bloomRadius, options.bloomThreshold);
+          if (resolutionSubrect && unreal === undefined) {
             const retained = effect as unknown as {
               setSize(w: number, h: number): void;
               setup(builder: NodeBuilder): unknown;
@@ -1057,7 +1060,9 @@ export class WorldEnvironment {
               scratch._quadMesh.material.dispose();
             }
           };
-          return colour.add(effect);
+          return unreal === undefined
+            ? colour.add(effect)
+            : vec4(colour.rgb.add(unreal.bloomNode), colour.a);
         },
       }),
       stage({
