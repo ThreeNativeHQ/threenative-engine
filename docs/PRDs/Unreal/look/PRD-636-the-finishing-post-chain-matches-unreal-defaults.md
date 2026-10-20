@@ -86,3 +86,6 @@ plumbing it already owns (`packages/core/src/render/chain.ts`).
 
 - 2026-10-19: Chromatic aberration, lens flare and depth of field stay off. Unreal's effective
   defaults are off too.
+- 2026-10-19 (external visual review, checked): the emissive sphere's wide, low halo is bloom
+  (threshold and radius, this PRD). Its light on the floor in Unreal is Lumen GI from an emissive
+  surface (layer L7), owned by the GI PRDs, not by a default point light inside the mesh.

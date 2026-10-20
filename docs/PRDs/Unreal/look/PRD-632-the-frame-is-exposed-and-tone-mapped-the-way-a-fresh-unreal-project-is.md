@@ -91,7 +91,8 @@ plumbing every game repeats, so it belongs in core, with the values chosen in te
 **Status:** NOT STARTED
 **Files:** `packages/create-threenative/templates/starter/src/render/tonemap.ts` (new), `packages/core/src/render/exposure-units.ts` (new), `packages/core/__tests__/exposure-units.spec.ts`
 - [ ] The filmic node maps the scene-linear L1 EXR cells to the Unreal L1 PNG cells within the thresholds when both use the same exposure. This isolates the curve. proof: `pnpm unreal-look:compare --layer L1 --apply-curve-to unreal-exr`.
-- [ ] EV100 to multiplier round-trips, and the defaults convert as stated. proof: `pnpm exec vitest run packages/core/__tests__/exposure-units.spec.ts`.
+- [x] EV100 to multiplier round-trips, and the defaults convert as stated. proof: `pnpm exec vitest run packages/core/__tests__/exposure-units.spec.ts`. Result 2026-10-19: 3/3 pass (round trip; EV0 -> 1/1.2; f/4 1/60 s ISO 100 -> log2(960); RangeError on bad input).
+- [ ] The curve applies Unreal's blue correction (0.6) and gamut expansion (1.0) before the tone curve, so a saturated blue sky stays blue instead of shifting toward purple. proof: `pnpm exec vitest run packages/create-threenative/__tests__/tonemap.spec.ts` on the JS reference, then the L1 sky region inside thresholds with `pnpm unreal-look:compare --layer L1`.
 
 #### Phase 2: The starter matches L1
 **Status:** NOT STARTED
@@ -112,3 +113,10 @@ plumbing every game repeats, so it belongs in core, with the values chosen in te
   conversion is plumbing, so it ships in core.
 - 2026-10-19: The `low` tier keeps a fixed exposure. Unreal's mobile hardware targeting also turns
   auto exposure off (`Engine/Source/Editor/HardwareTargeting/Private/HardwareTargetingModule.cpp:235`).
+- 2026-10-19 (external visual review of the first three.js/Unreal sheet, checked against source):
+  Unreal's tonemapper also applies `BlueCorrection = 0.6` and `ExpandGamut = 1.0` by default
+  (`Engine/Source/Runtime/Engine/Private/Scene.cpp:436-437`, applied in
+  `Engine/Shaders/Private/PostProcessCombineLUTs.usf`). The filmic curve shipped without them; a box
+  now owns them. The review's "use AgX or an Unreal LUT" is rejected: the target is Unreal's own
+  curve and parameters, not a look-alike.
+- 2026-10-19: the live 5.8.3 level's sun is 6.0 lux, 6500 K, source angle 0.7357° (`template-actors.json`).

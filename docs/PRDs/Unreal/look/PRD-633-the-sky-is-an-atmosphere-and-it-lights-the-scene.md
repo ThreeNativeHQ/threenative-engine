@@ -105,3 +105,8 @@ sun colour all change together. That coupling is a large part of the Unreal look
 - 2026-10-19: Stylised templates (platformer's gradient sky, sailing's dome) keep their own sky if
   PRD-631 shows that the atmosphere sky does not suit them. Each such template is recorded here by
   name.
+- 2026-10-19 (external visual review, checked): the starter ties `scene.environmentIntensity` to
+  `scene.backgroundIntensity` (both `SKY_RANGE` = 2.5, `templates/starter/src/render/sky.ts:50,61`),
+  so the sky fill is too strong against the sun and shadows wash out. The atmosphere sky fixes the
+  ratio by construction: the environment comes from `SkyCapture` of the same atmosphere the sun
+  lights, at Unreal's sun lux, never from a separate intensity knob.

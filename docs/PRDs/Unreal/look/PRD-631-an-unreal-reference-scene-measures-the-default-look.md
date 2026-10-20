@@ -255,3 +255,8 @@ because generated source belongs to the game.
   aerial perspective and clouds — [PRD-562](../rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md),
   [PRD-VQ-08](../rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md). Installed now: `ssgi`, `ssr`,
   `ProbeVolume` (static bake), `Atmosphere`. A new PRD is filed only for a residual none of these owns.
+- 2026-10-19 (layer ownership after an external visual review): L7 (Lumen GI) and L8 (Lumen
+  reflections) had no owner in this epic. Owner rule (absorb, don't duplicate): the epic absorbs
+  [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md) for L8, starting with the
+  installed `ssr`, and the GI owners listed above for L7, starting with the installed `ssgi` and
+  `ProbeVolume`. They run after PRD-632 to PRD-636, on this branch and PR.

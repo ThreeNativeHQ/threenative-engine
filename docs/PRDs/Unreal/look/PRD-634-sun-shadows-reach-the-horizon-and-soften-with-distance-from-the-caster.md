@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-634 — Sun shadows reach the horizon and soften with distance from the caster
 
-**Status:** NOT STARTED
-**Priority:** P2 — no box is ticked: the starter's sun shadow ends 14 m from the player and has the same edge width everywhere, while Unreal's default shadows cover the view and widen with the gap between caster and receiver.
+**Status:** PARTIAL
+**Priority:** P2 — template integration and native parity remain open: the starter's sun shadow ends 14 m from the player and has the same edge width everywhere, while Unreal's default shadows cover the view and widen with the gap between caster and receiver.
 **Complexity:** 6 (MEDIUM) — a shadow-filter mechanism in core (+2), the shadow method choice across 13 templates (+2), native proof of both (+2); risk override: the templates already reverted a virtual-shadow default once (level-boundary artefacts), so Phase 1 measures before anything changes.
 **Owner:** João
 **Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L5 row). Coordinates with [PRD-457](../rendering/PRD-457-virtual-shadows-scale-by-measurement.md), which owns virtual-shadow page cost. Builds on [PRD-572](../../done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md) and [PRD-538](../../done/PRD-538-shadow-maps-redraw-only-what-streamed-in.md).
@@ -81,9 +81,9 @@ A capsule's feet stay sharp, and a shadow cast from 10 m up spreads to about 9 c
 - [ ] The three candidates are scored on the L5 cells and on `high` frame time, and the winner is recorded under `## Decisions`. proof: `pnpm unreal-look:compare --layer L5 --candidates single,cascades,virtual`.
 
 #### Phase 2: The source-angle filter
-**Status:** NOT STARTED
+**Status:** PARTIAL — core mechanism and CPU checks only; GPU rendering, native parity and starter integration unverified.
 **Files:** `packages/core/src/render/soft-shadow.ts` (new), `packages/core/__tests__/soft-shadow.spec.ts`, `packages/runtime-native/src/engine/shader/standard.cpp`
-- [ ] The filter width grows linearly with the caster gap, and is clamped at one texel for a gap of 0. proof: `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts`.
+- [x] The filter width grows linearly with the caster gap, and is clamped at one texel for a gap of 0. proof: `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts` — 2026-10-19: 4 tests pass, exit 0; invalid inputs and GPU-free factory/node creation covered. `pnpm exec biome check packages/core/src/render/soft-shadow.ts packages/core/__tests__/soft-shadow.spec.ts packages/core/src/index.ts` and `pnpm --filter @threenative/core exec tsc --noEmit` both exit 0. Game supplies `sourceAngleRad`; `shadow.filterNode` uses blocker search and variable-radius PCF. GPU/visual results unverified.
 - [ ] The native engine applies the same filter within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests soft-shadow-source-angle`.
 - [ ] AC-2 passes on the starter. proof: `pnpm unreal-look:compare --layer L5 --metric penumbra`.
 
@@ -101,3 +101,7 @@ A capsule's feet stay sharp, and a shadow cast from 10 m up spreads to about 9 c
 - 2026-10-19: Unreal's SMRT traces rays through the shadow map. This PRD copies the effect (a
   penumbra that grows with the caster gap), not the method. A blocker-search filter gives that
   effect on any shadow method, and WebGPU can run it.
+- 2026-10-19: the measured source angle is 0.7357° (live 5.8.3 level dump, `template-actors.json`),
+  not 0.5357°; the templates use the measured value. The starter's `shadow.radius = 2`
+  (`templates/starter/src/render/lighting.ts:28`) is part of the blob look the review flagged;
+  the source-angle filter replaces it.

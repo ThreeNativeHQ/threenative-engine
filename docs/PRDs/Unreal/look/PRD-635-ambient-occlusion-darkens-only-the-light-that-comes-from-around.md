@@ -87,3 +87,7 @@ so the surface BRDF itself needs no change.
   compensate GGX multi-scatter. Both use Lambert diffuse and F0 = 0.04 for dielectrics, as
   Unreal's default lit does (`Engine/Shaders/Private/ShadingCommon.ush:122`;
   `Engine/Source/Runtime/RenderCore/Private/RenderUtils.cpp:2147`).
+- 2026-10-19 (external visual review, checked): Unreal's interior is cool and darker toward the back
+  because Lumen occludes the sky inside the room (layer L7). Before the GI PRDs land, the installed
+  `ProbeVolume` (static bake) is the candidate for interior sky occlusion; the AO change in this PRD
+  only stops AO from darkening direct light.
