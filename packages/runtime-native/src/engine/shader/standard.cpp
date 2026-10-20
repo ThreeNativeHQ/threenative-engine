@@ -841,9 +841,13 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         // table entry.w carries receiverPlaneBias so changing the policy never changes a program.
         const ExprId slopeBias = f.mul(f.div(f.div(f.mul(slope, f.mul(extent, t.f(2))), mapSize), span), footprint);
         const ExprId baseZ = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
+        const ExprId mover = f.loadStorage(table, f.construct(Type::u32(), {
+            f.add(t.f(float(levels * 9 + l)), f.mul(t.f(float(levels)), f.mul(tiles, tiles)))}));
+        auto sampleLayer = [&](bool moving) {
+        const ExprId resolution = moving ? f.swizzle(mover, "z") : mapSize;
         ExprId sum = kInvalid;
         for (int tap = 0; tap < 5; ++tap) {
-            const ExprId sampleUv = f.call("clamp", {f.add(uv, f.mul(vogelDisk(f, t, tap, phi), f.div(radius, mapSize))),
+            const ExprId sampleUv = f.call("clamp", {f.add(uv, f.mul(vogelDisk(f, t, tap, phi), f.div(radius, resolution))),
                 f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
             const ExprId grid = f.mul(sampleUv, tiles);
             const ExprId tile = f.call("min", {f.call("floor", {grid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
@@ -851,22 +855,28 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                 f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
             const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
             const ExprId local = f.mul(f.sub(grid, tile), f.swizzle(params, "x"));
-            const ExprId atlasUv = f.div(f.add(f.add(f.swizzle(entry, "xy"), f.construct(Type::vec(2), {f.swizzle(params, "y")})), local), f.swizzle(params, "z"));
-            const ExprId z = f.sub(baseZ, f.mul(slopeBias, f.swizzle(entry, "w")));
+            const ExprId atlasUv = moving
+                ? f.div(f.add(f.swizzle(mover, "xy"), f.mul(sampleUv, resolution)), f.swizzle(params, "z"))
+                : f.div(f.add(f.add(f.swizzle(entry, "xy"), f.construct(Type::vec(2), {f.swizzle(params, "y")})), local), f.swizzle(params, "z"));
+            const ExprId z = f.sub(baseZ, f.mul(f.mul(slopeBias, f.div(mapSize, resolution)), f.swizzle(entry, "w")));
             const ExprId value = f.select(f.less(t.f(0), f.swizzle(entry, "z")), f.sampleCompare(map, atlasUv, z), t.f(1));
             sum = sum == kInvalid ? value : f.add(sum, value);
         }
         const VarId filtered = f.var(Type::f32(), f.mul(sum, t.f(1.0f / 5.0f)));
-        const ExprId filterIndex = f.add(t.f(float(levels * 9)), f.mul(t.f(float(levels)), f.mul(tiles, tiles)));
+        const ExprId filterIndex = f.add(t.f(float(levels * 10)), f.mul(t.f(float(levels)), f.mul(tiles, tiles)));
         const ExprId filter = f.loadStorage(table, f.construct(Type::u32(), {filterIndex}));
         f.If(f.less(t.f(0), f.swizzle(filter, "w")), [&] {
             const ExprId tangent = f.swizzle(filter, "x"), blockers = f.swizzle(filter, "y"), samples = f.swizzle(filter, "z");
-            const ExprId texel = f.div(t.f(1), mapSize), width = f.mul(extent, t.f(2));
+            const ExprId texel = f.div(t.f(1), resolution), width = f.mul(extent, t.f(2));
             // Match core's integer raw-depth loads, clamped in the virtual level before resolving
             // the physical page. A wide penumbra crosses pages, never a neighbour's atlas tile.
             auto load = [&](ExprId atUv) {
-                const ExprId pixel = f.call("clamp", {f.call("floor", {f.mul(atUv, mapSize)}),
-                    f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {f.sub(mapSize, t.f(1))})});
+                const ExprId pixel = f.call("clamp", {f.call("floor", {f.mul(atUv, resolution)}),
+                    f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {f.sub(resolution, t.f(1))})});
+                if (moving) {
+                    const ExprId coordinate = f.construct(Type::vec(2, Type::Scalar::I32), {f.add(f.swizzle(mover, "xy"), pixel)});
+                    return f.textureLoad(map, coordinate, f.constant(int32_t(0)));
+                }
                 const ExprId tile = f.call("floor", {f.div(pixel, f.swizzle(params, "x"))});
                 const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
                     f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
@@ -902,7 +912,12 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
             });
             f.assign(filtered, f.select(f.less(t.f(0), f.load(blockerCount)), f.div(f.load(visibility), samples), t.f(1)));
         });
-        ExprId value = f.load(filtered);
+        return f.load(filtered);
+        };
+        ExprId value = sampleLayer(false);
+        // A separate map shares the held level camera; animated casters never dirty static pages.
+        const ExprId moverValue = sampleLayer(true);
+        value = f.call("min", {value, f.select(f.less(t.f(0), f.swizzle(mover, "w")), moverValue, t.f(1))});
         value = f.select(f.less(f.swizzle(uv, "x"), t.f(0)), t.f(1), value);
         value = f.select(f.less(t.f(1), f.swizzle(uv, "x")), t.f(1), value);
         value = f.select(f.less(f.swizzle(uv, "y"), t.f(0)), t.f(1), value);

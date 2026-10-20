@@ -97,6 +97,7 @@ struct DrawCache {
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
 struct DrawItem {
+    const Object3D* shadowObject = nullptr;
     uint32_t layers = 1;
     bool mainPass = true;
     bool background = false;
@@ -784,12 +785,16 @@ private:
     // light still binds a 2D map after light i becomes a point light.
     std::vector<ShadowMap> shadowMaps_, cubeShadowMaps_;
     bool shadowMapsChanged_ = false;  // compilation changes survive until a real frame rebuilds groups
+    struct VirtualShadowCosts {
+        std::mutex mutex;
+        std::map<int, std::pair<double, uint64_t>> levels;
+    };
     struct VirtualShadow {
         shadows::PageAtlas atlas;
         std::shared_ptr<const shadows::AtlasOptions> source;
         ShadowMap map;
-        std::map<uint64_t, Box3> casters;
-        std::map<uint64_t, std::string> casterPrograms;
+        std::shared_ptr<VirtualShadowCosts> costs = std::make_shared<VirtualShadowCosts>();
+        std::map<int, uint64_t> consumedCosts;
     };
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     bool virtualCut_ = false;

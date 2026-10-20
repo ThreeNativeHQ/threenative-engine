@@ -1234,7 +1234,19 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   /** Engine bridge: preserve whether depth was authored, rather than mistaking fallback values for overrides. */
   get [Symbol.for("threenative.virtualShadow")](): object {
-    return { ...this.options, autoDepth: this.#autoDepth };
+    return {
+      ...this.options,
+      autoDepth: this.#autoDepth,
+      pinnedStatic: [...this.#pinnedRoots].map((root) => root.id),
+      trackedCasters: [...this.#casters.values()].map((root) => root.id),
+    };
+  }
+
+  #nativeCommand(command: string, data: object = {}): void {
+    const dispatch = (this as unknown as Record<symbol, ((value: object) => void) | undefined>)[
+      Symbol.for("threenative.virtualShadowCommand")
+    ];
+    dispatch?.({ command, ...data });
   }
 
   /** The per-frame counters, as of the last `updateBefore`. */
@@ -1313,6 +1325,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       return object.uuid;
     }
     if (previous !== undefined && previous !== object) this.#restoreMoverChildren(object.uuid);
+    this.#nativeCommand("track", { id: object.id });
     this.#casters.set(object.uuid, object);
     this.#rememberMoverChildren(object);
     // It leaves the cached levels from here on: only the ones around it redraw without it.
@@ -1324,6 +1337,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const id = typeof objectOrId === "string" ? objectOrId : objectOrId.uuid;
     const object = this.#casters.get(id);
     if (object === undefined) return false;
+    this.#nativeCommand("untrack", { id: object.id });
     this.#restoreMoverChildren(id);
     this.tracker.remove(id);
     const removed = this.#casters.delete(id);
@@ -1337,6 +1351,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * calls `invalidateRegion`. Takes effect from the next frame.
    */
   pinStatic(object: Object3D): void {
+    this.#nativeCommand("pin", { id: object.id });
     this.#pinnedRoots.add(object);
     // The table is rebuilt on the next frame, which is where the pin reaches each mesh.
     this.#casterStale = true;
@@ -1344,6 +1359,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   /** Force every level to re-render on the next frame — a tree fell, a door opened. */
   invalidateAll(): void {
+    this.#nativeCommand("invalidateAll");
     this.#invalidateAll = true;
     this.#regions.length = 0;
     this.tracker.invalidateAll();
@@ -1368,6 +1384,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
     bounds: IBoundsLike & { admission?: boolean },
     admission = bounds.admission === true,
   ): void {
+    this.#nativeCommand("invalidateRegion", {
+      bounds: [bounds.min.x, bounds.min.y, bounds.min.z, bounds.max.x, bounds.max.y, bounds.max.z],
+    });
     if (this.#levels.length === 0) return;
     this.#regions.push({
       ...(admission ? { admission: true as const } : {}),

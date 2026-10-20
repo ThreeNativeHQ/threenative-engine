@@ -191,6 +191,8 @@ class DirectionalClipmap {
     /** Re-snaps every level's window around `worldPoint`; returns the current windows. */
     const std::vector<ClipWindow>& updateCenter(const Vector3& worldPoint);
 
+    void setRefreshStep(int level, double step) { refreshStep_.at(level) = step; }
+
     [[nodiscard]] bool containsPage(int level, int x, int y) const;
 
     /** The page `worldPoint` falls in on `level`; `level` must be valid (from `selectLevel`). */

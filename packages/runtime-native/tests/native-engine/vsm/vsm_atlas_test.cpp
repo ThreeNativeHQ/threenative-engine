@@ -46,6 +46,14 @@ void binding() {
     const auto held = plan->table();
     CHECK(!plan->update(Vector3(100, 0, 0), Vector3(0, 1, 1)).empty());
     CHECK(plan->table() != held);
+    auto defaults = options;
+    for (const char* key : {"adaptiveRefresh", "adaptiveCasterGate", "followViewFocus", "shadowLodBias"})
+        defaults.fields.emplace_back(key, Value::of(true));
+    defaults.fields.emplace_back("invalidationDelay", Value::list({0.25, 0.75}));
+    defaults.fields.emplace_back("minCasterTexels", Value::of(1.5));
+    bool accepted = true;
+    try { set(&light.shadow, defaults, store); } catch (const Unsupported&) { accepted = false; }
+    CHECK(accepted);
     auto bad = options;
     bad.fields.emplace_back("autoDepth", Value::of(true));
     set(&light.shadow, bad, store);
@@ -73,8 +81,98 @@ void binding() {
     CHECK(!light.shadow.virtualShadow);
 }
 
+void policies() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
+    options.staticAfterFrames = 2;
+    options.adaptiveRefresh = true; options.adaptiveCasterGate = true;
+    options.minCasterTexels = 1.5;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value()); if (!atlas) return;
+    const Vector3 eye(0, 0, 0), sun(0, 1, 0);
+    CasterState caster; caster.key = 1;
+    caster.bounds.set(Vector3(-1, 0, -1), Vector3(1, 2, 1));
+    atlas->updateCasters({caster});
+    atlas->update(eye, sun); atlas->update(eye, sun);
+    CHECK(atlas->update(eye, sun).empty());
+    const double base = atlas->refreshStep(0), gate = atlas->casterGate(0);
+    atlas->recordCost(0, 100, 1.0 / 120); atlas->recordCost(0, 100, 1.0 / 120);
+    CHECK(atlas->refreshStep(0) == base); // warm-up readings ignored
+    atlas->recordCost(0, 100, 1.0 / 120);
+    CHECK(atlas->refreshStep(0) > base);
+    CHECK(atlas->refreshStep(0) <= 1 - (0.9 - base));
+    CHECK(atlas->casterGate(0) > gate);
+    CHECK(atlas->casterGate(1) == 1.5 * 48 / 256);
+    // Rotation can change a caster while leaving its AABB exactly unchanged.
+    caster.world.makeRotationY(0.5);
+    atlas->updateCasters({caster});
+    CHECK(atlas->isMover(1) && !atlas->drawsStatic(1));
+    auto pages = atlas->update(eye, sun);
+    CHECK(!pages.empty() && pages.size() < 32); // urgent regional eviction on both levels
+    CHECK(std::any_of(pages.begin(), pages.end(), [](const auto& p) { return p.level == 0; }));
+    CHECK(std::any_of(pages.begin(), pages.end(), [](const auto& p) { return p.level == 1; }));
+    CHECK(atlas->table()[35] == 1 && atlas->table()[71] == 1);
+    atlas->appendMoverPages(pages);
+    CHECK(std::count_if(pages.begin(), pages.end(), [](const auto& p) { return p.mover; }) == 2);
+    CHECK(atlas->table().back() == 1);
+    // Deformation renders movers every frame without a new static invalidation.
+    caster.deforming = true;
+    for (int frame = 0; frame < 4; ++frame) {
+        atlas->updateCasters({caster});
+        pages = atlas->update(eye, sun);
+        CHECK(pages.empty());
+        atlas->appendMoverPages(pages);
+        CHECK(pages.size() == 2 && pages.front().mover);
+    }
+    // Settling outside the fine window must wait only for the coarse level which covers it.
+    caster.bounds.set(Vector3(18, 0, -1), Vector3(20, 2, 1));
+    caster.world.makeTranslation(19, 0, 0);
+    atlas->updateCasters({caster});
+    atlas->update(eye, sun);
+    caster.deforming = false;
+    atlas->updateCasters({caster});
+    CHECK(!atlas->drawsStatic(1));
+    atlas->updateCasters({caster});
+    CHECK(atlas->drawsStatic(1) && atlas->isMover(1));
+    for (int frame = 0; frame < 120; ++frame) atlas->update(eye, sun);
+    CHECK(!atlas->isMover(1));
+    // Explicit tracking survives stillness; pinStatic opts out of transform detection.
+    caster.tracked = true; atlas->updateCasters({caster});
+    CHECK(atlas->isMover(1));
+    caster.tracked = false; caster.pinned = true; atlas->updateCasters({caster});
+    for (int frame = 0; frame < 120; ++frame) atlas->update(eye, sun);
+    caster.world.makeRotationY(1); atlas->updateCasters({caster});
+    CHECK(!atlas->isMover(1));
+    atlas->updateCasters({});
+    CHECK(!atlas->isMover(1));
+
+    options.adaptiveRefresh = false; options.adaptiveCasterGate = false;
+    options.invalidationDelay = {0.25, 0.75};
+    auto delayed = PageAtlas::create(options, error);
+    delayed->update(eye, sun); delayed->update(eye, sun);
+    Box3 region; region.set(Vector3(-1, 0, -1), Vector3(1, 2, 1));
+    delayed->invalidate(region);
+    CHECK(delayed->update(eye, sun).empty());
+    std::set<int> redrawn;
+    for (int frame = 0; frame < 60; ++frame) {
+        pages = delayed->update(eye, sun);
+        if (!pages.empty()) redrawn.insert(pages.front().level);
+    }
+    CHECK(redrawn == std::set<int>({0, 1}));
+    CHECK(delayed->update(eye, sun).empty());
+    Box3 floor; floor.set(Vector3(-100, -1, -100), Vector3(100, 0, 100));
+    const auto focused = PageAtlas::viewFocus(Vector3(0, 30, 0), Vector3(0, -0.6, -0.8), 100, 8, {floor});
+    CHECK(focused.distanceTo(Vector3(0, 0, -40)) < 1e-10);
+    CHECK(PageAtlas::viewFocus(Vector3(0, 3, 0), Vector3(0, -1, 0), 100, 8, {floor}).y == 3);
+    CHECK(PageAtlas::viewFocus(Vector3(0, 30, 0), Vector3(0, 1, 0), 100, 8, {floor}).y == 30);
+    options.invalidationDelay = {-1}; CHECK(!PageAtlas::create(options, error));
+    options.invalidationDelay = {0}; options.expensiveRefreshShare = 0; CHECK(!PageAtlas::create(options, error));
+}
+
 void atlas() {
     binding();
+    policies();
     std::string error;
     AtlasOptions options;
     options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
@@ -85,7 +183,7 @@ void atlas() {
     const Vector3 eye(0, 0, 0), sun(0, 1, 1);
     auto pages = atlas->update(eye, sun);
     CHECK(pages.size() == 16);
-    CHECK(atlas->table().size() == (18 + 32) * 4);
+    CHECK(atlas->table().size() == (18 + 32 + 2) * 4);
     CHECK(atlas->table()[35] == 1 && atlas->table()[71] == 0);
     for (const auto& page : pages) {
         const auto [px, py] = atlas->origin(page.slot);
@@ -102,14 +200,14 @@ void atlas() {
     CHECK(atlas->update(eye, sun).empty()); // cached
     Box3 changed; changed.set(Vector3(-1, 0, -1), Vector3(1, 2, 1));
     atlas->invalidate(changed);
-    CHECK(atlas->update(eye, sun).size() == 16);
+    CHECK(atlas->update(eye, sun).size() == 4);
     const auto held = atlas->table();
     pages = atlas->update(Vector3(100, 0, 0), sun);
     CHECK(pages.size() == 16 && pages.front().level == 0);
     CHECK(atlas->table()[35] == 1 && atlas->table()[71] == 1);
     // The deferred coarse map keeps its own matrix/window and protected physical pages.
     CHECK(std::equal(held.begin() + 36, held.begin() + 72, atlas->table().begin() + 36));
-    CHECK(std::equal(held.begin() + 136, held.end(), atlas->table().begin() + 136));
+    CHECK(std::equal(held.begin() + 136, held.begin() + 200, atlas->table().begin() + 136));
     for (const auto& page : pages) {
         const auto [px, py] = atlas->origin(page.slot);
         for (int i = 136; i < 200; i += 4)
@@ -174,7 +272,7 @@ void atlas() {
     CHECK(horizon->table()[31] == 59);
     options.autoDepth = false;
     options.adaptiveRefresh = true;
-    CHECK(!PageAtlas::create(options, error) && error == "TN_VIRTUAL_SHADOW_UNSUPPORTED: adaptiveRefresh");
+    CHECK(PageAtlas::create(options, error).has_value());
     options.adaptiveRefresh = false;
     options.mapSize = 255;
     CHECK(!PageAtlas::create(options, error));

@@ -14,7 +14,7 @@
 
 import { defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
-import { shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
+import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
 import { withUpdateRanges } from "./update-ranges.js";
 
 export interface IRegistryClass {
@@ -912,7 +912,16 @@ export function defineBrowserClasses(
             return;
           }
           if (property === "shadowNode") {
-            const options = virtualShadowOptions(value);
+            if (shaderNodes.get(ref.key)?.get(property) === value) return;
+            const options = virtualShadowOptions(value, (command) =>
+              runtime.set(
+                ref,
+                property,
+                Object.fromEntries(
+                  Object.entries(command).map(([key, item]) => [key, toEngine(item)]),
+                ),
+              ),
+            );
             runtime.set(
               ref,
               property,
@@ -923,6 +932,7 @@ export function defineBrowserClasses(
                   ),
             );
             const slots = shaderNodes.get(ref.key) ?? new Map<string, unknown>();
+            if (slots.get(property) !== value) detachVirtualShadow(slots.get(property));
             shaderNodes.set(ref.key, slots.set(property, value));
             return;
           }

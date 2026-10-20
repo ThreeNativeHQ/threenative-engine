@@ -354,11 +354,52 @@ void shadowBindings(ClassBinding& b, const char* shadowClass, std::vector<const 
 // its numbers, `mapSize`, and `camera`, which is the shadow camera itself (orthographic for a
 // directional light, perspective otherwise). Only a spot shadow has `focus`.
 void registerLightShadow(ClassBinding& b, bool spot) {
-    b.setters["shadowNode"] = [](void* self, const Value& value) {
+    b.setters["shadowNode"] = [](void* self, const Value& value, Store& store) {
         auto& shadow = *as<LightShadow>(self);
         if (value.kind == Value::Kind::Null) { shadow.virtualShadow.reset(); return; }
         if (value.kind != Value::Kind::Record || !dynamic_cast<OrthographicCamera*>(shadow.camera.get()))
             throw Unsupported{"TN_NATIVE_SHADOW_NODE_UNSUPPORTED: directional VirtualShadowNode required"};
+        const auto command = std::find_if(value.fields.begin(), value.fields.end(), [](const auto& f) { return f.first == "command"; });
+        if (command != value.fields.end()) {
+            if (!shadow.virtualShadow) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command without node"};
+            auto& control = *shadow.virtualShadow->control;
+            if (command->second.kind != Value::Kind::String) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command"};
+            const std::string& name = command->second.text;
+            if (name == "invalidateAll") { control.invalidateAll = true; return; }
+            if (name == "lod") {
+                const Value* idValue = nullptr; const Value* geometryValue = nullptr;
+                for (const auto& [key, v] : value.fields) {
+                    if (key == "id") idValue = &v;
+                    if (key == "geometry") geometryValue = &v;
+                }
+                if (!idValue || !geometryValue) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod command"};
+                const double id = number(*idValue);
+                if (!std::isfinite(id) || id < 0 || id > 9007199254740991.0 || id != std::floor(id))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: caster id"};
+                auto* object = store.find(*geometryValue);
+                if (!object || !acceptsClass(object->cls, "BufferGeometry")) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod geometry"};
+                control.lods[uint64_t(id)] = std::static_pointer_cast<BufferGeometry>(object->ptr);
+                control.invalidateAll = true; return;
+            }
+            const auto arg = std::find_if(value.fields.begin(), value.fields.end(), [&](const auto& f) { return f.first == (name == "invalidateRegion" ? "bounds" : "id"); });
+            if (arg == value.fields.end()) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command argument"};
+            if (name == "invalidateRegion") {
+                const auto box = numbersOf(arg->second);
+                if (box.size() != 6 || std::any_of(box.begin(), box.end(), [](double n) { return !std::isfinite(n); }) || box[0] > box[3] || box[1] > box[4] || box[2] > box[5])
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: region"};
+                Box3 bounds; bounds.set(Vector3(box[0], box[1], box[2]), Vector3(box[3], box[4], box[5]));
+                control.regions.push_back(bounds); return;
+            }
+            const double id = number(arg->second);
+            if (!std::isfinite(id) || id < 0 || id > 9007199254740991.0 || id != std::floor(id))
+                throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: caster id"};
+            if (name == "pin") control.pinned.insert(uint64_t(id));
+            else if (name == "track") control.tracked.insert(uint64_t(id));
+            else if (name == "untrack") control.tracked.erase(uint64_t(id));
+            else if (name == "unlod") { control.lods.erase(uint64_t(id)); control.invalidateAll = true; }
+            else throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command"};
+            return;
+        }
         shadows::AtlasOptions options;
         options.autoDepth = true;
         bool distanceGiven = false, rangeGiven = false, automaticGiven = false;
@@ -366,7 +407,15 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             distanceGiven |= key == "lightDistance";
             rangeGiven |= key == "depthRange";
             automaticGiven |= key == "autoDepth";
-            if (key == "clipExtents") options.clipExtents = numbersOf(v);
+            if (key == "pinnedStatic" || key == "trackedCasters") {
+                auto& ids = key == "pinnedStatic" ? options.control->pinned : options.control->tracked;
+                for (double id : numbersOf(v)) {
+                    if (!std::isfinite(id) || id < 0 || id > 9007199254740991.0 || id != std::floor(id))
+                        throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: caster id"};
+                    ids.insert(uint64_t(id));
+                }
+            }
+            else if (key == "clipExtents") options.clipExtents = numbersOf(v);
             else if (key == "selectionGuard") options.selectionGuard = numbersOf(v);
             else if (key == "refreshStep") options.refreshStep = numbersOf(v);
             else if (key == "invalidationDelay") options.invalidationDelay = numbersOf(v);
@@ -384,7 +433,15 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             else if (key == "adaptiveCasterGate") options.adaptiveCasterGate = flag(v);
             else if (key == "followViewFocus") options.followViewFocus = flag(v);
             else if (key == "shadowLodBias") options.shadowLodBias = flag(v);
+            else if (key == "staticAfterFrames" || key == "moverMapSize") {
+                const double n = number(v);
+                if (!std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096)
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: " + key};
+                (key == "staticAfterFrames" ? options.staticAfterFrames : options.moverMapSize) = int(n);
+            }
+            else if (key == "expensiveRefreshShare") options.expensiveRefreshShare = number(v);
             else if (key == "minCasterTexels") options.minCasterTexels = number(v);
+            else if (key == "partialRedraw") options.partialRedraw = flag(v);
             else if (key == "receiverPlaneBias") options.receiverPlaneBias = flag(v);
         }
         if (!automaticGiven) options.autoDepth = !distanceGiven || !rangeGiven;

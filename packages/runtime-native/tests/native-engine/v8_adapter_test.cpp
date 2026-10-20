@@ -437,6 +437,15 @@ void scene() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
     Adapter adapter(rt.isolate, rt.context);
+    CHECK(run(rt, adapter, R"JS(
+        const sun = new DirectionalLight();
+        sun.shadow.shadowNode = {clipExtents:[8,24], selectionGuard:[0.9,0.9], refreshStep:[0.125,0.125],
+            mapSize:256, autoDepth:true, adaptiveRefresh:true, adaptiveCasterGate:true, followViewFocus:true,
+            shadowLodBias:true, minCasterTexels:1.5, invalidationDelay:[0.25,0.75], pinnedStatic:[], trackedCasters:[]};
+        sun.shadow.shadowNode = {command:"invalidateRegion", bounds:[-1,0,-1,1,2,1]};
+        "virtual-shadow-records-accepted";
+    )JS") == "virtual-shadow-records-accepted");
+
     const std::string got = run(rt, adapter, R"JS(
         const parent = new Object3D(), child = new Object3D();
         parent.add(child);

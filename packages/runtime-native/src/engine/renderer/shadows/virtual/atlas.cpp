@@ -9,17 +9,13 @@ double at(const std::vector<double>& values, int level) { return values[std::min
 }
 
 std::optional<PageAtlas> PageAtlas::create(const AtlasOptions& options, std::string& error) {
-    const std::pair<const char*, bool> unsupported[] = {
-        {"adaptiveRefresh", options.adaptiveRefresh}, {"adaptiveCasterGate", options.adaptiveCasterGate},
-        {"followViewFocus", options.followViewFocus}, {"shadowLodBias", options.shadowLodBias},
-        {"minCasterTexels", options.minCasterTexels != 0},
-        {"invalidationDelay", options.invalidationDelay.empty() || std::any_of(options.invalidationDelay.begin(), options.invalidationDelay.end(), [](double v) { return v != 0; })}};
-    for (const auto& [name, active] : unsupported) if (active) {
-        error = "TN_VIRTUAL_SHADOW_UNSUPPORTED: " + std::string(name); return std::nullopt;
-    }
     if (options.mapSize <= 0 || options.mapSize > 4096 || options.pageTexels <= 0 ||
         options.mapSize % options.pageTexels || options.border < 1 || options.border > 64 ||
-        options.clipExtents.size() > 8 || options.selectionGuard.empty() || options.refreshStep.empty() ||
+        options.staticAfterFrames <= 0 || options.moverMapSize < 1 || options.moverMapSize > 4096 ||
+        !std::isfinite(options.expensiveRefreshShare) || options.expensiveRefreshShare <= 0 || options.expensiveRefreshShare > 1 ||
+        !std::isfinite(options.minCasterTexels) || options.minCasterTexels < 0 ||
+        options.invalidationDelay.empty() || std::any_of(options.invalidationDelay.begin(), options.invalidationDelay.end(),
+            [](double v) { return !std::isfinite(v) || v < 0; }) || options.clipExtents.size() > 8 || options.selectionGuard.empty() || options.refreshStep.empty() ||
         !std::isfinite(options.lightDistance) || options.lightDistance <= 1 ||
         !std::isfinite(options.depthRange) || options.depthRange <= 0) {
         error = "TN_VIRTUAL_SHADOW_INVALID: atlas/depth configuration";
@@ -46,16 +42,17 @@ std::optional<PageAtlas> PageAtlas::create(const AtlasOptions& options, std::str
     return out;
 }
 
-void PageAtlas::invalidateAll() { for (auto& level : levels_) level.dirty = true; }
+void PageAtlas::invalidateAll() { for (auto& level : levels_) { level.dirty = true; level.dirtyAll = true; } }
 
-void PageAtlas::invalidate(const Box3& bounds) {
+void PageAtlas::invalidate(const Box3& bounds, bool urgent) {
     for (auto& level : levels_) {
         if (!level.mapped) continue;
         const auto u = projectBounds(bounds, clipmap_->basisU()), v = projectBounds(bounds, clipmap_->basisV());
         const double lowU = level.window.minX * level.window.pageWorldSize;
         const double lowV = level.window.minY * level.window.pageWorldSize;
         if (u.low <= lowU + 2 * level.window.extent && u.high >= lowU &&
-            v.low <= lowV + 2 * level.window.extent && v.high >= lowV) level.dirty = true;
+            v.low <= lowV + 2 * level.window.extent && v.high >= lowV) { level.dirty = true; level.urgent |= urgent;
+            for (const auto& page : level.pages) if (overlaps(page, bounds)) level.dirtySlots.insert(page.slot); }
     }
 }
 
@@ -64,7 +61,7 @@ bool PageAtlas::overlaps(const AtlasPage& page, const Box3& bounds) const {
     return u.low <= page.highU && u.high >= page.lowU && v.low <= page.highV && v.high >= page.lowV;
 }
 
-std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towards, bool cameraCut, const std::vector<Box3>& casters) {
+std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towards, bool cameraCut, const std::vector<Box3>& casters, double deltaSeconds) {
     Vector3 direction = towards;
     direction.normalize();
     // A cut requests fresh windows, but deferred levels retain their rendered matrices/pages,
@@ -86,6 +83,9 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
     direction_ = direction;
     previousEye_ = eye;
     started_ = true;
+    if (std::isfinite(deltaSeconds) && deltaSeconds > 0) frameSeconds_ = deltaSeconds;
+    now_ += frameSeconds_;
+    for (int l = 0; l < int(levels_.size()); ++l) clipmap_->setRefreshStep(l, refreshStep(l));
     const auto& windows = clipmap_->updateCenter(eye);
     const auto center = clipmap_->project(eye);
     ++frame_;
@@ -99,15 +99,21 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
     // The shipped TS node requests an entire granted clip window (its prototype's sparse
     // receiver-feedback path is not used by virtual-shadow.ts). Tile that same request into
     // physical pages; cached levels are neither cleared nor rendered.
-    // Native deformed casters invalidate every frame instead of using the browser's mover maps.
-    // Rotate the single-level grant so those invalidations cannot starve coarse coverage.
+    // One ordinary grant; urgent mover evictions cannot leave a detached old shadow behind.
+    bool granted = false;
+    const int startLevel = nextLevel_;
     for (int offset = 0; offset < int(levels_.size()); ++offset) {
-        const int l = (nextLevel_ + offset) % int(levels_.size());
+        const int l = (startLevel + offset) % int(levels_.size());
         auto& level = levels_[l];
         const auto& window = windows[l];
-        if (level.mapped && !level.dirty && level.window.minX == window.minX && level.window.minY == window.minY) continue;
+        const bool moved = !level.mapped || level.window.minX != window.minX || level.window.minY != window.minY;
+        const double gpuDelay = options_.adaptiveRefresh ? level.costMs / (1000 * options_.expensiveRefreshShare) : 0;
+        const bool matured = level.dirty && (level.urgent || now_ - level.lastRender >= std::max(at(options_.invalidationDelay, l), gpuDelay));
+        if ((!moved && !matured) || (granted && !level.urgent)) continue;
         if (level.mapped) for (int y = 0; y < tiles(); ++y) for (int x = 0; x < tiles(); ++x)
             protectedKeys.erase(makePageKey(l, level.window.minX + x * options_.pageTexels, level.window.minY + y * options_.pageTexels));
+        const Matrix4 oldMatrix = level.matrix;
+        bool partial = !moved && level.mapped && !level.dirtyAll && options_.partialRedraw;
         level.window = window;
         level.centerW = center.w;
         const double cu = (window.minX + options_.mapSize / 2.0) * window.pageWorldSize;
@@ -151,9 +157,12 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         Matrix4 projection;
         projection.makeOrthographic(-window.extent, window.extent, window.extent, -window.extent,
                                     level.near, level.far, CoordinateSystem::WebGPU);
+        level.projection = projection;
         level.matrix.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 1, 0, 0, 0, 0, 1);
         level.matrix.multiply(projection).multiply(level.view);
+        partial = partial && oldMatrix.elements == level.matrix.elements;
         level.slots.clear();
+        level.pages.clear();
         for (int y = 0; y < tiles(); ++y) for (int x = 0; x < tiles(); ++x) {
             const std::string key = makePageKey(l, window.minX + x * options_.pageTexels, window.minY + y * options_.pageTexels);
             const auto allocation = pool_->allocate(key, frame_, false, protectedKeys);
@@ -163,7 +172,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
             const double texel = window.pageWorldSize, pad = options_.border * texel;
             const double left = -window.extent + x * options_.pageTexels * texel;
             const double bottom = -window.extent + y * options_.pageTexels * texel;
-            AtlasPage page{l, x, y, allocation->entry.slot, level.view};
+            AtlasPage page; page.level = l; page.x = x; page.y = y; page.slot = allocation->entry.slot; page.view = level.view;
             page.projection.makeOrthographic(left - pad, left + options_.pageTexels * texel + pad,
                 bottom + options_.pageTexels * texel + pad, bottom - pad,
                 level.near, level.far, CoordinateSystem::WebGPU);
@@ -172,15 +181,116 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
             const double cameraU = target.dot(page.axisU), cameraV = target.dot(page.axisV);
             page.lowU = cameraU + left - pad; page.highU = cameraU + left + options_.pageTexels * texel + pad;
             page.lowV = cameraV + bottom - pad; page.highV = cameraV + bottom + options_.pageTexels * texel + pad;
-            pages.push_back(page);
+            level.pages.push_back(page);
+            if (!partial || level.dirtySlots.count(page.slot)) pages.push_back(page);
         }
         level.mapped = true;
         level.dirty = false;
+        level.dirtyAll = false; level.dirtySlots.clear();
+        level.urgent = false;
+        level.lastRender = now_;
+        for (auto& [key, motion] : motion_) motion.settling &= ~(1u << l);
+        granted = true;
         nextLevel_ = (l + 1) % int(levels_.size());
-        break;
     }
     writeTable();
     return pages;
+}
+
+std::pair<int, int> PageAtlas::moverOrigin(int level) const {
+    return {0, staticEdge() + level * (options_.moverMapSize + 2 * options_.border)};
+}
+
+bool PageAtlas::isMover(uint64_t key) const {
+    const auto it = motion_.find(key);
+    return it != motion_.end() && (it->second.moving || it->second.settling != 0);
+}
+
+bool PageAtlas::drawsStatic(uint64_t key) const {
+    const auto it = motion_.find(key);
+    return it == motion_.end() || !it->second.moving;
+}
+
+void PageAtlas::updateCasters(const std::vector<CasterState>& casters) {
+    std::set<uint64_t> present;
+    for (const auto& caster : casters) {
+        present.insert(caster.key);
+        auto [it, inserted] = motion_.try_emplace(caster.key);
+        auto& m = it->second;
+        const bool changed = !inserted && (caster.world.elements != m.caster.world.elements || caster.signature != m.caster.signature);
+        const bool moving = caster.tracked || (!caster.pinned && caster.automatic && (caster.deforming || changed));
+        if (moving) {
+            if (!m.moving && !inserted) invalidate(m.caster.bounds, true);
+            m.moving = true; m.quiet = 0; m.settling = 0;
+        } else if (m.moving && (caster.pinned || ++m.quiet >= options_.staticAfterFrames)) {
+            m.moving = false;
+            m.settling = 0;
+            for (int l = 0; l < int(levels_.size()); ++l)
+                if (levels_[l].mapped && std::any_of(levels_[l].pages.begin(), levels_[l].pages.end(),
+                    [&](const auto& page) { return overlaps(page, caster.bounds); })) m.settling |= 1u << l;
+            invalidate(caster.bounds);
+        } else if (inserted) invalidate(caster.bounds);
+        m.caster = caster;
+    }
+    for (auto it = motion_.begin(); it != motion_.end();) {
+        if (present.count(it->first)) { ++it; continue; }
+        if (!it->second.moving) invalidate(it->second.caster.bounds);
+        it = motion_.erase(it);
+    }
+}
+
+void PageAtlas::appendMoverPages(std::vector<AtlasPage>& pages) const {
+    if (std::none_of(motion_.begin(), motion_.end(), [](const auto& entry) {
+        return entry.second.moving || entry.second.settling;
+    })) return;
+    for (int l = 0; l < int(levels_.size()); ++l) {
+        const auto& level = levels_[l];
+        if (!level.mapped) continue;
+        AtlasPage p; p.level = l; p.mover = true; p.view = level.view; p.projection = level.projection;
+        const double extent = options_.clipExtents[l], pad = 2 * extent * options_.border / options_.moverMapSize;
+        p.projection.makeOrthographic(-extent-pad, extent+pad, extent+pad, -extent-pad,
+                                     level.near, level.far, CoordinateSystem::WebGPU);
+        pages.push_back(p);
+    }
+}
+
+void PageAtlas::recordCost(int l, double ms, double delta) {
+    if (l < 0 || l >= int(levels_.size()) || !std::isfinite(ms) || ms < 0) return;
+    if (std::isfinite(delta) && delta > 0) frameSeconds_ = delta;
+    auto& level = levels_[l];
+    if (++level.costReadings <= 2) return; // Compilation and uploads are not steady-state cost.
+    level.costMs = level.costMs == 0 ? ms : (level.costMs + ms) * 0.5;
+    const double budget = options_.expensiveRefreshShare * std::min(frameSeconds_ * 1000, 1000.0 / 60);
+    if (options_.adaptiveCasterGate && l == 0) {
+        if (level.costMs > budget) level.gateScale = std::min(8.0, level.gateScale * 1.5);
+        else if (level.costMs < budget * 0.5) level.gateScale = std::max(1.0, level.gateScale * 0.5);
+    }
+}
+
+double PageAtlas::refreshStep(int l) const {
+    const double base = at(options_.refreshStep, l);
+    if (!options_.adaptiveRefresh) return base;
+    const double budget = options_.expensiveRefreshShare * std::min(frameSeconds_ * 1000, 1000.0 / 60);
+    const double margin = std::max(base, 1 - (at(options_.selectionGuard, l) - base) - 1.0 / options_.mapSize);
+    return std::min(base * std::max(1.0, levels_[l].costMs / budget), margin);
+}
+
+double PageAtlas::casterGate(int l) const {
+    return options_.minCasterTexels * 2 * options_.clipExtents[l] / options_.mapSize * levels_[l].gateScale;
+}
+
+Vector3 PageAtlas::viewFocus(const Vector3& eye, const Vector3& forward, double far,
+                            double extent, const std::vector<Box3>& receivers) {
+    if (forward.y >= 0) return eye;
+    double height = -INFINITY;
+    for (const auto& box : receivers)
+        if (eye.x >= box.min.x && eye.x <= box.max.x && eye.z >= box.min.z && eye.z <= box.max.z)
+            height = std::max(height, box.max.y);
+    if (!std::isfinite(height) || eye.y - height <= extent) return eye;
+    const double distance = std::min((height - eye.y) / forward.y, far);
+    Vector3 focus = eye;
+    if (distance > 0) focus.addScaledVector(forward, distance);
+    return focus;
 }
 
 void PageAtlas::writeTable() {
@@ -194,7 +304,7 @@ void PageAtlas::writeTable() {
         for (int i = 0; i < 16; ++i) out[i] = float(level.matrix.elements[i]);
         out[16] = float((level.window.minX + options_.mapSize / 2.0) * level.window.pageWorldSize);
         out[17] = float((level.window.minY + options_.mapSize / 2.0) * level.window.pageWorldSize);
-        out[18] = float(options_.clipExtents[l]); out[19] = float(at(options_.selectionGuard, l));
+        out[18] = float(options_.clipExtents[l]); out[19] = float(at(options_.selectionGuard, l) - at(options_.refreshStep, l));
         const Vector3 axes[] = {clipmap_->basisU(), clipmap_->basisV(), clipmap_->basisW()};
         for (int i = 0; i < 3; ++i) { out[20 + 4*i] = float(axes[i].x); out[21 + 4*i] = float(axes[i].y); out[22 + 4*i] = float(axes[i].z); }
         out[23] = float(options_.mapSize); out[27] = float(tiles());
@@ -207,6 +317,14 @@ void PageAtlas::writeTable() {
             float* entry = table_.data() + (header + l * tiles() * tiles() + (tiles() - 1 - y) * tiles() + x) * 4;
             entry[0] = float(px); entry[1] = float(py); entry[2] = 1; entry[3] = options_.receiverPlaneBias ? 1 : 0;
         }
+    }
+    // One vec4 per level: mover viewport origin, resolution, active. Same held camera/depth.
+    for (int l = 0; l < int(levels_.size()); ++l) {
+        const auto [x, y] = moverOrigin(l);
+        const bool active = levels_[l].mapped && std::any_of(motion_.begin(), motion_.end(), [](const auto& e) {
+            return e.second.moving || e.second.settling;
+        });
+        table_.insert(table_.end(), {float(x + options_.border), float(y + options_.border), float(options_.moverMapSize), active ? 1.0f : 0.0f});
     }
 }
 } // namespace tn::engine::shadows

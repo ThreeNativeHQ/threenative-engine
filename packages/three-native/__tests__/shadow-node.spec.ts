@@ -1,9 +1,15 @@
-import { DirectionalLight } from "three";
+import { BufferGeometry, DirectionalLight, Mesh, Scene } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { type IBrowserRuntime, defineBrowserClasses } from "../src/browser-backend.js";
 import { bindUpstreamExports } from "../src/browser-entry.js";
 
-import { ShadowBaseNode, shadowFilterOptions, virtualShadowOptions } from "../src/shadow-node.js";
+import {
+  ShadowBaseNode,
+  detachVirtualShadow,
+  shadowFilterOptions,
+  syncVirtualShadowLods,
+  virtualShadowOptions,
+} from "../src/shadow-node.js";
 
 vi.mock("three/webgpu", async (original) => ({
   ...(await original<typeof import("three/webgpu")>()),
@@ -82,19 +88,50 @@ it("constructs core's automatic-depth node and installs through the facade sette
   const node = new CoreVirtualShadowNode(sun, {
     clipExtents: [8, 24],
     marker: false,
-    adaptiveRefresh: false,
-    adaptiveCasterGate: false,
-    followViewFocus: false,
-    shadowLodBias: false,
-    minCasterTexels: 0,
-    invalidationDelay: 0,
   });
   shadow.shadowNode = node;
   expect(shadow.shadowNode).toBe(node);
+  const installedWrites = writes.length;
+  shadow.shadowNode = node;
+  expect(writes).toHaveLength(installedWrites);
   expect(writes).toContainEqual([
     expect.any(Object),
     "shadowNode",
-    expect.objectContaining({ autoDepth: true, clipExtents: [8, 24] }),
+    expect.objectContaining({
+      autoDepth: true,
+      adaptiveRefresh: true,
+      followViewFocus: true,
+      clipExtents: [8, 24],
+    }),
+  ]);
+  const caster = new Mesh(new BufferGeometry());
+  const scene = new Scene();
+  scene.add(sun, caster);
+  node.trackCaster(caster);
+  expect(writes.at(-1)).toEqual([
+    expect.any(Object),
+    "shadowNode",
+    { command: "track", id: caster.id },
+  ]);
+  node.pinStatic(caster);
+  expect(writes.at(-1)).toEqual([
+    expect.any(Object),
+    "shadowNode",
+    { command: "pin", id: caster.id },
+  ]);
+  node.untrackCaster(caster);
+  expect(writes.at(-1)).toEqual([
+    expect.any(Object),
+    "shadowNode",
+    { command: "untrack", id: caster.id },
+  ]);
+  node.invalidateAll();
+  expect(writes.at(-1)).toEqual([expect.any(Object), "shadowNode", { command: "invalidateAll" }]);
+  node.invalidateRegion({ min: { x: -1, y: 0, z: -1 }, max: { x: 1, y: 2, z: 1 } });
+  expect(writes.at(-1)).toEqual([
+    expect.any(Object),
+    "shadowNode",
+    { command: "invalidateRegion", bounds: [-1, 0, -1, 1, 2, 1] },
   ]);
   const filterSource = "../../core/src/render/soft-shadow.ts";
   const { sourceAngleShadowFilter } = await import(filterSource);
@@ -137,5 +174,46 @@ it("validates branded source-angle parameters before either engine ABI sees them
       [Symbol.for("threenative.sourceAngleShadowFilter")]: options,
     });
     expect(() => shadowFilterOptions(callback)).toThrow("TN_VIRTUAL_SHADOW_INVALID");
+  }
+});
+
+it("transfers registered LOD chain data once and clears its dispatch on disposal", () => {
+  class VirtualShadowNode extends ShadowBaseNode {
+    static override get type() {
+      return "VirtualShadowNode";
+    }
+    options = { selectionGuard: [0.775], refreshStep: [0.125] };
+  }
+  const sun = new DirectionalLight();
+  const scene = new Scene();
+  const mesh = new Mesh(new BufferGeometry());
+  scene.add(sun, mesh);
+  const node = new VirtualShadowNode(sun);
+  const dispatch = vi.fn();
+  virtualShadowOptions(node, dispatch);
+  const key = Symbol.for("threenative.discreteLodChains");
+  const previous = (globalThis as Record<symbol, unknown>)[key];
+  const coarse = new BufferGeometry();
+  (globalThis as Record<symbol, unknown>)[key] = new WeakMap([
+    [mesh.geometry, { chain: { levels: [mesh.geometry, coarse] } }],
+  ]);
+  try {
+    syncVirtualShadowLods();
+    syncVirtualShadowLods();
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({
+      command: "lod",
+      id: mesh.id,
+      geometry: coarse,
+    });
+    detachVirtualShadow(node);
+    expect(node.lods.size).toBe(0);
+    virtualShadowOptions(node, dispatch);
+    syncVirtualShadowLods();
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    node.dispose();
+    expect(node.dispatch).toBeUndefined();
+  } finally {
+    (globalThis as Record<symbol, unknown>)[key] = previous;
+    node.dispose();
   }
 });

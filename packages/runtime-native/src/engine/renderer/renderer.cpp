@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <bit>
 #include <span>
+#include <deque>
 #include <cctype>
 #include <cmath>
 #include <unordered_map>
@@ -435,6 +436,8 @@ struct Renderer::Planned {
 
 struct Renderer::ShadowPass {
     WGPUTextureView target;
+    std::size_t virtualLight = 0;
+    int virtualLevel = -1;
     int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
     std::vector<Planned> draws;
 };
@@ -443,6 +446,7 @@ struct Renderer::FrameJob {
     uint64_t groupEpoch = 0;  // the group epoch the plan's bind groups were chosen under
     std::vector<Planned> plan, velocityPlan, normalPlan;
     std::vector<ShadowPass> shadowPasses;
+    std::deque<DrawItem> shadowLodItems;
     WGPURenderPassColorAttachment color{};
     WGPURenderPassDepthStencilAttachment depth{};
     WGPUCommandEncoder encoder = nullptr;
@@ -579,6 +583,7 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
     auto atlas = shadows::PageAtlas::create(options, error);
     if (!atlas) throw std::runtime_error(error);
     virtualShadows_.emplace(light, VirtualShadow{std::move(*atlas), {}, {}});
+    if (options.adaptiveRefresh || options.adaptiveCasterGate) passTimer_->enabled = true;
     // The table must exist before a cached material's bind groups can name it.
     auto& table = storages_["vsmTable" + std::to_string(light)];
     table.capacity = uint64_t(options.clipExtents.size()) * (9 + (options.mapSize/options.pageTexels)*(options.mapSize/options.pageTexels)) * 16;
@@ -2303,39 +2308,53 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
     std::map<std::size_t, std::map<uint64_t, Box3>> casterBounds;
+    std::map<std::size_t, std::map<uint64_t, double>> casterDiameters;
     for (auto& [i, shadow] : virtualShadows_) {
         if (compilation) continue;
         if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: requires a shadow-casting directional light");
         const uint32_t mask = lights.direct[i].shadow->layersMask;
         auto& lightCasterBounds = casterBounds[i];
+        std::vector<Box3> depthCasters, receivers;
         for (const DrawItem& item : items) {
-            if (!item.castShadow || !item.positions || item.instanceCount == 0 || (item.layers & mask) == 0) continue;
+            if ((!item.castShadow && !item.receiveShadow) || !item.positions || item.instanceCount == 0 || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
             // Bind-pose bounds cannot fit a GPU-displaced caster without clipping its shadow.
-            if (shadow.atlas.options().autoDepth &&
-                (item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry))
+            if (item.castShadow && shadow.atlas.options().autoDepth &&
+                (item.positionNode || item.nodes.positionNode || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
             Box3 bounds;
             if (item.positions->scalar() == Scalar::F32) {
                 for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
                     float p[3]; item.positions->read(idx * 4, p, sizeof(p));
-                    bounds.expandByPoint(Vector3(p[0], p[1], p[2]));
+                    Vector3 vertex(p[0], p[1], p[2]);
+                    if ((item.boneMatrices || item.morphGeometry) && item.shadowObject) {
+                        const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
+                        if (mesh) mesh->getVertexPosition(idx / 3, vertex);
+                    }
+                    bounds.expandByPoint(vertex);
                 }
             }
             Matrix4 model; model.elements = item.matrixWorld;
+            const double localDiameter = bounds.min.distanceTo(bounds.max);
+            double diameter = localDiameter * model.getMaxScaleOnAxis();
             if (item.instanceMatrices) {
                 Box3 instances;
+                diameter = 0;
                 const auto* matrices = reinterpret_cast<const float*>(item.instanceMatrices->data());
                 for (uint32_t instance = 0; instance < item.instanceCount; ++instance) {
                     Matrix4 transform;
                     for (int e = 0; e < 16; ++e) transform.elements[e] = matrices[instance * 16 + e];
                     Box3 box = bounds; box.applyMatrix4(transform);
                     instances.unionWith(box);
+                    transform.premultiply(model);
+                    diameter = std::max(diameter, localDiameter * transform.getMaxScaleOnAxis());
                 }
                 bounds = instances;
             }
             bounds.applyMatrix4(model);
-            lightCasterBounds[item.key] = bounds;
+            if (item.castShadow) { lightCasterBounds[item.key] = bounds; casterDiameters[i][item.key] = diameter; }
+            depthCasters.push_back(bounds);
+            if (item.receiveShadow) receivers.push_back(bounds);
         }
         const auto& direction = lights.direct[i].direction;
         const Vector3 towards(direction[0], direction[1], direction[2]);
@@ -2344,38 +2363,47 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const double radius = lights.direct[i].shadow->radius;
         if (!std::isfinite(radius) || radius < 0 || radius + 0.5 > shadow.atlas.options().border)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels");
-        for (const auto& [key, bounds] : shadow.casters) {
-            const auto now = lightCasterBounds.find(key);
-            if (now == lightCasterBounds.end() || !shadows::boundsEqual(bounds, now->second)) shadow.atlas.invalidate(bounds);
-        }
-        for (const auto& [key, bounds] : lightCasterBounds) {
-            const auto old = shadow.casters.find(key);
-            if (old == shadow.casters.end() || !shadows::boundsEqual(bounds, old->second)) shadow.atlas.invalidate(bounds);
-        }
-        // A shader can displace beyond the CPU AABB. Redraw and bypass the bounds gate rather than
-        // silently clipping a caster whose deformation cannot be evaluated on the CPU.
-        std::map<uint64_t, std::string> casterPrograms;
+        std::vector<shadows::CasterState> states;
         for (const DrawItem& item : items) {
-            if (!item.castShadow || !item.positions || item.instanceCount == 0 || (item.layers & mask) == 0) continue;
-            std::string signature = std::to_string(item.positions->version());
-            if (item.instanceMatrices) signature += ":instances:" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
-            if (item.nodes.positionNode) {
-                signature += "#" + std::to_string(shader::graph::keyId(item.nodes.positionNode));
-                for (const auto& node : shader::graph::uniformList(item.nodes.positionNode)) {
-                    signature += node->name;
-                    signature.append(reinterpret_cast<const char*>(node->values.data()), node->values.size() * sizeof(double));
-                }
+            if (!lightCasterBounds.count(item.key)) continue;
+            shadows::CasterState state;
+            state.key = item.key; state.bounds = lightCasterBounds.at(item.key);
+            state.world.elements = item.matrixWorld;
+            state.signature = std::to_string(item.positions->version());
+            if (item.instanceMatrices) state.signature += ":" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
+            state.deforming = item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry;
+            state.tracked = (item.layers & (1u << 29)) != 0;
+            state.automatic = (item.layers & 1u) != 0;
+            const auto& control = *shadow.atlas.options().control;
+            for (auto* object = item.shadowObject; object; object = object->parent) {
+                state.tracked |= control.tracked.count(object->id()) != 0;
+                state.pinned |= control.pinned.count(object->id()) != 0;
             }
-            if (item.positionNode || item.boneMatrices || item.morphGeometry ||
-                (shadow.casterPrograms.count(item.key) && shadow.casterPrograms.at(item.key) != signature)) shadow.atlas.invalidateAll();
-            casterPrograms[item.key] = std::move(signature);
+            states.push_back(std::move(state));
         }
-        shadow.casterPrograms = std::move(casterPrograms);
-        shadow.casters = lightCasterBounds;
-        std::vector<Box3> depthCasters;
-        for (const auto& [key, bounds] : lightCasterBounds) depthCasters.push_back(bounds);
-        virtualPages[i] = shadow.atlas.update(Vector3(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]), towards, virtualCut_, depthCasters);
+        auto& control = *shadow.atlas.options().control;
+        if (control.invalidateAll) { shadow.atlas.invalidateAll(); control.invalidateAll = false; }
+        for (const auto& region : control.regions) shadow.atlas.invalidate(region);
+        control.regions.clear();
+        shadow.atlas.updateCasters(states);
+        {
+            std::lock_guard lock(shadow.costs->mutex);
+            for (const auto& [level, reading] : shadow.costs->levels) {
+                if (shadow.consumedCosts[level] == reading.second) continue;
+                shadow.atlas.recordCost(level, reading.first, frameDelta_);
+                shadow.consumedCosts[level] = reading.second;
+            }
+        }
+
+        Vector3 focus(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]);
+        if (shadow.atlas.options().followViewFocus) {
+            Vector3 forward(-camera.matrixWorld[8], -camera.matrixWorld[9], -camera.matrixWorld[10]); forward.normalize();
+            focus = shadows::PageAtlas::viewFocus(focus, forward, camera.far, shadow.atlas.options().clipExtents.front(), receivers);
+        }
+        virtualPages[i] = shadow.atlas.update(focus, towards, virtualCut_, depthCasters, frameDelta_);
+        shadow.atlas.appendMoverPages(virtualPages[i]);
     }
+
     if (!compilation) virtualCut_ = false;
     std::string lightKinds, unshadowedKinds;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
@@ -2632,7 +2660,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     FrameJob compileJob;  // a compile plans pipelines only: it never touches a pending frame's job
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
-    job.plan.clear(); job.velocityPlan.clear(); job.normalPlan.clear(); job.shadowPasses.clear();
+    job.plan.clear(); job.velocityPlan.clear(); job.normalPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
@@ -2823,14 +2851,34 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         ShadowPass& pass = shadowPasses.emplace_back();
         pass.target = compilation ? nullptr : virtualMap ? virtualIt->second.map.view : shadow.cube ? cubeShadowMaps_[i].faces[face] : shadowMaps_[i].view;
         if (page) {
-            const auto [x, y] = virtualIt->second.atlas.origin(page->slot);
-            pass.x = x; pass.y = y; pass.size = virtualIt->second.atlas.stride();
+            const auto& atlas = virtualIt->second.atlas;
+            const auto [x, y] = page->mover ? atlas.moverOrigin(page->level) : atlas.origin(page->slot);
+            pass.x = x; pass.y = y; pass.size = page->mover ? atlas.options().moverMapSize + 2 * atlas.options().border : atlas.stride();
+            if (!page->mover) { pass.virtualLight = i; pass.virtualLevel = page->level; }
         }
         for (const auto& [depthKey, drawn] : opaque) {
-            const DrawItem& item = *drawn;
+            const DrawItem* selected = drawn;
+            if (page && !page->mover && page->level > 0 && virtualIt->second.atlas.options().shadowLodBias && drawn->shadowObject) {
+                const auto& lods = virtualIt->second.atlas.options().control->lods;
+                const auto lod = lods.find(drawn->shadowObject->id());
+                if (lod != lods.end() && lod->second->index) {
+                    auto& copy = job.shadowLodItems.emplace_back(*drawn);
+                    copy.indices = lod->second->index->store.get();
+                    copy.cache = nullptr;
+                    selected = &copy;
+                }
+            }
+            const DrawItem& item = *selected;
             if (!item.castShadow || item.instanceCount == 0 || !item.positions) continue;
-            if ((item.layers & shadow.layersMask) == 0) continue;
-            if (page && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
+            if ((item.layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) continue;
+            if (page) {
+                const auto& atlas = virtualIt->second.atlas;
+                if (page->mover ? !atlas.isMover(item.key) : !atlas.drawsStatic(item.key)) continue;
+                if (!page->mover && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry) {
+                    if (casterDiameters.at(i).at(item.key) < atlas.casterGate(page->level)) continue;
+                }
+            }
+            if (page && !page->mover && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
                 !item.instanceMatrices && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(item.key))) continue;
             shader::VertexVariant variant = variantOf(item);
             DrawCache* cache = item.cache;
@@ -2870,7 +2918,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const uint64_t v = frameUniforms_.size();
             frameUniforms_.resize(v + aligned(program.vertex.uniformBlockSize), 0);
             put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
-            if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{instanceBases.at(&item)});
+            if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{instanceBases.at(drawn)});
             put(frameUniforms_, v, program.vertexSlots[kViewMatrix], view);
             put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], page ? page->projection.elements : shadow.projection);
             // r185 draws a caster through the shadow camera, so TSL's camera accessors (a billboard's
@@ -3444,7 +3492,10 @@ void Renderer::encodeFrame(FrameJob& job) {
     // Keep the shadow diagnostic while timing each shadow pass separately.
     const bool shadowTimed = timed && !shadowPasses.empty();
     if (timed) timerBeganAtShadow_ = shadowTimed;
+    std::map<std::pair<std::size_t, int>, double> shadowCosts;
+    std::map<size_t, std::pair<std::weak_ptr<VirtualShadowCosts>, int>> shadowQueries;
     for (const ShadowPass& shadowPlan : shadowPasses) {
+        const auto shadowStarted = std::chrono::steady_clock::now();
         WGPURenderPassDepthStencilAttachment shadowDepth = {};
         shadowDepth.view = shadowPlan.target;
         shadowDepth.depthLoadOp = shadowPlan.size ? WGPULoadOp_Load : WGPULoadOp_Clear;
@@ -3452,7 +3503,10 @@ void Renderer::encodeFrame(FrameJob& job) {
         shadowDepth.depthClearValue = 1.0f;
         WGPURenderPassDescriptor shadowDesc = {};
         shadowDesc.depthStencilAttachment = &shadowDepth;
+        const size_t query = passTimer_->segments.size();
         WGPURenderPassEncoder shadowPass = beginTimedRenderPass(encoder, &shadowDesc, ownsPassTimer_ ? 0 : 2);
+        if (shadowPlan.virtualLevel >= 0 && passTimer_->segments.size() > query)
+            shadowQueries[query] = {virtualShadows_.at(shadowPlan.virtualLight).costs, shadowPlan.virtualLevel};
         if (shadowPlan.size) {
             wgpuRenderPassEncoderSetViewport(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size, 0, 1);
             wgpuRenderPassEncoderSetScissorRect(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size);
@@ -3464,7 +3518,12 @@ void Renderer::encodeFrame(FrameJob& job) {
         for (const Planned& p : shadowPlan.draws) encode(shadowPass, p, Tally::Shadow); // three's info counts the main pass
         wgpuRenderPassEncoderEnd(shadowPass);
         wgpuRenderPassEncoderRelease(shadowPass);
+        if (shadowPlan.virtualLevel >= 0)
+            shadowCosts[{shadowPlan.virtualLight, shadowPlan.virtualLevel}] += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - shadowStarted).count();
     }
+    // Like core's CPU measurement when timestamp queries are unavailable; never mix CPU and GPU samples.
+    if (!passTimer_->queries)
+        for (const auto& [key, ms] : shadowCosts) virtualShadows_.at(key.first).atlas.recordCost(key.second, ms, frameDelta_);
     if (traa_) traa_->seedHistory(encoder, sceneColor_);
     WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 1 : 2);
     bound = nullptr;
@@ -3610,19 +3669,27 @@ void Renderer::encodeFrame(FrameJob& job) {
         passTimer_->pending = true;
         std::weak_ptr<Timing> timing = timing_;
         const auto timer = passTimer_;
-        gpu_.readBuffer(timestampResolve_, 0, segments.size() * 16, [timing, timer, segments, source](GpuStatus status, std::vector<uint8_t> bytes) {
+        gpu_.readBuffer(timestampResolve_, 0, segments.size() * 16, [timing, timer, segments, source, shadowQueries](GpuStatus status, std::vector<uint8_t> bytes) {
             timer->pending = false;
             const auto t = timing.lock();
             if (!t || status != GpuStatus::Ok || bytes.size() != segments.size() * 16) return;
             std::array<double, 4> sums{};
+            std::map<std::pair<std::shared_ptr<VirtualShadowCosts>, int>, double> levelCosts;
             for (size_t i = 0; i < segments.size(); ++i) {
                 uint64_t ns[2];
                 std::memcpy(ns, bytes.data() + i * 16, sizeof ns);
                 if (!ns[0] || ns[1] < ns[0]) return;  // Missing/reset timestamps invalidate the whole frame.
-                sums[segments[i]] += double(ns[1] - ns[0]) / 1e6;
+                const double ms = double(ns[1] - ns[0]) / 1e6;
+                sums[segments[i]] += ms;
+                if (const auto query = shadowQueries.find(i); query != shadowQueries.end())
+                    if (const auto costs = query->second.first.lock()) levelCosts[{costs, query->second.second}] += ms;
             }
             const double total = sums[0] + sums[1] + sums[2] + sums[3];
             if (total <= 0) return;
+            for (const auto& [key, ms] : levelCosts) {
+                std::lock_guard lock(key.first->mutex);
+                auto& reading = key.first->levels[key.second]; reading.first = ms; ++reading.second;
+            }
             t->lastMs = total;
             t->segments = sums;
             t->passes = uint32_t(segments.size());

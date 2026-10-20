@@ -9,6 +9,7 @@ import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { PassDraw } from "./pass-node.js";
 import { defineRenderTargets } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
+import { syncVirtualShadowLods } from "./shadow-node.js";
 import { readStorageBytes } from "./storage.js";
 import type { INodeFrame } from "./temp-node.js";
 import { defineToneMappingLibrary } from "./tone-mapping.js";
@@ -333,6 +334,7 @@ export function defineWebRenderer(
         this.info.engine.frameGateSkips += 1;
         return;
       }
+      syncVirtualShadowLods();
       beforeRender({ camera, scene, renderer: this, frameId: this.info.frame });
       drawSecondaryPasses(
         () => ({ width: this.#drawWidth(), height: this.#drawHeight() }),
@@ -400,6 +402,7 @@ export function defineWebRenderer(
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
       if (this.#lost) return;
+      syncVirtualShadowLods();
       beforeRender({ camera, scene: root, renderer: this, frameId: this.info.frame });
       this.#applyState();
       writeHandle(0, root, "scene");

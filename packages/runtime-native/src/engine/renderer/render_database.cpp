@@ -531,6 +531,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     if (mesh.geometry) geometryInputsOf(*mesh.geometry, d);
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
+    d.shadowObject = &mesh;
     d.layers = Layers::bits(mesh.layers().mask);
     d.mainPass = true;
     return d;
@@ -727,7 +728,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 if (Record* r = cached ? (cached->meshId == mesh.id() ? cached : nullptr) : findRecord(mesh, false))
                     markSeen(*r);
             } else {
-                const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
+                const bool compact = batching && !(virtualShadows_ && mesh.castShadow()) && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                      !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                      !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
                                      !mesh.geometry->instanced &&
@@ -974,7 +975,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         const DrawItem& d = items[i];
         const auto verdict = decision.verdict.find(d.skinnedRig);
         const bool skinned = bool(d.gpuJoints) || (d.boneMatrices && verdict != decision.verdict.end() && verdict->second == "skinned");
-        if (!d.batchable && !skinned)
+        if ((virtualShadows_ && d.castShadow) || (!d.batchable && !skinned))
             continue;
         auto same = [&](const std::vector<std::size_t>& g) {
             const DrawItem& o = items[g.front()];

@@ -1,6 +1,6 @@
 export * from "./core-three.mjs";
 export { ShadowBaseNode } from "../../../../three-native/src/shadow-node.ts";
-import { shadowFilterOptions, virtualShadowOptions } from "../../../../three-native/src/shadow-node.ts";
+import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions, syncVirtualShadowLods } from "../../../../three-native/src/shadow-node.ts";
 // Native VSM configuration crosses the same LightShadow registry setter as the Wasm facade.
 for (const name of ["DirectionalLightShadow", "PointLightShadow", "SpotLightShadow"]) {
   const prototype = globalThis[name]?.prototype;
@@ -11,7 +11,7 @@ for (const name of ["DirectionalLightShadow", "PointLightShadow", "SpotLightShad
     Object.defineProperty(prototype, property, {
       configurable: true,
       get() { return nodes.get(this) ?? null; },
-      set(value) { set.call(this, translate(value)); nodes.set(this, value); },
+      set(value) { if (property === "shadowNode" && nodes.get(this) === value) return; set.call(this, translate(value, (command) => set.call(this, command))); if (nodes.get(this) !== value) detachVirtualShadow(nodes.get(this)); nodes.set(this, value); },
     });
   }
 }
@@ -55,6 +55,7 @@ function drawTarget(renderer, target, root, camera, deferred) {
 // Every offscreen PassNode plans its draw into its own target; the player records it in this frame, after the post
 // render-to-texture passes when the post graph samples the target, else ahead of the scene pass.
 function drawSecondaryPasses(renderer) {
+  syncVirtualShadowLods();
   updateSecondaryPasses(() => globalThis.tn.surfaceSize(), (target, root, camera) => drawTarget(renderer, target, root, camera, true));
 }
 
