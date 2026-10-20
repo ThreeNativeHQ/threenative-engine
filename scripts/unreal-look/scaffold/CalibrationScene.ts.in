@@ -163,6 +163,11 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         autoExposureEnabled: false,
         bloomEnabled: false,
         gtaoEnabled: level >= 6,
+        // Diagnosis: ?ssgi=0|1 and ?ssgiIntensity=N bracket the screen-space gather over the cache.
+        ...(params.get("ssgi") === null ? {} : { ssgiEnabled: params.get("ssgi") === "1" }),
+        ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
+        // Unreal's L7 is its Epic tier, so the gather takes the template's top sample budget.
+        ssgiQuality: (params.get("ssgiQuality") ?? "high") as "high",
         vignetteAmount: 0,
         exposure: EXPOSURE,
       });
