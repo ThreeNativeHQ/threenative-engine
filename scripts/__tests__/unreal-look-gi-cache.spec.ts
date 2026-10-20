@@ -7,8 +7,8 @@ import {
   Mesh,
   MeshStandardMaterial,
   PlaneGeometry,
-  SphereGeometry,
   Raycaster,
+  SphereGeometry,
   Vector3,
 } from "three";
 import { describe, expect, it } from "vitest";
