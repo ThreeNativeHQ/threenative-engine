@@ -42,9 +42,9 @@ SCENE = {
     "sky": None,
     "sun": None,
     "fog": None,
-    "ev100": 3,
+    "ev100": 5,
     "poses": [
         {"name": "cornell", "position": [0, 2.75, 8], "target": [0, 2.75, -2.75], "hfovDeg": 70},
-        {"name": "corner", "position": [0.5, 1.4, -1.2], "target": [-2.75, 0.4, -5.5], "hfovDeg": 70},
+        {"name": "corner", "position": [-1.6, 1.8, -0.6], "target": [-2.6, 0.5, -5.4], "hfovDeg": 70},
     ],
 }

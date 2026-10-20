@@ -109,8 +109,8 @@ def exposure_volume(ref, ev100):
     volume.set_actor_label("Exposure")
     volume.set_editor_property("unbound", True)
     settings = volume.get_editor_property("settings")
-    # Manual exposure without the physical camera: exposure = 0.18 / 2^EV100 at the 5.8.3 lens
-    # attenuation of 0.78 (PostProcessEyeAdaptation.cpp, CalculateManualAutoExposure).
+    # Manual exposure without the physical camera, biased by -EV100: a surface of L nits reads
+    # L x 2^-EV100 (PostProcessEyeAdaptation.cpp, CalculateManualAutoExposure; measured, scene.json).
     settings.set_editor_property("override_auto_exposure_method", True)
     settings.set_editor_property("auto_exposure_method", unreal.AutoExposureMethod.AEM_MANUAL)
     settings.set_editor_property("override_auto_exposure_apply_physical_camera_exposure", True)
@@ -211,7 +211,7 @@ def describe_level(ref, name, scene, regions):
                 "class": cls,
                 "position": to_three(actor.get_actor_location()),
                 "intensity": c.get_editor_property("intensity"),
-                "units": str(c.get_editor_property("intensity_units")).split(".")[-1].lower(),
+                "units": enum_name(c.get_editor_property("intensity_units")),
                 "attenuationRadiusM": c.get_editor_property("attenuation_radius") / 100.0,
                 "color": [color.r / 255.0, color.g / 255.0, color.b / 255.0],
                 "useTemperature": c.get_editor_property("use_temperature"),
@@ -224,13 +224,18 @@ def describe_level(ref, name, scene, regions):
         elif cls == "PostProcessVolume":
             s = actor.get_editor_property("settings")
             bias = s.get_editor_property("auto_exposure_bias")
+            lens = unreal.SystemLibrary.get_console_variable_float_value("r.EyeAdaptation.LensAttenuation")
             exposure = {
-                "method": str(s.get_editor_property("auto_exposure_method")).split(".")[-1].lower(),
+                "method": enum_name(s.get_editor_property("auto_exposure_method")),
                 "physicalCamera": s.get_editor_property("auto_exposure_apply_physical_camera_exposure"),
                 "bias": bias,
                 "ev100": -bias,
-                "lensAttenuation": unreal.SystemLibrary.get_console_variable_float_value("r.EyeAdaptation.LensAttenuation"),
-                "exposureScale": 0.18 * 2.0 ** bias,
+                "lensAttenuation": lens,
+                # Measured on cornell L1 (EV100 3 and 5, scene-linear EXR): a lit surface of L nits
+                # reads L x 2^-EV100 at the default lens attenuation of 0.78, so the 0.18 of
+                # GetEyeAdaptationFixedExposure cancels against the meter's mid-grey. The lens
+                # attenuation scales the saturation luminance (LuminanceMaxFromLensAttenuation).
+                "exposureScale": 2.0 ** bias * lens / 0.78,
             }
     return {
         "note": f"Written by gi/export.py from the Unreal 5.8.3 level GI_{name}. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
@@ -245,6 +250,11 @@ def describe_level(ref, name, scene, regions):
         "poses": scene["poses"],
         "regions": regions,
     }
+
+
+def enum_name(value):
+    # str() of an Unreal enum is "<LightUnits.LUMENS: 2>"; .name is "LUMENS".
+    return value.name.lower()
 
 
 def material_values(mi):
