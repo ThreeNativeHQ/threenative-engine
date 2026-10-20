@@ -380,12 +380,18 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Texture: {
             const ExprId coordinate = expression(d.args[0]);
             if (coordinate == kInvalid) return kInvalid;
-            if (d.bits == 1) {
+            // A depth texture has no filtered sample: read the texel under the uv. The scene pass's own depth
+            // (a texture named "depth" with no object behind it) is one, bound as a depth view by the post stage.
+            if (d.bits == 1 || (d.name == "depth" && !d.textureBinding)) {
                 const auto texture = program_.textureDepth(d.name);
                 const auto size = program_.textureSize(texture, program_.constant(int32_t(0)));
+                const ExprId inside = program_.call("min", {coordinate, program_.construct(Type::vec(2), {program_.constant(0.99999f)})});
                 const auto texel = program_.construct(Type::vec(2, Type::Scalar::I32), {
-                    program_.mul(coordinate, program_.construct(Type::vec(2), {size}))});
-                return program_.textureLoad(texture, texel, program_.constant(int32_t(0)));
+                    program_.mul(inside, program_.construct(Type::vec(2), {size}))});
+                const ExprId depth = program_.textureLoad(texture, texel, program_.constant(int32_t(0)));
+                // The sample of a float texture is a vec4: the depth rides in the first channel.
+                return d.bits == 1 ? depth
+                                   : program_.construct(Type::vec(4), {depth, program_.constant(0.0f), program_.constant(0.0f), program_.constant(1.0f)});
             }
             // TextureNode.level(n): an explicit mip, which a vertex stage needs.
             if (d.args.size() == 2) {

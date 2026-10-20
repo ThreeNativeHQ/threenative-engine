@@ -45,6 +45,13 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
             throw std::runtime_error(error);
     }
     linear_ = makeSampler(device, false, false);
+    // A graph that reads the scene's depth binds it as a depth texture, whose sampler is a comparison one.
+    WGPUSamplerDescriptor compare{};
+    compare.minFilter = compare.magFilter = WGPUFilterMode_Nearest;
+    compare.addressModeU = compare.addressModeV = WGPUAddressMode_ClampToEdge;
+    compare.compare = WGPUCompareFunction_LessEqual;
+    compare.maxAnisotropy = 1;
+    compare_ = wgpuDeviceCreateSampler(device, &compare);
     try {
         for (auto& source : sources) {
             passes_.push_back({std::move(source)});
@@ -65,7 +72,7 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
                         entry.texture.viewDimension =
                             binding.volume ? WGPUTextureViewDimension_3D : WGPUTextureViewDimension_2D;
                     } else if (binding.kind == shader::BindingKind::Sampler) {
-                        entry.sampler.type = WGPUSamplerBindingType_Filtering;
+                        entry.sampler.type = binding.depth ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering;
                     } else
                         throw std::runtime_error("TN_POST_BINDING_UNSUPPORTED: " + binding.name);
                     entries.push_back(entry);
@@ -147,6 +154,7 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
                 wgpuTextureRelease(image.texture);
         }
         wgpuSamplerRelease(linear_);
+        wgpuSamplerRelease(compare_);
         throw;
     }
 }
@@ -168,6 +176,7 @@ PostEffects::~PostEffects() {
         wgpuTextureRelease(image.texture);
     }
     wgpuSamplerRelease(linear_);
+    wgpuSamplerRelease(compare_);
 }
 void PostEffects::releaseGroups() {
     for (auto& pass : passes_) {
@@ -488,7 +497,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
                     if (binding.kind == shader::BindingKind::Texture)
                         entry.textureView = name == "scene" ? scene : name == "depth" ? depth : view(name);
                     else
-                        entry.sampler = sampler(name);
+                        entry.sampler = binding.depth ? compare_ : sampler(name);
                     if (binding.kind == shader::BindingKind::Texture && !entry.textureView)
                         throw std::runtime_error("TN_POST_INPUT_MISSING: " + name);
                 }

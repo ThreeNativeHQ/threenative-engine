@@ -851,6 +851,8 @@ private:
     WGPUTexture normalTexture_ = nullptr;
     WGPUTextureView normalView_ = nullptr;
     shader::StageModule normalFragment_;
+    /** normalFragment_ for Standard and Physical draws: the alpha also packs metalness and roughness (see planNormals). */
+    shader::StageModule surfaceFragment_;
     std::vector<std::string> diagnostics_;
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;

@@ -192,6 +192,25 @@ void unsupported() {
     CHECK(coatedPrograms.fragment.exprCount() > buildPhysical(coated).fragment.exprCount());
 }
 
+// The post surface pass reads metalness and roughness at offsets 0 and 4 of every standard fragment block,
+// for any lighting layout and for physical materials; a node that replaces either removes the pair.
+void surfacePrefix() {
+    namespace g = tn::engine::shader::graph;
+    for (const bool physical : {false, true}) {
+        VertexVariant plain;
+        const auto programs = physical ? buildPhysical({}, plain) : buildStandard({}, plain);
+        const auto fragment = buildStage(programs.fragment, 1);
+        CHECK(fragment.wgsl.ok() && fragment.uniforms.size() > 2);
+        CHECK(fragment.uniforms[0].name == "metalness" && fragment.uniforms[0].offset == 0);
+        CHECK(fragment.uniforms[1].name == "roughness" && fragment.uniforms[1].offset == 4);
+    }
+    VertexVariant replaced;
+    replaced.nodes.roughnessNode = g::swizzle(g::uv(), "x");
+    const auto fragment = buildStage(buildStandard({}, replaced).fragment, 1);
+    CHECK(fragment.wgsl.ok());
+    CHECK(fragment.uniforms.empty() || fragment.uniforms[0].name != "metalness");
+}
+
 void nodes() {
     namespace g = tn::engine::shader::graph;
     VertexVariant variant;
@@ -254,6 +273,7 @@ void nodes() {
 
 void builds() {
     nodes();
+    surfacePrefix();
     VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;
     CHECK(storage.key() != VertexVariant{}.key());
     for (int kind = 0; kind < 5; ++kind) {

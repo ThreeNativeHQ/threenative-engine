@@ -23,7 +23,6 @@ import {
   type Texture,
   Vector3,
 } from "three";
-import { installIndirectLight } from "../render/indirectLight.js";
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset } from "../render/quality.js";
@@ -135,8 +134,6 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         scene.background = new Color(0x000000);
         scene.environment = null;
       }
-      // L7: bounced light from a baked probe volume (PRD-631 Lumen GI tier; render/indirectLight.ts).
-      if (level >= 7) installIndirectLight(ctx, scene, model);
       if (level >= 9) {
         const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
         this.#dispose = () => post.dispose();

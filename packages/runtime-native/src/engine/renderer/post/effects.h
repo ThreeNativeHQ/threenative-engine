@@ -80,6 +80,7 @@ class PostEffects {
     std::map<std::string, WGPUTextureView> outputViews_;
     std::map<std::string, WGPUSampler> inputSamplers_;
     WGPUSampler linear_ = nullptr;
+    WGPUSampler compare_ = nullptr;
     uint32_t width_ = 0, height_ = 0;
     bool captured_ = false;
     float lastTime_ = -1;  // the frame time of the render before, for deltaTime

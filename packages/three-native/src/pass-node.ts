@@ -48,6 +48,9 @@ interface IPassTsl {
   texture(source: unknown, uv: unknown): unknown;
   uv(): unknown;
   readonly normalView: unknown;
+  /** The TSL constructors the surface decode composes; a table that lacks them refuses by name. */
+  readonly floor?: (value: unknown) => unknown;
+  readonly vec4?: (...values: unknown[]) => unknown;
 }
 
 interface IMRTSlot {
@@ -130,6 +133,29 @@ export function definePass(
       getBlendMode: (name: string): unknown => node.blendModes[name],
     });
     return node;
+  }
+
+  const slots: Record<string, IMRTSlot> = { metalness, roughness };
+
+  /**
+   * The engine's normal target carries the surface in its alpha (Renderer::planNormals):
+   * `2 * round(7 * metalness) + 0.25 + 0.5 * roughness`, 0 where no material wrote. One texel reads as
+   * `vec4(metalness, roughness, 0, 1)`: a game samples `.r` for the metalness target and `.g` for the
+   * roughness target. A pixel with no material reads as metalness 0 and roughness 1: it reflects nothing.
+   */
+  function surfaceNode(): unknown {
+    const { floor, vec4 } = tsl;
+    if (floor === undefined || vec4 === undefined)
+      throw new Error(
+        "TN_NATIVE_PASS_TEXTURE_UNSUPPORTED: this TSL table has no floor and vec4 to unpack the surface",
+      );
+    // quality-allow: the engine's untyped TSL node surface (chained operator calls).
+    // biome-ignore lint/suspicious/noExplicitAny: the engine's TSL node surface is open-ended chained calls.
+    const alpha = (tsl.texture({ name: "normal" }, tsl.uv()) as any).a;
+    const level = floor(alpha.mul(0.5));
+    const written = alpha.greaterThan(0.125);
+    const roughness = alpha.sub(level.mul(2)).sub(0.25).mul(2).clamp(0, 1);
+    return vec4(written.select(level.div(7), 0), written.select(roughness, 1), 0, 1);
   }
 
   const framePass = Symbol("tn.framePass");
@@ -248,6 +274,12 @@ export function definePass(
       if (name === "depth") return tsl.texture({ name: "depth" }, tsl.uv());
       if (name === "normal" && this.#mrt?.outputs.normal === normalView)
         return tsl.texture({ name: "normal" }, tsl.uv());
+      if (
+        (name === "metalness" || name === "roughness") &&
+        this.#mrt?.outputs.normal === normalView &&
+        this.#mrt.outputs[name] === slots[name]
+      )
+        return surfaceNode();
       throw new Error(
         `TN_NATIVE_PASS_TEXTURE_UNSUPPORTED: the native scene pass has no '${name}' target`,
       );

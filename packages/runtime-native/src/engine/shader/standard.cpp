@@ -1003,6 +1003,13 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
 
     Program& f = out.fragment;
     Tsl t{f};
+    // The post surface pass (Renderer::planNormals) reads metalness and roughness as the first two fields of
+    // this block, at offsets 0 and 4. Uniforms take offsets in creation order: make these two first. A material
+    // whose nodes replace either one has no such fields (and the pass writes no surface for it).
+    if (!variant.nodes.metalnessNode && !variant.nodes.roughnessNode) {
+        f.uniform("metalness", Type::f32());
+        f.uniform("roughness", Type::f32());
+    }
     // normalViewGeometry is the varying renormalized (three's .normalize().toVar()); getGeometryRoughness
     // differentiates that, not the raw varying.
     const ExprId normalViewGeometry = variant.flatShading ? f.varying("normalView", Type::vec(3))

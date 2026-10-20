@@ -11,6 +11,65 @@ const tsl = {
 const { mrt, output, metalness, roughness } = definePass(tsl);
 const vec4 = markNormalTarget((...parts: unknown[]) => ({ parts }), normalView);
 
+describe("native scene pass surface targets", () => {
+  const calls: string[] = [];
+  const node = (name: string): object =>
+    new Proxy(
+      {},
+      {
+        get: (_target, property) =>
+          property === "a" || property === "r" || property === "g"
+            ? node(`${name}.${String(property)}`)
+            : (...args: unknown[]) => {
+                calls.push(`${name}.${String(property)}(${args.length})`);
+                return node(`${name}.${String(property)}`);
+              },
+      },
+    );
+  const surfaceTsl = {
+    texture: (source: unknown) => node(`texture(${(source as { name: string }).name})`),
+    uv: () => ({}),
+    normalView,
+    floor: () => node("floor"),
+    vec4: (...parts: unknown[]) => ({ parts }),
+  };
+
+  it("reads metalness and roughness from the normal target's alpha when the MRT asks for them", () => {
+    const api = definePass(surfaceTsl);
+    const scenePass = api.pass({}, {});
+    scenePass.setMRT(
+      api.mrt({
+        output: api.output,
+        normal: normalView,
+        metalness: api.metalness,
+        roughness: api.roughness,
+      }),
+    );
+    const surface = scenePass.getTextureNode("metalness") as { parts: unknown[] };
+    expect(surface.parts).toHaveLength(4);
+    expect(scenePass.getTextureNode("roughness")).toBeDefined();
+    expect(calls.some((call) => call.includes("greaterThan"))).toBe(true);
+  });
+
+  it("refuses a surface target the MRT did not ask for, and a table that cannot unpack it", () => {
+    const api = definePass(surfaceTsl);
+    const scenePass = api.pass({}, {});
+    expect(() => scenePass.getTextureNode("metalness")).toThrow(
+      /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u,
+    );
+    scenePass.setMRT(api.mrt({ output: api.output, normal: normalView, metalness: api.metalness }));
+    expect(() => scenePass.getTextureNode("roughness")).toThrow(
+      /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u,
+    );
+    const bare = definePass(tsl);
+    const barePass = bare.pass({}, {});
+    barePass.setMRT(
+      bare.mrt({ output: bare.output, normal: normalView, metalness: bare.metalness }),
+    );
+    expect(() => barePass.getTextureNode("metalness")).toThrow(/no floor and vec4/u);
+  });
+});
+
 describe("native scene pass MRT", () => {
   it("accepts the normal target as normalView or as vec4(normalView, 0)", () => {
     expect(mrt({ output, normal: normalView }).outputs.normal).toBe(normalView);

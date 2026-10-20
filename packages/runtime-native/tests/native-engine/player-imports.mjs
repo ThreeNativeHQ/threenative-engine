@@ -637,9 +637,11 @@ try { scenePass.getTextureNode("normal"); } catch (error) { refusedNormal = /TN_
 check(refusedNormal, "normals need the MRT that asks for them");
 scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
 const sceneDepth = scenePass.getTextureNode("depth"), sceneNormal = scenePass.getTextureNode("normal");
-let refusedMetal = false;
-try { scenePass.getTextureNode("metalness"); } catch (error) { refusedMetal = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
-check(refusedMetal && scenePass.isPassNode && scenePass.scene === scene, "the native scene pass has colour, depth and normals only");
+let refusedVelocity = false;
+try { scenePass.getTextureNode("velocity"); } catch (error) { refusedVelocity = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
+const sceneSurface = scenePass.getTextureNode("metalness");
+check(refusedVelocity && scenePass.isPassNode && scenePass.scene === scene && sceneSurface.r !== undefined && sceneSurface.g !== undefined,
+  "the native scene pass has colour, depth, normals and the surface (metalness r, roughness g); velocity refuses");
 const contact = ao(sceneDepth, sceneNormal, camera);
 contact.radius.value = 0.35; contact.resolutionScale = 0.5;
 check(contact.radius.value === Math.fround(0.35) && contact.resolutionScale === 0.5 && contact.getTextureNode() === contact, "GTAO uniforms");
