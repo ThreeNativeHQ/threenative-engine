@@ -1,0 +1,288 @@
+{
+  "note": "Written by gi/export.py from the Unreal 5.8.3 level /Game/GI/sunlit-room/GI_sunlit-room. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
+  "scene": "sunlit-room",
+  "resolution": [1280, 720],
+  "meshes": [
+    {
+      "name": "Floor",
+      "class": "StaticMeshActor",
+      "position": [0.0, -0.1, -4.0],
+      "rotationYDeg": -0.0,
+      "size": [6.4, 0.2, 8.4],
+      "material": {
+        "name": "MI_Floor",
+        "baseColor": [0.45, 0.45, 0.45],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Ceiling",
+      "class": "StaticMeshActor",
+      "position": [0.0, 3.1, -4.0],
+      "rotationYDeg": -0.0,
+      "size": [6.4, 0.2, 8.4],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Wall_Left",
+      "class": "StaticMeshActor",
+      "position": [-3.1, 1.5, -4.0],
+      "rotationYDeg": -0.0,
+      "size": [0.2, 3.4, 8.4],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Wall_Right",
+      "class": "StaticMeshActor",
+      "position": [3.1, 1.5, -4.0],
+      "rotationYDeg": -0.0,
+      "size": [0.2, 3.4, 8.4],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Front_Left",
+      "class": "StaticMeshActor",
+      "position": [-2.1, 1.5, 0.1],
+      "rotationYDeg": -0.0,
+      "size": [2.2, 3.4, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Front_Right",
+      "class": "StaticMeshActor",
+      "position": [2.1, 1.5, 0.1],
+      "rotationYDeg": -0.0,
+      "size": [2.2, 3.4, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Front_Sill",
+      "class": "StaticMeshActor",
+      "position": [0.0, 0.3, 0.1],
+      "rotationYDeg": -0.0,
+      "size": [2.0, 1.0, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Front_Head",
+      "class": "StaticMeshActor",
+      "position": [0.0, 2.75, 0.1],
+      "rotationYDeg": -0.0,
+      "size": [2.0, 0.9, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Back_Left",
+      "class": "StaticMeshActor",
+      "position": [-2.8, 1.5, -6.1],
+      "rotationYDeg": -0.0,
+      "size": [0.8, 3.4, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Back_Right",
+      "class": "StaticMeshActor",
+      "position": [0.9, 1.5, -6.1],
+      "rotationYDeg": -0.0,
+      "size": [4.6, 3.4, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Back_Head",
+      "class": "StaticMeshActor",
+      "position": [-1.9, 2.65, -6.1],
+      "rotationYDeg": -0.0,
+      "size": [1.0, 1.1, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Hall_Back",
+      "class": "StaticMeshActor",
+      "position": [0.0, 1.5, -8.3],
+      "rotationYDeg": -0.0,
+      "size": [6.4, 3.4, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Ground",
+      "class": "StaticMeshActor",
+      "position": [0.0, -0.3, 10.0],
+      "rotationYDeg": -0.0,
+      "size": [40.0, 0.2, 40.0],
+      "material": {
+        "name": "MI_Ground",
+        "baseColor": [0.3, 0.3, 0.3],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    }
+  ],
+  "lights": [],
+  "sky": "template",
+  "sun": {
+    "intensityLux": 6.0,
+    "temperatureK": 6500.0,
+    "useTemperature": true,
+    "sourceAngleDeg": 0.7357000112533569,
+    "sourceSoftAngleDeg": 0.0,
+    "castShadows": true,
+    "contactShadowLength": 0.0
+  },
+  "template": "default",
+  "suns": [
+    {
+      "name": "sun60",
+      "elevationDeg": 60,
+      "azimuthDeg": 25
+    },
+    {
+      "name": "sun15",
+      "elevationDeg": 15,
+      "azimuthDeg": 25
+    }
+  ],
+  "templateMeshes": ["SM_SkySphere"],
+  "fog": null,
+  "exposure": null,
+  "poses": [
+    {
+      "name": "sun60-window",
+      "position": [0, 1.5, -5.5],
+      "target": [0, 1.2, 0],
+      "hfovDeg": 90,
+      "sun": "sun60"
+    },
+    {
+      "name": "sun60-leak",
+      "position": [-2, 1.6, -1],
+      "target": [3, 1.0, -4.5],
+      "hfovDeg": 75,
+      "sun": "sun60"
+    },
+    {
+      "name": "sun60-door",
+      "position": [1.5, 1.6, -1.5],
+      "target": [-1.9, 1.0, -6.1],
+      "hfovDeg": 70,
+      "sun": "sun60"
+    },
+    {
+      "name": "sun15-window",
+      "position": [0, 1.5, -5.5],
+      "target": [0, 1.2, 0],
+      "hfovDeg": 90,
+      "sun": "sun15"
+    },
+    {
+      "name": "sun15-leak",
+      "position": [-2, 1.6, -1],
+      "target": [3, 1.0, -4.5],
+      "hfovDeg": 75,
+      "sun": "sun15"
+    },
+    {
+      "name": "sun15-door",
+      "position": [1.5, 1.6, -1.5],
+      "target": [-1.9, 1.0, -6.1],
+      "hfovDeg": 70,
+      "sun": "sun15"
+    }
+  ],
+  "regions": {
+    "Floor": [255, 0, 0],
+    "Ceiling": [0, 255, 0],
+    "Wall_Left": [0, 0, 255],
+    "Wall_Right": [255, 255, 0],
+    "Front_Left": [255, 0, 255],
+    "Front_Right": [0, 255, 255],
+    "Front_Sill": [255, 128, 0],
+    "Front_Head": [128, 0, 255],
+    "Back_Left": [0, 128, 64],
+    "Back_Right": [128, 255, 128],
+    "Back_Head": [64, 0, 128],
+    "Hall_Back": [128, 128, 128],
+    "Ground": [192, 64, 0]
+  }
+}

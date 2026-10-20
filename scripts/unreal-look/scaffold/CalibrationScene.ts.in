@@ -34,7 +34,7 @@ const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
 const DATA = SCENES[NAME];
 // Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
 const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
-const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure.exposureScale ?? 1);
+const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure?.exposureScale ?? 1);
 
 /**
  * Unreal light units to three's. three's punctual light intensity is candela, and its Lambert
