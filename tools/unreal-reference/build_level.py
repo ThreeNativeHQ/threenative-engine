@@ -2,13 +2,14 @@
 
 Run by `pnpm unreal-look:capture --engine unreal`, which starts the editor as
   UnrealEditor <ThreeNativeReference.uproject> -RenderOffscreen -unattended
-    -ExecutePythonScript=build_level.py
+    "-ExecCmds=py build_level.py"
 and passes the work through environment variables:
 
   TN_UE_MODE    check-cvars | build | capture
   TN_UE_OUT     output folder (captures, template-actors.json, cvar report)
   TN_UE_LAYERS  comma-separated layer names for capture (default: all)
   TN_UE_CELLS   optional comma-separated "sun/pose" filter for capture
+  TN_UE_EXTRA_CVARS  extra names for check-cvars (a red test of the check)
 
 build: one level per sun elevation, each from the editor's own default level
 template (/Engine/Maps/Templates/Template_Default), so the lighting actors keep
@@ -56,11 +57,12 @@ def quit_editor(code=0):
 
 # --- coordinates -------------------------------------------------------------
 # three.js: Y up, right-handed, metres. Unreal: Z up, left-handed, centimetres.
-# The build log prints each imported mesh's bounds (TNREF probe lines), and the
-# L0 silhouette IoU in compare.ts proves the mapping.
+# Measured on the imported scene (TNREF probe lines in the build log): the capsule at
+# three.js (0, 0.9, 2) lands centred on Unreal (0, 200, 90). Swapping two axes also flips
+# the handedness. The L0 silhouette IoU in compare.ts proves the mapping on every pose.
 def to_unreal(p):
     x, y, z = p
-    return unreal.Vector(-z * 100.0, x * 100.0, y * 100.0)
+    return unreal.Vector(x * 100.0, z * 100.0, y * 100.0)
 
 
 def look_rotation(position, target):
@@ -150,7 +152,7 @@ COMPONENT_PROPS = {
     ],
     "ExponentialHeightFogComponent": [
         "fog_density", "fog_height_falloff", "fog_inscattering_luminance", "fog_max_opacity",
-        "start_distance", "volumetric_fog", "volumetric_fog_scattering_distribution",
+        "start_distance", "enable_volumetric_fog", "volumetric_fog_scattering_distribution",
         "volumetric_fog_albedo", "volumetric_fog_extinction_scale", "volumetric_fog_distance",
         "directional_inscattering_luminance", "second_fog_data",
     ],
@@ -169,9 +171,11 @@ def build_level(name, sun, meshes):
     lighting = []
     for actor in actors:
         name = actor.get_class().get_name()
-        if name == "StaticMeshActor":
-            log("delete template floor " + actor.get_actor_label())
+        if name == "StaticMeshActor" and actor.get_actor_label() == "Floor":
+            log("delete template floor")
             actor_subsystem.destroy_actor(actor)
+        elif name == "StaticMeshActor":
+            log("keep template mesh " + actor.get_actor_label())
         elif name == "DirectionalLight":
             actor.set_actor_rotation(sun_rotation(sun), False)
             lighting.append(actor)
@@ -240,6 +244,8 @@ def build():
 # --- check-cvars ---------------------------------------------------------------
 def check_cvars():
     names = sorted({n for layer in LAYERS for n in layer["cvars"]} | {"ShowFlag." + n for layer in LAYERS for n in layer["showFlags"]})
+    # TN_UE_EXTRA_CVARS adds names to the check, so a deliberate miss proves the check fails closed.
+    names += [n for n in os.environ.get("TN_UE_EXTRA_CVARS", "").split(",") if n]
     missing = []
     for name in names:
         if not unreal.SystemLibrary.get_console_variable_int_value(name) and not cvar_exists(name):
@@ -290,9 +296,10 @@ def add_job(queue, layer, sun, pose, kind):
     width, height = POSES["resolution"]
     output.output_resolution = unreal.IntPoint(width, height)
     output.override_existing_output = True
-    deferred = config.find_or_add_setting_by_class(unreal.MoviePipelineDeferredPassBase)
+    config.find_or_add_setting_by_class(unreal.MoviePipelineDeferredPassBase)
     if kind == "exr":
-        deferred.disable_tone_curve = True
+        # Scene-linear output: the color setting, not the render pass, owns the tone curve.
+        config.find_or_add_setting_by_class(unreal.MoviePipelineColorSetting).disable_tone_curve = True
         config.find_or_add_setting_by_class(unreal.MoviePipelineImageSequenceOutput_EXR)
     else:
         config.find_or_add_setting_by_class(unreal.MoviePipelineImageSequenceOutput_PNG)

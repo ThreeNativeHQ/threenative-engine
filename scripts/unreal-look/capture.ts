@@ -59,7 +59,9 @@ async function runUnreal(
         "-nosound",
         "-stdout",
         "-FullStdOutLogOutput",
-        `-ExecutePythonScript=${path.join(REFERENCE, "build_level.py")}`,
+        // -ExecutePythonScript quits the editor when the script returns; a Movie Render Queue
+        // run needs the editor to keep ticking, so the script runs as a console command.
+        `-ExecCmds=py ${path.join(REFERENCE, "build_level.py")}`,
       ],
       {
         env: { ...process.env, ...env, TN_UE_MODE: mode, TN_UE_OUT: out },
@@ -102,8 +104,11 @@ export async function main(args: readonly string[]): Promise<number> {
   }
 
   if (args.includes("--check-cvars")) return runUnreal("check-cvars", out);
-  if (args.includes("--dump-actors") || !existsSync(path.join(REFERENCE, "Content/Reference")))
+  if (args.includes("--dump-actors") || !existsSync(path.join(REFERENCE, "Content/Reference"))) {
+    // The build creates every level and sequence from scratch; old assets would block it.
+    await rm(path.join(REFERENCE, "Content/Reference"), { recursive: true, force: true });
     if ((await runUnreal("build", out)) !== 0) return 1;
+  }
   if (args.includes("--dump-actors")) return 0;
   const env = { TN_UE_LAYERS: layers.join(","), ...(cellsFlag ? { TN_UE_CELLS: cellsFlag } : {}) };
   const code = await runUnreal("capture", out, env);

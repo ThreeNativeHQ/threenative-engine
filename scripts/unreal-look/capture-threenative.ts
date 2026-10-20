@@ -86,9 +86,16 @@ async function patchScaffold(target: string, fresh = true): Promise<void> {
   await writeFile(
     config,
     replaceOnce(
-      await readFile(config, "utf8"),
-      'resolutionScale: "auto"',
-      "resolutionScale: 1",
+      replaceOnce(
+        await readFile(config, "utf8"),
+        'resolutionScale: "auto"',
+        "resolutionScale: 1",
+        config,
+      ),
+      'nativeEntry: "src/game.ts",',
+      // Upstream three.js renders the template's TSL as written; the owned engine's agreement
+      // with it is the separate per-layer parity gate (`pnpm parity --target desktop`).
+      'nativeEntry: "src/game.ts",\n  engine: "threejs",',
       config,
     ),
   );
@@ -106,15 +113,14 @@ async function scaffold(work: string, reuse: boolean): Promise<string> {
     await cp(path.join(TEMPLATE, "public"), path.join(target, "public"), { recursive: true });
     await patchScaffold(target, false);
     return target;
-  } else {
-    await rm(work, { recursive: true, force: true });
-    await mkdir(work, { recursive: true });
-    const packageSources = await packageLocalFramework(work);
-    await createProject(
-      { install: true, packageSources, target: "starter", template: "starter" },
-      work,
-    );
   }
+  await rm(work, { recursive: true, force: true });
+  await mkdir(work, { recursive: true });
+  const packageSources = await packageLocalFramework(work);
+  await createProject(
+    { install: true, packageSources, target: "starter", template: "starter" },
+    work,
+  );
   await patchScaffold(target);
   return target;
 }
@@ -218,13 +224,9 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
               (window as unknown as { __tnRef: { pose(p: unknown): void } }).__tnRef.pose(p);
             }, pose);
             // Let the chain, its denoisers and the shadow map settle on the new view.
+            // A string, because tsx names the inner arrow functions with a helper the page lacks.
             await page.evaluate(
-              () =>
-                new Promise<void>((resolve) => {
-                  let frames = 0;
-                  const tick = () => (++frames >= 45 ? resolve() : requestAnimationFrame(tick));
-                  requestAnimationFrame(tick);
-                }),
+              "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 45 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
             );
             if (errors.length > 0)
               throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);

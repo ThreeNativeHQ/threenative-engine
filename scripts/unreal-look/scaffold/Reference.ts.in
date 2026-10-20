@@ -29,7 +29,7 @@ type Pose = { position: number[]; target: number[]; hfovDeg: number };
 
 const params = new URLSearchParams(location.search);
 const LAYER = params.get("tnRef") ?? "L9";
-const [elevationDeg, azimuthDeg] = (params.get("sun") ?? "60,25").split(",").map(Number);
+const [elevationDeg = 60, azimuthDeg = 25] = (params.get("sun") ?? "60,25").split(",").map(Number);
 const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
 
 export class Reference extends Scene<GameState, IPhysicsContext> {

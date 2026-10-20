@@ -13,7 +13,8 @@
 // `"filmic"`. `"aces"` stays available as the named override. `filmicToneMap()` is the same
 // curve on plain numbers, so a test or a capture script can apply it to a scene-linear image.
 import { CustomToneMapping } from "three";
-import { Fn, clamp, dot, exp, type float, log, mat3, max, mix, select, vec3 } from "three/tsl";
+import { clamp, dot, exp, log, mat3, max, mix, step, vec3 } from "three/tsl";
+import type { Node } from "three/webgpu";
 
 export interface IFilmicCurve {
   readonly slope: number;
@@ -130,13 +131,10 @@ export function filmicToneMap(
   return [unit(x), unit(y), unit(z)];
 }
 
-type FloatNode = ReturnType<typeof float>;
-type Vec3Node = ReturnType<typeof vec3>;
-
 /** The same curve as a TSL tone-mapping function, `(color, exposure) => color`. */
 export function filmicToneMappingNode(
   c: IFilmicCurve = FILMIC_CURVE,
-): (color: Vec3Node, exposure: FloatNode) => Vec3Node {
+): (color: Node<"vec3">, exposure: Node<"float">) => Node<"vec3"> {
   const m = curveMatches(c);
   // mat3 takes columns, so the row-major tables go in transposed.
   const column = (r: Mat3) => mat3(r[0], r[3], r[6], r[1], r[4], r[7], r[2], r[5], r[8]);
@@ -159,12 +157,13 @@ export function filmicToneMappingNode(
       ),
     );
     // Per channel: the sigmoid below the toe match, the line above it; and the mirror for the
-    // shoulder. step() is the vector form of the comparison.
-    const toe = mix(toeCurve, straight, step(vec3(m.toeMatch), logValue));
-    const shoulder = mix(straight, shoulderCurve, step(vec3(m.shoulderMatch), logValue));
+    // shoulder. step() is the vector form of the comparison; mix() takes only a scalar weight.
+    const blend = (a: Node<"vec3">, b: Node<"vec3">, w: Node<"vec3">) => a.add(b.sub(a).mul(w));
+    const toe = blend(toeCurve, straight, step(vec3(m.toeMatch), logValue));
+    const shoulder = blend(straight, shoulderCurve, step(vec3(m.shoulderMatch), logValue));
     const linear = clamp(logValue.sub(m.toeMatch).div(m.shoulderMatch - m.toeMatch), 0, 1);
     const t = m.shoulderMatch < m.toeMatch ? linear.oneMinus() : linear;
-    const toned = mix(toe, shoulder, t.mul(t).mul(t.mul(-2).add(3)));
+    const toned = blend(toe, shoulder, t.mul(t).mul(t.mul(-2).add(3)));
     const post = mix(vec3(dot(toned, luma)), toned, POST_SATURATION);
     return clamp(toSrgb.mul(post), 0, 1);
   };
