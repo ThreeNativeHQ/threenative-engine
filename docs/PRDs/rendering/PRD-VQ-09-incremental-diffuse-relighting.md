@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — no box is ticked: the traced radiance cache of PRD-603 reacts only to a global sun or sky step, and its BVH holds static triangles only, so a door, a lamp or a moved crate changes no bounce light.
 **Complexity:** 7 (HIGH) — 1–5 files: dirty regions, a dynamic BVH part, specs, one conformance scene (+1), complex state: dirty bounds, a per-frame refit and probe generations (+2), changes the trace kernel's inputs (+2), native proof (+1), two prerequisite PRDs (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-603](../Unreal/rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 3 (the stale queue, generations and the lighting-step rule). [PRD-638](../Unreal/gi/PRD-638-a-gi-reference-scene-shows-every-lumen-behaviour-still-and-in-motion.md) Phase 2 (the `door`, `neon` and occluder motion runs). Part of the GI set in [`../Unreal/gi/`](../Unreal/gi/) (PR #541).
+**Depends on:** [PRD-603](../Unreal/rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 3 (the stale queue, generations and the lighting-step rule). [PRD-638](../Unreal/gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phases 2 and 3 (`sunlit-room` and the motion pipeline), the `neon` run of [PRD-641](../Unreal/gi/PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md), and [PRD-647](../Unreal/gi/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md). This PRD authors the `door` and `occluder` runs. Part of the GI set in [`../Unreal/gi/`](../Unreal/gi/) (PR #541).
 
 ## Context
 
@@ -42,7 +42,7 @@ The mechanism now follows PRD-603.
 
 ## Solution
 
-1. **Measure (Phase 1).** Run the PRD-638 `door`, `neon` and occluder runs on the owned engine with
+1. **Measure (Phase 1).** Run the `door` and `occluder` runs, which this PRD authors on `sunlit-room` with the PRD-638 pipeline, and the PRD-641 `neon` run, on the owned engine with
    PRD-603 as it lands: static BVH, a full re-trace on `requestBake`. Record response frames, the
    probes traced per change and the frame cost. Unreal Epic's response from the same runs is the
    target.
@@ -86,7 +86,8 @@ marked, the moved meshes in the trace and the skinned meshes left out.
 
 #### Phase 1: How a local change behaves today
 **Status:** NOT STARTED
-**Files:** none beyond PRD-638 and PRD-603 (measurement only)
+**Files:** `tools/unreal-reference/gi/sunlit-room/scene.py` (the `door` and `occluder` runs), `tools/unreal-reference/gi/scenes.json`
+- [ ] The `door` and `occluder` runs render 180 frames in both engines with matching frame counts. proof: `pnpm unreal-look:capture --engine unreal --scene gi:sunlit-room --motion door,occluder` and `pnpm unreal-look:compare --scene gi:sunlit-room --metric motion`.
 - [ ] Response frames, probes traced per change and frame cost for the three runs, with Unreal Epic's response, are recorded under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi --metric motion`.
 
 #### Phase 2: A change marks a box stale
@@ -99,7 +100,7 @@ marked, the moved meshes in the trace and the skinned meshes left out.
 **Status:** NOT STARTED
 **Files:** `packages/core/src/gpu-scene-bvh.ts`, `packages/core/src/render/probe-trace.ts`, `packages/core/__tests__/gpu-scene-bvh.spec.ts`, `packages/runtime-native/conformance/scenes/shared/radiance-cache-door.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] A ray against a moved rigid mesh hits it at its new transform, and a skinned mesh is skipped and counted. proof: `pnpm exec vitest run packages/core/__tests__/gpu-scene-bvh.spec.ts`.
-**Verification:** AC-1 to AC-3. A visual judge subagent reviews frames 0, 30 and 90 of the `door` run against Unreal's, and must return IMPROVEMENT against the Phase 1 run.
+**Verification:** AC-1 to AC-3. A PRD-647 round on the `door` run (frames 0, 30, 60, 90 and 179) at `high`, Unreal Epic as the target, must return IMPROVEMENT against the Phase 1 run.
 
 ## Decisions
 

@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — no box is ticked: no gate measures GI flicker, lag or smear, and the GI gather keeps no history of its own.
 **Complexity:** 6 (MEDIUM) — 1–5 files: the gather history, the light revision, specs, one conformance scene (+1), state across frames: history targets and a light revision (+2), velocity reuse from PRD-269 (+0), native proof (+1), a measured tuning loop against Unreal's motion series (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-638](PRD-638-a-gi-reference-scene-shows-every-lumen-behaviour-still-and-in-motion.md) Phase 2 (the motion runs and metrics). [PRD-640](PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) (the gather whose history this is; if PRD-640 declines its Phase 2, the history goes on `ssgi`). [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 3 (the lighting-step rule of the radiance cache).
+**Depends on:** [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 3 (the motion pipeline and metrics) and [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) (the calibration round). This PRD authors the `neon` motion run. [PRD-640](PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) (the gather whose history this is; if PRD-640 declines its Phase 2, the history goes on `ssgi`). [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 3 (the lighting-step rule of the radiance cache).
 
 ## Context
 
@@ -20,7 +20,7 @@ prd_contract: v1
 - The world radiance cache changes only when its probes are traced again. The harness cache
   (`giCache.ts`) never changes after the bake. PRD-603 adds a budgeted refresh and a lighting-step
   rule that marks probes stale.
-- No gate reads a moving camera or a switched light. PRD-638 Phase 2 adds those runs.
+- No gate reads a moving camera or a switched light. PRD-638 Phase 3 adds the motion pipeline.
 
 ### What Unreal does (UE 5.8.3, read 2026-10-20; clean-room summary, no code copied)
 
@@ -45,7 +45,7 @@ prd_contract: v1
 
 ## Solution
 
-1. **Measure first (Phase 1).** Run the four PRD-638 motion runs on the current chain and on Unreal
+1. **Measure first (Phase 1).** Run every registered PRD-638 motion run (`pan`, this PRD's `neon`, and `door` and `occluder` from PRD-VQ-09 when they exist) on the current chain and on Unreal
    Epic and Medium. Record flicker, response and overshoot per region. These numbers are the targets.
    No threshold is chosen before Unreal is measured.
 2. **Gather history (Phase 2).** The gather (Screen Probe Gather, or `ssgi` if PRD-640 declines)
@@ -65,7 +65,7 @@ prd_contract: v1
 `packages/core/src/render/`. The update-speed values are look decisions in the template's
 `src/render/`. `TN_GI_TEMPORAL` reports frames accumulated (median and p5), the rejected share and
 the fast-update share, the counterparts of Unreal visualize modes 22 and 23. The `GIVisualize`
-modes of PRD-638 gain `framesAccumulated` and `fastUpdateAmount`.
+modes of PRD-646 gain `framesAccumulated` and `fastUpdateAmount`.
 
 ## Acceptance Criteria
 
@@ -84,7 +84,8 @@ modes of PRD-638 gain `framesAccumulated` and `fastUpdateAmount`.
 
 #### Phase 1: The motion targets
 **Status:** NOT STARTED
-**Files:** none beyond PRD-638 (measurement only)
+**Files:** `tools/unreal-reference/gi/neon-corridor/scene.py` (the `neon` run; the scene comes from PRD-639 or is created here), `tools/unreal-reference/gi/scenes.json`
+- [ ] The `neon` run renders 180 frames in both engines with matching frame counts. proof: `pnpm unreal-look:capture --engine unreal --scene gi:neon-corridor --motion neon` and `pnpm unreal-look:compare --scene gi:neon-corridor --metric motion`.
 - [ ] Flicker, response and overshoot per region for Unreal Epic, Unreal Medium and the current owned-engine chain are recorded under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi --metric motion`.
 
 #### Phase 2: The gather keeps a history
@@ -92,7 +93,7 @@ modes of PRD-638 gain `framesAccumulated` and `fastUpdateAmount`.
 **Files:** `packages/core/src/render/gi-history.ts` (new), `packages/core/src/render/screen-probe-gather.ts`, `packages/core/__tests__/gi-history.spec.ts` (new)
 - [ ] A history sample whose reprojected depth differs by more than 0.01 relative is rejected, and accumulation stops at 10 frames. proof: `pnpm exec vitest run packages/core/__tests__/gi-history.spec.ts`.
 - [ ] The pan run on the owned engine meets AC-1 for flicker without a smear above the overshoot limit. proof: `pnpm unreal-look:compare --scene gi --metric motion`, `pan` run.
-**Verification:** a visual judge subagent reviews frames 30, 60 and 120 of the pan and door runs against Unreal's, and must return IMPROVEMENT against the current chain.
+**Verification:** a PRD-647 round on the `pan` and `neon` runs (frames 0, 60, 90, 120 and 179) at `high`, Unreal Epic as the target, must return IMPROVEMENT against the current chain.
 
 #### Phase 3: A changed light updates fast
 **Status:** NOT STARTED

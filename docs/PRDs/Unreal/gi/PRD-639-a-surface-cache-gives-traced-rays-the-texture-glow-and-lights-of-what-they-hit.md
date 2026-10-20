@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — no box is ticked: a traced GI ray reads one flat colour per material and only the sun, so a textured wall or a lamp in the room adds no correct bounce.
 **Complexity:** 7 (HIGH) — 6–10 files: the trace kernel, a material atlas, a light list, specs, a conformance scene (+2), new module `surface-cache.ts` (+2), state across frames: atlas pages and a light update budget (+2), native proof (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the traced refresh and its flat material table). [PRD-638](PRD-638-a-gi-reference-scene-shows-every-lumen-behaviour-still-and-in-motion.md) Phase 1 (the GI scene). Feeds [PRD-640](PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) and [PRD-642](PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md), whose rays hit the same surfaces.
+**Depends on:** [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the traced refresh and its flat material table). [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the scene pipeline), [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 and [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) Phase 1. This PRD authors the `neon-corridor` calibration scene. Feeds [PRD-640](PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) and [PRD-642](PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md), whose rays hit the same surfaces.
 
 ## Context
 
@@ -52,8 +52,9 @@ which is often white. A torch in `action-rpg` adds no bounce at all.
 The **Surface Cache** keeps Unreal's name and its job: the thing a traced ray reads at a hit. It is
 built in the order that pays first and measured at each step.
 
-1. **Measure the gap (Phase 1).** The GI scene from PRD-638 gets two variants: textured walls (a
-   brick albedo whose mean is not its `color`) and a point lamp in the second room. The harness
+1. **Measure the gap (Phase 1).** This PRD authors the `neon-corridor` calibration scene with the
+   PRD-638 pipeline: a textured wall (a brick albedo whose mean is not its `color`), emissive strips,
+   a 5 cm emitter and a point lamp. The harness
    `giCache.ts` already raycasts on the CPU, so it can test both causes without GPU work: once with
    flat colour and sun only (today), once with the albedo texel at the hit UV and the lamp added.
    **Gate:** continue to Phase 2 only if the textured variant moves an L7 region by more than the
@@ -85,8 +86,8 @@ back to flat colour and why, and lights skipped by the cap.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: On the textured GI scene, the L7 cells on the owned engine are within the PRD-631 thresholds of Unreal Epic in every region that Phase 1 found sensitive. proof: `pnpm unreal-look:compare --scene gi --layer L7` — Evidence: pending.
-- [ ] AC-2 [local]: The Surface Cache adds no more than 25% to the PRD-603 traced refresh time per probe on the GI scene, on a named WebGPU adapter. proof: the PRD-603 probe-cost playtest on the GI scene, with and without `surfaceCache` — Evidence: pending.
+- [ ] AC-1 [local]: On the `neon-corridor` scene, the L7 cells on the owned engine are within the PRD-631 thresholds of Unreal Epic in every region that Phase 1 found sensitive. proof: `pnpm unreal-look:compare --scene gi:neon-corridor --layer L7` — Evidence: pending.
+- [ ] AC-2 [local]: The Surface Cache adds no more than 25% to the PRD-603 traced refresh time per probe on the `neon-corridor` scene, on a named WebGPU adapter. proof: the PRD-603 probe-cost playtest on the same scene, with and without `surfaceCache` — Evidence: pending.
 - [ ] AC-3 [local; needs a built desktop host]: The new conformance row `surface-cache-albedo` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests surface-cache-albedo` — Evidence: pending.
 
 ## Integration Ledger
@@ -101,8 +102,9 @@ back to flat colour and why, and lights skipped by the cap.
 
 #### Phase 1: Which hit data changes the picture
 **Status:** NOT STARTED
-**Files:** `tools/unreal-reference/gi/scene.glb` (textured and lamp variants), `scripts/unreal-look/scaffold/render/giCache.ts`
-- [ ] The L7 region change from textured albedo at the hit is recorded under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi --layer L7`, flat against textured.
+**Files:** `tools/unreal-reference/gi/neon-corridor/{scene.py,criteria.md}` (new), `tools/unreal-reference/gi/scenes.json`, `scripts/unreal-look/scaffold/render/giCache.ts`
+- [ ] `neon-corridor` is ready to calibrate: authored and captured in Unreal, recreated with direct light matching (PRD-646), and its PRD-647 criteria written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:neon-corridor --check-cvars` and `pnpm unreal-look:compare --scene gi:neon-corridor --layer L1`.
+- [ ] The L7 region change from textured albedo at the hit is recorded under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi:neon-corridor --layer L7`, flat against textured.
 - [ ] The L7 region change from the point lamp at the hit is recorded under `## Decisions`. proof: the same command, sun-only against sun and lamp.
 
 #### Phase 2: Albedo and emissive from the material atlas
@@ -115,10 +117,10 @@ back to flat colour and why, and lights skipped by the cap.
 **Status:** NOT STARTED
 **Files:** `packages/core/src/render/probe-trace.ts`, `packages/core/__tests__/surface-cache.spec.ts`, `packages/runtime-native/conformance/scenes/shared/surface-cache-albedo.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] A point lamp lights the hit through its range and shadow ray, and the 9th-brightest light is skipped and counted. proof: `pnpm exec vitest run packages/core/__tests__/surface-cache.spec.ts`.
-**Verification:** AC-1 to AC-3. The change alters what reaches the screen, so a visual judge subagent compares flat against Surface Cache on the textured GI scene, with Unreal Epic as the stated target. NEUTRAL or REGRESSION means fix the cause and judge again.
+**Verification:** AC-1 to AC-3. The change alters what reaches the screen, so a PRD-647 round on `neon-corridor` at `high` compares flat (BEFORE) against Surface Cache (AFTER), with Unreal Epic as the target. It must return IMPROVEMENT against BEFORE, and the `neon` and `textured` cells must move toward MATCH. NEUTRAL or REGRESSION means fix the cause and judge again.
 
 ## Decisions
 
 - 2026-10-20 (PRD authoring): Unreal emissive has no separate emitter path. It lights the world only
   through rays that hit the emissive surface. This PRD keeps that model, so a tiny bright emitter is
-  tested through the PRD-638 `neon` pose and the motion runs, not with a special sampler.
+  tested through the `neon` pose and the PRD-641 `neon` motion run, not with a special sampler.

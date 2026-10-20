@@ -85,7 +85,7 @@ ThreeNative already has the substitute for the global field: a packed triangle B
 - [ ] On the off-screen-emitter fixture, the traced fill gives `sampleRed` within 25% of the capture fill and keeps `sampleHueRatio` at 3 or more. proof: the AC-2 playtest command
 - [ ] The harness installs `RadianceCache` in place of `giCache.ts`, the CPU bake is deleted, and the L7 cells are no further from Unreal than with `giCache.ts`. proof: `pnpm unreal-look:compare --layer L7`, before and after, engine named.
 - [ ] A capability search for "lumen radiance cache" returns `RadianceCache`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`.
-**Verification:** AC-1, AC-2 and AC-3 close this phase. The change alters what reaches the screen, so the visual judge from the root `AGENTS.md` runs on the off-screen-emitter fixture. It compares capture against trace and includes a frame taken mid-refresh. A NEUTRAL or REGRESSION verdict means fix the cause and judge again.
+**Verification:** AC-1, AC-2 and AC-3 close this phase. The change alters what reaches the screen, so the visual judge from the root `AGENTS.md` runs on the off-screen-emitter fixture. It compares capture against trace and includes a frame taken mid-refresh. A [PRD-647](../gi/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) round on `cornell` and `sunlit-room` at `high`, Unreal Epic as the target, runs on the same change. A NEUTRAL or REGRESSION verdict means fix the cause and judge again.
 
 #### Phase 3: Refresh the stalest probes and react to lighting steps
 **Status:** NOT STARTED

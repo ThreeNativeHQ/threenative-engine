@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — no box is ticked: the Epic tier of Unreal, which a fresh project runs, gathers GI with screen probes, and ThreeNative has only a per-pixel SSGI whose misses read a 1 m field.
 **Complexity:** 8 (HIGH) — 6–10 files: the gather, the short range AO, the composite, specs, conformance (+2), new module `screen-probe-gather.ts` (+2), state across frames: probe radiance history (+2), native proof (+1), changes the frame cost of the high tier (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-638](PRD-638-a-gi-reference-scene-shows-every-lumen-behaviour-still-and-in-motion.md) Phase 1 and the `indirectDiffuse` mode of its Phase 3. [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the radiance cache that a miss reads). [PRD-635](../look/PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md) (AO reaches indirect light only). Temporal stability is [PRD-641](PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md).
+**Depends on:** [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phases 1 and 2 (`cornell` and `sunlit-room`), [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 3 (the `indirectDiffuse` mode) and [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) (the calibration round). [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the radiance cache that a miss reads). [PRD-635](../look/PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md) (AO reaches indirect light only). Temporal stability is [PRD-641](PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md).
 
 ## Context
 
@@ -97,7 +97,7 @@ overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-scr
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The L7 cells on the owned engine match Unreal Epic within the PRD-631 thresholds on the interior and backlit poses of the reference scene. proof: `pnpm unreal-look:compare --layer L7` — Evidence: pending.
-- [ ] AC-2 [local]: The same holds on the `cornell` and `window` poses of the GI scene. proof: `pnpm unreal-look:compare --scene gi --layer L7` — Evidence: pending.
+- [ ] AC-2 [local]: The same holds on the `cornell` and `window` poses of the calibration scenes. proof: `pnpm unreal-look:compare --scene gi:cornell,gi:sunlit-room --layer L7` — Evidence: pending.
 - [ ] AC-3 [local]: The gather plus Short Range AO costs no more GPU time at 1920 × 1080 than Unreal's measured screen probe gather on the same RTX 2080. proof: `node packages/playtest/dist/runner/cli.js perf` on the harness against the Phase 1 Unreal number — Evidence: pending.
 
 ## Integration Ledger
@@ -121,7 +121,7 @@ overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-scr
 **Files:** `packages/core/src/render/screen-probe-gather.ts` (new), `packages/core/src/index.ts`, `packages/core/__tests__/screen-probe-gather.spec.ts` (new), `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `packages/engine-mcp/__tests__/search.spec.ts`
 - [ ] A ray that leaves the screen continues through the BVH and then reads the radiance cache, and a ray that hits on screen never reads the cache. proof: `pnpm exec vitest run packages/core/__tests__/screen-probe-gather.spec.ts`.
 - [ ] A capability search for "lumen screen probe gather" returns `ScreenProbeGather`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`.
-**Verification:** AC-1 and AC-2. A visual judge subagent compares `ssgi` against the gather on the four poses, with Unreal Epic as the stated target, and must return IMPROVEMENT.
+**Verification:** AC-1 and AC-2. A PRD-647 round on `cornell` and `sunlit-room` at `high` (BEFORE `ssgi`, AFTER the gather, Unreal Epic as the target) must return IMPROVEMENT against BEFORE. The four PRD-631 poses are judged the same way.
 
 #### Phase 3: Short Range AO and native proof
 **Status:** NOT STARTED

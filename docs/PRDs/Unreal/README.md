@@ -200,25 +200,34 @@ Medium uses the irradiance field gather, and Low has no dynamic GI (`Engine/Conf
 The set rebuilds that ladder on `GPUSceneBVH` instead of distance fields, and matches each tier to
 its own Unreal level.
 
+**Calibration comes first (owner, 2026-10-20).** Each calibration scene is built in Unreal
+(PRD-638), recreated in ThreeNative (PRD-646), and judged in rounds until parity (PRD-647). The
+pipeline, the recreation and the loop are filed once. Each GI PRD authors the scene or motion run
+for its own behaviour with that pipeline, and records its visual verdict as a PRD-647 round.
+
 | Lumen part | PRD | Outcome | Waits on |
 | --- | --- | --- | --- |
-| Reference and visualize modes | [PRD-638](gi/PRD-638-a-gi-reference-scene-shows-every-lumen-behaviour-still-and-in-motion.md) | A GI reference scene shows every Lumen behaviour, still and in motion | PRD-631 Phase 3 |
+| Calibration scenes | [PRD-638](gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) | Calibration scenes are built in Unreal and captured as the GI target | PRD-631 Phase 1 |
+| Scene recreation, visualize modes | [PRD-646](gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) | ThreeNative recreates each Unreal calibration scene exactly | PRD-638, PRD-632 |
+| Calibration loop | [PRD-647](gi/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) | A visual judge calibrates GI against the Unreal scenes until parity | PRD-638, PRD-646 |
 | Radiance cache | [PRD-603](rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) | `RadianceCache` refreshes by tracing the packed scene | — |
 | Irradiance field gather | [PRD-604](rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md) | A surface is lit only by probes that can see it | — |
 | Radiance cache clipmaps | [PRD-605](rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md) | The probe field follows the camera in nested rings | PRD-603, PRD-604 |
-| Dynamic updates | [PRD-VQ-09](../rendering/PRD-VQ-09-incremental-diffuse-relighting.md) | A door that opens and a lamp that switches change the bounce light | PRD-603, PRD-638 |
+| Dynamic updates | [PRD-VQ-09](../rendering/PRD-VQ-09-incremental-diffuse-relighting.md) | A door that opens and a lamp that switches change the bounce light | PRD-603, PRD-647 |
 | Surface cache | [PRD-639](gi/PRD-639-a-surface-cache-gives-traced-rays-the-texture-glow-and-lights-of-what-they-hit.md) | Traced rays see the texture, glow and lights of what they hit | PRD-603 |
-| Screen probe gather, Short Range AO | [PRD-640](gi/PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) | Pixels gather from screen probes, and the radiance cache answers the rest | PRD-603, PRD-638 |
-| Temporal filter | [PRD-641](gi/PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md) | Bounce light holds still and follows a changed light | PRD-638, PRD-640 |
+| Screen probe gather, Short Range AO | [PRD-640](gi/PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) | Pixels gather from screen probes, and the radiance cache answers the rest | PRD-603, PRD-647 |
+| Temporal filter | [PRD-641](gi/PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md) | Bounce light holds still and follows a changed light | PRD-640, PRD-647 |
 | Reflections | [PRD-642](gi/PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md) | Glossy surfaces reflect what the camera cannot see | PRD-603, PRD-639 |
 | Translucency volume, foliage | [PRD-643](gi/PRD-643-glass-fog-and-leaves-take-the-bounce-light-too.md) | Glass, fog and leaves take the bounce light too | PRD-603, PRD-604 |
-| Scalability | [PRD-644](gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md) | The GI tier follows Unreal's quality levels and the measured GPU time | PRD-638 |
+| Scalability | [PRD-644](gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md) | The GI tier follows Unreal's quality levels and the measured GPU time | PRD-647 |
 | Hardware ray tracing | [PRD-645](gi/PRD-645-a-desktop-gpu-with-ray-tracing-traces-gi-rays-in-hardware.md) | A desktop GPU with ray tracing traces GI rays in hardware (opt-in) | PRD-603 |
-| Templates | [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) | The templates take the tuned tier table, last | PRD-644 |
+| Templates | [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) | The templates take the tuned tier table, last | PRD-644, PRD-647 parity |
 
 ```mermaid
 flowchart LR
-  P638[PRD-638 GI scene] --> P603[PRD-603 RadianceCache]
+  P638[PRD-638 Unreal calibration scenes] --> P646[PRD-646 ThreeNative recreation]
+  P646 --> P647[PRD-647 judge rounds until parity]
+  P647 -. judges .-> P603[PRD-603 RadianceCache]
   P603 --> P604[PRD-604 IrradianceFieldGather]
   P604 --> P605[PRD-605 clipmaps]
   P603 --> P639[PRD-639 SurfaceCache]
@@ -233,7 +242,9 @@ flowchart LR
   P644 --> P267[PRD-267 templates]
 ```
 
-Order: PRD-638 Phase 1 and PRD-603 Phase 1 first and in parallel. The harness `giCache.ts` (PR #541)
+Order: PRD-638 Phase 1, then PRD-646 Phases 1 and 2, then PRD-647 Phase 1: the first round on
+`cornell` is the GI baseline. PRD-603 Phase 1 runs in parallel. Parity at a tier (PRD-647 Phase 3)
+is the bar for PRD-267 to copy that tier to the templates. The harness `giCache.ts` (PR #541)
 is the CPU reference for PRD-603 to PRD-604 until PRD-603 Phase 2 deletes it. Template edits come
 last (owner, 2026-10-19: tune the harness 1:1 first).
 

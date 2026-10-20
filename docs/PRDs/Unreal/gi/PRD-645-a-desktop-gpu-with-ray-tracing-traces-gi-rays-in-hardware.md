@@ -84,4 +84,4 @@ cache option is mechanism in `packages/core`.
 **Files:** `packages/core/src/render/probe-trace.ts`, `packages/core/__tests__/probe-volume.spec.ts`, `packages/engine-mcp/__tests__/search.spec.ts`
 - [ ] `rayTracing: "hardware"` on a host without support falls back to software and logs the reason in `TN_RAY_TRACING`. proof: `pnpm exec vitest run packages/core/__tests__/probe-volume.spec.ts`.
 - [ ] A capability search for "lumen hardware ray tracing" returns the radiance cache option. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`.
-**Verification:** AC-1 and AC-2.
+**Verification:** AC-1 and AC-2. A PRD-647 round on `cornell` and `sunlit-room` at `high` returns no REGRESSION against the BVH trace.

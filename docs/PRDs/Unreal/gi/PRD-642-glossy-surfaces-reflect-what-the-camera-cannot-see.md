@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — no box is ticked: a reflection ray that leaves the screen falls back to the sky environment, so a chrome sphere in a room reflects the sky and not the room behind the camera.
 **Complexity:** 7 (HIGH) — 6–10 files: the reflection trace, rough specular, the denoise, specs, conformance (+2), new module `traced-reflections.ts` (+2), history state (+2), native proof (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the radiance cache that rough reflections read and the BVH trace). [PRD-639](PRD-639-a-surface-cache-gives-traced-rays-the-texture-glow-and-lights-of-what-they-hit.md) Phase 2 (what a reflection ray sees at its hit). [PRD-641](PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md) Phase 2 (the history code it reuses). [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md) owns the reflection captures that the tiers without traced reflections use.
+**Depends on:** [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the radiance cache that rough reflections read and the BVH trace). [PRD-639](PRD-639-a-surface-cache-gives-traced-rays-the-texture-glow-and-lights-of-what-they-hit.md) Phase 2 (what a reflection ray sees at its hit). [PRD-641](PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md) Phase 2 (the history code it reuses). [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1, [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 and [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md): this PRD adds the `chrome` pose to the `neon-corridor` calibration scene. [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md) owns the reflection captures that the tiers without traced reflections use.
 
 ## Context
 
@@ -48,7 +48,7 @@ prd_contract: v1
 ## Solution
 
 1. **Measure (Phase 1).** On the owned engine at L8, compare the chrome and smooth-dielectric spheres
-   of the PRD-631 scene and a chrome sphere in the PRD-638 `cornell` pose against Unreal Epic.
+   of the PRD-631 scene and the `chrome` pose that this PRD adds to the `neon-corridor` calibration scene, against Unreal Epic.
    Classify each wrong region by cause: the reflected object is off screen, behind the camera,
    beyond `maxDistance`, or the surface is rougher than 0.4. Only the measured causes are built.
 2. **`TracedReflections` (Phase 2).** For pixels with roughness up to `maxRoughnessToTrace` (0.4,
@@ -89,8 +89,9 @@ stays out of the API. The options keep Unreal's names in camelCase: `maxRoughnes
 
 #### Phase 1: Which reflections are wrong, and why
 **Status:** NOT STARTED
-**Files:** none (measurement only)
-- [ ] Each wrong L8 region is listed with its cause under `## Decisions`. proof: `pnpm unreal-look:compare --layer L8` and `--scene gi --layer L8`.
+**Files:** `tools/unreal-reference/gi/neon-corridor/{scene.py,criteria.md}` (the `chrome` pose; the scene comes from PRD-639 or is created here)
+- [ ] The `chrome` pose is ready to calibrate: authored and captured in Unreal, recreated with direct light matching (PRD-646), and its PRD-647 criteria written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:neon-corridor --check-cvars` and `pnpm unreal-look:compare --scene gi:neon-corridor --layer L1`.
+- [ ] Each wrong L8 region is listed with its cause under `## Decisions`. proof: `pnpm unreal-look:compare --layer L8` and `--scene gi:neon-corridor --layer L8`.
 
 #### Phase 2: Reflection rays leave the screen
 **Status:** NOT STARTED
@@ -98,7 +99,7 @@ stays out of the API. The options keep Unreal's names in camelCase: `maxRoughnes
 - [ ] An `ssr` miss on a surface at roughness 0.4 or less continues through the BVH, and a rougher surface casts no BVH ray. proof: `pnpm exec vitest run packages/core/__tests__/traced-reflections.spec.ts`.
 - [ ] The harness floor paint is gone and AC-1 still holds. proof: `pnpm unreal-look:compare --layer L8`.
 - [ ] A capability search for "lumen reflections" returns `TracedReflections`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`.
-**Verification:** a visual judge subagent compares before and after on the sphere cells and the `cornell` pose, with Unreal Epic as the stated target, and must return IMPROVEMENT.
+**Verification:** a PRD-647 round on the PRD-631 sphere cells and the `chrome` pose at `high`, Unreal Epic as the target, must return IMPROVEMENT against BEFORE.
 
 #### Phase 3: Rough specular and the denoiser
 **Status:** NOT STARTED

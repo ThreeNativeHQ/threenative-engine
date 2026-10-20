@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — no box is ticked: GI reaches opaque materials only, so glass, particles and fog inside a room glow with the sky and a leaf lit from behind stays dark.
 **Complexity:** 5 (MEDIUM) — 1–5 files: the translucency read, the fog read, the foliage term, specs, one conformance scene (+1), per-pixel and per-froxel cost (+2), native proof (+1), two consumers with different render paths (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 and [PRD-604](../rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md) Phase 2 (the radiance cache and its visibility-weighted read). [PRD-638](PRD-638-a-gi-reference-scene-shows-every-lumen-behaviour-still-and-in-motion.md) Phase 1 (the glass pane, the fog and the `foliage` pose).
+**Depends on:** [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 and [PRD-604](../rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md) Phase 2 (the radiance cache and its visibility-weighted read). [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the scene pipeline), [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 and [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md). This PRD authors the `foliage` calibration scene.
 
 ## Context
 
@@ -39,7 +39,7 @@ prd_contract: v1
 
 ## Solution
 
-1. **Measure (Phase 1).** On the GI scene at L7, compare the glass pane, a fog-filled room and the
+1. **Measure (Phase 1).** On the `foliage` calibration scene (authored here with the PRD-638 pipeline) at L7, compare the glass pane, a fog-filled room and the
    `foliage` pose against Unreal Epic. List the materials that take no GI and the fog froxels that
    take none.
 2. **Translucent materials and fog read the radiance cache (Phase 2).** ThreeNative draws translucency
@@ -80,8 +80,9 @@ The subsurface colour, the AO factor and the fog density are look values in game
 
 #### Phase 1: What takes no GI
 **Status:** NOT STARTED
-**Files:** none (measurement only)
-- [ ] The materials and fog froxels that take no GI on the GI scene are listed under `## Decisions`, with the per-region error against Unreal Epic. proof: `pnpm unreal-look:compare --scene gi --layer L7`.
+**Files:** `tools/unreal-reference/gi/foliage/{scene.py,criteria.md}` (new), `tools/unreal-reference/gi/scenes.json`
+- [ ] `foliage` is ready to calibrate: authored and captured in Unreal, recreated with direct light matching (PRD-646), and its PRD-647 criteria written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:foliage --check-cvars` and `pnpm unreal-look:compare --scene gi:foliage --layer L1`.
+- [ ] The materials and fog froxels that take no GI on the `foliage` scene are listed under `## Decisions`, with the per-region error against Unreal Epic. proof: `pnpm unreal-look:compare --scene gi:foliage --layer L7`.
 
 #### Phase 2: Glass and fog
 **Status:** NOT STARTED
@@ -93,4 +94,4 @@ The subsurface colour, the AO factor and the fog density are look values in game
 **Status:** NOT STARTED
 **Files:** `packages/core/src/render/probe-volume.ts`, `packages/core/__tests__/probe-volume.spec.ts`, `packages/runtime-native/conformance/scenes/shared/translucency-gi.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] A `twoSidedFoliage` material adds `subsurfaceColor ×` the back-face irradiance, and a material without `subsurfaceColor` adds nothing. proof: `pnpm exec vitest run packages/core/__tests__/probe-volume.spec.ts`.
-**Verification:** AC-2 and AC-3. A visual judge subagent compares the `foliage` pose before and after, with Unreal Epic as the stated target.
+**Verification:** AC-2 and AC-3. A PRD-647 round on `foliage` at `high`, Unreal Epic as the target, must return IMPROVEMENT against BEFORE on the `foliage` and `glass` poses.
