@@ -825,6 +825,16 @@ void tsl_call() {
     CHECK(tn_tsl_call(ctx, "vec4", nullptr, parts, 3, &color, &d.value) == TN_OK);
     CHECK(tn_tsl_call(ctx, "noSuchNode", nullptr, nullptr, 0, &unknown, &d.value) == TN_ERROR_UNSUPPORTED && unknown == 0);
     tn_diagnostic_release(&d.value);
+    // three's denoise converts its input to a texture itself (DenoiseNode.js: convertToTexture(node)), so a
+    // computed node is a valid input: the template denoises SSGI's AO, which the engine's ssgi answers as vec4(1).
+    {
+        uint64_t depth = 0, denoised = 0;
+        const tn_tsl_arg_t source = nodeArg(color);
+        CHECK(tn_tsl_call(ctx, "convertToTexture", nullptr, &source, 1, &depth, &d.value) == TN_OK);
+        const tn_tsl_arg_t inputs[3] = {nodeArg(color), nodeArg(depth), nodeArg(depth)};
+        CHECK(tn_tsl_call(ctx, "denoise", nullptr, inputs, 3, &denoised, &d.value) == TN_OK && denoised != 0);
+        tn_diagnostic_release(&d.value);
+    }
     const tn_tsl_arg_t stale = nodeArg(999999);
     CHECK(tn_tsl_call(ctx, "sin", nullptr, &stale, 1, &unknown, &d.value) != TN_OK);
     tn_diagnostic_release(&d.value);
