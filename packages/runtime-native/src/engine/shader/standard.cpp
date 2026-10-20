@@ -893,11 +893,29 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                 const ExprId angle = f.mul(n, t.f(2.399963229728653f));
                 return f.mul(f.construct(Type::vec(2), {f.call("cos", {angle}), f.call("sin", {angle})}), r);
             };
+            // The filter reads a disk, so a receiver plane tilts away from the light across it: a floor
+            // at a grazing sun would shadow itself. Each tap is compared with the receiver plane's depth
+            // at that tap (bounded by the plane's depth slope along both axes), plus the texel bias.
+            const ExprId centre = f.call("clamp", {uv, f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
+            const ExprId centreGrid = f.mul(centre, tiles);
+            const ExprId centreTile = f.call("min", {f.call("floor", {centreGrid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
+            const ExprId centreEntry = f.loadStorage(table, f.construct(Type::u32(), {f.add(t.f(float(levels*9)),
+                f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+                f.add(f.mul(f.swizzle(centreTile, "y"), tiles), f.swizzle(centreTile, "x"))))}));
+            const ExprId planeOn = f.swizzle(centreEntry, "w");
+            const ExprId planeWidth = f.div(width, span);
+            const ExprId texelBias = f.mul(f.mul(f.div(f.mul(slope, planeWidth), mapSize), f.div(mapSize, resolution)), planeOn);
+            auto tapZ = [&](ExprId offset) {
+                const ExprId tilt = f.add(f.mul(f.div(f.call("abs", {t.dot(plane, axisU)}), along), f.call("abs", {f.swizzle(offset, "x")})),
+                                          f.mul(f.div(f.call("abs", {t.dot(plane, axisV)}), along), f.call("abs", {f.swizzle(offset, "y")})));
+                return f.sub(baseZ, f.add(texelBias, f.mul(f.mul(tilt, planeWidth), planeOn)));
+            };
             const ExprId search = f.call("max", {texel, f.div(f.mul(f.mul(baseZ, span), tangent), width)});
             const VarId blockerSum = f.var(Type::f32(), t.f(0)), blockerCount = f.var(Type::f32(), t.f(0));
             f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
-                const ExprId depth = load(f.add(uv, f.mul(disk(i, blockers), search)));
-                f.If(f.less(depth, baseZ), [&] {
+                const ExprId offset = f.mul(disk(i, blockers), search);
+                const ExprId depth = load(f.add(uv, offset));
+                f.If(f.less(depth, tapZ(offset)), [&] {
                     f.assign(blockerSum, f.add(f.load(blockerSum), depth));
                     f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
                 });
@@ -907,8 +925,9 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
             const ExprId penumbra = f.call("max", {texel, f.div(f.mul(gap, tangent), width)});
             const VarId visibility = f.var(Type::f32(), t.f(0));
             f.Loop(f.construct(Type::i32(), {samples}), [&](ExprId i) {
-                const ExprId depth = load(f.add(uv, f.mul(disk(i, samples), penumbra)));
-                f.assign(visibility, f.add(f.load(visibility), f.select(f.less(depth, baseZ), t.f(0), t.f(1))));
+                const ExprId offset = f.mul(disk(i, samples), penumbra);
+                const ExprId depth = load(f.add(uv, offset));
+                f.assign(visibility, f.add(f.load(visibility), f.select(f.less(depth, tapZ(offset)), t.f(0), t.f(1))));
             });
             f.assign(filtered, f.select(f.less(t.f(0), f.load(blockerCount)), f.div(f.load(visibility), samples), t.f(1)));
         });
