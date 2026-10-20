@@ -28,6 +28,7 @@ import {
   Box3,
   type Color,
   Data3DTexture,
+  DoubleSide,
   HalfFloatType,
   type Intersection,
   LinearFilter,
@@ -36,6 +37,7 @@ import {
   type Object3D,
   type PerspectiveCamera,
   RGBAFormat,
+  type Side,
   Vector3,
 } from "three";
 import {
@@ -105,6 +107,8 @@ export interface IGiReport {
   readonly enclosed: number;
   readonly rays: number;
   readonly shadowRays: number;
+  /** Final-grid texels whose centre lies inside a solid; the reader skips them. */
+  readonly solid: number;
   readonly bounces: number;
   readonly milliseconds: number;
 }
@@ -361,15 +365,20 @@ function resample(field: IField): { grid: IGrid; values: Float32Array; sky: Floa
  * The reader blends texels itself and drops the ones a wall separates, because a hardware blend across a wall
  * thinner than a texel (the 0.2 m roof) mixes the lit outside into the room. Most links lie inside open space
  * where the coarse probes already say so; only the ones near a blocked or solid probe get a ray.
+ * A texel whose centre lies inside a solid (most of six axis rays leave through a back face, the coarse bake's own
+ * test) is flagged: its value is an interpolation through the solid, and a floor beside a box that is not aligned
+ * with the grid read it as its nearest texel, a hard-edged bright wedge along the box's foot.
  */
 function linkMasks(
   field: IField,
   fine: IGrid,
   ctx: IRayContext,
   root: Object3D,
-): { masks: Uint8Array; rays: number } {
+): { masks: Uint8Array; solid: Uint8Array; rays: number } {
   const { grid } = field;
   const masks = new Uint8Array(fine.nx * fine.ny * fine.nz);
+  const solid = new Uint8Array(masks.length);
+  const faceNormal = new Vector3();
   const dims = [grid.nx, grid.ny, grid.nz];
   const stride = [1, grid.nx, grid.nx * grid.ny];
   const origin = new Vector3();
@@ -401,6 +410,49 @@ function linkMasks(
     }
     return false;
   };
+  const centre = (index: number) =>
+    [
+      fine.origin.x + ((index % fine.nx) + 0.5) * fine.cell,
+      fine.origin.y + ((Math.floor(index / fine.nx) % fine.ny) + 0.5) * fine.cell,
+      fine.origin.z + (Math.floor(index / (fine.nx * fine.ny)) + 0.5) * fine.cell,
+    ] as const;
+  // The ray query honours each material's side, so a single-sided solid is invisible from inside it: the solid
+  // test sees both sides for its own rays, and every material gets its side back before the link rays.
+  const sides = new Map<{ side: Side }, Side>();
+  root.traverse((object) => {
+    const material = (object as Mesh).material;
+    for (const m of Array.isArray(material) ? material : material === undefined ? [] : [material])
+      sides.set(m, m.side);
+  });
+  for (const m of sides.keys()) m.side = DoubleSide;
+  try {
+    for (let index = 0; index < masks.length; index += 1) {
+      const at = centre(index);
+      if (unsure(...at)) {
+        let backfaces = 0;
+        for (let a = 0; a < 6; a += 1) {
+          rays += 1;
+          origin.set(at[0], at[1], at[2]);
+          const along = axes[a % 3] as readonly [number, number, number];
+          const sign = a < 3 ? 1 : -1;
+          direction.set(along[0] * sign, along[1] * sign, along[2] * sign);
+          const hit = ctx.raycast({
+            origin,
+            direction,
+            far: Number.POSITIVE_INFINITY,
+            targets: root,
+          });
+          const face = hit?.face?.normal;
+          if (hit === undefined || face === undefined || face === null) continue;
+          faceNormal.copy(face).transformDirection(hit.object.matrixWorld);
+          if (faceNormal.dot(direction) > 0) backfaces += 1;
+        }
+        if (backfaces > 6 * SOLID_SHARE) solid[index] = 1;
+      }
+    }
+  } finally {
+    for (const [m, side] of sides) m.side = side;
+  }
   for (let index = 0; index < masks.length; index += 1) {
     const [x, y, z] = [
       index % fine.nx,
@@ -430,7 +482,7 @@ function linkMasks(
     }
     masks[index] = mask;
   }
-  return { masks, rays };
+  return { masks, solid, rays };
 }
 
 const halfView = new DataView(new ArrayBuffer(4));
@@ -445,7 +497,10 @@ function toHalf(value: number): number {
   return sign | (exponent << 10) | ((bits >>> 13) & 0x3ff);
 }
 
-/** Sky visibility is stored in 6 bits next to the 3-bit link mask: alpha = mask + 8 x round(63 x visibility). */
+/**
+ * Sky visibility is stored in 6 bits next to the 3-bit link mask, and the solid flag above them:
+ * alpha = mask + 8 x round(63 x visibility) + 512 x solid (an integer below 2048, exact in a half float).
+ */
 const SKY_STEPS = 63;
 
 function volume(
@@ -453,6 +508,7 @@ function volume(
   grid: IGrid,
   masks: Uint8Array,
   sky: Float32Array,
+  solid: Uint8Array,
 ): Data3DTexture {
   const slices = grid.nz * 6;
   const texels = new Uint16Array(grid.nx * grid.ny * slices * 4);
@@ -467,7 +523,9 @@ function volume(
       for (let c = 0; c < 3; c += 1)
         texels[o + c] = toHalf(values[(probe * 6 + face) * 3 + c] ?? 0);
       texels[o + 3] = toHalf(
-        (masks[probe] ?? 0) + 8 * Math.round(SKY_STEPS * Math.min(1, sky[probe * 6 + face] ?? 0)),
+        (masks[probe] ?? 0) +
+          8 * Math.round(SKY_STEPS * Math.min(1, sky[probe * 6 + face] ?? 0)) +
+          512 * (solid[probe] ?? 0),
       );
     }
   }
@@ -486,8 +544,14 @@ function volume(
  * read point are blended here (not by the hardware) with the weight of a texel set to zero when a wall cuts the way
  * to it from the nearest texel, the walk `weightsAt` does at bake time, on the links `linkMasks` stored in alpha.
  */
-function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky: Float32Array) {
-  const cache = volume(values, grid, masks, sky);
+function irradianceAt(
+  values: Float32Array,
+  grid: IGrid,
+  masks: Uint8Array,
+  sky: Float32Array,
+  solid: Uint8Array,
+) {
+  const cache = volume(values, grid, masks, sky, solid);
   const dims = [grid.nx, grid.ny, grid.nz] as const;
   return (
     position: Node<"vec3">,
@@ -513,7 +577,6 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
     ];
     const lower = [ax.floor(), ay.floor(), az.floor()];
     const fraction = [ax.sub(nth(lower, 0)), ay.sub(nth(lower, 1)), az.sub(nth(lower, 2))];
-    const nearest = fraction.map((f) => f.greaterThan(0.5).select(float(1), float(0)));
     const squares = [n.x.mul(n.x), n.y.mul(n.y), n.z.mul(n.z)];
     const faceIndex = [
       n.x.lessThan(0).select(float(1), float(0)),
@@ -530,7 +593,12 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
       r.z.lessThan(0).select(float(5), float(4)),
     ];
 
-    type Taps = { colour: Node<"vec3">; mask: Node<"float">; sky: Node<"float"> };
+    type Taps = {
+      colour: Node<"vec3">;
+      mask: Node<"float">;
+      sky: Node<"float">;
+      solid: Node<"float">;
+    };
     const taps = new Map<number, Taps>();
     const tap = (corner: number): Taps => {
       const known = taps.get(corner);
@@ -542,6 +610,7 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
       const v = (ty as Node<"float">).add(0.5).div(grid.ny);
       let colour: Node<"vec3"> | undefined;
       let mask: Node<"float"> | undefined;
+      let solidFlag: Node<"float"> | undefined;
       let visible: Node<"float"> | undefined;
       for (let axis = 0; axis < 3; axis += 1) {
         const w = nth(faceIndex, axis)
@@ -552,9 +621,12 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
         const texel = volumeNode.sample(vec3(u, v, w));
         const weighted = texel.rgb.mul(nth(squares, axis));
         colour = colour === undefined ? weighted : colour.add(weighted);
-        // alpha = link mask + 8 x sky steps (see `volume`).
-        const steps = texel.a.add(0.25).div(8).floor();
-        mask ??= texel.a.sub(steps.mul(8));
+        // alpha = link mask + 8 x sky steps + 512 x solid (see `volume`).
+        const inside = texel.a.add(0.25).div(512).floor();
+        const rest = texel.a.sub(inside.mul(512));
+        const steps = rest.add(0.25).div(8).floor();
+        solidFlag ??= inside;
+        mask ??= rest.sub(steps.mul(8));
         const along =
           reflection === undefined
             ? texel
@@ -569,7 +641,8 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
                     .div(grid.nz * 6),
                 ),
               );
-        const shareSteps = along.a.add(0.25).div(8).floor();
+        const alongRest = along.a.sub(along.a.add(0.25).div(512).floor().mul(512));
+        const shareSteps = alongRest.add(0.25).div(8).floor();
         const share = shareSteps.div(SKY_STEPS).mul(nth(squaresR, axis));
         visible = visible === undefined ? share : visible.add(share);
       }
@@ -577,6 +650,7 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
         colour: colour as Node<"vec3">,
         mask: mask as Node<"float">,
         sky: visible as Node<"float">,
+        solid: solidFlag as Node<"float">,
       };
       taps.set(corner, result);
       return result;
@@ -603,6 +677,21 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
       return whole.sub(whole.div(2).floor().mul(2)).lessThan(0.5).select(float(1), float(0));
     };
 
+    // The walk starts at the strongest texel outside a solid, as `weightsAt` does at bake time; only when all eight
+    // are solid does it fall back to the plain nearest one.
+    const trilinear = (corner: number): Node<"float"> =>
+      [0, 1, 2].reduce<Node<"float">>(
+        (w, a) => w.mul((corner >> a) & 1 ? nth(fraction, a) : float(1).sub(nth(fraction, a))),
+        float(1),
+      );
+    let bestScore: Node<"float"> = trilinear(0).sub(tap(0).solid.mul(2));
+    let nearest: Node<"float">[] = [float(0), float(0), float(0)];
+    for (let corner = 1; corner < 8; corner += 1) {
+      const score = trilinear(corner).sub(tap(corner).solid.mul(2));
+      const better = score.greaterThan(bestScore);
+      nearest = nearest.map((bit, a) => better.select(float((corner >> a) & 1), bit));
+      bestScore = better.select(score, bestScore);
+    }
     let sum: Node<"vec3"> | undefined;
     let total: Node<"float"> | undefined;
     let skySum: Node<"float"> | undefined;
@@ -621,6 +710,8 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
         weight = weight.mul(float(1).sub(differs).add(differs.mul(step)));
       }
       const t = tap(corner);
+      // A solid texel holds an interpolation through the solid: next to nothing, unless every texel is solid.
+      weight = weight.mul(float(1).sub(t.solid.mul(0.999)));
       sum = sum === undefined ? t.colour.mul(weight) : sum.add(t.colour.mul(weight));
       skySum = skySum === undefined ? t.sky.mul(weight) : skySum.add(t.sky.mul(weight));
       total = total === undefined ? weight : total.add(weight);
@@ -1183,7 +1274,7 @@ export function installGi(
   const cut = linkMasks({ grid, values, links, valid }, fine.grid, ctx, root);
   traced += cut.rays;
   giCache.field = { grid: fine.grid, values: fine.values, sky: fine.sky };
-  const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky);
+  const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky, cut.solid);
   giCache.irradiance = (position, normal) => read(position, normal).irradiance;
   const normal = normalWorld.normalize();
   const incident = positionWorld.sub(cameraPosition).normalize();
@@ -1225,6 +1316,7 @@ export function installGi(
     points: probes,
     enclosed: enclosedProbes,
     rays: traced,
+    solid: cut.solid.reduce((n, v) => n + v, 0),
     shadowRays,
     bounces: options.bounces,
     milliseconds: Math.round(performance.now() - started),
