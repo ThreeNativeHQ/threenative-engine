@@ -55,7 +55,13 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   #dispose: (() => void) | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
-    const file = LAYER === "ID" ? "unreal-reference/scene-id.glb" : "unreal-reference/scene.glb";
+    // `model=<scene folder>`: a calibration scene lit by this reference's lighting (PRD-649).
+    const folder = params.get("model");
+    const file = folder
+      ? `unreal-reference/gi/${folder}/scene.glb`
+      : LAYER === "ID"
+        ? "unreal-reference/scene-id.glb"
+        : "unreal-reference/scene.glb";
     const [model, sky] = await Promise.all([
       ctx.assets.model<{ scene: Group }>(file),
       ctx.assets.texture("sky.jpg"),

@@ -132,33 +132,51 @@ export async function captureGiThreeNative(options: {
           throw new Error(`TN_UNREAL_LOOK_SOFTWARE_ADAPTER: ${JSON.stringify(adapter)}`);
         for (const layer of options.layers) {
           const extra = process.env.TN_GI_URL_EXTRA ?? "";
-          await page.goto(`${origin}?tnGi=${name}&layer=${layer}${extra}`, {
-            waitUntil: "domcontentloaded",
-          });
-          await page.addStyleTag({ content: HIDE_UI });
-          await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 300_000 });
-          await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
-          const engine = await page.evaluate("window.__tnRef.engine");
-          if (engine !== "threenative")
-            throw new Error(
-              `TN_UNREAL_LOOK_WRONG_ENGINE: ${name} ${layer} drew on ${String(engine)}`,
-            );
-          report[`${name}/${layer}`] = {
-            engine,
-            unsupported: await page.evaluate("window.__tnRef.unsupported"),
-            probe: await page.evaluate("window.__tnRef.probe()"),
-          };
-          for (const pose of scene.poses) {
-            await page.evaluate(`window.__tnRef.pose(${JSON.stringify(pose)})`);
-            await page.evaluate(
-              "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 45 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
-            );
-            if (errors.length > 0)
-              throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
-            const file = path.join(options.out, sceneKey(name), layer, `${pose.name}.png`);
-            await mkdir(path.dirname(file), { recursive: true });
-            await writeFile(file, await page.screenshot({ type: "png" }));
-            count += 1;
+          // A template-lit shadow scene (PRD-649) is lit by the reference scene's default-level
+          // lighting, once per sun; its ID frames and every other scene use the calibration scene.
+          const visits: { query: string; key: string; poses: typeof scene.poses }[] =
+            scene.template === "default" && layer !== "ID"
+              ? (scene.suns ?? []).map((sun) => ({
+                  query: `tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=${sceneKey(name)}`,
+                  key: `${name}/${layer}/${sun.name}`,
+                  poses: scene.poses.filter((pose) => pose.sun === sun.name),
+                }))
+              : [
+                  {
+                    query: `tnGi=${name}&layer=${layer}`,
+                    key: `${name}/${layer}`,
+                    poses: scene.poses,
+                  },
+                ];
+          for (const visit of visits) {
+            await page.goto(`${origin}?${visit.query}${extra}`, {
+              waitUntil: "domcontentloaded",
+            });
+            await page.addStyleTag({ content: HIDE_UI });
+            await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 300_000 });
+            await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
+            const engine = await page.evaluate("window.__tnRef.engine");
+            if (engine !== "threenative")
+              throw new Error(
+                `TN_UNREAL_LOOK_WRONG_ENGINE: ${name} ${layer} drew on ${String(engine)}`,
+              );
+            report[visit.key] = {
+              engine,
+              unsupported: await page.evaluate("window.__tnRef.unsupported"),
+              probe: await page.evaluate("window.__tnRef.probe?.()"),
+            };
+            for (const pose of visit.poses) {
+              await page.evaluate(`window.__tnRef.pose(${JSON.stringify(pose)})`);
+              await page.evaluate(
+                "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 45 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
+              );
+              if (errors.length > 0)
+                throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
+              const file = path.join(options.out, sceneKey(name), layer, `${pose.name}.png`);
+              await mkdir(path.dirname(file), { recursive: true });
+              await writeFile(file, await page.screenshot({ type: "png" }));
+              count += 1;
+            }
           }
         }
         await page.close();

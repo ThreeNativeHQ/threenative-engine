@@ -63,6 +63,8 @@ export interface ISceneJson {
     class: string;
     position: Vec3;
     rotationYDeg: number;
+    /** A tilt about +X in degrees (PRD-649 ramps); a mesh carries this or rotationYDeg, never both. */
+    rotationXDeg?: number;
     size: Vec3;
     material: ISceneMaterial;
   }[];
@@ -76,7 +78,11 @@ export interface ISceneJson {
     sourceRadiusM?: number;
   }[];
   exposure: { ev100: number; exposureScale: number } | null;
-  poses: { name: string; position: Vec3; target: Vec3; hfovDeg: number }[];
+  /** `sun`: a template-lit scene's poses run once per sun, named `<sun>-<pose>` (PRD-649). */
+  poses: { name: string; position: Vec3; target: Vec3; hfovDeg: number; sun?: string }[];
+  /** A template-lit scene: Unreal's default level, one level per sun. */
+  template?: "default";
+  suns?: { name: string; elevationDeg: number; azimuthDeg: number }[];
   regions: Record<string, Vec3>;
 }
 interface IGltf {
@@ -247,9 +253,13 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
     const node = nodes[index] ?? fail("SCENE_EXPORT", actor.name);
     if (!near(node.translation ?? [0, 0, 0], actor.position, 1e-3))
       fail("SCENE_EXPORT", `${actor.name}: position differs between scene.json and scene.glb`);
-    const half = (actor.rotationYDeg * Math.PI) / 360;
+    // One rotation, about +Y or (PRD-649's ramps) about +X.
+    const tilt = actor.rotationXDeg ?? 0;
+    const half = ((tilt || actor.rotationYDeg) * Math.PI) / 360;
     const q = node.rotation ?? [0, 0, 0, 1];
-    const expected = [0, Math.sin(half), 0, Math.cos(half)];
+    const expected = tilt
+      ? [Math.sin(half), 0, 0, Math.cos(half)]
+      : [0, Math.sin(half), 0, Math.cos(half)];
     if (
       !near(q, expected, 1e-3) &&
       !near(
@@ -297,7 +307,8 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
     if (!(light.intensity > 0) || !(light.attenuationRadiusM > 0))
       fail("SCENE_EXPORT", `${light.name}: intensity and attenuation radius must be positive`);
   }
-  if (!scene.exposure || !Number.isFinite(scene.exposure.ev100))
+  // A template-lit scene (PRD-649) keeps the default level's exposure, as the PRD-631 reference does.
+  if (scene.template !== "default" && (!scene.exposure || !Number.isFinite(scene.exposure.ev100)))
     fail("SCENE_EXPORT", `${scene.scene}: no fixed EV100`);
   const colors = Object.values(scene.regions).map((c) => c.join(","));
   if (
@@ -384,6 +395,11 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
     if (args.includes("--rebuild") || !existsSync(content)) {
       await rm(content, { recursive: true, force: true });
       if ((await runUnreal("build", out, { TN_UE_SCENE: name })) !== 0) return 1;
+      // A build whose Python failed exits 0 and leaves its Content: remove it, or the next run skips it.
+      if (!existsSync(path.join(sceneDir(name), "scene.json"))) {
+        await rm(content, { recursive: true, force: true });
+        fail("SCENE_EXPORT", `${name}: the build wrote no scene.json (see the editor log)`);
+      }
       // The exported scene.json is committed: give it the repo's JSON format.
       // Relative: Biome skips an absolute path that runs through a .claude/ worktree.
       const file = path.relative(REPO_ROOT, path.join(sceneDir(name), "scene.json"));
