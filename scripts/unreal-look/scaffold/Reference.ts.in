@@ -43,6 +43,18 @@ const [elevationDeg = 60, azimuthDeg = 25] = (params.get("sun") ?? "60,25").spli
 const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
 const TUNED = params.get("baseline") !== "1";
+// `off=vsm,gpusky,clouds,gi,bloom,localexposure,autoexposure,ssgi,ssr,gtao` switches one L9 stage off, to
+// attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`.
+const OFF = new Set((params.get("off") ?? "").split(",").filter(Boolean));
+// What each stage name turns off in the template's `high` preset.
+const STAGE_OFF: Record<string, Record<string, boolean>> = {
+  autoexposure: { autoExposureEnabled: false, localExposureEnabled: false },
+  bloom: { bloomEnabled: false, unrealBloomEnabled: false },
+  gtao: { gtaoEnabled: false },
+  localexposure: { localExposureEnabled: false },
+  ssgi: { ssgiEnabled: false },
+  ssr: { ssrEnabled: false },
+};
 // Unreal 5.8.3's sun source angle, from the live level dump (tools/unreal-reference/template-actors.json),
 // is the sun's apex angle (its angular diameter). `sourceAngleShadowFilter` takes the angular radius,
 // the half angle: Unreal's shadow rays spread over sin(angle / 2).
@@ -112,9 +124,10 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       });
       // three's WebGPU ShadowNode reads `shadow.filterNode`; its types do not declare it yet.
       if (TUNED) {
-        (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
-          sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
-        });
+        if (!OFF.has("vsm"))
+          (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
+            sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
+          });
         // Unreal's directional light shadows the whole view with camera-centred virtual shadow
         // maps. `VirtualShadowNode` is that: nested clip levels around the camera, each twice
         // as wide as the last. The coarsest half-width is the scene's own diameter, so every
@@ -128,14 +141,15 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         // The native atlas holds every page of every level, then every level's mover map, in one
         // square texture that must fit the device's 8192 texel limit: four 2048 levels take 4224
         // and four 512 mover maps 2064 more. The scene has no moving caster.
-        key.shadow.shadowNode = new VirtualShadowNode(key, {
-          clipExtents: [reach / 4, reach / 2, reach, 2 * reach],
-          mapSize: 2048,
-          moverMapSize: 512,
-        });
+        if (!OFF.has("vsm"))
+          key.shadow.shadowNode = new VirtualShadowNode(key, {
+            clipExtents: [reach / 4, reach / 2, reach, 2 * reach],
+            mapSize: 2048,
+            moverMapSize: 512,
+          });
       }
       if (level >= 2) {
-        setupSky(scene, sky, ctx.renderer.softwareAdapter !== undefined, level >= 3, level >= 4);
+        setupSky(scene, sky, ctx.renderer.softwareAdapter !== undefined, level >= 3, level >= 4 && !OFF.has("clouds"));
         if (level < 3) {
           scene.fog = null;
           (scene as unknown as { fogNode: unknown }).fogNode = null;
@@ -146,7 +160,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       }
       // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
       // global illumination), the sun a surface returns (render/giCache.ts).
-      if (TUNED && level >= 2)
+      if (TUNED && level >= 2 && !OFF.has("gi"))
         installGi(ctx, model, {
           bounces: level >= 7 ? 5 : 0,
           // Unreal below L7 has no GI: its sky light is shadowed by distance fields, up to 10 m.
@@ -154,6 +168,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
       if (level >= 9) {
+        // setupPost reads the `high` preset by reference, so the ablation switches go there.
+        for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
         const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
         this.#dispose = () => post.dispose();
       } else {
