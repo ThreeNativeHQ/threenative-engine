@@ -63,9 +63,13 @@ export const exposureSettings: Readonly<IExposureSettings> = {
 /**
  * Return weighted luminance and weight. The histogram's percent clip, not a clamp here, rejects
  * small bright sources. The upper bound only keeps a half-float overflow from poisoning a block.
+ * Unreal weights red, green and blue equally by default (r.AutoExposure.LuminanceMethod 0, the
+ * uniform weights in Engine/Source/Runtime/Renderer/Private/PostProcess/PostProcessEyeAdaptation.cpp
+ * and CalculateEyeAdaptationLuminance in Engine/Shaders/Private/PostProcessHistogramCommon.ush),
+ * not Rec. 709, so a blue sky meters brighter than it does with the Rec. 709 weights.
  */
 export function exposureMeter(colour: Node<"vec4">, uv: Node<"vec2">): Node<"vec2"> {
-  const luminance = dot(colour.rgb, vec3(0.2126, 0.7152, 0.0722)).clamp(0.0001, 65504);
+  const luminance = dot(colour.rgb, vec3(1 / 3, 1 / 3, 1 / 3)).clamp(0.0001, 65504);
   // Unreal meters the whole view with weight 1 unless a meter mask texture is set
   // (EyeAdaptation_MeterMaskTexture, white by default); there is no bottom-of-frame preference.
   void uv;

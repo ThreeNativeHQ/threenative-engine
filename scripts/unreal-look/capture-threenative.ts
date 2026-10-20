@@ -273,6 +273,8 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             const file = path.join(options.out, layer, `${name}.png`);
             await mkdir(path.dirname(file), { recursive: true });
             await writeFile(file, await page.screenshot({ type: "png" }));
+            // Names the cell the preceding page: TN_AUTO_EXPOSURE reports belong to.
+            console.info(`TN_UNREAL_LOOK cell ${name}`);
             count += 1;
           }
         }
