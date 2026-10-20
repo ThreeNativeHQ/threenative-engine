@@ -129,7 +129,13 @@ export function defineWebRenderer(
         programs: 0,
         frameGateSkips: 0,
       },
-      reset(): void {},
+      // three's Info: render() adds to drawCalls and triangles, and the caller resets once per frame, so a
+      // frame that draws its world and then its overlay reports both (core does this in onBeginFrame).
+      reset(): void {
+        this.render.drawCalls = 0;
+        this.render.frameCalls = 0;
+        this.render.triangles = 0;
+      },
     };
     /** three's WebGPURenderer: `antialias` is 4x MSAA, `samples` 0 or 1 is none; the engine draws 1 or 4. */
     readonly samples: number;
@@ -311,8 +317,8 @@ export function defineWebRenderer(
       this.info.frame += 1;
       this.info.render.frameCalls = module._tnw_web_frame(0);
       this.info.render.calls += this.info.render.frameCalls;
-      this.info.render.drawCalls = this.info.render.frameCalls;
-      this.info.render.triangles = module._tnw_web_frame(1);
+      this.info.render.drawCalls += this.info.render.frameCalls;
+      this.info.render.triangles += module._tnw_web_frame(1);
       const gpuSamples = module._tnw_web_frame(8);
       if (gpuSamples > this.#gpuSamples) {
         this.#gpuSamples = gpuSamples;

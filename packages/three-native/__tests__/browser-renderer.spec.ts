@@ -198,6 +198,35 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     await unsupported.init();
     expect(unsupported.backend.trackTimestamp).toBe(false);
   });
+
+  it("counts a frame's draws and triangles over every render() call until info.reset(), as three's Info does", async () => {
+    // The game draws the world, then its HUD overlay, as two render() calls in one frame; the
+    // overlay's own few draws used to overwrite the world's (doctor: "4 draw calls, 7 triangles").
+    const perCall = [
+      { draws: 58, triangles: 13700 },
+      { draws: 4, triangles: 7 },
+    ];
+    let call = -1;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => (field === 0 ? perCall[call]?.draws ?? 0 : field === 1 ? perCall[call]?.triangles ?? 0 : 0),
+      () => {
+        call += 1;
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      info: { reset(): void; render: { drawCalls: number; triangles: number; frameCalls: number } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    renderer.render(scene, camera);
+    expect(renderer.info.render.drawCalls).toBe(62);
+    expect(renderer.info.render.triangles).toBe(13707);
+    renderer.info.reset();
+    expect(renderer.info.render).toMatchObject({ drawCalls: 0, frameCalls: 0, triangles: 0 });
+  });
 });
 
 describe("the Wasm engine's offscreen PassNode draw", () => {
