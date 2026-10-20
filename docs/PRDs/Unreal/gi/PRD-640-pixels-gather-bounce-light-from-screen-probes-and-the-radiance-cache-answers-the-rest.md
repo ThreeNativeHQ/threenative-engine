@@ -121,9 +121,9 @@ overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-scr
 ## Execution Phases
 
 #### Phase 1: How far the per-pixel path gets
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (1/2)
 **Files:** `scripts/unreal-look/scaffold/render/worldEnvironment.ts` (measurement only)
-- [ ] Per-region L7 error of `ssgi` plus the radiance cache, against Unreal Epic, is recorded under `## Decisions`. proof: `pnpm unreal-look:compare --layer L7 --visualize indirectDiffuse`.
+- [x] Per-region L7 error of `ssgi` plus the radiance cache, against Unreal Epic, is recorded under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi:cornell --layer L7` at `cd6e484bc` — cornell table recorded 2026-10-20; `sunlit-room` follows PRD-638 Phase 2.
 - [ ] Unreal's screen probe gather GPU time and ours at 1920 × 1080 on the RTX 2080 are recorded, and the gate verdict with them. proof: `r.ProfileGPU` log from the Unreal capture, and `node packages/playtest/dist/runner/cli.js perf`.
 
 #### Phase 2: Screen probes
@@ -139,3 +139,31 @@ overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-scr
 - [ ] With the gather on, the chain reports `shortRangeAO` and no `gtao` stage. proof: `TN_RENDER_CHAIN` in the harness capture at L7.
 - [ ] The conformance row `screen-probe-gather` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests screen-probe-gather`.
 **Verification:** AC-3.
+
+## Decisions
+
+- **2026-10-20, GI session: the Phase 1 error is read on the full L7 frame, not on an `indirectDiffuse` pair.**
+  Unreal's `L7-Epic-indirect` frame (`r.Lumen.Visualize.IndirectDiffuse 1`) is not on the frame's scale. The
+  cornell corner floor is in full shadow at L6 (0 in both engines), so its L7 value is all indirect light. Unreal
+  shows 93 there in the Epic frame and 31 in the indirect view. The proof is therefore the L7 compare.
+- **2026-10-20, GI session: cornell L7 per-region p50, `ssgi` at `high` over the 1 m cache (`cd6e484bc`).**
+
+  | Pose | Region | Unreal Epic | Cache alone | Cache + `ssgi` |
+  |---|---|---|---|---|
+  | cornell | Floor | 141 | 184 | 164 |
+  | cornell | Ceiling | 203 | 207 | 207 |
+  | cornell | Back | 228 | 225 | 226 |
+  | cornell | Wall_Red | 99 | 96 | 94 |
+  | cornell | Wall_Green | 173 | 171 | 171 |
+  | cornell | Box_Tall | 174 | 163 | 172 |
+  | cornell | Box_Short | 58 | 80 | 101 |
+  | corner | Floor | 93 | 126 | 96 |
+  | corner | Back | 111 | 106 | 92 |
+  | corner | Wall_Red | 90 | 81 | 79 |
+  | corner | Box_Tall | 164 | 148 | 148 |
+
+  Three levers did not close the remaining gaps, and none was adopted. A per-ray miss that reads the cache ahead of
+  the ray moved the frame by 0.14 levels mean. A second gather pass over the first one's result made corner Back
+  darker (88). A 0.5 m cache cell brought cornell Floor to 146 but corner Floor to 85, left the slot and Box_Short
+  as they were, and took the bake from 17 s to 126 s. The open gaps (Box_Short facing the open front, and the narrow
+  slot between the tall box and the red wall) need directional radiance for a missed ray: Phase 2.
