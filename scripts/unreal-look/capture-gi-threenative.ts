@@ -25,6 +25,8 @@ export const GI_LAYERS: Readonly<Record<string, string>> = {
   ID: "ID",
   L1: "L1",
   L5: "L5", // the shadow family's direct-shadow layer (PRD-649)
+  // Shadows and AO without GI: the pair of Unreal with Lumen GI off.
+  L6: "L7-Low",
   L7: "L7-Epic",
   L9: "L9-Epic",
 };
