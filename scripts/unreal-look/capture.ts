@@ -8,6 +8,7 @@
  *     --dump-actors        only build the levels and write template-actors.json
  *   --engine threenative   scaffold the starter and capture the same cells headed on WebGPU
  *     --reuse              keep the scaffold and its install; re-copy the template source
+ *     --baseline           skip scripts/unreal-look/scaffold/render/ (the template look as shipped)
  *   --layers L0,L1,ID      limit the layers (default: every layer plus the region-id frames)
  *   --cells sun60/exterior limit the (sun, pose) cells
  *   --out <dir>            default tools/unreal-reference/captures/<engine>
@@ -98,7 +99,13 @@ export async function main(args: readonly string[]): Promise<number> {
   const cells = cellsFlag === undefined ? undefined : new Set(cellsFlag.split(","));
 
   if (engine === "threenative") {
-    const count = await captureThreeNative({ out, layers, cells, reuse: args.includes("--reuse") });
+    const count = await captureThreeNative({
+      out,
+      layers,
+      cells,
+      reuse: args.includes("--reuse"),
+      baseline: args.includes("--baseline"),
+    });
     console.info(`TN_UNREAL_LOOK threenative cells=${count} out=${out}`);
     return count > 0 ? 0 : 1;
   }

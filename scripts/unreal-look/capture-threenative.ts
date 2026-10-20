@@ -47,6 +47,8 @@ export interface IThreeNativeCaptureOptions {
   readonly layers: readonly string[];
   readonly cells?: ReadonlySet<string>;
   readonly reuse: boolean;
+  /** Skip scaffold/render/: capture the template look as it ships (the BEFORE arm). */
+  readonly baseline?: boolean;
   readonly port?: number;
 }
 
@@ -56,12 +58,13 @@ function replaceOnce(source: string, from: string, to: string, file: string): st
 }
 
 /** Applies the harness patches to a scaffolded starter; fails closed when the template moved. */
-async function patchScaffold(target: string, fresh = true): Promise<void> {
+async function patchScaffold(target: string, fresh: boolean, baseline: boolean): Promise<void> {
   // The look under tuning: these files replace the template's own in the copy only. A tuned
   // file moves into the templates once the reference cells match Unreal.
-  await cp(path.join(import.meta.dirname, "scaffold/render"), path.join(target, "src/render"), {
-    recursive: true,
-  });
+  if (!baseline)
+    await cp(path.join(import.meta.dirname, "scaffold/render"), path.join(target, "src/render"), {
+      recursive: true,
+    });
   await cp(
     path.join(import.meta.dirname, "scaffold/Reference.ts.in"),
     path.join(target, "src/scenes/Reference.ts"),
@@ -106,7 +109,7 @@ async function patchScaffold(target: string, fresh = true): Promise<void> {
   );
 }
 
-async function scaffold(work: string, reuse: boolean): Promise<string> {
+async function scaffold(work: string, reuse: boolean, baseline: boolean): Promise<string> {
   const target = path.join(work, "starter");
   if (reuse && existsSync(path.join(target, "node_modules"))) {
     // The look lives in src/render/; re-copy it (and public/) so a template edit reaches the
@@ -116,7 +119,7 @@ async function scaffold(work: string, reuse: boolean): Promise<string> {
       recursive: true,
     });
     await cp(path.join(TEMPLATE, "public"), path.join(target, "public"), { recursive: true });
-    await patchScaffold(target, false);
+    await patchScaffold(target, false, baseline);
     return target;
   }
   await rm(work, { recursive: true, force: true });
@@ -126,7 +129,7 @@ async function scaffold(work: string, reuse: boolean): Promise<string> {
     { install: true, packageSources, target: "starter", template: "starter" },
     work,
   );
-  await patchScaffold(target);
+  await patchScaffold(target, true, baseline);
   return target;
 }
 
@@ -166,7 +169,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
   const poses = JSON.parse(await readFile(path.join(REFERENCE, "poses.json"), "utf8")) as IPoses;
   const work =
     process.env.TN_UNREAL_LOOK_WORK ?? path.join(os.homedir(), ".cache/threenative/unreal-look");
-  const target = await scaffold(work, options.reuse);
+  const target = await scaffold(work, options.reuse, options.baseline === true);
   const port = options.port ?? (await freePort());
   await assertVisualPortAvailable(port);
   const server = spawn(
@@ -229,9 +232,11 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
               (window as unknown as { __tnRef: { pose(p: unknown): void } }).__tnRef.pose(p);
             }, pose);
             // Let the chain, its denoisers and the shadow map settle on the new view.
+            // Auto exposure (L9) closes at 1 stop/s like Unreal's: give it about 8 s to land.
+            const settle = layer === "L9" ? 480 : 45;
             // A string, because tsx names the inner arrow functions with a helper the page lacks.
             await page.evaluate(
-              "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 45 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
+              `new Promise((resolve) => { let n = 0; const tick = () => (++n >= ${settle} ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })`,
             );
             if (errors.length > 0)
               throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
