@@ -916,6 +916,20 @@ export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
  */
 export { Daylight } from "./render/daylight.js";
 export type { IDaylightOptions } from "./render/daylight.js";
+/**
+ * Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's
+ * EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.
+ *
+ * @situation expose a frame lit in lux and nits with a physical camera exposure value
+ * @constraint arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0
+ * @example renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
+ */
+export {
+  ev100FromCamera,
+  ev100FromExposure,
+  ev100FromLuminance,
+  exposureFromEv100,
+} from "./render/exposure-units.js";
 export type { IVirtualShadowOptions, IVirtualShadowStats } from "./render/virtual-shadow.js";
 /**
  * Attach hundreds of built objects to the scene in slices, presenting a frame between each.

@@ -154,6 +154,10 @@ def build(flat_id):
 
 
 def export(path):
+    # Bake every transform into the vertices: each node sits at the origin, so an
+    # importer that keeps only the meshes still places them correctly.
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     bpy.ops.export_scene.gltf(
         filepath=path,
         export_format="GLB",

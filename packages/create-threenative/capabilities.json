@@ -1503,6 +1503,66 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0",
+        "every argument must be finite and greater than zero"
+      ],
+      "example": "renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function ev100FromCamera(aperture: number, shutterSeconds: number, iso: number): number { … }",
+      "situations": [
+        "expose a frame lit in lux and nits with a physical camera exposure value",
+        "expose like a camera with an aperture, a shutter time and an ISO"
+      ],
+      "summary": "Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.",
+      "supersedes": [],
+      "symbol": "ev100FromCamera"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0",
+        "multiplier must be finite and greater than zero"
+      ],
+      "example": "renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function ev100FromExposure(multiplier: number): number { … }",
+      "situations": [
+        "expose a frame lit in lux and nits with a physical camera exposure value",
+        "report a hand-set exposure multiplier as an EV100"
+      ],
+      "summary": "Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.",
+      "supersedes": [],
+      "symbol": "ev100FromExposure"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0",
+        "luminance must be finite and greater than zero"
+      ],
+      "example": "renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function ev100FromLuminance(luminance: number): number { … }",
+      "situations": [
+        "expose a frame lit in lux and nits with a physical camera exposure value",
+        "meter a frame's average luminance in cd/m² into an exposure value"
+      ],
+      "summary": "Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.",
+      "supersedes": [],
+      "symbol": "ev100FromLuminance"
+    },
+    {
+      "aliases": [],
       "constraints": ["development builds only; a production build publishes nothing"],
       "example": "import { exposeDebug } from \"@threenative/core\";\nexposeDebug(\"player\", player);\n// then from the console: __THREENATIVE__.debug.player",
       "importPath": "@threenative/core",
@@ -1514,6 +1574,23 @@
       "summary": "Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.",
       "supersedes": [],
       "symbol": "exposeDebug"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0",
+        "ev100 must be finite; a unitless scene keeps its own multiplier instead"
+      ],
+      "example": "renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function exposureFromEv100(ev100: number): number { … }",
+      "situations": ["expose a frame lit in lux and nits with a physical camera exposure value"],
+      "summary": "Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.",
+      "supersedes": [],
+      "symbol": "exposureFromEv100"
     },
     {
       "aliases": [],

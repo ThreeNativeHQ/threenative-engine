@@ -1165,6 +1165,51 @@ renderer.render(scene, camera);
 tracker.commit(scene);
 ```
 
+### `ev100FromCamera`
+
+`function` — Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.
+
+```ts
+export function ev100FromCamera(aperture: number, shutterSeconds: number, iso: number): number { … }
+```
+
+- **Use when:** expose a frame lit in lux and nits with a physical camera exposure value · expose like a camera with an aperture, a shutter time and an ISO
+- **Constraints:** arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0 · every argument must be finite and greater than zero
+
+```ts
+renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
+```
+
+### `ev100FromExposure`
+
+`function` — Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.
+
+```ts
+export function ev100FromExposure(multiplier: number): number { … }
+```
+
+- **Use when:** expose a frame lit in lux and nits with a physical camera exposure value · report a hand-set exposure multiplier as an EV100
+- **Constraints:** arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0 · multiplier must be finite and greater than zero
+
+```ts
+renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
+```
+
+### `ev100FromLuminance`
+
+`function` — Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.
+
+```ts
+export function ev100FromLuminance(luminance: number): number { … }
+```
+
+- **Use when:** expose a frame lit in lux and nits with a physical camera exposure value · meter a frame's average luminance in cd/m² into an exposure value
+- **Constraints:** arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0 · luminance must be finite and greater than zero
+
+```ts
+renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
+```
+
 ### `exposeDebug`
 
 `function` — Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.
@@ -1180,6 +1225,21 @@ export function exposeDebug(name: string, value: unknown): void { … }
 import { exposeDebug } from "@threenative/core";
 exposeDebug("player", player);
 // then from the console: __THREENATIVE__.debug.player
+```
+
+### `exposureFromEv100`
+
+`function` — Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.
+
+```ts
+export function exposureFromEv100(ev100: number): number { … }
+```
+
+- **Use when:** expose a frame lit in lux and nits with a physical camera exposure value
+- **Constraints:** arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0 · ev100 must be finite; a unitless scene keeps its own multiplier instead
+
+```ts
+renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
 ```
 
 ### `FlightModel`

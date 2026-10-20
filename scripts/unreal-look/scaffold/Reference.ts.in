@@ -1,0 +1,126 @@
+// Written by scripts/unreal-look/capture-threenative.ts into a scaffolded copy of the starter
+// (PRD-631). It is scene setup only: every look decision comes from the copy's own
+// `src/render/`, and a layer below L9 only switches a system off. The URL picks the cell:
+//   ?tnRef=<ID|L0..L9>&sun=<elevation>,<azimuth>
+// and `window.__tnRef.pose(...)` frames one camera pose.
+import { type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import type { IPhysicsContext } from "@threenative/physics";
+import {
+  Color,
+  type Group,
+  Mesh,
+  MeshBasicMaterial,
+  type MeshStandardMaterial,
+  NoToneMapping,
+  type PerspectiveCamera,
+  type Texture,
+  Vector3,
+} from "three";
+import { setupLighting } from "../render/lighting.js";
+import { setupPost } from "../render/postprocessing.js";
+import { qualityPreset } from "../render/quality.js";
+import { SUN_DIRECTION, setupSky } from "../render/sky.js";
+import { WorldEnvironment } from "../render/worldEnvironment.js";
+import type { GameState } from "../state.js";
+import { Play } from "./Play.js";
+
+type GameCtx = ICtx<GameState, IPhysicsContext>;
+type Pose = { position: number[]; target: number[]; hfovDeg: number };
+
+const params = new URLSearchParams(location.search);
+const LAYER = params.get("tnRef") ?? "L9";
+const [elevationDeg, azimuthDeg] = (params.get("sun") ?? "60,25").split(",").map(Number);
+const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
+
+export class Reference extends Scene<GameState, IPhysicsContext> {
+  static override readonly initialState: GameState = Play.initialState;
+  #model: Group | undefined;
+  #sky: Texture | undefined;
+  #dispose: (() => void) | undefined;
+
+  override async load(ctx: GameCtx): Promise<void> {
+    const file = LAYER === "ID" ? "unreal-reference/scene-id.glb" : "unreal-reference/scene.glb";
+    const [model, sky] = await Promise.all([
+      ctx.assets.model<{ scene: Group }>(file),
+      ctx.assets.texture("sky.jpg"),
+    ]);
+    this.#model = model.scene;
+    this.#sky = sky;
+  }
+
+  override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
+    const model = this.#model;
+    const sky = this.#sky;
+    if (model === undefined || sky === undefined) throw new Error("TN_REF_NOT_LOADED");
+    const el = (elevationDeg * Math.PI) / 180;
+    const az = (azimuthDeg * Math.PI) / 180;
+    SUN_DIRECTION.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+    ctx.add(model);
+    const scene = ctx.scene;
+    const camera = ctx.camera as PerspectiveCamera;
+    const raw = ctx.renderer.raw as unknown as { toneMapping: number };
+
+    if (level <= 0) {
+      // ID and L0: unlit base colour, no post. Unreal: ShowFlag.Lighting 0, post off.
+      model.traverse((object) => {
+        if (!(object instanceof Mesh)) return;
+        const source = object.material as MeshStandardMaterial;
+        object.material = new MeshBasicMaterial({ color: source.color, toneMapped: false });
+      });
+      scene.background = new Color(0x000000);
+      scene.environment = null;
+      raw.toneMapping = NoToneMapping;
+    } else {
+      const { key } = setupLighting(scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+      key.castShadow = level >= 5;
+      if (level >= 2) {
+        setupSky(scene, sky, ctx.renderer.softwareAdapter !== undefined);
+        if (level < 3) {
+          scene.fog = null;
+          (scene as unknown as { fogNode: unknown }).fogNode = null;
+        }
+      } else {
+        scene.background = new Color(0x000000);
+        scene.environment = null;
+      }
+      if (level >= 9) {
+        const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
+        this.#dispose = () => post.dispose();
+      } else {
+        // The template's own `high` chain with the L9-only stages off: bloom, vignette, the
+        // authored grade and grain, auto exposure. AO enters at L6, as in the Unreal ladder.
+        const world = new WorldEnvironment({
+          ...qualityPreset("high"),
+          autoExposureEnabled: false,
+          bloomEnabled: false,
+          gtaoEnabled: level >= 6,
+          vignetteAmount: 0,
+        });
+        this.#dispose = world.apply(ctx.renderer, scene, camera, { godraysLight: key }).dispose;
+      }
+    }
+
+    const target = new Vector3();
+    (window as unknown as { __tnRef: unknown }).__tnRef = {
+      layer: LAYER,
+      pose(pose: Pose): void {
+        const aspect = innerWidth / innerHeight;
+        const half = (pose.hfovDeg * Math.PI) / 360;
+        camera.fov = (2 * Math.atan(Math.tan(half) / aspect) * 180) / Math.PI;
+        camera.aspect = aspect;
+        camera.near = 0.1;
+        camera.far = 2000;
+        camera.position.fromArray(pose.position);
+        camera.lookAt(target.fromArray(pose.target));
+        camera.updateProjectionMatrix();
+      },
+    };
+    return () => undefined;
+  }
+
+  override exit(ctx: GameCtx): void {
+    this.#dispose?.();
+    this.#dispose = undefined;
+    super.exit(ctx);
+  }
+}

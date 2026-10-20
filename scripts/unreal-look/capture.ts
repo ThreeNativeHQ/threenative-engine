@@ -1,0 +1,124 @@
+/**
+ * `pnpm unreal-look:capture` — renders the PRD-631 reference cells.
+ *
+ *   --engine unreal        build the levels (template-actors.json), then render every cell
+ *                          through Movie Render Queue: a PNG and a scene-linear EXR per cell.
+ *                          Needs UE_ROOT (an installed Unreal 5.8.3).
+ *     --check-cvars        only resolve every console variable in layers.json; exit 1 on a miss
+ *     --dump-actors        only build the levels and write template-actors.json
+ *   --engine threenative   scaffold the starter and capture the same cells headed on WebGPU
+ *     --reuse              keep the scaffold and its install; re-copy the template source
+ *   --layers L0,L1,ID      limit the layers (default: every layer plus the region-id frames)
+ *   --cells sun60/exterior limit the (sun, pose) cells
+ *   --out <dir>            default tools/unreal-reference/captures/<engine>
+ */
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { captureThreeNative } from "./capture-threenative.js";
+
+const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
+const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
+
+function flag(args: readonly string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+  return index === -1 ? undefined : args[index + 1];
+}
+
+function layerNames(): string[] {
+  const layers = JSON.parse(readFileSync(path.join(REFERENCE, "layers.json"), "utf8")) as {
+    layers: { name: string }[];
+  };
+  return [...layers.layers.map((layer) => layer.name), "ID"];
+}
+
+/** Runs the editor headless on build_level.py in one mode and returns the script's own exit code. */
+async function runUnreal(
+  mode: string,
+  out: string,
+  env: Record<string, string> = {},
+): Promise<number> {
+  const ueRoot = process.env.UE_ROOT;
+  if (ueRoot === undefined)
+    throw new Error("TN_UNREAL_LOOK_NO_UE: set UE_ROOT to an installed Unreal 5.8.3");
+  const editor = path.join(ueRoot, "Engine/Binaries/Linux/UnrealEditor");
+  if (!existsSync(editor)) throw new Error(`TN_UNREAL_LOOK_NO_UE: ${editor} not found`);
+  await mkdir(out, { recursive: true });
+  const exitFile = path.join(out, `${mode}.exit`);
+  await rm(exitFile, { force: true });
+  const code = await new Promise<number | null>((resolve, reject) => {
+    const child = spawn(
+      editor,
+      [
+        path.join(REFERENCE, "ThreeNativeReference.uproject"),
+        "-RenderOffscreen",
+        "-unattended",
+        "-nosplash",
+        "-nosound",
+        "-stdout",
+        "-FullStdOutLogOutput",
+        `-ExecutePythonScript=${path.join(REFERENCE, "build_level.py")}`,
+      ],
+      {
+        env: { ...process.env, ...env, TN_UE_MODE: mode, TN_UE_OUT: out },
+        stdio: ["ignore", "inherit", "inherit"],
+      },
+    );
+    child.once("error", reject);
+    child.once("exit", resolve);
+  });
+  // The editor's own exit status says nothing about the script; the script writes its verdict.
+  if (!existsSync(exitFile))
+    throw new Error(`TN_UNREAL_LOOK_UE_CRASH: ${mode} wrote no verdict (editor exit ${code})`);
+  return Number(readFileSync(exitFile, "utf8"));
+}
+
+function countFiles(root: string, extension: string): number {
+  if (!existsSync(root)) return 0;
+  let count = 0;
+  for (const entry of readdirSync(root, { withFileTypes: true, recursive: true }))
+    if (entry.isFile() && entry.name.endsWith(extension)) count += 1;
+  return count;
+}
+
+export async function main(args: readonly string[]): Promise<number> {
+  const engine = flag(args, "--engine");
+  if (engine !== "unreal" && engine !== "threenative")
+    throw new Error("TN_UNREAL_LOOK_BAD_INPUT: --engine unreal|threenative");
+  const out = path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", engine));
+  const known = layerNames();
+  const layers = (flag(args, "--layers")?.split(",") ?? known).filter(Boolean);
+  for (const layer of layers)
+    if (!known.includes(layer)) throw new Error(`TN_UNREAL_LOOK_BAD_INPUT: unknown layer ${layer}`);
+  const cellsFlag = flag(args, "--cells");
+  const cells = cellsFlag === undefined ? undefined : new Set(cellsFlag.split(","));
+
+  if (engine === "threenative") {
+    const count = await captureThreeNative({ out, layers, cells, reuse: args.includes("--reuse") });
+    console.info(`TN_UNREAL_LOOK threenative cells=${count} out=${out}`);
+    return count > 0 ? 0 : 1;
+  }
+
+  if (args.includes("--check-cvars")) return runUnreal("check-cvars", out);
+  if (args.includes("--dump-actors") || !existsSync(path.join(REFERENCE, "Content/Reference")))
+    if ((await runUnreal("build", out)) !== 0) return 1;
+  if (args.includes("--dump-actors")) return 0;
+  const env = { TN_UE_LAYERS: layers.join(","), ...(cellsFlag ? { TN_UE_CELLS: cellsFlag } : {}) };
+  const code = await runUnreal("capture", out, env);
+  console.info(
+    `TN_UNREAL_LOOK unreal png=${countFiles(out, ".png")} exr=${countFiles(out, ".exr")} out=${out}`,
+  );
+  return code;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main(process.argv.slice(2)).then(
+    (code) => process.exit(code),
+    (error: unknown) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exit(1);
+    },
+  );
+}
