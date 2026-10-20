@@ -61,11 +61,11 @@ import {
  */
 export const SEA_STATE: ISeaState = {
   wind: { speed: 11, direction: 0.55, fetch: 80_000, peakEnhancement: 3.3 },
-  swell: { height: 1.0, direction: -0.3, peakFrequency: 0.62, spreading: 16 },
+  swell: { height: 1.5, direction: -0.3, peakFrequency: 0.62, spreading: 16 },
   gravity: 9.81,
   surfaceTension: 7.4e-5,
   shortWaveCut: 0.04,
-  waveHeight: 1.6,
+  waveHeight: 2.0,
 };
 
 /**
@@ -102,15 +102,15 @@ export const FOAM = {
   halfLife: 3,
   /** Jacobian below which water is breaking. */
   threshold: 0.8,
-  gain: 4,
+  gain: 3,
   /** Foam grids ride on these cascades, finest first. The second is the coarse, far one. */
   cascades: [1, 0] as readonly number[],
 } as const;
 
 /** Looks: colours are linear RGB, sizes are metres. */
 export const LOOK = {
-  deep: 0x082f45,
-  shallow: 0x1d5f7c,
+  deep: 0x0d3f58,
+  shallow: 0x2a7a96,
   foam: 0xe6eef0,
   /** Light coming through a thin backlit crest. */
   subsurface: 0x2f9a78,
