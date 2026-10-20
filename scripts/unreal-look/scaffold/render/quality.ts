@@ -129,7 +129,11 @@ const high: IWorldEnvironmentOptions = {
   ...shared,
   // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
-  gtaoRadius: 0.35,
+  // Contact scale. Unreal's Lumen (L7 up) has no wide screen-space AO: its short-range AO is a thin line in every
+  // corner, and the world cache already carries the room-scale occlusion. At 0.35 m the same GTAO darkened a band
+  // about 30 px wide along every interior corner and under the sunlit patch (ablation, abl4 and abl5: gone with
+  // GTAO off, thin and soft at 0.12). The L6 arm keeps Unreal's SSAO radius in Reference.ts.in.
+  gtaoRadius: 0.12,
   renderChainTier: "high",
   // Temporal AA is opt-in and no shipped tier names it: add `authoredStageNames: ["traa"]` here to
   // reconstruct at the display raster, and read `setupPost(...).debug().temporal` for the reset and

@@ -158,6 +158,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           autoExposureEnabled: false,
           bloomEnabled: false,
           gtaoEnabled: level >= 6,
+          // Unreal's SSAO at L6 (r.AmbientOcclusionRadius 40 cm); Lumen's short-range AO is thinner from L7.
+          ...(level < 7 ? { gtaoRadius: 0.35 } : {}),
           vignetteAmount: 0,
         });
         this.#dispose = world.apply(ctx.renderer, scene, camera, { godraysLight: key }).dispose;

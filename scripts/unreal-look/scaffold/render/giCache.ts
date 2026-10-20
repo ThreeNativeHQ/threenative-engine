@@ -471,8 +471,12 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
     const volumeNode = texture3D(cache);
     const n = normal;
     // Texel units: texel i's centre is at i + 0.5. Clamped to the centres so nothing reads past the grid.
+    // Read half a fine cell off the surface. 1.5 cells (0.75 m) looked past a 0.4 m gap between two boxes and read the
+    // far side, so the white box next to the green one saw no green; the link masks already stop the read from
+    // crossing a thin wall. Against a path trace of the scene at 0.25 m, mean |ln(cache / truth)| fell 0.129 -> 0.090
+    // (sun60) and 0.106 -> 0.080 (sun15), the worst patch 1.36x -> 1.24x, and a flat wall is as smooth.
     const at = position
-      .add(n.mul(grid.cell * 1.5))
+      .add(n.mul(grid.cell * 0.5))
       .sub(grid.origin)
       .div(grid.cell);
     const [ax, ay, az] = [
