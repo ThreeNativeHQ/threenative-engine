@@ -119,6 +119,7 @@ run duration read from GitHub. "New" columns are filled only from runs that exec
 | `release-candidate` run (39304236813) | 2 min | unchanged | |
 | Candidate to tag pushed | about 4 min of hand work | `release:ship` | AC-7 |
 | Tag run (39327476745) | 45 min, 31 of them the Windows build | unchanged here, 12 min with PRD-630 | AC-7, PRD-630 AC-5 |
+| Rehearsal after the builds (run 39362738911) | does not exist; `publish`, `finalize` and the npm step first ran on tag day | `publish` 1 min, `npm-dry-run` 5 min, `clean-consumer` 10 min, `finalize` 1 min on the pull request | 35 min whole run, Windows build 22 min |
 | CI green to public GitHub release | **51 min** (21:20 to 22:11) | about 50 min | AC-7 |
 | npm publish and `verify-registry-install` | not measured | unchanged | AC-7 |
 
@@ -151,7 +152,7 @@ What this says, without rounding it up:
 **Implementation:** Gate the rehearsal on the same condition as `gates` for non-tag events. Use the existing `generateReleaseManifest` with the real repository and a rehearsal tag. Delete the draft in an `always()` step.
 **Verification:** AC-1 and AC-2 on this PRD's PR, labeled `release-proof`. Then run all workflow specs locally.
 
-- [ ] AC-1 [shared]: A `release-proof` PR run executes `publish`, `clean-consumer`, `finalize` and the npm dry run against a draft release, and no job is skipped. proof: the `native-release.yml` run on this PRD's PR, with every listed job `success` and the draft deleted afterward. Evidence: pending.
+- [x] AC-1 [shared]: A `release-proof` PR run executes `publish`, `clean-consumer`, `finalize` and the npm dry run against a draft release, and no job is skipped. proof: the `native-release.yml` run on this PRD's PR, with every listed job `success` and the draft deleted afterward. Evidence: run 39362738911 (head `8ce7bd1ed`, `release-proof` label, 35 min) is `success`: `publish`, `npm-dry-run`, `clean-consumer`, `clean-consumer-windows`, `finalize` and `cleanup-rehearsal` all `success`. `clean-consumer-ios`, `cleanup-failed-release` and `validate-tag` are skipped by design (tag-only). `gh api repos/.../releases` lists 0 drafts and 0 `rehearsal-` releases afterward. It took four runs to get there, and each red was a real defect that tag day would have found: run 39348347531 (simulator zip missing from the lock), run 39352029148 (`clean-consumer` zip check, `npm-dry-run` could not read the draft), run 39358513586 (`npm-dry-run` had no built tree).
 - [ ] AC-2 [shared]: The rehearsal catches the finding-1 defect. With `RELEASE_REPOSITORY` set back to `ThreeNativeHQ/threenative` on a scratch branch, the rehearsal `publish` job fails with the same error that tag run 39304823341 printed. proof: the scratch-branch run id, recorded in the PR body. The scratch branch is not merged. Evidence: pending.
 
 #### Phase 2: Main proof starts by itself, and downloads retry
