@@ -49,6 +49,7 @@ flowchart LR
 4. **One change** in `scripts/unreal-look/scaffold/render/` (copy the starter file there first if
    it is not there yet). Recapture into `--out .../after`. Compare again.
 5. **Sheet.** `python3 -I .agents/skills/tune-look-to-unreal/sheet.py <scratch>/sheet.png --layer L1 --sun sun60 "before=THREE.JS before" "after=THREE.JS after" "unreal=UNREAL 5.8.3 (target)"`
+   Close-ups, once the whole frame is near parity: `python3 -I .agents/skills/tune-look-to-unreal/closeups.py <scratch>/closeups.png --layer L9 --sun sun60 "engine-after=WASM ENGINE" "unreal=UNREAL 5.8.3"` crops every scene element from each arm with the box from Unreal's region ID frame, one row per element, so detail gaps (reflections, contact shadows, edges) show at full size.
 6. **Visual judge.** Give BEFORE, AFTER and UNREAL to a fresh read-only subagent that did not
    write the change. Acceptance criterion: AFTER is closer to UNREAL than BEFORE on the named gap,
    with no new artefact (hue cast, banding, clipping, missing object). It returns IMPROVEMENT,
