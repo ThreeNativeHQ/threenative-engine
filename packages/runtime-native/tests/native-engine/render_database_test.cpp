@@ -3398,6 +3398,94 @@ void lampSourceRadius() {
     for (const int hard : {pointPcf, pointHard, spotPcf, spotHard}) CHECK(hard <= 3);
 }
 
+// A box standing on a floor slab under a point lamp shades the floor right behind its far foot. three's
+// shadowSide draws a front-sided caster's back faces, so there the stored depth is the box's back face
+// at the floor and the strip leaks light (cornell's tall box); the strip's darkest-to-brightest
+// shadowed-to-open ratio. material.shadowSide = FrontSide closes it without acne on the lit floor.
+void contactShadowFoot() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(192, 192);
+    // 0.4 m across the box's far foot at x = 2: about 2 mm per pixel.
+    OrthographicCamera camera(-0.2, 0.2, 0.2, -0.2, 0.1, 20);
+    camera.position.set(2, 10, 0.001);
+    camera.lookAt(2, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto strip = [&](std::optional<Side> side, double bias, double normalBias) -> std::array<double, 2> {
+        Scene scene;
+        PointLight lamp{Color(1, 1, 1), 60};
+        lamp.position.set(0, 3, 0);
+        lamp.setCastShadow(true);
+        lamp.shadow.bias = bias;
+        lamp.shadow.normalBias = normalBias;
+        lamp.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        scene.add(lamp);
+        auto white = std::make_shared<Material>(MaterialType::Standard);
+        white->shadowSide = side;
+        Mesh floor{makeBoxGeometry(6, 0.2, 6), white};
+        floor.position.y = -0.1;
+        floor.setCastShadow(true);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        // The box covers x 1..2 at z -0.5..0.5, 2 m tall, on layer 2: the camera sees the floor at x > 2.
+        Mesh box{makeBoxGeometry(1, 2, 1), white};
+        box.position.set(1.5, 1, 0);
+        box.setCastShadow(true);
+        box.setLayer(2);
+        scene.add(box);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        const auto row = [&] {
+            database.render(renderer, scene, camera);
+            std::vector<uint8_t> pixels;
+            bool read = false;
+            renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+                if (status == GpuStatus::Ok) pixels = std::move(px);
+                read = true;
+            });
+            for (int i = 0; i < 5000 && !read; ++i) {
+                renderer.poll();
+                events.drain();
+                if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(pixels.size() == size_t{192} * 192 * 4);
+            std::vector<double> red(192);
+            for (int x = 0; x < 192; ++x) red[x] = pixels[(size_t{96} * 192 + x) * 4];
+            return red;
+        };
+        const std::vector<double> shadowed = row();
+        box.setCastShadow(false);
+        const std::vector<double> open = row();
+        lamp.setCastShadow(false);
+        const std::vector<double> free = row();
+        // Acne: the lit floor with no box shadow, against the floor with no shadow pass at all.
+        double acne = 1;
+        for (int x = 0; x < 192; ++x) acne = std::min(acne, open[x] / std::max(free[x], 1.0));
+        // Floor x 2.0 .. 2.2 m beyond the foot: pixels 97 .. 191 on one side of the centre, the side
+        // that is darker on average (the camera's x order is not assumed).
+        std::array<double, 2> brightest{}, mean{};
+        for (int i = 1; i <= 95; ++i)
+            for (int side = 0; side < 2; ++side) {
+                const int x = side == 0 ? 96 + i : 96 - i;
+                const double ratio = shadowed[x] / std::max(open[x], 1.0);
+                brightest[side] = std::max(brightest[side], ratio);
+                mean[side] += ratio / 95;
+            }
+        CHECK(*std::max_element(open.begin(), open.end()) > 32);
+        return std::array<double, 2>{mean[0] < mean[1] ? brightest[0] : brightest[1], acne};
+    };
+    const auto [backLeak, backKept] = strip(std::nullopt, 0, 0);
+    const auto [frontLeak, frontKept] = strip(Side::Front, 0, 0);
+    std::printf("contact foot: back faces leak %.3f, lit floor kept %.3f; shadowSide front leak %.3f, kept %.3f\n",
+                backLeak, backKept, frontLeak, frontKept);
+    CHECK(backLeak > 0.5);    // three's derived shadowSide: the far foot leaks
+    CHECK(frontLeak < 0.05);  // shadowSide = FrontSide, the faces Unreal draws: the foot stays dark
+    CHECK(frontKept > 0.95);  // and the lit floor does not shadow itself
+}
+
 // A point light's cube shadow: five casters around and below the lamp each shade the floor where its
 // shadow lands, through four side faces and the bottom one, and the floor between them stays lit.
 void pointShadowCubeFaces() {
@@ -4299,7 +4387,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 
