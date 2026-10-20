@@ -663,13 +663,16 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
     };
     for (const auto& node : variant.nodes.graphs()) collect(node);
     for (const auto& [name, type] : out.fragment.varyings()) {
-        if (name == "normalView" || (name == "positionView" && v.hasOutput(name)) ||
+        if ((name == "backgroundDirection" && variant.background) || name == "normalView" || (name == "positionView" && v.hasOutput(name)) ||
             (name == "instanceColor" && variant.tinted()) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps))) continue;
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
             tsl::Build build(v);
             value = graph::lower(found->second->args[0], v, {{"positionLocal", v.swizzle(position, "xyz")}});
-        } else if (name == "positionWorld")
+        } else if (name == "positionWorldDirection")
+            value = v.call("normalize", {v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)),
+                v.construct(Type::vec(4), {v.swizzle(position, "xyz"), v.constant(0.0f)})), "xyz")});
+        else if (name == "positionWorld")
             value = v.swizzle(v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), position), "xyz");
         else if (name == "positionLocal") value = v.swizzle(position, "xyz");
         // positionView for a program that does not light (linearDepth() of the fragment): view * model * position.
@@ -1439,7 +1442,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     graph::Lowering slots = slotLowering(f, normalView);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     ExprId texel = kInvalid;
-    if (variant.background) {
+    if (variant.background && !variant.nodes.colorNode) {
         const ExprId normal = f.call("normalize", {f.varying("backgroundDirection", Type::vec(3))});
         const ExprId direction = f.swizzle(f.mul(f.uniform("backgroundRotation", Type::mat(4, 4)),
             f.construct(Type::vec(4), {normal, f.constant(0.0f)})), "xyz");
@@ -1448,6 +1451,9 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
         texel = f.sampleLevel(f.textureCube("map"), cubeDirection, f.constant(0.0f));
     } else if (!variant.nodes.colorNode) texel = mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
+    if (variant.background && variant.nodes.colorNode)
+        diffuseColor = f.mul(diffuseColor, f.swizzle(f.uniform("diffuse", Type::vec(4)), "xyz"));
+
     if (texel != kInvalid) diffuseColor = f.mul(diffuseColor, f.swizzle(texel, "xyz"));
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, slotValue(f, slots, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;

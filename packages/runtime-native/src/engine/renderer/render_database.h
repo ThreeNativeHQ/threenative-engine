@@ -144,6 +144,7 @@ class RenderDatabase {
                            std::array<double, 4> clear);
     std::shared_ptr<BufferGeometry> backgroundGeometry_;
     shader::StandardMaterial backgroundParams_;
+    Material backgroundNodeMaterial_{MaterialType::Basic, true};
     using GeometryKey = std::array<BufferStore*, 4>;
     struct alignas(64) Record {
         uint64_t geometryRevision = 0;

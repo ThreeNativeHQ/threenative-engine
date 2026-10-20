@@ -1523,8 +1523,8 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         }
         items_.swap(twoPasses_);
     }
-    if (world && world->backgroundTexture) {
-        if (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0)
+    if (world && (world->backgroundNode || world->backgroundTexture)) {
+        if (!world->backgroundNode && (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0))
             throw std::runtime_error("TN_NATIVE_BACKGROUND_UNSUPPORTED: sharp EquirectangularReflectionMapping required");
         if (!backgroundGeometry_) backgroundGeometry_ = makeSphereGeometry(1, 32, 32);
         DrawItem sky;
@@ -1533,6 +1533,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         sky.positions = backgroundGeometry_->attributes.at("position")->store.get();
         sky.normals = backgroundGeometry_->attributes.at("normal")->store.get();
         sky.indices = backgroundGeometry_->index->store.get();
+        sky.uvs = backgroundGeometry_->attributes.at("uv")->store.get();
         Matrix4 model;
         if (camera.projectionMatrix.elements[15] == 1) {
             const double scale = 3 / camera.projectionMatrix.elements[5]; model.makeScale(scale, scale, scale);
@@ -1545,7 +1546,16 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         sky.backgroundRotation = toArray(rotation);
         backgroundParams_.color.fill(static_cast<float>(world->backgroundIntensity));
         sky.material = &backgroundParams_;
-        sky.map = world->backgroundTexture.get();
+        sky.map = world->backgroundNode ? nullptr : world->backgroundTexture.get();
+        if (backgroundNodeMaterial_.nodes.colorNode != world->backgroundNode) {
+            backgroundNodeMaterial_.nodes.colorNode = world->backgroundNode;
+            backgroundNodeMaterial_.needsUpdate();
+        }
+        sky.nodes = backgroundNodeMaterial_.nodes;
+        const auto& sources = graphSources(backgroundNodeMaterial_);
+        sky.nodeTextures = sources.textures.empty() ? nullptr : &sources.textures;
+        sky.nodeStorages = sources.storages.empty() ? nullptr : &sources.storages;
+        sky.pmremMap = sources.texture;
         sky.kind = MaterialKind::Basic; sky.side = 1; sky.depthWrite = false;
         sky.mainPass = true;
         sky.layers = Layers::bits(camera.layers().mask);

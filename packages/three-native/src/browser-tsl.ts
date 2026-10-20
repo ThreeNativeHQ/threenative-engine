@@ -163,6 +163,7 @@ const CONSTANTS = [
   "normalWorld",
   "positionLocal",
   "positionWorld",
+  "positionWorldDirection",
   "normalViewGeometry",
   "cameraViewMatrix",
   "instanceIndex",

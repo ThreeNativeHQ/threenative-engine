@@ -717,6 +717,11 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(0);
         return g::normalize(g::varying("normalView", Type::vec(3)));
     }
+    // r185: positionLocal.transformDirection(modelWorldMatrix), interpolated then normalized.
+    if (name == "positionWorldDirection") {
+        arity(0);
+        return g::normalize(g::varying("positionWorldDirection", Type::vec(3)));
+    }
     // positionViewDirection = positionView.negate().toVarying().normalize().
     if (name == "positionViewDirection") {
         arity(0);
@@ -1068,7 +1073,7 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
     // The node constants tslCall also answers by name; neither takes a serial.
     uint64_t serial = 0;
     for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "cameraNear", "cameraFar", "screenSize", "depth",
-                             "positionGeometry", "normalWorld", "normalView", "positionViewDirection", "screenCoordinate",
+                             "positionGeometry", "normalWorld", "normalView", "positionWorldDirection", "positionViewDirection", "screenCoordinate",
                              "normalGeometry", "tangentGeometry", "normalLocal", "tangentLocal", "positionPrevious",
                              "normalWorldGeometry"})
         constants.emplace_back(name, tslCall(name, nullptr, {}, serial));

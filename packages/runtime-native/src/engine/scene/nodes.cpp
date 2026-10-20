@@ -69,6 +69,7 @@ Scene& Scene::copy(const Scene& source) {
     // resources, as the existing scene copy contract does.
     background = source.background;
     backgroundTexture = source.backgroundTexture;
+    backgroundNode = source.backgroundNode;
     environment = source.environment;
     fog = source.fog;
     fogNode = source.fogNode;

@@ -214,6 +214,17 @@ depth for GPU-deformed casters; supply lightDistance and depthRange`): native bi
 cannot safely bound arbitrary position shaders, skinning or morphs. Fixed depth remains available;
 this refusal's render-time branch is compiled but unexecuted here.
 
+Background-node engine support (2026-10-20): the scene now retains a TSL background graph and
+uses the existing far-depth sky draw, graph resource bindings, live uniform upload and output
+transform. The facade and V8 player expose `backgroundNode` and `positionWorldDirection`;
+Color/Texture backgrounds keep their existing path. Red: the rebuilt material test sampled a
+cube and requested an unknown direction attribute; the facade test lacked the direction export.
+Green: 8 material/fog Wasm CTests, the Wasm renderer integration test, 253 facade Vitests and
+three-native `tsc --noEmit`; `tn-native-engine-web` builds using `EM_CACHE=/tmp/tn-bgnode-emcache`.
+The renderer playtest now checks a GPU sky gradient, intensity, a live uniform and
+`TN_NATIVE_BACKGROUND_NODE_UNSUPPORTED` for an invalid graph. The coordinator must run it;
+GPU capture/visual judging and desktop V8 execution remain unverified. No environment-node support.
+
 #### Phase 3: Noise floor, thresholds and the baseline gap
 **Status:** NOT STARTED
 **Files:** `tools/unreal-reference/reference-stats.json`

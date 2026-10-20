@@ -291,9 +291,13 @@ extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_h
     if (target == nullptr || root == nullptr || camera == nullptr)
         return fail("TN_WASM_RENDER_TARGET: target, root or camera handle invalid");
     flushCompute();  // a material in the target may read what a queued kernel writes
-    const auto refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, deferred != 0);
-    if (!refused.empty()) return refuse(refused.front());
-    return 0;
+    try {
+        const auto refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, deferred != 0);
+        if (!refused.empty()) return refuse(refused.front());
+        return 0;
+    } catch (const std::exception& error) {
+        return refuse(error.what());  // preserve backgroundNode's named compile refusal across the Wasm boundary
+    }
 }
 
 namespace {

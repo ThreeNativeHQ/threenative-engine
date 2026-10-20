@@ -1051,7 +1051,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         if (name.ends_with("Material")) slotTemplates.push_back(ctor->InstanceTemplate());
         for (const auto& [path, settable, fixed] : properties) {
             if ((name.ends_with("NodeMaterial") && path.ends_with("Node")) ||
-                (name == "Scene" && path == "fogNode")) {
+                (name == "Scene" && (path == "fogNode" || path == "backgroundNode"))) {
                 auto* data = keep(new MethodData{this, path, {}});
                 proto->SetAccessorProperty(str(isolate_, path),
                     v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {

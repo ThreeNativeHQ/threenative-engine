@@ -42,6 +42,7 @@ import {
   cameraViewMatrix,
   float,
   positionLocal,
+  positionWorldDirection,
   screenUV,
   texture,
   texture3D,
@@ -84,6 +85,9 @@ const probe = {
   steadyPrograms: -1,
   /** PRD-551: a QuadMesh's flat colour read back from a HalfFloat target (half bits) and a byte target. */
   targetHalf: "",
+  backgroundNodeGradient: false,
+  backgroundNodeUniform: "",
+  backgroundNodeRefusal: false,
   targetBytes: "",
   /** PRD-545: an InstancedBufferGeometry's 4x1 strip, RGBA bytes per column. */
   instancedStrip: "",
@@ -93,6 +97,7 @@ const probe = {
   volumeStrip: "",
   /** A QuadMesh whose material the engine refuses, drawn into a target: the draw throws, once, by name. */
   targetRefusal: "",
+  sharedNode: "",
   /** Draw calls the world scene submits after that refusal; -1 until measured, 0 while the host stays dead. */
   drawsAfterTargetRefusal: -1,
 };
@@ -303,6 +308,47 @@ try {
     renderer.setRenderTarget(null);
     return Array.from(await renderer.readRenderTargetPixelsAsync(strip, 0, 0, 4, 1)).join(",");
   };
+  // A per-pixel sky, linear bytes at intensity 2; changing a live uniform changes the next draw.
+  const skyScene = new Scene();
+  const skySun = uniform(0.125);
+  skyScene.backgroundIntensity = 2;
+  skyScene.backgroundNode = vec3(skySun, positionWorldDirection.y.mul(0.25).add(0.25), 0.125);
+  const skyCamera = new PerspectiveCamera(60, 2, 0.1, 10);
+  const skyTarget = new RenderTarget(4, 2, { type: UnsignedByteType });
+  const drawSky = async () => {
+    renderer.setRenderTarget(skyTarget);
+    try {
+      renderer.render(skyScene, skyCamera);
+    } finally {
+      renderer.setRenderTarget(null);
+    }
+    return renderer.readRenderTargetPixelsAsync(skyTarget, 0, 0, 4, 2);
+  };
+  const skyBefore = await drawSky();
+  skySun.value = 0.25;
+  const skyAfter = await drawSky();
+  probe.backgroundNodeGradient =
+    Math.abs(Number(skyBefore[1]) - Number(skyBefore[17])) > 16 &&
+    skyBefore[3] === 255 &&
+    skyBefore[19] === 255;
+  probe.backgroundNodeUniform = `${skyBefore[0]},${skyAfter[0]}`;
+  // One node read by two statements around an assign: `half` before the assign is 0.4, after it 0.2.
+  // The strip's first pixel is (0.4, 0.4) when the node keeps its first value, (0.2, 0.4) when it is
+  // evaluated again at the second statement.
+  const shared = new MeshBasicNodeMaterial();
+  shared.colorNode = Fn(() => {
+    const a = float(0.8).toVar();
+    const half = a.mul(0.5);
+    a.subAssign(half);
+    const c = float(0).toVar();
+    c.assign(half);
+    return vec4(c, a, 0, 1);
+  })();
+  const sharedQuad = new Mesh(new PlaneGeometry(4, 1), shared);
+  sharedQuad.position.set(2, 0.5, 0);
+  const sharedScene = new Scene();
+  sharedScene.add(sharedQuad);
+  probe.sharedNode = (await drawStrip(sharedScene)).split(",").slice(0, 2).join(",");
   // InstancedBufferGeometry draws instanceCount (3) of its 4 instances; TSL attribute() reads each
   // instance's offset and tint. The fourth (white) instance must not draw.
   const strip = new InstancedBufferGeometry();
@@ -362,6 +408,15 @@ try {
   // vec2 of a vec3 and a float is four components, a graph the engine refuses to lower.
   const unlowerable = new MeshBasicNodeMaterial();
   unlowerable.colorNode = vec4(vec2(vec3(1, 0, 0), 1), 0, 1);
+  skyScene.backgroundNode = unlowerable.colorNode;
+  try {
+    await drawSky();
+  } catch (error) {
+    probe.backgroundNodeRefusal =
+      String(error).includes("TN_NATIVE_BACKGROUND_NODE_UNSUPPORTED") &&
+      String(error).includes("components for 2");
+  }
+  skyTarget.dispose();
   renderer.setRenderTarget(halfTarget);
   try {
     new QuadMesh(unlowerable).render(renderer);

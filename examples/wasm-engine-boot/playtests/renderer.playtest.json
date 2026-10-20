@@ -21,9 +21,30 @@
   "assert": {
     "diagnostics": {
       "noConsoleErrors": false,
-      "consoleErrorsOptOutReason": "The page refuses one offscreen draw on purpose (targetRefusal); the engine names it once on the console as an error."
+      "consoleErrorsOptOutReason": "The page refuses invalid material and backgroundNode offscreen draws on purpose; the engine names it once on the console as an error."
     },
     "components": [
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "backgroundNodeGradient",
+        "equals": true,
+        "allowTrivial": "A GPU backgroundNode reads different world directions at opposite rows, with opaque alpha."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "backgroundNodeUniform",
+        "equals": "64,128",
+        "allowTrivial": "Intensity 2 scales a live sun uniform from 0.125 to 0.25 on consecutive GPU draws."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "backgroundNodeRefusal",
+        "equals": true,
+        "allowTrivial": "An invalid backgroundNode throws TN_NATIVE_BACKGROUND_NODE_UNSUPPORTED with the compiler cause."
+      },
       {
         "entity": "wasm-renderer",
         "component": "probe",

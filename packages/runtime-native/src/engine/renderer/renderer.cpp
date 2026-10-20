@@ -2039,12 +2039,19 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         if (std::find(diagnostics_.begin(), diagnostics_.end(), reason) == diagnostics_.end()) diagnostics_.push_back(reason);
         return nullptr;
     };
-    if (const auto found = programs_.find(key); found != programs_.end())
+    if (const auto found = programs_.find(key); found != programs_.end()) {
+        if (!found->second && vv.background && vv.nodes.colorNode)
+            throw std::runtime_error(refusedPrograms_.at(key));
         return found->second ? found->second.get() : refuse(refusedPrograms_.at(key));
-    const auto refuseBuild = [&](const std::string& why) {
+    }
+    const auto refuseBuild = [&](const std::string& why) -> Program* {
         programs_[key] = nullptr;
-        return refuse(refusedPrograms_[key] = "TN_NATIVE_SHADER_INVALID: material program " + key.substr(0, 120) +
-                                              (key.size() > 120 ? "...: " : ": ") + why);
+        const bool backgroundNode = vv.background && vv.nodes.colorNode;
+        const auto message = refusedPrograms_[key] =
+            (backgroundNode ? "TN_NATIVE_BACKGROUND_NODE_UNSUPPORTED: backgroundNode " : "TN_NATIVE_SHADER_INVALID: material program ") +
+            key.substr(0, 120) + (key.size() > 120 ? "...: " : ": ") + why;
+        if (backgroundNode) throw std::runtime_error(message);
+        return refuse(message);
     };
     const shader::LightLayout layout{lights, softShadows};
     shader::StandardPrograms source;
@@ -3352,7 +3359,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         for (int k = 0; k < shader::kPbrMapCount; ++k)
             if (p.item->pbrMaps[k]) pbrTextures[k] = materialTexture(*p.item->pbrMaps[k]);
         const MaterialTexture* map = p.item->map && !p.item->background ? materialTexture(*p.item->map) : nullptr;
-        const BackgroundCube* cube = p.item->background ? &backgroundCube(*p.item->map) : nullptr;
+        const BackgroundCube* cube = p.item->background && p.item->map ? &backgroundCube(*p.item->map) : nullptr;
         const EnvironmentGpu* env = p.item->envMap ? &environment(*p.item->envMap) : nullptr;
         const EnvironmentGpu* pmrem = p.item->pmremMap ? &environment(*p.item->pmremMap) : nullptr;
         const WGPUTextureView mapView = cube ? cube->view : map ? map->view : nullptr, envView = env ? env->view : nullptr;

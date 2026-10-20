@@ -19135,6 +19135,15 @@
             "kind": "unsupported",
             "diagnostic": "TN_NATIVE_UNSUPPORTED_RENDERER_PRIVATE"
           }
+        },
+        {
+          "name": "backgroundNode",
+          "type": "Node | null | undefined",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [

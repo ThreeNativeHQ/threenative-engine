@@ -8,7 +8,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { Vector3 } from "three";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   type EngineValue,
@@ -17,6 +18,8 @@ import {
   type IRegistryDump,
   defineBrowserClasses,
 } from "../src/browser-backend.js";
+import { TSL_NODE, engineRef } from "../src/browser-backend.js";
+import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
 
 const REPO = process.cwd();
@@ -147,4 +150,48 @@ describe("browser back end object surface", () => {
       "TN_BROWSER_UNBOUND: Group.children",
     );
   });
+});
+
+it("bridges Scene.backgroundNode and live uniforms through the shared TSL runtime", () => {
+  let serial = 0;
+  const tslRuntime: ITslRuntime = {
+    call: vi.fn(() => ++serial),
+    release: vi.fn(),
+    set: vi.fn(),
+    setUniform: vi.fn(),
+    effectParameter: vi.fn(() => 0),
+    setPost: vi.fn(),
+    compute: vi.fn(),
+    readStorage: vi.fn(),
+    deleteStorage: vi.fn(),
+  };
+  const runtime = sceneRuntime(new Map(), new Set());
+  const { classes } = defineBrowserClasses(registry, { ...runtime, tsl: tslRuntime }, catalog);
+  const authoring = defineTsl(tslRuntime);
+  const tsl = authoring.exports as unknown as {
+    uniform(value: number): { value: number; [TSL_NODE]: number };
+    uniform(value: { x: number; y: number; z: number }): {
+      value: { x: number; y: number; z: number };
+      [TSL_NODE]: number;
+    };
+    positionWorldDirection: { [TSL_NODE]: number; mul(value: unknown): unknown };
+  };
+  const scene = new (classes.Scene as new () => { backgroundNode: unknown })();
+  const sun = tsl.uniform(0.5);
+  const graph = tsl.positionWorldDirection.mul(sun) as { [TSL_NODE]: number };
+  scene.backgroundNode = graph;
+  expect(scene.backgroundNode).toBe(graph);
+  expect(tslRuntime.set).toHaveBeenCalledWith(engineRef(scene), "backgroundNode", graph[TSL_NODE]);
+  sun.value = 0.75;
+  expect(tslRuntime.setUniform).toHaveBeenCalledWith(sun[TSL_NODE], [0.75]);
+  const direction = tsl.uniform(new Vector3(0, 1, 0));
+  scene.backgroundNode = tsl.positionWorldDirection.mul(direction);
+  direction.value.y = 0.5;
+  authoring.sync();
+  expect(tslRuntime.setUniform).toHaveBeenCalledWith(direction[TSL_NODE], [0, 0.5, 0]);
+  expect(() => {
+    scene.backgroundNode = {};
+  }).toThrow("TN_BROWSER_SHADER_NODE");
+  scene.backgroundNode = null;
+  expect(scene.backgroundNode).toBe(null);
 });

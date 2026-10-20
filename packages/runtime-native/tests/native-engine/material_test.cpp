@@ -340,6 +340,20 @@ void nodes() {
 }
 
 void builds() {
+    // A procedural background reads a world direction and a live sun uniform, without a cube map.
+    VertexVariant background; background.background = true;
+    background.nodes.colorNode = graph::mul(graph::normalize(graph::varying("positionWorldDirection", Type::vec(3))),
+        graph::uniform("sun", Type::f32(), {0.5}));
+    const auto sky = buildBasic(background);
+    CHECK(sky.vertex.ok() && sky.fragment.ok());
+    const auto skyVs = buildStage(sky.vertex, 0), skyFs = buildStage(sky.fragment, 1);
+    CHECK(skyVs.wgsl.ok() && skyFs.wgsl.ok());
+    CHECK(skyFs.wgsl.code.find("texture_cube") == std::string::npos);
+    CHECK(skyFs.wgsl.code.find("f_sun") != std::string::npos);
+    CHECK(skyFs.wgsl.code.find("f_diffuse") != std::string::npos); // backgroundIntensity
+    for (const auto& attribute : skyVs.attributes)
+        CHECK(attribute.name == "position" || attribute.name == "normal");
+
     nodes();
     surfacePrefix();
     aoNode();
