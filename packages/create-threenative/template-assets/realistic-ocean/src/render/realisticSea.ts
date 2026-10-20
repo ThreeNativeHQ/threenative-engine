@@ -115,7 +115,7 @@ export const LOOK = {
   /** Light coming through a thin backlit crest. */
   subsurface: 0x2f9a78,
   /** Radiance of the sun for the crest glow only. The scene's own light lights everything else. */
-  sunRadiance: [10, 9, 7] as readonly [number, number, number],
+  sunRadiance: [16, 14, 10] as readonly [number, number, number],
   /** Fraction of the mirrored hull and marks that shows. A render target is written linear. */
   mirrorGain: 0.55,
   /** Image-based reflection scale on the standard material. */
@@ -431,7 +431,7 @@ export function createRealisticWaterMesh(
     const crest = saturate(height.sub(reference.mul(0.05)).div(reference.mul(0.8)));
     const toSun = max(dot(sunDirection, toEye.negate()), 0);
     const thin = smoothstep(float(0.78), float(0.25), dot(sunDirection, normalWorld));
-    const glow = crest.mul(crest).mul(pow(toSun, 2)).mul(thin).mul(distance.div(-600).exp());
+    const glow = crest.mul(crest).mul(toSun).mul(thin).mul(distance.div(-1200).exp());
     const tint = new Color(LOOK.subsurface);
     const subsurface = vec3(tint.r, tint.g, tint.b)
       .mul(sunRadiance)
