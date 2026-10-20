@@ -25,6 +25,7 @@
 #include "engine/scene/camera.h"
 #include "engine/renderer/graph/render_graph.h"
 #include "engine/renderer/post/traa.h"
+#include "engine/scene/lights.h"
 #include "engine/renderer/post/effects.h"
 #include "engine/shader/tsl/tsl.h"
 #include "engine/shader/graph/serialized.h"
@@ -2409,8 +2410,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     std::string lightKinds, unshadowedKinds;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         const DirectLight& l = lights.direct[i];
-        if (l.shadow && l.shadow->sourceAngleFilter && !virtualShadows_.count(i))
-            throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: sourceAngleShadowFilter requires VirtualShadowNode");
+        if (l.shadow)
+            if (const char* refusal = sourceAngleFilterRefusal(*l.shadow)) throw std::runtime_error(refusal);
         const char kind = l.kind == DirectLight::Kind::Directional ? 'd' : l.kind == DirectLight::Kind::Point ? 'p' : 's';
         unshadowedKinds += kind;
         lightKinds += virtualShadows_.count(i) ? char('0' + virtualShadows_.at(i).atlas.options().clipExtents.size()) : l.shadow ? static_cast<char>(kind - 'a' + 'A') : kind;

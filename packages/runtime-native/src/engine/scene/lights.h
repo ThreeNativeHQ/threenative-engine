@@ -48,6 +48,18 @@ public:
     double aspect = 1; // SpotLightShadow: a factor on the map's aspect
 };
 
+/**
+ * The source-angle filter reads the virtual atlas, so a shadow that has the filter and no
+ * VirtualShadowNode is refused at render, whichever of the two was set first. Null when fine.
+ */
+template <class Shadow>
+[[nodiscard]] inline const char* sourceAngleFilterRefusal(const Shadow& shadow) {
+    return shadow.sourceAngleFilter && !shadow.virtualShadow
+        ? "TN_VIRTUAL_SHADOW_UNSUPPORTED: sourceAngleShadowFilter requires VirtualShadowNode; "
+          "set light.shadow.shadowNode = new VirtualShadowNode(light)"
+        : nullptr;
+}
+
 class DirectionalLight : public Light {
 public:
     explicit DirectionalLight(Color color = Color(1, 1, 1), double intensity = 1);

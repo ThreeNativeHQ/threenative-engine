@@ -85,6 +85,22 @@ void binding() {
     CHECK(wide);
     set(&light.shadow, Value{}, store);
     CHECK(!light.shadow.virtualShadow);
+    // The filter without the node is refused whichever was set first, and says the fix.
+    DirectionalLight order;
+    setters.at("filterNode")(&order.shadow, filter, store);
+    const char* refusal = sourceAngleFilterRefusal(order.shadow);
+    CHECK(refusal && std::string(refusal).find("TN_VIRTUAL_SHADOW_UNSUPPORTED: sourceAngleShadowFilter requires VirtualShadowNode") == 0);
+    CHECK(refusal && std::string(refusal).find("set light.shadow.shadowNode = new VirtualShadowNode(light)") != std::string::npos);
+    set(&order.shadow, options, store);
+    CHECK(!sourceAngleFilterRefusal(order.shadow));
+    DirectionalLight reverse;
+    set(&reverse.shadow, options, store);
+    setters.at("filterNode")(&reverse.shadow, filter, store);
+    CHECK(!sourceAngleFilterRefusal(reverse.shadow));
+    set(&reverse.shadow, Value{}, store);
+    CHECK(sourceAngleFilterRefusal(reverse.shadow));
+    setters.at("filterNode")(&reverse.shadow, Value{}, store);
+    CHECK(!sourceAngleFilterRefusal(reverse.shadow));
 }
 
 void policies() {
