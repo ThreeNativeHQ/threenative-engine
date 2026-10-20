@@ -4,6 +4,8 @@
 //   upstream   Noniv/web-ocean's ocean.html at the pinned commit, as its README poses them
 // usage: node realistic-ocean-capture.mjs --arm <incumbent|realistic|upstream> --url <url> --out <dir>
 //          [--runs 2] [--poses low,oblique,elevated] [--width 1280] [--height 720] [--hide <css selector>]
+//          [--pin <ms>]  game arms only: drive the page on a fake clock and capture exactly <ms> of frames
+//                        (16.67 ms each) after the game reports ready, so every arm and run shows the same sea time
 // Every frame records the adapter it ran on: a software adapter's picture is not evidence.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -27,6 +29,7 @@ const runs = Number(option("runs", "2"));
 const width = Number(option("width", "1280"));
 const height = Number(option("height", "720"));
 const hide = option("hide", "");
+const pin = Number(option("pin", "0"));
 const wanted = option("poses", "low,oblique,elevated,sunpath").split(",");
 
 // web-ocean's README views: 2.4 m looking toward the sun, 75 degrees off it at 2.4 m, 30 m up
@@ -58,7 +61,7 @@ const browser = await chromium.launch({
     "--use-angle=vulkan",
   ],
 });
-const report = { arm, url, width, height, runs, frames: [] };
+const report = { arm, url, width, height, runs, pin, frames: [] };
 try {
   for (let run = 1; run <= runs; run += 1) {
     for (const name of wanted) {
@@ -80,11 +83,29 @@ try {
         await page.addInitScript((value) => {
           globalThis.__TN_OCEAN_POSE = value;
         }, pose);
+        if (pin > 0) await page.clock.install({ time: 0 });
         await page.goto(url, { waitUntil: "load", timeout: 120_000 });
-        await page.waitForSelector("canvas", { timeout: 60_000 });
-        await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 120_000 });
-        if (hide) await page.addStyleTag({ content: `${hide}{display:none !important}` });
-        await page.waitForTimeout(6_000);
+        if (pin > 0) {
+          // The fake clock only moves when told to, so advance it in frame-sized steps until the
+          // game reports ready, then by exactly `pin` ms: the sea's own clock is those frames.
+          await page.clock.pauseAt(1_000);
+          const ready = '[data-threenative-startup="ready"]';
+          for (let waited = 0; !(await page.$(ready)); waited += 1) {
+            if (waited > 6_000) throw new Error("the game never reported ready on the fake clock");
+            await page.clock.runFor(100);
+            await page.waitForTimeout(20);
+          }
+          if (hide) await page.addStyleTag({ content: `${hide}{display:none !important}` });
+          for (let advanced = 0; advanced < pin; advanced += 100) {
+            await page.clock.runFor(Math.min(100, pin - advanced));
+            await page.waitForTimeout(30);
+          }
+        } else {
+          await page.waitForSelector("canvas", { timeout: 60_000 });
+          await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 120_000 });
+          if (hide) await page.addStyleTag({ content: `${hide}{display:none !important}` });
+          await page.waitForTimeout(6_000);
+        }
       }
       const adapter = await page.evaluate(async () => {
         const a = await navigator.gpu?.requestAdapter();
