@@ -438,6 +438,22 @@ int main() {
     if (!transmittingMesh || transmittingMesh->material->transmission != 0.5 || transmittingMesh->material->type != MaterialType::Physical) {
         std::printf("physical extensions: the final material lost the factor\n"); ++differ;
     }
+    // EXT_mesh_gpu_instancing (GLTFMeshGpuInstancing): the node's mesh is an InstancedMesh with one matrix per
+    // TRANSLATION entry; without the extension in extensionsUsed it stays a plain Mesh.
+    auto instancing = tiny(R"("EXT_mesh_gpu_instancing")", {R"({})"}, R"(,"extensions":{"EXT_mesh_gpu_instancing":{"attributes":{"TRANSLATION":1}}})");
+    auto* instanced = instancing.scene ? dynamic_cast<InstancedMesh*>(instancing.scene->getObjectByName("m0")) : nullptr;
+    Matrix4 first, second;
+    if (instanced) { instanced->getMatrixAt(0, first); instanced->getMatrixAt(1, second); }
+    const auto at = [](const Matrix4& m) { const auto e = m.toArray(); return std::array<double, 3>{e[12], e[13], e[14]}; };
+    if (!instancing.error.empty() || !instanced || instanced->count != 2 || !instanced->geometry || !instanced->material ||
+        at(first) != std::array<double, 3>{1, 2, 3} || at(second) != std::array<double, 3>{4, 5, 6}) {
+        std::printf("instancing: not an InstancedMesh with the TRANSLATION matrices: %s\n", instancing.error.c_str()); ++differ;
+    }
+    auto uninstanced = tiny("", {R"({})"}, R"(,"extensions":{"EXT_mesh_gpu_instancing":{"attributes":{"TRANSLATION":1}}})");
+    auto* plainMesh = uninstanced.scene ? uninstanced.scene->getObjectByName("m0") : nullptr;
+    if (!plainMesh || dynamic_cast<InstancedMesh*>(plainMesh)) {
+        std::printf("instancing: applied without EXT_mesh_gpu_instancing in extensionsUsed\n"); ++differ;
+    }
     // PRD-526: a texture's image decodes at load (PNG and JPEG), with the sampler GLTFLoader applies.
     const std::string imageBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/runtime-native/tests/native-engine/assets/image-textures.gltf");
     auto images = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(imageBytes.data()), imageBytes.size()));

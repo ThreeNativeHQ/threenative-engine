@@ -75,7 +75,7 @@ const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_p
                                           "KHR_materials_emissive_strength", "KHR_texture_transform",
                                           "KHR_materials_transmission", "KHR_materials_volume", "KHR_materials_sheen",
                                           "KHR_materials_iridescence", "KHR_materials_anisotropy",
-                                          "KHR_materials_dispersion", "EXT_materials_bump"};
+                                          "KHR_materials_dispersion", "EXT_materials_bump", "EXT_mesh_gpu_instancing"};
 
 class Builder {
   public:
@@ -317,12 +317,17 @@ class Builder {
         std::shared_ptr<Object3D> object;     // the Mesh, or the Group of primitive meshes
         std::vector<std::shared_ptr<Mesh>> meshes;
     };
-    std::shared_ptr<Object3D> meshObjectFor(std::size_t meshIndex, std::size_t /*nodeIndex*/) {
+    std::shared_ptr<Object3D> meshObjectFor(std::size_t meshIndex, std::size_t nodeIndex) {
         const cgltf_mesh& def = data_.meshes[meshIndex];
         MeshUse use{meshIndex, nullptr, {}};
+        const Value* instancing = used_.count("EXT_mesh_gpu_instancing")
+            ? member(member(item(member(&json_, "nodes"), nodeIndex), "extensions"), "EXT_mesh_gpu_instancing")
+            : nullptr;
         for (std::size_t p = 0; p < def.primitives_count; ++p) {
-            std::shared_ptr<Mesh> mesh =
-                skinnedMesh_[meshIndex] ? std::make_shared<SkinnedMesh>() : std::make_shared<Mesh>();
+            std::shared_ptr<Mesh> mesh;
+            if (auto instanced = instancedMeshFor(instancing)) mesh = instanced;
+            else if (skinnedMesh_[meshIndex]) mesh = std::make_shared<SkinnedMesh>();
+            else mesh = std::make_shared<Mesh>();
             use.meshes.push_back(mesh);
         }
         if (use.meshes.size() == 1) {
@@ -334,6 +339,37 @@ class Builder {
         }
         uses_.push_back(use);
         return use.object;
+    }
+
+    // GLTFMeshGpuInstancing.createNodeMesh: an InstancedMesh whose matrices compose the TRANSLATION, ROTATION
+    // and SCALE accessors and whose instanceColor is _COLOR_0. Null for a node without the extension.
+    // ponytail: other instance attributes (_ID, ...) feed a custom material, which a glTF cannot carry here.
+    std::shared_ptr<InstancedMesh> instancedMeshFor(const Value* instancing) {
+        const Value* attributes = member(instancing, "attributes");
+        if (!attributes || !attributes->isObject() || attributes->members().empty() || !error_.empty()) return nullptr;
+        std::map<std::string, std::shared_ptr<BufferAttribute>> loaded;
+        for (const auto& [name, index] : attributes->members()) {
+            const auto at = static_cast<std::size_t>(number(&index, -1));
+            if (at >= data_.accessors_count) { refuse("TN_NATIVE_GLTF_ACCESSOR_INVALID instance attribute " + name); return nullptr; }
+            if (!(loaded[name] = accessor(data_.accessors[at]))) return nullptr;
+        }
+        const auto count = static_cast<uint32_t>(loaded[attributes->members().front().first]->count()); // all counts agree
+        auto instanced = std::make_shared<InstancedMesh>(nullptr, nullptr, count);
+        const auto& translation = loaded["TRANSLATION"];
+        const auto& rotation = loaded["ROTATION"];
+        const auto& scale = loaded["SCALE"];
+        const auto& color = loaded["_COLOR_0"];
+        for (uint32_t i = 0; i < count; ++i) {
+            Vector3 p(0, 0, 0), s(1, 1, 1);
+            Quaternion q;
+            if (translation) p.set(translation->getX(i), translation->getY(i), translation->getZ(i));
+            if (rotation) q.set(rotation->getX(i), rotation->getY(i), rotation->getZ(i), rotation->getW(i));
+            if (scale) s.set(scale->getX(i), scale->getY(i), scale->getZ(i));
+            Matrix4 m;
+            instanced->setMatrixAt(i, m.compose(p, q, s));
+            if (color) instanced->setColorAt(i, Color(color->getX(i), color->getY(i), color->getZ(i)));
+        }
+        return instanced;
     }
 
     // loadMesh's continuation, in the order the meshes were first asked for: geometry, final
