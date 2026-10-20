@@ -1380,6 +1380,9 @@ jobs:
         run: |
           target="$RUNNER_TEMP/threenative-ios-release-consumer"
           cp examples/native-smoke/src/game.ts "$target/src/game.ts"
+          # The entry's own siblings: `game.ts` alone fails with UNRESOLVED_IMPORT for these two (PRD-637).
+          cp examples/native-smoke/src/networking-game.ts examples/native-smoke/src/worker-proof.ts \
+            "$target/src/"
           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
           cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \
             "$target/physics-parity.scenario.json"

@@ -118,7 +118,7 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
       const loaded = await loadConfig(path.resolve(vite.root ?? process.cwd()));
       // The dep optimizer does not run resolveId, so a pre-bundled dependency (core) would inline the
       // upstream packages the engine replaces; three-mesh-bvh builds a refused Line3 at module scope.
-      if (loaded.engine === "threenative")
+      if (loaded.engine === "threenative" && process.env.THREENATIVE_NATIVE_BUNDLE === undefined)
         return {
           optimizeDeps: { exclude: ["three", "three/webgpu", "three/tsl", "three-mesh-bvh"] },
         };
@@ -133,7 +133,11 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
     async configResolved(resolved) {
       root = resolved.root;
       config = await loadConfig(root);
-      if (config.engine === "threenative")
+      // The Wasm engine is the browser's. `runtime-native/scripts/bundle.mjs` builds a native
+      // bundle through the project's own Vite config and names its target here: that bundle is one
+      // script inside a non-async function, which the engine module's top-level await cannot parse
+      // in, and its host brings its own engine.
+      if (config.engine === "threenative" && process.env.THREENATIVE_NATIVE_BUNDLE === undefined)
         engine = createWebEnginePlugin({ root, engine: config.engine });
     },
     transformIndexHtml(html) {

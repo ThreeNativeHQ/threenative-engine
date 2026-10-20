@@ -493,7 +493,11 @@ export class FixedStepLoop {
     return updates;
   }
 
-  advance(ticks: number, options?: { render?: boolean }): number {
+  /**
+   * Run `ticks` fixed steps now and return how many ran. `until` is asked after each tick and ends
+   * the batch early when it answers true, so a caller can stop where an asynchronous change began.
+   */
+  advance(ticks: number, options?: { render?: boolean; until?: () => boolean }): number {
     if (!this.#running) throw new Error("Cannot advance a stopped loop.");
     if (!Number.isInteger(ticks) || ticks <= 0)
       throw new Error("advance ticks must be a positive integer.");
@@ -511,7 +515,10 @@ export class FixedStepLoop {
       this.#driven = true;
       if (this.#frameHandle !== undefined) this.#cancelFrame(this.#frameHandle);
       this.#frameHandle = undefined;
-      for (let index = 0; index < ticks; index += 1) this.stepFrame(this.#now(), true);
+      for (let index = 0; index < ticks; index += 1) {
+        this.stepFrame(this.#now(), true);
+        if (options.until?.() === true) return index + 1;
+      }
       return ticks;
     }
     // A counted batch is metered, because a tick-counted run — which is what a playtest run is — is
@@ -522,18 +529,21 @@ export class FixedStepLoop {
     // percentiles. `addSimulation` decides which it is from the frame it lands in, so an `advance()`
     // from inside a live frame — the frozen prime's settle — is charged there exactly once.
     const startedAt = this.#now();
-    for (let index = 0; index < ticks; index += 1) {
+    let ran = 0;
+    while (ran < ticks) {
       this.#interpolation?.beginTick();
       this.#onUpdate(this.step);
       this.#onAfterPhysics(this.step);
       this.#interpolation?.endTick();
       this.#tick += 1;
+      ran += 1;
+      if (options?.until?.() === true) break;
     }
     const finishedAt = this.#now();
     const budget = this.#budget;
     if (budget !== undefined && Number.isFinite(startedAt) && Number.isFinite(finishedAt))
-      budget.addSimulation(Math.max(0, finishedAt - startedAt), ticks);
-    return ticks;
+      budget.addSimulation(Math.max(0, finishedAt - startedAt), ran);
+    return ran;
   }
 
   /**

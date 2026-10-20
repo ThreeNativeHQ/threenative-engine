@@ -37,6 +37,32 @@
     },
     {
       "kind": "input",
+      "label": "restart-2",
+      "press": "KeyR",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "restarted-2",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "restart-3",
+      "press": "KeyR",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "restarted-3",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
       "label": "moved-after-restart",
       "press": "ArrowUp",
       "holdTicks": 120,
@@ -67,6 +93,14 @@
           {
             "label": "restarted",
             "equals": 0
+          },
+          {
+            "label": "restarted-2",
+            "equals": 0
+          },
+          {
+            "label": "restarted-3",
+            "equals": 0
           }
         ]
       },
@@ -80,6 +114,14 @@
           },
           {
             "label": "restarted",
+            "equals": 4
+          },
+          {
+            "label": "restarted-2",
+            "equals": 4
+          },
+          {
+            "label": "restarted-3",
             "equals": 4
           }
         ]
