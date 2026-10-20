@@ -4506,6 +4506,7 @@
       "getters": [
         "alphaTest",
         "aoNode",
+        "irradianceNode",
         "blending",
         "color.b",
         "color.g",
@@ -4542,6 +4543,7 @@
       "setters": [
         "alphaTest",
         "aoNode",
+        "irradianceNode",
         "blending",
         "color",
         "color.b",
@@ -4979,6 +4981,7 @@
         "alphaTest",
         "aoMapIntensity",
         "aoNode",
+        "irradianceNode",
         "blending",
         "bumpScale",
         "color.b",
@@ -5026,6 +5029,7 @@
         "aoMap",
         "aoMapIntensity",
         "aoNode",
+        "irradianceNode",
         "blending",
         "bumpMap",
         "bumpScale",
@@ -5100,6 +5104,7 @@
       "getters": [
         "alphaTest",
         "aoNode",
+        "irradianceNode",
         "blending",
         "colorNode",
         "colorWrite",
@@ -5130,6 +5135,7 @@
       "setters": [
         "alphaTest",
         "aoNode",
+        "irradianceNode",
         "blending",
         "colorNode",
         "colorWrite",
@@ -7736,6 +7742,7 @@
       "getters": [
         "alphaTest",
         "aoNode",
+        "irradianceNode",
         "blending",
         "color.b",
         "color.g",
@@ -7776,6 +7783,7 @@
       "setters": [
         "alphaTest",
         "aoNode",
+        "irradianceNode",
         "blending",
         "color",
         "color.b",

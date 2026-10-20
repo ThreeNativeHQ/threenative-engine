@@ -1156,8 +1156,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
             v = f.construct(Type::vec(3), {f.swizzle(v, "x"), f.neg(f.swizzle(v, "y")), f.swizzle(v, "z")});
             return f.swizzle(f.mul(f.uniform("envRotation", Type::mat(4, 4)), f.construct(Type::vec(4), {v, t.f(0)})), "xyz");
         };
-        const ExprId iblIrradiance =
-            f.mul(f.mul(textureCubeUV(f, env, flipped(normalWorld), t.f(1)), t.f(kPi)), envIntensity);
+        // material.irradianceNode replaces the environment's diffuse irradiance (the PMREM level-1 sample, whose
+        // blur leaks a bright horizon into a surface that faces down) with the author's own, already cosine-weighted.
+        const ExprId iblIrradiance = variant.nodes.irradianceNode
+            ? f.mul(slotValue(f, slots, variant.nodes.irradianceNode, Type::vec(3), kInvalid), t.f(kPi))
+            : f.mul(f.mul(textureCubeUV(f, env, flipped(normalWorld), t.f(1)), t.f(kPi)), envIntensity);
         ExprId reflectVec = f.call("reflect", {f.neg(positionViewDirection), n});
         reflectVec = f.call("normalize", {f.call("mix", {reflectVec, n, f.mul(f.mul(t.pow2(roughness), roughness), roughness)})});
         reflectVec = transformDirection(f, f.uniform("cameraWorldMatrix", Type::mat(4, 4)), reflectVec);

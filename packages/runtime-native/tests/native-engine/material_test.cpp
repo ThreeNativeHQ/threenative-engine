@@ -226,6 +226,22 @@ void aoNode() {
     CHECK(with.code.find("f_nodeAo") != std::string::npos);
 }
 
+// NodeMaterial.irradianceNode replaces the environment's diffuse irradiance: its uniform enters the fragment of a
+// material that is lit by an environment, and the slot is part of the program key.
+void irradianceNode() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    plain.environment = true;
+    VertexVariant lit = plain;
+    lit.nodes.irradianceNode = g::uniform("nodeIrradiance", Type::vec(3), {0.5f, 0.25f, 0.125f});
+    CHECK(plain.key() != lit.key());
+    const auto without = WgslEmitter::emit(buildStandard(StandardMaterial{}, plain).fragment, 1);
+    const auto with = WgslEmitter::emit(buildStandard(StandardMaterial{}, lit).fragment, 1);
+    CHECK(without.ok() && with.ok());
+    CHECK(without.code.find("f_nodeIrradiance") == std::string::npos);
+    CHECK(with.code.find("f_nodeIrradiance") != std::string::npos);
+}
+
 void nodes() {
     namespace g = tn::engine::shader::graph;
     VertexVariant variant;
@@ -290,6 +306,7 @@ void builds() {
     nodes();
     surfacePrefix();
     aoNode();
+    irradianceNode();
     VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;
     CHECK(storage.key() != VertexVariant{}.key());
     for (int kind = 0; kind < 5; ++kind) {

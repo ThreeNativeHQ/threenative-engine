@@ -152,7 +152,7 @@ export function definePass(
     // quality-allow: the engine's untyped TSL node surface (chained operator calls).
     // biome-ignore lint/suspicious/noExplicitAny: the engine's TSL node surface is open-ended chained calls.
     const alpha = (tsl.texture({ name: "normal" }, tsl.uv()) as any).a;
-    const level = floor(alpha.mul(0.5));
+    const level = floor(alpha.mul(0.5)) as typeof alpha;
     const written = alpha.greaterThan(0.125);
     const roughness = alpha.sub(level.mul(2)).sub(0.25).mul(2).clamp(0, 1);
     return vec4(written.select(level.div(7), 0), written.select(roughness, 1), 0, 1);
@@ -277,7 +277,7 @@ export function definePass(
       if (
         (name === "metalness" || name === "roughness") &&
         this.#mrt?.outputs.normal === normalView &&
-        this.#mrt.outputs[name] === slots[name]
+        this.#mrt?.outputs[name] === slots[name]
       )
         return surfaceNode();
       throw new Error(

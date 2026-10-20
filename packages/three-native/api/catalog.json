@@ -11925,6 +11925,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "irradianceNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13280,6 +13289,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "irradianceNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13859,6 +13877,15 @@
         },
         {
           "name": "aoNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "irradianceNode",
           "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",

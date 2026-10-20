@@ -16,6 +16,8 @@ struct MaterialNodes {
     graph::Node colorNode, positionNode, normalNode, emissiveNode, roughnessNode, metalnessNode, opacityNode;
     /** NodeMaterial.aoNode: ambient occlusion (float) that darkens indirect light only. */
     graph::Node aoNode;
+    /** The scene environment's diffuse term, replaced: cosine-weighted irradiance (E / pi, in the units of the PMREM level-1 sample) for the surface's own normalWorld. */
+    graph::Node irradianceNode;
     /** NodeMaterial.vertexNode: the clip-space position itself, replacing model-view-projection. */
     graph::Node vertexNode, fragmentNode;
     /** NodeMaterial.depthNode: the fragment's depth (frag_depth), replacing the rasterised one. */
@@ -31,13 +33,13 @@ struct MaterialNodes {
                           emissiveNode.get(), roughnessNode.get(), metalnessNode.get(),
                           opacityNode.get(),  vertexNode.get(),    fragmentNode.get(),
                           scaleNode.get(),    rotationNode.get(),  depthNode.get(),
-                          aoNode.get()};
+                          aoNode.get(),       irradianceNode.get()};
     }
     auto graphs() const {
         return std::array{colorNode,     positionNode, normalNode, emissiveNode, roughnessNode,
                           metalnessNode, opacityNode,  vertexNode, fragmentNode,
                           scaleNode,     rotationNode, depthNode,
-                          aoNode,        fogNode};
+                          aoNode,        irradianceNode, fogNode};
     }
     std::string key() const {
         std::string out;

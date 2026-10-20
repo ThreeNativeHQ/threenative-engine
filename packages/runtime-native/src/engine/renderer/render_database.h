@@ -111,7 +111,7 @@ class RenderDatabase {
     // ponytail: entries for released materials stay until the database goes; prune if materials churn.
     struct GraphSources {
         uint32_t version = 0;
-        std::array<const void*, 13> roots{};  // one per MaterialNodes::pointers()
+        std::array<const void*, 14> roots{};  // one per MaterialNodes::pointers()
         const Texture* texture = nullptr;
         std::shared_ptr<const void> reflector;  // an engine::Reflector
         std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples
