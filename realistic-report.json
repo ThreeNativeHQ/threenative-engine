@@ -4,6 +4,7 @@
   "width": 1280,
   "height": 720,
   "runs": 2,
+  "pin": 8000,
   "frames": [
     {
       "file": "realistic-low-run1.png",
