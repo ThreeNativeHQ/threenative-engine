@@ -1,6 +1,6 @@
 # PRD-629 — A green main commit ships to npm in one command, in under an hour
 
-**Status:** PARTIAL — code for all three phases is on the PR; AC-1, AC-2, AC-3 and AC-7 wait on shared runs
+**Status:** PARTIAL — code for all three phases is on the PR; AC-1, AC-2, AC-4, AC-5 and AC-6 are ticked; AC-3 and AC-7 need the first main push after the merge and the next real release
 **Priority:** P1 — The 0.3.5 release (PRD-624) took more than 30 hours across six candidate commits; every open box below removes a step that failed or needed hand work during that release.
 **Complexity:** 6 (MEDIUM); risk override: none. Touches 6-10 release files (+2), crosses the npm and GitHub release boundary (+2), and drives the GitHub API (+1). It adds no new workflow file.
 **Owner:** release tooling
@@ -147,13 +147,13 @@ What this says, without rounding it up:
 ## Execution Phases
 
 #### Phase 1: The release proof runs every tag-only step
-**Status:** PARTIAL — rehearsal jobs, `release.ts --dry-run --lock` and specs landed; the shared run (AC-1, AC-2) is queued behind the 0.3.5 release
+**Status:** DONE — rehearsal jobs, `release.ts --dry-run --lock` and specs landed; AC-1 (run 39362738911) and AC-2 (run 39366377735) are ticked
 **Files:** `.github/workflows/native-release.yml` (rehearsal mode for `publish`, `clean-consumer`, `finalize`, the `npm-dry-run` job and the `cleanup-rehearsal` job), `scripts/release.ts` (a `--dry-run` that packs against a given `--lock`), and the workflow specs.
 **Implementation:** Gate the rehearsal on the same condition as `gates` for non-tag events. Use the existing `generateReleaseManifest` with the real repository and a rehearsal tag. Delete the draft in an `always()` step.
 **Verification:** AC-1 and AC-2 on this PRD's PR, labeled `release-proof`. Then run all workflow specs locally.
 
 - [x] AC-1 [shared]: A `release-proof` PR run executes `publish`, `clean-consumer`, `finalize` and the npm dry run against a draft release, and no job is skipped. proof: the `native-release.yml` run on this PRD's PR, with every listed job `success` and the draft deleted afterward. Evidence: run 39362738911 (head `8ce7bd1ed`, `release-proof` label, 35 min) is `success`: `publish`, `npm-dry-run`, `clean-consumer`, `clean-consumer-windows`, `finalize` and `cleanup-rehearsal` all `success`. `clean-consumer-ios`, `cleanup-failed-release` and `validate-tag` are skipped by design (tag-only). `gh api repos/.../releases` lists 0 drafts and 0 `rehearsal-` releases afterward. It took four runs to get there, and each red was a real defect that tag day would have found: run 39348347531 (simulator zip missing from the lock), run 39352029148 (`clean-consumer` zip check, `npm-dry-run` could not read the draft), run 39358513586 (`npm-dry-run` had no built tree).
-- [ ] AC-2 [shared]: The rehearsal catches the finding-1 defect. With `RELEASE_REPOSITORY` set back to `ThreeNativeHQ/threenative` on a scratch branch, the rehearsal `publish` job fails with the same error that tag run 39304823341 printed. proof: the scratch-branch run id, recorded in the PR body. The scratch branch is not merged. Evidence: pending.
+- [x] AC-2 [shared]: The rehearsal catches the finding-1 defect. With `RELEASE_REPOSITORY` set back to `ThreeNativeHQ/threenative` on a scratch branch, the rehearsal `publish` job fails with the same error that tag run 39304823341 printed. proof: the scratch-branch run id, recorded in the PR body. The scratch branch is not merged. Evidence: run 39366377735 (draft PR #543 from scratch branch `ci/prd-629-ac2-scratch`, `RELEASE_REPOSITORY` set to `ThreeNativeHQ/threenative`). Its `publish` job failed in "Generate the checksum lock from the verified assets" with `Prebuilt releases must be published by ThreeNativeHQ/threenative, received ThreeNativeHQ/threenative-engine.`, the step and message of tag run 39304823341. `cleanup-rehearsal` was `success` and no draft remained. Attempt 1 failed in the Linux build on a timing check (`ui` phase 3.06 ms over a 2 ms budget), which does not touch this change, so only that job was rerun. The PR is closed and the branch is deleted. A `workflow_dispatch` on the scratch branch (run 39366210449) stopped at `gates`, which needs a green `main` CI run for the exact SHA, so a labeled PR is the only route for a scratch commit.
 
 #### Phase 2: Main proof starts by itself, and downloads retry
 **Status:** PARTIAL — trigger, retry wrapper and tag concurrency group landed; AC-3 needs the first main push after the merge
