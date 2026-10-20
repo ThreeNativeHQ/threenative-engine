@@ -38,14 +38,20 @@ import {
   Vector3,
 } from "three";
 import {
+  acos,
+  atan,
   cameraPosition,
   clamp,
+  dot,
   float,
+  inverseSqrt,
   max,
   mix,
   normalWorld,
   positionWorld,
   reflect,
+  select,
+  sqrt,
   texture3D,
   uniform,
   vec3,
@@ -798,6 +804,49 @@ function environmentShare(
  * Bakes the cache for `root` and gives every standard material under it an `irradianceNode` that
  * reads it. Returns what it did, or undefined when there is no sky to gather (no OffscreenCanvas).
  */
+/**
+ * E / (pi L) at a surface from a sphere of angular radius asin(sqrt(sin2)) whose centre lies at `cos` from the normal:
+ * the CPU twin of the share inside `emitterLight` (keep the two in step; the spec pins this one).
+ */
+export function sphereShare(sin2: number, cos: number): number {
+  if (cos * cos > sin2) return sin2 * Math.max(cos, 0);
+  const sin = Math.sqrt(Math.max(1 - cos * cos, 1e-6));
+  const x = Math.sqrt(Math.max(1 / sin2 - 1, 1e-6));
+  const y = Math.min(1, Math.max(-1, (-x * cos) / sin));
+  const t = sin * Math.sqrt(Math.max(1 - y * y, 0));
+  return Math.max(0, ((cos * Math.acos(y) - x * t) * sin2 + Math.atan(t / x)) / Math.PI);
+}
+
+/**
+ * E / pi at a surface from small emissive spheres: the source's own light on its neighbourhood, resolved where the light
+ * lands, as Lumen's surface cache does (Engine/Shaders/Private/Lumen/LumenSceneLighting.usf). A sphere wholly above the
+ * horizon gives L (r / d)^2 cos; one cut by the horizon gives the clipped form (Lagarde and de Rousiers, "Moving
+ * Frostbite to PBR", 2014, section 4.7.2). Only the source occludes itself; another object between them does not
+ * (ponytail: no per-pixel visibility; add a shadow ray or a screen trace when a scene puts a blocker beside an emitter).
+ */
+export function emitterLight(
+  emitters: readonly { centre: Vector3; radius: number; radiance: number[] }[],
+  position: Node<"vec3">,
+  normal: Node<"vec3">,
+): Node<"vec3"> | undefined {
+  let sum: Node<"vec3"> | undefined;
+  for (const e of emitters) {
+    const toward = vec3(e.centre.x, e.centre.y, e.centre.z).sub(position);
+    const d2 = max(dot(toward, toward), e.radius * e.radius * 1.0001);
+    const sin2 = float(e.radius * e.radius).div(d2);
+    const cos = clamp(dot(normal, toward.mul(inverseSqrt(d2))), -1, 1);
+    const sin = sqrt(max(float(1).sub(cos.mul(cos)), 1e-6));
+    const x = sqrt(max(float(1).div(sin2).sub(1), 1e-6));
+    const y = clamp(x.negate().mul(cos.div(sin)), -1, 1);
+    const s = sin.mul(sqrt(max(float(1).sub(y.mul(y)), 0)));
+    const clipped = cos.mul(acos(y)).sub(x.mul(s)).mul(sin2).add(atan(s.div(x))).div(Math.PI);
+    const share = select(cos.mul(cos).greaterThan(sin2), sin2.mul(max(cos, 0)), max(clipped, 0));
+    const light = vec3(e.radiance[0] ?? 0, e.radiance[1] ?? 0, e.radiance[2] ?? 0).mul(share);
+    sum = sum === undefined ? light : sum.add(light);
+  }
+  return sum;
+}
+
 export function installGi(
   ctx: IRayContext,
   root: Object3D,
@@ -1142,6 +1191,9 @@ export function installGi(
   let values = gather(undefined);
   for (let pass = 1; pass < options.bounces; pass += 1)
     values = gather({ grid, values, links, valid });
+  // The bounces above carry the emitters' light; what a surface reads directly from them is exact per pixel (see
+  // `emitterLight`), because a 0.5 m cell cannot hold a glow that falls off within 0.3 m of the source.
+  for (let i = 0; i < values.length; i += 1) values[i] = (values[i] ?? 0) - (emitted[i] ?? 0);
 
   if (options.bounces > 0) {
     const floor = groundRadiance({ grid, values, links, valid }, ray, first, end, grid.origin.y);
@@ -1153,7 +1205,13 @@ export function installGi(
   traced += cut.rays;
   giCache.field = { grid: fine.grid, values: fine.values, sky: fine.sky };
   const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky);
-  giCache.irradiance = (position, normal) => read(position, normal).irradiance;
+  // The screen-space gather's tier below reads the same as a material does, emitters included, so a ray that hits
+  // the emitter on screen replaces its direct light instead of adding it twice.
+  giCache.irradiance = (position, normal) => {
+    const base = read(position, normal).irradiance;
+    const light = emitterLight(emitters, position, normal);
+    return light === undefined ? base : base.add(light);
+  };
   const normal = normalWorld.normalize();
   const incident = positionWorld.sub(cameraPosition).normalize();
   /**
@@ -1162,6 +1220,7 @@ export function installGi(
    * occlusion: it dims the environment's specular, which the engine applies to the indirect specular only (aoNode
    * also scales the indirect diffuse, so the diffuse reads the cache divided by it: the product is the cache).
    */
+  const direct = emitterLight(emitters, positionWorld, normal);
   const reads = new Map<number, { node: Node<"vec3">; visibility: Node<"float"> }>();
   const readFor = (roughness: number) => {
     const known = reads.get(roughness);
@@ -1169,7 +1228,8 @@ export function installGi(
     const lobe = mix(reflect(incident, normal), normal, roughness ** 3).normalize();
     const lit = read(positionWorld, normal, lobe);
     const visibility = max(lit.visibility, 0.05);
-    const made = { node: lit.irradiance.div(visibility), visibility };
+    const irradiance = direct === undefined ? lit.irradiance : lit.irradiance.add(direct);
+    const made = { node: irradiance.div(visibility), visibility };
     reads.set(roughness, made);
     return made;
   };
