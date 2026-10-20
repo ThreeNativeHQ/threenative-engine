@@ -1,0 +1,99 @@
+{
+  "arm": "upstream",
+  "url": "http://127.0.0.1:8093/ocean.html",
+  "width": 1280,
+  "height": 720,
+  "runs": 2,
+  "frames": [
+    {
+      "file": "upstream-low-run1.png",
+      "pose": "low",
+      "run": 1,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": [
+        "Failed to load resource: the server responded with a status of 404 (File not found)"
+      ]
+    },
+    {
+      "file": "upstream-oblique-run1.png",
+      "pose": "oblique",
+      "run": 1,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "upstream-elevated-run1.png",
+      "pose": "elevated",
+      "run": 1,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "upstream-sunpath-run1.png",
+      "pose": "sunpath",
+      "run": 1,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "upstream-low-run2.png",
+      "pose": "low",
+      "run": 2,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "upstream-oblique-run2.png",
+      "pose": "oblique",
+      "run": 2,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "upstream-elevated-run2.png",
+      "pose": "elevated",
+      "run": 2,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "upstream-sunpath-run2.png",
+      "pose": "sunpath",
+      "run": 2,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    }
+  ]
+}

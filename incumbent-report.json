@@ -1,0 +1,97 @@
+{
+  "arm": "incumbent",
+  "url": "http://127.0.0.1:8091/",
+  "width": 1280,
+  "height": 720,
+  "runs": 2,
+  "frames": [
+    {
+      "file": "incumbent-low-run1.png",
+      "pose": "low",
+      "run": 1,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "incumbent-oblique-run1.png",
+      "pose": "oblique",
+      "run": 1,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "incumbent-elevated-run1.png",
+      "pose": "elevated",
+      "run": 1,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "incumbent-sunpath-run1.png",
+      "pose": "sunpath",
+      "run": 1,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "incumbent-low-run2.png",
+      "pose": "low",
+      "run": 2,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "incumbent-oblique-run2.png",
+      "pose": "oblique",
+      "run": 2,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "incumbent-elevated-run2.png",
+      "pose": "elevated",
+      "run": 2,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
+    {
+      "file": "incumbent-sunpath-run2.png",
+      "pose": "sunpath",
+      "run": 2,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    }
+  ]
+}
