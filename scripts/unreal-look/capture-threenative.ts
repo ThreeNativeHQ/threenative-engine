@@ -207,7 +207,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
         if (
           message.type() === "error" ||
           message.type() === "warning" ||
-          /^TN_(INDIRECT_LIGHT|PROBE_VOLUME|NATIVE_|RENDER_CHAIN|SSR|SSGI|SKY_OCCLUSION|AUTO_EXPOSURE|VIRTUAL_SHADOW)/.test(
+          /^TN_(INDIRECT_LIGHT|PROBE_VOLUME|NATIVE_|RENDER_CHAIN|SSR|SSGI|GI_CACHE|SKY_OCCLUSION|AUTO_EXPOSURE|VIRTUAL_SHADOW)/.test(
             message.text(),
           )
         )
@@ -250,7 +250,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             },
           );
           await page.addStyleTag({ content: HIDE_UI });
-          await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 120_000 });
+          await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 300_000 });
           await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
           const engine = await page.evaluate("window.__tnRef.engine");
           if (engine !== "threenative")
