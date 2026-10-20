@@ -8,6 +8,7 @@
  *     --runs 2               repeat each run; run 2 lands in "<variant>#2" (the noise floor)
  *     --rebuild              author and export the scene again even if its level exists
  *   pnpm unreal-look:compare --scene gi:cornell --unreal-vs-unreal [--write-stats]
+ *   pnpm unreal-look:compare --scene gi:cornell --layer L1[,L7]   ThreeNative against Unreal, per region
  *
  * Capture authors and exports each scene once (scene.glb, scene.json), checks that the two
  * agree, then renders each variant in its own editor and reads the variant's GI settings back from
@@ -17,7 +18,17 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import { type IImage, type IStats, decode, masks, measure } from "./compare.js";
+import {
+  type IImage,
+  type IRow,
+  type IStats,
+  type IThresholds,
+  compareCells,
+  decode,
+  iou,
+  masks,
+  measure,
+} from "./compare.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -358,7 +369,73 @@ export function relativeChange(a: IStats, b: IStats): number {
   return 2 ** Math.abs(b.ev50 - a.ev50) - 1;
 }
 
+/** The Unreal variant each ThreeNative layer is judged against (capture-gi-threenative.ts). */
+const UNREAL_VARIANT: Readonly<Record<string, string>> = { L1: "L1", L7: "L7-Epic", L9: "L9-Epic" };
+
+/**
+ * ThreeNative against Unreal for one scene: region statistics of every (layer, pose), with the
+ * Unreal ID frame as the mask and the IoU of the two ID frames per region. A row passes against
+ * tools/unreal-reference/thresholds.json when that file exists (PRD-631); otherwise it reports.
+ */
+export function compareGiToUnreal(name: string, layers: readonly string[], root: string): IRow[] {
+  const { scene } = readScene(name);
+  const thresholdFile = path.join(REFERENCE, "thresholds.json");
+  const thresholds = existsSync(thresholdFile)
+    ? (JSON.parse(readFileSync(thresholdFile, "utf8")) as IThresholds)
+    : undefined;
+  const unreal = path.join(root, "unreal", name);
+  const tn = path.join(root, "threenative", name);
+  const rows: IRow[] = [];
+  for (const layer of layers) {
+    const variant = UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`);
+    for (const pose of scene.poses) {
+      const reference = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions);
+      const own = masks(image(path.join(tn, "ID", `${pose.name}.png`)), scene.regions);
+      const regions = Object.keys(reference.regions).filter(
+        (r) => r !== "Sky" && reference.regions[r]?.some(Boolean),
+      );
+      const exr = path.join(unreal, variant, `${pose.name}.exr`);
+      const cell = compareCells({
+        layer,
+        cell: `${name}/${pose.name}`,
+        unreal: image(path.join(unreal, variant, `${pose.name}.png`)),
+        threenative: image(path.join(tn, layer, `${pose.name}.png`)),
+        masks: reference,
+        regions,
+        ...(existsSync(exr) ? { unrealExr: image(exr) } : {}),
+        ...(thresholds ? { thresholds } : {}),
+      });
+      for (const row of cell) {
+        const a = reference.regions[row.region];
+        const b = own.regions[row.region];
+        row.iou = a && b ? iou(a, b) : 0;
+      }
+      rows.push(...cell);
+    }
+  }
+  return rows;
+}
+
 export function compareGi(args: readonly string[]): number {
+  const layerFlag = flag(args, "--layer");
+  if (layerFlag !== undefined) {
+    const root = path.resolve(flag(args, "--captures") ?? path.join(REFERENCE, "captures"));
+    const names = sceneNames(
+      flag(args, "--scene") ?? "gi",
+      registry().scenes.map((s) => s.name),
+    );
+    const rows = names.flatMap((name) => compareGiToUnreal(name, layerFlag.split(","), root));
+    const f = (v: number | null, d = 3) => (v === null ? "—" : v.toFixed(d));
+    console.log(
+      `| layer | cell | region | Unreal p50 | TN p50 | dP50 | ΔE2000 | ID IoU | verdict |\n|---|---|---|---:|---:|---:|---:|---:|---|\n${rows
+        .map(
+          (r) =>
+            `| ${r.layer} | ${r.cell} | ${r.region} | ${f(r.unreal?.p50 ?? null, 1)} | ${f(r.threenative?.p50 ?? null, 1)} | ${f(r.dP50)} | ${f(r.deltaE, 2)} | ${f(r.iou)} | ${r.pass === null ? "report" : r.pass ? "PASS" : "FAIL"} |`,
+        )
+        .join("\n")}`,
+    );
+    return rows.some((r) => r.pass === false) ? 1 : 0;
+  }
   const reg = registry();
   const scenes = sceneNames(
     flag(args, "--scene") ?? "gi",
