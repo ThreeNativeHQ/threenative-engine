@@ -39,7 +39,7 @@ import { HEIGHT_FOG, type HeightFogParams, heightFogNode } from "./heightFog.js"
  * pulled the photograph's ambient toward Unreal's void band; the atmosphere bake needs none.
  */
 /** Draw the sky with gpuSky.ts (Unreal LUT atmosphere and clouds) instead of the CPU bake. */
-const GPU_SKY = true;
+const GPU_SKY = !/[?&]off=[^&]*gpusky/.test(globalThis.location?.search ?? "");
 
 const AMBIENT_SCALE = new Color(1, 1, 1);
 
