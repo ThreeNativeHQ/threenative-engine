@@ -17,8 +17,8 @@
 // the log luminance; the gain pulls the base toward middle grey by the contrast scale and
 // keeps the detail above the base.
 import {
-  HalfFloatType,
   FloatType,
+  HalfFloatType,
   LinearFilter,
   NearestFilter,
   RenderTarget,
